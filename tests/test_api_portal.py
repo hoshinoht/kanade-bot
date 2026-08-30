@@ -387,10 +387,10 @@ def test_every_action_in_a_row_is_a_real_form(auth, seeded):
     """With the CDN blocked the page must still work, so nothing is js-only."""
     body = auth.get("/").text
     row = body[body.index('<article class="run') : body.index("</article>")]
-    # move, preview ping, and the status control -- each a real POST with an
-    # htmx upgrade, and no click handlers anywhere.
-    assert row.count('method="post"') == 3
-    assert row.count("hx-post=") == 3
+    # move, preview ping, the party swap, and the status control -- each a real
+    # POST with an htmx upgrade, and no click handlers anywhere.
+    assert row.count('method="post"') == 4
+    assert row.count("hx-post=") == 4
     assert "onclick" not in row
     assert row.count('type="submit" name="status"') == 5
 

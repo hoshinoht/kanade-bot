@@ -145,6 +145,7 @@ uv run python -m bot
 /otot run_id:a1b2c3d4           # own time: stays in the morning ping, no countdowns
 /restore run_id:a1b2c3d4        # put a cancelled/own-time/finished run back on
 /done run_id:a1b2c3d4           # cleared early
+/swap run_id:a1b2 out:@Priya in:@kanon  # this week only; the timing is unchanged
 /rsvp run_id:a1b2c3d4 answer:no
 
 /nick user:@harbour4417 alias:MY  # chat nickname, used by the extractor
@@ -241,11 +242,19 @@ to the `extractions` table. That is the prompt-tuning tool, and phase 3's portal
 will render it.
 
 ```
-/rescan                                  # re-read this channel's boss week from Discord
+/rescan                                  # queue a re-read of this channel's boss week
 /rescan window:2weeks                    # week (default) · 2weeks · 48h · 24h
 /rescan scope:all channels               # every watched channel, one at a time
-/debug extract                           # the same, ephemeral, with the raw JSON and no card
+/rescan cancel:True                      # stop the one that is running
+/debug extract                           # read it now, ephemeral, raw JSON, no card
 ```
+
+A rescan is **queued, never awaited**: re-reading a boss week is minutes of model
+time, so the bot answers commands, ticks reminders and handles reactions
+throughout. One worker drains the queue a channel at a time (the model is
+single-threaded anyway), and asking twice for the same channels attaches to the
+job already running rather than reading everything twice. Cancelling lands
+between conversations — a call already in flight is left to finish.
 
 A rescan does three things in order. It **backfills from Discord first** —
 paging `channel.history()` for the window, threads included — so it still works
@@ -260,6 +269,16 @@ Tuesday. The reply says what it read, not just what it found.
 
 If the current boss week holds no scheduling chat at all, it checks the week
 before it once (and says so). Never further back than that.
+
+**What it reads, and how it is cut up.** History is grouped into the
+conversations it actually was: the unit is the local calendar day, so a planning
+thread that ran from lunchtime to the evening with long pauses stays one prompt.
+Only a day too big for one prompt is split, at its longest pause. Each
+conversation is one model call, and the channel gets **one card at the end** —
+not one per burst, which used to leave a stack of cards superseding each other.
+
+**Automated re-reads are capped at 48 hours** and never widen to the previous
+week; only a person asking can choose `week` or `2weeks`.
 
 The same backfill runs on startup for every watched channel — no model call,
 just history into the database. Turn it off with `BACKFILL_ON_START=false`.
@@ -439,7 +458,10 @@ bossctl rsvp <run> yes --user <user-id>
 bossctl members | nick <user-id> MY
 bossctl reminders [--run <id>]
 bossctl rescan [--window week] [--channel ID ...]   # default: every watched channel
+bossctl rescan-stop [JOB]                # stop it after the current channel
+bossctl rescans                          # the last few
 bossctl channels                         # what a rescan would cover
+bossctl swap <run> --out ID --in ID      # change the party for one week only
 bossctl access                           # per-channel read/post permissions
 bossctl status <run> planned|confirmed|otot|done|cancelled
 bossctl restore <run>

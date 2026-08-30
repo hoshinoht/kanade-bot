@@ -36,6 +36,9 @@
 </header>
 
 <main class="shell">
+{# Every page shows the message a redirect carried, so an action's result is
+   never silently dropped because that page forgot to render it. #}
+{% if flash %}{% include "partials/flash.html" %}{% endif %}
 {% block content %}{% endblock %}
   <p class="footnote">
     <span>All times {{ tz_name }}.</span>

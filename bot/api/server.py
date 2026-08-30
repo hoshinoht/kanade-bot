@@ -83,11 +83,6 @@ class ApiServer:
 
     async def stop(self) -> None:
         """Ask uvicorn to finish in-flight requests, then wait for the task."""
-        jobs = getattr(getattr(self.app, "state", None), "jobs", None)
-        if jobs is not None:
-            # A background rescan holds the model; let go of it before the loop
-            # closes, or shutdown waits on Ollama.
-            await jobs.shutdown()
         if self.server is not None:
             self.server.should_exit = True
         task, self._task = self._task, None

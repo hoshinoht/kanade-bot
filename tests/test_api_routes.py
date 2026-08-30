@@ -545,6 +545,24 @@ def test_the_digest_channel_is_included_and_marked(auth, fake_bot, seeded):
     assert [r["is_digest_channel"] for r in rows if r["name"] == "#hstar-party"] == [True]
 
 
+def wait_for_job(auth, job_id, tries: int = 60) -> dict:
+    """Poll a queued rescan the way the portal and the CLI do."""
+    for _ in range(tries):
+        body = auth.get(f"/api/rescan/{job_id}").json()
+        if not body["running"]:
+            return body
+    raise AssertionError("the rescan never finished")
+
+
+def test_a_rescan_is_queued_not_awaited(auth, seeded):
+    """It is minutes of model time; the request must come straight back."""
+    response = auth.post("/api/rescan", json={})
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] in ("queued", "running")
+    assert body["total"] == 2
+
+
 def test_rescan_refuses_an_unwatched_channel(auth, seeded):
     response = auth.post("/api/rescan", json={"channels": [str(UNWATCHED_CHANNEL)]})
     assert response.status_code == 400
@@ -566,8 +584,9 @@ def test_rescan_refuses_while_the_extractor_is_off(auth, fake_bot, seeded):
 
 
 def test_no_channels_means_every_watched_one(auth, fake_bot, seeded):
-    body = auth.post("/api/rescan", json={}).json()
-    assert {r["channel_name"] for r in body["channels"]} == {"#hstar-party", "#xkalos-party"}
+    job = auth.post("/api/rescan", json={}).json()
+    body = wait_for_job(auth, job["job_id"])
+    assert {r["channel_name"] for r in body["results"]} == {"#hstar-party", "#xkalos-party"}
     assert [c for c, _, _ in fake_bot.extractor.calls] == [
         str(WATCHED_CHANNEL),
         str(OTHER_CHANNEL),
@@ -579,14 +598,17 @@ def test_the_channels_are_read_one_at_a_time(auth, fake_bot, seeded):
     order: list[str] = []
     original = fake_bot.extractor.rescan_window
 
-    async def record(channel_id, window="week", post=True):
+    async def record(channel_id, window="week", post=True, automated=False, should_stop=None):
         order.append(f"start {channel_id}")
-        result = await original(channel_id, window=window, post=post)
+        result = await original(
+            channel_id, window=window, post=post, automated=automated, should_stop=should_stop
+        )
         order.append(f"end {channel_id}")
         return result
 
     fake_bot.extractor.rescan_window = record
-    auth.post("/api/rescan", json={})
+    job = auth.post("/api/rescan", json={}).json()
+    wait_for_job(auth, job["job_id"])
     assert order == [
         f"start {WATCHED_CHANNEL}",
         f"end {WATCHED_CHANNEL}",
@@ -596,13 +618,15 @@ def test_the_channels_are_read_one_at_a_time(auth, fake_bot, seeded):
 
 
 def test_one_named_channel_is_the_only_one_read(auth, fake_bot, seeded):
-    body = auth.post("/api/rescan", json={"channels": [str(OTHER_CHANNEL)]}).json()
-    assert [r["channel_name"] for r in body["channels"]] == ["#xkalos-party"]
+    job = auth.post("/api/rescan", json={"channels": [str(OTHER_CHANNEL)]}).json()
+    body = wait_for_job(auth, job["job_id"])
+    assert [r["channel_name"] for r in body["results"]] == ["#xkalos-party"]
 
 
 def test_a_rescan_takes_a_window(auth, fake_bot, seeded):
-    body = auth.post("/api/rescan", json={"window": "2weeks"}).json()
-    assert body["window"] == "2weeks"
+    job = auth.post("/api/rescan", json={"window": "2weeks"}).json()
+    assert job["window"] == "2weeks"
+    wait_for_job(auth, job["job_id"])
     assert {w for _, w, _ in fake_bot.extractor.calls} == {"2weeks"}
 
 
@@ -613,9 +637,44 @@ def test_an_unknown_rescan_window_is_refused(auth, seeded):
 
 def test_the_totals_add_the_channels_up(auth, fake_bot, seeded):
     fake_bot.backfill_count = 5
-    body = auth.post("/api/rescan", json={}).json()
-    assert body["backfilled"] == sum(r["backfilled"] for r in body["channels"])
-    assert body["asked"] is False
+    job = auth.post("/api/rescan", json={}).json()
+    body = wait_for_job(auth, job["job_id"])
+    assert body["totals"]["backfilled"] == sum(r["backfilled"] for r in body["results"])
+
+
+def test_a_rescan_can_be_stopped(auth, seeded):
+    job = auth.post("/api/rescan", json={}).json()
+    response = auth.delete(f"/api/rescan/{job['job_id']}")
+    assert response.status_code in (200, 400)  # it may already have finished
+
+
+def test_stopping_a_finished_rescan_says_so(auth, seeded):
+    job = auth.post("/api/rescan", json={}).json()
+    wait_for_job(auth, job["job_id"])
+    response = auth.delete(f"/api/rescan/{job['job_id']}")
+    assert response.status_code == 400
+    assert "already" in response.json()["error"]
+
+
+def test_an_unknown_job_is_a_404(auth, seeded):
+    assert auth.get("/api/rescan/nope").status_code == 404
+
+
+def test_recent_rescans_are_listed(auth, seeded):
+    job = auth.post("/api/rescan", json={}).json()
+    wait_for_job(auth, job["job_id"])
+    listed = auth.get("/api/rescan").json()
+    assert listed[0]["job_id"] == job["job_id"]
+
+
+def test_a_job_is_recorded_in_the_database(auth, fake_bot, seeded):
+    """So the portal can still show it after a restart."""
+    job = auth.post("/api/rescan", json={}).json()
+    wait_for_job(auth, job["job_id"])
+    row = fake_bot.repo.get_rescan_job(job["job_id"])
+    assert row["status"] == "done"
+    assert row["window"] == "week"
+    assert len(row["results"]) == 2
 
 
 def test_the_rescan_targets_put_party_channels_first(auth, fake_bot, seeded):

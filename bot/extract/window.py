@@ -19,18 +19,46 @@ from ..timeutil import utcnow
 from ..weeks import current_week_start, week_start
 
 #: Silence that ends a burst when replaying history. The live debounce is 90 s;
-#: history is replayed with a wider gap so a whole evening's planning arrives as
-#: one burst rather than a dozen single messages.
-BURST_GAP = timedelta(minutes=15)
+#: history is replayed with a much wider gap because a planning thread is not
+#: continuous -- a real one ran 11:50 -> 13:15 with fifty-minute pauses, and at
+#: fifteen minutes it came apart into six bursts of one to four messages. The
+#: model then never saw "then weds lah" next to "Wed i can from 9:30pm", and
+#: produced TBD cards from a conversation that had settled.
+BURST_GAP = timedelta(hours=3)
+
+#: A burst this big is already more than one prompt should carry, so it is split
+#: at its longest internal pause rather than sent whole.
+MAX_BURST_MESSAGES = 40
 
 #: What `/rescan window:` offers, longest first.
 WINDOWS: tuple[str, ...] = ("week", "2weeks", "48h", "24h")
 
 DEFAULT_WINDOW = "week"
 
+#: The furthest back the bot may look **on its own initiative**. A person asking
+#: for a week has decided that re-reading it is worth the model time and the
+#: cards it might post; a scheduled sweep has decided nothing, and quietly
+#: re-reading a fortnight every hour is how a bot becomes noise.
+AUTOMATED_WINDOW = "48h"
+
 #: Fixed-length windows, in hours. `week`/`2weeks` are boss weeks, not 7×24 h,
 #: so a rescan on Thursday morning does not reach back past the reset.
 _HOUR_WINDOWS: dict[str, int] = {"24h": 24, "48h": 48}
+
+
+def clamp_window(window: str, automated: bool) -> str:
+    """The window that will actually be read.
+
+    Automated rescans are capped at :data:`AUTOMATED_WINDOW`; a manual one is
+    taken at its word. Enforced here rather than by each caller remembering, so
+    a future scheduled sweep cannot widen itself by accident.
+    """
+    key = (window or DEFAULT_WINDOW).strip().lower()
+    if key not in WINDOWS:
+        raise ValueError(f"unknown window {window!r}; expected one of {', '.join(WINDOWS)}")
+    if not automated:
+        return key
+    return key if key in _HOUR_WINDOWS else AUTOMATED_WINDOW
 
 
 def window_since(
@@ -65,20 +93,73 @@ def previous_week_start(
     return week_start(this_week - timedelta(seconds=1), tz, reset_weekday, reset_time)
 
 
-def should_widen(window: str, gated_count: int) -> bool:
+def should_widen(window: str, gated_count: int, automated: bool = False) -> bool:
     """Whether to look back one more boss week.
 
-    Only from the default ``week`` window, and only when the week held *no*
+    Only from the default ``week`` window, only when the week held *no*
     scheduling chat at all -- a quiet week early on Thursday is the normal case
-    right after a reset, and the useful answer is last week's plan.  Never more
-    than two weeks: a card about a run that has already happened is noise
-    (see :data:`bot.extract.pipeline.STALE_GRACE`).
+    right after a reset, and the useful answer is last week's plan -- and never
+    for an automated run, which is capped at :data:`AUTOMATED_WINDOW` and has
+    nobody waiting on an answer. Never more than two weeks either way: a card
+    about a run that has already happened is noise (see
+    :data:`bot.extract.pipeline.STALE_GRACE`).
     """
-    return window == "week" and gated_count == 0
+    return not automated and window == "week" and gated_count == 0
 
 
 def _created_at(row: Any) -> datetime:
     return row["created_at"]
+
+
+def group_for_rescan(
+    rows: Sequence[Any],
+    tz: ZoneInfo,
+    gap: timedelta = BURST_GAP,
+    cap: int = MAX_BURST_MESSAGES,
+    key: Callable[[Any], datetime] = _created_at,
+) -> list[list[Any]]:
+    """Cut a window of history into the conversations it actually was.
+
+    A boss night is one conversation even when it has long pauses in it, so the
+    unit is **the local calendar day**: if a day's scheduling chat fits in one
+    prompt it goes as one burst, pauses and all. Only when a day is too big for
+    that is it split -- first on :data:`BURST_GAP` silences, and then, for
+    anything still over ``cap``, at its longest internal pause until every piece
+    fits. Splitting on the longest pause keeps the halves where the conversation
+    genuinely broke rather than at an arbitrary count.
+    """
+    out: list[list[Any]] = []
+    for _day, day_rows in _by_local_day(rows, tz, key):
+        if len(day_rows) <= cap:
+            out.append(day_rows)
+            continue
+        for chunk in group_bursts(day_rows, gap, key):
+            out.extend(_split_to_fit(chunk, cap, key))
+    return out
+
+
+def _by_local_day(
+    rows: Sequence[Any], tz: ZoneInfo, key: Callable[[Any], datetime]
+) -> list[tuple[Any, list[Any]]]:
+    """``rows`` grouped by their date in the guild timezone, chronologically."""
+    days: dict[Any, list[Any]] = {}
+    for row in rows:
+        days.setdefault(key(row).astimezone(tz).date(), []).append(row)
+    return sorted(days.items())
+
+
+def _split_to_fit(rows: list[Any], cap: int, key: Callable[[Any], datetime]) -> list[list[Any]]:
+    """Halve at the longest pause until every piece is at most ``cap`` long."""
+    if len(rows) <= cap:
+        return [rows]
+    middle = len(rows) // 2
+    # Longest pause wins; evenly-spaced chatter has no natural break, so ties go
+    # to the most central split rather than shaving one message off the front.
+    at = max(
+        range(1, len(rows)),
+        key=lambda index: (key(rows[index]) - key(rows[index - 1]), -abs(index - middle)),
+    )
+    return _split_to_fit(rows[:at], cap, key) + _split_to_fit(rows[at:], cap, key)
 
 
 def group_bursts(
@@ -107,10 +188,14 @@ def group_bursts(
 
 
 __all__ = [
+    "AUTOMATED_WINDOW",
     "BURST_GAP",
+    "MAX_BURST_MESSAGES",
     "DEFAULT_WINDOW",
     "WINDOWS",
+    "clamp_window",
     "group_bursts",
+    "group_for_rescan",
     "previous_week_start",
     "should_widen",
     "window_since",

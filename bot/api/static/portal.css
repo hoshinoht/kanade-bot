@@ -821,6 +821,31 @@ details[open] > summary.btn {
   letter-spacing: -0.01em;
 }
 
+.chip__x {
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  margin-left: 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chip__x:hover {
+  color: var(--risk);
+}
+
+.chip__add {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--dim);
+}
+
 .chip--yes {
   color: var(--ok);
   border-color: color-mix(in srgb, var(--ok) 35%, transparent);

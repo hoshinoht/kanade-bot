@@ -197,7 +197,7 @@ def decline_notice(run: dict, who_declined: str, display_name: str, tz: ZoneInfo
     ).strip()
 
 
-def schedule_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
+def schedule_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str], delta: str = "") -> str:
     local = run["datetime"].astimezone(tz)
     when = "own time" if run["status"] == "otot" else local.strftime("%H:%M")
     parts = [
@@ -208,6 +208,10 @@ def schedule_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
         STATUS_LABEL.get(run["status"], run["status"]),
         rsvp_tally(run["participants"], rsvps),
     ]
+    if delta:
+        # A one-week stand-in is invisible otherwise: the run's party differs
+        # from the timing it came from, and that is easy to forget.
+        parts.append(f"_{delta}_")
     return " · ".join(parts)
 
 
@@ -259,6 +263,28 @@ def restore_notice(run: dict, tz: ZoneInfo) -> str:
         f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}) — "
         f"{format_participants(run['participants'])}\n{REACT_HINT}"
     )
+
+
+def swap_notice(run: dict, out: list[str], joined: list[str], tz: ZoneInfo) -> str:
+    """Posted when a run's party changes for one week only."""
+    parts = []
+    if out:
+        parts.append(f"{format_participants(out)} out")
+    if joined:
+        parts.append(f"{format_participants(joined)} in")
+    return (
+        f"🔁 **{format_bosses(run['bosses'])}** "
+        f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}): "
+        f"{' · '.join(parts)} this week — the weekly timing is unchanged."
+    )
+
+
+def roster_delta(out: list[str], joined: list[str]) -> str:
+    """``"this week: -MY +kanon"`` for a schedule line, or ``""`` when unchanged."""
+    if not out and not joined:
+        return ""
+    bits = [f"−{name}" for name in out] + [f"+{name}" for name in joined]
+    return "this week: " + " ".join(bits)
 
 
 def done_notice(run: dict) -> str:
@@ -381,7 +407,13 @@ def proposal_line(amendment: dict, run: dict | None, tz: ZoneInfo) -> tuple[str,
     elif kind == "otot":
         lines.append("**own time** — stays on the schedule, no countdown pings")
     elif kind == "sub":
-        lines.append("**stand-in wanted** " + format_participants(amendment["participants"]))
+        payload = amendment.get("payload") or {}
+        out = [str(u) for u in payload.get("remove", [])] or amendment["participants"]
+        joining = [str(u) for u in payload.get("add", [])]
+        if joining:
+            lines.append(f"{format_participants(out)} out · {format_participants(joining)} in")
+        else:
+            lines.append(f"{format_participants(out)} out · **temp needed**")
     else:  # pragma: no cover - rsvp never reaches a card
         lines.append(when_text(amendment, tz))
 

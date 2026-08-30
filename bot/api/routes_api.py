@@ -41,12 +41,14 @@ from .models import (
     RejectOut,
     ReminderOut,
     RescanIn,
-    RescanOut,
+    RescanJobDetailOut,
+    RescanJobOut,
     RescanTargetOut,
     RsvpIn,
     RunOut,
     ScheduleOut,
     StatusIn,
+    SwapIn,
     Week,
 )
 
@@ -162,6 +164,16 @@ async def post_restore(bot: Bot, caller: Caller, run_id: str) -> dict:
 async def patch_status(bot: Bot, caller: Caller, run_id: str, body: StatusIn) -> dict:
     """The one place a status is chosen; `/otot`, `/cancel` and `/restore` are shortcuts."""
     return await service.set_status(bot, run_id, body.status)
+
+
+@router.patch(
+    "/runs/{run_id}/participants",
+    response_model=RunOut,
+    summary="Swap someone in or out for this week only",
+)
+async def patch_participants(bot: Bot, caller: Caller, run_id: str, body: SwapIn) -> dict:
+    """Changes the run, never the fixed timing behind it."""
+    return await service.swap_participants(bot, run_id, remove=body.remove, add=body.add)
 
 
 @router.post("/runs/{run_id}/rsvp", response_model=RunOut)
@@ -280,11 +292,36 @@ async def get_rescan_targets(bot: Bot, caller: Caller) -> list[dict]:
     return service.rescan_targets(bot)
 
 
-@router.post("/rescan", response_model=RescanOut, summary="Re-read the party channels")
+@router.post(
+    "/rescan",
+    response_model=RescanJobOut,
+    status_code=202,
+    summary="Queue a re-read of the party channels",
+)
 async def post_rescan(bot: Bot, caller: Caller, body: RescanIn | None = None) -> dict:
-    """One channel at a time, oldest conversation first. No channels means all of them."""
+    """Returns at once with a job to poll; no channels means all of them.
+
+    Re-reading a boss week is minutes of model time, so this never blocks: the
+    worker drains the queue one channel at a time while the bot carries on.
+    """
     body = body or RescanIn()
-    return await service.rescan(bot, body.channels, window=body.window, post=body.post)
+    return service.queue_rescan(bot, body.channels, window=body.window)
+
+
+@router.get("/rescan/{job_id}", response_model=RescanJobDetailOut, summary="A rescan's progress")
+async def get_rescan_job(bot: Bot, caller: Caller, job_id: str) -> dict:
+    return service.rescan_job(bot, job_id)
+
+
+@router.delete("/rescan/{job_id}", response_model=RescanJobDetailOut, summary="Stop a rescan")
+async def delete_rescan_job(bot: Bot, caller: Caller, job_id: str) -> dict:
+    """Cancellation is cooperative: it lands between bursts, not mid-call."""
+    return service.cancel_rescan(bot, job_id)
+
+
+@router.get("/rescan", response_model=list[RescanJobOut], summary="The last few rescans")
+async def list_rescans(bot: Bot, caller: Caller, limit: int = 5) -> list[dict]:
+    return service.recent_rescans(bot, limit)
 
 
 @router.post("/debug/ping", response_model=PingOut, summary="Post one test reminder now")

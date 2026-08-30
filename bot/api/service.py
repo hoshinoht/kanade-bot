@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import re
 import zlib
-from collections.abc import AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -296,6 +296,7 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
         "yes": sum(1 for p in participants if p["rsvp"] == "yes"),
         "no": sum(1 for p in participants if p["rsvp"] == "no"),
         "unanswered": sum(1 for p in participants if p["rsvp"] is None),
+        "roster_change": roster_change(bot, run),
     }
 
 
@@ -831,6 +832,83 @@ async def restore_run(bot: BossBot, run_id: str) -> dict:
     return await set_status(bot, run_id, "planned")
 
 
+async def swap_participants(
+    bot: BossBot,
+    run_id: str,
+    remove: Sequence[str] = (),
+    add: Sequence[str] = (),
+    mark: bool = True,
+) -> dict:
+    """Change who is on a run **for this week only**.
+
+    Not the same as editing the fixed timing: a stand-in for one night must not
+    rewrite the baseline, or next week pings the wrong people. The run's own
+    participant list is what the day-of and countdown messages mention, so
+    changing it here is all that is needed.
+
+    Answers from anyone taken off are cleared -- theirs was about a run they are
+    no longer on -- and a run may not be emptied.
+    """
+    run = load_run(bot, run_id)
+    leaving = [str(u) for u in remove or ()]
+    joining = validate_participants(bot, add) if add else []
+
+    people = [uid for uid in run["participants"] if uid not in leaving]
+    unknown = [uid for uid in leaving if uid not in run["participants"]]
+    if unknown:
+        raise BadRequest(
+            "not on this run: " + ", ".join(f"{member_name(bot, u)} ({u})" for u in unknown)
+        )
+    for uid in joining:
+        if uid not in people:
+            people.append(uid)
+    if not people:
+        raise BadRequest("a run needs at least one participant - cancel it instead")
+    if people == run["participants"]:
+        return run_view(bot, run)
+
+    bot.repo.set_run_participants(run["id"], people)
+    for uid in leaving:
+        bot.repo.clear_rsvp(run["id"], uid)
+
+    fresh = bot.repo.get_run(run["id"])
+    # Recompute: losing the person who said no can settle a run, and gaining
+    # someone who has not answered unsettles one.
+    status = compute_status(fresh["status"], fresh["participants"], bot.repo.get_rsvps(run["id"]))
+    if status != fresh["status"]:
+        bot.repo.set_run_status(run["id"], status)
+        fresh = bot.repo.get_run(run["id"])
+
+    await _announce(
+        bot,
+        formatting.swap_notice(fresh, leaving, joining, bot.tz),
+        [*fresh["participants"], *leaving],
+        fresh["channel_id"],
+        mark=mark,
+    )
+    return run_view(bot, fresh)
+
+
+def roster_change(bot: BossBot, run: dict) -> dict:
+    """How this week's party differs from the fixed timing behind it.
+
+    Shown as "(this week: -X +Y)" so a one-night stand-in is visible without
+    opening anything -- the baseline is unchanged, and that is easy to forget.
+    """
+    fixed_id = run.get("fixed_run_id")
+    fixed = bot.repo.get_fixed_run(fixed_id) if fixed_id else None
+    if fixed is None:
+        return {"out": [], "in": [], "changed": False}
+    baseline = list(fixed["participants"])
+    out = [uid for uid in baseline if uid not in run["participants"]]
+    joined = [uid for uid in run["participants"] if uid not in baseline]
+    return {
+        "out": [{"id": uid, "name": member_name(bot, uid)} for uid in out],
+        "in": [{"id": uid, "name": member_name(bot, uid)} for uid in joined],
+        "changed": bool(out or joined),
+    }
+
+
 async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -> dict:
     run = load_run(bot, run_id)
     if answer not in ("yes", "no", "maybe"):
@@ -1137,10 +1215,17 @@ def resolve_rescan_channels(bot: BossBot, channels: Sequence[str] | None) -> lis
 
 
 async def rescan_one(
-    bot: BossBot, channel_id: int | str, window: str = DEFAULT_WINDOW, post: bool = True
+    bot: BossBot,
+    channel_id: int | str,
+    window: str = DEFAULT_WINDOW,
+    post: bool = True,
+    automated: bool = False,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """Backfill one channel from Discord, then re-read the window burst by burst."""
-    report = await bot.extractor.rescan_window(channel_id, window=window, post=post)
+    report = await bot.extractor.rescan_window(
+        channel_id, window=window, post=post, automated=automated, should_stop=should_stop
+    )
     return {
         "channel_id": str(channel_id),
         "channel_name": channel_name(bot, channel_id) or f"channel {channel_id}",
@@ -1157,6 +1242,7 @@ async def rescan_one(
         "dropped": report.dropped,
         "stale": report.stale,
         "elapsed_ms": report.elapsed_ms,
+        "cancelled": report.cancelled,
         "error": report.errors[0] if report.errors else None,
         "summary": next((p.summary for p in report.plans if p.summary), ""),
         "proposed": [
@@ -1191,22 +1277,83 @@ def rescan_totals(window: str, results: Sequence[dict]) -> dict:
     }
 
 
+def queue_rescan(
+    bot: BossBot,
+    channels: Sequence[str] | None = None,
+    window: str = DEFAULT_WINDOW,
+    source: str = "manual",
+    automated: bool = False,
+    requested_by: int | str | None = None,
+) -> dict:
+    """Put a rescan on the queue and return the job to watch.
+
+    Deliberately *not* awaited: re-reading a boss week is minutes of model time,
+    and doing it inline froze the reminder tick, reactions and every other
+    command behind Ollama. :class:`bot.rescan.RescanWorker` drains the queue one
+    channel at a time while the rest of the bot carries on.
+    """
+    from ..rescan import job_view
+
+    _check_rescan_allowed(bot, window)
+    targets = resolve_rescan_channels(bot, channels)
+    names = {row["id"]: row["name"] for row in rescan_targets(bot)}
+    job = bot.rescans.submit(
+        targets,
+        window=window,
+        source=source,
+        automated=automated,
+        requested_by=requested_by,
+        names=names,
+    )
+    return job_view(job)
+
+
+def rescan_job(bot: BossBot, job_id: str) -> dict:
+    """One job's progress, live from memory."""
+    from ..rescan import job_view
+
+    job = bot.rescans.get(job_id)
+    if job is None:
+        raise NotFound("that rescan is no longer in memory - start another one")
+    view = job_view(job)
+    view["totals"] = rescan_totals(view["window"], view["results"])
+    return view
+
+
+def cancel_rescan(bot: BossBot, job_id: str) -> dict:
+    """Ask a queued or running rescan to stop between bursts."""
+    if not bot.rescans.cancel(job_id):
+        job = bot.rescans.get(job_id)
+        if job is None:
+            raise NotFound("that rescan is no longer in memory")
+        raise BadRequest(f"that rescan is already `{job.status}`")
+    return rescan_job(bot, job_id)
+
+
+def recent_rescans(bot: BossBot, limit: int = 5) -> list[dict]:
+    """The last few rescans, newest first -- what the Config page shows."""
+    from ..rescan import job_view
+
+    return [job_view(job) for job in bot.rescans.recent(limit)]
+
+
 async def rescan(
     bot: BossBot,
     channels: Sequence[str] | None = None,
     window: str = DEFAULT_WINDOW,
     post: bool = True,
+    automated: bool = False,
 ) -> dict:
-    """Re-read one or more party channels. No ``channels`` means all watched ones.
+    """Re-read channels **inline**, waiting for the result.
 
-    Channels are done **one at a time**: the model lock serialises the calls
-    anyway, and doing them in order keeps each channel's cards together in that
-    channel rather than interleaving eight parties' proposals.
+    Only for callers that genuinely want to block -- the offline dry run, and
+    tests. Everything a person triggers goes through :func:`queue_rescan`.
     """
     _check_rescan_allowed(bot, window)
     targets = resolve_rescan_channels(bot, channels)
     results = [
-        await rescan_one(bot, channel_id, window=window, post=post) for channel_id in targets
+        await rescan_one(bot, channel_id, window=window, post=post, automated=automated)
+        for channel_id in targets
     ]
     return rescan_totals(window, results)
 
@@ -1338,13 +1485,19 @@ __all__ = [
     "SETTABLE_STATUSES",
     "otot_run",
     "restore_run",
+    "roster_change",
     "set_status",
+    "swap_participants",
     "parse_since",
     "pending",
     "post_digest",
     "reject_amendment",
     "reminders",
+    "cancel_rescan",
+    "queue_rescan",
+    "recent_rescans",
     "rescan",
+    "rescan_job",
     "rescan_one",
     "rescan_targets",
     "rescan_totals",

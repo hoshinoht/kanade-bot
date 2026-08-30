@@ -26,7 +26,7 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
@@ -181,6 +181,26 @@ CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- v4. One row per rescan asked for, so the portal can show the last few runs
+-- after a restart. The live queue is in memory (bot/rescan.py); this is the
+-- record of what was asked and what came of it.
+CREATE TABLE IF NOT EXISTS rescan_jobs (
+    id           TEXT PRIMARY KEY,
+    channels     TEXT NOT NULL DEFAULT '[]',
+    window       TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT 'manual',
+    automated    INTEGER NOT NULL DEFAULT 0,
+    requested_by TEXT,
+    status       TEXT NOT NULL DEFAULT 'queued',
+    created_at   TEXT NOT NULL,
+    started_at   TEXT,
+    finished_at  TEXT,
+    results      TEXT NOT NULL DEFAULT '[]',
+    error        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS rescan_jobs_recent ON rescan_jobs (created_at DESC);
 """
 
 
@@ -285,9 +305,18 @@ def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
 
 
 #: version -> the step that upgrades *from* that version to the next.
+def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
+    """v4 only adds ``rescan_jobs``, which ``SCHEMA_SQL`` creates on its own.
+
+    A numbered step is still needed so :meth:`Repo.migrate` can walk past v3;
+    the work is the ``CREATE TABLE IF NOT EXISTS`` that runs afterwards.
+    """
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
+    3: _migrate_3_to_4,
 }
 
 
@@ -1116,6 +1145,82 @@ class Repo:
             "UPDATE extractions SET amendment_ids = ? WHERE id = ?",
             (_dump(amendment_ids), extraction_id),
         )
+
+    # -- rescan jobs -------------------------------------------------------
+    def create_rescan_job(
+        self,
+        job_id: str,
+        channels: Sequence[str],
+        window: str,
+        source: str = "manual",
+        automated: bool = False,
+        requested_by: int | str | None = None,
+        at: datetime | None = None,
+    ) -> str:
+        """Record a rescan the moment it is asked for, before it runs."""
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO rescan_jobs
+                (id, channels, window, source, automated, requested_by, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)
+            """,
+            (
+                job_id,
+                _dump(str(c) for c in channels),
+                window,
+                source,
+                int(bool(automated)),
+                str(requested_by) if requested_by is not None else None,
+                to_iso(at or utcnow()),
+            ),
+        )
+        return job_id
+
+    def update_rescan_job(self, job_id: str, **fields: Any) -> None:
+        allowed = {
+            "status",
+            "started_at",
+            "finished_at",
+            "results",
+            "error",
+            "channels",
+            "window",
+        }
+        sets, values = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            if key in ("started_at", "finished_at") and isinstance(value, datetime):
+                value = to_iso(value)
+            if key in ("results", "channels") and not isinstance(value, str):
+                value = json.dumps(value)
+            sets.append(f"{key} = ?")
+            values.append(value)
+        if not sets:
+            return
+        values.append(job_id)
+        self._conn.execute(f"UPDATE rescan_jobs SET {', '.join(sets)} WHERE id = ?", values)
+
+    def get_rescan_job(self, job_id: str) -> dict | None:
+        row = self._conn.execute("SELECT * FROM rescan_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._rescan_job(row) if row else None
+
+    def recent_rescan_jobs(self, limit: int = 10) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM rescan_jobs ORDER BY created_at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        return [self._rescan_job(r) for r in rows]
+
+    @staticmethod
+    def _rescan_job(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["channels"] = _json_list(data["channels"])
+        data["results"] = json.loads(data["results"] or "[]")
+        data["automated"] = bool(data["automated"])
+        data["created_at"] = from_iso(data["created_at"])
+        for key in ("started_at", "finished_at"):
+            data[key] = from_iso(data[key]) if data[key] else None
+        return data
 
     def recent_extractions(self, limit: int = 20) -> list[dict]:
         rows = self._conn.execute(

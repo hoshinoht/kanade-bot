@@ -91,6 +91,7 @@ def merge(
         out.append(merged)
 
     out = _fold_time_changes_into_adds(out, positions, existing_bosses)
+    out = _carry_time_across_moves(out)
     # Keep the caller's ordering stable: earliest evidence first.
     out.sort(key=lambda a: _order(a, positions))
     return out
@@ -157,6 +158,45 @@ def _fold_time_changes_into_adds(
         # The proposal is settled by the later, more specific message.
         target.is_question = amendment.is_question
     return keep
+
+
+def _day_key(amendment: Amendment) -> str | None:
+    ref = (amendment.day_ref or "").strip().lower()
+    return ref or None
+
+
+def _carry_time_across_moves(candidates: list[Amendment]) -> list[Amendment]:
+    """One time stated for a day applies to every run moved to that day.
+
+    "mon and tuesday suddenly got things on can change to wed?" then "Wed i
+    free from 9:30pm" is two moves and one time: the time was said once because
+    it is the same evening for both. Without this the second run reads
+    "Wed - time TBD" and the card asks a question the thread already answered.
+
+    Only when the day is stated the same way for both and **exactly one** time
+    was given for it -- two different times mean the thread has not settled, and
+    guessing which applies to which run would be inventing a decision. The
+    borrowed evidence is cited on the run that borrowed it.
+    """
+    moves = [a for a in candidates if a.kind == "move"]
+    by_day: dict[str, list[Amendment]] = {}
+    for amendment in moves:
+        day = _day_key(amendment)
+        if day is not None:
+            by_day.setdefault(day, []).append(amendment)
+
+    for group in by_day.values():
+        stated = [a for a in group if a.time_ref]
+        missing = [a for a in group if not a.time_ref]
+        if len(stated) != 1 or not missing:
+            continue
+        source = stated[0]
+        for amendment in missing:
+            amendment.time_ref = source.time_ref
+            for mid in source.evidence_message_ids:
+                if mid not in amendment.evidence_message_ids:
+                    amendment.evidence_message_ids.append(mid)
+    return candidates
 
 
 def _union(members: list[tuple[int, int, Amendment]], field: str) -> list[str]:

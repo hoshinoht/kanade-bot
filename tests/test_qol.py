@@ -102,7 +102,7 @@ def test_decline_notice_round_trip():
     assert row["message_id"] is None and row["notified_at"] == at  # cooldown survives
 
 
-def test_migration_v2_to_v3_is_additive(tmp_path):
+def test_migrating_an_old_database_forward_is_additive(tmp_path):
     path = tmp_path / "v2.sqlite"
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -128,5 +128,9 @@ def test_migration_v2_to_v3_is_additive(tmp_path):
     assert {"channel_id", "is_question", "payload", "day_ref"} <= cols
     assert repo._conn.execute("SELECT COUNT(*) FROM amendments").fetchone()[0] == 1
     assert repo.get_config("day_of_ping_time") == "09:00"
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 3
-    assert repo.get_decline_notice("x", "y") is None  # table exists
+    from bot.db import SCHEMA_VERSION
+
+    # It walks all the way to the current schema, whatever that is now.
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert repo.get_decline_notice("x", "y") is None  # v3's table exists
+    assert repo.recent_rescan_jobs() == []  # v4's table exists

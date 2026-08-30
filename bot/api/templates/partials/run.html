@@ -25,9 +25,33 @@
       {% for person in run.participants %}
       <span class="chip chip--{{ person.rsvp or 'waiting' }}">
         {{ person.name }}{% if person.rsvp == "yes" %} ✅{% elif person.rsvp == "no" %} ❌{% endif %}
+        <button class="chip__x" type="submit" name="remove" value="{{ person.id }}"
+                form="swap-{{ run.short_id }}"
+                title="Take {{ person.name }} off this run for this week only">×</button>
       </span>
       {% endfor %}
+      {% if roster %}
+      <select class="chip__add" name="add" form="swap-{{ run.short_id }}"
+              aria-label="Add someone to {{ run.bosses|join(' + ') }} for this week"
+              onchange="this.form.requestSubmit()">
+        <option value="">+ add…</option>
+        {% for member in roster %}
+        {% if member.user_id not in run.participants|map(attribute='id')|list %}
+        <option value="{{ member.user_id }}">{{ member.display_name }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+      {% endif %}
     </div>
+    {% if run.roster_change and run.roster_change.changed %}
+    <p class="run__meta"><span class="chip chip--waiting">this week:
+      {%- for person in run.roster_change.out %} −{{ person.name }}{% endfor %}
+      {%- for person in run.roster_change["in"] %} +{{ person.name }}{% endfor %}
+    </span></p>
+    {% endif %}
+    <form id="swap-{{ run.short_id }}" method="post" action="/runs/{{ run.id }}/participants"
+          hx-post="/runs/{{ run.id }}/participants" hx-target="closest .run" hx-swap="outerHTML"
+          hidden><input type="hidden" name="next" value="{{ back }}"></form>
   </div>
 
   <div class="run__actions">

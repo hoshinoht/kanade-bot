@@ -32,6 +32,7 @@ from .materialise import (
     materialise_week,
     reconcile_day_of,
 )
+from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
 from .util import roster_rows
@@ -90,6 +91,9 @@ class BossBot(discord.Client):
         # reads live state and drives Discord without a second process fighting
         # over SQLite. Constructing the bot does not bind the port.
         self.api = ApiServer(self)
+        # Re-reading a channel is minutes of model time, so requests are queued
+        # and drained by one task rather than blocking whoever asked.
+        self.rescans = RescanWorker(self)
         self.tick.change_interval(seconds=settings.tick_seconds)
 
     # -- runtime config (DB-backed, seeded from env on first run) ----------
@@ -163,12 +167,14 @@ class BossBot(discord.Client):
         self._synced = True
         log.info("synced application commands to guild %s", self.settings.guild_id)
         self.tick.start()
+        await self.rescans.start()
         await self.api.start()
 
     async def close(self) -> None:
         if self.tick.is_running():
             self.tick.cancel()
         await self.api.stop()
+        await self.rescans.stop()
         await self.extractor.shutdown()
         await super().close()
 

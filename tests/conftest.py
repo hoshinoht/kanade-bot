@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -56,12 +57,23 @@ def app(fake_bot):
 
 
 @pytest.fixture
-def client(app):
-    """An unauthenticated test client -- add the header or cookie per test."""
+def client(app, fake_bot):
+    """An unauthenticated test client -- add the header or cookie per test.
+
+    The rescan worker is started inside the client's event loop, so a queued
+    rescan actually runs, exactly as it does in the bot.
+    """
+    import asyncio
+
     from fastapi.testclient import TestClient
 
     with TestClient(app) as test_client:
-        yield test_client
+        test_client.portal.call(fake_bot.rescans.start)
+        try:
+            yield test_client
+        finally:
+            with contextlib.suppress(asyncio.CancelledError, RuntimeError):
+                test_client.portal.call(fake_bot.rescans.stop)
 
 
 @pytest.fixture

@@ -10,8 +10,6 @@
   </div>
 </div>
 
-{% if flash %}{% include "partials/flash.html" %}{% endif %}
-
 <div class="grid-2">
   <section class="card">
     <div class="card__head"><h2 class="card__title">Pings</h2></div>
@@ -94,8 +92,30 @@
       {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
     </div>
     <p class="run__meta">Pulls each channel's history from Discord, splits it back into
-      conversations, and posts that channel's cards in that channel. One channel at a time, so a
-      full sweep takes a few minutes — it keeps going if you leave the page.</p>
+      conversations, and posts one card per channel at the end. One channel at a time, so a full
+      sweep takes a few minutes — it runs in the background, and the bot keeps working while it
+      does, so you can leave the page.</p>
+    {% if recent_rescans %}
+    <details>
+      <summary class="btn">Recent rescans</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>Channels</th><th>Window</th><th>Cards</th><th></th></tr></thead>
+          <tbody>
+            {% for past in recent_rescans %}
+            <tr>
+              <td class="mono">{{ "%.0f"|format(past.elapsed_ms / 1000) }}s</td>
+              <td>{{ past.channel_names|join(", ") }}</td>
+              <td class="mono">{{ past.window }}</td>
+              <td class="mono">{{ past.results|sum(attribute="proposals") }}</td>
+              <td><a href="/config?job={{ past.job_id }}">{{ past.status }}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
   </section>
 </div>
 

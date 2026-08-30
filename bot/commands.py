@@ -725,7 +725,9 @@ async def schedule(
     else:
         for heading, day_runs in formatting.group_by_day(runs, bot.tz):
             lines = [
-                formatting.schedule_line(run, bot.tz, bot.repo.get_rsvps(run["id"]))
+                formatting.schedule_line(
+                    run, bot.tz, bot.repo.get_rsvps(run["id"]), _roster_delta(bot, run)
+                )
                 for run in day_runs
             ]
             embed.add_field(name=heading, value="\n".join(lines), inline=False)
@@ -737,6 +739,26 @@ async def schedule(
     await interaction.response.send_message(
         embed=embed, allowed_mentions=discord.AllowedMentions.none()
     )
+
+
+def _roster_delta(bot: BossBot, run: dict) -> str:
+    """``"this week: -MY +kanon"`` when the party differs from the fixed timing."""
+    fixed = bot.repo.get_fixed_run(run["fixed_run_id"]) if run["fixed_run_id"] else None
+    if fixed is None:
+        return ""
+    baseline = list(fixed["participants"])
+    out = [uid for uid in baseline if uid not in run["participants"]]
+    joined = [uid for uid in run["participants"] if uid not in baseline]
+    return formatting.roster_delta(
+        [_member_name(bot, uid) for uid in out], [_member_name(bot, uid) for uid in joined]
+    )
+
+
+def _member_name(bot: BossBot, user_id: str) -> str:
+    member = bot.repo.get_member(user_id)
+    if member:
+        return member["nickname"] or member["display_name"] or str(user_id)
+    return str(user_id)
 
 
 def _hidden_note(hidden: int) -> str:
@@ -883,6 +905,59 @@ async def _set_status(interaction: discord.Interaction, run_id: str, state: str)
     )
 
 
+@app_commands.command(name="swap", description="Swap someone in or out for this week only")
+@app_commands.describe(
+    run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`",
+    out="Who is dropping out this week",
+    into="Who is standing in",
+    out2="Someone else dropping out",
+    into2="Someone else standing in",
+)
+@app_commands.autocomplete(run_id=run_autocomplete)
+@app_commands.rename(into="in", into2="in2")
+@require_role()
+async def swap(
+    interaction: discord.Interaction,
+    run_id: str,
+    out: discord.Member | None = None,
+    into: discord.Member | None = None,
+    out2: discord.Member | None = None,
+    into2: discord.Member | None = None,
+) -> None:
+    from .api import service
+    from .api.errors import ApiError
+
+    bot = _bot(interaction)
+    try:
+        run = _load_run(bot, interaction, run_id)
+    except NotAllowed as exc:
+        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        return
+    leaving = [str(m.id) for m in (out, out2) if m is not None]
+    joining = [str(m.id) for m in (into, into2) if m is not None]
+    if not leaving and not joining:
+        await interaction.response.send_message(
+            "❌ Pick someone to swap out, in, or both.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # `mark=False`: this is a chat decision, not a portal one.
+        updated = await service.swap_participants(
+            bot, run["id"], remove=leaving, add=joining, mark=False
+        )
+    except ApiError as exc:
+        await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
+        return
+    await interaction.followup.send(
+        f"✅ Run `#{short_id(run['id'])}` this week: "
+        + ", ".join(p["name"] for p in updated["participants"])
+        + "\nThe weekly timing is unchanged — use `/fixed edit` for that.",
+        ephemeral=True,
+    )
+
+
 @app_commands.command(name="rsvp", description="Say whether you're on a run")
 @app_commands.describe(
     run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`", answer="yes or no"
@@ -931,6 +1006,7 @@ async def rsvp(
 @app_commands.describe(
     window="How far back to read (default: this boss week)",
     scope="This channel (default), or every watched channel",
+    cancel="Stop the rescan that is running",
 )
 @app_commands.choices(
     window=WINDOW_CHOICES,
@@ -944,8 +1020,16 @@ async def rescan(
     interaction: discord.Interaction,
     window: app_commands.Choice[str] | None = None,
     scope: app_commands.Choice[str] | None = None,
+    cancel: bool = False,
 ) -> None:
     bot = _bot(interaction)
+    from .api import service
+    from .api.errors import ApiError
+
+    if cancel:
+        await _cancel_rescan(interaction, bot)
+        return
+
     everywhere = (scope.value if scope else "this-channel") == "all-channels"
     if not everywhere and not bot.is_watched(interaction.channel):
         await interaction.response.send_message(
@@ -954,98 +1038,47 @@ async def rescan(
             ephemeral=True,
         )
         return
-    if bot.paused:
-        await interaction.response.send_message(
-            "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
-        )
-        return
-    if not bot.extract_enabled:
-        await interaction.response.send_message(
-            "❌ The extractor is switched off - turn it back on in the portal's Config page, "
-            "or with `bossctl config set extract_enabled true`.",
-            ephemeral=True,
-        )
-        return
 
-    await interaction.response.defer(ephemeral=True)
     which = window.value if window else DEFAULT_WINDOW
-    if everywhere:
-        # Sweeping every party channel is minutes of model time; the interaction
-        # token lasts 15, so say up front what is happening.
-        await interaction.followup.send(
-            "Re-reading every watched channel — one at a time, so this takes a few minutes. "
-            "Each channel's cards appear in that channel.",
-            ephemeral=True,
+    channels = None
+    if not everywhere:
+        channel_id, _thread = origin_ids(interaction.channel)
+        channels = [str(channel_id)]
+    try:
+        job = service.queue_rescan(
+            bot,
+            channels,
+            window=which,
+            source="slash",
+            requested_by=interaction.user.id,
         )
-        from .api import service
-
-        result = await service.rescan(bot, None, window=which)
-        await interaction.followup.send(_sweep_summary(result), ephemeral=True)
+    except ApiError as exc:
+        await interaction.response.send_message(f"❌ {exc.message}", ephemeral=True)
         return
-    channel_id, _thread = origin_ids(interaction.channel)
-    report = await bot.extractor.rescan_window(channel_id, window=which)
-    await interaction.followup.send(rescan_summary(report), ephemeral=True)
 
-
-def _sweep_summary(result: dict) -> str:
-    """The reply for `/rescan scope:all channels` -- one line per channel."""
-    lines = [
-        f"• {row['channel_name']}: {row['backfilled']} pulled, {row['bursts']} conversation(s), "
-        f"**{row['proposals']}** card(s)"
-        + (" · checked last week too" if row["widened"] else "")
-        + (f" · ⚠️ {row['error']}" if row["error"] else "")
-        for row in result["channels"]
-    ]
-    head = (
-        f"Read {len(result['channels'])} channel(s) in {result['elapsed_ms'] / 1000:.0f}s — "
-        f"**{result['proposals']}** card(s) posted."
+    where = ", ".join(job["channel_names"]) if job["channel_names"] else "every watched channel"
+    # Queued, not awaited: re-reading a week is minutes of model time, and the
+    # bot has to keep answering everything else while it happens.
+    await interaction.response.send_message(
+        f"🔎 Re-reading **{where}** ({WINDOW_LABELS.get(job['window'], job['window'])}) — "
+        f"I'll post the cards in {'each channel' if everywhere else 'this channel'} as I find "
+        f"them. `/rescan cancel:True` stops it.\n"
+        f"-# job `{job['short_id']}`",
+        ephemeral=True,
     )
-    return (head + "\n" + "\n".join(lines))[:1900]
 
 
-def rescan_summary(report) -> str:
-    """The ephemeral reply for `/rescan`, shared with `/debug extract`.
-
-    Leads with what it read rather than what it found, because "nothing found"
-    means something quite different after backfilling 300 messages than after
-    backfilling none.
-    """
-    label = WINDOW_LABELS.get(report.window, report.window)
-    head = (
-        f"Read **{label}** in {report.elapsed_ms / 1000:.1f}s — "
-        f"{report.backfilled} message(s) pulled from Discord, "
-        f"{report.gated} worth reading, {report.bursts} conversation(s), "
-        f"{report.extracted} sent to the model."
+async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None:
+    running = bot.rescans.active()
+    if running is None:
+        await interaction.response.send_message("Nothing is being re-read.", ephemeral=True)
+        return
+    bot.rescans.cancel(running.id)
+    await interaction.response.send_message(
+        f"🛑 `{running.short_id}` will stop after the channel it is on "
+        f"({running.done} of {running.total} done).",
+        ephemeral=True,
     )
-    if report.widened:
-        head += "\nNothing this boss week, so I checked last week too."
-    if report.errors:
-        return head + f"\n❌ The model didn't answer: {report.errors[0]}"
-    if not report.asked:
-        return head + "\nNothing looked like scheduling, so the model wasn't asked."
-
-    planned = report.planned
-    if not planned:
-        tail = f"\n**No change found.** ({report.proposals} card(s) posted.)"
-        if report.stale:
-            tail += f"\n{report.stale} change(s) were about runs that have already happened."
-        return head + tail
-    lines = [
-        f"• `{p.kind}` "
-        f"{formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
-        f" ({p.amendment.confidence:.2f})"
-        for p in planned
-    ]
-    tail = f"\n**{report.proposals} card(s) posted:**\n" + "\n".join(lines)
-    extra = []
-    if report.stale:
-        extra.append(f"{report.stale} already passed")
-    below = report.dropped - report.stale
-    if below > 0:
-        extra.append(f"{below} below threshold or unmatched")
-    if extra:
-        tail += "\n_" + ", ".join(extra) + "._"
-    return head + tail
 
 
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
@@ -1126,6 +1159,7 @@ def register_commands(bot: BossBot) -> None:
     for command in (
         schedule,
         amend,
+        swap,
         cancel,
         otot,
         restore,

@@ -184,7 +184,7 @@ def test_a_sub_marks_the_person_asking_as_the_one_dropping_out(runs):
         ),
         runs,
     )
-    assert result.planned[0].payload == {"remove": [MY]}
+    assert result.planned[0].payload == {"remove": [MY], "add": []}
 
 
 def test_rsvps_and_proposals_are_separated(runs):
@@ -787,7 +787,7 @@ def test_a_sub_across_two_runs_becomes_one_candidate_each(runs):
         ["HCarling", "XKalos"],
     ]
     assert [e.run["id"] for e in result.planned] == [runs[0]["id"], runs[1]["id"]]
-    assert all(e.payload == {"remove": [MY]} for e in result.planned)
+    assert all(e.payload == {"remove": [MY], "add": []} for e in result.planned)
 
 
 def test_a_sub_about_one_run_stays_one_candidate(runs):

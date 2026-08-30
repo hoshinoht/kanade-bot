@@ -275,7 +275,9 @@ def _sub(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
         if uid not in people:
             people.append(uid)
     if people == run["participants"]:
-        return "nobody to swap in or out - use `/fixed edit` or `/amend`"
+        return "nobody to swap in or out - use `/swap` or `/fixed edit`"
+    if not people:
+        return "that would leave the run with nobody on it - cancel it instead"
     repo.set_run_participants(run["id"], people)
     for uid in run["participants"]:
         if uid not in people:

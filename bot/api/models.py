@@ -77,6 +77,7 @@ class RunOut(BaseModel):
     yes: int
     no: int
     unanswered: int
+    roster_change: RosterChangeOut | None = None
 
 
 class DayOut(BaseModel):
@@ -161,6 +162,28 @@ RunStatus = Literal["planned", "confirmed", "otot", "done", "cancelled"]
 
 class StatusIn(Strict):
     status: RunStatus
+
+
+class SwapIn(Strict):
+    """Who comes off this week's run, and who takes their place."""
+
+    remove: list[str] = []
+    add: list[str] = []
+
+
+class RosterMemberOut(BaseModel):
+    id: str
+    name: str
+
+
+class RosterChangeOut(BaseModel):
+    """How this week's party differs from the fixed timing behind it."""
+
+    out: list[RosterMemberOut] = []
+    in_: list[RosterMemberOut] = Field(default=[], alias="in")
+    changed: bool = False
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # --- the inbox --------------------------------------------------------------
@@ -365,6 +388,7 @@ class ChannelRescanOut(BaseModel):
     dropped: int = 0
     stale: int = 0
     elapsed_ms: int = 0
+    cancelled: bool = False
     error: str | None = None
     summary: str = ""
     proposed: list[ProposedOut] = []
@@ -391,6 +415,31 @@ class RescanTargetOut(BaseModel):
     id: str
     name: str
     has_runs: bool
+
+
+class RescanJobOut(BaseModel):
+    """A queued or running rescan, and how far through it is."""
+
+    job_id: str
+    short_id: str
+    status: Literal["queued", "running", "done", "failed", "cancelled"]
+    window: str
+    source: str
+    automated: bool
+    channels: list[str]
+    channel_names: list[str]
+    current: str | None = None
+    done: int
+    total: int
+    percent: int
+    elapsed_ms: int
+    running: bool
+    error: str | None = None
+    results: list[ChannelRescanOut] = []
+
+
+class RescanJobDetailOut(RescanJobOut):
+    totals: RescanOut
 
 
 class PingIn(Strict):
@@ -459,11 +508,16 @@ __all__ = [
     "ReminderOut",
     "ChannelRescanOut",
     "RescanIn",
+    "RescanJobDetailOut",
+    "RescanJobOut",
     "RescanOut",
     "RescanTargetOut",
     "RsvpIn",
     "RunStatus",
+    "RosterChangeOut",
+    "RosterMemberOut",
     "StatusIn",
+    "SwapIn",
     "RunOut",
     "ScheduleOut",
 ]

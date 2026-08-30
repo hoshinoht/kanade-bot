@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -367,6 +368,24 @@ def status(
 
 
 @app.command()
+def swap(
+    run: str = typer.Argument(help="Run id, or any unique prefix."),
+    out: list[str] = typer.Option(None, "--out", help="Discord id to take off; repeatable."),
+    into: list[str] = typer.Option(None, "--in", help="Discord id to bring on; repeatable."),
+) -> None:
+    """Change who is on a run for this week only. The weekly timing is untouched."""
+    if not out and not into:
+        fail("pass --out and/or --in")
+    result = api().patch(
+        f"/api/runs/{run}/participants", {"remove": list(out or []), "add": list(into or [])}
+    )
+    console.print(
+        f"[green]✓[/green] {' + '.join(result['bosses'])} this week: "
+        + ", ".join(p["name"] for p in result["participants"])
+    )
+
+
+@app.command()
 def rsvp(
     run: str = typer.Argument(help="Run id, or any unique prefix."),
     answer: str = typer.Argument(help="yes, no or maybe."),
@@ -471,51 +490,100 @@ def rescan(
     window: str = typer.Option(
         "week", "--window", "-w", help="week, 2weeks, 48h or 24h (default: this boss week)."
     ),
-    post: bool = typer.Option(True, "--post/--dry-run", help="Post a card for what it finds."),
+    wait: bool = typer.Option(True, "--wait/--no-wait", help="Follow it, or just queue it."),
 ) -> None:
-    """Pull the party channels' history from Discord, re-read it, and propose changes."""
+    """Queue a re-read of the party channels and follow it.
+
+    The bot keeps working while it runs; ^C here only stops watching, not the
+    rescan itself (use `bossctl rescan-stop` for that).
+    """
     channels = list(channel or [])
+    job = api().post("/api/rescan", {"channels": channels, "window": window})
     console.print(
-        f"[dim]Reading {window} of "
-        f"{', '.join(channels) if channels else 'every watched channel'}. "
-        "One model call per conversation, one channel at a time — this can take a few "
-        "minutes…[/dim]"
+        f"[dim]Queued {job['short_id']}: {window} of "
+        f"{', '.join(job['channel_names']) if job['channel_names'] else 'every watched channel'}. "
+        "One model call per conversation, one channel at a time.[/dim]"
     )
-    result = Api(timeout=RESCAN_TIMEOUT).post(
-        "/api/rescan", {"channels": channels, "window": window, "post": post}
-    )
-    print_table(
-        f"{len(result['channels'])} channel(s) in {result['elapsed_ms'] / 1000:.1f}s",
-        ["channel", "pulled", "worth reading", "conversations", "cards", "time", ""],
-        [
-            [
-                row["channel_name"],
-                str(row["backfilled"]),
-                str(row["gated"]),
-                str(row["bursts"]),
-                str(row["proposals"]),
-                f"{row['elapsed_ms'] / 1000:.1f}s",
-                row["error"]
-                or ("checked last week too" if row["widened"] else "")
-                or (f"{row['stale']} already passed" if row["stale"] else ""),
-            ]
-            for row in result["channels"]
-        ],
-    )
-    if result["errors"]:
-        fail(f"the model didn't answer: {result['errors'][0]}")
-    if not result["asked"]:
-        console.print("[dim]Nothing looked like scheduling, so the model wasn't asked.[/dim]")
+    if not wait:
+        return
+    _follow_rescan(job["job_id"])
+
+
+def _follow_rescan(job_id: str, interval: float = 2.0) -> None:
+    """Poll a queued rescan, printing each channel as it lands."""
+    client = Api(timeout=RESCAN_TIMEOUT)
+    seen = 0
+    with console.status("waiting for the model…") as status:
+        while True:
+            job = client.get(f"/api/rescan/{job_id}")
+            for row in job["results"][seen:]:
+                console.print(
+                    f"  {row['channel_name']}: {row['backfilled']} pulled, "
+                    f"{row['bursts']} conversation(s), "
+                    f"[bold]{row['proposals']}[/bold] card(s) "
+                    f"[dim]({row['elapsed_ms'] / 1000:.1f}s)[/dim]"
+                    + (" · checked last week too" if row["widened"] else "")
+                    + (f" · [red]{row['error']}[/red]" if row["error"] else "")
+                )
+            seen = len(job["results"])
+            if not job["running"]:
+                break
+            status.update(
+                f"{job['status']} — {job['done']}/{job['total']} channel(s)"
+                + (f", {job['current']} now" if job["current"] else "")
+            )
+            time.sleep(interval)
+
+    totals = job["totals"]
+    if job["error"]:
+        fail(job["error"])
+    if job["status"] == "cancelled":
+        console.print(f"[yellow]Stopped after {job['done']} of {job['total']} channel(s).[/yellow]")
         return
     console.print(
-        f"{result['proposals']} card(s) posted, {result['dropped']} dropped "
-        f"({result['stale']} already passed)."
+        f"[green]✓[/green] {job['total']} channel(s) in {job['elapsed_ms'] / 1000:.1f}s — "
+        f"{totals['backfilled']} message(s) pulled, "
+        f"{totals['proposals']} card(s) posted, {totals['dropped']} dropped "
+        f"({totals['stale']} already passed)."
     )
-    for item in result["proposed"]:
-        console.print(
-            f"  • {item['kind']} {' + '.join(item['bosses']) or ''} "
-            f"[dim]({item['confidence']:.2f})[/dim]"
-        )
+    if totals["errors"]:
+        fail(f"the model didn't answer: {totals['errors'][0]}")
+
+
+@app.command("rescan-stop")
+def rescan_stop(
+    job_id: str = typer.Argument(None, help="Job id; the running one by default."),
+) -> None:
+    """Stop a rescan. It finishes the conversation it is on, then stops."""
+    if job_id is None:
+        running = [j for j in api().get("/api/rescan") if j["running"]]
+        if not running:
+            console.print("[dim]Nothing is running.[/dim]")
+            return
+        job_id = running[0]["job_id"]
+    job = api().delete(f"/api/rescan/{job_id}")
+    console.print(f"[green]✓[/green] {job['short_id']} will stop after the current channel.")
+
+
+@app.command("rescans")
+def rescans(limit: int = typer.Option(5, "--limit", "-n")) -> None:
+    """The last few rescans."""
+    rows = api().get("/api/rescan", limit=limit)
+    print_table(
+        f"{len(rows)} rescan(s)",
+        ["id", "status", "window", "channels", "cards", "time"],
+        [
+            [
+                row["short_id"],
+                row["status"],
+                row["window"],
+                ", ".join(row["channel_names"]) or "—",
+                str(sum(r["proposals"] for r in row["results"])),
+                f"{row['elapsed_ms'] / 1000:.0f}s",
+            ]
+            for row in rows
+        ],
+    )
 
 
 @app.command()

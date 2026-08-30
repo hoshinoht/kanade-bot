@@ -103,6 +103,16 @@ def _next(request: Request, fallback: str = "/") -> str:
     return fallback
 
 
+def _job_or_none(bot, job_id: str) -> dict | None:
+    """A rescan job for the Config page, or nothing if the id is stale."""
+    if not job_id:
+        return None
+    try:
+        return service.rescan_job(bot, job_id)
+    except ApiError:
+        return None
+
+
 def watched_channels(bot) -> list[dict]:
     """Channels a run may live in, named where the bot can see them.
 
@@ -226,6 +236,7 @@ async def week_page(
         url_toggle_past=url_toggle_past,
         status_choices=STATUS_CHOICES,
         rescan_targets=service.rescan_targets(bot),
+        roster=service.members(bot),
         back=str(request.url.path) + (f"?{request.url.query}" if request.url.query else ""),
     )
 
@@ -355,7 +366,8 @@ async def config_page(request: Request, bot: Bot, caller: Caller) -> Response:
         channels=watched_channels(bot),
         access=service.access_report(bot),
         rescan_targets=service.rescan_targets(bot),
-        job=request.app.state.jobs.get(request.query_params.get("job", "")),
+        job=_job_or_none(bot, request.query_params.get("job", "")),
+        recent_rescans=service.recent_rescans(bot),
     )
 
 
@@ -384,6 +396,7 @@ def _run_fragment(request: Request, bot, run_id: str, back: str) -> HTMLResponse
         index=0,
         status_choices=STATUS_CHOICES,
         rescan_targets=service.rescan_targets(bot),
+        roster=service.members(bot),
     )
 
 
@@ -454,6 +467,19 @@ async def web_restore(
     return _after_run_action(
         request, bot, run["id"], safe_next(next, _next(request)), "Back on the schedule."
     )
+
+
+@router.post("/runs/{run_id}/participants")
+async def web_swap(request: Request, bot: Bot, caller: Caller, run_id: str) -> Response:
+    """Swap someone in or out for this week; the fixed timing is untouched."""
+    form = await request.form()
+    remove = [v for v in form.getlist("remove") if v.strip()]
+    add = [v for v in form.getlist("add") if v.strip()]
+    next_path = str(form.get("next") or "/")
+    if not remove and not add:
+        return back_to(request, safe_next(next_path), "Nobody was picked.", "error")
+    run = await service.swap_participants(bot, run_id, remove=remove, add=add)
+    return _after_run_action(request, bot, run["id"], next_path, "Party updated for this week.")
 
 
 @router.post("/runs/{run_id}/rsvp")
@@ -660,47 +686,28 @@ def rescan_channels_from(form) -> list[str]:
 
 @router.post("/rescan")
 async def web_rescan(request: Request, bot: Bot, caller: Caller) -> Response:
-    """Start a rescan in the background and hand back something to watch.
+    """Queue a rescan and hand back something to watch.
 
     Re-reading eight party channels is minutes of model time, far longer than a
     browser will hold a form post open, so this returns immediately with a job
-    to poll (:mod:`bot.api.jobs`). Without htmx the redirect lands on Config
-    with the same fragment rendered, plus a refresh link.
+    to poll. Without htmx the redirect lands on Config with the same fragment
+    rendered, plus a refresh link.
     """
     form = await request.form()
     window = str(form.get("window") or "week")
-    channels = rescan_channels_from(form)
-    jobs = request.app.state.jobs
-
-    running = jobs.active("rescan")
-    if running is not None:
-        return back_to(
-            request, "/config", "A rescan is already running; wait for it to finish.", "error"
-        )
     try:
-        service._check_rescan_allowed(bot, window)
-        targets = service.resolve_rescan_channels(bot, channels)
+        job = service.queue_rescan(
+            bot,
+            rescan_channels_from(form),
+            window=window,
+            source="portal",
+            requested_by=bot.portal_actor_id,
+        )
     except ApiError as exc:
         return back_to(request, "/config", exc.message, "error")
-
-    names = {row["id"]: row["name"] for row in service.rescan_targets(bot)}
-    job = jobs.create(
-        "rescan",
-        steps=[names.get(cid, cid) for cid in targets],
-        label=f"{len(targets)} channel(s), {window}",
-    )
-
-    async def work(job) -> None:
-        # One channel at a time: the model lock serialises the calls anyway, and
-        # in order each party's cards land together in its own channel.
-        for channel_id in targets:
-            job.current = names.get(channel_id, channel_id)
-            job.results.append(await service.rescan_one(bot, channel_id, window=window))
-
-    jobs.start(job, work)
     if request.headers.get("HX-Request"):
-        return _job_fragment(request, job, window)
-    return RedirectResponse(f"/config?job={job.id}", status_code=303)
+        return _job_fragment(request, bot, job["job_id"])
+    return RedirectResponse(f"/config?job={job['job_id']}", status_code=303)
 
 
 @router.get("/rescan/{job_id}")
@@ -708,19 +715,23 @@ async def web_rescan_progress(
     request: Request, bot: Bot, caller: Caller, job_id: str
 ) -> HTMLResponse:
     """The progress (or result) of a rescan, as a fragment that polls itself."""
-    job = request.app.state.jobs.get(job_id)
-    if job is None:
-        raise NotFound("that rescan is no longer in memory - start another one")
-    return _job_fragment(request, job)
+    return _job_fragment(request, bot, job_id)
 
 
-def _job_fragment(request: Request, job, window: str | None = None) -> HTMLResponse:
-    return fragment(
-        request,
-        "partials/rescan_job.html",
-        job=job,
-        totals=service.rescan_totals(window or job.label, job.results),
-    )
+@router.post("/rescan/{job_id}/cancel")
+async def web_rescan_cancel(request: Request, bot: Bot, caller: Caller, job_id: str) -> Response:
+    try:
+        service.cancel_rescan(bot, job_id)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return _job_fragment(request, bot, job_id)
+    return RedirectResponse(f"/config?job={job_id}", status_code=303)
+
+
+def _job_fragment(request: Request, bot, job_id: str) -> HTMLResponse:
+    job = service.rescan_job(bot, job_id)
+    return fragment(request, "partials/rescan_job.html", job=job, totals=job["totals"])
 
 
 __all__ = ["router", "safe_next", "watched_channels"]

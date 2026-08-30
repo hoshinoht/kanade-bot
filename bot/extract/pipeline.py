@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -43,7 +44,8 @@ from .resolve import Resolved, resolve
 from .schema import Amendment, Extraction
 from .window import (
     DEFAULT_WINDOW,
-    group_bursts,
+    clamp_window,
+    group_for_rescan,
     previous_week_start,
     should_widen,
     window_since,
@@ -113,6 +115,8 @@ class Plan:
     error: str | None = None
     message_ids: list[str] = field(default_factory=list)
     amendment_ids: list[str] = field(default_factory=list)
+    #: The boss week the burst's amendments belong to, set once resolved.
+    week_start: datetime | None = None
 
     @property
     def rsvps(self) -> list[Planned]:
@@ -130,7 +134,12 @@ def _fix_payload(resolved: Resolved) -> dict:
     return {"weekday": resolved.day.weekday(), "time": resolved.clock.strftime("%H:%M")}
 
 
-def _payload_for(amendment: Amendment, resolved: Resolved, run: dict | None) -> dict:
+def _payload_for(
+    amendment: Amendment,
+    resolved: Resolved,
+    run: dict | None,
+    volunteer_ids: Sequence[str] | None = None,
+) -> dict:
     if amendment.kind == "fix":
         return _fix_payload(resolved)
     if amendment.kind == "split" and run is not None:
@@ -140,17 +149,43 @@ def _payload_for(amendment: Amendment, resolved: Resolved, run: dict | None) -> 
             "participants": list(amendment.participants),
         }
     if amendment.kind == "sub":
-        # Whoever is asking for a temp is the one dropping out; who replaces them
-        # is not something the chat states, so it is left to `/fixed edit`.
-        return {"remove": list(amendment.participants)}
+        # Whoever is asking for a temp is the one dropping out. A volunteer is
+        # whoever *else* the merged amendment ended up naming -- "find temp for
+        # me" then "I can take" is two messages and two different authors.
+        leaving = [str(u) for u in amendment.participants]
+        volunteers = [str(u) for u in (volunteer_ids or []) if str(u) not in leaving]
+        return {"remove": leaving, "add": volunteers}
     return {}
 
 
-def already_passed(entry: Planned, now: datetime) -> bool:
+def consolidate(entries: Sequence[Planned]) -> list[Planned]:
+    """One entry per thing changed, latest evidence winning.
+
+    A rescan reads a week as several conversations, and the same run is often
+    revisited in more than one of them -- Sunday proposes Wednesday, Monday
+    settles the time. Posting a card per burst produced a stack of cards that
+    superseded each other in the channel; this keeps the last word on each
+    target and posts one.
+
+    Keyed on the run being changed, or -- for `add`/`fix`, which have no run yet
+    -- on the boss set they would create, which is the same key
+    :func:`bot.extract.commit.supersede` uses.
+    """
+    best: dict[tuple, Planned] = {}
+    for entry in entries:
+        target = entry.run["id"] if entry.run else tuple(sorted(entry.amendment.bosses))
+        best[(entry.kind, target)] = entry  # later bursts overwrite earlier ones
+    return list(best.values())
+
+
+def already_passed(entry: Planned, now: datetime, tz: ZoneInfo | None = None) -> bool:
     """True when acting on this amendment would change something already over.
 
-    Two ways that happens, and a rescan over old chat hits both:
+    Three ways that happens, and a rescan over old chat hits all of them:
 
+    * the **day** it names is before today -- "we doing our nstar tonight?" read
+      back two days later is about a night that has been and gone, and it has no
+      clock time for the check below to catch;
     * the time it proposes is behind ``now`` by more than :data:`STALE_GRACE`;
     * the run it targets is finished, cancelled, or its slot has passed.
 
@@ -160,12 +195,32 @@ def already_passed(entry: Planned, now: datetime) -> bool:
     at = entry.resolved.at
     if at is not None and at < now - STALE_GRACE:
         return True
+    day = entry.resolved.day
+    if day is not None and tz is not None and day < now.astimezone(tz).date():
+        return True
     run = entry.run
     if run is None:
         return False
     if run["status"] in ("done", "cancelled"):
         return True
     return run["datetime"] + RUN_DONE_AFTER < now
+
+
+def volunteers_for(amendment: Amendment, author_ids: dict[str, str]) -> list[str]:
+    """Who offered to stand in, from the authors of a `sub`'s evidence.
+
+    The person asking for a temp writes the first message; anyone who answers
+    it is offering ("I can come", "I take"). The model is not asked to work out
+    who volunteered -- it cites the messages, and the author of a later one who
+    is not the person leaving is the volunteer.
+    """
+    leaving = {str(u) for u in amendment.participants}
+    out: list[str] = []
+    for message_id in amendment.evidence_message_ids:
+        author = author_ids.get(str(message_id))
+        if author and author not in leaving and author not in out:
+            out.append(author)
+    return out
 
 
 def plan_burst(
@@ -216,7 +271,9 @@ def plan_burst(
                         amendment=per_run,
                         resolved=resolved,
                         run=run,
-                        payload=_payload_for(per_run, resolved, run),
+                        payload=_payload_for(
+                            per_run, resolved, run, volunteers_for(per_run, author_ids)
+                        ),
                         match_reason=f"one of {len(spanned)} runs it spans",
                     )
                 )
@@ -229,7 +286,9 @@ def plan_burst(
                     amendment=amendment,
                     resolved=resolved,
                     run=result.run,
-                    payload=_payload_for(amendment, resolved, result.run),
+                    payload=_payload_for(
+                        amendment, resolved, result.run, volunteers_for(amendment, author_ids)
+                    ),
                     match_reason=result.reason,
                 )
             )
@@ -243,7 +302,7 @@ def plan_burst(
                 entry.match_reason = f"no run matched ({entry.match_reason})"
                 plan.dropped.append(entry)
                 continue
-            if already_passed(entry, now):
+            if already_passed(entry, now, tz):
                 entry.match_reason = "already passed"
                 plan.dropped.append(entry)
                 continue
@@ -283,6 +342,7 @@ class RescanReport:
     dropped: int = 0
     stale: int = 0
     elapsed_ms: int = 0
+    cancelled: bool = False
     errors: list[str] = field(default_factory=list)
     plans: list[Plan] = field(default_factory=list)
 
@@ -451,6 +511,8 @@ class Pipeline:
         channel_id: int | str,
         window: str = DEFAULT_WINDOW,
         post: bool = True,
+        automated: bool = False,
+        should_stop: Callable[[], bool] | None = None,
     ) -> RescanReport:
         """Backfill from Discord, then re-read a whole window, burst by burst.
 
@@ -463,10 +525,12 @@ class Pipeline:
 
         Calls are sequential: :data:`bot.extract.llm.MODEL_LOCK` serialises them
         anyway, and issuing them in order keeps "latest stated value wins" true
-        across the week.
+        across the week. One card is posted at the end, not one per burst -- see
+        :func:`consolidate`.
         """
         started = utcnow()
         bot = self.bot
+        window = clamp_window(window, automated)
         since = window_since(
             window, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, started
         )
@@ -474,7 +538,7 @@ class Pipeline:
         report.backfilled = await self._backfill(channel_id, since)
         rows, gated = self._gated_since(channel_id, since)
 
-        if should_widen(window, len(gated)):
+        if should_widen(window, len(gated), automated):
             # A quiet week is normal just after a Thursday reset; the useful
             # answer is last week's plan. Once only -- anything older would be
             # dropped as `already passed` regardless.
@@ -487,20 +551,46 @@ class Pipeline:
 
         report.stored = len(rows)
         report.gated = len(gated)
-        groups = group_bursts(gated)
+        groups = group_for_rescan(gated, bot.tz)
         report.bursts = len(groups)
 
+        # Each conversation gets its own model call, but the *cards* wait: a
+        # week is often one decision revisited across several evenings, and a
+        # card per burst left a stack of superseded cards in the channel.
+        collected: list[Planned] = []
+        consumed: list[str] = []
+        week = None
         for group in groups:
-            plan = await self.extract(str(channel_id), group, post=post)
+            if should_stop is not None and should_stop():
+                # Cancellation is cooperative and lands between bursts: a model
+                # call in flight is left to finish rather than abandoned.
+                report.cancelled = True
+                break
+            plan = await self.extract(str(channel_id), group, post=False)
             if plan is None:
                 continue
             report.extracted += 1
             report.plans.append(plan)
-            report.proposals += len(plan.amendment_ids)
             report.dropped += len(plan.dropped)
             report.stale += sum(1 for e in plan.dropped if e.match_reason == "already passed")
             if plan.error:
                 report.errors.append(plan.error)
+                continue
+            collected.extend(plan.planned)
+            consumed.extend(plan.message_ids)
+            week = plan.week_start or week
+
+        if post and collected and week is not None:
+            entries = consolidate(collected)
+            amendment_ids = await self.apply_plan(
+                str(channel_id),
+                [e for e in entries if e.is_rsvp],
+                [e for e in entries if not e.is_rsvp],
+                week,
+                next((p.summary for p in report.plans if p.summary), ""),
+            )
+            report.proposals = len(amendment_ids)
+            self.bot.repo.mark_messages_processed(sorted(set(consumed)))
 
         report.elapsed_ms = int((utcnow() - started).total_seconds() * 1000)
         log.info(
@@ -526,15 +616,30 @@ class Pipeline:
                 return True
         return False
 
-    def _context_rows(self, channel_id: str, burst_ids: set[str]) -> list[dict]:
-        since = utcnow() - timedelta(hours=CONTEXT_WINDOW_HOURS)
+    def _context_rows(self, channel_id: str, burst: list[dict]) -> list[dict]:
+        """The messages immediately *before* a burst, oldest first.
+
+        Anchored to the burst, not to the wall clock: a rescan replays old
+        conversations, and taking "the last 25 messages in the last 48 hours"
+        fed the model chat from *after* the burst it was being asked about --
+        including, on a real thread, the answers to a question it was supposed
+        to be reading fresh.
+        """
+        if not burst:
+            return []
+        first = burst[0]["created_at"]
         limit = self.bot.settings.extract_context_messages
+        if not limit:
+            return []
+        burst_ids = {str(row["id"]) for row in burst}
         rows = [
             row
-            for row in self.bot.repo.recent_messages(channel_id, since)
+            for row in self.bot.repo.recent_messages(
+                channel_id, first - timedelta(hours=CONTEXT_WINDOW_HOURS), until=first
+            )
             if str(row["id"]) not in burst_ids
         ]
-        return rows[-limit:] if limit else []
+        return rows[-limit:]
 
     def _name_for(self, user_id: str) -> str:
         member = self.bot.repo.get_member(user_id)
@@ -557,7 +662,7 @@ class Pipeline:
         bot, repo = self.bot, self.bot.repo
         burst_ids = {str(row["id"]) for row in rows}
         burst = self._msgs(rows)
-        context = self._msgs(self._context_rows(channel_id, burst_ids))
+        context = self._msgs(self._context_rows(channel_id, rows))
         anchor = burst[-1].created_at
 
         this_week, next_week = relevant_weeks(
@@ -625,16 +730,12 @@ class Pipeline:
                 entry.match_reason,
             )
 
+        plan.week_start = this_week
         amendment_ids: list[str] = []
         if post:
-            for entry in plan.rsvps:
-                await self._apply_rsvp(entry, channel_id)
-            if plan.proposals:
-                amendment_ids, retired = self._record(
-                    plan.proposals, channel_id, this_week, plan.summary
-                )
-                await self._mark_superseded(retired)
-                await self._post_card(channel_id, amendment_ids)
+            amendment_ids = await self.apply_plan(
+                channel_id, plan.rsvps, plan.proposals, this_week, plan.summary
+            )
             # Only a real pass consumes the messages; a dry run leaves them for it.
             repo.mark_messages_processed(sorted(burst_ids))
         plan.amendment_ids = amendment_ids
@@ -654,6 +755,28 @@ class Pipeline:
         return getattr(channel, "name", "") or ""
 
     # -- effects -----------------------------------------------------------
+    async def apply_plan(
+        self,
+        channel_id: str,
+        rsvps: list[Planned],
+        proposals: list[Planned],
+        week: datetime,
+        summary: str,
+    ) -> list[str]:
+        """Turn planned entries into answers, rows and one card. Returns the row ids.
+
+        Shared by the live path (one burst) and a rescan (a whole window,
+        consolidated), so a card looks the same whichever produced it.
+        """
+        for entry in rsvps:
+            await self._apply_rsvp(entry, channel_id)
+        if not proposals:
+            return []
+        amendment_ids, retired = self._record(proposals, channel_id, week, summary)
+        await self._mark_superseded(retired)
+        await self._post_card(channel_id, amendment_ids)
+        return amendment_ids
+
     async def _apply_rsvp(self, entry: Planned, channel_id: str) -> None:
         """Apply a chat answer through the same path the ✅/❌ reactions use."""
         run = entry.run

@@ -411,75 +411,110 @@ RESCAN = {
 }
 
 
-def test_rescan_defaults_to_every_watched_channel(api):
-    route = api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
+JOB = {
+    "job_id": "job-1234-5678",
+    "short_id": "job-1234",
+    "status": "done",
+    "window": "week",
+    "source": "manual",
+    "automated": False,
+    "channels": ["5"],
+    "channel_names": ["#hstar-party"],
+    "current": None,
+    "done": 1,
+    "total": 1,
+    "percent": 100,
+    "elapsed_ms": 42000,
+    "running": False,
+    "error": None,
+    "results": [CHANNEL_RESCAN],
+    "totals": RESCAN,
+}
+
+
+def test_rescan_queues_and_then_follows(api):
+    queued = api.post("/api/rescan").mock(
+        return_value=httpx.Response(202, json={**JOB, "status": "queued", "running": True})
+    )
+    api.get("/api/rescan/job-1234-5678").mock(return_value=httpx.Response(200, json=JOB))
     result = run("rescan")
-    assert json.loads(route.calls.last.request.content) == {
-        "channels": [],
-        "window": "week",
-        "post": True,
-    }
-    assert "every watched channel" in result.output
-
-
-def test_rescan_reports_a_row_per_channel(api):
-    api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
-    output = " ".join(run("rescan").output.split())
-    assert "#hstar-party" in output
-    assert "312" in output
+    assert json.loads(queued.calls.last.request.content) == {"channels": [], "window": "week"}
+    output = " ".join(result.output.split())
+    assert "Queued job-1234" in output
+    assert "#hstar-party: 312 pulled" in output
     assert "1 card(s) posted, 3 dropped (2 already passed)" in output
-    assert "move HStar" in output
+
+
+def test_rescan_can_just_queue_and_leave(api):
+    api.post("/api/rescan").mock(
+        return_value=httpx.Response(202, json={**JOB, "status": "queued", "running": True})
+    )
+    polled = api.get("/api/rescan/job-1234-5678").mock(return_value=httpx.Response(200, json=JOB))
+    run("rescan", "--no-wait")
+    assert not polled.calls
 
 
 def test_rescan_takes_channels_and_a_window(api):
-    route = api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
-    run("rescan", "-c", "5", "-c", "6", "-w", "2weeks", "--dry-run")
+    route = api.post("/api/rescan").mock(return_value=httpx.Response(202, json=JOB))
+    api.get("/api/rescan/job-1234-5678").mock(return_value=httpx.Response(200, json=JOB))
+    run("rescan", "-c", "5", "-c", "6", "-w", "2weeks")
     assert json.loads(route.calls.last.request.content) == {
         "channels": ["5", "6"],
         "window": "2weeks",
-        "post": False,
     }
 
 
 def test_rescan_says_when_a_channel_widened_to_last_week(api):
-    api.post("/api/rescan").mock(
+    api.post("/api/rescan").mock(return_value=httpx.Response(202, json=JOB))
+    api.get("/api/rescan/job-1234-5678").mock(
         return_value=httpx.Response(
-            200,
-            json={
-                **RESCAN,
-                "widened": True,
-                "channels": [{**CHANNEL_RESCAN, "widened": True}],
-            },
+            200, json={**JOB, "results": [{**CHANNEL_RESCAN, "widened": True}]}
         )
     )
     assert "checked last week too" in " ".join(run("rescan").output.split())
 
 
-def test_rescan_that_never_asked_the_model(api):
-    api.post("/api/rescan").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                **RESCAN,
-                "asked": False,
-                "gated": 0,
-                "bursts": 0,
-                "extracted": 0,
-                "proposed": [],
-                "channels": [{**CHANNEL_RESCAN, "asked": False, "proposals": 0}],
-            },
-        )
-    )
-    assert "wasn't asked" in run("rescan").output
-
-
 def test_rescan_reports_a_model_failure_and_exits_non_zero(api):
-    api.post("/api/rescan").mock(
-        return_value=httpx.Response(200, json={**RESCAN, "errors": ["connection refused"]})
+    api.post("/api/rescan").mock(return_value=httpx.Response(202, json=JOB))
+    api.get("/api/rescan/job-1234-5678").mock(
+        return_value=httpx.Response(
+            200, json={**JOB, "totals": {**RESCAN, "errors": ["connection refused"]}}
+        )
     )
     result = run("rescan")
     assert result.exit_code == 1
     assert "connection refused" in result.output
+
+
+def test_a_cancelled_rescan_says_how_far_it_got(api):
+    api.post("/api/rescan").mock(return_value=httpx.Response(202, json=JOB))
+    api.get("/api/rescan/job-1234-5678").mock(
+        return_value=httpx.Response(200, json={**JOB, "status": "cancelled", "done": 1, "total": 3})
+    )
+    assert "Stopped after 1 of 3" in " ".join(run("rescan").output.split())
+
+
+def test_rescan_stop_targets_the_running_job(api):
+    api.get("/api/rescan").mock(
+        return_value=httpx.Response(200, json=[{**JOB, "status": "running", "running": True}])
+    )
+    route = api.delete("/api/rescan/job-1234-5678").mock(
+        return_value=httpx.Response(200, json={**JOB, "status": "cancelled"})
+    )
+    assert "will stop" in run("rescan-stop").output
+    assert route.calls
+
+
+def test_rescan_stop_with_nothing_running(api):
+    api.get("/api/rescan").mock(return_value=httpx.Response(200, json=[]))
+    assert "Nothing is running" in run("rescan-stop").output
+
+
+def test_rescans_lists_the_last_few(api):
+    api.get("/api/rescan").mock(return_value=httpx.Response(200, json=[JOB]))
+    output = " ".join(run("rescans").output.split())
+    assert "job-1234" in output
+    assert "#hstar-party" in output
 
 
 def test_channels_lists_what_a_rescan_would_cover(api):

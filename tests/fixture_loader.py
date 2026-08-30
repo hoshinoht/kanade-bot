@@ -185,6 +185,11 @@ def realise(extraction, scenario: Scenario, min_confidence: float = 0.0) -> Plan
         burst_order=[m.id for m in messages],
         author_ids={m.id: m.author_id for m in messages},
         min_confidence=min_confidence,
+        # A fixture measures what the bot would have posted *at the time*. Left
+        # to the wall clock, `plan_burst` would correctly drop every one of
+        # these as "already passed" the day after it was recorded, and the
+        # suite would score the calendar rather than the model.
+        now=scenario.anchor,
     )
 
 

@@ -102,6 +102,7 @@ class FakeExtractor:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, bool]] = []
+        self.stops: list[Any] = []
         self.plan: Any = None
         self.report: Any = None
 
@@ -109,11 +110,16 @@ class FakeExtractor:
         self.calls.append((str(channel_id), f"{hours}h", post))
         return self.plan
 
-    async def rescan_window(self, channel_id, window="week", post=True):
+    async def rescan_window(
+        self, channel_id, window="week", post=True, automated=False, should_stop=None
+    ):
         from bot.extract.pipeline import RescanReport
+        from bot.extract.window import clamp_window
         from bot.timeutil import utcnow
 
+        window = clamp_window(window, automated)
         self.calls.append((str(channel_id), window, post))
+        self.stops.append(should_stop)
         if self.report is not None:
             return self.report
         return RescanReport(channel_id=str(channel_id), window=window, since=utcnow())
@@ -128,6 +134,11 @@ class FakeBot:
         self.settings = settings or make_settings()
         self.tz: ZoneInfo = self.settings.zoneinfo
         self.extractor = FakeExtractor()
+        # The real worker over the fake bot: the queue is what the API and the
+        # portal talk to, so faking it would test nothing.
+        from bot.rescan import RescanWorker
+
+        self.rescans = RescanWorker(self)
 
         self.channels = {
             WATCHED_CHANNEL: FakeChannel(WATCHED_CHANNEL, "hstar-party"),
