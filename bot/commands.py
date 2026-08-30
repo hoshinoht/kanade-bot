@@ -22,6 +22,7 @@ from .debug import DebugGroup, DebugNotAllowed
 from .extract.window import DEFAULT_WINDOW, WINDOWS
 from .ids import IdAmbiguous, IdError, resolve_id, short_id
 from .materialise import LIVE_STATUSES, refresh_run_reminders
+from .pings import PING_LEVELS, audience, normalise_level
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
 from .util import can_modify_fixed, can_modify_run, mention, resolve_participant_text
@@ -810,10 +811,14 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
         f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}.",
         ephemeral=True,
     )
+    # The move is already applied, and everyone on it gets the morning card and
+    # its countdowns anyway, so this receipt names people rather than pinging
+    # them (DESIGN.md §3, "Mention policy").
+    who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
-        formatting.amend_notice(updated, old_at, bot.tz),
-        updated["participants"],
+        formatting.amend_notice(updated, old_at, bot.tz, who),
+        list(who.mentioned),
         channel_id=updated["channel_id"],
     )
 
@@ -1081,6 +1086,98 @@ async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None
     )
 
 
+def rescan_summary(report) -> str:
+    """The ephemeral reply for `/debug extract` (a `RescanReport`).
+
+    Leads with what it read rather than what it found, because "nothing found"
+    means something quite different after backfilling 300 messages than after
+    backfilling none.
+    """
+    label = WINDOW_LABELS.get(report.window, report.window)
+    head = (
+        f"Read **{label}** in {report.elapsed_ms / 1000:.1f}s — "
+        f"{report.backfilled} message(s) pulled from Discord, "
+        f"{report.gated} worth reading, {report.bursts} conversation(s), "
+        f"{report.extracted} sent to the model."
+    )
+    if report.widened:
+        head += "\nNothing this boss week, so I checked last week too."
+    if report.errors:
+        return head + f"\n❌ The model didn't answer: {report.errors[0]}"
+    if not report.asked:
+        return head + "\nNothing looked like scheduling, so the model wasn't asked."
+
+    planned = report.planned
+    extra = []
+    if report.stale:
+        extra.append(f"{report.stale} already passed")
+    below = report.dropped - report.stale
+    if below > 0:
+        extra.append(f"{below} below threshold, unmatched or already scheduled")
+    note = ("\n_" + ", ".join(extra) + "._") if extra else ""
+    if not planned:
+        return head + "\n**No change found.**" + note
+    lines = [
+        f"• `{p.kind}` "
+        f"{formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
+        f" ({p.amendment.confidence:.2f})"
+        for p in planned
+    ]
+    posted = f" ({report.proposals} card(s) posted)" if report.proposals else " (nothing posted)"
+    return head + f"\n**{len(planned)} change(s) found**{posted}:\n" + "\n".join(lines) + note
+
+
+#: What each level means, in the words the command itself uses.
+PING_LEVEL_HELP: dict[str, str] = {
+    "essential": (
+        "only when you need to answer — the morning card, the countdowns you "
+        "haven't ✅'d, a card waiting on your ✅, and someone dropping out of your run"
+    ),
+    "all": "everything that lists you, including moves, swaps and weekly-timing changes",
+    "off": "never — you'll still be named in every post, just not notified",
+}
+
+PING_LEVEL_CHOICES = [
+    app_commands.Choice(name=f"{level} — {PING_LEVEL_HELP[level]}"[:100], value=level)
+    for level in PING_LEVELS
+]
+
+
+@app_commands.command(name="pings", description="Choose how much the bot @mentions you")
+@app_commands.describe(level="Leave this empty to see what you're on now")
+@app_commands.choices(level=PING_LEVEL_CHOICES)
+@require_role()
+async def pings(
+    interaction: discord.Interaction, level: app_commands.Choice[str] | None = None
+) -> None:
+    """Set (or read back) the invoker's own mention level. Nobody can set anyone else's."""
+    bot = _bot(interaction)
+    user = interaction.user
+    # A member who has the role but has never been synced has no row to update.
+    if bot.repo.get_member(user.id) is None:
+        bot.repo.upsert_member(
+            user.id, user.display_name, getattr(user, "nick", None), bot.has_bossing_role(user)
+        )
+    if level is None:
+        current = bot.repo.get_ping_level(user.id)
+        others = " · ".join(f"`{name}`" for name in PING_LEVELS if name != current)
+        await interaction.response.send_message(
+            f"🔔 You're on **{current}** — {PING_LEVEL_HELP[current]}.\n"
+            f"`/pings level:` to change it ({others}).",
+            ephemeral=True,
+        )
+        return
+    try:
+        chosen = normalise_level(level.value)
+    except ValueError as exc:  # pragma: no cover - the choices constrain this
+        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        return
+    bot.repo.set_ping_level(user.id, chosen)
+    await interaction.response.send_message(
+        f"🔔 Pings set to **{chosen}** — {PING_LEVEL_HELP[chosen]}.", ephemeral=True
+    )
+
+
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
 @app_commands.describe(user="The member", alias="What they get called in chat, e.g. `MY`")
 @require_role()
@@ -1167,6 +1264,7 @@ def register_commands(bot: BossBot) -> None:
         status,
         rsvp,
         nick,
+        pings,
         pingtime,
         rescan,
     ):

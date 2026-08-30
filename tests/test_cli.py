@@ -283,6 +283,73 @@ def test_members_and_nick(api):
     assert "also known as: jo, MY" in result.output
 
 
+def test_member_pings_resolves_a_name_and_sets_the_level(api):
+    api.get("/api/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "user_id": "1001",
+                    "display_name": "Alvin tan",
+                    "nickname": None,
+                    "aliases": ["jo"],
+                    "has_role": True,
+                    "ping_level": "essential",
+                    "runs_this_week": 2,
+                },
+                {
+                    "user_id": "1002",
+                    "display_name": "kanon [AZUR]",
+                    "nickname": "kanon",
+                    "aliases": [],
+                    "has_role": True,
+                    "ping_level": "essential",
+                    "runs_this_week": 1,
+                },
+            ],
+        )
+    )
+    route = api.patch("/api/members/1002").mock(
+        return_value=httpx.Response(
+            200, json={"user_id": "1002", "display_name": "kanon [AZUR]", "ping_level": "off"}
+        )
+    )
+    # A name, not a snowflake: nobody remembers ids.
+    result = run("member", "pings", "kanon", "off")
+    assert json.loads(route.calls.last.request.content) == {"ping_level": "off"}
+    assert "off" in result.output
+
+    # ...and an id still works.
+    run("member", "pings", "1002", "all")
+    assert json.loads(route.calls.last.request.content) == {"ping_level": "all"}
+
+
+def test_member_pings_says_so_when_the_name_matches_nobody(api):
+    api.get("/api/members").mock(return_value=httpx.Response(200, json=[]))
+    result = run("member", "pings", "nobody", "off")
+    assert result.exit_code == 1
+    assert "no member matches" in result.output
+
+
+def test_the_members_table_shows_each_ping_level(api):
+    api.get("/api/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "user_id": "1001",
+                    "display_name": "Alvin",
+                    "nickname": None,
+                    "aliases": [],
+                    "ping_level": "off",
+                    "runs_this_week": 0,
+                }
+            ],
+        )
+    )
+    assert "off" in run("members").output
+
+
 def test_fixed_list_add_edit_and_rm(api):
     row = {
         "short_id": "cccccccc",

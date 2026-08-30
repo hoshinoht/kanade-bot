@@ -140,11 +140,33 @@ def test_guild_wide_matching_needs_someone_it_recognises(runs):
 
 
 def test_the_models_run_hint_wins_when_it_is_real(runs):
+    """A hint the bosses agree with is followed."""
+    hint = short_id(runs["xkalos"]["id"])
+    result = match_run(
+        amendment(bosses=["XKalos"], target_run_hint=f"#{hint}"),
+        channel_runs(runs, PARTY_CHANNEL),
+    )
+    assert result.run["id"] == runs["xkalos"]["id"]
+
+
+def test_a_hint_at_a_run_with_none_of_those_bosses_is_refused(runs):
+    """The model will happily point a move about one boss at another's run.
+
+    Live: `move · NBaldrix` was hinted at next week's HStar run and followed,
+    which renamed somebody else's night. A hint is a hint, not an override.
+    """
     hint = short_id(runs["xkalos"]["id"])
     result = match_run(
         amendment(bosses=["HStar"], target_run_hint=f"#{hint}"),
         channel_runs(runs, PARTY_CHANNEL),
     )
+    assert result.run["id"] == runs["hstar"]["id"], "it falls back to scoring, which is right"
+
+
+def test_a_hint_is_still_followed_when_no_bosses_are_named(runs):
+    """"change it to wed" plus a hint is exactly what the hint is for."""
+    hint = short_id(runs["xkalos"]["id"])
+    result = match_run(amendment(target_run_hint=f"#{hint}"), channel_runs(runs, PARTY_CHANNEL))
     assert result.run["id"] == runs["xkalos"]["id"]
     assert "pointed at" in result.reason
 

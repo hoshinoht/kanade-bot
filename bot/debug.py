@@ -26,6 +26,7 @@ from . import formatting
 from .extract.window import WINDOWS
 from .ids import IdError, resolve_id, short_id
 from .materialise import DAY_OF, countdown_minutes
+from .pings import audience
 from .timeutil import from_iso, utcnow
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -103,6 +104,27 @@ def render_reminder_rows(reminders: list[dict], tz: ZoneInfo) -> str:
         msg = f" · msg `{rem['message_id']}`" if rem.get("message_id") else ""
         lines.append(f"run `#{short_id(rem['run_id'])}` · `{rem['kind']}` · {when} · {state}{msg}")
     return "\n".join(lines)
+
+
+def manage_messages_lines(access: list[dict]) -> list[str]:
+    """Per-channel Manage Messages, for `/debug status`.
+
+    Without it the bot cannot take somebody's old reaction off, so a person who
+    switches ❌ to ✅ ends up counted as both -- silently, which is why it is
+    worth a line of its own rather than a log entry nobody reads.
+    """
+    if not access:
+        return ["**manage messages** _(not connected; nothing to check)_"]
+    rows = [
+        f"{row['name']} {'✅' if row.get('manage_messages') else '❌'}"
+        for row in access
+        if row["watched"]
+    ]
+    if not rows:
+        return ["**manage messages** _(no watched channels)_"]
+    missing = sum(1 for row in access if row["watched"] and not row.get("manage_messages"))
+    header = "**manage messages** " + ("all good" if not missing else f"missing in {missing}")
+    return [f"{header} · " + " · ".join(rows)]
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +229,9 @@ class DebugGroup(app_commands.Group):
 
         await interaction.response.defer(ephemeral=True)
         body.content = TEST_PREFIX + body.content
-        message = await bot._post(channel, body, mention_users=run["participants"])
+        # `_render` resolved the card's allow-list already: a test ping names the
+        # party but does not summon it (DESIGN.md §3, "Mention policy").
+        message = await bot._post(channel, body)
         if message is None:
             await interaction.followup.send("❌ Couldn't post the test message.", ephemeral=True)
             return
@@ -225,22 +249,37 @@ class DebugGroup(app_commands.Group):
         bot: BossBot, run: dict, kind: str, interaction: discord.Interaction
     ) -> formatting.Card | None:
         rsvps = bot.repo.get_rsvps(run["id"])
+        # `test`, not the kind being imitated: the message looks exactly like the
+        # real one, but nobody should get a notification from a rehearsal.
+        who = audience(bot.repo, run["participants"], "test")
+        mentions = list(who.mentioned)
         if kind == DAY_OF:
             return formatting.day_of_card(
-                [run], bot.tz, {run["id"]: rsvps}, table=bot.bosses, today=run["datetime"]
+                [run],
+                bot.tz,
+                {run["id"]: rsvps},
+                table=bot.bosses,
+                today=run["datetime"],
+                who=who,
             )
         minutes = countdown_minutes(kind)
         if minutes is not None:
-            return formatting.countdown_card(run, minutes, bot.tz, rsvps, table=bot.bosses)
+            return formatting.countdown_card(
+                run, minutes, bot.tz, rsvps, table=bot.bosses, who=who
+            )
         if kind == "amend":
             return formatting.Card(
-                content=formatting.amend_notice(run, run["datetime"] - timedelta(days=1), bot.tz)
+                content=formatting.amend_notice(
+                    run, run["datetime"] - timedelta(days=1), bot.tz, who
+                ),
+                mention_users=mentions,
             )
         if kind == "decline":
             return formatting.Card(
                 content=formatting.decline_notice(
-                    run, interaction.user.id, interaction.user.display_name, bot.tz
-                )
+                    run, interaction.user.id, interaction.user.display_name, bot.tz, who
+                ),
+                mention_users=mentions,
             )
         return None
 
@@ -343,7 +382,8 @@ class DebugGroup(app_commands.Group):
             f"**model** `{bot.settings.ollama_model}` · "
             f"**ollama** {'✅' if reachable else '❌'} {detail}",
         ]
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        lines.extend(manage_messages_lines(bot.access_report()))
+        await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
 
     # -- extract -----------------------------------------------------------
     @app_commands.command(
@@ -414,6 +454,7 @@ __all__ = [
     "DebugGroup",
     "DebugNotAllowed",
     "format_uptime",
+    "manage_messages_lines",
     "may_debug",
     "ollama_reachable",
     "render_reminder_rows",

@@ -246,7 +246,10 @@ def test_amend_moves_the_run_and_announces_it(auth, fake_bot, seeded):
     posted = fake_bot.posts[-1]
     assert "moved" in posted.content
     assert posted.channel_id == WATCHED_CHANNEL
-    assert set(posted.mentions) == {"1001", "1002"}
+    # A move is a receipt, not a summons: the party is named, nobody is pinged
+    # (DESIGN.md §3, "Mention policy").
+    assert posted.allowed_mentions == []
+    assert "Alvin tan" in posted.content and "kanon" in posted.content
 
 
 def test_amend_rebuilds_the_runs_reminders(auth, fake_bot, seeded):

@@ -83,12 +83,13 @@ def test_the_channel_is_told_who_is_in_and_out(auth, fake_bot, seeded):
         json={"remove": ["1002"], "add": ["1003"]},
     )
     posted = fake_bot.posts[-1]
-    assert "<@1002> out" in posted.content
-    assert "<@1003> in" in posted.content
+    # Names, not pings: a stand-in is news, not a thing anyone has to answer.
+    assert "kanon out" in posted.content
+    assert "Priya in" in posted.content
     assert "the weekly timing is unchanged" in posted.content
     assert formatting.VIA_PORTAL in posted.content
-    # The person who left is told too, or they turn up anyway.
-    assert "1002" in posted.mentions
+    assert posted.allowed_mentions == []
+    assert "<@" not in posted.content
 
 
 def test_the_run_reports_how_it_differs_from_its_timing(auth, fake_bot, seeded):

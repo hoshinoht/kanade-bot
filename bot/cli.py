@@ -242,8 +242,10 @@ app = typer.Typer(
 )
 fixed_app = typer.Typer(help="The weekly baseline timings.", no_args_is_help=True)
 config_app = typer.Typer(help="Runtime settings.", no_args_is_help=True)
+member_app = typer.Typer(help="Per-member settings.", no_args_is_help=True)
 app.add_typer(fixed_app, name="fixed")
 app.add_typer(config_app, name="config")
+app.add_typer(member_app, name="member")
 
 
 @app.command()
@@ -408,7 +410,7 @@ def access() -> None:
     tick = {True: "[green]✅[/green]", False: "[red]❌[/red]"}
     print_table(
         f"{len(rows)} channel(s)",
-        ["channel", "id", "see", "post", "history", "embeds", "react"],
+        ["channel", "id", "see", "post", "history", "embeds", "react", "manage msgs"],
         [
             [
                 row["name"] + (" (digest)" if row["is_digest_channel"] else ""),
@@ -418,6 +420,7 @@ def access() -> None:
                 tick[row["history"]],
                 tick[row["embed"]],
                 tick[row["react"]],
+                tick[row.get("manage_messages", True)],
             ]
             for row in rows
         ],
@@ -428,6 +431,12 @@ def access() -> None:
             f"[red]{', '.join(missing)}[/red]: the bot cannot post there, so those runs get "
             "no reminders. Fix it in Edit Channel → Permissions."
         )
+    no_manage = [r["name"] for r in rows if r["watched"] and not r.get("manage_messages", True)]
+    if no_manage:
+        console.print(
+            f"[yellow]{', '.join(no_manage)}[/yellow]: no Manage Messages, so the bot cannot take "
+            "somebody's old reaction off — a person who switches ❌ to ✅ is counted as both."
+        )
 
 
 @app.command()
@@ -436,7 +445,7 @@ def members() -> None:
     rows = api().get("/api/members")
     print_table(
         f"{len(rows)} member(s)",
-        ["user id", "name", "server nickname", "chat aliases", "runs this week"],
+        ["user id", "name", "server nickname", "chat aliases", "runs this week", "@mentions"],
         [
             [
                 m["user_id"],
@@ -444,9 +453,52 @@ def members() -> None:
                 m["nickname"] or "—",
                 ", ".join(m["aliases"]) or "—",
                 str(m["runs_this_week"]),
+                m.get("ping_level", "essential"),
             ]
             for m in rows
         ],
+    )
+
+
+def resolve_member(who: str) -> dict:
+    """A member by user id, display name, server nickname or chat alias.
+
+    Typing an id is what the API wants, but nobody remembers snowflakes, so the
+    same name-matching the bot uses in chat is applied to the roster here.
+    """
+    from .util import match_roster
+
+    rows = api().get("/api/members", with_role=False)
+    exact = [m for m in rows if m["user_id"] == who.strip()]
+    if exact:
+        return exact[0]
+    matches = match_roster(who, rows)
+    if not matches:
+        fail(f"no member matches `{who}` - `bossctl members` lists them")
+    if len(matches) > 1:
+        names = ", ".join(m["display_name"] for m in matches[:8])
+        fail(f"`{who}` could be {names} - use the user id")
+    return matches[0]
+
+
+@member_app.command("pings")
+def member_pings(
+    who: str = typer.Argument(help="Discord user id, display name, nickname or chat alias."),
+    level: str = typer.Argument(help="essential (default), all, or off."),
+) -> None:
+    """Set how much the bot @mentions one member.
+
+    `essential` is the default: only the posts that ask them to answer. `all`
+    adds the informational ones (moves, swaps, weekly-timing changes); `off`
+    never mentions them anywhere, though they are still named in every post.
+    """
+    member = resolve_member(who)
+    updated = api().patch(
+        f"/api/members/{member['user_id']}", {"ping_level": level.strip().lower()}
+    )
+    console.print(
+        f"[green]✓[/green] {updated['display_name']} is now on "
+        f"[bold]{updated['ping_level']}[/bold] @mentions."
     )
 
 

@@ -19,7 +19,7 @@
 {% else %}
 <div class="table-wrap">
   <table>
-    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>Add an alias</th></tr></thead>
+    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>@mentions</th><th>Add an alias</th></tr></thead>
     <tbody>
       {% for member in members %}
       <tr>
@@ -29,6 +29,9 @@
           {% for alias in member.aliases %}<span class="chip chip--mono">{{ alias }}</span> {% else %}<span class="id">none</span>{% endfor %}
         </td>
         <td class="mono">{{ member.runs_this_week }}</td>
+        <td>
+          <span class="chip {{ 'chip--waiting' if member.ping_level == 'off' }}">{{ member.ping_level }}</span>
+        </td>
         <td>
           <form method="post" action="/members/{{ member.user_id }}/nick" class="filters" style="margin:0">
             <input name="alias" placeholder="MY" size="8" required aria-label="New alias for {{ member.display_name }}">

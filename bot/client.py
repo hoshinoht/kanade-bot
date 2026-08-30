@@ -32,6 +32,7 @@ from .materialise import (
     materialise_week,
     reconcile_day_of,
 )
+from .pings import audience
 from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
@@ -528,10 +529,27 @@ class BossBot(discord.Client):
                     "history": permissions is None or permissions.read_message_history,
                     "embed": permissions is None or permissions.embed_links,
                     "react": permissions is None or permissions.add_reactions,
+                    # Needed to take the *other* reaction off when somebody
+                    # switches ✅ <-> ❌; without it both stick and the tally lies.
+                    "manage_messages": permissions is None or permissions.manage_messages,
                     "unknown": permissions is None,
                 }
             )
         return rows
+
+    def missing_manage_messages(self) -> list[str]:
+        """Watched channels where ✅/❌ cannot be kept exclusive, by name.
+
+        Read live from ``channel.permissions_for(guild.me)`` every time rather
+        than from :attr:`_warned_manage_messages`, which only says whether the
+        bot has *already tripped over* the missing permission -- it stays false
+        until someone reacts, and stays true after the permission is granted.
+        """
+        return [
+            row["name"]
+            for row in self.access_report()
+            if row["watched"] and not row["unknown"] and not row["manage_messages"]
+        ]
 
     async def _send_day_of(self, channel_id: str | None, entries: list[tuple[dict, dict]]) -> None:
         """One message per home channel, one line per run, each tagging its own people."""
@@ -542,10 +560,13 @@ class BossBot(discord.Client):
         entries.sort(key=lambda pair: pair[1]["datetime"])
         runs = [run for _, run in entries]
         rsvps = {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        # The morning card asks everyone on tonight's runs to answer, so it is
+        # one of the four posts that may actually notify people.
+        who = audience(self.repo, formatting.everyone_on(runs), "day_of")
         card = formatting.day_of_card(
-            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"]
+            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"], who=who
         )
-        message = await self._post(channel, card, mention_users=formatting.everyone_on(runs))
+        message = await self._post(channel, card)
         if message is None:
             return
         for reminder, _ in entries:
@@ -561,9 +582,17 @@ class BossBot(discord.Client):
             log.error("no channel available for run %s; leaving its countdown queued", run["id"])
             return
         rsvps = self.repo.get_rsvps(run["id"])
-        card = formatting.countdown_card(run, minutes, self.tz, rsvps, table=self.bosses)
         # Only the people who haven't answered get pinged; the rest just see it.
-        message = await self._post(channel, card, mention_users=formatting.unconfirmed(run, rsvps))
+        who = audience(
+            self.repo,
+            run["participants"],
+            "countdown",
+            candidates=formatting.unconfirmed(run, rsvps),
+        )
+        card = formatting.countdown_card(
+            run, minutes, self.tz, rsvps, table=self.bosses, who=who
+        )
+        message = await self._post(channel, card)
         if message is not None:
             self.repo.mark_reminder_sent(reminder["id"], message.id)
 
@@ -602,13 +631,19 @@ class BossBot(discord.Client):
         card: formatting.Card | str,
         mention_users: list[str] | None = None,
     ) -> discord.Message | None:
-        """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back."""
+        """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back.
+
+        The allow-list comes from the card itself (already resolved against the
+        mention policy) unless the caller overrides it; either way it is
+        explicit, so nothing in a message can ping by accident.
+        """
         if isinstance(card, str):
             card = formatting.Card(content=card)
+        wanted = card.mention_users if mention_users is None else mention_users
         allowed = discord.AllowedMentions(
             everyone=False,
             roles=False,
-            users=[discord.Object(id=int(uid)) for uid in (mention_users or [])],
+            users=[discord.Object(id=int(uid)) for uid in wanted],
         )
         attachment = self._attachment(card)
         try:
@@ -786,10 +821,16 @@ class BossBot(discord.Client):
 
     async def _announce_move(self, run: dict, old_at: datetime) -> None:
         channel = await self.post_channel(run["channel_id"])
-        if channel is not None:
-            await self.post_plain(
-                channel, formatting.amend_notice(run, old_at, self.tz), run["participants"]
-            )
+        if channel is None:
+            return
+        # The move has already been applied and the party will be pinged again
+        # on the day, so this is a receipt: names, not notifications.
+        who = audience(self.repo, run["participants"], "amend")
+        await self.post_plain(
+            channel,
+            formatting.amend_notice(run, old_at, self.tz, who),
+            list(who.mentioned),
+        )
 
     async def _annotate_card(self, payload: discord.RawReactionActionEvent, notice: str) -> None:
         """Append "✅ applied by X" to the card so its state is visible in the channel."""
@@ -875,6 +916,36 @@ class BossBot(discord.Client):
             log.exception("failed to post the weekly digest")
             return None
 
+    # -- deleted cards ----------------------------------------------------
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        self.withdraw_card(payload.message_id)
+
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        for message_id in payload.message_ids:
+            self.withdraw_card(message_id)
+
+    def withdraw_card(self, message_id: int | str) -> list[dict]:
+        """Retire the amendments on a card somebody deleted; returns them.
+
+        Without this the rows stay ``proposed`` forever: the tick keeps them
+        alive until the 24 h TTL, `/pending` and the portal's inbox keep
+        offering an Approve button for a card nobody can see, and a supersede
+        check still treats them as the live proposal for that run.
+        """
+        withdrawn = [
+            a for a in self.repo.amendments_by_message(message_id) if a["status"] == "proposed"
+        ]
+        for amendment in withdrawn:
+            self.repo.set_amendment_status(amendment["id"], "withdrawn")
+        if withdrawn:
+            log.info(
+                "card %s was deleted; withdrew %d proposal(s): %s",
+                message_id,
+                len(withdrawn),
+                ", ".join(a["kind"] for a in withdrawn),
+            )
+        return withdrawn
+
     async def expire_proposals(self, now: datetime) -> None:
         """Drop proposal cards nobody answered (see `bot.extract.commit.PROPOSAL_TTL`)."""
         for amendment in expire_stale(self.repo, now):
@@ -925,9 +996,14 @@ class BossBot(discord.Client):
         channel = await self.post_channel(channel_id or run["channel_id"])
         if channel is None:
             return
-        content = formatting.decline_notice(run, str(user_id), display_name, self.tz)
         others = [uid for uid in run["participants"] if uid != str(user_id)]
-        message = await self.post_plain(channel, content, others, reference_id=reference_id)
+        # The rest of the run have to decide whether to re-plan the night, so
+        # this is one of the four posts that may notify people.
+        who = audience(self.repo, others, "decline")
+        content = formatting.decline_notice(run, str(user_id), display_name, self.tz, who)
+        message = await self.post_plain(
+            channel, content, list(who.mentioned), reference_id=reference_id
+        )
         self.repo.set_decline_notice(
             run["id"],
             user_id,

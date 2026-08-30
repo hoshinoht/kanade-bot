@@ -10,6 +10,16 @@
   </div>
 </div>
 
+{% if config.missing_manage_messages %}
+<div class="empty" role="status">
+  <strong>Missing “Manage Messages” in {{ config.missing_manage_messages|join(", ") }}.</strong>
+  The bot needs it to take somebody's old reaction off, so ✅ and ❌ stay one-or-the-other. Until
+  it is granted, a person who switches answer is counted as both there. Fix it in
+  <strong>Edit Channel → Permissions</strong>, or re-invite the bot with the permissions in the
+  README.
+</div>
+{% endif %}
+
 <div class="grid-2">
   <section class="card">
     <div class="card__head"><h2 class="card__title">Pings</h2></div>

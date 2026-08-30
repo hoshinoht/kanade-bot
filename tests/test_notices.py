@@ -31,7 +31,11 @@ def test_moving_a_run_tells_the_home_channel(auth, fake_bot, seeded):
     assert posted.channel_id == WATCHED_CHANNEL
     assert "moved" in posted.content
     assert PORTAL in posted.content
-    assert set(posted.mentions) == {"1001", "1002"}
+    # Named, not notified: the change has already happened, and everyone on it
+    # gets the morning card and its countdowns anyway.
+    assert posted.allowed_mentions == []
+    assert "<@" not in posted.content
+    assert "Alvin tan" in posted.content and "kanon" in posted.content
 
 
 def test_cancelling_tells_the_home_channel(auth, fake_bot, seeded):

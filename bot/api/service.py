@@ -32,6 +32,7 @@ from ..extract.commit import commit, reject
 from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
 from ..materialise import LIVE_STATUSES, refresh_run_reminders
+from ..pings import audience, normalise_level
 from ..rsvp import compute_status
 from ..timeutil import local_naive, to_iso, utcnow
 from ..weeks import (
@@ -416,6 +417,7 @@ def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
         "nickname": member["nickname"],
         "aliases": member["aliases"],
         "has_role": member["has_role"],
+        "ping_level": member["ping_level"],
         "updated_at": member["updated_at"],
         "runs_this_week": run_counts.get(member["user_id"], 0),
     }
@@ -603,7 +605,8 @@ async def create_fixed(
     )
     bot.materialise_weeks()
     fixed = bot.repo.get_fixed_run(fixed_id)
-    await _announce(bot, formatting.fixed_notice(fixed, "added"), fixed["participants"], home)
+    who = audience(bot.repo, fixed["participants"], "fixed")
+    await _announce(bot, formatting.fixed_notice(fixed, "added", who), who.mentioned, home)
     return fixed_view(bot, fixed)
 
 
@@ -642,10 +645,11 @@ async def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
     _apply_fixed_to_runs(bot, fixed["id"], set(fields))
     bot.materialise_weeks()
     updated = bot.repo.get_fixed_run(fixed["id"])
+    who = audience(bot.repo, updated["participants"], "fixed")
     await _announce(
         bot,
-        formatting.fixed_notice(updated, "changed"),
-        updated["participants"],
+        formatting.fixed_notice(updated, "changed", who),
+        who.mentioned,
         updated["channel_id"],
     )
     return fixed_view(bot, updated)
@@ -685,8 +689,9 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
             cancelled += 1
     bot.repo.delete_fixed_run(fixed["id"])
+    who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(
-        bot, formatting.fixed_notice(fixed, "removed"), fixed["participants"], fixed["channel_id"]
+        bot, formatting.fixed_notice(fixed, "removed", who), who.mentioned, fixed["channel_id"]
     )
     return {"id": fixed["id"], "short_id": short_id(fixed["id"]), "cancelled_runs": cancelled}
 
@@ -725,10 +730,11 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
         bot.repo.set_run_status(run["id"], "planned")
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
     updated = bot.repo.get_run(run["id"])
+    who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
-        formatting.amend_notice(updated, old_at, bot.tz),
-        updated["participants"],
+        formatting.amend_notice(updated, old_at, bot.tz, who),
+        who.mentioned,
         updated["channel_id"],
     )
     return run_view(bot, updated)
@@ -757,22 +763,24 @@ STATUS_LABELS: dict[str, str] = {
 }
 
 
-def status_notice(bot: BossBot, run: dict, status: str) -> str | None:
+def status_notice(
+    bot: BossBot, run: dict, status: str, who: formatting.Audience | None = None
+) -> str | None:
     """What the channel is told about a status change, or ``None`` to stay quiet."""
     if status == "cancelled":
-        return formatting.cancel_notice(run, bot.tz)
+        return formatting.cancel_notice(run, bot.tz, who)
     if status == "otot":
-        return formatting.otot_notice(run, bot.tz)
+        return formatting.otot_notice(run, bot.tz, who)
     if status == "done":
-        return formatting.done_notice(run)
+        return formatting.done_notice(run, who)
     if status == "planned":
-        return formatting.restore_notice(run, bot.tz)
+        return formatting.restore_notice(run, bot.tz, who)
     if status == "confirmed":
         return (
             f"✅ **{formatting.format_bosses(run['bosses'])}** is confirmed for "
             f"{formatting.local_day(run['datetime'], bot.tz)} "
             f"{formatting.local_time(run['datetime'], bot.tz)} — "
-            f"{formatting.format_participants(run['participants'])}"
+            f"{formatting.format_participants(run['participants'], who)}"
         )
     return None
 
@@ -816,9 +824,10 @@ async def set_status(
 
     fresh = bot.repo.get_run(run["id"])
     if announce:
-        notice = status_notice(bot, fresh, status)
+        who = audience(bot.repo, fresh["participants"], "status")
+        notice = status_notice(bot, fresh, status, who)
         if notice:
-            await _announce(bot, notice, fresh["participants"], fresh["channel_id"], mark=mark)
+            await _announce(bot, notice, who.mentioned, fresh["channel_id"], mark=mark)
     return run_view(bot, fresh)
 
 
@@ -879,10 +888,11 @@ async def swap_participants(
         bot.repo.set_run_status(run["id"], status)
         fresh = bot.repo.get_run(run["id"])
 
+    who = audience(bot.repo, [*fresh["participants"], *leaving], "swap")
     await _announce(
         bot,
-        formatting.swap_notice(fresh, leaving, joining, bot.tz),
-        [*fresh["participants"], *leaving],
+        formatting.swap_notice(fresh, leaving, joining, bot.tz, who),
+        who.mentioned,
         fresh["channel_id"],
         mark=mark,
     )
@@ -997,10 +1007,11 @@ async def approve(bot: BossBot, amendment_id: str, actor_id: int | str | None = 
     if result.kind == "move" and result.run_id and result.old_datetime is not None:
         run = bot.repo.get_run(result.run_id)
         if run is not None:
+            who = audience(bot.repo, run["participants"], "amend")
             await _announce(
                 bot,
-                formatting.amend_notice(run, result.old_datetime, bot.tz),
-                run["participants"],
+                formatting.amend_notice(run, result.old_datetime, bot.tz, who),
+                who.mentioned,
                 run["channel_id"],
             )
     return {
@@ -1032,12 +1043,32 @@ async def reject_amendment(bot: BossBot, amendment_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def members(bot: BossBot, with_role: bool = True) -> list[dict]:
+def _run_counts(bot: BossBot) -> dict[str, int]:
     counts: dict[str, int] = {}
     for run in bot.repo.list_runs(week_start=week_for(bot, "this"), include_cancelled=False):
         for uid in run["participants"]:
             counts[uid] = counts.get(uid, 0) + 1
+    return counts
+
+
+def members(bot: BossBot, with_role: bool = True) -> list[dict]:
+    counts = _run_counts(bot)
     return [member_view(bot, m, counts) for m in bot.repo.list_members(with_role=with_role)]
+
+
+def update_member(bot: BossBot, user_id: int | str, ping_level: str | None = None) -> dict:
+    """Edit one member's own settings. Only ``ping_level`` is editable today."""
+    member = bot.repo.get_member(user_id)
+    if member is None:
+        raise NotFound(f"no member {user_id} - the roster syncs from the bossing role")
+    if ping_level is None:
+        raise BadRequest("nothing to change - pass `ping_level`")
+    try:
+        level = normalise_level(ping_level)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
+    bot.repo.set_ping_level(user_id, level)
+    return member_view(bot, bot.repo.get_member(user_id), _run_counts(bot))
 
 
 def set_nick(bot: BossBot, user_id: int | str, alias: str) -> dict:
@@ -1086,6 +1117,9 @@ def get_config(bot: BossBot) -> dict:
         "guild_id": str(bot.settings.guild_id),
         "watched_channels": [str(c) for c in bot.settings.chat_channel_id_list],
         "watched_categories": [str(c) for c in bot.settings.chat_category_id_list],
+        # Read live from the guild every time this is asked for: a permission
+        # granted in Discord must show up here without a restart.
+        "missing_manage_messages": bot.missing_manage_messages(),
     }
 
 
@@ -1373,7 +1407,7 @@ async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
         raise BadRequest(f"couldn't post the test ping: {found.problem}")
     channel = found.channel
     card.content = TEST_PREFIX + card.content
-    message = await bot._post(channel, card, mention_users=run["participants"])
+    message = await bot._post(channel, card)
     if message is None:
         raise BadRequest("couldn't post the test message")
     bot.repo.add_debug_message(message.id, run["id"], getattr(channel, "id", None), kind)

@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from .. import formatting
+from .. import formatting, pings
 from ..materialise import RUN_DONE_AFTER
 from ..rsvp import apply_reaction
 from ..timeutil import utcnow
@@ -38,7 +38,7 @@ from . import gate
 from . import prompt as prompt_mod
 from .commit import supersede
 from .llm import Extractor
-from .match import match_run, needs_run, runs_spanned
+from .match import NO_BOSS_OVERLAP, match_run, needs_run, runs_spanned
 from .merge import merge
 from .resolve import Resolved, resolve
 from .schema import Amendment, Extraction
@@ -65,6 +65,10 @@ CONTEXT_WINDOW_HOURS = 48
 #: "find temp for me for mon and tues" is one sentence and two stand-ins.
 SPLIT_ACROSS_RUNS = frozenset({"sub"})
 
+#: Kinds that become an `add` when the channel has no run with those bosses and
+#: the thread did settle on a day and time.
+CONVERTS_TO_ADD = frozenset({"move", "split"})
+
 #: How far into the past a proposed time may point before the card is pointless.
 #: A rescan reads a whole boss week, so without this it would cheerfully post
 #: "move HStar to Monday 21:30" on Wednesday. The grace exists because live chat
@@ -87,6 +91,10 @@ class Planned:
     run: dict | None = None
     payload: dict = field(default_factory=dict)
     match_reason: str = ""
+    match_code: str = ""
+    #: Kinds that lost to this one for the same run (see :func:`one_per_run`).
+    #: Named on the card so nothing the thread said disappears silently.
+    also_mentioned: list[str] = field(default_factory=list)
 
     @property
     def kind(self) -> str:
@@ -158,6 +166,83 @@ def _payload_for(
     return {}
 
 
+#: Which change wins when a burst says several things about one run's *timing*.
+#: An explicit cancel beats everything; a `move` that names a day beats "own
+#: time", because naming a night is a decision and "otot" is what people say
+#: when there is not one; a `move` with no day is weaker than either. Live: one
+#: thread produced both `move HCarling -> Tue` and `otot HCarling`, and the move
+#: was what the party meant. `sub` is deliberately absent: a stand-in is a
+#: roster change, not a timing one, and "ZedRS's out, X fills, and we do Wed"
+#: is one decision that needs both lines on the card.
+RUN_PRECEDENCE = ("move", "otot", "move-with-day", "cancel")
+
+
+def _precedence(entry: Planned) -> int:
+    kind = entry.kind
+    if kind == "move" and entry.resolved.day is not None:
+        kind = "move-with-day"
+    return RUN_PRECEDENCE.index(kind) if kind in RUN_PRECEDENCE else -1
+
+
+def one_per_run(entries: Sequence[Planned]) -> list[Planned]:
+    """Keep one change per run, by :data:`RUN_PRECEDENCE`; note the rest.
+
+    A card that offers two contradictory things for the same run cannot be
+    confirmed with one ✅, and the loser is not thrown away -- the winning line
+    says "(also mentioned: own time)" so the reader can see what else was said.
+
+    Kinds outside the precedence list (`add`, `fix`, `split`, `sub`) are left
+    alone: `add`/`fix` have no run to collide over, a `split` deliberately
+    changes a run *and* creates another, and a `sub` changes who goes, which
+    can sit beside any timing change for the same run.
+    """
+    best: dict[str, Planned] = {}
+    out: list[Planned] = []
+    for entry in entries:
+        rank = _precedence(entry)
+        if entry.run is None or rank < 0:
+            out.append(entry)
+            continue
+        run_id = entry.run["id"]
+        held = best.get(run_id)
+        if held is None:
+            best[run_id] = entry
+            out.append(entry)
+            continue
+        winner, loser = (entry, held) if _precedence(entry) > _precedence(held) else (held, entry)
+        if winner is entry:
+            out[out.index(held)] = entry
+            best[run_id] = entry
+        if loser.kind not in winner.also_mentioned:
+            winner.also_mentioned.append(loser.kind)
+        log.info(
+            "run %s: keeping %s over %s from the same burst",
+            run_id[:8],
+            winner.kind,
+            loser.kind,
+        )
+    return out
+
+
+def is_no_op(entry: Planned) -> bool:
+    """True when applying this would change nothing at all.
+
+    A rescan re-reads chat that has already been acted on, so it routinely
+    proposes the schedule that already exists -- "Wed 21:30 -> Wed 21:30" is a
+    card asking someone to confirm a decision they made days ago.
+    """
+    run = entry.run
+    if run is None:
+        return False
+    if entry.kind == "move":
+        return entry.resolved.at is not None and entry.resolved.at == run["datetime"]
+    if entry.kind == "otot":
+        return run["status"] == "otot"
+    if entry.kind == "cancel":
+        return run["status"] == "cancelled"
+    return False
+
+
 def consolidate(entries: Sequence[Planned]) -> list[Planned]:
     """One entry per thing changed, latest evidence winning.
 
@@ -175,7 +260,7 @@ def consolidate(entries: Sequence[Planned]) -> list[Planned]:
     for entry in entries:
         target = entry.run["id"] if entry.run else tuple(sorted(entry.amendment.bosses))
         best[(entry.kind, target)] = entry  # later bursts overwrite earlier ones
-    return list(best.values())
+    return one_per_run(list(best.values()))
 
 
 def already_passed(entry: Planned, now: datetime, tz: ZoneInfo | None = None) -> bool:
@@ -244,8 +329,11 @@ def plan_burst(
     """
     author_ids = author_ids or {}
     now = now or utcnow()
-    plan = Plan(summary=extraction.summary)
     merged = merge(extraction.amendments, burst_order, [r["bosses"] for r in channel_runs])
+    # Bosses the burst is already proposing a new run for, so a `move` about the
+    # same ones is that proposal settling rather than a second run.
+    proposed_bosses = {str(b) for a in merged if a.kind in ("add", "fix") for b in (a.bosses or [])}
+    plan = Plan(summary=extraction.summary)
     for amendment in merged:
         resolved = resolve(amendment.day_ref, amendment.time_ref, anchor, tz)
         author = next(
@@ -281,6 +369,27 @@ def plan_burst(
             result = match_run(
                 amendment, channel_runs, guild_runs, author_id=author, mentioned=mentioned
             )
+            if (
+                result.run is None
+                and result.reason_code == NO_BOSS_OVERLAP
+                and amendment.kind in CONVERTS_TO_ADD
+                and resolved.at is not None
+                # A named day, not a bare time: turning "amend to 9:45" into a
+                # brand new run would invent a night nobody chose.
+                and amendment.day_ref
+                and not (proposed_bosses & {str(b) for b in (amendment.bosses or [])})
+            ):
+                # Nothing here runs those bosses, but a day and a time were
+                # agreed: the thread is proposing a new run, whatever grammar it
+                # used. Better one `add` card than a `move` pointed at a
+                # stranger's night.
+                log.info(
+                    "no run for %s in this channel; reading the %s as a new run",
+                    "+".join(amendment.bosses),
+                    amendment.kind,
+                )
+                amendment = amendment.model_copy(deep=True)
+                amendment.kind = "add"
             entries.append(
                 Planned(
                     amendment=amendment,
@@ -290,6 +399,7 @@ def plan_burst(
                         amendment, resolved, result.run, volunteers_for(amendment, author_ids)
                     ),
                     match_reason=result.reason,
+                    match_code=result.reason_code,
                 )
             )
 
@@ -306,7 +416,14 @@ def plan_burst(
                 entry.match_reason = "already passed"
                 plan.dropped.append(entry)
                 continue
+            if is_no_op(entry):
+                entry.match_reason = "already scheduled"
+                plan.dropped.append(entry)
+                continue
             plan.planned.append(entry)
+    # One change per run, so a card can never offer two contradictory things
+    # for the same night.
+    plan.planned = one_per_run(plan.planned)
     return plan
 
 
@@ -841,7 +958,7 @@ class Pipeline:
                     day_ref=entry.amendment.day_ref,
                     time_ref=entry.amendment.time_ref,
                     summary=summary,
-                    payload=entry.payload,
+                    payload={**entry.payload, "also_mentioned": list(entry.also_mentioned)},
                 )
             )
         # Rows inserted in this pass are never their own predecessors.
@@ -877,18 +994,30 @@ class Pipeline:
         if channel is None:
             log.error("no channel available for the proposal card; leaving it unposted")
             return
+        for amendment in amendments:
+            # `payload` is the row's kind-specific bag; the card reads the note
+            # from the top level, so lift it there.
+            amendment["also_mentioned"] = (amendment.get("payload") or {}).get("also_mentioned", [])
+        unanswered = self._unanswered(amendments, runs)
+        listed = formatting.everyone_on(
+            [{"participants": a["participants"] or []} for a in amendments]
+            + [{"participants": r["participants"]} for r in runs.values()]
+            + [{"participants": unanswered}]
+        )
+        # A card is a question, and only the people who can answer it are worth
+        # a notification: `may_commit` requires the bossing role, so anybody
+        # without it would be pinged for a ✅ the bot would then ignore.
+        eligible = [uid for uid in listed if self.bot.repo.has_role(uid)]
+        who = pings.audience(self.bot.repo, listed, "proposal", candidates=eligible)
         card = formatting.proposal_card(
             amendments,
             runs,
             self.bot.tz,
-            unanswered=self._unanswered(amendments, runs),
+            unanswered=unanswered,
             confidence=min(a["confidence"] or 0.0 for a in amendments),
+            who=who,
         )
-        mentions = formatting.everyone_on(
-            [{"participants": a["participants"] or []} for a in amendments]
-            + [{"participants": r["participants"]} for r in runs.values()]
-        )
-        message = await self.bot._post(channel, card, mention_users=mentions)
+        message = await self.bot._post(channel, card)
         if message is None:
             return
         for amendment in amendments:

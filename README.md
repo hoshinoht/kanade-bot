@@ -47,12 +47,20 @@ lose or replay a ping.
      both, so if either is off it exits with a clear error instead of hanging.)
 4. **OAuth2 → URL Generator**:
    - Scopes: `bot` and `applications.commands`.
-   - Bot permissions — exactly these six (permissions integer `274877992000`):
+   - Bot permissions — exactly these seven (permissions integer `274878000192`):
      **View Channels**, **Send Messages**, **Send Messages in Threads**,
-     **Embed Links**, **Read Message History**, **Add Reactions**.
+     **Embed Links**, **Read Message History**, **Add Reactions**, and
+     **Manage Messages**.
+     *Manage Messages* is only used to keep ✅/❌ one-or-the-other: when someone
+     switches their answer the bot removes their previous reaction, and without
+     it both stick and the attendance tally is wrong. (It never deletes anyone
+     else's messages; `/debug clear_test` only removes the bot's own.) The portal's
+     **Config → Channel access** table and `/debug status` show, per channel,
+     whether it is actually granted.
      *Mention Everyone is not needed*: pinging a run's participants is an
      ordinary user mention, and the bot never pings `@everyone` or a role — every
-     message goes out with an allow-list of exactly the users on that run.
+     message goes out with an allow-list of exactly the users who need to act
+     (DESIGN.md §3, "Mention policy").
    - Open the generated URL and invite the bot to your server.
 5. In Discord: **User Settings → Advanced → Developer Mode** on. Then right-click
    to copy the ids you need:

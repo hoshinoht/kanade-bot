@@ -100,3 +100,23 @@ def test_zoneinfo_and_derived_helpers():
     assert settings.zoneinfo.key == "UTC"
     assert settings.reset_weekday == 0
     assert settings.reset_time == time(12, 30)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("low", "low"), ("MEDIUM", "medium"), ("off", False), ("false", False), ("none", False)],
+)
+def test_think_off_is_an_explicit_false_not_an_omitted_key(value, expected):
+    """A model that reasons by default (Gemma 4) needs `think=False`, not silence."""
+    assert make(ollama_think=value).think is expected or make(ollama_think=value).think == expected
+
+
+def test_a_blank_think_falls_back_to_the_default_level():
+    """``OLLAMA_THINK=`` cannot mean "omit the key": blanks never reach the field.
+
+    `_tidy_env_values` drops every blank so the field default speaks -- that is
+    what makes `ADMIN_ROLE_ID=   # optional` read as unset -- so an empty value
+    is `low`, not `None`. The `None` arm of `Settings.think` is defensive only.
+    """
+    assert make(ollama_think="").think == "low"
+    assert make().think == "low"

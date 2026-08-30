@@ -45,12 +45,22 @@ def make_settings(**overrides: Any) -> Settings:
 
 @dataclass
 class Posted:
-    """One thing the bot was asked to send, so a test can look at it."""
+    """One thing the bot was asked to send, so a test can look at it.
+
+    ``mentions`` is the allow-list the real client hands to
+    ``discord.AllowedMentions(users=...)``, so an empty one means the message
+    notifies nobody however many names it spells out.
+    """
 
     channel_id: Any
     content: str
     mentions: list[str] = field(default_factory=list)
     kind: str = "plain"
+
+    @property
+    def allowed_mentions(self) -> list[str]:
+        """What Discord would actually be allowed to notify."""
+        return list(self.mentions)
 
 
 class FakeMessage:
@@ -66,6 +76,7 @@ class FakePermissions:
         self.read_message_history = flags.get("read_message_history", True)
         self.embed_links = flags.get("embed_links", True)
         self.add_reactions = flags.get("add_reactions", True)
+        self.manage_messages = flags.get("manage_messages", True)
 
 
 class FakeChannel:
@@ -276,6 +287,11 @@ class FakeBot:
 
         return BossBot.access_report(self)
 
+    def missing_manage_messages(self):
+        from bot.client import BossBot
+
+        return BossBot.missing_manage_messages(self)
+
     async def post_channel(self, channel_id=None):
         return (await self.find_channel(channel_id)).channel
 
@@ -287,8 +303,11 @@ class FakeBot:
 
     async def _post(self, channel, card, mention_users=None):
         content = card if isinstance(card, str) else card.content
+        wanted = mention_users
+        if wanted is None:
+            wanted = getattr(card, "mention_users", [])
         self.posts.append(
-            Posted(getattr(channel, "id", None), content, list(mention_users or []), "card")
+            Posted(getattr(channel, "id", None), content, list(wanted), "card")
         )
         return self._message(channel)
 

@@ -34,6 +34,7 @@ from .models import (
     FixedOut,
     FixedUpdate,
     MemberOut,
+    MemberUpdate,
     NickIn,
     NickOut,
     PingIn,
@@ -240,6 +241,11 @@ async def get_extraction(bot: Bot, caller: Caller, extraction_id: str) -> dict:
 @router.get("/members", response_model=list[MemberOut])
 async def get_members(bot: Bot, caller: Caller, with_role: bool = True) -> list[dict]:
     return service.members(bot, with_role=with_role)
+
+
+@router.patch("/members/{user_id}", response_model=MemberOut, summary="Set a member's ping level")
+async def patch_member(bot: Bot, caller: Caller, user_id: str, body: MemberUpdate) -> dict:
+    return service.update_member(bot, user_id, ping_level=body.ping_level)
 
 
 @router.post("/members/{user_id}/nick", response_model=NickOut)

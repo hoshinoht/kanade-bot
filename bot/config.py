@@ -232,8 +232,20 @@ class Settings(BaseSettings):
 
     @property
     def think(self) -> str | bool | None:
-        """The value the ollama client wants: a level, or ``None`` for off."""
-        return self.ollama_think if self.ollama_think in ("low", "medium", "high") else None
+        """The value the ollama client wants.
+
+        A level passes through; ``off`` becomes an explicit ``False``. Omitting
+        the key is *not* the same as ``False``: a model that reasons by default
+        (Gemma 4) then puts its whole answer into ``message.thinking`` and
+        leaves ``content`` empty -- 500+ s for nothing, measured. Anything else
+        (unset, a typo) omits the key and lets the model do its default.
+        """
+        level = (self.ollama_think or "").strip().lower()
+        if level in ("low", "medium", "high"):
+            return level
+        if level in ("off", "false", "none", "0"):
+            return False
+        return None
 
     @property
     def allowed_login_list(self) -> list[str]:

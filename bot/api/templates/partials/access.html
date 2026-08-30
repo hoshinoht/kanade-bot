@@ -5,7 +5,7 @@
 <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Channel</th><th>See</th><th>Post</th><th>Read history</th><th>Embeds</th><th>React</th></tr>
+      <tr><th>Channel</th><th>See</th><th>Post</th><th>Read history</th><th>Embeds</th><th>React</th><th>Manage messages</th></tr>
     </thead>
     <tbody>
       {% for row in access %}
@@ -15,7 +15,7 @@
           {% if row.is_digest_channel %}<span class="chip">digest</span>{% endif %}
           {% if not row.watched %}<span class="chip chip--waiting">not watched</span>{% endif %}
         </td>
-        {% for ok in (row.view, row.send, row.history, row.embed, row.react) %}
+        {% for ok in (row.view, row.send, row.history, row.embed, row.react, row.manage_messages) %}
         <td class="{{ 'status status--confirmed' if ok else 'status status--at_risk' }}">
           {{ "✅" if ok else "❌" }}
         </td>
@@ -26,5 +26,8 @@
   </table>
 </div>
 <p class="run__meta">A ❌ means the bot's role is missing that permission in that channel — the
-  reminders for its runs will not go out. Fix it in <strong>Edit Channel → Permissions</strong>.</p>
+  reminders for its runs will not go out. Fix it in <strong>Edit Channel → Permissions</strong>.
+  <strong>Manage messages</strong> is the one exception: without it the reminders still go out, but
+  the bot cannot take somebody's old reaction off, so a person who switches ❌ to ✅ is counted as
+  both.</p>
 {% endif %}

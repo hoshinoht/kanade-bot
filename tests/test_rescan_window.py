@@ -464,11 +464,16 @@ def test_different_runs_both_survive():
     assert len(consolidate([star, kalos])) == 2
 
 
-def test_different_kinds_about_one_run_both_survive():
+def test_one_run_gets_one_change_with_the_rest_noted():
+    """A card offering both "move to Tue" and "own time" cannot be one ✅."""
     from bot.extract.pipeline import consolidate
 
     run = run_row(NOW)
-    assert len(consolidate([planned_for("move", [], run), planned_for("otot", [], run)])) == 2
+    move = planned_for("move", [], run, NOW + timedelta(days=2))
+    move.resolved = Resolved(day=(NOW + timedelta(days=2)).date(), at=NOW + timedelta(days=2))
+    kept = consolidate([move, planned_for("otot", [], run)])
+    assert [e.kind for e in kept] == ["move"]
+    assert kept[0].also_mentioned == ["otot"]
 
 
 def test_a_new_run_is_keyed_on_its_bosses():

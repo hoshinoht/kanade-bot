@@ -26,6 +26,12 @@ DEAD_STATUSES = ("cancelled", "done")
 NEEDS_RUN = ("move", "cancel", "otot", "split", "sub", "rsvp")
 
 
+#: ``reason_code`` for "the amendment named bosses, and nothing here runs them".
+#: The caller acts on this rather than on the prose reason: with a day and time
+#: it becomes an `add`, without one it is dropped.
+NO_BOSS_OVERLAP = "no-boss-overlap"
+
+
 @dataclass(frozen=True)
 class MatchResult:
     """The chosen run (if any), why, and what else was in the running."""
@@ -34,6 +40,8 @@ class MatchResult:
     reason: str = "no candidates"
     candidates: tuple[dict, ...] = field(default=())
     ambiguous: bool = False
+    #: A machine-readable form of ``reason`` for the cases callers branch on.
+    reason_code: str = ""
 
     @property
     def matched(self) -> bool:
@@ -56,16 +64,25 @@ def _score(run: dict, bosses: set[str], people: set[str]) -> tuple[int, int]:
     )
 
 
-def _hinted(hint: str | None, runs: Sequence[dict]) -> dict | None:
-    """The run the model pointed at with ``target_run_hint``, if it is real."""
+def _hinted(hint: str | None, runs: Sequence[dict], bosses: set[str]) -> dict | None:
+    """The run the model pointed at with ``target_run_hint``, if it is real.
+
+    A hint is still only a hint. It is refused when the amendment names bosses
+    the hinted run does not have: a 20B model will happily point a `move` about
+    NBaldrix at an HStar run it saw in the prompt, and following that renames
+    somebody else's night.
+    """
     if not hint:
         return None
     prefix = canonical_id(hint)
     if len(prefix) < 4:
         return None
     for run in runs:
-        if canonical_id(run["id"]).startswith(prefix):
-            return run
+        if not canonical_id(run["id"]).startswith(prefix):
+            continue
+        if bosses and not (bosses & {str(b) for b in run["bosses"]}):
+            return None
+        return run
     return None
 
 
@@ -95,12 +112,12 @@ def match_run(
     if not scoped:
         return MatchResult(reason="no runs to match against")
 
-    hinted = _hinted(getattr(amendment, "target_run_hint", None), scoped)
-    if hinted is not None:
-        return MatchResult(hinted, f"model pointed at #{short_id(hinted['id'])}", tuple(scoped))
-
     bosses = {str(b) for b in (amendment.bosses or [])}
     people = _people(amendment, author_id, mentioned)
+
+    hinted = _hinted(getattr(amendment, "target_run_hint", None), scoped, bosses)
+    if hinted is not None:
+        return MatchResult(hinted, f"model pointed at #{short_id(hinted['id'])}", tuple(scoped))
 
     scored = sorted(
         ((_score(run, bosses, people), run) for run in scoped),
@@ -110,8 +127,14 @@ def match_run(
     best_score, best = scored[0]
 
     if bosses and best_score[0] == 0:
-        # Named bosses, none of which any run here has: this is a new run.
-        return MatchResult(reason="no run here has those bosses", candidates=tuple(scoped))
+        # Named bosses, none of which any run here has. Participant overlap is
+        # NOT enough -- everyone in a party channel is on everything in it, so
+        # matching on people alone points a change at whatever run is handy.
+        return MatchResult(
+            reason="no run here has those bosses",
+            candidates=tuple(scoped),
+            reason_code=NO_BOSS_OVERLAP,
+        )
     if not bosses:
         # No bosses named ("change to wed?", "Can"). One run in the channel is
         # unambiguous; several are not unless the people pick one out.
@@ -169,6 +192,7 @@ def needs_run(kind: str) -> bool:
 __all__ = [
     "DEAD_STATUSES",
     "NEEDS_RUN",
+    "NO_BOSS_OVERLAP",
     "MatchResult",
     "match_run",
     "needs_run",

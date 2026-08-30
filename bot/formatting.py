@@ -1,12 +1,17 @@
 """Message and embed text.
 
 Pure string building, no Discord objects, so the wording is unit testable.
-Participants are rendered as ``<@id>`` mentions; callers that must not ping
-(e.g. ``/schedule``) pass ``allowed_mentions=discord.AllowedMentions.none()``.
+
+Who appears as a ``<@id>`` mention and who appears as a plain name is decided by
+the :class:`Audience` a caller passes in -- built by :func:`bot.pings.audience`
+from the mention policy in DESIGN.md §3. Without one (older call sites, and the
+unit tests that only care about wording) everybody is rendered as a mention, and
+``allowed_mentions`` is still the thing that decides who is actually notified.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +57,11 @@ class Card:
     #: from ``config/portraits``. ``None`` (the usual case) means no attachment
     #: at all, so a guild that ships no portraits sees exactly what it did before.
     thumbnail_path: Path | None = None
+    #: The user ids this card may actually notify, already resolved against the
+    #: mention policy (:mod:`bot.pings`). ``BossBot._post`` turns it into the
+    #: message's ``allowed_mentions``, so a card cannot ping anyone its own
+    #: wording does not account for.
+    mention_users: list[str] = field(default_factory=list)
 
     @property
     def has_embed(self) -> bool:
@@ -60,11 +70,45 @@ class Card:
         )
 
 
+@dataclass(frozen=True)
+class Audience:
+    """Who a message names, and which of them it is allowed to notify.
+
+    ``mentioned`` is the resolved list from :func:`bot.pings.resolve_mentions`;
+    everyone else is rendered from ``names``. A person with no name on file
+    falls back to a ``<@id>``, which Discord still renders as their display
+    name -- and, absent from ``allowed_mentions``, still does not notify them.
+    """
+
+    names: Mapping[str, str] = field(default_factory=dict)
+    mentioned: tuple[str, ...] = ()
+
+    def renders_as_mention(self, user_id: int | str) -> bool:
+        return str(user_id) in self.mentioned
+
+    def name_for(self, user_id: int | str) -> str:
+        uid = str(user_id)
+        if uid in self.mentioned:
+            return mention(uid)
+        return self.names.get(uid) or mention(uid)
+
+    def render(self, user_ids: Iterable[int | str]) -> str:
+        people = [self.name_for(uid) for uid in user_ids]
+        return " ".join(people) if people else "(nobody)"
+
+
 def format_bosses(bosses: list[str]) -> str:
     return " + ".join(bosses) if bosses else "(no bosses)"
 
 
-def format_participants(participants: list[str]) -> str:
+def format_participants(participants: list[str], who: Audience | None = None) -> str:
+    """The people on a run: mentions for whoever ``who`` says may be notified.
+
+    With no ``who`` everyone is a mention, which is what the card unit tests and
+    any caller that has not been given an audience expect.
+    """
+    if who is not None:
+        return who.render(participants)
     return " ".join(mention(uid) for uid in participants) if participants else "(nobody)"
 
 
@@ -140,10 +184,11 @@ def day_of_card(
     rsvps_by_run: dict[str, dict[str, str]],
     table: Any | None = None,
     today: datetime | None = None,
+    who: Audience | None = None,
 ) -> Card:
     """The grouped day-of ping: mentions up top, one embed field per run."""
     when = today or runs[0]["datetime"]
-    content = f"📅 **Today — {local_day(when, tz)}**\n{format_participants(everyone_on(runs))}"
+    content = f"📅 **Today — {local_day(when, tz)}**\n{format_participants(everyone_on(runs), who)}"
     fields: list[tuple[str, str]] = []
     for run in sorted(runs, key=lambda r: r["datetime"]):
         own_time = run["status"] == "otot"
@@ -153,7 +198,7 @@ def day_of_card(
             [
                 boss_detail(run["bosses"], table),
                 status_line(run, rsvps_by_run.get(run["id"], {})),
-                format_participants(run["participants"]),
+                format_participants(run["participants"], who),
             ]
         )
         fields.append((name, value))
@@ -164,18 +209,24 @@ def day_of_card(
         footer=REACT_HINT,
         colour=COLOUR_DAY_OF,
         thumbnail_path=lead_portrait(lead["bosses"], table),
+        mention_users=list(who.mentioned) if who else [],
     )
 
 
 def countdown_card(
-    run: dict, minutes: int, tz: ZoneInfo, rsvps: dict[str, str], table: Any | None = None
+    run: dict,
+    minutes: int,
+    tz: ZoneInfo,
+    rsvps: dict[str, str],
+    table: Any | None = None,
+    who: Audience | None = None,
 ) -> Card:
     """A countdown pings only the people who haven't ✅'d; everyone else just sees it."""
     pending = unconfirmed(run, rsvps)
-    who = format_participants(pending) if pending else "everyone's confirmed ✅"
+    waiting = format_participants(pending, who) if pending else "everyone's confirmed ✅"
     content = (
         f"⏰ **{format_bosses(run['bosses'])}** in {format_offset(minutes)} "
-        f"({local_time(run['datetime'], tz)}) — {who}"
+        f"({local_time(run['datetime'], tz)}) — {waiting}"
     )
     return Card(
         content=content,
@@ -183,13 +234,20 @@ def countdown_card(
         footer=REACT_HINT if pending else None,
         colour=COLOUR_COUNTDOWN if pending else COLOUR_ALL_SET,
         thumbnail_path=lead_portrait(run["bosses"], table),
+        mention_users=list(who.mentioned) if who else [],
     )
 
 
-def decline_notice(run: dict, who_declined: str, display_name: str, tz: ZoneInfo) -> str:
+def decline_notice(
+    run: dict,
+    who_declined: str,
+    display_name: str,
+    tz: ZoneInfo,
+    who: Audience | None = None,
+) -> str:
     """Posted as a reply when someone reacts ❌."""
     others = [uid for uid in run["participants"] if uid != str(who_declined)]
-    tag = format_participants(others) if others else ""
+    tag = format_participants(others, who) if others else ""
     return (
         f"{tag} {display_name} can't make **{format_bosses(run['bosses'])}** "
         f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}) — "
@@ -228,12 +286,12 @@ def group_by_day(runs: list[dict], tz: ZoneInfo) -> list[tuple[str, list[dict]]]
     return [(key, groups[key]) for key in order]
 
 
-def amend_notice(run: dict, old_at: datetime, tz: ZoneInfo) -> str:
+def amend_notice(run: dict, old_at: datetime, tz: ZoneInfo, who: Audience | None = None) -> str:
     return (
         f"🔁 **{format_bosses(run['bosses'])}** moved: "
         f"~~{local_day(old_at, tz)} {local_time(old_at, tz)}~~ → "
         f"**{local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}** — "
-        f"{format_participants(run['participants'])}\n{REACT_HINT}"
+        f"{format_participants(run['participants'], who)}\n{REACT_HINT}"
     )
 
 
@@ -247,31 +305,33 @@ def via_portal(content: str) -> str:
     return f"{content}\n{VIA_PORTAL}"
 
 
-def otot_notice(run: dict, tz: ZoneInfo) -> str:
+def otot_notice(run: dict, tz: ZoneInfo, who: Audience | None = None) -> str:
     """Posted when a run is switched to own time outside Discord."""
     return (
         f"🕒 **{format_bosses(run['bosses'])}** is own-time this week "
         f"({local_day(run['datetime'], tz)}) — it stays in the morning ping, "
-        f"but there are no countdowns. {format_participants(run['participants'])}"
+        f"but there are no countdowns. {format_participants(run['participants'], who)}"
     )
 
 
-def restore_notice(run: dict, tz: ZoneInfo) -> str:
+def restore_notice(run: dict, tz: ZoneInfo, who: Audience | None = None) -> str:
     """Posted when a cancelled or own-time run goes back on the schedule."""
     return (
         f"🔁 **{format_bosses(run['bosses'])}** is back on the schedule "
         f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}) — "
-        f"{format_participants(run['participants'])}\n{REACT_HINT}"
+        f"{format_participants(run['participants'], who)}\n{REACT_HINT}"
     )
 
 
-def swap_notice(run: dict, out: list[str], joined: list[str], tz: ZoneInfo) -> str:
+def swap_notice(
+    run: dict, out: list[str], joined: list[str], tz: ZoneInfo, who: Audience | None = None
+) -> str:
     """Posted when a run's party changes for one week only."""
     parts = []
     if out:
-        parts.append(f"{format_participants(out)} out")
+        parts.append(f"{format_participants(out, who)} out")
     if joined:
-        parts.append(f"{format_participants(joined)} in")
+        parts.append(f"{format_participants(joined, who)} in")
     return (
         f"🔁 **{format_bosses(run['bosses'])}** "
         f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}): "
@@ -287,18 +347,18 @@ def roster_delta(out: list[str], joined: list[str]) -> str:
     return "this week: " + " ".join(bits)
 
 
-def done_notice(run: dict) -> str:
+def done_notice(run: dict, who: Audience | None = None) -> str:
     return (
         f"🏁 **{format_bosses(run['bosses'])}** cleared — "
-        f"{format_participants(run['participants'])}"
+        f"{format_participants(run['participants'], who)}"
     )
 
 
-def cancel_notice(run: dict, tz: ZoneInfo) -> str:
+def cancel_notice(run: dict, tz: ZoneInfo, who: Audience | None = None) -> str:
     return (
         f"🚫 **{format_bosses(run['bosses'])}** "
         f"({local_day(run['datetime'], tz)}) is cancelled — "
-        f"{format_participants(run['participants'])}"
+        f"{format_participants(run['participants'], who)}"
     )
 
 
@@ -310,12 +370,12 @@ FIXED_VERBS = {
 }
 
 
-def fixed_notice(fixed: dict, verb: str) -> str:
+def fixed_notice(fixed: dict, verb: str, who: Audience | None = None) -> str:
     """One line for a baseline timing created, edited or deleted elsewhere."""
     day = WEEKDAY_NAMES[fixed["weekday"]]
     return (
         f"{FIXED_VERBS.get(verb, verb)}: **{format_bosses(fixed['bosses'])}** · "
-        f"{day} {fixed['time']} · {format_participants(fixed['participants'])}"
+        f"{day} {fixed['time']} · {format_participants(fixed['participants'], who)}"
     )
 
 
@@ -385,9 +445,16 @@ def when_text(amendment: dict, tz: ZoneInfo) -> str:
     return TBD
 
 
-def proposal_line(amendment: dict, run: dict | None, tz: ZoneInfo) -> tuple[str, str]:
-    """``(field name, field value)`` for one amendment on a card."""
-    bosses = format_bosses(amendment["bosses"] or (run["bosses"] if run else []))
+def proposal_line(
+    amendment: dict, run: dict | None, tz: ZoneInfo, who: Audience | None = None
+) -> tuple[str, str]:
+    """``(field name, field value)`` for one amendment on a card.
+
+    When a run matched, the heading names **that run's** bosses, not the
+    amendment's: the `#id` beside them points at the run, and showing one run's
+    id next to another's bosses is how a reader ✅s the wrong night.
+    """
+    bosses = format_bosses(run["bosses"] if run is not None else amendment["bosses"])
     verb = KIND_VERB.get(amendment["kind"], amendment["kind"])
     name = f"{verb} · {bosses}"
     if run is not None:
@@ -411,17 +478,25 @@ def proposal_line(amendment: dict, run: dict | None, tz: ZoneInfo) -> tuple[str,
         out = [str(u) for u in payload.get("remove", [])] or amendment["participants"]
         joining = [str(u) for u in payload.get("add", [])]
         if joining:
-            lines.append(f"{format_participants(out)} out · {format_participants(joining)} in")
+            lines.append(
+                f"{format_participants(out, who)} out · {format_participants(joining, who)} in"
+            )
         else:
-            lines.append(f"{format_participants(out)} out · **temp needed**")
+            lines.append(f"{format_participants(out, who)} out · **temp needed**")
     else:  # pragma: no cover - rsvp never reaches a card
         lines.append(when_text(amendment, tz))
 
-    who = amendment["participants"] or (run["participants"] if run else [])
-    if who and kind != "sub":
-        lines.append(format_participants(who))
+    people = amendment["participants"] or (run["participants"] if run else [])
+    if people and kind != "sub":
+        lines.append(format_participants(people, who))
     if amendment.get("summary"):
         lines.append(f"_{amendment['summary']}_")
+    also = amendment.get("also_mentioned") or []
+    if also:
+        # The burst said more than one thing about this run. One ✅ applies the
+        # winner; the rest are named so nothing is silently dropped.
+        spoken = ", ".join(KIND_VERB.get(kind, kind) for kind in also)
+        lines.append(f"(also mentioned: {spoken})")
     return name, "\n".join(lines)
 
 
@@ -439,6 +514,7 @@ def proposal_card(
     tz: ZoneInfo,
     unanswered: list[str] | None = None,
     confidence: float | None = None,
+    who: Audience | None = None,
 ) -> Card:
     """One card for a whole burst -- one embed field per amendment.
 
@@ -458,22 +534,23 @@ def proposal_card(
             for a in amendments
         ]
     )
-    content = f"{title}\n{format_participants(mentioned)}" if mentioned else title
+    content = f"{title}\n{format_participants(mentioned, who)}" if mentioned else title
 
-    fields = [proposal_line(a, runs.get(a["run_id"]), tz) for a in amendments]
+    fields = [proposal_line(a, runs.get(a["run_id"]), tz, who) for a in amendments]
     footer = CONFIRM_HINT
     if confidence is not None:
         footer += f"  (confidence {confidence:.2f})"
 
     description = None
     if unanswered:
-        description = "Not yet answered: " + format_participants(unanswered)
+        description = "Not yet answered: " + format_participants(unanswered, who)
     return Card(
         content=content,
         description=description,
         fields=fields,
         footer=footer,
         colour=colour,
+        mention_users=list(who.mentioned) if who else [],
     )
 
 

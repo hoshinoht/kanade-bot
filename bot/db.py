@@ -26,14 +26,28 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
+#: How much a member wants to be @mentioned (DESIGN.md s3, "Mention policy").
+#: `essential` is the default: only the posts that ask them to act.
+PING_LEVELS = ("essential", "all", "off")
+DEFAULT_PING_LEVEL = "essential"
 #: `superseded` = a newer card about the same run replaced this one, or a sibling
 #: amendment for the run was committed. Kept rather than deleted so the
 #: extraction log still shows what was proposed and why it never applied.
-AMENDMENT_STATUSES = ("proposed", "confirmed", "rejected", "expired", "superseded")
+#: `withdrawn` = the card itself was deleted from Discord, so there is nothing
+#: left to react to. Kept rather than deleted so the extraction log still shows
+#: what was proposed and why it never applied.
+AMENDMENT_STATUSES = (
+    "proposed",
+    "confirmed",
+    "rejected",
+    "expired",
+    "superseded",
+    "withdrawn",
+)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -46,6 +60,8 @@ CREATE TABLE IF NOT EXISTS members (
     nickname     TEXT,
     aliases      TEXT NOT NULL DEFAULT '[]',
     has_role     INTEGER NOT NULL DEFAULT 0,
+    -- how much this member wants to be @mentioned: essential | all | off
+    ping_level   TEXT NOT NULL DEFAULT 'essential',
     updated_at   TEXT NOT NULL
 );
 
@@ -313,10 +329,33 @@ def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
     """
 
 
+def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
+    """v4 -> v5: ``members.ping_level``, the per-person mention preference.
+
+    Additive, and everyone starts on the default (``essential``), which is the
+    behaviour the guild already had for the posts that ask them to act.
+    ``SCHEMA_SQL`` cannot do this itself: the table already exists, so its
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op on an upgrade.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(members)")}
+    if not existing:
+        # No `members` table yet: a database old enough to predate it walks
+        # through this step on its way forward, and `SCHEMA_SQL` creates the
+        # table -- with the column already on it -- once the steps are done.
+        return
+    if "ping_level" in existing:
+        return
+    conn.execute(
+        f"ALTER TABLE members ADD COLUMN ping_level TEXT NOT NULL DEFAULT '{DEFAULT_PING_LEVEL}'"
+    )
+    log.info("schema v4->v5: members gained ping_level (everyone on %s)", DEFAULT_PING_LEVEL)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
     3: _migrate_3_to_4,
+    4: _migrate_4_to_5,
 }
 
 
@@ -472,11 +511,34 @@ class Repo:
         member = self.get_member(user_id)
         return bool(member and member["has_role"])
 
+    def get_ping_level(self, user_id: int | str) -> str:
+        """How much this person wants to be @mentioned.
+
+        Somebody the roster has never seen (a guest on a run, a member who left)
+        gets the default rather than an error: a missing row must never stop a
+        reminder going out.
+        """
+        member = self.get_member(user_id)
+        return member["ping_level"] if member else DEFAULT_PING_LEVEL
+
+    def set_ping_level(self, user_id: int | str, level: str) -> str:
+        """Record a member's mention preference; returns the level that was stored."""
+        if level not in PING_LEVELS:
+            raise ValueError(f"ping level must be one of {', '.join(PING_LEVELS)}, not {level!r}")
+        updated = self._conn.execute(
+            "UPDATE members SET ping_level = ?, updated_at = ? WHERE user_id = ?",
+            (level, to_iso(utcnow()), str(user_id)),
+        ).rowcount
+        if not updated:
+            raise KeyError(str(user_id))
+        return level
+
     @staticmethod
     def _member(row: sqlite3.Row) -> dict:
         data = dict(row)
         data["aliases"] = _json_list(data["aliases"])
         data["has_role"] = bool(data["has_role"])
+        data["ping_level"] = data.get("ping_level") or DEFAULT_PING_LEVEL
         return data
 
     # -- fixed runs -------------------------------------------------------

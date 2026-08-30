@@ -283,8 +283,16 @@ class MemberOut(BaseModel):
     nickname: str | None
     aliases: list[str]
     has_role: bool
+    #: How much this member wants to be @mentioned: essential | all | off.
+    ping_level: str
     updated_at: str
     runs_this_week: int
+
+
+class MemberUpdate(Strict):
+    """A member's own settings. Only the mention level is editable."""
+
+    ping_level: str | None = None
 
 
 class NickIn(Strict):
@@ -331,6 +339,9 @@ class ConfigOut(BaseModel):
     guild_id: str
     watched_channels: list[str]
     watched_categories: list[str]
+    #: Watched channels where the bot lacks Manage Messages, by name. While one
+    #: is listed, a ✅ and a ❌ from the same person both stick in that channel.
+    missing_manage_messages: list[str] = []
 
 
 class ConfigIn(Strict):
@@ -467,6 +478,8 @@ class AccessOut(BaseModel):
     history: bool
     embed: bool
     react: bool
+    #: Needed to keep ✅/❌ exclusive: the bot removes the opposite reaction.
+    manage_messages: bool = True
     #: True when the bot is not connected, so nothing could be checked.
     unknown: bool
 
@@ -497,6 +510,7 @@ __all__ = [
     "FixedUpdate",
     "HealthOut",
     "MemberOut",
+    "MemberUpdate",
     "MonogramOut",
     "NickIn",
     "NickOut",
