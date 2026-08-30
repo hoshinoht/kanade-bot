@@ -1,7 +1,7 @@
 # Boss Scheduler Bot
 
 A Discord bot that keeps a MapleStory guild's weekly boss schedule and posts
-tagged reminders. See [`DESIGN.md`](DESIGN.md) for the full design.
+tagged reminders.
 
 **This is phase 1 (the skeleton).** It is fully useful with zero LLM: you set
 baseline timings with `/fixed`, the bot materialises them into concrete runs each
@@ -13,16 +13,16 @@ extractor (phase 2) and the web portal / `bossctl` (phase 3) are not built yet.
 
 ## What it does today
 
-| | |
-|---|---|
-| **Membership** | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role on startup and on member updates — no `/roster` upkeep. |
-| **Baseline** | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party. |
-| **Weekly runs** | At each boss-week reset (default Thu 00:00) the baseline is materialised into concrete runs for the current and next week. |
+|                      |                                                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Membership**       | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role on startup and on member updates — no `/roster` upkeep.                                          |
+| **Baseline**         | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party.                                          |
+| **Weekly runs**      | At each boss-week reset (default Thu 00:00) the baseline is materialised into concrete runs for the current and next week.                                                        |
 | **Watched channels** | `CHAT_CHANNEL_IDS` and/or `CHAT_CATEGORY_IDS` decide where the bot listens. A category watches every channel under it, including ones added later; threads count as their parent. |
-| **Home channels** | Each fixed run's **home channel** is the (watched) channel `/fixed add` was invoked in. All of that run's output lands there, so one channel per party stays clean. |
-| **Reminders** | One grouped **day-of** message per home channel each morning (one line per run, each tagging only its own participants), plus **countdown** pings at T-1h and T-15m. |
-| **RSVPs** | The bot puts ✅/❌ on every reminder. ✅ from everyone → the run is `confirmed`; any ❌ → `at_risk` and the bot replies tagging the rest to reschedule. |
-| **Changes** | `/amend`, `/cancel`, `/otot`, `/rsvp`, `/nick`, `/pingtime`. |
+| **Home channels**    | Each fixed run's **home channel** is the (watched) channel `/fixed add` was invoked in. All of that run's output lands there, so one channel per party stays clean.               |
+| **Reminders**        | One grouped **day-of** message per home channel each morning (one line per run, each tagging only its own participants), plus **countdown** pings at T-1h and T-15m.              |
+| **RSVPs**            | The bot puts ✅/❌ on every reminder. ✅ from everyone → the run is `confirmed`; any ❌ → `at_risk` and the bot replies tagging the rest to reschedule.                               |
+| **Changes**          | `/amend`, `/cancel`, `/otot`, `/rsvp`, `/nick`, `/pingtime`.                                                                                                                      |
 
 Reminders are rows in SQLite, not in-memory jobs, so restarts and rebuilds never
 lose or replay a ping.
@@ -254,11 +254,11 @@ tests/
 
 ## Troubleshooting
 
-| Symptom | Cause |
-|---|---|
-| Bot exits with "Message Content and/or Server Members intent is not enabled" | Step 1.3 — turn both on in the portal. |
-| "This channel isn't watched" on `/fixed add` | The channel is not in `CHAT_CHANNEL_IDS` and its category is not in `CHAT_CATEGORY_IDS`. |
-| Commands don't appear | They are guild-scoped to `GUILD_ID` and sync on startup, so this is usually a wrong `GUILD_ID`, or the bot was invited without the `applications.commands` scope. |
-| "You need the bossing role" | `BOSSING_ROLE_ID` is wrong, or the roster hasn't synced — check the startup log line `roster synced: N members`. |
-| No reminders | The bot must be able to post in the run's home channel (where `/fixed add` was used); the log says `channel ... unavailable` if not. Set `POST_CHANNEL_ID` as a fallback. |
-| Container unhealthy | `docker compose logs bot`. The healthcheck fails if the tick loop stopped writing its heartbeat. |
+| Symptom                                                                      | Cause                                                                                                                                                                     |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bot exits with "Message Content and/or Server Members intent is not enabled" | Step 1.3 — turn both on in the portal.                                                                                                                                    |
+| "This channel isn't watched" on `/fixed add`                                 | The channel is not in `CHAT_CHANNEL_IDS` and its category is not in `CHAT_CATEGORY_IDS`.                                                                                  |
+| Commands don't appear                                                        | They are guild-scoped to `GUILD_ID` and sync on startup, so this is usually a wrong `GUILD_ID`, or the bot was invited without the `applications.commands` scope.         |
+| "You need the bossing role"                                                  | `BOSSING_ROLE_ID` is wrong, or the roster hasn't synced — check the startup log line `roster synced: N members`.                                                          |
+| No reminders                                                                 | The bot must be able to post in the run's home channel (where `/fixed add` was used); the log says `channel ... unavailable` if not. Set `POST_CHANNEL_ID` as a fallback. |
+| Container unhealthy                                                          | `docker compose logs bot`. The healthcheck fails if the tick loop stopped writing its heartbeat.                                                                          |
