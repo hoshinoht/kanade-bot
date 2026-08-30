@@ -17,7 +17,7 @@ from pathlib import Path
 import discord
 
 from .bosses import BossTable, BossTableError
-from .client import CFG_COUNTDOWNS, CFG_PAUSED, CFG_PING_TIME, BossBot
+from .client import CFG_COUNTDOWNS, CFG_EXTRACT, CFG_PAUSED, CFG_PING_TIME, BossBot
 from .config import Settings, get_settings
 from .db import Repo
 
@@ -77,6 +77,7 @@ def build_repo(settings: Settings) -> Repo:
             CFG_PING_TIME: settings.day_of_ping_time,
             CFG_COUNTDOWNS: settings.countdown_minutes,
             CFG_PAUSED: "0",
+            CFG_EXTRACT: "1" if settings.extract_enabled else "0",
         }
     )
     return repo

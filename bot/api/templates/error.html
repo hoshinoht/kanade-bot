@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ status }} — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">HTTP {{ status }}</p>
+    <h1>{{ "That doesn't exist" if status == 404 else "That didn't work" }}</h1>
+  </div>
+</div>
+<div class="empty">
+  <strong>{{ message }}</strong>
+  <a class="btn" href="/">Back to the week</a>
+</div>
+{% endblock %}

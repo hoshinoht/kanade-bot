@@ -3,13 +3,15 @@
 A Discord bot that keeps a MapleStory guild's weekly boss schedule and posts
 tagged reminders.
 
-**Phases 1 and 2 are built.** You set baseline timings with `/fixed`, the bot
+**Phases 1, 2 and 3 are built.** You set baseline timings with `/fixed`, the bot
 materialises them into concrete runs each boss week, and it pings exactly the
 people on each run — a grouped morning message plus countdowns — with ✅/❌
 reactions as the attendance record. On top of that it **reads the party's chat**
 with a local LLM and posts a card proposing the change it found; nothing reaches
-the schedule until someone reacts ✅. The web portal / `bossctl` (phase 3) are
-not built yet.
+the schedule until someone reacts ✅. And it serves a **web portal and a
+`bossctl` CLI** on `127.0.0.1:8080` — the week at a glance, the fixed-timing
+editor, the inbox of what the extractor proposed, and the full extraction log —
+reachable from your phone over Tailscale.
 
 ---
 
@@ -26,6 +28,7 @@ not built yet.
 | **RSVPs**            | The bot puts ✅/❌ on every reminder. ✅ from everyone → the run is `confirmed`; any ❌ → `at_risk` and the bot replies tagging the rest to reschedule.                               |
 | **Changes**          | `/amend`, `/cancel`, `/otot`, `/rsvp`, `/nick`, `/pingtime`.                                                                                                                      |
 | **Chat extraction**  | A local `gpt-oss:20b` reads the party channels and posts a 📋/💡/📌 card for each change it finds. ✅ from a participant applies it; ❌ rejects it; unanswered cards expire after 24 h. |
+| **Portal & CLI**     | A local web portal (week view, fixed editor, proposal inbox, extraction log, config) and `bossctl`, both over one HTTP API inside the bot process. Loopback only; tailnet via `tailscale serve`.  |
 
 Reminders are rows in SQLite, not in-memory jobs, so restarts and rebuilds never
 lose or replay a ping.
@@ -95,14 +98,14 @@ Radiant Malefic Star, Limbo, Baldrix, Jupiter and Black Mage.
 docker compose up --build
 ```
 
-The container publishes `127.0.0.1:8080` for the phase-3 portal (nothing listens
-on it yet) and bind-mounts `./data` for the SQLite database, so the schedule
-survives rebuilds. `restart: unless-stopped` plus Docker Desktop's "start at
-login" is all the supervision it needs.
+The container publishes `127.0.0.1:8080` for the portal (see
+[Portal & CLI](#6-portal--cli)) and bind-mounts `./data` for the SQLite
+database, so the schedule survives rebuilds. `restart: unless-stopped` plus
+Docker Desktop's "start at login" is all the supervision it needs.
 
 Health: `docker compose ps` shows healthy once the bot has ticked; the check is
-`python -m bot.health`, which passes when the database opens and the bot wrote a
-heartbeat in the last 3 minutes.
+`python -m bot.health`, which passes when the database opens, the bot wrote a
+heartbeat in the last 3 minutes, **and** the in-process API answers `/healthz`.
 
 To run it without Docker:
 
@@ -305,7 +308,134 @@ them.** Exported messages are also upserted into the `messages` table.
 The export needs the same privileged intents as the bot, and it does not post,
 sync commands, or run the reminder loop.
 
-## 6. Development
+## 6. Portal & CLI
+
+One HTTP API, two front ends. It runs **inside the bot process** — FastAPI on the
+same asyncio loop as discord.py — so the portal reads live state, writes to the
+same SQLite file the bot has open, and can post to Discord, with no second
+process to supervise.
+
+### Set the token
+
+```sh
+openssl rand -hex 32          # paste into ADMIN_TOKEN= in .env
+docker compose up -d --build
+open http://127.0.0.1:8080    # sign in with that token
+```
+
+Until `ADMIN_TOKEN` is set the API still starts and `/healthz` still answers, but
+every other request comes back `503 set ADMIN_TOKEN` — a half-configured
+deployment fails loudly rather than quietly serving your schedule. Rotating the
+token signs every browser session out.
+
+### The pages
+
+| Page             | What it is for                                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Week**         | The default. A seven-column rail for the boss week — starting on the reset day, not Monday — with a pip per run, then the runs grouped by day. Filter by channel, member or boss; move / own-time / cancel / preview-ping on each row. |
+| **Fixed**        | The baseline timings, with a create/edit form. Boss tokens are checked as you type; the party is picked from the synced roster.                     |
+| **Inbox**        | What the extractor proposed and nobody has answered: the change, its confidence, and the exact chat lines it cited. Approve, edit-then-approve, or reject — the same code path a ✅ on the Discord card runs, and the card is edited to say it was applied via the portal. |
+| **Extractions**  | Every model call: the prompt as sent, the raw JSON back, the latency, and the changes it produced. This is the prompt-tuning tool.                  |
+| **Members**      | The roster as synced from the bossing role, plus the chat aliases the extractor matches names against.                                              |
+| **Reminders**    | Queued and sent reminder rows, with a link straight to each posted message in Discord.                                                              |
+| **Config**       | Morning ping time, countdown offsets, pause chat watching, turn the extractor off, post the weekly digest now, rescan a channel. The `.env`-only values are listed read-only underneath. |
+
+Every time on every page is in the guild timezone, which is named in the header.
+The pages are server-rendered; [htmx](https://htmx.org) (pinned, from cdnjs, with
+an integrity hash) only upgrades the actions to in-place swaps. Every control is
+a real form, so with the CDN blocked or JavaScript off the portal still works.
+
+### Reaching it from your phone: `tailscale serve`
+
+The container publishes the port on the host's loopback only
+(`ports: ["127.0.0.1:8080:8080"]`), so nothing on your LAN can see it. Tailscale
+puts it on your tailnet, over HTTPS, with a real certificate:
+
+```sh
+tailscale serve --bg 8080
+tailscale serve status                       # check what is published
+```
+
+Then open **https://your-machine.your-tailnet.ts.net** from any device
+signed into your tailnet.
+
+To skip the token on the phone, let the portal trust the identity Tailscale
+attaches to each request — add these two to `.env` and restart:
+
+```sh
+ALLOWED_TAILSCALE_LOGINS=you@example.com     # the login Tailscale shows for you
+TRUST_TAILSCALE_HEADERS=true
+```
+
+`tailscale serve` sets a `Tailscale-User-Login` header on every proxied request.
+That header is only a string, so the portal accepts it under three conditions at
+once: the flag above is on, the login is on the allow-list, and the connection
+came from this machine (loopback or the Docker bridge). Anyone who can already
+open `127.0.0.1:8080` on this Mac can run code as you anyway, so that is where
+the trust boundary genuinely is. With the flag off — the default — the phone just
+asks for the token once and keeps a seven-day cookie.
+
+> **Never `tailscale funnel`.** Funnel publishes the port to the public internet.
+> `serve` keeps it inside your tailnet. If you want to narrow it further, a
+> Tailscale ACL can restrict port 443 on this node to your own devices.
+
+To stop publishing it:
+
+```sh
+tailscale serve --bg --https=443 off
+```
+
+### `bossctl`
+
+```sh
+uv run bossctl schedule                   # from the project directory
+uv tool install .                         # or install it on your PATH
+docker compose exec bot bossctl schedule  # or from inside the container
+```
+
+It reads `ADMIN_TOKEN` from the environment or from the nearest `.env`, and talks
+to `BOSSCTL_URL` (default `http://127.0.0.1:8080`). Ids may be any unique prefix.
+An API refusal is printed as its message and exits non-zero.
+
+```
+bossctl schedule [--week next] [--channel ID] [--user ID] [--boss hstar]
+bossctl fixed list | add | edit | rm
+bossctl fixed add -b "hstar, hfa" -d mon -t 21:30 -c <channel-id> -m <user-id> -m <user-id>
+bossctl pending                          # what the extractor proposed
+bossctl approve <id> | reject <id>
+bossctl amend <run> --to "wed 21:30"
+bossctl cancel <run> | otot <run>
+bossctl rsvp <run> yes --user <user-id>
+bossctl members | nick <user-id> MY
+bossctl reminders [--run <id>]
+bossctl rescan --channel <id> [--hours 24] [--dry-run]
+bossctl digest [--channel <id>] [--week next]
+bossctl ping <run> day_of                # posts a 🧪 TEST reminder now
+bossctl extractions [-n 25] | extraction <id> [--no-prompt]
+bossctl export --channel <id> --since 2026-06-01 --out data/exports/party.jsonl
+bossctl config get [key] | config set <key> <value>
+```
+
+`config set` takes the four runtime settings the portal edits —
+`day_of_ping_time`, `countdown_minutes`, `paused`, `extract_enabled`. Everything
+else is `.env` and a redeploy.
+
+### The API itself
+
+Everything under `/api` is JSON, documented at
+<http://127.0.0.1:8080/api/docs>. Errors are `{"error": "..."}` with a real
+status code.
+
+```sh
+TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-)
+curl -s http://127.0.0.1:8080/healthz                                   # -> ok
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/schedule
+```
+
+`GET /healthz` is the one unauthenticated route and returns nothing but `ok`; the
+compose healthcheck uses it alongside the SQLite heartbeat.
+
+## 7. Development
 
 ```sh
 uv sync                 # includes dev deps
@@ -319,6 +449,12 @@ materialisation idempotency, reminder generation and pruning, the
 reaction → RSVP → status transitions, and every stage of the extractor (gate,
 resolve, merge, match, commit, cards). Discord I/O is kept thin on purpose so it
 needs no mocking.
+
+The portal and CLI are covered the same way: `tests/fake_bot.py` is a stand-in
+client that records every Discord side effect, so the API routes, the auth paths,
+each page's rendering (empty and populated) and the `bossctl` commands are all
+exercised without a gateway. `tests/test_api_server.py` starts the real uvicorn
+server on a real port to prove it shares the loop rather than stealing it.
 
 `uv run pytest` never touches the model. The fixture suite that does is marked
 `ollama` and excluded by default; run it with `uv run pytest -m ollama`, which
@@ -340,7 +476,8 @@ bot/
   client.py      discord.py client, tick loop, reactions
   commands.py    slash commands
   export.py      `python -m bot.export` -- channel history -> JSONL
-  health.py      container healthcheck
+  health.py      container healthcheck (heartbeat + /healthz)
+  cli.py         `bossctl` -- the Typer CLI, over the same HTTP API
   extract/       the chat extractor (phase 2)
     gate.py      keyword gate + boss-token finder (pure, no model)
     prompt.py    the prompt: boss table, channel runs, roster, messages
@@ -352,6 +489,17 @@ bot/
     pipeline.py  per-channel buffering and the whole flow
     commit.py    ✅ on a card -> the schedule change (pure repo work)
     __main__.py  `python -m bot.extract` -- offline dry run over an export
+  api/           the portal + CLI API (phase 3), served on the bot's own loop
+    server.py    uvicorn as a task next to discord.py; start/stop
+    app.py       the FastAPI app, built around the live client
+    auth.py      bearer token, tailnet identity, signed session cookie
+    service.py   what the API does, in repository terms (no FastAPI here)
+    routes_api.py  JSON under /api
+    routes_web.py  the portal's pages and HTMX partials
+    models.py    request/response shapes
+    templating.py the Jinja environment
+    templates/   Jinja pages and partials
+    static/      portal.css
 config/bosses.yaml
 tests/
 ```

@@ -251,7 +251,10 @@ class Pipeline:
     # -- intake ------------------------------------------------------------
     @property
     def enabled(self) -> bool:
-        return self.bot.settings.extract_enabled and not self.bot.paused
+        # `extract_enabled` is the DB-backed runtime flag (seeded from the env
+        # var of the same name), so the portal can switch the model off without
+        # a redeploy. `paused` is `/bot pause`.
+        return bool(getattr(self.bot, "extract_enabled", True)) and not self.bot.paused
 
     def gate_message(self, content: str) -> gate.GateResult:
         roster = [m["user_id"] for m in self.bot.repo.list_members()]

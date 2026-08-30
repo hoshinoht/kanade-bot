@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Fixed timings — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Baseline</p>
+    <h1>{{ fixed|length }} weekly timing{{ "" if fixed|length == 1 else "s" }}</h1>
+    <p>Materialised into runs for this week and next. Editing a day or time moves the runs that
+      have not happened yet; editing a note leaves them alone.</p>
+  </div>
+</div>
+
+{% if flash %}{% include "partials/flash.html" %}{% endif %}
+
+{% if not fixed %}
+<div class="empty">
+  <strong>No baseline yet.</strong>
+  Add one below, or run <code>/fixed add</code> inside a party channel.
+</div>
+{% else %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>When</th><th>Bosses</th><th>Party</th><th>Home channel</th><th>Owner</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in fixed %}
+      <tr id="fixed-{{ row.short_id }}">
+        <td>
+          <strong>{{ row.weekday_name }}</strong>
+          <span class="mono">{{ row.time }}</span>
+          <div class="id">#{{ row.short_id }}</div>
+        </td>
+        <td>{% with detail = row.boss_detail %}{% include "partials/bosses.html" %}{% endwith %}</td>
+        <td>
+          {% for person in row.participants %}<span class="chip">{{ person.name }}</span> {% endfor %}
+        </td>
+        <td>
+          {{ row.channel_name or row.channel_id or "—" }}
+          {% if not row.channel_watched %}<div class="status status--at_risk">not watched</div>{% endif %}
+        </td>
+        <td>{{ row.owner_name }}</td>
+        <td>
+          <details>
+            <summary class="btn">Edit</summary>
+            <form method="post" action="/fixed/{{ row.id }}/edit" class="filters">
+              <label class="field"><span>Bosses</span>
+                <input name="bosses" value="{{ row.bosses|join(', ') }}" size="16"
+                       hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
+                       hx-target="next .boss-check" hx-swap="innerHTML">
+              </label>
+              <span class="boss-check"></span>
+              <label class="field"><span>Day</span>
+                <select name="day">
+                  {% for name in weekday_names %}
+                  <option value="{{ loop.index0 }}"{% if loop.index0 == row.weekday %} selected{% endif %}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="field"><span>Time</span>
+                <input name="time" value="{{ row.time }}" size="6" class="mono">
+              </label>
+              <label class="field"><span>Note</span>
+                <input name="note" value="{{ row.note or '' }}" size="14">
+              </label>
+              <fieldset class="field">
+                <span class="label">Party</span>
+                <div class="run__people">
+                  {% for member in members %}
+                  <label class="chip">
+                    <input type="checkbox" name="participants" value="{{ member.user_id }}"
+                      {% if member.user_id in row.participants|map(attribute='id')|list %}checked{% endif %}>
+                    {{ member.display_name }}
+                  </label>
+                  {% endfor %}
+                </div>
+              </fieldset>
+              <button class="btn btn--primary" type="submit">Save</button>
+            </form>
+            <form method="post" action="/fixed/{{ row.id }}/delete"
+                  hx-confirm="Remove {{ row.bosses|join(' + ') }} {{ row.weekday_name }} {{ row.time }}? Its upcoming runs are cancelled.">
+              <button class="btn btn--danger" type="submit">Remove</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<hr class="rule">
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Add a weekly timing</h2></div>
+  <form method="post" action="/fixed/new" class="filters">
+    <label class="field"><span>Bosses</span>
+      <input name="bosses" placeholder="hstar, hfa" required size="18"
+             hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
+             hx-target="#new-boss-check" hx-swap="innerHTML">
+    </label>
+    <span class="boss-check" id="new-boss-check"></span>
+    <label class="field"><span>Day</span>
+      <select name="day">
+        {% for name in weekday_names %}<option value="{{ loop.index0 }}">{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Time</span>
+      <input name="time" placeholder="21:30" required size="6" class="mono">
+    </label>
+    <label class="field"><span>Home channel</span>
+      <select name="channel_id" required>
+        {% for channel in channels %}
+        <option value="{{ channel.id }}">{{ channel.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Note</span><input name="note" size="14"></label>
+    <fieldset class="field">
+      <span class="label">Party</span>
+      <div class="run__people">
+        {% for member in members %}
+        <label class="chip">
+          <input type="checkbox" name="participants" value="{{ member.user_id }}"> {{ member.display_name }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <button class="btn btn--primary" type="submit">Add timing</button>
+  </form>
+  {% if not channels %}
+  <p class="flash flash--error">No watched channel is visible right now, so a new timing has
+    nowhere to post. Set <code>CHAT_CHANNEL_IDS</code> or <code>CHAT_CATEGORY_IDS</code>, and check
+    the bot is connected.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% if not schedule.days %}
+<div class="empty">
+  <strong>Nothing scheduled for this week.</strong>
+  Set a baseline timing on the Fixed page, or run <code>/fixed add</code> in a party channel.
+</div>
+{% else %}
+{% for day in schedule.days %}
+<section class="day" id="day-{{ day.runs[0].local_date }}">
+  <h2 class="day__head">
+    <span class="day__name">{{ day.heading }}</span>
+    <span class="day__count">{{ day.runs|length }} run{{ "" if day.runs|length == 1 else "s" }}</span>
+  </h2>
+  <div class="runs">
+    {% for run in day.runs %}
+      {% with index = loop.index0 %}{% include "partials/run.html" %}{% endwith %}
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endif %}

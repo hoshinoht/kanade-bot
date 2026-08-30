@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}Boss scheduler{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/portal.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🗓️</text></svg>">
+{# htmx only makes the actions feel instant. Every control below is also a real
+   form or link, so the page works with the script blocked. #}
+<script src="{{ htmx_src }}" integrity="{{ htmx_sri }}" crossorigin="anonymous"
+        referrerpolicy="no-referrer" defer></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead__inner">
+    <a class="brand" href="/"><span class="brand__mark">BOSS</span> scheduler</a>
+    <div class="masthead__meta">
+      <span title="Guild timezone — every time on this page is in it">{{ tz_name }}</span>
+      {% if caller %}<span>{{ caller.display }}</span>{% endif %}
+      {% if caller %}<a href="/logout">sign out</a>{% endif %}
+    </div>
+    <nav class="nav">
+      {% for key, href, label in nav %}
+      <a href="{{ href }}"{% if key == active %} aria-current="page"{% endif %}>
+        {{ label }}{% if key == "inbox" and pending_count %}<span class="pip">{{ pending_count }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+  </div>
+</header>
+
+<main class="shell">
+{% block content %}{% endblock %}
+  <p class="footnote">
+    <span>All times {{ tz_name }}.</span>
+    <span>Boss week starts {{ reset_label }}.</span>
+    <span>Loopback only — tailnet access is <code>tailscale serve</code>.</span>
+  </p>
+</main>
+</body>
+</html>

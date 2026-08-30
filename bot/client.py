@@ -16,6 +16,7 @@ import discord
 from discord.ext import tasks
 
 from . import formatting
+from .api.server import ApiServer
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
@@ -33,6 +34,7 @@ log = logging.getLogger(__name__)
 CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
+CFG_EXTRACT = "extract_enabled"
 CFG_LAST_WEEK = "last_materialised_week"
 
 #: A person's "can't make it" notice is posted at most this often per run, so a
@@ -62,6 +64,10 @@ class BossBot(discord.Client):
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
         self.extractor = Pipeline(self)
+        # The portal/CLI HTTP API, served on this same loop (DESIGN.md §5) so it
+        # reads live state and drives Discord without a second process fighting
+        # over SQLite. Constructing the bot does not bind the port.
+        self.api = ApiServer(self)
         self.tick.change_interval(seconds=settings.tick_seconds)
 
     # -- runtime config (DB-backed, seeded from env on first run) ----------
@@ -77,6 +83,31 @@ class BossBot(discord.Client):
     @property
     def paused(self) -> bool:
         return (self.repo.get_config(CFG_PAUSED, "0") or "0") == "1"
+
+    @property
+    def extract_enabled(self) -> bool:
+        """Runtime master switch for reading chat, seeded from ``EXTRACT_ENABLED``.
+
+        Kept in the ``config`` table rather than read from the environment so
+        the portal and ``bossctl config set`` can turn the model off without a
+        redeploy, and the choice survives a restart.
+        """
+        default = "1" if self.settings.extract_enabled else "0"
+        return (self.repo.get_config(CFG_EXTRACT, default) or default) == "1"
+
+    @property
+    def portal_actor_id(self) -> str:
+        """Who a portal-driven change is attributed to.
+
+        ``PORTAL_ACTOR_ID`` when set, otherwise the guild owner -- the one
+        account that is always allowed to confirm anything (see
+        :func:`bot.extract.commit.may_commit`).
+        """
+        if self.settings.portal_actor_id is not None:
+            return str(self.settings.portal_actor_id)
+        guild = self.get_guild(self.settings.guild_id)
+        owner_id = getattr(guild, "owner_id", None)
+        return str(owner_id) if owner_id else "0"
 
     def is_admin(self, user: discord.abc.User) -> bool:
         role_id = self.settings.admin_role_id
@@ -110,10 +141,12 @@ class BossBot(discord.Client):
         self._synced = True
         log.info("synced application commands to guild %s", self.settings.guild_id)
         self.tick.start()
+        await self.api.start()
 
     async def close(self) -> None:
         if self.tick.is_running():
             self.tick.cancel()
+        await self.api.stop()
         await self.extractor.shutdown()
         await super().close()
 
@@ -528,19 +561,87 @@ class BossBot(discord.Client):
 
     async def _annotate_card(self, payload: discord.RawReactionActionEvent, notice: str) -> None:
         """Append "✅ applied by X" to the card so its state is visible in the channel."""
+        await self.annotate_message(payload.channel_id, payload.message_id, notice)
+
+    async def annotate_message(
+        self, channel_id: int | str | None, message_id: int | str | None, notice: str
+    ) -> bool:
+        """Append a line to one of the bot's own messages; ``True`` if it stuck.
+
+        Used for "✅ applied by ...", "↪ superseded by a newer card", and the
+        portal's "✅ applied via portal", so a card's state is visible in the
+        channel however the decision was actually made.
+        """
+        if channel_id is None or message_id is None:
+            return False
         try:
-            channel = self.get_channel(payload.channel_id) or await self.fetch_channel(
-                payload.channel_id
-            )
-            message = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
+            channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(message_id))  # type: ignore[union-attr]
             if notice in (message.content or ""):
-                return
+                return True
             await message.edit(
                 content=f"{message.content}\n{notice}",
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException, AttributeError):
-            log.debug("could not annotate the proposal card", exc_info=True)
+            return True
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+            AttributeError,
+            TypeError,
+            ValueError,
+        ):
+            log.debug("could not annotate message %s", message_id, exc_info=True)
+            return False
+
+    async def _mark_superseded(self, retired: list[dict]) -> None:
+        """Put the superseded notice on every card this commit retired."""
+        seen: set[str] = set()
+        for amendment in retired:
+            message_id = amendment.get("proposal_message_id")
+            if not message_id or message_id in seen:
+                continue
+            seen.add(message_id)
+            await self.annotate_message(
+                amendment.get("channel_id"), message_id, formatting.SUPERSEDED_NOTICE
+            )
+
+    # -- weekly digest ----------------------------------------------------
+    async def post_digest(
+        self, channel_id: int | str | None = None, week: str = "this"
+    ) -> discord.Message | None:
+        """Post the whole guild's week (DESIGN.md §3, "Weekly digest").
+
+        Goes to ``channel_id`` if given, else ``POST_CHANNEL_ID``. It names
+        people rather than mentioning them: a guild-wide post must not notify
+        thirty bossers about every party's run.
+        """
+        now = utcnow()
+        ws = (
+            next_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+            if week == "next"
+            else current_week_start(
+                self.tz, self.settings.reset_weekday, self.settings.reset_time, now
+            )
+        )
+        runs = self.repo.list_runs(week_start=ws)
+        channel = await self.post_channel(channel_id)
+        if channel is None:
+            log.error("no channel available for the weekly digest")
+            return None
+        card = formatting.digest_card(
+            runs, ws, self.tz, {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        )
+        try:
+            return await channel.send(
+                card.content,
+                embed=self._embed(card),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except discord.HTTPException:
+            log.exception("failed to post the weekly digest")
+            return None
 
     async def expire_proposals(self, now: datetime) -> None:
         """Drop proposal cards nobody answered (see `bot.extract.commit.PROPOSAL_TTL`)."""

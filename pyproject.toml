@@ -11,12 +11,26 @@ dependencies = [
     "dateparser==1.4.2",
     "PyYAML==6.0.3",
     "ollama==0.6.2",
+    # phase 3: the in-process HTTP API, the portal, and `bossctl`
+    "fastapi==0.141.1",
+    "uvicorn==0.52.4",
+    "jinja2==3.1.6",
+    "itsdangerous==2.2.0",
+    "python-multipart==0.0.32",
+    "python-dotenv==1.2.3",
+    "typer==0.27.2",
+    "httpx==0.28.1",
+    "rich==15.0.0",
 ]
+
+[project.scripts]
+bossctl = "bot.cli:main"
 
 [dependency-groups]
 dev = [
     "pytest==9.1.1",
     "ruff==0.16.5",
+    "respx==0.23.1",
 ]
 
 [build-system]
@@ -39,3 +53,15 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer and FastAPI declare argument metadata as defaults on purpose; that is
+# the whole calling convention, not an accidental shared mutable.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.Form",
+    "fastapi.Query",
+    "typer.Argument",
+    "typer.Option",
+]

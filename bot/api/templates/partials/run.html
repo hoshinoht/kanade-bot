@@ -1,0 +1,53 @@
+{# One run. Swapped in place by htmx after an action; re-rendered whole by the
+   server so the status, the tally and the buttons can never disagree. #}
+<article class="run run--{{ run.status }}" id="run-{{ run.short_id }}" style="animation-delay: {{ (index|default(0)) * 24 }}ms">
+  <div class="run__time">
+    {% if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif %}
+    <small>{{ run.local_day }}</small>
+  </div>
+
+  <div>
+    <p class="run__bosses">{% with detail = run.boss_detail %}{% include "partials/bosses.html" %}{% endwith %}</p>
+    <div class="run__meta">
+      <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
+      <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
+      {% if run.no %}<span class="status status--at_risk mono">{{ run.no }} out</span>{% endif %}
+      {% if run.channel_name %}<span>{{ run.channel_name }}</span>{% endif %}
+      <span class="id">#{{ run.short_id }}</span>
+    </div>
+    <div class="run__people">
+      {% for person in run.participants %}
+      <span class="chip chip--{{ person.rsvp or 'waiting' }}">
+        {{ person.name }}{% if person.rsvp == "yes" %} ✅{% elif person.rsvp == "no" %} ❌{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="run__actions">
+    <form method="post" action="/runs/{{ run.id }}/amend"
+          hx-post="/runs/{{ run.id }}/amend" hx-target="closest .run" hx-swap="outerHTML">
+      <input type="hidden" name="next" value="{{ back }}">
+      <input name="to" placeholder="wed 21:30" size="10" required
+             aria-label="Move run {{ run.short_id }} to a new day and time">
+      <button class="btn" type="submit">Move</button>
+    </form>
+    <form method="post" action="/runs/{{ run.id }}/otot"
+          hx-post="/runs/{{ run.id }}/otot" hx-target="closest .run" hx-swap="outerHTML">
+      <input type="hidden" name="next" value="{{ back }}">
+      <button class="btn" type="submit" title="Own time: stays in the morning ping, no countdowns">Own time</button>
+    </form>
+    <form method="post" action="/runs/{{ run.id }}/ping"
+          hx-post="/runs/{{ run.id }}/ping" hx-target="closest .run" hx-swap="outerHTML">
+      <input type="hidden" name="next" value="{{ back }}">
+      <input type="hidden" name="kind" value="day_of">
+      <button class="btn btn--ghost" type="submit" title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
+    </form>
+    <form method="post" action="/runs/{{ run.id }}/cancel"
+          hx-post="/runs/{{ run.id }}/cancel" hx-target="closest .run" hx-swap="outerHTML"
+          hx-confirm="Cancel {{ run.bosses|join(' + ') }} on {{ run.local_day }}?">
+      <input type="hidden" name="next" value="{{ back }}">
+      <button class="btn btn--danger" type="submit">Cancel</button>
+    </form>
+  </div>
+</article>

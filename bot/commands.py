@@ -806,9 +806,11 @@ async def rescan(interaction: discord.Interaction, hours: int = 24) -> None:
             "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
         )
         return
-    if not bot.settings.extract_enabled:
+    if not bot.extract_enabled:
         await interaction.response.send_message(
-            "❌ The extractor is switched off (`EXTRACT_ENABLED=false`).", ephemeral=True
+            "❌ The extractor is switched off - turn it back on in the portal's Config page, "
+            "or with `bossctl config set extract_enabled true`.",
+            ephemeral=True,
         )
         return
     hours = max(1, min(int(hours), 168))

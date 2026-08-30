@@ -369,3 +369,64 @@ def applied_notice(display_name: str) -> str:
 
 def rejected_notice(display_name: str) -> str:
     return f"❌ rejected by {display_name}"
+
+
+# ---------------------------------------------------------------------------
+# weekly digest (DESIGN.md §3, posted at reset; the portal can post it on demand)
+# ---------------------------------------------------------------------------
+
+COLOUR_DIGEST = 0x5865F2
+
+#: Statuses that mean "nobody has committed to this yet" -- the digest calls
+#: these out, because the reset morning is when they can still be settled.
+UNSETTLED = ("planned", "at_risk")
+
+
+def digest_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
+    """One run inside a digest day, without the `<@id>` mentions.
+
+    The digest covers the whole guild, so it names people rather than pinging
+    them -- 30 bossers must not all get a notification for every party's run.
+    """
+    when = "own time" if run["status"] == "otot" else local_time(run["datetime"], tz)
+    marker = "⚠️ " if run["status"] in UNSETTLED else ""
+    where = f" · <#{run['channel_id']}>" if run.get("channel_id") else ""
+    return (
+        f"{marker}`{when}` **{format_bosses(run['bosses'])}** · "
+        f"{rsvp_tally(run['participants'], rsvps)} · "
+        f"`#{short_id(run['id'])}`{where}"
+    )
+
+
+def digest_card(
+    runs: list[dict],
+    week_start: datetime,
+    tz: ZoneInfo,
+    rsvps_by_run: dict[str, dict[str, str]],
+) -> Card:
+    """The whole guild's week, grouped by day, with anything unsettled marked."""
+    local_ws = week_start.astimezone(tz)
+    live = [r for r in runs if r["status"] != "cancelled"]
+    title = f"🗓️ Boss week of {local_ws.strftime('%a %d %b')}"
+    if not live:
+        return Card(
+            content=title,
+            description="Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+            colour=COLOUR_DIGEST,
+        )
+
+    unsettled = sum(1 for r in live if r["status"] in UNSETTLED)
+    fields = [
+        (heading, "\n".join(digest_line(run, tz, rsvps_by_run.get(run["id"], {})) for run in day))
+        for heading, day in group_by_day(live, tz)
+    ]
+    summary = f"{len(live)} run(s) across {len(fields)} day(s)"
+    if unsettled:
+        summary += f" · **{unsettled}** still unconfirmed ⚠️"
+    return Card(
+        content=title,
+        description=summary,
+        fields=fields,
+        footer="React ✅/❌ on your run's reminders · /schedule scope:mine for just yours",
+        colour=COLOUR_DIGEST,
+    )

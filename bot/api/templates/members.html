@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Members — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Synced from the bossing role</p>
+    <h1>{{ members|length }} bosser{{ "" if members|length == 1 else "s" }}</h1>
+    <p>Aliases are what the extractor matches names against in chat — add the short forms people
+      actually type.</p>
+  </div>
+</div>
+
+{% if flash %}{% include "partials/flash.html" %}{% endif %}
+
+{% if not members %}
+<div class="empty">
+  <strong>The roster is empty.</strong>
+  It syncs from <code>BOSSING_ROLE_ID</code> when the bot connects. Check the startup log line
+  <code>roster synced: N members</code>.
+</div>
+{% else %}
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>Add an alias</th></tr></thead>
+    <tbody>
+      {% for member in members %}
+      <tr>
+        <td><strong>{{ member.display_name }}</strong><div class="id">{{ member.user_id }}</div></td>
+        <td>{{ member.nickname or "—" }}</td>
+        <td>
+          {% for alias in member.aliases %}<span class="chip chip--mono">{{ alias }}</span> {% else %}<span class="id">none</span>{% endfor %}
+        </td>
+        <td class="mono">{{ member.runs_this_week }}</td>
+        <td>
+          <form method="post" action="/members/{{ member.user_id }}/nick" class="filters" style="margin:0">
+            <input name="alias" placeholder="MY" size="8" required aria-label="New alias for {{ member.display_name }}">
+            <button class="btn" type="submit">Add</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

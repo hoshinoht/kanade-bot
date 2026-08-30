@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Config — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Runtime</p>
+    <h1>Config</h1>
+    <p>These four take effect immediately and survive a restart. Everything below them is set in
+      <code>.env</code> and needs a redeploy.</p>
+  </div>
+</div>
+
+{% if flash %}{% include "partials/flash.html" %}{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Pings</h2></div>
+    <form method="post" action="/config" class="filters">
+      <label class="field"><span>Morning ping</span>
+        <input name="day_of_ping_time" value="{{ config.day_of_ping_time }}" size="6" class="mono">
+      </label>
+      <label class="field"><span>Countdowns (minutes)</span>
+        <input name="countdown_minutes" value="{{ config.countdown_minutes }}" size="10" class="mono">
+      </label>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </form>
+    <p class="run__meta">Changing either re-places every ping that has not fired yet.</p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Chat watching</h2></div>
+    <div class="run__actions" style="justify-content: flex-start">
+      <form method="post" action="/config">
+        <input type="hidden" name="paused" value="{{ '0' if config.paused else '1' }}">
+        <button class="btn" type="submit">{{ "Resume watching" if config.paused else "Pause watching" }}</button>
+      </form>
+      <form method="post" action="/config">
+        <input type="hidden" name="extract_enabled" value="{{ '0' if config.extract_enabled else '1' }}">
+        <button class="btn" type="submit">{{ "Turn the extractor on" if not config.extract_enabled else "Turn the extractor off" }}</button>
+      </form>
+    </div>
+    <p class="run__meta">
+      Watching is <strong>{{ "paused" if config.paused else "on" }}</strong> ·
+      extractor <strong>{{ "on" if config.extract_enabled else "off" }}</strong>.
+      Messages are stored either way, so a rescan can catch up later.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Weekly digest</h2></div>
+    <form method="post" action="/digest" class="filters">
+      <label class="field"><span>Week</span>
+        <select name="week"><option value="this">This week</option><option value="next">Next week</option></select>
+      </label>
+      <label class="field"><span>Channel</span>
+        <select name="channel_id">
+          <option value="">POST_CHANNEL_ID</option>
+          {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="btn btn--primary" type="submit">Post it now</button>
+    </form>
+    <p class="run__meta">Posts the whole guild's week. It names people rather than pinging them.</p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Re-read a channel</h2></div>
+    <form method="post" action="/rescan" class="filters">
+      <label class="field"><span>Channel</span>
+        <select name="channel_id" required>
+          {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field"><span>Hours back</span>
+        <input name="hours" value="24" size="4" class="mono">
+      </label>
+      <button class="btn" type="submit">Rescan</button>
+    </form>
+    <p class="run__meta">Runs the extractor over stored history and posts a card for anything it finds.</p>
+  </section>
+</div>
+
+<hr class="rule">
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Set in <code>.env</code></h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
+        <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
+        <tr><th>Model</th><td class="mono">{{ config.model }}</td></tr>
+        <tr><th>Ollama</th><td class="mono">{{ config.ollama_host }}</td></tr>
+        <tr><th>Minimum confidence</th><td class="mono">{{ config.min_confidence }}</td></tr>
+        <tr><th>Digest channel</th><td class="mono">{{ config.post_channel_id or "not set" }}</td></tr>
+        <tr><th>Watched channels</th><td class="mono">{{ config.watched_channels|join(", ") or "none" }}</td></tr>
+        <tr><th>Watched categories</th><td class="mono">{{ config.watched_categories|join(", ") or "none" }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

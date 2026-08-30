@@ -95,9 +95,26 @@ class Settings(BaseSettings):
     #: Below this, an extracted amendment is logged but never posted.
     extract_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
 
-    # --- phase 3 (parsed now, unused until the portal lands) -------------
+    # --- phase 3: the portal + `bossctl` ---------------------------------
+    #: Bearer token for the HTTP API. Empty means the API starts but refuses
+    #: every non-health request, so a half-configured deployment fails loudly
+    #: instead of quietly serving the schedule to whoever can reach the port.
     admin_token: str = ""
+    #: Tailscale logins allowed through `tailscale serve`, comma separated.
     allowed_tailscale_logins: str = ""
+    #: Trust `Tailscale-User-Login` on requests arriving from the host. Off by
+    #: default: without `tailscale serve` in front, the header is just a string
+    #: anyone can send. See README "Portal & CLI".
+    trust_tailscale_headers: bool = False
+    #: Discord user id credited for changes made in the portal. Defaults to the
+    #: guild owner when unset.
+    portal_actor_id: int | None = None
+    #: Interface the API binds. ``127.0.0.1`` is right when the bot runs
+    #: natively on this Mac. **Inside the container it must be ``0.0.0.0``** --
+    #: compose sets it -- because the loopback of a container namespace is not
+    #: the host's; the "loopback only" guarantee comes from the compose port
+    #: mapping ``127.0.0.1:8080:8080``, not from this value.
+    api_host: str = "127.0.0.1"
     api_port: int = 8080
 
     log_level: str = "INFO"
@@ -119,6 +136,11 @@ class Settings(BaseSettings):
         cleaned: dict[str, Any] = {}
         for key, value in values.items():
             if not isinstance(value, str) or str(key).lower() in _VERBATIM:
+                # A secret is whatever was pasted, `#` included -- but a line
+                # left as `ADMIN_TOKEN=   # generate with ...` is a comment, not
+                # a token, and must read as "unset" rather than authenticate.
+                if isinstance(value, str) and value.strip().startswith("#"):
+                    continue
                 cleaned[key] = value
                 continue
             text = _INLINE_COMMENT_RE.sub("", value).strip()
@@ -211,7 +233,7 @@ class Settings(BaseSettings):
 
     @property
     def allowed_login_list(self) -> list[str]:
-        return [p.strip() for p in self.allowed_tailscale_logins.split(",") if p.strip()]
+        return [p.strip().lower() for p in self.allowed_tailscale_logins.split(",") if p.strip()]
 
 
 @lru_cache(maxsize=1)

@@ -308,7 +308,14 @@ class Repo:
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, isolation_level=None)
+        # `check_same_thread=False`: the connection is created wherever the
+        # process happens to start (``python -m bot`` builds it inside
+        # ``asyncio.run``; a test builds it on the pytest thread) and then used
+        # from the bot's event loop. There is exactly one connection and one
+        # user of it at a time -- every HTTP handler in `bot.api` is `async def`
+        # so it runs on that loop rather than in FastAPI's worker threadpool,
+        # which `tests/test_api_app.py::test_every_route_is_async` enforces.
+        self._conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -968,6 +975,18 @@ class Repo:
             (str(message_id) if message_id is not None else None, amendment_id),
         )
 
+    def set_amendment_datetime(self, amendment_id: str, new_datetime: datetime | None) -> None:
+        """Overwrite the instant a proposal would move a run to.
+
+        Used by the portal's "edit, then approve": the reader corrects the time
+        the extractor read, and the correction -- not the model's value -- is
+        what `commit()` then applies.
+        """
+        self._conn.execute(
+            "UPDATE amendments SET new_datetime = ? WHERE id = ?",
+            (to_iso(new_datetime) if new_datetime else None, amendment_id),
+        )
+
     def set_amendment_run(self, amendment_id: str, run_id: str | None) -> None:
         self._conn.execute("UPDATE amendments SET run_id = ? WHERE id = ?", (run_id, amendment_id))
 
@@ -1063,11 +1082,22 @@ class Repo:
         rows = self._conn.execute(
             "SELECT * FROM extractions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
         )
-        out = []
-        for row in rows:
-            data = dict(row)
-            data["at"] = from_iso(data["at"])
-            data["message_ids"] = _json_list(data["message_ids"])
-            data["amendment_ids"] = _json_list(data["amendment_ids"])
-            out.append(data)
-        return out
+        return [self._extraction(row) for row in rows]
+
+    def get_extraction(self, extraction_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM extractions WHERE id = ?", (extraction_id,)
+        ).fetchone()
+        return self._extraction(row) if row else None
+
+    def list_extraction_ids(self) -> list[str]:
+        """Every extraction id, newest first -- what a short-prefix lookup resolves against."""
+        return [r["id"] for r in self._conn.execute("SELECT id FROM extractions ORDER BY at DESC")]
+
+    @staticmethod
+    def _extraction(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["at"] = from_iso(data["at"])
+        data["message_ids"] = _json_list(data["message_ids"])
+        data["amendment_ids"] = _json_list(data["amendment_ids"])
+        return data
