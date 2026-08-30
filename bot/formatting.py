@@ -219,3 +219,153 @@ def fixed_run_line(fixed: dict, table: object | None = None) -> str:
         # Full in-game names, so "HFA" is unambiguous to someone new to the party.
         line += f"\n   ↳ {table.describe_all(fixed['bosses'])}"
     return line
+
+
+# ---------------------------------------------------------------------------
+# extractor proposal cards (DESIGN.md §2.3, §2b.3)
+# ---------------------------------------------------------------------------
+
+COLOUR_PROPOSAL = 0xEB459E  # fuchsia
+COLOUR_SUGGESTION = 0xFAA61A  # orange -- something is still unanswered
+COLOUR_FIXED = 0x9B59B6  # purple -- a recurring timing
+
+CONFIRM_HINT = f"React {EMOJI_YES} to confirm, {EMOJI_NO} to reject, or use `/amend` to edit."
+
+#: Header per card kind: (emoji + title, colour).
+PROPOSAL_HEADERS: dict[str, tuple[str, int]] = {
+    "proposal": ("📋 Proposed change", COLOUR_PROPOSAL),
+    "suggestion": ("💡 Suggested amendment", COLOUR_SUGGESTION),
+    "fix": ("📌 New fixed timing", COLOUR_FIXED),
+}
+
+#: What each amendment kind reads as on a card.
+KIND_VERB: dict[str, str] = {
+    "move": "move",
+    "add": "new run",
+    "cancel": "cancel",
+    "split": "split",
+    "otot": "own time",
+    "sub": "stand-in",
+    "fix": "fixed timing",
+    "rsvp": "answer",
+}
+
+TBD = "**TBD**"
+
+
+def when_text(amendment: dict, tz: ZoneInfo) -> str:
+    """The new day/time, falling back to the words that were actually written.
+
+    Never invents a value: a day with no time reads "Wed 02 Sep — time **TBD**",
+    and nothing at all reads **TBD**, which is what DESIGN.md §2b.1 requires.
+    """
+    new_at = amendment.get("new_datetime")
+    if new_at is not None:
+        return f"**{local_day(new_at, tz)} {local_time(new_at, tz)}**"
+    day_ref, time_ref = amendment.get("day_ref"), amendment.get("time_ref")
+    if day_ref and time_ref:
+        return f"**{day_ref} {time_ref}** (couldn't read that as a date)"
+    if day_ref:
+        return f"**{day_ref}** — time {TBD}"
+    if time_ref:
+        return f"**{time_ref}** — day {TBD}"
+    return TBD
+
+
+def proposal_line(amendment: dict, run: dict | None, tz: ZoneInfo) -> tuple[str, str]:
+    """``(field name, field value)`` for one amendment on a card."""
+    bosses = format_bosses(amendment["bosses"] or (run["bosses"] if run else []))
+    verb = KIND_VERB.get(amendment["kind"], amendment["kind"])
+    name = f"{verb} · {bosses}"
+    if run is not None:
+        name += f" · `#{short_id(run['id'])}`"
+
+    lines: list[str] = []
+    kind = amendment["kind"]
+    if kind in ("move", "add", "split", "fix"):
+        old = (
+            f"~~{local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}~~ → "
+            if run is not None and kind == "move"
+            else ""
+        )
+        lines.append(old + when_text(amendment, tz))
+    elif kind == "cancel":
+        lines.append("**off this week**")
+    elif kind == "otot":
+        lines.append("**own time** — stays on the schedule, no countdown pings")
+    elif kind == "sub":
+        lines.append("**stand-in wanted** " + format_participants(amendment["participants"]))
+    else:  # pragma: no cover - rsvp never reaches a card
+        lines.append(when_text(amendment, tz))
+
+    who = amendment["participants"] or (run["participants"] if run else [])
+    if who and kind != "sub":
+        lines.append(format_participants(who))
+    if amendment.get("summary"):
+        lines.append(f"_{amendment['summary']}_")
+    return name, "\n".join(lines)
+
+
+def card_kind(amendments: list[dict]) -> str:
+    """Which header this burst's card gets."""
+    if amendments and all(a["kind"] == "fix" for a in amendments):
+        return "fix"
+    unresolved = any(a.get("is_question") or a.get("new_datetime") is None for a in amendments)
+    return "suggestion" if unresolved else "proposal"
+
+
+def proposal_card(
+    amendments: list[dict],
+    runs: dict[str, dict],
+    tz: ZoneInfo,
+    unanswered: list[str] | None = None,
+    confidence: float | None = None,
+) -> Card:
+    """One card for a whole burst -- one embed field per amendment.
+
+    ``runs`` maps ``amendment["run_id"]`` to the run it targets.  ``unanswered``
+    is the people a field is still waiting on; per DESIGN.md §2b.1 they are named
+    rather than assumed, and no value is ever filled in on their behalf.
+    """
+    kind = card_kind(amendments)
+    title, colour = PROPOSAL_HEADERS[kind]
+
+    mentioned = everyone_on(
+        [
+            {
+                "participants": a["participants"]
+                or (runs.get(a["run_id"]) or {}).get("participants", [])
+            }
+            for a in amendments
+        ]
+    )
+    content = f"{title}\n{format_participants(mentioned)}" if mentioned else title
+
+    fields = [proposal_line(a, runs.get(a["run_id"]), tz) for a in amendments]
+    footer = CONFIRM_HINT
+    if confidence is not None:
+        footer += f"  (confidence {confidence:.2f})"
+
+    description = None
+    if unanswered:
+        description = "Not yet answered: " + format_participants(unanswered)
+    return Card(
+        content=content,
+        description=description,
+        fields=fields,
+        footer=footer,
+        colour=colour,
+    )
+
+
+#: Put on a card that a newer card (or a committed sibling) has retired, so a
+#: ✅ on it can never re-apply a change the group has already moved past.
+SUPERSEDED_NOTICE = "↪ superseded by a newer card"
+
+
+def applied_notice(display_name: str) -> str:
+    return f"✅ applied by {display_name}"
+
+
+def rejected_notice(display_name: str) -> str:
+    return f"❌ rejected by {display_name}"

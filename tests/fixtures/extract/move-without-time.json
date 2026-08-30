@@ -1,0 +1,131 @@
+{
+  "name": "move-without-time",
+  "note": "The same proposal with no time stated: both the Monday and the Tuesday run move, the day is known, the time stays TBD, and it is still a question.",
+  "channel": "party-hstar",
+  "tz": "Asia/Kuala_Lumpur",
+  "roster": [
+    {
+      "id": "100000000000000001",
+      "name": "A"
+    },
+    {
+      "id": "100000000000000002",
+      "name": "B"
+    },
+    {
+      "id": "100000000000000003",
+      "name": "C"
+    },
+    {
+      "id": "100000000000000004",
+      "name": "D"
+    },
+    {
+      "id": "100000000000000005",
+      "name": "E"
+    },
+    {
+      "id": "100000000000000006",
+      "name": "F"
+    }
+  ],
+  "fixed_runs": [
+    {
+      "id": "f0000001",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "weekday": "mon",
+      "time": "21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "id": "f0000002",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "weekday": "tue",
+      "time": "23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "id": "a1a1a1a1",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "at": "2026-08-31 21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ],
+      "fixed": "f0000001"
+    },
+    {
+      "id": "b2b2b2b2",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "at": "2026-09-01 23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ],
+      "fixed": "f0000002"
+    }
+  ],
+  "context": [],
+  "messages": [
+    {
+      "id": "201",
+      "author": "A",
+      "at": "2026-08-30 11:50",
+      "text": "sorry mon and tuesday suddenly got things on can change to wed?"
+    }
+  ],
+  "expected": [
+    {
+      "kind": "move",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "resolved_local_datetime": null,
+      "participants": [],
+      "is_question": true,
+      "rsvp": null,
+      "resolved_local_day": "2026-09-02"
+    },
+    {
+      "kind": "move",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "resolved_local_datetime": null,
+      "participants": [],
+      "is_question": true,
+      "rsvp": null,
+      "resolved_local_day": "2026-09-02"
+    }
+  ]
+}

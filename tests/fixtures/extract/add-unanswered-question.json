@@ -1,0 +1,117 @@
+{
+  "name": "add-unanswered-question",
+  "note": "DESIGN §8 row 4: a proposal with no day and no time. It must come back as a question, not a run.",
+  "channel": "party-hstar",
+  "tz": "Asia/Kuala_Lumpur",
+  "roster": [
+    {
+      "id": "100000000000000001",
+      "name": "A"
+    },
+    {
+      "id": "100000000000000002",
+      "name": "B"
+    },
+    {
+      "id": "100000000000000003",
+      "name": "C"
+    },
+    {
+      "id": "100000000000000004",
+      "name": "D"
+    },
+    {
+      "id": "100000000000000005",
+      "name": "E"
+    },
+    {
+      "id": "100000000000000006",
+      "name": "F"
+    }
+  ],
+  "fixed_runs": [
+    {
+      "id": "f0000001",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "weekday": "mon",
+      "time": "21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "id": "f0000002",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "weekday": "tue",
+      "time": "23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "id": "a1a1a1a1",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "at": "2026-08-31 21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ],
+      "fixed": "f0000001"
+    },
+    {
+      "id": "b2b2b2b2",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "at": "2026-09-01 23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ],
+      "fixed": "f0000002"
+    }
+  ],
+  "context": [],
+  "messages": [
+    {
+      "id": "501",
+      "author": "D",
+      "at": "2026-08-27 18:23",
+      "text": "<@100000000000000003> <@100000000000000002> u know our trio Nstar pt right, do u guys wanna try do trio ncarling also together?"
+    }
+  ],
+  "expected": [
+    {
+      "kind": "add",
+      "bosses": [
+        "NCarling"
+      ],
+      "resolved_local_datetime": null,
+      "participants": [],
+      "is_question": true,
+      "rsvp": null
+    }
+  ]
+}

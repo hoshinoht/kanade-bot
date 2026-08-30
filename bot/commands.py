@@ -24,6 +24,7 @@ from .materialise import refresh_run_reminders
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
 from .util import can_modify_fixed, can_modify_run, mention, resolve_participant_text
+from .watch import origin_ids
 from .weeks import (
     WEEKDAY_NAMES,
     current_week_start,
@@ -788,6 +789,55 @@ async def rsvp(
         await bot.retract_decline(run, interaction.user.id)
 
 
+@app_commands.command(
+    name="rescan", description="Re-read this channel's recent chat and propose any changes"
+)
+@app_commands.describe(hours="How far back to read (default 24, max 168)")
+@require_role()
+async def rescan(interaction: discord.Interaction, hours: int = 24) -> None:
+    bot = _bot(interaction)
+    if not bot.is_watched(interaction.channel):
+        await interaction.response.send_message(
+            "❌ This channel isn't watched, so there's nothing stored to re-read.", ephemeral=True
+        )
+        return
+    if bot.paused:
+        await interaction.response.send_message(
+            "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
+        )
+        return
+    if not bot.settings.extract_enabled:
+        await interaction.response.send_message(
+            "❌ The extractor is switched off (`EXTRACT_ENABLED=false`).", ephemeral=True
+        )
+        return
+    hours = max(1, min(int(hours), 168))
+
+    await interaction.response.defer(ephemeral=True)
+    channel_id, _thread = origin_ids(interaction.channel)
+    plan = await bot.extractor.rescan(channel_id, hours=hours)
+    await interaction.followup.send(_rescan_summary(plan, hours), ephemeral=True)
+
+
+def _rescan_summary(plan, hours: int) -> str:
+    """Wording shared by `/rescan` and `/debug extract`."""
+    if plan is None:
+        return f"Nothing in the last {hours}h looked like scheduling, so the model wasn't asked."
+    if plan.error:
+        return f"❌ The model didn't answer: {plan.error}"
+    if not plan.planned:
+        return f"Read the last {hours}h ({plan.latency_ms} ms): no change found." + (
+            f"\n_{plan.summary}_" if plan.summary else ""
+        )
+    lines = [
+        f"• `{p.kind}` {formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
+        f" ({p.amendment.confidence:.2f})"
+        for p in plan.planned
+    ]
+    dropped = f"\n{len(plan.dropped)} below threshold or unmatched." if plan.dropped else ""
+    return f"Read the last {hours}h ({plan.latency_ms} ms):\n" + "\n".join(lines) + dropped
+
+
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
 @app_commands.describe(user="The member", alias="What they get called in chat, e.g. `MY`")
 @require_role()
@@ -863,6 +913,6 @@ def register_commands(bot: BossBot) -> None:
     tree.add_command(FixedGroup())
     tree.add_command(BotGroup())
     tree.add_command(DebugGroup())
-    for command in (schedule, amend, cancel, otot, rsvp, nick, pingtime):
+    for command in (schedule, amend, cancel, otot, rsvp, nick, pingtime, rescan):
         tree.add_command(command)
     tree.on_error = on_app_command_error

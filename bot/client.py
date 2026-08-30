@@ -19,6 +19,8 @@ from . import formatting
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
+from .extract.commit import CommitResult, commit, expire_stale, may_commit, reject
+from .extract.pipeline import Pipeline
 from .materialise import DAY_OF, countdown_minutes, is_stale, materialise_week, reconcile_day_of
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
@@ -57,6 +59,9 @@ class BossBot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
         self._synced = False
         self._warned_manage_messages = False
+        # The chat extractor: buffers each channel's messages and runs one model
+        # call per burst. Constructing it does not touch Ollama.
+        self.extractor = Pipeline(self)
         self.tick.change_interval(seconds=settings.tick_seconds)
 
     # -- runtime config (DB-backed, seeded from env on first run) ----------
@@ -109,6 +114,7 @@ class BossBot(discord.Client):
     async def close(self) -> None:
         if self.tick.is_running():
             self.tick.cancel()
+        await self.extractor.shutdown()
         await super().close()
 
     async def on_ready(self) -> None:
@@ -155,9 +161,10 @@ class BossBot(discord.Client):
 
     # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
-        """Log messages from watched channels.
+        """Store messages from watched channels, then offer them to the extractor.
 
-        Phase 1 only stores them; the phase-2 extractor reads the table back.
+        Storing happens whether or not extraction is enabled, so `/rescan` can
+        always look back over history that was captured while it was paused.
         """
         if message.author.bot or message.guild is None:
             return
@@ -175,6 +182,10 @@ class BossBot(discord.Client):
             message.created_at,
             message.content,
         )
+        try:
+            await self.extractor.offer(message)
+        except Exception:  # pragma: no cover - chat must never break the bot
+            log.exception("extractor rejected a message")
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
@@ -215,6 +226,7 @@ class BossBot(discord.Client):
             if self._week_rolled_over(now):
                 log.info("boss week rolled over; materialising")
                 self.materialise_weeks()
+            await self.expire_proposals(now)
             await self.dispatch_reminders(now)
         except Exception:  # pragma: no cover - keep the loop alive
             log.exception("tick failed")
@@ -369,6 +381,10 @@ class BossBot(discord.Client):
             self.repo.debug_messages_for(payload.message_id)
         )
         if not sources:
+            # ...and a ✅ on a proposal card is a confirmation, not an RSVP.
+            proposals = self.repo.amendments_by_message(payload.message_id)
+            if proposals and added:
+                await self._handle_proposal_reaction(payload, proposals, emoji)
             return
 
         declines: list[dict] = []
@@ -407,6 +423,134 @@ class BossBot(discord.Client):
                     channel_id=payload.channel_id,
                     reference_id=payload.message_id,
                 )
+
+    # -- proposal cards ---------------------------------------------------
+    async def _handle_proposal_reaction(
+        self, payload: discord.RawReactionActionEvent, proposals: list[dict], emoji: str
+    ) -> None:
+        """✅/❌ on an extractor card: commit or reject every amendment on it.
+
+        Only a participant of the run being changed (or an admin, or the guild
+        owner) counts; anyone else's reaction is ignored in silence, exactly as a
+        reaction from a non-participant is on a reminder.
+        """
+        actor = payload.user_id
+        member = payload.member
+        is_admin = self.is_admin(member) if member is not None else False
+        guild = self.get_guild(self.settings.guild_id)
+        is_owner = guild is not None and guild.owner_id == actor
+        # The role is the outer gate: a card that names nobody (a new run, a new
+        # fixed timing) must not be confirmable by whoever happens to be in the
+        # channel. `has_bossing_role` reads the live member when there is one and
+        # falls back to the synced roster when there is not.
+        has_role = (
+            self.has_bossing_role(member) if member is not None else self.repo.has_role(actor)
+        )
+
+        open_proposals = [a for a in proposals if a["status"] == "proposed"]
+        if not open_proposals:
+            return
+        allowed = [
+            a
+            for a in open_proposals
+            if may_commit(
+                a,
+                self.repo.get_run(a["run_id"]) if a["run_id"] else None,
+                actor,
+                has_role=has_role,
+                is_admin=is_admin,
+                is_owner=is_owner,
+            )
+        ]
+        if not allowed:
+            log.info("ignoring %s on a proposal card from %s: not theirs to confirm", emoji, actor)
+            return
+
+        name = self._display_name(payload)
+        if emoji == EMOJI_NO:
+            for amendment in allowed:
+                reject(self.repo, amendment)
+            await self._annotate_card(payload, formatting.rejected_notice(name))
+            return
+
+        results = [await self._commit_one(amendment, actor, payload) for amendment in allowed]
+        applied = [r for r in results if r.applied]
+        problems = [r.problem for r in results if r.problem]
+        if applied:
+            await self._annotate_card(payload, formatting.applied_notice(name))
+        if problems:
+            channel = await self.post_channel(payload.channel_id)
+            if channel is not None:
+                await self.post_plain(
+                    channel,
+                    "⚠️ " + "; ".join(problems),
+                    [],
+                    reference_id=payload.message_id,
+                )
+
+    async def _commit_one(
+        self, amendment: dict, actor: int | str, payload: discord.RawReactionActionEvent
+    ) -> CommitResult:
+        # A card can carry several amendments for one run; committing the first
+        # supersedes the rest, and a superseded row must not then be applied.
+        fresh = self.repo.get_amendment(amendment["id"])
+        if fresh is None or fresh["status"] != "proposed":
+            return CommitResult(amendment_id=amendment["id"], kind=amendment["kind"])
+        result = commit(
+            self.repo,
+            amendment,
+            tz=self.tz,
+            reset_weekday=self.settings.reset_weekday,
+            reset_time=self.settings.reset_time,
+            ping_time=self.ping_time,
+            countdowns=self.countdowns,
+            actor_id=actor,
+            channel_id=amendment.get("channel_id") or payload.channel_id,
+            on_fixed_created=lambda _fixed_id: self.materialise_weeks(),
+        )
+        if not result.applied:
+            return result
+        await self._mark_superseded(result.superseded)
+        # A move is the one change the party needs to see spelled out, and the
+        # phase-1 notice already says it exactly right.
+        if result.kind == "move" and result.run_id:
+            run = self.repo.get_run(result.run_id)
+            if run is not None and result.old_datetime is not None:
+                await self._announce_move(run, result.old_datetime)
+        return result
+
+    async def _announce_move(self, run: dict, old_at: datetime) -> None:
+        channel = await self.post_channel(run["channel_id"])
+        if channel is not None:
+            await self.post_plain(
+                channel, formatting.amend_notice(run, old_at, self.tz), run["participants"]
+            )
+
+    async def _annotate_card(self, payload: discord.RawReactionActionEvent, notice: str) -> None:
+        """Append "✅ applied by X" to the card so its state is visible in the channel."""
+        try:
+            channel = self.get_channel(payload.channel_id) or await self.fetch_channel(
+                payload.channel_id
+            )
+            message = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
+            if notice in (message.content or ""):
+                return
+            await message.edit(
+                content=f"{message.content}\n{notice}",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException, AttributeError):
+            log.debug("could not annotate the proposal card", exc_info=True)
+
+    async def expire_proposals(self, now: datetime) -> None:
+        """Drop proposal cards nobody answered (see `bot.extract.commit.PROPOSAL_TTL`)."""
+        for amendment in expire_stale(self.repo, now):
+            log.info(
+                "expired %s proposal %s (posted %s)",
+                amendment["kind"],
+                amendment["id"][:8],
+                amendment["created_at"],
+            )
 
     async def _drop_opposite_reaction(
         self, payload: discord.RawReactionActionEvent, emoji: str

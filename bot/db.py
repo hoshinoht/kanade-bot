@@ -30,7 +30,10 @@ SCHEMA_VERSION = 3
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
-AMENDMENT_STATUSES = ("proposed", "confirmed", "rejected", "expired")
+#: `superseded` = a newer card about the same run replaced this one, or a sibling
+#: amendment for the run was committed. Kept rather than deleted so the
+#: extraction log still shows what was proposed and why it never applied.
+AMENDMENT_STATUSES = ("proposed", "confirmed", "rejected", "expired", "superseded")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -814,3 +817,257 @@ class Repo:
                 content,
             ),
         )
+
+    def get_message(self, message_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (str(message_id),)
+        ).fetchone()
+        return self._message(row) if row else None
+
+    def recent_messages(
+        self,
+        channel_id: int | str,
+        since: datetime,
+        until: datetime | None = None,
+        unprocessed_only: bool = False,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """One channel's stored messages in ``[since, until)``, oldest first.
+
+        ``limit`` keeps the *newest* rows (the tail of the window), because that
+        is what a prompt wants when a channel has been busy.
+        """
+        sql = "SELECT * FROM messages WHERE channel_id = ? AND created_at >= ?"
+        params: list[Any] = [str(channel_id), to_iso(since)]
+        if until is not None:
+            sql += " AND created_at < ?"
+            params.append(to_iso(until))
+        if unprocessed_only:
+            sql += " AND processed_at IS NULL"
+        sql += " ORDER BY created_at, id"
+        rows = [self._message(r) for r in self._conn.execute(sql, params)]
+        return rows[-limit:] if limit is not None and limit >= 0 else rows
+
+    def mark_messages_processed(
+        self, message_ids: Sequence[int | str], at: datetime | None = None
+    ) -> None:
+        stamp = to_iso(at or utcnow())
+        self._conn.executemany(
+            "UPDATE messages SET processed_at = ? WHERE id = ?",
+            [(stamp, str(mid)) for mid in message_ids],
+        )
+
+    @staticmethod
+    def _message(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["created_at"] = from_iso(data["created_at"])
+        data["processed_at"] = from_iso(data["processed_at"]) if data["processed_at"] else None
+        return data
+
+    # -- amendments (the chat extractor's proposals) -----------------------
+    def create_amendment(
+        self,
+        week_start: datetime,
+        kind: str,
+        bosses: Sequence[str] = (),
+        run_id: str | None = None,
+        new_datetime: datetime | None = None,
+        participants: Sequence[int | str] = (),
+        confidence: float | None = None,
+        evidence_msg_ids: Sequence[int | str] = (),
+        channel_id: int | str | None = None,
+        is_question: bool = False,
+        rsvp: str | None = None,
+        day_ref: str | None = None,
+        time_ref: str | None = None,
+        summary: str | None = None,
+        payload: dict | None = None,
+        status: str = "proposed",
+    ) -> str:
+        if status not in AMENDMENT_STATUSES:
+            raise ValueError(f"unknown amendment status {status!r}")
+        amendment_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO amendments
+                (id, week_start, kind, bosses, run_id, new_datetime, participants, status,
+                 confidence, evidence_msg_ids, proposal_message_id, created_at, channel_id,
+                 is_question, rsvp, day_ref, time_ref, summary, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                amendment_id,
+                to_iso(week_start),
+                kind,
+                _dump(bosses),
+                run_id,
+                to_iso(new_datetime) if new_datetime else None,
+                _dump(str(p) for p in participants),
+                status,
+                confidence,
+                _dump(str(m) for m in evidence_msg_ids),
+                to_iso(utcnow()),
+                str(channel_id) if channel_id is not None else None,
+                int(bool(is_question)),
+                rsvp,
+                day_ref,
+                time_ref,
+                summary,
+                json.dumps(payload or {}),
+            ),
+        )
+        return amendment_id
+
+    def get_amendment(self, amendment_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM amendments WHERE id = ?", (amendment_id,)
+        ).fetchone()
+        return self._amendment(row) if row else None
+
+    def amendments_by_message(self, message_id: int | str) -> list[dict]:
+        """Every amendment on one proposal card -- a burst posts one card for all of them."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE proposal_message_id = ? ORDER BY created_at, id",
+            (str(message_id),),
+        )
+        return [self._amendment(r) for r in rows]
+
+    def list_amendments(
+        self,
+        status: str | None = None,
+        channel_id: int | str | None = None,
+        week_start: datetime | None = None,
+    ) -> list[dict]:
+        sql = "SELECT * FROM amendments"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(str(channel_id))
+        if week_start is not None:
+            clauses.append("week_start = ?")
+            params.append(to_iso(week_start))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at, id"
+        return [self._amendment(r) for r in self._conn.execute(sql, params)]
+
+    def set_amendment_status(self, amendment_id: str, status: str) -> None:
+        if status not in AMENDMENT_STATUSES:
+            raise ValueError(f"unknown amendment status {status!r}")
+        self._conn.execute("UPDATE amendments SET status = ? WHERE id = ?", (status, amendment_id))
+
+    def set_amendment_proposal_message(
+        self, amendment_id: str, message_id: int | str | None
+    ) -> None:
+        self._conn.execute(
+            "UPDATE amendments SET proposal_message_id = ? WHERE id = ?",
+            (str(message_id) if message_id is not None else None, amendment_id),
+        )
+
+    def set_amendment_run(self, amendment_id: str, run_id: str | None) -> None:
+        self._conn.execute("UPDATE amendments SET run_id = ? WHERE id = ?", (run_id, amendment_id))
+
+    def proposed_for_run(self, run_id: str, exclude: str | None = None) -> list[dict]:
+        """Still-`proposed` amendments targeting one run, newest last."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = 'proposed' AND run_id = ? "
+            "ORDER BY created_at, id",
+            (run_id,),
+        )
+        return [self._amendment(r) for r in rows if r["id"] != exclude]
+
+    def proposed_for_bosses(
+        self, channel_id: int | str, bosses: Sequence[str], exclude: str | None = None
+    ) -> list[dict]:
+        """Still-`proposed` amendments in one channel that create the same thing.
+
+        Used for `add`/`fix`, which have no run to key on yet: two cards for the
+        same new run in the same channel are the same proposal.
+        """
+        wanted = {str(b) for b in bosses}
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = 'proposed' AND channel_id = ? "
+            "AND run_id IS NULL ORDER BY created_at, id",
+            (str(channel_id),),
+        )
+        return [
+            row
+            for row in (self._amendment(r) for r in rows)
+            if row["id"] != exclude and {str(b) for b in row["bosses"]} == wanted
+        ]
+
+    def stale_amendments(self, before: datetime, status: str = "proposed") -> list[dict]:
+        """Proposals older than ``before`` -- the tick expires these."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = ? AND created_at < ? ORDER BY created_at",
+            (status, to_iso(before)),
+        )
+        return [self._amendment(r) for r in rows]
+
+    @staticmethod
+    def _amendment(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["bosses"] = _json_list(data["bosses"])
+        data["participants"] = _json_list(data["participants"])
+        data["evidence_msg_ids"] = _json_list(data["evidence_msg_ids"])
+        data["payload"] = json.loads(data["payload"] or "{}")
+        data["is_question"] = bool(data["is_question"])
+        data["week_start"] = from_iso(data["week_start"])
+        data["created_at"] = from_iso(data["created_at"])
+        data["new_datetime"] = from_iso(data["new_datetime"]) if data["new_datetime"] else None
+        return data
+
+    # -- extraction log ----------------------------------------------------
+    def log_extraction(
+        self,
+        model: str,
+        prompt: str,
+        raw_response: str,
+        latency_ms: int | None = None,
+        message_ids: Sequence[int | str] = (),
+        amendment_ids: Sequence[str] = (),
+        at: datetime | None = None,
+    ) -> str:
+        """Record one model call. This is the prompt-tuning tool (DESIGN.md §5)."""
+        extraction_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO extractions
+                (id, at, model, prompt, raw_response, latency_ms, message_ids, amendment_ids)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                extraction_id,
+                to_iso(at or utcnow()),
+                model,
+                prompt,
+                raw_response,
+                int(latency_ms) if latency_ms is not None else None,
+                _dump(str(m) for m in message_ids),
+                _dump(amendment_ids),
+            ),
+        )
+        return extraction_id
+
+    def set_extraction_amendments(self, extraction_id: str, amendment_ids: Sequence[str]) -> None:
+        self._conn.execute(
+            "UPDATE extractions SET amendment_ids = ? WHERE id = ?",
+            (_dump(amendment_ids), extraction_id),
+        )
+
+    def recent_extractions(self, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM extractions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        out = []
+        for row in rows:
+            data = dict(row)
+            data["at"] = from_iso(data["at"])
+            data["message_ids"] = _json_list(data["message_ids"])
+            data["amendment_ids"] = _json_list(data["amendment_ids"])
+            out.append(data)
+        return out

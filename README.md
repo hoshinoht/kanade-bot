@@ -3,11 +3,13 @@
 A Discord bot that keeps a MapleStory guild's weekly boss schedule and posts
 tagged reminders.
 
-**This is phase 1 (the skeleton).** It is fully useful with zero LLM: you set
-baseline timings with `/fixed`, the bot materialises them into concrete runs each
-boss week, and it pings exactly the people on each run — a grouped morning
-message plus countdowns — with ✅/❌ reactions as the attendance record. The chat
-extractor (phase 2) and the web portal / `bossctl` (phase 3) are not built yet.
+**Phases 1 and 2 are built.** You set baseline timings with `/fixed`, the bot
+materialises them into concrete runs each boss week, and it pings exactly the
+people on each run — a grouped morning message plus countdowns — with ✅/❌
+reactions as the attendance record. On top of that it **reads the party's chat**
+with a local LLM and posts a card proposing the change it found; nothing reaches
+the schedule until someone reacts ✅. The web portal / `bossctl` (phase 3) are
+not built yet.
 
 ---
 
@@ -23,6 +25,7 @@ extractor (phase 2) and the web portal / `bossctl` (phase 3) are not built yet.
 | **Reminders**        | One grouped **day-of** message per home channel each morning (one line per run, each tagging only its own participants), plus **countdown** pings at T-1h and T-15m.              |
 | **RSVPs**            | The bot puts ✅/❌ on every reminder. ✅ from everyone → the run is `confirmed`; any ❌ → `at_risk` and the bot replies tagging the rest to reschedule.                               |
 | **Changes**          | `/amend`, `/cancel`, `/otot`, `/rsvp`, `/nick`, `/pingtime`.                                                                                                                      |
+| **Chat extraction**  | A local `gpt-oss:20b` reads the party channels and posts a 📋/💡/📌 card for each change it finds. ✅ from a participant applies it; ❌ rejects it; unanswered cards expire after 24 h. |
 
 Reminders are rows in SQLite, not in-memory jobs, so restarts and rebuilds never
 lose or replay a ping.
@@ -37,9 +40,8 @@ lose or replay a ping.
    like a password. Never commit it.
 3. Still on the **Bot** tab, under *Privileged Gateway Intents*, enable **both**:
    - **Server Members Intent** — the roster is derived from the bossing role.
-   - **Message Content Intent** — not used until phase 2, but enabling it now
-     avoids a second trip. (The bot declares both, so if either is off it exits
-     with a clear error instead of hanging.)
+   - **Message Content Intent** — the extractor reads chat. (The bot declares
+     both, so if either is off it exits with a clear error instead of hanging.)
 4. **OAuth2 → URL Generator**:
    - Scopes: `bot` and `applications.commands`.
    - Bot permissions — exactly these six (permissions integer `274877992000`):
@@ -132,9 +134,10 @@ uv run python -m bot
 /otot run_id:a1b2c3d4           # own time: stays in the morning ping, no countdowns
 /rsvp run_id:a1b2c3d4 answer:no
 
-/nick user:@harbour4417 alias:MY  # chat nickname, used by the phase-2 extractor
+/nick user:@harbour4417 alias:MY  # chat nickname, used by the extractor
 /pingtime time:08:30            # move the morning ping, reschedules pending ones
-/bot pause | /bot resume        # stop/resume chat watching (phase 2)
+/bot pause | /bot resume        # stop/resume chat watching
+/rescan hours:24                # re-read this channel's recent chat and propose
 ```
 
 
@@ -166,6 +169,89 @@ participants, its owner, or `ADMIN_ROLE_ID` members can change it. Bot accounts
 are never rostered and cannot be participants, even if they hold the role.
 
 
+### How the extractor decides
+
+The bot watches the party channels and turns the conversation into schedule
+changes. **The model is an extractor, not the scheduler** — five stages, only one
+of which is the LLM, and a human ends every one of them.
+
+**1. Gate (Python, no model).** Every message is scored for a boss alias, a clock
+time, a weekday or relative day, a scheduling verb, an `@here`, a mention of a
+roster member, or an agreement ("Can", "Ok", "kenot"). Banter is dropped here, so
+a 13 GB model is never woken for "botter again sigh". Boss tokens tolerate the guild's
+spelling — `hlimb`, `nbald`, `bladrix`, `hkarling`, `exkalos`, `hstarr` — but
+`start` never becomes `Star` and `cc9`/`ch7` is a map channel, not a time. Bare
+answers ("Can") only trigger a call if the channel was scheduling in the last 6 h.
+
+**2. Burst.** Gated messages buffer per channel and go to the model together
+after `EXTRACT_DEBOUNCE_SECONDS` of silence — or immediately when a message has a
+mention/@here **and** a boss or a time. One model call per burst, never per
+message. Only messages from people holding the bossing role count.
+
+**3. Model.** One call to Ollama, serialised guild-wide (only ever one at a
+time), constrained by a JSON schema, at `temperature 0` with `keep_alive=-1`.
+The prompt carries the boss table, **that channel's** runs and fixed timings, the
+roster members who actually appear, and the messages with `[msg_id]` prefixes so
+it can cite evidence. It stays around 2k tokens whatever size the guild grows to.
+The model emits `kind`, `bosses`, the **literal words** it saw for the day and
+time (`"weds"`, `"1030~11+pm"`), who it is about, `is_question`, a confidence and
+its evidence message ids. It never computes a date.
+
+**4. Deterministic assembly (Python again).** The per-message pieces are merged
+into one candidate per affected run (latest stated value wins, so "9pm" then
+"amend to 9:45pm" is one run at 21:45). `day_ref`/`time_ref` are resolved against
+the **last evidence message's** local time: `tonight`, `tmr`, `weds`, `next mon`,
+`9:30pm`, `930`, `1030~11+pm`, `at 11`, `11pm onward`. A bare hour of 1–11 means
+pm, because every run here is an evening run; anything unparseable stays `TBD`
+rather than being guessed. Each candidate is then matched to a run by
+**bosses ∩ participants**, scoped to the channel it was said in.
+
+**5. Card, then ✅.** Anything below `EXTRACT_MIN_CONFIDENCE` is logged and never
+posted. Everything else becomes one card per burst in that channel:
+
+- 📋 **Proposed change** — the thread reached a decision.
+- 💡 **Suggested amendment** — it ended on a question, or a field is still
+  unknown. Unknown fields read **TBD** and the card names who has not answered.
+  Nobody's availability is ever inferred from silence or past attendance.
+- 📌 **New fixed timing** — a recurring time was stated ("lock in Tue 1030pm as
+  default"); ✅ creates the fixed run exactly as `/fixed add` would.
+
+✅ from a participant of the target run (or an admin, or the server owner)
+applies it and edits the card to "✅ applied by …"; ❌ rejects it. Anyone else's
+reaction is ignored. Cards nobody answers expire after 24 hours. RSVPs are the
+one exception: "Can" / "kenot" is recorded straight away through the same
+path as a ✅ reaction, because it records an opinion rather than changing a
+schedule.
+
+Every call — prompt, raw JSON, latency, the amendments it produced — is written
+to the `extractions` table. That is the prompt-tuning tool, and phase 3's portal
+will render it.
+
+```
+/rescan hours:24          # re-read this channel's last N hours and propose again
+/debug extract hours:6    # the same, but ephemeral, with the raw JSON, no card
+```
+
+Turn it off with `EXTRACT_ENABLED=false` (messages are still stored) or
+`/bot pause` at runtime. If Ollama is unreachable or slow the extraction is
+logged as failed and nothing else happens — the reminders keep running.
+
+#### Tuning it
+
+```sh
+# replay a real exported channel through the extractor; no Discord, no writes
+uv run python -m bot.extract --file data/exports/<name>.jsonl \
+    --since 2026-06-01 --host http://127.0.0.1:11434
+
+# the regression suite: 14 fixtures of real (anonymised) chat vs the real model
+uv run pytest -m ollama -v
+```
+
+`tests/fixtures/extract/*.json` are the guild's own messages with names reduced
+to single letters and ids replaced by fake snowflakes; each carries the channel's
+runs at the time and the amendments a correct extraction produces. Scoring is
+strict — everything expected must be found and nothing extra invented.
+
 ### Testing it
 
 `/debug` posts the *real* reminder messages on demand so you can check the whole
@@ -180,6 +266,8 @@ members, and ids in `DEBUG_USER_IDS`.
 /debug materialise                    # force current+next week materialisation
 /debug upcoming hours:24              # dry run: what would fire, nothing sent
 /debug status                         # uptime, heartbeat, week, Ollama reachability
+/debug extract hours:6                # run the extractor here and show its raw JSON
+                                      # (ephemeral, and never posts a card)
 /debug clear_test                     # delete this channel's 🧪 TEST messages (24h)
 ```
 
@@ -190,7 +278,7 @@ go `planned → confirmed` or `→ at_risk` end to end.
 
 ## 5. Exporting chat
 
-Phase 2 tunes the extractor against real conversations, which have to be on disk
+The extractor is tuned against real conversations, which have to be on disk
 first. `python -m bot.export` logs in with the **bot token** (never a user token —
 self-botting breaks Discord's ToS), pages channel history, and writes one JSONL
 file per channel into git-ignored `data/exports/`:
@@ -227,9 +315,14 @@ uv run ruff format .
 ```
 
 Tests cover the pure layers — boss-week arithmetic, token parsing,
-materialisation idempotency, reminder generation and pruning, and the
-reaction → RSVP → status transitions. Discord I/O is kept thin on purpose so it
+materialisation idempotency, reminder generation and pruning, the
+reaction → RSVP → status transitions, and every stage of the extractor (gate,
+resolve, merge, match, commit, cards). Discord I/O is kept thin on purpose so it
 needs no mocking.
+
+`uv run pytest` never touches the model. The fixture suite that does is marked
+`ollama` and excluded by default; run it with `uv run pytest -m ollama`, which
+skips itself if Ollama is unreachable.
 
 ### Layout
 
@@ -248,6 +341,17 @@ bot/
   commands.py    slash commands
   export.py      `python -m bot.export` -- channel history -> JSONL
   health.py      container healthcheck
+  extract/       the chat extractor (phase 2)
+    gate.py      keyword gate + boss-token finder (pure, no model)
+    prompt.py    the prompt: boss table, channel runs, roster, messages
+    schema.py    the JSON schema the model is constrained to (pydantic)
+    llm.py       one guarded, serialised call to Ollama
+    merge.py     per-message pieces -> one candidate per run (pure)
+    resolve.py   "weds"/"1030~11+pm" -> a datetime (pure)
+    match.py     amendment -> the run it is about (pure)
+    pipeline.py  per-channel buffering and the whole flow
+    commit.py    ✅ on a card -> the schedule change (pure repo work)
+    __main__.py  `python -m bot.extract` -- offline dry run over an export
 config/bosses.yaml
 tests/
 ```

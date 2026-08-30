@@ -340,6 +340,37 @@ class DebugGroup(app_commands.Group):
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
+    # -- extract -----------------------------------------------------------
+    @app_commands.command(
+        name="extract", description="Run the chat extractor over this channel and show its JSON"
+    )
+    @app_commands.describe(hours="How far back to read (default 6, max 168)")
+    async def extract(self, interaction: discord.Interaction, hours: int = 6) -> None:
+        from .commands import _rescan_summary
+        from .watch import origin_ids
+
+        bot = _bot(interaction)
+        if not bot.is_watched(interaction.channel):
+            await interaction.response.send_message(
+                "❌ This channel isn't watched, so nothing is stored for it.", ephemeral=True
+            )
+            return
+        if bot.paused:
+            await interaction.response.send_message(
+                "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
+            )
+            return
+        hours = max(1, min(int(hours), 168))
+        await interaction.response.defer(ephemeral=True)
+        channel_id, _thread = origin_ids(interaction.channel)
+        # `post=False`: /debug never posts a card, so this is safe to run on a
+        # busy channel without spamming everyone.
+        plan = await bot.extractor.rescan(channel_id, hours=hours, post=False)
+        body = _rescan_summary(plan, hours)
+        if plan is not None and plan.raw:
+            body += f"\n```json\n{plan.raw[:1200]}\n```"
+        await interaction.followup.send(body[:1900], ephemeral=True)
+
     # -- clear_test --------------------------------------------------------
     @app_commands.command(
         name="clear_test", description="Delete this channel's 🧪 TEST messages from the last 24h"
