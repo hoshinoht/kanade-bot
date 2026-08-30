@@ -488,7 +488,28 @@ class Repo:
         ).fetchone()
         return self._fixed(row) if row else None
 
-    def list_fixed_runs(self, participant: str | None = None) -> list[dict]:
+    def list_fixed_runs(
+        self, participant: str | None = None, involving: int | str | None = None
+    ) -> list[dict]:
+        """Every baseline timing, ordered by when it happens.
+
+        ``participant`` narrows to runs someone is *on*.  ``involving`` is the
+        wider "mine": the runs someone is on **or owns**.  Setting a party's
+        timing up does not put you on it (`/fixed add` deliberately does not add
+        the invoker), so filtering on participation alone hides a pilot's or an
+        admin's own timings from them, which reads as data loss.
+        """
+        if involving is not None:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM fixed_runs
+                WHERE owner_id = :uid
+                   OR EXISTS (SELECT 1 FROM json_each(fixed_runs.participants) WHERE value = :uid)
+                ORDER BY weekday, time, id
+                """,
+                {"uid": str(involving)},
+            )
+            return [self._fixed(r) for r in rows]
         rows = self._conn.execute("SELECT * FROM fixed_runs ORDER BY weekday, time, id")
         out = [self._fixed(r) for r in rows]
         if participant is not None:
@@ -572,7 +593,16 @@ class Repo:
         participant: str | None = None,
         channel_id: int | str | None = None,
         include_cancelled: bool = True,
+        involving: int | str | None = None,
+        statuses: Sequence[str] | None = None,
     ) -> list[dict]:
+        """Runs, newest-slot last.
+
+        ``participant`` is "on this run"; ``involving`` also counts runs
+        materialised from a fixed timing the person owns, which is what "mine"
+        means everywhere a human reads it.  ``statuses`` keeps only those
+        statuses -- the callers that hide `done`/`cancelled` pass it.
+        """
         sql = "SELECT * FROM runs"
         params: list[Any] = []
         if week_start is not None:
@@ -582,10 +612,19 @@ class Repo:
         runs = [self._run(r) for r in self._conn.execute(sql, params)]
         if participant is not None:
             runs = [r for r in runs if str(participant) in r["participants"]]
+        if involving is not None:
+            uid = str(involving)
+            owned = {f["id"] for f in self.list_fixed_runs(involving=uid)}
+            runs = [
+                r for r in runs if uid in r["participants"] or (r["fixed_run_id"] or "") in owned
+            ]
         if channel_id is not None:
             runs = [r for r in runs if r["channel_id"] == str(channel_id)]
         if not include_cancelled:
             runs = [r for r in runs if r["status"] != "cancelled"]
+        if statuses is not None:
+            wanted = set(statuses)
+            runs = [r for r in runs if r["status"] in wanted]
         return runs
 
     def set_run_status(self, run_id: str, status: str) -> None:

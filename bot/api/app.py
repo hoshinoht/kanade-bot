@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .deps import Caller
 from .errors import ApiError
+from .jobs import JobRegistry
 from .templating import build_templates
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -56,10 +57,16 @@ def create_app(bot: BossBot) -> FastAPI:
     )
     app.state.bot = bot
     app.state.templates = build_templates(TEMPLATE_DIR, bot)
+    # Long portal actions (a rescan of every party channel) run here and are
+    # polled by the page; see bot/api/jobs.py.
+    app.state.jobs = JobRegistry()
 
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    # Routes before the mount: Starlette matches in registration order, and a
+    # Mount at /static would otherwise swallow /static/portraits/<boss>, which
+    # is served from the bind-mounted config directory rather than from here.
     app.include_router(api_router)
     app.include_router(web_router)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError) -> Response:

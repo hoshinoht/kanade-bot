@@ -1,3 +1,12 @@
+{# One re-read form per channel, referenced by the ⟳ buttons in the rows via
+   `form=`; a form per row would post the same thing several times over. #}
+{% for target in rescan_targets %}
+<form id="reread-{{ target.id }}" method="post" action="/rescan" hidden>
+  <input type="hidden" name="channels" value="{{ target.id }}">
+  <input type="hidden" name="window" value="week">
+</form>
+{% endfor %}
+
 {% if not schedule.days %}
 <div class="empty">
   <strong>Nothing scheduled for this week.</strong>

@@ -59,12 +59,32 @@ class FakeMessage:
         self.channel = channel
 
 
+class FakePermissions:
+    def __init__(self, **flags: bool):
+        self.view_channel = flags.get("view_channel", True)
+        self.send_messages = flags.get("send_messages", True)
+        self.read_message_history = flags.get("read_message_history", True)
+        self.embed_links = flags.get("embed_links", True)
+        self.add_reactions = flags.get("add_reactions", True)
+
+
 class FakeChannel:
     def __init__(self, channel_id: int, name: str, category_id: int | None = None):
         self.id = channel_id
         self.name = name
         self.category_id = category_id
         self.parent = None
+        self.guild = None
+        #: Flip these to simulate a channel the bot can see but not post in.
+        self.permissions = FakePermissions()
+
+    def permissions_for(self, _member):
+        return self.permissions
+
+
+class FakeMe:
+    id = 5555555555555555555
+    name = "YuukiSakuna"
 
 
 class FakeGuild:
@@ -72,18 +92,31 @@ class FakeGuild:
         self.id = GUILD_ID
         self.owner_id = OWNER_ID
         self.text_channels = channels
+        self.me = FakeMe()
+        for channel in channels:
+            channel.guild = self
 
 
 class FakeExtractor:
     """Stands in for :class:`bot.extract.pipeline.Pipeline`."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int, bool]] = []
+        self.calls: list[tuple[str, str, bool]] = []
         self.plan: Any = None
+        self.report: Any = None
 
     async def rescan(self, channel_id, hours=24, post=True):
-        self.calls.append((str(channel_id), hours, post))
+        self.calls.append((str(channel_id), f"{hours}h", post))
         return self.plan
+
+    async def rescan_window(self, channel_id, window="week", post=True):
+        from bot.extract.pipeline import RescanReport
+        from bot.timeutil import utcnow
+
+        self.calls.append((str(channel_id), window, post))
+        if self.report is not None:
+            return self.report
+        return RescanReport(channel_id=str(channel_id), window=window, since=utcnow())
 
 
 class FakeBot:
@@ -102,6 +135,7 @@ class FakeBot:
             UNWATCHED_CHANNEL: FakeChannel(UNWATCHED_CHANNEL, "off-topic"),
         }
         self.guild = FakeGuild([self.channels[WATCHED_CHANNEL], self.channels[OTHER_CHANNEL]])
+        self.user = FakeMe()
 
         # what the bot was asked to do, in order
         self.posts: list[Posted] = []
@@ -109,6 +143,8 @@ class FakeBot:
         self.declines: list[tuple[str, str]] = []
         self.retractions: list[tuple[str, str]] = []
         self.materialised = 0
+        self.backfills: list[tuple[str, Any, Any]] = []
+        self.backfill_count = 0
         self.digest_channel: Any = "unset"
         self.digest_fails = False
         self._next_message_id = 700000000000000000
@@ -163,20 +199,74 @@ class FakeBot:
     def has_bossing_role(self, user) -> bool:
         return self.repo.has_role(getattr(user, "id", user))
 
+    def watched_text_channels(self):
+        """Delegates to the real implementation, so the fake cannot drift from it."""
+        from bot.client import BossBot
+
+        return BossBot.watched_text_channels(self)
+
+    def resolve_channel(self, channel_id):
+        from bot.client import BossBot
+
+        return BossBot.resolve_channel(self, channel_id)
+
     def materialise_weeks(self) -> None:
         self.materialised += 1
+
+    async def backfill(self, channel, since, until=None) -> int:
+        if not self.is_watched(channel):
+            return 0
+        self.backfills.append((str(getattr(channel, "id", channel)), since, until))
+        return self.backfill_count
+
+    async def backfill_channel(self, channel_id, since, until=None) -> int:
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            return 0
+        return await self.backfill(channel, since, until)
 
     # -- discord side effects ---------------------------------------------
     def _message(self, channel) -> FakeMessage:
         self._next_message_id += 1
         return FakeMessage(self._next_message_id, channel)
 
-    async def post_channel(self, channel_id=None):
+    async def find_channel(self, channel_id=None):
+        """Mirrors :meth:`bot.client.BossBot.find_channel`, including its reasons."""
+        from bot.client import ChannelLookup
+
+        problems = []
         for candidate in (channel_id, self.settings.post_channel_id):
-            channel = self.get_channel(candidate) if candidate is not None else None
-            if channel is not None:
-                return channel
-        return None
+            if candidate is None:
+                continue
+            channel = self.get_channel(candidate)
+            if channel is None:
+                problems.append(
+                    f"channel {candidate} does not exist, or the bot is not in that server"
+                )
+                continue
+            if not self.can_send_in(channel):
+                problems.append(
+                    f"the bot has no access to #{channel.name} - grant the YuukiSakuna role "
+                    "View Channel + Send Messages there"
+                )
+                continue
+            return ChannelLookup(channel=channel, problem=None)
+        if not problems:
+            problems.append("no channel was given and POST_CHANNEL_ID is not set in .env")
+        return ChannelLookup(channel=None, problem="; ".join(problems))
+
+    def can_send_in(self, channel):
+        from bot.client import BossBot
+
+        return BossBot.can_send_in(self, channel)
+
+    def access_report(self):
+        from bot.client import BossBot
+
+        return BossBot.access_report(self)
+
+    async def post_channel(self, channel_id=None):
+        return (await self.find_channel(channel_id)).channel
 
     async def post_plain(self, channel, content, mention_users, reference_id=None):
         self.posts.append(

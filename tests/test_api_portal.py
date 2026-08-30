@@ -243,7 +243,8 @@ def test_editing_and_removing_a_fixed_timing_from_the_page(auth, fake_bot, seede
 
 def test_live_boss_validation_returns_chips_or_the_reason(auth):
     good = auth.post("/validate/bosses", data={"bosses": "hstar hfa"})
-    assert 'class="boss boss--h"' in good.text
+    assert 'class="pill pill--h"' in good.text
+    assert "Radiant Malefic Star" in good.text
     bad = auth.post("/validate/bosses", data={"bosses": "hkalos"})
     assert "no Hard difficulty" in bad.text
     assert auth.post("/validate/bosses", data={"bosses": "  "}).text == ""
@@ -297,22 +298,86 @@ def test_posting_the_digest_from_the_config_page(auth, fake_bot, seeded):
     assert "digest" in response.headers["location"]
 
 
-def test_rescanning_from_the_config_page(auth, fake_bot, seeded):
-    response = auth.post(
-        "/rescan",
-        data={"channel_id": str(WATCHED_CHANNEL), "hours": "6"},
-        follow_redirects=False,
-    )
+def finish_rescan(auth, response) -> str:
+    """Wait for a started rescan job and return its finished fragment.
+
+    The job runs as a task on the app's loop, so it is not done the instant the
+    POST returns; polling the fragment is exactly what the page does.
+    """
+    job_id = response.headers["location"].split("job=")[1]
+    for _ in range(50):
+        body = auth.get(f"/rescan/{job_id}").text
+        if "Re-reading" not in body:
+            return body
+    raise AssertionError("the rescan job never finished")
+
+
+def test_rescanning_from_the_config_page_starts_a_job(auth, fake_bot, seeded):
+    response = auth.post("/rescan", data={"window": "2weeks"}, follow_redirects=False)
     assert response.status_code == 303
-    assert fake_bot.extractor.calls == [(str(WATCHED_CHANNEL), 6, True)]
+    assert response.headers["location"].startswith("/config?job=")
+
+
+def test_the_job_reports_every_channel_when_it_finishes(auth, fake_bot, seeded):
+    body = finish_rescan(
+        auth, auth.post("/rescan", data={"window": "week"}, follow_redirects=False)
+    )
+    assert "#hstar-party" in body
+    assert "#xkalos-party" in body
+    assert "card(s) posted" in body
+
+
+def test_an_htmx_rescan_gets_a_fragment_that_polls_itself(auth, fake_bot, seeded):
+    response = auth.post("/rescan", data={"window": "week"}, headers={"HX-Request": "true"})
+    assert response.status_code == 200
+    assert 'id="rescan-job"' in response.text
+    assert "<html" not in response.text
+
+
+def test_only_the_ticked_channels_are_read(auth, fake_bot, seeded):
+    finish_rescan(
+        auth,
+        auth.post(
+            "/rescan",
+            data={"window": "week", "channels": [str(OTHER_CHANNEL)]},
+            follow_redirects=False,
+        ),
+    )
+    assert [c for c, _, _ in fake_bot.extractor.calls] == [str(OTHER_CHANNEL)]
 
 
 def test_rescanning_an_unwatched_channel_comes_back_as_an_error(auth, seeded):
     response = auth.post(
-        "/rescan", data={"channel_id": str(UNWATCHED_CHANNEL)}, follow_redirects=True
+        "/rescan", data={"channels": [str(UNWATCHED_CHANNEL)]}, follow_redirects=True
     )
     assert "flash--error" in response.text
     assert "isn&#39;t watched" in response.text or "isn't watched" in response.text
+
+
+def test_an_unknown_job_is_a_404(auth, seeded):
+    assert auth.get("/rescan/nope").status_code == 404
+
+
+def test_the_config_page_lists_the_channels_to_pick_from(auth, seeded):
+    body = auth.get("/config").text
+    assert "Re-read the party channels" in body
+    assert 'name="channels"' in body
+    assert "leave all unticked for every one" in body
+
+
+def test_the_week_view_can_re_read_one_channel(auth, fake_bot, seeded):
+    body = auth.get("/").text
+    assert f'id="reread-{WATCHED_CHANNEL}"' in body
+    assert 'form="reread-' in body
+    finish_rescan(
+        auth,
+        auth.post(
+            "/rescan",
+            data={"channels": [str(WATCHED_CHANNEL)], "window": "week"},
+            follow_redirects=False,
+        ),
+    )
+    assert [c for c, _, _ in fake_bot.extractor.calls] == [str(WATCHED_CHANNEL)]
 
 
 # --- degradation without htmx ----------------------------------------------
@@ -322,9 +387,12 @@ def test_every_action_in_a_row_is_a_real_form(auth, seeded):
     """With the CDN blocked the page must still work, so nothing is js-only."""
     body = auth.get("/").text
     row = body[body.index('<article class="run') : body.index("</article>")]
-    assert row.count('<form method="post"') == 4
-    assert row.count("hx-post=") == 4
+    # move, preview ping, and the status control -- each a real POST with an
+    # htmx upgrade, and no click handlers anywhere.
+    assert row.count('method="post"') == 3
+    assert row.count("hx-post=") == 3
     assert "onclick" not in row
+    assert row.count('type="submit" name="status"') == 5
 
 
 def test_the_htmx_script_is_pinned_and_has_an_integrity_hash(auth):
@@ -358,3 +426,164 @@ def test_the_api_reference_is_behind_the_same_auth(client, auth):
     assert auth.get("/api/docs").status_code == 200
     schema = auth.get("/api/openapi.json").json()
     assert "/api/schedule" in schema["paths"]
+
+
+def test_the_week_page_says_how_many_past_runs_it_hid(auth, fake_bot, seeded):
+    fake_bot.repo.set_run_status(seeded["run_star"], "done")
+    body = auth.get("/").text
+    assert "1 past or cancelled run hidden" in body
+    assert "show_past=1" in body
+
+
+def test_showing_the_past_offers_the_way_back(auth, fake_bot, seeded):
+    fake_bot.repo.set_run_status(seeded["run_star"], "done")
+    body = auth.get("/?show_past=1").text
+    assert "Hide the past" in body
+    assert "🏁 done" in body
+
+
+# --- difficulty pills and the boss grid (item 4) ----------------------------
+
+
+def test_the_week_row_names_the_boss_and_its_difficulty(auth, seeded):
+    body = auth.get("/").text
+    assert "Radiant Malefic Star" in body
+    assert '<span class="pill pill--h">HARD</span>' in body
+    assert "Lv. 280" in body
+
+
+def test_extreme_and_normal_get_their_own_pill(auth, seeded):
+    body = auth.get("/").text
+    assert '<span class="pill pill--x">EXTREME</span>' in body
+    assert "Gatekeeper Kalos" in body
+
+
+def test_the_bosses_page_lists_the_table_in_level_order(auth, seeded):
+    body = auth.get("/bosses").text
+    order = [body.index(name) for name in ("Chosen Seren", "Radiant Malefic Star", "Jupiter")]
+    assert order == sorted(order)
+    assert "Lv. 260" in body and "Lv. 295" in body
+
+
+def test_the_bosses_page_ticks_what_the_guild_runs(auth, seeded):
+    body = auth.get("/bosses").text
+    assert "pill-toggle--on" in body  # HStar, HFA and XKalos have timings
+    assert 'class="grid-bosses"' in body
+    assert "9 bosses, 25 difficulties" in body
+    assert "<strong>3</strong> ticked" in body
+
+
+def test_the_bosses_page_is_read_only(auth, seeded):
+    body = auth.get("/bosses").text
+    assert "<input" not in body
+    assert "<form" not in body
+
+
+def test_a_boss_with_no_hard_difficulty_offers_no_hard_pill(auth):
+    """Kalos has E/N/C/X in game; the grid must not offer a run nobody can enter."""
+    body = auth.get("/bosses").text
+    row = body[body.index("Gatekeeper Kalos") :]
+    row = row[: row.index("</div>\n  </div>")]
+    assert "EXTREME" in row and "CHAOS" in row
+    assert ">HARD<" not in row
+
+
+def test_the_fixed_page_offers_the_grid_as_a_picker(auth, seeded):
+    body = auth.get("/fixed").text
+    assert 'name="boss_tokens" value="HStar"' in body
+    assert "tap the difficulties this party runs" in body
+
+
+def test_the_editor_pre_ticks_the_bosses_a_timing_already_has(auth, seeded):
+    body = " ".join(auth.get("/fixed").text.split())
+    assert 'value="HStar" checked' in body
+    assert 'value="XSeren" checked' not in body
+
+
+def test_adding_a_timing_from_the_grid(auth, fake_bot, seeded):
+    response = auth.post(
+        "/fixed/new",
+        data={
+            "boss_tokens": ["NCarling", "HFA"],
+            "day": "2",
+            "time": "23:00",
+            "channel_id": str(WATCHED_CHANNEL),
+            "participants": ["1001"],
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    added = next(f for f in fake_bot.repo.list_fixed_runs() if f["weekday"] == 2)
+    assert added["bosses"] == ["NCarling", "HFA"]
+
+
+def test_the_grid_and_the_text_box_are_merged(auth, fake_bot, seeded):
+    auth.post(
+        "/fixed/new",
+        data={
+            "boss_tokens": ["NCarling"],
+            "bosses": "hlimbo",
+            "day": "3",
+            "time": "23:00",
+            "channel_id": str(WATCHED_CHANNEL),
+            "participants": ["1001"],
+        },
+        follow_redirects=False,
+    )
+    added = next(f for f in fake_bot.repo.list_fixed_runs() if f["weekday"] == 3)
+    assert added["bosses"] == ["NCarling", "HLimbo"]
+
+
+def test_editing_a_timing_from_the_grid(auth, fake_bot, seeded):
+    auth.post(
+        f"/fixed/{seeded['fixed_star']}/edit",
+        data={"boss_tokens": ["XKalos"], "day": "0", "time": "21:30", "participants": ["1001"]},
+        follow_redirects=False,
+    )
+    assert fake_bot.repo.get_fixed_run(seeded["fixed_star"])["bosses"] == ["XKalos"]
+
+
+def test_the_inbox_names_the_boss_in_full(auth, seeded):
+    assert "Radiant Malefic Star" in auth.get("/inbox").text
+
+
+def test_the_pills_are_defined_for_both_themes(client):
+    css = client.get("/static/portal.css").text
+    for token in ("--pill-e-", "--pill-n-", "--pill-h-", "--pill-c-", "--pill-x-"):
+        assert css.count(token) >= 4  # light bg+fg and dark bg+fg
+    assert "prefers-color-scheme: dark" in css
+
+
+def test_the_pill_toggle_is_big_enough_to_tap(client):
+    assert "min-height: 36px" in client.get("/static/portal.css").text
+
+
+# --- channel access (item 10) -----------------------------------------------
+
+
+def test_the_config_page_shows_what_the_bot_may_do(auth, fake_bot, seeded):
+    body = auth.get("/config").text
+    assert "Channel access" in body
+    assert "#hstar-party" in body
+    table = body[body.index("Channel access") : body.index("A ❌ means")]
+    assert "❌" not in table
+
+
+def test_a_missing_permission_is_visible_at_a_glance(auth, fake_bot, seeded):
+    fake_bot.channels[WATCHED_CHANNEL].permissions.send_messages = False
+    body = auth.get("/config").text
+    table = body[body.index("Channel access") : body.index("A ❌ means")]
+    assert "❌" in table
+    assert "Edit Channel" in body
+
+
+def test_the_access_panel_can_be_refreshed_on_its_own(auth, seeded):
+    fragment = auth.get("/access").text
+    assert "<html" not in fragment
+    assert "#hstar-party" in fragment
+
+
+def test_rechecking_without_javascript_reloads_config(auth, seeded):
+    response = auth.post("/access", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/config")

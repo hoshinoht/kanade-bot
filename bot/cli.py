@@ -29,7 +29,13 @@ from rich.table import Table
 from rich.text import Text
 
 DEFAULT_URL = "http://127.0.0.1:8080"
-TIMEOUT = httpx.Timeout(10.0, read=180.0)  # a rescan waits on the local model
+#: Ordinary calls are local and instant; the read budget covers a `digest` or a
+#: `ping` waiting on Discord.
+TIMEOUT = httpx.Timeout(10.0, read=60.0)
+#: A week-wide rescan is one model call per conversation, and `gpt-oss:20b`
+#: takes 10-40 s each on this Mac. Ten minutes is deliberately generous -- the
+#: alternative is the CLI giving up on work the bot then finishes anyway.
+RESCAN_TIMEOUT = httpx.Timeout(10.0, read=900.0)
 
 console = Console()
 err = Console(stderr=True)
@@ -97,15 +103,18 @@ def base_url() -> str:
 class Api:
     """A thin httpx wrapper that turns an error response into :class:`ApiFailed`."""
 
-    def __init__(self, url: str | None = None, token: str | None = None):
+    def __init__(
+        self, url: str | None = None, token: str | None = None, timeout: httpx.Timeout | None = None
+    ):
         self.url = url or base_url()
         self.token = token if token is not None else load_token()
+        self.timeout = timeout or TIMEOUT
 
     def _client(self) -> httpx.Client:
         return httpx.Client(
             base_url=self.url,
             headers={"Authorization": f"Bearer {self.token}"},
-            timeout=TIMEOUT,
+            timeout=self.timeout,
         )
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -174,12 +183,16 @@ def status_text(status: str, label: str | None = None) -> Text:
 
 
 def print_runs(schedule: dict) -> None:
+    # A boss week is materialised whole, so the API hides runs that have already
+    # happened; say how many rather than letting the count look wrong.
+    hidden = schedule.get("hidden") or 0
+    note = f" · {hidden} past/cancelled hidden, --all-statuses to see them" if hidden else ""
     if not schedule["days"]:
-        console.print(f"[dim]Nothing scheduled for the week of {schedule['week_label']}.[/dim]")
+        console.print(f"[dim]Nothing left in the week of {schedule['week_label']}{note}.[/dim]")
         return
     console.print(
         f"[bold]Boss week of {schedule['week_label']}[/bold] "
-        f"[dim]({schedule['count']} run(s), all times {schedule['timezone']})[/dim]"
+        f"[dim]({schedule['count']} run(s), all times {schedule['timezone']}){note}[/dim]"
     )
     for day in schedule["days"]:
         table = Table(title=day["heading"], title_justify="left", title_style="bold", box=None)
@@ -237,12 +250,24 @@ def schedule(
     week: str = typer.Option("this", "--week", "-w", help="`this` or `next`."),
     all_: bool = typer.Option(False, "--all", help="Every party (the default)."),
     channel: str | None = typer.Option(None, "--channel", help="Only this home channel."),
-    user: str | None = typer.Option(None, "--user", help="Only runs this member is on."),
+    user: str | None = typer.Option(None, "--user", help="Runs this member is on or owns."),
     boss: str | None = typer.Option(None, "--boss", help="Substring of a boss token."),
+    all_statuses: bool = typer.Option(
+        False, "--all-statuses", help="Include runs that already happened, and cancelled ones."
+    ),
 ) -> None:
-    """Show a boss week's runs, grouped by day."""
+    """Show a boss week's runs, grouped by day. Past and cancelled runs are hidden."""
     del all_  # showing everything is already the default; the flag reads better
-    print_runs(api().get("/api/schedule", week=week, channel=channel, user=user, boss=boss))
+    print_runs(
+        api().get(
+            "/api/schedule",
+            week=week,
+            channel=channel,
+            user=user,
+            boss=boss,
+            show_past=all_statuses or None,
+        )
+    )
 
 
 @app.command()
@@ -319,6 +344,29 @@ def otot(run: str = typer.Argument(help="Run id, or any unique prefix.")) -> Non
 
 
 @app.command()
+def restore(run: str = typer.Argument(help="Run id, or any unique prefix.")) -> None:
+    """Put a cancelled, own-time or finished run back on the schedule."""
+    result = api().post(f"/api/runs/{run}/restore")
+    console.print(
+        f"[green]✓[/green] {' + '.join(result['bosses'])} is back on for "
+        f"{result['local_day']} {result['local_time']}."
+    )
+
+
+@app.command()
+def status(
+    run: str = typer.Argument(help="Run id, or any unique prefix."),
+    state: str = typer.Argument(help="planned, confirmed, otot, done or cancelled."),
+) -> None:
+    """Set a run's status. `at_risk` is derived from answers and cannot be set."""
+    result = api().patch(f"/api/runs/{run}/status", {"status": state})
+    console.print(
+        f"[green]✓[/green] {' + '.join(result['bosses'])} is now "
+        f"{status_text(result['status'], result['status_label'])}."
+    )
+
+
+@app.command()
 def rsvp(
     run: str = typer.Argument(help="Run id, or any unique prefix."),
     answer: str = typer.Argument(help="yes, no or maybe."),
@@ -330,6 +378,37 @@ def rsvp(
         f"[green]✓[/green] Noted: {answer} — {result['yes']}/{len(result['participants'])} on, "
         f"now {result['status_label']}."
     )
+
+
+@app.command()
+def access() -> None:
+    """What the bot may actually do in each watched channel."""
+    rows = api().get("/api/access")
+    if not rows:
+        fail("the bot isn't connected to the guild, so its permissions can't be checked")
+    tick = {True: "[green]✅[/green]", False: "[red]❌[/red]"}
+    print_table(
+        f"{len(rows)} channel(s)",
+        ["channel", "id", "see", "post", "history", "embeds", "react"],
+        [
+            [
+                row["name"] + (" (digest)" if row["is_digest_channel"] else ""),
+                row["id"],
+                tick[row["view"]],
+                tick[row["send"]],
+                tick[row["history"]],
+                tick[row["embed"]],
+                tick[row["react"]],
+            ]
+            for row in rows
+        ],
+    )
+    missing = [r["name"] for r in rows if not (r["view"] and r["send"])]
+    if missing:
+        console.print(
+            f"[red]{', '.join(missing)}[/red]: the bot cannot post there, so those runs get "
+            "no reminders. Fix it in Edit Channel → Permissions."
+        )
 
 
 @app.command()
@@ -386,29 +465,68 @@ def reminders(run: str | None = typer.Option(None, "--run", help="Limit to one r
 
 @app.command()
 def rescan(
-    channel: str = typer.Option(..., "--channel", "-c", help="Channel id; must be watched."),
-    hours: int = typer.Option(24, "--hours", "-h", help="How far back to read (1-168)."),
+    channel: list[str] = typer.Option(
+        None, "--channel", "-c", help="Channel id; repeatable. Default: every watched channel."
+    ),
+    window: str = typer.Option(
+        "week", "--window", "-w", help="week, 2weeks, 48h or 24h (default: this boss week)."
+    ),
     post: bool = typer.Option(True, "--post/--dry-run", help="Post a card for what it finds."),
 ) -> None:
-    """Re-read a channel's recent chat and propose any changes."""
-    result = api().post("/api/rescan", {"channel_id": channel, "hours": hours, "post": post})
-    if not result["asked"]:
-        console.print(
-            f"[dim]Nothing in the last {result['hours']}h looked like scheduling, so the "
-            "model wasn't asked.[/dim]"
-        )
-        return
-    if result.get("error"):
-        fail(f"the model didn't answer: {result['error']}")
+    """Pull the party channels' history from Discord, re-read it, and propose changes."""
+    channels = list(channel or [])
     console.print(
-        f"Read {result['hours']}h in {result['latency_ms']} ms: "
-        f"{len(result['proposed'])} change(s), {result['dropped']} dropped."
+        f"[dim]Reading {window} of "
+        f"{', '.join(channels) if channels else 'every watched channel'}. "
+        "One model call per conversation, one channel at a time — this can take a few "
+        "minutes…[/dim]"
+    )
+    result = Api(timeout=RESCAN_TIMEOUT).post(
+        "/api/rescan", {"channels": channels, "window": window, "post": post}
+    )
+    print_table(
+        f"{len(result['channels'])} channel(s) in {result['elapsed_ms'] / 1000:.1f}s",
+        ["channel", "pulled", "worth reading", "conversations", "cards", "time", ""],
+        [
+            [
+                row["channel_name"],
+                str(row["backfilled"]),
+                str(row["gated"]),
+                str(row["bursts"]),
+                str(row["proposals"]),
+                f"{row['elapsed_ms'] / 1000:.1f}s",
+                row["error"]
+                or ("checked last week too" if row["widened"] else "")
+                or (f"{row['stale']} already passed" if row["stale"] else ""),
+            ]
+            for row in result["channels"]
+        ],
+    )
+    if result["errors"]:
+        fail(f"the model didn't answer: {result['errors'][0]}")
+    if not result["asked"]:
+        console.print("[dim]Nothing looked like scheduling, so the model wasn't asked.[/dim]")
+        return
+    console.print(
+        f"{result['proposals']} card(s) posted, {result['dropped']} dropped "
+        f"({result['stale']} already passed)."
     )
     for item in result["proposed"]:
         console.print(
             f"  • {item['kind']} {' + '.join(item['bosses']) or ''} "
             f"[dim]({item['confidence']:.2f})[/dim]"
         )
+
+
+@app.command()
+def channels() -> None:
+    """The channels a rescan covers, party channels first."""
+    rows = api().get("/api/rescan/targets")
+    print_table(
+        f"{len(rows)} watched channel(s)",
+        ["id", "channel", "has runs"],
+        [[row["id"], row["name"], "yes" if row["has_runs"] else "—"] for row in rows],
+    )
 
 
 @app.command()

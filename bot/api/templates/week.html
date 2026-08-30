@@ -5,6 +5,12 @@
   <div>
     <p class="eyebrow">Boss week of {{ schedule.week_label }}</p>
     <h1>{{ schedule.count }} run{{ "" if schedule.count == 1 else "s" }}{% if filtered %}, filtered{% endif %}</h1>
+    {% if schedule.hidden %}
+    <p>{{ schedule.hidden }} past or cancelled run{{ "" if schedule.hidden == 1 else "s" }} hidden.
+      <a href="{{ url_toggle_past() }}">Show {{ "them" if schedule.hidden > 1 else "it" }}</a>.</p>
+    {% elif show_past %}
+    <p>Showing everything, past runs included. <a href="{{ url_toggle_past() }}">Hide the past</a>.</p>
+    {% endif %}
   </div>
   <div class="seg" role="group" aria-label="Which week">
     <a href="{{ url_for_week('this') }}" aria-current="{{ 'true' if week == 'this' else 'false' }}">This week</a>

@@ -19,8 +19,9 @@ from discord import app_commands
 from . import formatting
 from .bosses import BossParseError
 from .debug import DebugGroup, DebugNotAllowed
+from .extract.window import DEFAULT_WINDOW, WINDOWS
 from .ids import IdAmbiguous, IdError, resolve_id, short_id
-from .materialise import refresh_run_reminders
+from .materialise import LIVE_STATUSES, refresh_run_reminders
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
 from .util import can_modify_fixed, can_modify_run, mention, resolve_participant_text
@@ -44,6 +45,34 @@ DAY_CHOICES = [
     app_commands.Choice(name=name, value=key)
     for name, key in zip(
         WEEKDAY_NAMES, ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], strict=True
+    )
+]
+
+WINDOW_LABELS = {
+    "week": "this boss week",
+    "2weeks": "this and last boss week",
+    "48h": "the last 48 hours",
+    "24h": "the last 24 hours",
+}
+
+WINDOW_CHOICES = [app_commands.Choice(name=WINDOW_LABELS[value], value=value) for value in WINDOWS]
+
+#: Runs a human is offered to act on, and the ones `/schedule` shows: a night
+#: that has been and gone is neither. `/debug` deliberately still sees everything.
+ACTIONABLE_STATUSES = LIVE_STATUSES
+
+#: `/restore` and `/status` have to reach the runs the others hide -- putting a
+#: cancelled run back is the whole point of them.
+RESTORABLE_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
+
+STATUS_CHOICES = [
+    app_commands.Choice(name=name, value=value)
+    for value, name in (
+        ("planned", "planned"),
+        ("confirmed", "confirmed"),
+        ("otot", "own time"),
+        ("done", "done"),
+        ("cancelled", "cancelled"),
     )
 ]
 
@@ -159,19 +188,26 @@ def _resolve(bot: BossBot, raw: str, candidates: list[str], noun: str) -> str:
 
 
 def _visible_runs(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
-    """Runs the invoker may act on: this week and next, theirs unless admin."""
+    """Runs the invoker may act on: this week and next, theirs unless admin.
+
+    "Theirs" is on-the-run *or* owner of the fixed timing behind it, and a run
+    whose night has passed is left out -- see :data:`ACTIONABLE_STATUSES`.
+    """
     runs: list[dict] = []
     for which in ("this", "next"):
-        runs.extend(bot.repo.list_runs(week_start=_week_for(bot, which)))
+        runs.extend(
+            bot.repo.list_runs(week_start=_week_for(bot, which), statuses=ACTIONABLE_STATUSES)
+        )
     if bot.is_admin(interaction.user):
         return runs
-    return [r for r in runs if str(interaction.user.id) in r["participants"]]
+    mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
+    return [r for r in runs if r["id"] in mine]
 
 
 def _visible_fixed(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
     if bot.is_admin(interaction.user):
         return bot.repo.list_fixed_runs()
-    return bot.repo.list_fixed_runs(participant=str(interaction.user.id))
+    return bot.repo.list_fixed_runs(involving=interaction.user.id)
 
 
 def _channel_name(interaction: discord.Interaction, channel_id: str | None) -> str:
@@ -218,6 +254,33 @@ async def run_autocomplete(
         out = []
         for run in sorted(_visible_runs(bot, interaction), key=lambda r: r["datetime"]):
             label = _run_label(bot, run, interaction)
+            if _matches(current, label, run["id"]):
+                out.append(app_commands.Choice(name=label, value=run["id"]))
+        return out[:25]
+    except Exception:  # noqa: BLE001
+        log.exception("run autocomplete failed")
+        return []
+
+
+async def any_run_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Like :func:`run_autocomplete`, but including cancelled/own-time/done runs.
+
+    `/restore` and `/status` exist precisely to reach those, so hiding them
+    would make the commands unusable from the dropdown.
+    """
+    try:
+        bot = _bot(interaction)
+        runs: list[dict] = []
+        for which in ("this", "next"):
+            runs.extend(bot.repo.list_runs(week_start=_week_for(bot, which)))
+        if not bot.is_admin(interaction.user):
+            mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
+            runs = [r for r in runs if r["id"] in mine]
+        out = []
+        for run in sorted(runs, key=lambda r: r["datetime"]):
+            label = f"{_run_label(bot, run, interaction)} · {run['status']}"[:100]
             if _matches(current, label, run["id"]):
                 out.append(app_commands.Choice(name=label, value=run["id"]))
         return out[:25]
@@ -404,15 +467,24 @@ class FixedGroup(app_commands.Group):
             channel_id=interaction.channel_id,
         )
         bot.materialise_weeks()
+        # The invoker is not added automatically, so say plainly when they have
+        # set up a run that will never ping them.
+        not_on_it = (
+            "\n(you're the owner but not on this run — it won't ping you; "
+            "`/fixed edit` to add yourself)"
+            if str(interaction.user.id) not in ids
+            else ""
+        )
         await interaction.response.send_message(
             f"✅ Fixed run `#{short_id(fixed_id)}` added — this channel is its home channel, "
             f"so its pings land here.\n"
-            f"{formatting.fixed_run_line(bot.repo.get_fixed_run(fixed_id), bot.bosses)}",
+            f"{formatting.fixed_run_line(bot.repo.get_fixed_run(fixed_id), bot.bosses)}"
+            f"{not_on_it}",
             ephemeral=True,
         )
 
     @app_commands.command(name="list", description="List the fixed weekly runs")
-    @app_commands.describe(scope="`mine` (default) or `all`")
+    @app_commands.describe(scope="`mine` (default: on it or you own it) or `all`")
     @app_commands.choices(
         scope=[
             app_commands.Choice(name="mine", value="mine"),
@@ -424,10 +496,17 @@ class FixedGroup(app_commands.Group):
     ) -> None:
         bot = _bot(interaction)
         only_mine = (scope.value if scope else "mine") == "mine"
-        rows = bot.repo.list_fixed_runs(participant=str(interaction.user.id) if only_mine else None)
+        # "Mine" is owner *or* participant: `/fixed add` does not put the
+        # invoker on the run, so filtering on participation alone hides a
+        # pilot's own timings from them and reads as data loss.
+        rows = bot.repo.list_fixed_runs(involving=interaction.user.id if only_mine else None)
         if not rows:
             await interaction.response.send_message(
-                "No fixed runs yet - add one with `/fixed add`.", ephemeral=True
+                "No fixed runs yet - add one with `/fixed add`."
+                if not only_mine
+                else "None of the fixed runs are yours. "
+                "`/fixed list scope:all` shows every party's.",
+                ephemeral=True,
             )
             return
         body = "\n".join(formatting.fixed_run_line(f, bot.bosses) for f in rows)
@@ -591,6 +670,7 @@ class BotGroup(app_commands.Group):
 @app_commands.describe(
     scope="`channel` (default in a party channel), `mine`, or `all`",
     week="`this` (default) or `next`",
+    show_past="Include runs that already happened, and cancelled ones",
 )
 @app_commands.choices(
     scope=[
@@ -608,6 +688,7 @@ async def schedule(
     interaction: discord.Interaction,
     scope: app_commands.Choice[str] | None = None,
     week: app_commands.Choice[str] | None = None,
+    show_past: bool = False,
 ) -> None:
     bot = _bot(interaction)
     which_week = week.value if week else "this"
@@ -616,24 +697,31 @@ async def schedule(
     default_scope = "channel" if bot.is_watched(interaction.channel) else "mine"
     which_scope = scope.value if scope else default_scope
     ws = _week_for(bot, which_week)
-    runs = bot.repo.list_runs(
+    # "Mine" counts runs whose fixed timing you own as well as ones you are on.
+    everything = bot.repo.list_runs(
         week_start=ws,
-        participant=str(interaction.user.id) if which_scope == "mine" else None,
+        involving=interaction.user.id if which_scope == "mine" else None,
         channel_id=interaction.channel_id if which_scope == "channel" else None,
     )
+    # A boss week is materialised whole, so by Sunday it already holds
+    # Thursday's finished runs. They are hidden unless asked for.
+    runs = everything if show_past else [r for r in everything if r["status"] in LIVE_STATUSES]
+    hidden = len(everything) - len(runs)
 
     local_ws = ws.astimezone(bot.tz)
     title = f"Boss week of {local_ws.strftime('%a %d %b')} ({which_scope})"
     embed = discord.Embed(title=title, colour=discord.Colour.blurple())
     if not runs:
         embed.description = {
-            "all": "Nothing scheduled. Add a baseline with `/fixed add`.",
-            "mine": "You have no runs this week. `/schedule scope:all` shows everyone's.",
+            "all": "Nothing still to come. Add a baseline with `/fixed add`.",
+            "mine": "You have nothing left this week. `/schedule scope:all` shows everyone's.",
             "channel": (
-                "No runs in this channel this week. `/schedule scope:mine` shows yours, "
+                "Nothing left in this channel this week. `/schedule scope:mine` shows yours, "
                 "`scope:all` the whole guild's."
             ),
         }[which_scope]
+        if hidden:
+            embed.description += f"\n{_hidden_note(hidden)}"
     else:
         for heading, day_runs in formatting.group_by_day(runs, bot.tz):
             lines = [
@@ -641,11 +729,18 @@ async def schedule(
                 for run in day_runs
             ]
             embed.add_field(name=heading, value="\n".join(lines), inline=False)
-        embed.set_footer(text="✅/❌ react on a reminder to RSVP · /amend to move a run")
+        footer = "✅/❌ react on a reminder to RSVP · /amend to move a run"
+        if hidden:
+            footer += f" · {_hidden_note(hidden)}"
+        embed.set_footer(text=footer)
 
     await interaction.response.send_message(
         embed=embed, allowed_mentions=discord.AllowedMentions.none()
     )
+
+
+def _hidden_note(hidden: int) -> str:
+    return f"{hidden} past/cancelled run(s) hidden — `show_past:True` to see them"
 
 
 @app_commands.command(name="amend", description="Move a run to a new day/time")
@@ -706,25 +801,7 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
 @app_commands.autocomplete(run_id=run_autocomplete)
 @require_role()
 async def cancel(interaction: discord.Interaction, run_id: str) -> None:
-    bot = _bot(interaction)
-    try:
-        run = _load_run(bot, interaction, run_id)
-    except NotAllowed as exc:
-        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
-        return
-    bot.repo.set_run_status(run["id"], "cancelled")
-    _sync_run_reminders(bot, run["id"])
-    await interaction.response.send_message(
-        f"🚫 Run `#{short_id(run['id'])}` cancelled.", ephemeral=True
-    )
-    await _announce(
-        bot,
-        f"🚫 **{formatting.format_bosses(run['bosses'])}** "
-        f"({formatting.local_day(run['datetime'], bot.tz)}) is cancelled — "
-        f"{formatting.format_participants(run['participants'])}",
-        run["participants"],
-        channel_id=run["channel_id"],
-    )
+    await _set_status(interaction, run_id, "cancelled")
 
 
 @app_commands.command(name="otot", description="Mark a run as own-time (no countdown pings)")
@@ -732,17 +809,76 @@ async def cancel(interaction: discord.Interaction, run_id: str) -> None:
 @app_commands.autocomplete(run_id=run_autocomplete)
 @require_role()
 async def otot(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "otot")
+
+
+@app_commands.command(name="restore", description="Put a run back on the schedule")
+@app_commands.describe(run_id="A cancelled, own-time or finished run")
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def restore(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "planned")
+
+
+@app_commands.command(name="done", description="Mark a run as cleared")
+@app_commands.describe(run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`")
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def done(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "done")
+
+
+@app_commands.command(name="status", description="Set a run's status")
+@app_commands.describe(
+    run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`",
+    state="What the run is now",
+)
+@app_commands.choices(state=STATUS_CHOICES)
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def status(
+    interaction: discord.Interaction, run_id: str, state: app_commands.Choice[str]
+) -> None:
+    await _set_status(interaction, run_id, state.value)
+
+
+async def _set_status(interaction: discord.Interaction, run_id: str, state: str) -> None:
+    """The one path behind `/status`, `/otot`, `/cancel`, `/restore` and `/done`.
+
+    It goes through the same service function the portal and `bossctl` use, so
+    a transition means the same thing however it was asked for -- including the
+    channel notice, which is posted once and only when something changed.
+    """
+    # Imported here rather than at module scope: `bot.api` pulls in FastAPI and
+    # the whole portal, and the slash-command layer must not depend on that
+    # being importable to work.
+    from .api import service
+    from .api.errors import ApiError
+
     bot = _bot(interaction)
     try:
         run = _load_run(bot, interaction, run_id)
     except NotAllowed as exc:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
-    bot.repo.set_run_status(run["id"], "otot")
-    _sync_run_reminders(bot, run["id"])
-    await interaction.response.send_message(
-        f"🕒 Run `#{short_id(run['id'])}` is own-time: it still shows in the morning "
-        f"ping, but no countdowns.",
+    was = run["status"]
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # The reply is ephemeral, so the channel still needs telling -- but
+        # without the "(via portal)" marker, because this *was* a chat decision.
+        updated = await service.set_status(bot, run["id"], state, mark=False)
+    except ApiError as exc:
+        await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
+        return
+    if was == updated["status"]:
+        await interaction.followup.send(
+            f"Run `#{short_id(run['id'])}` is already {updated['status_label']}.", ephemeral=True
+        )
+        return
+    await interaction.followup.send(
+        f"{updated['status_label']} — run `#{short_id(run['id'])}` "
+        f"({formatting.format_bosses(updated['bosses'])}, "
+        f"{updated['local_day']} {updated['local_time']}).",
         ephemeral=True,
     )
 
@@ -790,15 +926,32 @@ async def rsvp(
 
 
 @app_commands.command(
-    name="rescan", description="Re-read this channel's recent chat and propose any changes"
+    name="rescan", description="Re-read this channel's chat from Discord and propose any changes"
 )
-@app_commands.describe(hours="How far back to read (default 24, max 168)")
+@app_commands.describe(
+    window="How far back to read (default: this boss week)",
+    scope="This channel (default), or every watched channel",
+)
+@app_commands.choices(
+    window=WINDOW_CHOICES,
+    scope=[
+        app_commands.Choice(name="this channel", value="this-channel"),
+        app_commands.Choice(name="all channels", value="all-channels"),
+    ],
+)
 @require_role()
-async def rescan(interaction: discord.Interaction, hours: int = 24) -> None:
+async def rescan(
+    interaction: discord.Interaction,
+    window: app_commands.Choice[str] | None = None,
+    scope: app_commands.Choice[str] | None = None,
+) -> None:
     bot = _bot(interaction)
-    if not bot.is_watched(interaction.channel):
+    everywhere = (scope.value if scope else "this-channel") == "all-channels"
+    if not everywhere and not bot.is_watched(interaction.channel):
         await interaction.response.send_message(
-            "❌ This channel isn't watched, so there's nothing stored to re-read.", ephemeral=True
+            "❌ This channel isn't watched, so there's nothing to re-read. "
+            "`/rescan scope:all channels` reads the ones that are.",
+            ephemeral=True,
         )
         return
     if bot.paused:
@@ -813,31 +966,86 @@ async def rescan(interaction: discord.Interaction, hours: int = 24) -> None:
             ephemeral=True,
         )
         return
-    hours = max(1, min(int(hours), 168))
 
     await interaction.response.defer(ephemeral=True)
-    channel_id, _thread = origin_ids(interaction.channel)
-    plan = await bot.extractor.rescan(channel_id, hours=hours)
-    await interaction.followup.send(_rescan_summary(plan, hours), ephemeral=True)
-
-
-def _rescan_summary(plan, hours: int) -> str:
-    """Wording shared by `/rescan` and `/debug extract`."""
-    if plan is None:
-        return f"Nothing in the last {hours}h looked like scheduling, so the model wasn't asked."
-    if plan.error:
-        return f"❌ The model didn't answer: {plan.error}"
-    if not plan.planned:
-        return f"Read the last {hours}h ({plan.latency_ms} ms): no change found." + (
-            f"\n_{plan.summary}_" if plan.summary else ""
+    which = window.value if window else DEFAULT_WINDOW
+    if everywhere:
+        # Sweeping every party channel is minutes of model time; the interaction
+        # token lasts 15, so say up front what is happening.
+        await interaction.followup.send(
+            "Re-reading every watched channel — one at a time, so this takes a few minutes. "
+            "Each channel's cards appear in that channel.",
+            ephemeral=True,
         )
+        from .api import service
+
+        result = await service.rescan(bot, None, window=which)
+        await interaction.followup.send(_sweep_summary(result), ephemeral=True)
+        return
+    channel_id, _thread = origin_ids(interaction.channel)
+    report = await bot.extractor.rescan_window(channel_id, window=which)
+    await interaction.followup.send(rescan_summary(report), ephemeral=True)
+
+
+def _sweep_summary(result: dict) -> str:
+    """The reply for `/rescan scope:all channels` -- one line per channel."""
     lines = [
-        f"• `{p.kind}` {formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
-        f" ({p.amendment.confidence:.2f})"
-        for p in plan.planned
+        f"• {row['channel_name']}: {row['backfilled']} pulled, {row['bursts']} conversation(s), "
+        f"**{row['proposals']}** card(s)"
+        + (" · checked last week too" if row["widened"] else "")
+        + (f" · ⚠️ {row['error']}" if row["error"] else "")
+        for row in result["channels"]
     ]
-    dropped = f"\n{len(plan.dropped)} below threshold or unmatched." if plan.dropped else ""
-    return f"Read the last {hours}h ({plan.latency_ms} ms):\n" + "\n".join(lines) + dropped
+    head = (
+        f"Read {len(result['channels'])} channel(s) in {result['elapsed_ms'] / 1000:.0f}s — "
+        f"**{result['proposals']}** card(s) posted."
+    )
+    return (head + "\n" + "\n".join(lines))[:1900]
+
+
+def rescan_summary(report) -> str:
+    """The ephemeral reply for `/rescan`, shared with `/debug extract`.
+
+    Leads with what it read rather than what it found, because "nothing found"
+    means something quite different after backfilling 300 messages than after
+    backfilling none.
+    """
+    label = WINDOW_LABELS.get(report.window, report.window)
+    head = (
+        f"Read **{label}** in {report.elapsed_ms / 1000:.1f}s — "
+        f"{report.backfilled} message(s) pulled from Discord, "
+        f"{report.gated} worth reading, {report.bursts} conversation(s), "
+        f"{report.extracted} sent to the model."
+    )
+    if report.widened:
+        head += "\nNothing this boss week, so I checked last week too."
+    if report.errors:
+        return head + f"\n❌ The model didn't answer: {report.errors[0]}"
+    if not report.asked:
+        return head + "\nNothing looked like scheduling, so the model wasn't asked."
+
+    planned = report.planned
+    if not planned:
+        tail = f"\n**No change found.** ({report.proposals} card(s) posted.)"
+        if report.stale:
+            tail += f"\n{report.stale} change(s) were about runs that have already happened."
+        return head + tail
+    lines = [
+        f"• `{p.kind}` "
+        f"{formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
+        f" ({p.amendment.confidence:.2f})"
+        for p in planned
+    ]
+    tail = f"\n**{report.proposals} card(s) posted:**\n" + "\n".join(lines)
+    extra = []
+    if report.stale:
+        extra.append(f"{report.stale} already passed")
+    below = report.dropped - report.stale
+    if below > 0:
+        extra.append(f"{below} below threshold or unmatched")
+    if extra:
+        tail += "\n_" + ", ".join(extra) + "._"
+    return head + tail
 
 
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
@@ -915,6 +1123,18 @@ def register_commands(bot: BossBot) -> None:
     tree.add_command(FixedGroup())
     tree.add_command(BotGroup())
     tree.add_command(DebugGroup())
-    for command in (schedule, amend, cancel, otot, rsvp, nick, pingtime, rescan):
+    for command in (
+        schedule,
+        amend,
+        cancel,
+        otot,
+        restore,
+        done,
+        status,
+        rsvp,
+        nick,
+        pingtime,
+        rescan,
+    ):
         tree.add_command(command)
     tree.on_error = on_app_command_error

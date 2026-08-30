@@ -9,6 +9,7 @@ in memory, so a container restart neither loses nor replays a reminder.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -17,12 +18,20 @@ from discord.ext import tasks
 
 from . import formatting
 from .api.server import ApiServer
+from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
 from .extract.commit import CommitResult, commit, expire_stale, may_commit, reject
 from .extract.pipeline import Pipeline
-from .materialise import DAY_OF, countdown_minutes, is_stale, materialise_week, reconcile_day_of
+from .materialise import (
+    DAY_OF,
+    countdown_minutes,
+    is_stale,
+    mark_done,
+    materialise_week,
+    reconcile_day_of,
+)
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
 from .util import roster_rows
@@ -30,6 +39,19 @@ from .watch import is_watched, origin_ids
 from .weeks import current_week_start, next_week_start, parse_hhmm
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ChannelLookup:
+    """Somewhere to post, or the reason there is nowhere."""
+
+    channel: discord.abc.Messageable | None
+    problem: str | None
+
+    @property
+    def ok(self) -> bool:
+        return self.channel is not None
+
 
 CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
@@ -154,6 +176,84 @@ class BossBot(discord.Client):
         log.info("logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
         await self.sync_roster()
         self.materialise_weeks()
+        if self.settings.backfill_on_start:
+            await self.backfill_all()
+
+    # -- history ----------------------------------------------------------
+    def watched_text_channels(self) -> list[discord.abc.GuildChannel]:
+        """Every text channel the bot watches, resolved from the live guild.
+
+        Categories are expanded here rather than from config, so a channel added
+        to a watched category is picked up without a restart -- the same rule
+        :func:`bot.watch.is_watched` applies per message.
+        """
+        guild = self.get_guild(self.settings.guild_id)
+        if guild is None:
+            return []
+        return [c for c in getattr(guild, "text_channels", []) if self.is_watched(c)]
+
+    def resolve_channel(self, channel_id: int | str) -> discord.abc.GuildChannel | None:
+        """A channel by id, with **no** ``POST_CHANNEL_ID`` fallback.
+
+        Distinct from :meth:`post_channel`, whose fallback is right for posting
+        and wrong for reading: backfilling "the channel we could not find" from
+        the digest channel would file one party's chat under another's.
+        """
+        try:
+            return self.get_channel(int(channel_id))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
+
+    async def backfill(
+        self, channel: object, since: datetime, until: datetime | None = None
+    ) -> int:
+        """Pull one watched channel's history into ``messages``; returns the count.
+
+        Reads only -- no model call, no card, no reaction. Idempotent, because
+        ``record_message`` ignores ids it already has, so running it on every
+        start costs one paginated read and writes nothing new.
+        """
+        if not self.is_watched(channel):
+            log.debug("refusing to backfill unwatched channel %s", getattr(channel, "id", "?"))
+            return 0
+        try:
+            return await record_channel(self.repo, channel, since, until)
+        except AccessDenied:
+            log.warning("no access to #%s's history; skipping", getattr(channel, "name", "?"))
+            return 0
+        except discord.HTTPException:
+            log.exception("backfill of #%s failed", getattr(channel, "name", "?"))
+            return 0
+
+    async def backfill_channel(
+        self, channel_id: int | str, since: datetime, until: datetime | None = None
+    ) -> int:
+        """:meth:`backfill` by id -- what the extractor's rescan calls."""
+        channel = self.resolve_channel(channel_id)
+        if channel is None:
+            log.warning("channel %s is not visible; nothing to backfill", channel_id)
+            return 0
+        return await self.backfill(channel, since, until)
+
+    async def backfill_all(self, since: datetime | None = None) -> int:
+        """Sweep every watched channel for the current boss week, one at a time.
+
+        Sequential on purpose: discord.py handles rate limits, and fanning a
+        category of channels out concurrently only makes it throttle harder.
+        """
+        since = since or current_week_start(
+            self.tz, self.settings.reset_weekday, self.settings.reset_time
+        )
+        channels = self.watched_text_channels()
+        if not channels:
+            log.info("no watched channels visible; nothing to backfill")
+            return 0
+        total = 0
+        for channel in channels:
+            count = await self.backfill(channel, since)
+            total += count
+            log.info("backfilled #%s: %d message(s) since %s", channel.name, count, since.date())
+        return total
 
     # -- roster -----------------------------------------------------------
     async def sync_roster(self) -> None:
@@ -259,6 +359,10 @@ class BossBot(discord.Client):
             if self._week_rolled_over(now):
                 log.info("boss week rolled over; materialising")
                 self.materialise_weeks()
+            # Retire runs whose night has been and gone, before anything else
+            # looks at them: a `done` run gets no pings and shows in nobody's
+            # schedule or dropdown.
+            mark_done(self.repo, now)
             await self.expire_proposals(now)
             await self.dispatch_reminders(now)
         except Exception:  # pragma: no cover - keep the loop alive
@@ -301,27 +405,127 @@ class BossBot(discord.Client):
         for channel_id, entries in day_of.items():
             await self._send_day_of(channel_id, entries)
 
-    async def post_channel(
-        self, channel_id: int | str | None = None
-    ) -> discord.abc.Messageable | None:
-        """Resolve a run's home channel, falling back to ``POST_CHANNEL_ID``.
+    async def find_channel(self, channel_id: int | str | None = None) -> ChannelLookup:
+        """Resolve somewhere to post, and say why if there is nowhere.
 
-        The home channel can disappear (deleted, or the bot loses access), so the
-        guild-wide channel is always tried as a backstop before giving up.
+        The home channel can disappear (deleted, or the bot loses access), so
+        ``POST_CHANNEL_ID`` is always tried as a backstop before giving up. When
+        both fail the *reason* matters far more than the failure: "no access"
+        and "no such channel" need completely different fixes, and a bare
+        "couldn't post" sends the owner hunting.
         """
+        problems: list[str] = []
         for candidate in (channel_id, self.settings.post_channel_id):
             if candidate is None:
                 continue
-            channel = self.get_channel(int(candidate))
+            try:
+                target = int(candidate)
+            except (TypeError, ValueError):
+                problems.append(f"`{candidate}` is not a channel id")
+                continue
+            channel = self.get_channel(target)
             if channel is None:
                 try:
-                    channel = await self.fetch_channel(int(candidate))
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    log.warning("channel %s unavailable", candidate)
+                    channel = await self.fetch_channel(target)
+                except discord.Forbidden:
+                    problems.append(self._no_access(target))
                     continue
-            if isinstance(channel, discord.abc.Messageable):
-                return channel
-        return None
+                except discord.NotFound:
+                    problems.append(
+                        f"channel {target} does not exist, or the bot is not in that server"
+                    )
+                    continue
+                except discord.HTTPException as exc:
+                    problems.append(f"Discord would not hand over channel {target}: {exc}")
+                    continue
+            if not isinstance(channel, discord.abc.Messageable):
+                problems.append(f"channel {target} is not a text channel")
+                continue
+            if not self.can_send_in(channel):
+                problems.append(self._no_access(target, channel))
+                continue
+            return ChannelLookup(channel=channel, problem=None)
+
+        if not problems:
+            problems.append(
+                "no channel was given and POST_CHANNEL_ID is not set in .env - "
+                "set it, or pass a channel"
+            )
+        log.warning("nowhere to post: %s", "; ".join(problems))
+        return ChannelLookup(channel=None, problem="; ".join(problems))
+
+    def _no_access(self, channel_id: int, channel: object | None = None) -> str:
+        name = getattr(channel, "name", None)
+        where = f"#{name}" if name else f"channel {channel_id}"
+        who = getattr(self.user, "name", "the bot")
+        return (
+            f"the bot has no access to {where} - grant the {who} role "
+            "View Channel + Send Messages there"
+        )
+
+    def can_send_in(self, channel: object) -> bool:
+        """Whether the bot may actually post in a channel it can see.
+
+        A guild the bot has not finished loading has no ``me``, and a DM has no
+        permissions at all; both are treated as "go ahead and try", so this can
+        only ever turn a *known* refusal into a better message.
+        """
+        guild = getattr(channel, "guild", None)
+        me = getattr(guild, "me", None)
+        permissions_for = getattr(channel, "permissions_for", None)
+        if me is None or permissions_for is None:
+            return True
+        permissions = permissions_for(me)
+        return bool(permissions.view_channel and permissions.send_messages)
+
+    async def post_channel(
+        self, channel_id: int | str | None = None
+    ) -> discord.abc.Messageable | None:
+        """Just the channel, for callers that have nothing useful to say about failure."""
+        return (await self.find_channel(channel_id)).channel
+
+    def access_report(self) -> list[dict]:
+        """Every channel the bot is meant to use, and what it may do there.
+
+        The permissions a Discord bot ends up with are the product of role
+        permissions, category overwrites and per-channel overwrites, which is
+        genuinely hard to reason about in the client. This says what it can
+        actually do, per channel.
+        """
+        guild = self.get_guild(self.settings.guild_id)
+        if guild is None:
+            return []
+        me = getattr(guild, "me", None)
+        post_channel_id = self.settings.post_channel_id
+        wanted = {c.id: c for c in self.watched_text_channels()}
+        if post_channel_id is not None:
+            channel = self.get_channel(int(post_channel_id))
+            if channel is not None:
+                wanted.setdefault(channel.id, channel)
+
+        rows: list[dict] = []
+        for channel in sorted(wanted.values(), key=lambda c: getattr(c, "name", "")):
+            permissions = (
+                channel.permissions_for(me)
+                if me is not None and hasattr(channel, "permissions_for")
+                else None
+            )
+            rows.append(
+                {
+                    "id": str(channel.id),
+                    "name": f"#{channel.name}",
+                    "watched": self.is_watched(channel),
+                    "is_digest_channel": post_channel_id is not None
+                    and int(post_channel_id) == channel.id,
+                    "view": permissions is None or permissions.view_channel,
+                    "send": permissions is None or permissions.send_messages,
+                    "history": permissions is None or permissions.read_message_history,
+                    "embed": permissions is None or permissions.embed_links,
+                    "react": permissions is None or permissions.add_reactions,
+                    "unknown": permissions is None,
+                }
+            )
+        return rows
 
     async def _send_day_of(self, channel_id: str | None, entries: list[tuple[dict, dict]]) -> None:
         """One message per home channel, one line per run, each tagging its own people."""
@@ -368,7 +572,23 @@ class BossBot(discord.Client):
             embed.add_field(name=name, value=value, inline=False)
         if card.footer:
             embed.set_footer(text=card.footer)
+        if card.thumbnail_path is not None:
+            # The file travels with the message, so the thumbnail keeps working
+            # without hosting anything: `attachment://` refers to it by name.
+            embed.set_thumbnail(url=f"attachment://{card.thumbnail_path.name}")
         return embed
+
+    @staticmethod
+    def _attachment(card: formatting.Card) -> discord.File | None:
+        """The boss portrait to send alongside a card, if there is one."""
+        path = card.thumbnail_path
+        if path is None:
+            return None
+        try:
+            return discord.File(str(path), filename=path.name)
+        except OSError:
+            log.warning("could not read the portrait at %s", path)
+            return None
 
     async def _post(
         self,
@@ -384,9 +604,15 @@ class BossBot(discord.Client):
             roles=False,
             users=[discord.Object(id=int(uid)) for uid in (mention_users or [])],
         )
+        attachment = self._attachment(card)
         try:
+            # `file=` is omitted entirely when there is no portrait, so a guild
+            # that ships none sends exactly the message it did before.
             message = await channel.send(
-                card.content, embed=self._embed(card), allowed_mentions=allowed
+                card.content,
+                embed=self._embed(card),
+                allowed_mentions=allowed,
+                **({"file": attachment} if attachment is not None else {}),
             )
             await message.add_reaction(EMOJI_YES)
             await message.add_reaction(EMOJI_NO)

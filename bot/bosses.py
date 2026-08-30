@@ -26,6 +26,13 @@ import yaml
 _NORMALISE_RE = re.compile(r"[^a-z0-9]+")
 _SPLIT_RE = re.compile(r"[,\s/+&]+")
 
+#: Where portraits live, relative to ``bosses.yaml``. The whole ``config/``
+#: directory is bind-mounted read-only, so dropping a file in is enough --
+#: no rebuild, no restart.
+PORTRAIT_DIR = "portraits"
+#: Tried in order for ``<short>.<ext>`` when no explicit ``portrait:`` is set.
+PORTRAIT_SUFFIXES = (".png", ".webp", ".jpg", ".jpeg")
+
 
 class BossParseError(ValueError):
     """Raised when one or more tokens cannot be resolved to a canonical boss."""
@@ -49,6 +56,9 @@ class Boss:
     #: Difficulty prefixes this boss actually has, in table order.
     difficulties: tuple[str, ...]
     aliases: tuple[str, ...]
+    #: An explicit portrait filename from ``bosses.yaml``; otherwise the file is
+    #: looked up as ``<short>.png`` and friends.
+    portrait: str | None = None
 
     def canonical(self, letter: str) -> str:
         return f"{letter.upper()}{self.short}"
@@ -62,14 +72,17 @@ class BossTable:
     bosses: dict[str, Boss]
     #: normalised alias -> short name
     aliases: dict[str, str]
+    #: The directory ``bosses.yaml`` was loaded from; portraits live under it.
+    base_dir: Path | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> BossTable:
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        return cls.from_dict(raw)
+        path = Path(path)
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return cls.from_dict(raw, base_dir=path.parent)
 
     @classmethod
-    def from_dict(cls, raw: dict) -> BossTable:
+    def from_dict(cls, raw: dict, base_dir: Path | None = None) -> BossTable:
         difficulties = {str(k).lower(): str(v) for k, v in (raw.get("difficulties") or {}).items()}
         if not difficulties:
             raise BossTableError("bosses.yaml has no `difficulties:` map")
@@ -93,12 +106,14 @@ class BossTable:
                     f"{short} lists difficulty prefix(es) {unknown} that are not in `difficulties:`"
                 )
             level = spec.get("level")
+            portrait = spec.get("portrait")
             boss = Boss(
                 short=short,
                 full=str(spec.get("full") or short),
                 level=int(level) if level is not None else None,
                 difficulties=allowed,
                 aliases=tuple(str(a) for a in (spec.get("aliases") or [])),
+                portrait=str(portrait) if portrait else None,
             )
             bosses[short] = boss
             for name in (short, boss.full, *boss.aliases):
@@ -110,7 +125,7 @@ class BossTable:
                         f"alias {name!r} is claimed by both {aliases[key]!r} and {short!r}"
                     )
                 aliases[key] = short
-        return cls(difficulties=difficulties, bosses=bosses, aliases=aliases)
+        return cls(difficulties=difficulties, bosses=bosses, aliases=aliases, base_dir=base_dir)
 
     # -- lookups ----------------------------------------------------------
     @property
@@ -189,3 +204,61 @@ class BossTable:
 
     def describe_all(self, canonicals: list[str]) -> str:
         return " · ".join(self.describe(name) for name in canonicals)
+
+    def portrait_path(self, short: str) -> Path | None:
+        """The portrait file for a boss, or ``None`` when there isn't one.
+
+        Portraits are entirely optional: ``config/portraits/Star.png`` (the
+        ``bosses.yaml`` key), or whatever ``portrait:`` names. The filename is
+        never taken from user input -- it is resolved from the table -- so this
+        cannot be walked out of the config directory.
+        """
+        boss = self.bosses.get(short)
+        if boss is None or self.base_dir is None:
+            return None
+        directory = self.base_dir / PORTRAIT_DIR
+        if boss.portrait:
+            candidate = directory / Path(boss.portrait).name
+            return candidate if candidate.is_file() else None
+        for suffix in PORTRAIT_SUFFIXES:
+            candidate = directory / f"{boss.short}{suffix}"
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def portrait_for(self, canonical: str) -> Path | None:
+        """The portrait for a canonical name like ``"HStar"``."""
+        parts = self.split(canonical)
+        return self.portrait_path(parts[1].short) if parts else None
+
+    def difficulty_name(self, letter: str) -> str:
+        """``"h"`` -> ``"Hard"``. Unknown letters come back as themselves."""
+        return self.difficulties.get(letter.lower(), letter.upper())
+
+    def ordered(self) -> list[Boss]:
+        """Every boss in the order the in-game list uses: by level, then name.
+
+        The portal's boss grid renders this, so adding a boss to
+        ``bosses.yaml`` puts it in the right place with no code change.
+        """
+        return sorted(self.bosses.values(), key=lambda b: (b.level or 0, b.short))
+
+    def detail(self, canonical: str) -> dict | None:
+        """The parts of a canonical name, for anything that renders it richly.
+
+        ``"HStar"`` -> full name, the difficulty as a word, the level and the
+        prefix letter -- what the difficulty pill and the boss grid need, rather
+        than the single pre-formatted string :meth:`describe` returns.
+        """
+        parts = self.split(canonical)
+        if parts is None:
+            return None
+        letter, boss = parts
+        return {
+            "token": canonical,
+            "short": boss.short,
+            "full": boss.full,
+            "level": boss.level,
+            "letter": letter,
+            "difficulty": self.difficulties[letter],
+        }

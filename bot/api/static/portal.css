@@ -31,11 +31,19 @@
   --own: #34648f;
   --off: #8b8898;
 
-  --d-e: #2f9e6b;
-  --d-n: #3b7fd4;
-  --d-h: #c96c1f;
-  --d-c: #8e4cc4;
-  --d-x: #cd3652;
+  /* Difficulty pills, keyed to the in-game boss list rather than to this
+     page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
+     black-and-ember Extreme. They are the one saturated thing here. */
+  --pill-e-bg: #d7d9dd;
+  --pill-e-fg: #23252b;
+  --pill-n-bg: #2f93b3;
+  --pill-n-fg: #ffffff;
+  --pill-h-bg: #d9407f;
+  --pill-h-fg: #ffffff;
+  --pill-c-bg: #17161c;
+  --pill-c-fg: #f0a030;
+  --pill-x-bg: #17161c;
+  --pill-x-fg: #ff5a3c;
 
   --sans: "Archivo", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
     sans-serif;
@@ -68,13 +76,24 @@
     --own: #83b6e8;
     --off: #77738a;
 
-    --d-e: #4cc78b;
-    --d-n: #6aa6ec;
-    --d-h: #eb9a4e;
-    --d-c: #bb84e6;
-    --d-x: #f2687f;
+    --pill-e-bg: #3a3d45;
+    --pill-e-fg: #e6e8ee;
+    --pill-n-bg: #3aa7c9;
+    --pill-n-fg: #06222b;
+    --pill-h-bg: #e8579a;
+    --pill-h-fg: #2b0716;
+    --pill-c-bg: #0e0d12;
+    --pill-c-fg: #f5b452;
+    --pill-x-bg: #0e0d12;
+    --pill-x-fg: #ff7050;
 
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px -20px rgb(0 0 0 / 80%);
+  }
+
+  .portrait--mono {
+    background: hsl(var(--mono-hue) 32% 24%);
+    color: hsl(var(--mono-hue) 65% 78%);
+    border-color: hsl(var(--mono-hue) 28% 34%);
   }
 }
 
@@ -687,6 +706,92 @@ details[open] > summary.btn {
   max-width: 7.5rem;
 }
 
+/* The status of a run is one choice out of five, so it reads as one control
+   rather than as four unrelated buttons. */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.statusbar__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.statusbar__note {
+  font-size: 0.72rem;
+  color: var(--risk);
+}
+
+.seg--status {
+  flex-wrap: wrap;
+}
+
+.seg__btn {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.34rem 0.7rem;
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg__btn:last-child {
+  border-right: 0;
+}
+
+.seg__btn:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+.seg__btn--on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg__btn--on:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chanmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chanmark__btn {
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chanmark__btn:hover {
+  color: var(--accent);
+  background: var(--raise);
+}
+
 .run__people {
   display: flex;
   flex-wrap: wrap;
@@ -758,46 +863,223 @@ details[open] > summary.btn {
   color: var(--faint);
 }
 
-/* Difficulty prefix is a real tier in game, so it gets the only saturated
-   colour on the page -- and only at chip size. */
+/* ── bosses: portrait, name, difficulty pill, level ─────────────────────── */
+
 .boss {
   display: inline-flex;
-  align-items: stretch;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  border: 1px solid var(--line);
-  font-size: 0.72rem;
-  line-height: 1.7;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
-.boss__d {
-  font-family: var(--mono);
-  font-weight: 600;
-  padding: 0 0.34rem;
-  color: #fff;
-  background: var(--off);
+.boss + .boss {
+  margin-left: 0.55rem;
 }
 
-.boss__n {
-  padding: 0 0.4rem;
+/* A portrait and its monogram stand-in occupy the same box, so adding an image
+   never reflows the row. */
+.portrait {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  object-fit: cover;
   background: var(--raise);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+}
+
+.portrait--sm {
+  width: 26px;
+  height: 26px;
+  font-size: 0.6rem;
+}
+
+.portrait--md {
+  width: 38px;
+  height: 38px;
+  font-size: 0.78rem;
+}
+
+.portrait--mono {
+  background: hsl(var(--mono-hue) 42% 88%);
+  color: hsl(var(--mono-hue) 55% 26%);
+  border-color: hsl(var(--mono-hue) 35% 78%);
+}
+
+.boss__name {
+  font-weight: 600;
+  white-space: normal;
+}
+
+.boss__lv {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+/* The difficulty tier is a real thing in game, and these are its colours. */
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.42rem 0.09rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.5;
+  background: var(--off);
+  color: #fff;
+  vertical-align: 0.06em;
+}
+
+.pill--e {
+  background: var(--pill-e-bg);
+  color: var(--pill-e-fg);
+}
+.pill--n {
+  background: var(--pill-n-bg);
+  color: var(--pill-n-fg);
+}
+.pill--h {
+  background: var(--pill-h-bg);
+  color: var(--pill-h-fg);
+}
+.pill--c {
+  background: var(--pill-c-bg);
+  color: var(--pill-c-fg);
+}
+.pill--x {
+  background: var(--pill-x-bg);
+  color: var(--pill-x-fg);
+}
+
+/* ── the boss grid: the in-game list, as a picker ───────────────────────── */
+
+.grid-bosses {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.bossrow {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) 1fr;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+}
+
+.bossrow--on {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.bossrow__id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.bossrow__name {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.bossrow__lv {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
+.bossrow__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* A pill you can press. Selected = filled, unselected = outlined and dim, so
+   the two states differ by more than colour. */
+.pill-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 36px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pill-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.pill-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   color: var(--ink);
 }
 
-.boss--e .boss__d {
-  background: var(--d-e);
+.pill-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-.boss--n .boss__d {
-  background: var(--d-n);
+
+.pill-toggle__tick {
+  visibility: hidden;
 }
-.boss--h .boss__d {
-  background: var(--d-h);
+
+.pill-toggle:has(input:checked) .pill-toggle__tick,
+.pill-toggle--on .pill-toggle__tick {
+  visibility: visible;
 }
-.boss--c .boss__d {
-  background: var(--d-c);
+
+.pill-toggle--e:has(input:checked),
+.pill-toggle--e.pill-toggle--on {
+  background: var(--pill-e-bg);
+  color: var(--pill-e-fg);
+  border-color: var(--pill-e-bg);
 }
-.boss--x .boss__d {
-  background: var(--d-x);
+.pill-toggle--n:has(input:checked),
+.pill-toggle--n.pill-toggle--on {
+  background: var(--pill-n-bg);
+  color: var(--pill-n-fg);
+  border-color: var(--pill-n-bg);
+}
+.pill-toggle--h:has(input:checked),
+.pill-toggle--h.pill-toggle--on {
+  background: var(--pill-h-bg);
+  color: var(--pill-h-fg);
+  border-color: var(--pill-h-bg);
+}
+.pill-toggle--c:has(input:checked),
+.pill-toggle--c.pill-toggle--on {
+  background: var(--pill-c-bg);
+  color: var(--pill-c-fg);
+  border-color: #3a3742;
+}
+.pill-toggle--x:has(input:checked),
+.pill-toggle--x.pill-toggle--on {
+  background: var(--pill-x-bg);
+  color: var(--pill-x-fg);
+  border-color: #3a3742;
 }
 
 .mono {

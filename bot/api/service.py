@@ -17,6 +17,8 @@ paging channel history) are ``async`` and take the live :class:`~bot.client.Boss
 from __future__ import annotations
 
 import logging
+import re
+import zlib
 from collections.abc import AsyncIterator, Iterable, Sequence
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
@@ -27,8 +29,9 @@ from .. import formatting
 from ..bosses import BossParseError
 from ..export import message_record
 from ..extract.commit import commit, reject
+from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
-from ..materialise import refresh_run_reminders
+from ..materialise import LIVE_STATUSES, refresh_run_reminders
 from ..rsvp import compute_status
 from ..timeutil import local_naive, to_iso, utcnow
 from ..weeks import (
@@ -174,14 +177,95 @@ def channel_is_watched(bot: BossBot, channel_id: int | str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def boss_view(bot: BossBot, token: str) -> dict:
-    """``"HFA"`` plus the difficulty letter and the full in-game name."""
-    parts = bot.bosses.split(token)
+def monogram(name: str) -> dict:
+    """A stand-in badge for a boss with no portrait.
+
+    Deterministic from the name, so the same boss is always the same colour and
+    the grid does not reshuffle between page loads. Sits in the same box a
+    portrait would, so nothing shifts when one is added.
+    """
+    letters = [word[0] for word in re.split(r"[^A-Za-z0-9]+", name) if word][:2]
     return {
-        "token": token,
-        "difficulty": parts[0].upper() if parts else "",
-        "label": bot.bosses.describe(token),
+        "text": "".join(letters).upper() or "?",
+        "hue": zlib.crc32(name.encode("utf-8")) % 360,
     }
+
+
+def boss_view(bot: BossBot, token: str) -> dict:
+    """One boss as the portal renders it: full name, difficulty pill, level.
+
+    Falls back to the raw token for anything not in ``bosses.yaml`` -- an old
+    run whose boss was removed from the table still has to render.
+    """
+    detail = bot.bosses.detail(token)
+    if detail is None:
+        return {
+            "token": token,
+            "short": token,
+            "full": token,
+            "level": None,
+            "letter": "",
+            "difficulty": "",
+            "label": token,
+            "portrait": None,
+            "monogram": monogram(token),
+        }
+    return {
+        **detail,
+        "letter": detail["letter"].upper(),
+        "difficulty": detail["difficulty"].upper(),
+        "label": bot.bosses.describe(token),
+        "portrait": portrait_url(bot, detail["short"]),
+        "monogram": monogram(detail["full"]),
+    }
+
+
+def portrait_url(bot: BossBot, short: str) -> str | None:
+    """The portal URL for a boss portrait, or ``None`` when there is no file."""
+    return f"/static/portraits/{short}" if bot.bosses.portrait_path(short) else None
+
+
+def boss_grid(bot: BossBot, selected: Sequence[str] = ()) -> list[dict]:
+    """The in-game boss list: one row per boss, its difficulties as pills.
+
+    ``selected`` marks the tokens that are already chosen, so the same grid
+    serves the fixed-run editor (a picker) and `/bosses` (a read-only view of
+    what the guild actually runs).
+    """
+    chosen = {str(t) for t in selected}
+    rows = []
+    for boss in bot.bosses.ordered():
+        options = [
+            {
+                "token": boss.canonical(letter),
+                "letter": letter.upper(),
+                "difficulty": bot.bosses.difficulty_name(letter).upper(),
+                "selected": boss.canonical(letter) in chosen,
+            }
+            for letter in boss.difficulties
+        ]
+        rows.append(
+            {
+                "short": boss.short,
+                "full": boss.full,
+                "level": boss.level,
+                "difficulties": options,
+                "any_selected": any(o["selected"] for o in options),
+                "portrait": portrait_url(bot, boss.short),
+                "monogram": monogram(boss.full),
+            }
+        )
+    return rows
+
+
+def bosses_in_use(bot: BossBot) -> list[str]:
+    """Every canonical boss the guild has a fixed timing for."""
+    seen: list[str] = []
+    for fixed in bot.repo.list_fixed_runs():
+        for token in fixed["bosses"]:
+            if token not in seen:
+                seen.append(token)
+    return seen
 
 
 def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> dict:
@@ -215,8 +299,8 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
     }
 
 
-def fixed_view(bot: BossBot, fixed: dict) -> dict:
-    return {
+def fixed_view(bot: BossBot, fixed: dict, with_grid: bool = False) -> dict:
+    view = {
         "id": fixed["id"],
         "short_id": short_id(fixed["id"]),
         "owner_id": fixed["owner_id"],
@@ -236,6 +320,10 @@ def fixed_view(bot: BossBot, fixed: dict) -> dict:
         ],
         "note": fixed["note"],
     }
+    if with_grid:
+        # The editor renders the same picker as the create form, pre-ticked.
+        view["grid"] = boss_grid(bot, fixed["bosses"])
+    return view
 
 
 def evidence_view(bot: BossBot, message_ids: Sequence[str]) -> list[dict]:
@@ -271,6 +359,7 @@ def amendment_view(bot: BossBot, amendment: dict, with_evidence: bool = True) ->
         "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
         "status": amendment["status"],
         "bosses": amendment["bosses"],
+        "boss_detail": [boss_view(bot, b) for b in amendment["bosses"]],
         "run_id": amendment["run_id"],
         "run": run_view(bot, run) if run else None,
         "new_datetime": to_iso(amendment["new_datetime"]) if amendment["new_datetime"] else None,
@@ -344,6 +433,7 @@ def reminder_view(bot: BossBot, reminder: dict, run: dict | None) -> dict:
         "message_id": reminder["message_id"],
         "url": message_url(bot, run["channel_id"] if run else None, reminder["message_id"]),
         "bosses": run["bosses"] if run else [],
+        "boss_detail": [boss_view(bot, b) for b in run["bosses"]] if run else [],
         "run_local": formatting.local_day(run["datetime"], bot.tz) if run else None,
         "status": run["status"] if run else None,
     }
@@ -360,25 +450,31 @@ def schedule(
     channel_id: int | str | None = None,
     user_id: int | str | None = None,
     boss: str | None = None,
-    include_cancelled: bool = True,
+    show_past: bool = False,
 ) -> dict:
-    """One week's runs, filtered, grouped by day -- the Week view's whole payload."""
+    """One week's runs, filtered, grouped by day -- the Week view's whole payload.
+
+    A boss week is materialised whole, so by Sunday it already holds Thursday's
+    finished runs. ``done`` and ``cancelled`` are hidden unless ``show_past``,
+    and the count of what was hidden is returned so the page can say so rather
+    than quietly dropping rows.
+    """
     ws = week_for(bot, week)
-    runs = bot.repo.list_runs(
-        week_start=ws,
-        participant=str(user_id) if user_id else None,
-        channel_id=channel_id,
-        include_cancelled=include_cancelled,
-    )
+    # "mine" counts runs whose fixed timing the member owns, not just ones they
+    # are on -- the same rule `/schedule scope:mine` applies.
+    everything = bot.repo.list_runs(week_start=ws, involving=user_id, channel_id=channel_id)
     if boss:
         wanted = boss.strip().lower()
-        runs = [r for r in runs if any(wanted in b.lower() for b in r["bosses"])]
+        everything = [r for r in everything if any(wanted in b.lower() for b in r["bosses"])]
+    runs = everything if show_past else [r for r in everything if r["status"] in LIVE_STATUSES]
     views = [run_view(bot, run) for run in runs]
     return {
         "week": week,
         "week_start": to_iso(ws),
         "week_label": ws.astimezone(bot.tz).strftime("%a %d %b"),
         "timezone": bot.settings.tz,
+        "show_past": show_past,
+        "hidden": len(everything) - len(runs),
         "days": [
             {"heading": heading, "runs": [run_view(bot, r) for r in day]}
             for heading, day in formatting.group_by_day(runs, bot.tz)
@@ -476,7 +572,7 @@ def validate_channel(bot: BossBot, channel_id: int | str) -> str:
     return str(channel_id)
 
 
-def create_fixed(
+async def create_fixed(
     bot: BossBot,
     *,
     bosses: str | Sequence[str],
@@ -505,10 +601,12 @@ def create_fixed(
         channel_id=home,
     )
     bot.materialise_weeks()
-    return fixed_view(bot, bot.repo.get_fixed_run(fixed_id))
+    fixed = bot.repo.get_fixed_run(fixed_id)
+    await _announce(bot, formatting.fixed_notice(fixed, "added"), fixed["participants"], home)
+    return fixed_view(bot, fixed)
 
 
-def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
+async def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
     """Apply a partial edit, then push only the touched fields onto live runs.
 
     Re-snapping every field would undo this week's ``/amend`` -- editing a note
@@ -542,7 +640,14 @@ def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
     bot.repo.update_fixed_run(fixed["id"], **fields)
     _apply_fixed_to_runs(bot, fixed["id"], set(fields))
     bot.materialise_weeks()
-    return fixed_view(bot, bot.repo.get_fixed_run(fixed["id"]))
+    updated = bot.repo.get_fixed_run(fixed["id"])
+    await _announce(
+        bot,
+        formatting.fixed_notice(updated, "changed"),
+        updated["participants"],
+        updated["channel_id"],
+    )
+    return fixed_view(bot, updated)
 
 
 def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None:
@@ -568,7 +673,7 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
 
 
-def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
+async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
     """Remove a baseline timing and cancel the runs it had already produced."""
     fixed = load_fixed(bot, fixed_id)
     cancelled = 0
@@ -579,6 +684,9 @@ def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
             cancelled += 1
     bot.repo.delete_fixed_run(fixed["id"])
+    await _announce(
+        bot, formatting.fixed_notice(fixed, "removed"), fixed["participants"], fixed["channel_id"]
+    )
     return {"id": fixed["id"], "short_id": short_id(fixed["id"]), "cancelled_runs": cancelled}
 
 
@@ -626,26 +734,101 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
 
 
 async def cancel_run(bot: BossBot, run_id: str) -> dict:
+    return await set_status(bot, run_id, "cancelled")
+
+
+#: The statuses a person may set, in the order the portal's control shows them.
+#: `at_risk` is *derived* -- it means somebody said no, and setting it by hand
+#: would be a claim about an answer nobody gave.
+SETTABLE_STATUSES: tuple[str, ...] = ("planned", "confirmed", "otot", "done", "cancelled")
+
+#: How each target status reads in the party's channel, and what it does to the
+#: run's reminders. `refresh_run_reminders` derives the right set from the
+#: status itself (`bot.materialise.reminder_specs`), so "rebuild" covers
+#: planned/confirmed keeping both kinds, `otot` keeping only the morning ping,
+#: and `cancelled`/`done` keeping none.
+STATUS_LABELS: dict[str, str] = {
+    "planned": "back on the schedule",
+    "confirmed": "confirmed",
+    "otot": "own time",
+    "done": "cleared",
+    "cancelled": "cancelled",
+}
+
+
+def status_notice(bot: BossBot, run: dict, status: str) -> str | None:
+    """What the channel is told about a status change, or ``None`` to stay quiet."""
+    if status == "cancelled":
+        return formatting.cancel_notice(run, bot.tz)
+    if status == "otot":
+        return formatting.otot_notice(run, bot.tz)
+    if status == "done":
+        return formatting.done_notice(run)
+    if status == "planned":
+        return formatting.restore_notice(run, bot.tz)
+    if status == "confirmed":
+        return (
+            f"✅ **{formatting.format_bosses(run['bosses'])}** is confirmed for "
+            f"{formatting.local_day(run['datetime'], bot.tz)} "
+            f"{formatting.local_time(run['datetime'], bot.tz)} — "
+            f"{formatting.format_participants(run['participants'])}"
+        )
+    return None
+
+
+async def set_status(
+    bot: BossBot, run_id: str, status: str, announce: bool = True, mark: bool = True
+) -> dict:
+    """Move a run to an explicitly chosen status, with the side effects it implies.
+
+    One function behind `/status`, `/otot`, `/cancel`, `/restore`, `/done`, the
+    portal's segmented control and `bossctl status`, so a transition cannot mean
+    one thing in Discord and another in the portal.
+
+    * reminders are rebuilt from the new status -- countdowns come back for
+      ``planned``/``confirmed``, drop for ``otot``, and go entirely for
+      ``cancelled``/``done``;
+    * answers survive going to ``confirmed`` or ``done`` (they were about this
+      run) and are cleared coming *back* from ``cancelled``/``otot``, where they
+      were about a run that was off;
+    * nothing is posted when the status did not actually change.
+
+    ``mark`` adds the ``(via portal)`` suffix; a slash command turns it off,
+    because that change *was* a chat decision.
+    """
+    if status not in SETTABLE_STATUSES:
+        raise BadRequest(
+            f"`{status}` is not a status you can set - one of {', '.join(SETTABLE_STATUSES)}. "
+            "`at_risk` is derived from the answers people give."
+        )
     run = load_run(bot, run_id)
-    bot.repo.set_run_status(run["id"], "cancelled")
+    previous = run["status"]
+    if previous == status:
+        return run_view(bot, run)
+
+    if status == "planned" and previous in ("cancelled", "otot", "done"):
+        # Those answers were about a run that was off; ask again.
+        for uid in run["participants"]:
+            bot.repo.clear_rsvp(run["id"], uid)
+    bot.repo.set_run_status(run["id"], status)
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
-    await _announce(
-        bot,
-        f"🚫 **{formatting.format_bosses(run['bosses'])}** "
-        f"({formatting.local_day(run['datetime'], bot.tz)}) is cancelled — "
-        f"{formatting.format_participants(run['participants'])}",
-        run["participants"],
-        run["channel_id"],
-    )
-    return run_view(bot, bot.repo.get_run(run["id"]))
+
+    fresh = bot.repo.get_run(run["id"])
+    if announce:
+        notice = status_notice(bot, fresh, status)
+        if notice:
+            await _announce(bot, notice, fresh["participants"], fresh["channel_id"], mark=mark)
+    return run_view(bot, fresh)
 
 
-def otot_run(bot: BossBot, run_id: str) -> dict:
+async def otot_run(bot: BossBot, run_id: str) -> dict:
     """Own time: stays in the morning ping, loses its countdowns."""
-    run = load_run(bot, run_id)
-    bot.repo.set_run_status(run["id"], "otot")
-    refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
-    return run_view(bot, bot.repo.get_run(run["id"]))
+    return await set_status(bot, run_id, "otot")
+
+
+async def restore_run(bot: BossBot, run_id: str) -> dict:
+    """Put a cancelled, own-time or finished run back on the schedule."""
+    return await set_status(bot, run_id, "planned")
 
 
 async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -> dict:
@@ -668,13 +851,28 @@ async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -
 
 
 async def _announce(
-    bot: BossBot, content: str, mention_users: Sequence[str], channel_id: str | None
+    bot: BossBot,
+    content: str,
+    mention_users: Sequence[str],
+    channel_id: str | None,
+    mark: bool = True,
 ) -> None:
-    channel = await bot.post_channel(channel_id)
-    if channel is None:
-        log.warning("no channel available; dropping the portal's announcement")
+    """Post a change notice in a run's home channel.
+
+    Everything the portal, the CLI and the API do to the schedule goes through
+    here, marked ``(via portal)``: a run that moves without anyone in the
+    channel having said anything is otherwise baffling to the party.
+    """
+    found = await bot.find_channel(channel_id)
+    if found.channel is None:
+        # A notice is a courtesy, not the change itself: the schedule edit has
+        # already happened, so this warns rather than failing the request.
+        log.warning("dropping a portal notice: %s", found.problem)
         return
-    await bot.post_plain(channel, content, list(mention_users))
+    channel = found.channel
+    await bot.post_plain(
+        channel, formatting.via_portal(content) if mark else content, list(mention_users)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -787,6 +985,11 @@ def reminders(bot: BossBot, run_id: str | None = None, limit: int = 200) -> list
     return [reminder_view(bot, reminder, run) for reminder, run in rows[:limit]]
 
 
+def access_report(bot: BossBot) -> list[dict]:
+    """Per-channel read/send permissions, so missing ones are visible at a glance."""
+    return bot.access_report()
+
+
 def get_config(bot: BossBot) -> dict:
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
@@ -858,10 +1061,13 @@ async def post_digest(
     bot: BossBot, channel_id: int | str | None = None, week: str = "this"
 ) -> dict:
     week_for(bot, week)  # validates
+    found = await bot.find_channel(channel_id)
+    if found.channel is None:
+        raise BadRequest(f"couldn't post the digest: {found.problem}")
     message = await bot.post_digest(channel_id, week=week)
     if message is None:
         raise BadRequest(
-            "couldn't post the digest - set POST_CHANNEL_ID, or pass a channel the bot can see"
+            "couldn't post the digest - Discord rejected the message; check the bot logs"
         )
     cid = getattr(getattr(message, "channel", None), "id", channel_id)
     return {
@@ -873,25 +1079,86 @@ async def post_digest(
     }
 
 
-async def rescan(bot: BossBot, channel_id: int | str, hours: int = 24, post: bool = True) -> dict:
-    if not channel_is_watched(bot, channel_id):
-        raise BadRequest(f"channel {channel_id} isn't watched, so nothing is stored for it")
+#: General channels (no fixed run lives there) are offered last: a rescan is
+#: usually about a party's own channel, and the general one is the noisy one.
+def rescan_targets(bot: BossBot) -> list[dict]:
+    """Every watched channel a rescan can cover, party channels first.
+
+    Resolved from the live guild so a channel added to a watched category is
+    included without a restart -- the same rule the listener applies.
+    """
+    with_runs = {f["channel_id"] for f in bot.repo.list_fixed_runs() if f["channel_id"]}
+    rows = []
+    for channel in bot.watched_text_channels():
+        rows.append(
+            {
+                "id": str(channel.id),
+                "name": f"#{channel.name}",
+                "has_runs": str(channel.id) in with_runs,
+            }
+        )
+    for cid in bot.settings.chat_channel_id_list:
+        if not any(r["id"] == str(cid) for r in rows):
+            rows.append(
+                {
+                    "id": str(cid),
+                    "name": channel_name(bot, cid) or f"channel {cid}",
+                    "has_runs": str(cid) in with_runs,
+                }
+            )
+    # Party channels first, then the general ones, each group alphabetical.
+    rows.sort(key=lambda r: (not r["has_runs"], r["name"]))
+    return rows
+
+
+def _check_rescan_allowed(bot: BossBot, window: str) -> None:
+    if window not in WINDOWS:
+        raise BadRequest(f"window must be one of {', '.join(WINDOWS)}")
     if bot.paused:
         raise BadRequest("chat watching is paused - resume it in Config first")
     if not bot.extract_enabled:
         raise BadRequest("the extractor is switched off - turn it on in Config first")
-    hours = max(1, min(int(hours), 168))
-    plan = await bot.extractor.rescan(channel_id, hours=hours, post=post)
-    if plan is None:
-        return {"asked": False, "hours": hours, "proposed": [], "dropped": 0, "summary": ""}
+
+
+def resolve_rescan_channels(bot: BossBot, channels: Sequence[str] | None) -> list[str]:
+    """The channels a rescan will cover; empty or ``None`` means all watched ones."""
+    if not channels:
+        picked = [row["id"] for row in rescan_targets(bot)]
+        if not picked:
+            raise BadRequest(
+                "no watched channels are visible - check CHAT_CHANNEL_IDS / CHAT_CATEGORY_IDS, "
+                "and that the bot is connected"
+            )
+        return picked
+    for channel_id in channels:
+        if not channel_is_watched(bot, channel_id):
+            raise BadRequest(f"channel {channel_id} isn't watched, so there's nothing to re-read")
+    return [str(c) for c in channels]
+
+
+async def rescan_one(
+    bot: BossBot, channel_id: int | str, window: str = DEFAULT_WINDOW, post: bool = True
+) -> dict:
+    """Backfill one channel from Discord, then re-read the window burst by burst."""
+    report = await bot.extractor.rescan_window(channel_id, window=window, post=post)
     return {
-        "asked": True,
-        "hours": hours,
-        "error": plan.error,
-        "latency_ms": plan.latency_ms,
-        "summary": plan.summary,
-        "dropped": len(plan.dropped),
-        "amendment_ids": plan.amendment_ids,
+        "channel_id": str(channel_id),
+        "channel_name": channel_name(bot, channel_id) or f"channel {channel_id}",
+        "asked": report.asked,
+        "window": report.window,
+        "since": to_iso(report.since),
+        "widened": report.widened,
+        "backfilled": report.backfilled,
+        "stored": report.stored,
+        "gated": report.gated,
+        "bursts": report.bursts,
+        "extracted": report.extracted,
+        "proposals": report.proposals,
+        "dropped": report.dropped,
+        "stale": report.stale,
+        "elapsed_ms": report.elapsed_ms,
+        "error": report.errors[0] if report.errors else None,
+        "summary": next((p.summary for p in report.plans if p.summary), ""),
         "proposed": [
             {
                 "kind": p.kind,
@@ -899,9 +1166,49 @@ async def rescan(bot: BossBot, channel_id: int | str, hours: int = 24, post: boo
                 "confidence": p.amendment.confidence,
                 "run_id": p.run["id"] if p.run else None,
             }
-            for p in plan.planned
+            for p in report.planned
         ],
     }
+
+
+def rescan_totals(window: str, results: Sequence[dict]) -> dict:
+    """Roll a per-channel rescan up into one answer."""
+    return {
+        "window": window,
+        "channels": list(results),
+        "asked": any(r["asked"] for r in results),
+        "widened": any(r["widened"] for r in results),
+        "backfilled": sum(r["backfilled"] for r in results),
+        "gated": sum(r["gated"] for r in results),
+        "bursts": sum(r["bursts"] for r in results),
+        "extracted": sum(r["extracted"] for r in results),
+        "proposals": sum(r["proposals"] for r in results),
+        "dropped": sum(r["dropped"] for r in results),
+        "stale": sum(r["stale"] for r in results),
+        "elapsed_ms": sum(r["elapsed_ms"] for r in results),
+        "errors": [r["error"] for r in results if r["error"]],
+        "proposed": [p for r in results for p in r["proposed"]],
+    }
+
+
+async def rescan(
+    bot: BossBot,
+    channels: Sequence[str] | None = None,
+    window: str = DEFAULT_WINDOW,
+    post: bool = True,
+) -> dict:
+    """Re-read one or more party channels. No ``channels`` means all watched ones.
+
+    Channels are done **one at a time**: the model lock serialises the calls
+    anyway, and doing them in order keeps each channel's cards together in that
+    channel rather than interleaving eight parties' proposals.
+    """
+    _check_rescan_allowed(bot, window)
+    targets = resolve_rescan_channels(bot, channels)
+    results = [
+        await rescan_one(bot, channel_id, window=window, post=post) for channel_id in targets
+    ]
+    return rescan_totals(window, results)
 
 
 async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
@@ -914,9 +1221,10 @@ async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
         raise BadRequest(
             f"don't know how to render `{kind}` - try day_of, countdown_60, amend or decline"
         )
-    channel = await bot.post_channel(run["channel_id"])
-    if channel is None:
-        raise BadRequest("that run's home channel isn't reachable")
+    found = await bot.find_channel(run["channel_id"])
+    if found.channel is None:
+        raise BadRequest(f"couldn't post the test ping: {found.problem}")
+    channel = found.channel
     card.content = TEST_PREFIX + card.content
     message = await bot._post(channel, card, mention_users=run["participants"])
     if message is None:
@@ -1003,8 +1311,14 @@ __all__ = [
     "CONFIG_KEYS",
     "PORTAL_APPLIED",
     "PORTAL_REJECTED",
+    "access_report",
     "amend_run",
     "amendment_view",
+    "boss_grid",
+    "boss_view",
+    "bosses_in_use",
+    "monogram",
+    "portrait_url",
     "approve",
     "cancel_run",
     "channel_is_watched",
@@ -1021,13 +1335,20 @@ __all__ = [
     "load_run",
     "member_name",
     "members",
+    "SETTABLE_STATUSES",
     "otot_run",
+    "restore_run",
+    "set_status",
     "parse_since",
     "pending",
     "post_digest",
     "reject_amendment",
     "reminders",
     "rescan",
+    "rescan_one",
+    "rescan_targets",
+    "rescan_totals",
+    "resolve_rescan_channels",
     "run_view",
     "schedule",
     "set_config",

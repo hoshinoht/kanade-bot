@@ -29,10 +29,25 @@ class ErrorOut(BaseModel):
 # --- schedule ---------------------------------------------------------------
 
 
+class MonogramOut(BaseModel):
+    """The stand-in badge shown when a boss has no portrait file."""
+
+    text: str
+    hue: int
+
+
 class BossOut(BaseModel):
     token: str
+    short: str
+    full: str
+    level: int | None
+    #: The difficulty prefix (``H``) and its in-game word (``HARD``).
+    letter: str
     difficulty: str
     label: str
+    #: ``/static/portraits/<short>`` when `config/portraits/` has a file.
+    portrait: str | None = None
+    monogram: MonogramOut | None = None
 
 
 class ParticipantOut(BaseModel):
@@ -74,6 +89,9 @@ class ScheduleOut(BaseModel):
     week_start: str
     week_label: str
     timezone: str
+    show_past: bool
+    #: How many `done`/`cancelled` runs were left out, so the reader is told.
+    hidden: int
     days: list[DayOut]
     runs: list[RunOut]
     count: int
@@ -136,6 +154,15 @@ class RsvpIn(Strict):
     answer: Answer
 
 
+#: `at_risk` is derived from the answers people give, and `done` is also set
+#: automatically once a run's night has passed; neither is set by hand here.
+RunStatus = Literal["planned", "confirmed", "otot", "done", "cancelled"]
+
+
+class StatusIn(Strict):
+    status: RunStatus
+
+
 # --- the inbox --------------------------------------------------------------
 
 
@@ -157,6 +184,7 @@ class AmendmentOut(BaseModel):
     kind_label: str
     status: str
     bosses: list[str]
+    boss_detail: list[BossOut] = []
     run_id: str | None
     run: RunOut | None
     new_datetime: str | None
@@ -258,6 +286,7 @@ class ReminderOut(BaseModel):
     message_id: str | None
     url: str | None
     bosses: list[str]
+    boss_detail: list[BossOut] = []
     run_local: str | None
     status: str | None
 
@@ -304,8 +333,9 @@ class DigestOut(BaseModel):
 
 
 class RescanIn(Strict):
-    channel_id: str
-    hours: int = Field(default=24, ge=1, le=168)
+    #: Empty (or absent) means every watched channel.
+    channels: list[str] = []
+    window: Literal["week", "2weeks", "48h", "24h"] = "week"
     post: bool = True
 
 
@@ -316,15 +346,51 @@ class ProposedOut(BaseModel):
     run_id: str | None
 
 
-class RescanOut(BaseModel):
+class ChannelRescanOut(BaseModel):
+    """What re-reading one channel did."""
+
+    channel_id: str
+    channel_name: str
     asked: bool
-    hours: int
-    error: str | None = None
-    latency_ms: int | None = None
-    summary: str = ""
+    window: str
+    since: str
+    #: True when the week held no scheduling chat and the search widened once.
+    widened: bool = False
+    backfilled: int = 0
+    stored: int = 0
+    gated: int = 0
+    bursts: int = 0
+    extracted: int = 0
+    proposals: int = 0
     dropped: int = 0
-    amendment_ids: list[str] = []
+    stale: int = 0
+    elapsed_ms: int = 0
+    error: str | None = None
+    summary: str = ""
     proposed: list[ProposedOut] = []
+
+
+class RescanOut(BaseModel):
+    window: str
+    channels: list[ChannelRescanOut]
+    asked: bool
+    widened: bool = False
+    backfilled: int = 0
+    gated: int = 0
+    bursts: int = 0
+    extracted: int = 0
+    proposals: int = 0
+    dropped: int = 0
+    stale: int = 0
+    elapsed_ms: int = 0
+    errors: list[str] = []
+    proposed: list[ProposedOut] = []
+
+
+class RescanTargetOut(BaseModel):
+    id: str
+    name: str
+    has_runs: bool
 
 
 class PingIn(Strict):
@@ -340,11 +406,28 @@ class PingOut(BaseModel):
     url: str | None
 
 
+class AccessOut(BaseModel):
+    """What the bot may actually do in one channel."""
+
+    id: str
+    name: str
+    watched: bool
+    is_digest_channel: bool
+    view: bool
+    send: bool
+    history: bool
+    embed: bool
+    react: bool
+    #: True when the bot is not connected, so nothing could be checked.
+    unknown: bool
+
+
 class HealthOut(BaseModel):
     status: str
 
 
 __all__ = [
+    "AccessOut",
     "AmendIn",
     "AmendmentOut",
     "ApproveIn",
@@ -365,6 +448,7 @@ __all__ = [
     "FixedUpdate",
     "HealthOut",
     "MemberOut",
+    "MonogramOut",
     "NickIn",
     "NickOut",
     "ParticipantOut",
@@ -373,9 +457,13 @@ __all__ = [
     "ProposedOut",
     "RejectOut",
     "ReminderOut",
+    "ChannelRescanOut",
     "RescanIn",
     "RescanOut",
+    "RescanTargetOut",
     "RsvpIn",
+    "RunStatus",
+    "StatusIn",
     "RunOut",
     "ScheduleOut",
 ]

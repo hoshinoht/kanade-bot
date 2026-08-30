@@ -21,12 +21,12 @@ reachable from your phone over Tailscale.
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Membership**       | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role on startup and on member updates — no `/roster` upkeep.                                          |
 | **Baseline**         | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party.                                          |
-| **Weekly runs**      | At each boss-week reset (default Thu 00:00) the baseline is materialised into concrete runs for the current and next week.                                                        |
+| **Weekly runs**      | At each boss-week reset (default Thu 00:00) the baseline is materialised into concrete runs for the current and next week. A run whose night has passed goes `done` on the tick and drops out of `/schedule` and the dropdowns. |
 | **Watched channels** | `CHAT_CHANNEL_IDS` and/or `CHAT_CATEGORY_IDS` decide where the bot listens. A category watches every channel under it, including ones added later; threads count as their parent. |
 | **Home channels**    | Each fixed run's **home channel** is the (watched) channel `/fixed add` was invoked in. All of that run's output lands there, so one channel per party stays clean.               |
 | **Reminders**        | One grouped **day-of** message per home channel each morning (one line per run, each tagging only its own participants), plus **countdown** pings at T-1h and T-15m.              |
 | **RSVPs**            | The bot puts ✅/❌ on every reminder. ✅ from everyone → the run is `confirmed`; any ❌ → `at_risk` and the bot replies tagging the rest to reschedule.                               |
-| **Changes**          | `/amend`, `/cancel`, `/otot`, `/rsvp`, `/nick`, `/pingtime`.                                                                                                                      |
+| **Changes**          | `/amend`, `/status` (with `/otot`, `/cancel`, `/restore`, `/done` as shortcuts), `/rsvp`, `/nick`, `/pingtime`. Every change made outside Discord is announced in the run's home channel, marked *(via portal)*. |
 | **Chat extraction**  | A local `gpt-oss:20b` reads the party channels and posts a 📋/💡/📌 card for each change it finds. ✅ from a participant applies it; ❌ rejects it; unanswered cards expire after 24 h. |
 | **Portal & CLI**     | A local web portal (week view, fixed editor, proposal inbox, extraction log, config) and `bossctl`, both over one HTTP API inside the bot process. Loopback only; tailnet via `tailscale serve`.  |
 
@@ -92,6 +92,11 @@ can edit it and restart — no rebuild. It ships with the nine bosses parties
 currently run: Chosen Seren, Gatekeeper Kalos, The First Adversary, Carling,
 Radiant Malefic Star, Limbo, Baldrix, Jupiter and Black Mage.
 
+**Boss portraits are optional.** Drop `Star.png`, `Kalos.png` and friends into
+[`config/portraits/`](config/portraits/README.md) and the portal shows them next
+to each boss, and the bot attaches one as the thumbnail on that run's pings. A
+boss with no file gets a coloured monogram instead, so nothing shifts either way.
+
 ## 3. Run
 
 ```sh
@@ -129,12 +134,17 @@ uv run python -m bot
 /fixed remove id:a1b2c3d4
 
 /schedule                       # in a party channel: that channel's runs
-                                # elsewhere: your runs. Public, never pings.
-/schedule scope:mine|all|channel week:this|next
+                                # elsewhere: your runs (on them, or you own the
+                                # timing). Public, never pings. Runs that have
+                                # already happened are hidden.
+/schedule scope:mine|all|channel week:this|next show_past:True
 
 /amend run_id:a1b2 to:wed 21:30  # understands "tomorrow 9:45pm", "in 2 hours"
-/cancel run_id:a1b2c3d4
+/status run_id:a1b2 state:...   # planned · confirmed · own time · done · cancelled
+/cancel run_id:a1b2c3d4         # shortcuts for the same thing
 /otot run_id:a1b2c3d4           # own time: stays in the morning ping, no countdowns
+/restore run_id:a1b2c3d4        # put a cancelled/own-time/finished run back on
+/done run_id:a1b2c3d4           # cleared early
 /rsvp run_id:a1b2c3d4 answer:no
 
 /nick user:@harbour4417 alias:MY  # chat nickname, used by the extractor
@@ -231,9 +241,28 @@ to the `extractions` table. That is the prompt-tuning tool, and phase 3's portal
 will render it.
 
 ```
-/rescan hours:24          # re-read this channel's last N hours and propose again
-/debug extract hours:6    # the same, but ephemeral, with the raw JSON, no card
+/rescan                                  # re-read this channel's boss week from Discord
+/rescan window:2weeks                    # week (default) · 2weeks · 48h · 24h
+/rescan scope:all channels               # every watched channel, one at a time
+/debug extract                           # the same, ephemeral, with the raw JSON and no card
 ```
+
+A rescan does three things in order. It **backfills from Discord first** —
+paging `channel.history()` for the window, threads included — so it still works
+on a database that was just reset, which is exactly when you reach for it. Then
+it splits the window back into the conversations it came from (a 15-minute gap
+ends one) and sends **each conversation as its own prompt**, oldest first: a
+whole boss week in one prompt would be enormous and impossible for the model to
+attribute. Finally, anything it finds that is already over — a time more than
+three hours in the past, or a run that is finished or cancelled — is dropped
+rather than posted, so re-reading old chat never puts up a card about last
+Tuesday. The reply says what it read, not just what it found.
+
+If the current boss week holds no scheduling chat at all, it checks the week
+before it once (and says so). Never further back than that.
+
+The same backfill runs on startup for every watched channel — no model call,
+just history into the database. Turn it off with `BACKFILL_ON_START=false`.
 
 Turn it off with `EXTRACT_ENABLED=false` (messages are still stored) or
 `/bot pause` at runtime. If Ollama is unreachable or slow the extraction is
@@ -332,13 +361,14 @@ token signs every browser session out.
 
 | Page             | What it is for                                                                                                                                     |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Week**         | The default. A seven-column rail for the boss week — starting on the reset day, not Monday — with a pip per run, then the runs grouped by day. Filter by channel, member or boss; move / own-time / cancel / preview-ping on each row. |
-| **Fixed**        | The baseline timings, with a create/edit form. Boss tokens are checked as you type; the party is picked from the synced roster.                     |
+| **Week**         | The default. A seven-column rail for the boss week — starting on the reset day, not Monday — with a pip per run, then the runs grouped by day. Filter by channel, member or boss; move, preview-ping, and a status control (planned · confirmed · own time · done · cancelled) on each row. Past and cancelled runs are hidden until you ask. |
+| **Fixed**        | The baseline timings, with a create/edit form. Bosses are picked from a **boss grid** — the in-game list, one row per boss with its real difficulties as pills — or typed as tokens. The party comes from the synced roster. |
+| **Bosses**       | The same grid, read-only, with the difficulties the guild actually has timings for ticked. A quick "what do we run".                                |
 | **Inbox**        | What the extractor proposed and nobody has answered: the change, its confidence, and the exact chat lines it cited. Approve, edit-then-approve, or reject — the same code path a ✅ on the Discord card runs, and the card is edited to say it was applied via the portal. |
 | **Extractions**  | Every model call: the prompt as sent, the raw JSON back, the latency, and the changes it produced. This is the prompt-tuning tool.                  |
 | **Members**      | The roster as synced from the bossing role, plus the chat aliases the extractor matches names against.                                              |
 | **Reminders**    | Queued and sent reminder rows, with a link straight to each posted message in Discord.                                                              |
-| **Config**       | Morning ping time, countdown offsets, pause chat watching, turn the extractor off, post the weekly digest now, rescan a channel. The `.env`-only values are listed read-only underneath. |
+| **Config**       | Morning ping time, countdown offsets, pause chat watching, turn the extractor off, post the weekly digest now, **re-read the party channels**, and a **channel access** table showing what the bot may actually do in each one. The `.env`-only values are listed read-only underneath. |
 
 Every time on every page is in the guild timezone, which is named in the header.
 The pages are server-rendered; [htmx](https://htmx.org) (pinned, from cdnjs, with
@@ -408,7 +438,11 @@ bossctl cancel <run> | otot <run>
 bossctl rsvp <run> yes --user <user-id>
 bossctl members | nick <user-id> MY
 bossctl reminders [--run <id>]
-bossctl rescan --channel <id> [--hours 24] [--dry-run]
+bossctl rescan [--window week] [--channel ID ...]   # default: every watched channel
+bossctl channels                         # what a rescan would cover
+bossctl access                           # per-channel read/post permissions
+bossctl status <run> planned|confirmed|otot|done|cancelled
+bossctl restore <run>
 bossctl digest [--channel <id>] [--week next]
 bossctl ping <run> day_of                # posts a 🧪 TEST reminder now
 bossctl extractions [-n 25] | extraction <id> [--no-prompt]

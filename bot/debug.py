@@ -23,6 +23,7 @@ import discord
 from discord import app_commands
 
 from . import formatting
+from .extract.window import WINDOWS
 from .ids import IdError, resolve_id, short_id
 from .materialise import DAY_OF, countdown_minutes
 from .timeutil import from_iso, utcnow
@@ -112,6 +113,10 @@ KIND_CHOICES = [
     app_commands.Choice(name=n, value=n)
     for n in ("day_of", "countdown_60", "countdown_15", "amend", "decline")
 ]
+
+#: Declared here rather than imported from `bot.commands`, which imports this
+#: module -- the labels live with the windows themselves.
+WINDOW_CHOICES = [app_commands.Choice(name=value, value=value) for value in WINDOWS]
 
 
 def _bot(interaction: discord.Interaction) -> BossBot:
@@ -344,9 +349,12 @@ class DebugGroup(app_commands.Group):
     @app_commands.command(
         name="extract", description="Run the chat extractor over this channel and show its JSON"
     )
-    @app_commands.describe(hours="How far back to read (default 6, max 168)")
-    async def extract(self, interaction: discord.Interaction, hours: int = 6) -> None:
-        from .commands import _rescan_summary
+    @app_commands.describe(window="How far back to read (default: this boss week)")
+    @app_commands.choices(window=WINDOW_CHOICES)
+    async def extract(
+        self, interaction: discord.Interaction, window: app_commands.Choice[str] | None = None
+    ) -> None:
+        from .commands import DEFAULT_WINDOW, rescan_summary
         from .watch import origin_ids
 
         bot = _bot(interaction)
@@ -360,15 +368,17 @@ class DebugGroup(app_commands.Group):
                 "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
             )
             return
-        hours = max(1, min(int(hours), 168))
         await interaction.response.defer(ephemeral=True)
         channel_id, _thread = origin_ids(interaction.channel)
         # `post=False`: /debug never posts a card, so this is safe to run on a
-        # busy channel without spamming everyone.
-        plan = await bot.extractor.rescan(channel_id, hours=hours, post=False)
-        body = _rescan_summary(plan, hours)
-        if plan is not None and plan.raw:
-            body += f"\n```json\n{plan.raw[:1200]}\n```"
+        # busy channel without spamming everyone. It still backfills.
+        report = await bot.extractor.rescan_window(
+            channel_id, window=window.value if window else DEFAULT_WINDOW, post=False
+        )
+        body = rescan_summary(report)
+        raw = next((plan.raw for plan in reversed(report.plans) if plan.raw), "")
+        if raw:
+            body += f"\n```json\n{raw[:1000]}\n```"
         await interaction.followup.send(body[:1900], ephemeral=True)
 
     # -- clear_test --------------------------------------------------------

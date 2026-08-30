@@ -64,23 +64,53 @@
   </section>
 
   <section class="card">
-    <div class="card__head"><h2 class="card__title">Re-read a channel</h2></div>
-    <form method="post" action="/rescan" class="filters">
-      <label class="field"><span>Channel</span>
-        <select name="channel_id" required>
-          {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="field"><span>Hours back</span>
-        <input name="hours" value="24" size="4" class="mono">
-      </label>
-      <button class="btn" type="submit">Rescan</button>
+    <div class="card__head"><h2 class="card__title">Re-read the party channels</h2></div>
+    <form method="post" action="/rescan" hx-post="/rescan" hx-target="#rescan-job"
+          hx-swap="outerHTML">
+      <div class="filters">
+        <label class="field"><span>How far back</span>
+          <select name="window">
+            <option value="week">This boss week</option>
+            <option value="2weeks">Last 2 weeks</option>
+            <option value="48h">48h</option>
+            <option value="24h">24h</option>
+          </select>
+        </label>
+        <button class="btn btn--primary" type="submit">Rescan</button>
+      </div>
+      <fieldset class="field">
+        <span class="label">Channels — leave all unticked for every one</span>
+        <div class="run__people">
+          {% for target in rescan_targets %}
+          <label class="chip">
+            <input type="checkbox" name="channels" value="{{ target.id }}"> {{ target.name }}
+            {% if not target.has_runs %}<span class="id">general</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
     </form>
-    <p class="run__meta">Runs the extractor over stored history and posts a card for anything it finds.</p>
+    <div id="rescan-job">
+      {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
+    </div>
+    <p class="run__meta">Pulls each channel's history from Discord, splits it back into
+      conversations, and posts that channel's cards in that channel. One channel at a time, so a
+      full sweep takes a few minutes — it keeps going if you leave the page.</p>
   </section>
 </div>
 
 <hr class="rule">
+
+<section class="card">
+  <div class="card__head">
+    <h2 class="card__title">Channel access</h2>
+    <form method="post" action="/access" hx-get="/access" hx-target="#access" hx-swap="innerHTML"
+          style="margin-left:auto">
+      <button class="btn" type="submit">Check again</button>
+    </form>
+  </div>
+  <div id="access">{% include "partials/access.html" %}</div>
+</section>
 
 <section class="card">
   <div class="card__head"><h2 class="card__title">Set in <code>.env</code></h2></div>

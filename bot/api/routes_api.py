@@ -18,6 +18,7 @@ from . import service
 from .deps import Bot, Caller
 from .errors import BadRequest
 from .models import (
+    AccessOut,
     AmendIn,
     AmendmentOut,
     ApproveIn,
@@ -41,9 +42,11 @@ from .models import (
     ReminderOut,
     RescanIn,
     RescanOut,
+    RescanTargetOut,
     RsvpIn,
     RunOut,
     ScheduleOut,
+    StatusIn,
     Week,
 )
 
@@ -65,15 +68,10 @@ async def get_schedule(
     channel: str | None = Query(default=None, description="only this home channel"),
     user: str | None = Query(default=None, description="only runs this member is on"),
     boss: str | None = Query(default=None, description="substring match on a boss token"),
-    include_cancelled: bool = True,
+    show_past: bool = Query(default=False, description="include done and cancelled runs"),
 ) -> dict:
     return service.schedule(
-        bot,
-        week=week,
-        channel_id=channel,
-        user_id=user,
-        boss=boss,
-        include_cancelled=include_cancelled,
+        bot, week=week, channel_id=channel, user_id=user, boss=boss, show_past=show_past
     )
 
 
@@ -94,7 +92,7 @@ async def get_fixed(bot: Bot, caller: Caller, fixed_id: str) -> dict:
 
 @router.post("/fixed", response_model=FixedOut, status_code=201, summary="Add a weekly timing")
 async def post_fixed(bot: Bot, caller: Caller, body: FixedCreate) -> dict:
-    return service.create_fixed(
+    return await service.create_fixed(
         bot,
         bosses=body.bosses,
         day=body.day,
@@ -108,12 +106,12 @@ async def post_fixed(bot: Bot, caller: Caller, body: FixedCreate) -> dict:
 
 @router.patch("/fixed/{fixed_id}", response_model=FixedOut)
 async def patch_fixed(bot: Bot, caller: Caller, fixed_id: str, body: FixedUpdate) -> dict:
-    return service.update_fixed(bot, fixed_id, **body.model_dump(exclude_unset=True))
+    return await service.update_fixed(bot, fixed_id, **body.model_dump(exclude_unset=True))
 
 
 @router.delete("/fixed/{fixed_id}", response_model=DeletedOut)
 async def remove_fixed(bot: Bot, caller: Caller, fixed_id: str) -> dict:
-    return service.delete_fixed(bot, fixed_id)
+    return await service.delete_fixed(bot, fixed_id)
 
 
 @router.post("/validate/bosses", summary="Parse boss tokens without saving anything")
@@ -148,7 +146,22 @@ async def post_cancel(bot: Bot, caller: Caller, run_id: str) -> dict:
 
 @router.post("/runs/{run_id}/otot", response_model=RunOut, summary="Own time: no countdowns")
 async def post_otot(bot: Bot, caller: Caller, run_id: str) -> dict:
-    return service.otot_run(bot, run_id)
+    return await service.otot_run(bot, run_id)
+
+
+@router.post(
+    "/runs/{run_id}/restore",
+    response_model=RunOut,
+    summary="Put a cancelled or own-time run back on the schedule",
+)
+async def post_restore(bot: Bot, caller: Caller, run_id: str) -> dict:
+    return await service.restore_run(bot, run_id)
+
+
+@router.patch("/runs/{run_id}/status", response_model=RunOut, summary="Set a run's status")
+async def patch_status(bot: Bot, caller: Caller, run_id: str, body: StatusIn) -> dict:
+    """The one place a status is chosen; `/otot`, `/cancel` and `/restore` are shortcuts."""
+    return await service.set_status(bot, run_id, body.status)
 
 
 @router.post("/runs/{run_id}/rsvp", response_model=RunOut)
@@ -243,15 +256,35 @@ async def put_config(bot: Bot, caller: Caller, body: ConfigIn) -> dict:
     return result
 
 
+@router.get(
+    "/access",
+    response_model=list[AccessOut],
+    summary="What the bot may do in each watched channel",
+)
+async def get_access(bot: Bot, caller: Caller) -> list[dict]:
+    return service.access_report(bot)
+
+
 @router.post("/digest", response_model=DigestOut, summary="Post the weekly digest now")
 async def post_digest(bot: Bot, caller: Caller, body: DigestIn | None = None) -> dict:
     body = body or DigestIn()
     return await service.post_digest(bot, body.channel_id, week=body.week)
 
 
-@router.post("/rescan", response_model=RescanOut, summary="Re-read a channel's recent chat")
-async def post_rescan(bot: Bot, caller: Caller, body: RescanIn) -> dict:
-    return await service.rescan(bot, body.channel_id, hours=body.hours, post=body.post)
+@router.get(
+    "/rescan/targets",
+    response_model=list[RescanTargetOut],
+    summary="The channels a rescan can cover",
+)
+async def get_rescan_targets(bot: Bot, caller: Caller) -> list[dict]:
+    return service.rescan_targets(bot)
+
+
+@router.post("/rescan", response_model=RescanOut, summary="Re-read the party channels")
+async def post_rescan(bot: Bot, caller: Caller, body: RescanIn | None = None) -> dict:
+    """One channel at a time, oldest conversation first. No channels means all of them."""
+    body = body or RescanIn()
+    return await service.rescan(bot, body.channels, window=body.window, post=body.post)
 
 
 @router.post("/debug/ping", response_model=PingOut, summary="Post one test reminder now")

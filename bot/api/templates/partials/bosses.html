@@ -1,5 +1,2 @@
-{% for boss in detail %}
-<span class="boss boss--{{ boss.difficulty|lower }}" title="{{ boss.label }}">
-  <span class="boss__d">{{ boss.difficulty }}</span><span class="boss__n">{{ boss.token[1:] }}</span>
-</span>
-{% endfor %}
+{% from "partials/macros.html" import boss_list %}
+{{ boss_list(detail) }}

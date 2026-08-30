@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import boss_list %}
 {% block title %}Reminders — Boss scheduler{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -24,7 +25,7 @@
           <td class="mono">{{ row.local_fire_at }}</td>
           <td class="mono">{{ row.kind }}</td>
           <td class="id">#{{ row.run_short_id }}</td>
-          <td>{{ row.bosses|join(" + ") or "—" }}</td>
+          <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
           <td><span class="status status--{{ row.status }}">{{ row.status }}</span></td>
         </tr>
         {% endfor %}
@@ -48,7 +49,7 @@
           <td class="mono">{{ row.sent_at|local_dt }}</td>
           <td class="mono">{{ row.kind }}</td>
           <td class="id">#{{ row.run_short_id }}</td>
-          <td>{{ row.bosses|join(" + ") or "—" }}</td>
+          <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
           <td>{% if row.url %}<a href="{{ row.url }}">open in Discord</a>{% else %}<span class="id">no message</span>{% endif %}</td>
         </tr>
         {% endfor %}

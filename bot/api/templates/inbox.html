@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import boss_list %}
 {% block title %}Inbox — Boss scheduler{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -25,8 +26,8 @@
   <div class="card__head">
     <h2 class="card__title">
       {{ item.kind_label }}
-      {% set names = item.bosses or (item.run.bosses if item.run else []) %}
-      {% if names %}— {{ names|join(" + ") }}{% endif %}
+      {% set detail = item.boss_detail or (item.run.boss_detail if item.run else []) %}
+      {% if detail %}— {{ boss_list(detail, level=False) }}{% endif %}
     </h2>
     <span class="conf conf--{{ item.confidence|confidence_band }}">
       {% if item.confidence is not none %}{{ "%.2f"|format(item.confidence) }}{% else %}no score{% endif %}

@@ -11,6 +11,16 @@ from bot.ids import short_id
 
 from .fake_bot import OTHER_CHANNEL, OWNER_ID, UNWATCHED_CHANNEL, WATCHED_CHANNEL
 
+
+class _AnyHue:
+    """The monogram hue is derived from the name; the value itself is arbitrary."""
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, int) and 0 <= other < 360
+
+
+ANY_HUE = _AnyHue()
+
 # --- schedule ---------------------------------------------------------------
 
 
@@ -32,9 +42,24 @@ def test_schedule_boss_detail_carries_the_full_in_game_name(auth, seeded):
     star = next(r for r in body["runs"] if "HStar" in r["bosses"])
     assert star["boss_detail"][0] == {
         "token": "HStar",
-        "difficulty": "H",
+        "short": "Star",
+        "full": "Radiant Malefic Star",
+        "level": 280,
+        "letter": "H",
+        "difficulty": "HARD",
         "label": "Radiant Malefic Star (Hard, Lv280)",
+        "portrait": None,
+        "monogram": {"text": "RM", "hue": ANY_HUE},
     }
+
+
+def test_a_boss_no_longer_in_the_table_still_renders(auth, fake_bot, seeded):
+    """A run outlives an edit to bosses.yaml; it must not 500 the week view."""
+    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HGollux"])
+    body = auth.get("/api/schedule").json()
+    star = next(r for r in body["runs"] if r["bosses"] == ["HGollux"])
+    assert star["boss_detail"][0]["full"] == "HGollux"
+    assert star["boss_detail"][0]["difficulty"] == ""
 
 
 def test_schedule_filters_by_channel_member_and_boss(auth, seeded):
@@ -462,42 +487,149 @@ def test_digest_posts_and_returns_a_link(auth, fake_bot, seeded):
     assert body["url"].startswith("https://discord.com/channels/")
 
 
-def test_digest_says_what_to_do_when_there_is_nowhere_to_post(auth, fake_bot, seeded):
+def test_digest_says_which_channel_and_why(auth, fake_bot, seeded):
+    """ "couldn't post" sends the owner hunting; the reason does not."""
+    from .fake_bot import make_settings
+
+    fake_bot.settings = make_settings(post_channel_id=None)
+    response = auth.post("/api/digest")
+    assert response.status_code == 400
+    assert "POST_CHANNEL_ID is not set" in response.json()["error"]
+
+
+def test_digest_says_when_the_bot_cannot_post_there(auth, fake_bot, seeded):
+    fake_bot.channels[WATCHED_CHANNEL].permissions.send_messages = False
+    response = auth.post("/api/digest", json={"channel_id": str(WATCHED_CHANNEL)})
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert "#hstar-party" in error
+    assert "View Channel + Send Messages" in error
+
+
+def test_digest_says_when_the_channel_does_not_exist(auth, fake_bot, seeded):
+    from .fake_bot import make_settings
+
+    fake_bot.settings = make_settings(post_channel_id=None)
+    response = auth.post("/api/digest", json={"channel_id": "424242"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+
+
+def test_a_rejected_message_is_reported_separately(auth, fake_bot, seeded):
     fake_bot.digest_fails = True
     response = auth.post("/api/digest")
     assert response.status_code == 400
-    assert "POST_CHANNEL_ID" in response.json()["error"]
+    assert "Discord rejected the message" in response.json()["error"]
+
+
+# --- what the bot may actually do in each channel ---------------------------
+
+
+def test_the_access_report_covers_every_watched_channel(auth, fake_bot, seeded):
+    rows = auth.get("/api/access").json()
+    assert {r["name"] for r in rows} == {"#hstar-party", "#xkalos-party"}
+    assert all(r["watched"] for r in rows)
+    assert all(r["view"] and r["send"] for r in rows)
+
+
+def test_the_access_report_flags_a_missing_permission(auth, fake_bot, seeded):
+    fake_bot.channels[OTHER_CHANNEL].permissions.send_messages = False
+    rows = auth.get("/api/access").json()
+    broken = next(r for r in rows if r["name"] == "#xkalos-party")
+    assert broken["send"] is False
+    assert broken["view"] is True
+
+
+def test_the_digest_channel_is_included_and_marked(auth, fake_bot, seeded):
+    rows = auth.get("/api/access").json()
+    assert [r["is_digest_channel"] for r in rows if r["name"] == "#hstar-party"] == [True]
 
 
 def test_rescan_refuses_an_unwatched_channel(auth, seeded):
-    response = auth.post("/api/rescan", json={"channel_id": str(UNWATCHED_CHANNEL)})
+    response = auth.post("/api/rescan", json={"channels": [str(UNWATCHED_CHANNEL)]})
     assert response.status_code == 400
     assert "isn't watched" in response.json()["error"]
 
 
 def test_rescan_refuses_while_paused(auth, fake_bot, seeded):
     fake_bot.repo.set_config("paused", "1")
-    response = auth.post("/api/rescan", json={"channel_id": str(WATCHED_CHANNEL)})
+    response = auth.post("/api/rescan", json={})
     assert response.status_code == 400
     assert "paused" in response.json()["error"]
 
 
 def test_rescan_refuses_while_the_extractor_is_off(auth, fake_bot, seeded):
     fake_bot.repo.set_config("extract_enabled", "0")
-    response = auth.post("/api/rescan", json={"channel_id": str(WATCHED_CHANNEL)})
+    response = auth.post("/api/rescan", json={})
     assert response.status_code == 400
     assert "switched off" in response.json()["error"]
 
 
-def test_rescan_with_nothing_to_read_reports_that_it_did_not_ask(auth, fake_bot, seeded):
-    body = auth.post("/api/rescan", json={"channel_id": str(WATCHED_CHANNEL), "hours": 6}).json()
-    assert body["asked"] is False
-    assert fake_bot.extractor.calls == [(str(WATCHED_CHANNEL), 6, True)]
+def test_no_channels_means_every_watched_one(auth, fake_bot, seeded):
+    body = auth.post("/api/rescan", json={}).json()
+    assert {r["channel_name"] for r in body["channels"]} == {"#hstar-party", "#xkalos-party"}
+    assert [c for c, _, _ in fake_bot.extractor.calls] == [
+        str(WATCHED_CHANNEL),
+        str(OTHER_CHANNEL),
+    ]
 
 
-def test_rescan_hours_are_bounded(auth, seeded):
-    response = auth.post("/api/rescan", json={"channel_id": str(WATCHED_CHANNEL), "hours": 999})
+def test_the_channels_are_read_one_at_a_time(auth, fake_bot, seeded):
+    """The model lock serialises them anyway; in order keeps each party's cards together."""
+    order: list[str] = []
+    original = fake_bot.extractor.rescan_window
+
+    async def record(channel_id, window="week", post=True):
+        order.append(f"start {channel_id}")
+        result = await original(channel_id, window=window, post=post)
+        order.append(f"end {channel_id}")
+        return result
+
+    fake_bot.extractor.rescan_window = record
+    auth.post("/api/rescan", json={})
+    assert order == [
+        f"start {WATCHED_CHANNEL}",
+        f"end {WATCHED_CHANNEL}",
+        f"start {OTHER_CHANNEL}",
+        f"end {OTHER_CHANNEL}",
+    ]
+
+
+def test_one_named_channel_is_the_only_one_read(auth, fake_bot, seeded):
+    body = auth.post("/api/rescan", json={"channels": [str(OTHER_CHANNEL)]}).json()
+    assert [r["channel_name"] for r in body["channels"]] == ["#xkalos-party"]
+
+
+def test_a_rescan_takes_a_window(auth, fake_bot, seeded):
+    body = auth.post("/api/rescan", json={"window": "2weeks"}).json()
+    assert body["window"] == "2weeks"
+    assert {w for _, w, _ in fake_bot.extractor.calls} == {"2weeks"}
+
+
+def test_an_unknown_rescan_window_is_refused(auth, seeded):
+    response = auth.post("/api/rescan", json={"window": "since forever"})
     assert response.status_code == 422
+
+
+def test_the_totals_add_the_channels_up(auth, fake_bot, seeded):
+    fake_bot.backfill_count = 5
+    body = auth.post("/api/rescan", json={}).json()
+    assert body["backfilled"] == sum(r["backfilled"] for r in body["channels"])
+    assert body["asked"] is False
+
+
+def test_the_rescan_targets_put_party_channels_first(auth, fake_bot, seeded):
+    rows = auth.get("/api/rescan/targets").json()
+    assert [r["name"] for r in rows] == ["#hstar-party", "#xkalos-party"]
+    assert all(r["has_runs"] for r in rows)
+
+
+def test_a_channel_with_no_timings_is_listed_last(auth, fake_bot, seeded):
+    """The general channel is the noisy one; a rescan is usually about a party's."""
+    fake_bot.repo.delete_fixed_run(seeded["fixed_kalos"])
+    rows = auth.get("/api/rescan/targets").json()
+    assert rows[-1]["name"] == "#xkalos-party"
+    assert rows[-1]["has_runs"] is False
 
 
 def test_debug_ping_posts_a_test_message_without_touching_the_reminders(auth, fake_bot, seeded):
@@ -548,3 +680,36 @@ def test_export_refuses_a_window_that_runs_backwards(auth, seeded):
     )
     assert response.status_code == 400
     assert "after since" in response.json()["error"]
+
+
+# --- past runs and "mine" ---------------------------------------------------
+
+
+def test_the_schedule_hides_runs_that_have_already_happened(auth, fake_bot, seeded):
+    fake_bot.repo.set_run_status(seeded["run_star"], "done")
+    body = auth.get("/api/schedule").json()
+    assert body["count"] == 1
+    assert body["hidden"] == 1
+    assert body["show_past"] is False
+    assert all("HStar" not in r["bosses"] for r in body["runs"])
+
+
+def test_show_past_brings_them_back(auth, fake_bot, seeded):
+    fake_bot.repo.set_run_status(seeded["run_star"], "done")
+    body = auth.get("/api/schedule?show_past=true").json()
+    assert body["count"] == 2
+    assert body["hidden"] == 0
+    assert body["show_past"] is True
+
+
+def test_cancelled_runs_are_hidden_by_the_same_rule(auth, fake_bot, seeded):
+    fake_bot.repo.set_run_status(seeded["run_kalos"], "cancelled")
+    assert auth.get("/api/schedule").json()["hidden"] == 1
+
+
+def test_user_filter_counts_runs_you_own_as_well_as_ones_you_are_on(auth, fake_bot, seeded):
+    """1001 owns the HStar timing and is on it; 1002 owns XKalos but is also on it."""
+    fake_bot.repo.update_fixed_run(seeded["fixed_star"], participants=["1002"])
+    fake_bot.repo.set_run_participants(seeded["run_star"], ["1002"])
+    body = auth.get("/api/schedule?user=1001").json()
+    assert [r["short_id"] for r in body["runs"]] == [short_id(seeded["run_star"])]

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .. import formatting
+from ..materialise import RUN_DONE_AFTER
 from ..rsvp import apply_reaction
 from ..timeutil import utcnow
 from ..watch import origin_ids
@@ -40,6 +41,13 @@ from .match import match_run, needs_run, runs_spanned
 from .merge import merge
 from .resolve import Resolved, resolve
 from .schema import Amendment, Extraction
+from .window import (
+    DEFAULT_WINDOW,
+    group_bursts,
+    previous_week_start,
+    should_widen,
+    window_since,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..client import BossBot
@@ -54,6 +62,13 @@ CONTEXT_WINDOW_HOURS = 48
 #: one candidate per run rather than being forced onto the best single match.
 #: "find temp for me for mon and tues" is one sentence and two stand-ins.
 SPLIT_ACROSS_RUNS = frozenset({"sub"})
+
+#: How far into the past a proposed time may point before the card is pointless.
+#: A rescan reads a whole boss week, so without this it would cheerfully post
+#: "move HStar to Monday 21:30" on Wednesday. The grace exists because live chat
+#: routinely settles a run just after it was due to start ("start now lah") and
+#: that is a real amendment, not a stale one.
+STALE_GRACE = timedelta(hours=3)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +146,28 @@ def _payload_for(amendment: Amendment, resolved: Resolved, run: dict | None) -> 
     return {}
 
 
+def already_passed(entry: Planned, now: datetime) -> bool:
+    """True when acting on this amendment would change something already over.
+
+    Two ways that happens, and a rescan over old chat hits both:
+
+    * the time it proposes is behind ``now`` by more than :data:`STALE_GRACE`;
+    * the run it targets is finished, cancelled, or its slot has passed.
+
+    Judged against *now* rather than the burst's anchor: the anchor is when the
+    conversation happened, which during a rescan is exactly the point.
+    """
+    at = entry.resolved.at
+    if at is not None and at < now - STALE_GRACE:
+        return True
+    run = entry.run
+    if run is None:
+        return False
+    if run["status"] in ("done", "cancelled"):
+        return True
+    return run["datetime"] + RUN_DONE_AFTER < now
+
+
 def plan_burst(
     extraction: Extraction,
     *,
@@ -141,13 +178,17 @@ def plan_burst(
     burst_order: list[str] = (),
     author_ids: dict[str, str] | None = None,
     min_confidence: float = 0.0,
+    now: datetime | None = None,
 ) -> Plan:
     """Merge, resolve and match one extraction.  No database, no Discord.
 
     ``author_ids`` maps message id -> author id, so an amendment that names
-    nobody still matches against whoever wrote the evidence.
+    nobody still matches against whoever wrote the evidence.  ``now`` is what
+    "already passed" is measured against; it defaults to the real now, so a
+    rescan over last week's chat proposes nothing.
     """
     author_ids = author_ids or {}
+    now = now or utcnow()
     plan = Plan(summary=extraction.summary)
     merged = merge(extraction.amendments, burst_order, [r["bosses"] for r in channel_runs])
     for amendment in merged:
@@ -202,6 +243,10 @@ def plan_burst(
                 entry.match_reason = f"no run matched ({entry.match_reason})"
                 plan.dropped.append(entry)
                 continue
+            if already_passed(entry, now):
+                entry.match_reason = "already passed"
+                plan.dropped.append(entry)
+                continue
             plan.planned.append(entry)
     return plan
 
@@ -217,6 +262,38 @@ def relevant_weeks(
 # ---------------------------------------------------------------------------
 # the buffering half
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class RescanReport:
+    """What one `/rescan` did, in the terms the ephemeral reply reports."""
+
+    channel_id: str
+    window: str
+    since: datetime
+    #: True when the requested week held no scheduling chat and the search was
+    #: widened to the boss week before it (once, never further).
+    widened: bool = False
+    backfilled: int = 0
+    stored: int = 0
+    gated: int = 0
+    bursts: int = 0
+    extracted: int = 0
+    proposals: int = 0
+    dropped: int = 0
+    stale: int = 0
+    elapsed_ms: int = 0
+    errors: list[str] = field(default_factory=list)
+    plans: list[Plan] = field(default_factory=list)
+
+    @property
+    def asked(self) -> bool:
+        """Was the model called at all?"""
+        return self.extracted > 0
+
+    @property
+    def planned(self) -> list[Planned]:
+        return [entry for plan in self.plans for entry in plan.planned]
 
 
 @dataclass
@@ -334,14 +411,109 @@ class Pipeline:
     async def rescan(
         self, channel_id: int | str, hours: int = 24, post: bool = True
     ) -> Plan | None:
-        """Re-run extraction over a channel's stored history (``/rescan``)."""
+        """One model call over a channel's stored history for the last ``hours``.
+
+        The narrow form, kept for callers that want a single burst and a single
+        :class:`Plan`.  `/rescan` uses :meth:`rescan_window`, which backfills
+        from Discord first and splits a whole week into conversations.
+        """
         since = utcnow() - timedelta(hours=hours)
-        rows = self.bot.repo.recent_messages(channel_id, since)
-        rows = [r for r in rows if self.bot.repo.has_role(r["author_id"])]
-        gated = [row for row in rows if self.gate_message(row["content"]).hit]
+        gated = self._gated_since(channel_id, since)[1]
         if not gated:
             return None
         return await self.extract(str(channel_id), gated, post=post)
+
+    def _gated_since(
+        self, channel_id: int | str, since: datetime, until: datetime | None = None
+    ) -> tuple[list[dict], list[dict]]:
+        """``(stored rows, the ones worth a model call)`` for a window.
+
+        Same two filters the live listener applies: only roster members count
+        (DESIGN.md §1), and only messages the keyword gate hits.
+        """
+        rows = self.bot.repo.recent_messages(channel_id, since, until)
+        rows = [r for r in rows if self.bot.repo.has_role(r["author_id"])]
+        return rows, [row for row in rows if self.gate_message(row["content"]).hit]
+
+    async def _backfill(self, channel_id: int | str, since: datetime) -> int:
+        """Pull history from Discord, if there is a live client to pull it with."""
+        backfill = getattr(self.bot, "backfill_channel", None)
+        if backfill is None:  # pragma: no cover - only a stand-in bot lacks it
+            return 0
+        try:
+            return await backfill(channel_id, since)
+        except Exception:  # noqa: BLE001 - a rescan must still read what is stored
+            log.exception("backfill failed for channel %s", channel_id)
+            return 0
+
+    async def rescan_window(
+        self,
+        channel_id: int | str,
+        window: str = DEFAULT_WINDOW,
+        post: bool = True,
+    ) -> RescanReport:
+        """Backfill from Discord, then re-read a whole window, burst by burst.
+
+        The order matters. Reading only the ``messages`` table finds nothing at
+        all after a database reset, which is exactly when a rescan is wanted, so
+        history is pulled from Discord first. A boss week of chat is then split
+        back into the conversations it came from (:func:`group_bursts`) and each
+        one gets its own model call, oldest first -- one prompt per week would
+        be both enormous and impossible for the model to attribute.
+
+        Calls are sequential: :data:`bot.extract.llm.MODEL_LOCK` serialises them
+        anyway, and issuing them in order keeps "latest stated value wins" true
+        across the week.
+        """
+        started = utcnow()
+        bot = self.bot
+        since = window_since(
+            window, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, started
+        )
+        report = RescanReport(channel_id=str(channel_id), window=window, since=since)
+        report.backfilled = await self._backfill(channel_id, since)
+        rows, gated = self._gated_since(channel_id, since)
+
+        if should_widen(window, len(gated)):
+            # A quiet week is normal just after a Thursday reset; the useful
+            # answer is last week's plan. Once only -- anything older would be
+            # dropped as `already passed` regardless.
+            report.widened = True
+            report.since = since = previous_week_start(
+                since, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time
+            )
+            report.backfilled += await self._backfill(channel_id, since)
+            rows, gated = self._gated_since(channel_id, since)
+
+        report.stored = len(rows)
+        report.gated = len(gated)
+        groups = group_bursts(gated)
+        report.bursts = len(groups)
+
+        for group in groups:
+            plan = await self.extract(str(channel_id), group, post=post)
+            if plan is None:
+                continue
+            report.extracted += 1
+            report.plans.append(plan)
+            report.proposals += len(plan.amendment_ids)
+            report.dropped += len(plan.dropped)
+            report.stale += sum(1 for e in plan.dropped if e.match_reason == "already passed")
+            if plan.error:
+                report.errors.append(plan.error)
+
+        report.elapsed_ms = int((utcnow() - started).total_seconds() * 1000)
+        log.info(
+            "rescan of channel %s (%s%s): %d backfilled, %d gated, %d burst(s), %d proposal(s)",
+            channel_id,
+            window,
+            ", widened to the previous week" if report.widened else "",
+            report.backfilled,
+            report.gated,
+            report.bursts,
+            report.proposals,
+        )
+        return report
 
     def _recent_scheduling(self, channel_id: str, exclude: list[str]) -> bool:
         """Was this channel talking about a schedule recently?  Gates bare answers."""
@@ -439,6 +611,7 @@ class Pipeline:
             burst_order=[m.id for m in context + burst],
             author_ids={m.id: m.author_id for m in context + burst},
             min_confidence=bot.settings.extract_min_confidence,
+            now=utcnow(),
         )
         plan.raw = call.raw
         plan.latency_ms = call.latency_ms

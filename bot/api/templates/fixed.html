@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import boss_grid %}
 {% block title %}Fixed timings — Boss scheduler{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -43,9 +44,12 @@
         <td>
           <details>
             <summary class="btn">Edit</summary>
-            <form method="post" action="/fixed/{{ row.id }}/edit" class="filters">
-              <label class="field"><span>Bosses</span>
-                <input name="bosses" value="{{ row.bosses|join(', ') }}" size="16"
+            <form method="post" action="/fixed/{{ row.id }}/edit">
+              <p class="eyebrow">Bosses</p>
+              {{ boss_grid(row.grid) }}
+              <div class="filters">
+              <label class="field"><span>…or type them</span>
+                <input name="bosses" placeholder="hstar, hfa" size="16"
                        hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
                        hx-target="next .boss-check" hx-swap="innerHTML">
               </label>
@@ -76,6 +80,7 @@
                 </div>
               </fieldset>
               <button class="btn btn--primary" type="submit">Save</button>
+              </div>
             </form>
             <form method="post" action="/fixed/{{ row.id }}/delete"
                   hx-confirm="Remove {{ row.bosses|join(' + ') }} {{ row.weekday_name }} {{ row.time }}? Its upcoming runs are cancelled.">
@@ -94,9 +99,12 @@
 
 <section class="card">
   <div class="card__head"><h2 class="card__title">Add a weekly timing</h2></div>
-  <form method="post" action="/fixed/new" class="filters">
-    <label class="field"><span>Bosses</span>
-      <input name="bosses" placeholder="hstar, hfa" required size="18"
+  <form method="post" action="/fixed/new">
+    <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
+    {{ boss_grid(grid) }}
+    <div class="filters">
+    <label class="field"><span>…or type them</span>
+      <input name="bosses" placeholder="hstar, hfa" size="18"
              hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
              hx-target="#new-boss-check" hx-swap="innerHTML">
     </label>
@@ -128,6 +136,7 @@
       </div>
     </fieldset>
     <button class="btn btn--primary" type="submit">Add timing</button>
+    </div>
   </form>
   {% if not channels %}
   <p class="flash flash--error">No watched channel is visible right now, so a new timing has

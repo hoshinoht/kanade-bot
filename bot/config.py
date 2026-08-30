@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     extract_context_messages: int = Field(default=25, ge=0, le=100)
     #: Below this, an extracted amendment is logged but never posted.
     extract_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    #: Pull each watched channel's history for the current boss week on start.
+    #: No model call is made -- it only fills `messages`, so a `/rescan` (or a
+    #: card's evidence links) still works after the database has been reset.
+    backfill_on_start: bool = True
 
     # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Bearer token for the HTTP API. Empty means the API starts but refuses

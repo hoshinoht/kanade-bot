@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -47,10 +48,16 @@ class Card:
     fields: list[tuple[str, str]] = field(default_factory=list)
     footer: str | None = None
     colour: int = COLOUR_DAY_OF
+    #: An image to attach and use as the embed's thumbnail -- a boss portrait
+    #: from ``config/portraits``. ``None`` (the usual case) means no attachment
+    #: at all, so a guild that ships no portraits sees exactly what it did before.
+    thumbnail_path: Path | None = None
 
     @property
     def has_embed(self) -> bool:
-        return bool(self.title or self.description or self.fields or self.footer)
+        return bool(
+            self.title or self.description or self.fields or self.footer or self.thumbnail_path
+        )
 
 
 def format_bosses(bosses: list[str]) -> str:
@@ -87,6 +94,18 @@ def rsvp_tally(participants: list[str], rsvps: dict[str, str]) -> str:
     if no:
         text += f" · {no} {EMOJI_NO}"
     return text
+
+
+def lead_portrait(bosses: list[str], table: Any | None) -> Path | None:
+    """The portrait for the first boss on a card, if the guild has one.
+
+    One thumbnail per message, and the first boss is the one the message is
+    named after -- "HStar + HFA" is the star run.
+    """
+    if table is None or not bosses:
+        return None
+    getter = getattr(table, "portrait_for", None)
+    return getter(bosses[0]) if getter else None
 
 
 def boss_detail(bosses: list[str], table: Any | None) -> str:
@@ -138,7 +157,14 @@ def day_of_card(
             ]
         )
         fields.append((name, value))
-    return Card(content=content, fields=fields, footer=REACT_HINT, colour=COLOUR_DAY_OF)
+    lead = sorted(runs, key=lambda r: r["datetime"])[0]
+    return Card(
+        content=content,
+        fields=fields,
+        footer=REACT_HINT,
+        colour=COLOUR_DAY_OF,
+        thumbnail_path=lead_portrait(lead["bosses"], table),
+    )
 
 
 def countdown_card(
@@ -156,6 +182,7 @@ def countdown_card(
         description=f"{boss_detail(run['bosses'], table)}\n{status_line(run, rsvps)}",
         footer=REACT_HINT if pending else None,
         colour=COLOUR_COUNTDOWN if pending else COLOUR_ALL_SET,
+        thumbnail_path=lead_portrait(run["bosses"], table),
     )
 
 
@@ -203,6 +230,66 @@ def amend_notice(run: dict, old_at: datetime, tz: ZoneInfo) -> str:
         f"~~{local_day(old_at, tz)} {local_time(old_at, tz)}~~ → "
         f"**{local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}** — "
         f"{format_participants(run['participants'])}\n{REACT_HINT}"
+    )
+
+
+#: Appended to every notice a portal/CLI/API action posts. The party sees the
+#: same wording as a chat-driven change, plus who really made it -- a run that
+#: moves with nobody in the channel having said anything is otherwise baffling.
+VIA_PORTAL = "_(via portal)_"
+
+
+def via_portal(content: str) -> str:
+    return f"{content}\n{VIA_PORTAL}"
+
+
+def otot_notice(run: dict, tz: ZoneInfo) -> str:
+    """Posted when a run is switched to own time outside Discord."""
+    return (
+        f"🕒 **{format_bosses(run['bosses'])}** is own-time this week "
+        f"({local_day(run['datetime'], tz)}) — it stays in the morning ping, "
+        f"but there are no countdowns. {format_participants(run['participants'])}"
+    )
+
+
+def restore_notice(run: dict, tz: ZoneInfo) -> str:
+    """Posted when a cancelled or own-time run goes back on the schedule."""
+    return (
+        f"🔁 **{format_bosses(run['bosses'])}** is back on the schedule "
+        f"({local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}) — "
+        f"{format_participants(run['participants'])}\n{REACT_HINT}"
+    )
+
+
+def done_notice(run: dict) -> str:
+    return (
+        f"🏁 **{format_bosses(run['bosses'])}** cleared — "
+        f"{format_participants(run['participants'])}"
+    )
+
+
+def cancel_notice(run: dict, tz: ZoneInfo) -> str:
+    return (
+        f"🚫 **{format_bosses(run['bosses'])}** "
+        f"({local_day(run['datetime'], tz)}) is cancelled — "
+        f"{format_participants(run['participants'])}"
+    )
+
+
+#: How a fixed-timing change reads in the party's channel.
+FIXED_VERBS = {
+    "added": "📌 Weekly timing added",
+    "changed": "📌 Weekly timing changed",
+    "removed": "🗑️ Weekly timing removed",
+}
+
+
+def fixed_notice(fixed: dict, verb: str) -> str:
+    """One line for a baseline timing created, edited or deleted elsewhere."""
+    day = WEEKDAY_NAMES[fixed["weekday"]]
+    return (
+        f"{FIXED_VERBS.get(verb, verb)}: **{format_bosses(fixed['bosses'])}** · "
+        f"{day} {fixed['time']} · {format_participants(fixed['participants'])}"
     )
 
 

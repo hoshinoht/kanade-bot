@@ -233,3 +233,55 @@ def test_fake_bot_is_the_only_thing_the_api_needs(fake_bot):
     """A guard: the API must keep duck-typing the client, not import it."""
     assert isinstance(fake_bot, FakeBot)
     assert create_app(fake_bot) is not None
+
+
+# --- the `next=` parameter cannot leave the portal (item 7) -----------------
+
+
+@pytest.mark.parametrize(
+    "candidate,expected",
+    [
+        ("/week", "/week"),
+        ("/api/schedule", "/api/schedule"),
+        ("/a?b=c#d", "/a?b=c#d"),
+        ("//evil.com", "/"),
+        ("////evil.com", "/"),
+        ("https://evil.com", "/"),
+        ("http://evil.com", "/"),
+        ("/\\evil", "/"),
+        ("/x\r\nSet-Cookie: a=b", "/"),
+        ("javascript:alert(1)", "/"),
+        ("", "/"),
+        ("   ", "/"),
+        (None, "/"),
+    ],
+)
+def test_next_only_ever_points_back_into_the_portal(candidate, expected):
+    from bot.api.routes_web import safe_next
+
+    assert safe_next(candidate) == expected
+
+
+def test_signing_in_will_not_bounce_you_off_the_site(client):
+    response = client.post(
+        "/login",
+        data={"token": ADMIN_TOKEN, "next": "https://evil.example/"},
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == "/"
+
+
+def test_the_login_form_does_not_echo_a_hostile_next(client):
+    body = client.get("/login?next=//evil.example").text
+    assert "evil.example" not in body
+    assert 'name="next" value="/"' in body
+
+
+def test_a_wrong_token_also_sanitises_next(client):
+    body = client.post("/login", data={"token": "nope", "next": "//evil.example"}).text
+    assert "evil.example" not in body
+
+
+def test_an_already_signed_in_browser_is_not_bounced_off_site(auth):
+    response = auth.get("/login?next=https://evil.example", follow_redirects=False)
+    assert response.headers["location"] == "/"

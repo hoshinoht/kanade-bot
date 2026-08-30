@@ -59,9 +59,30 @@ def runs(repo: Repo) -> list[dict]:
     return [repo.get_run(i) for i in ids]
 
 
+@pytest.fixture(autouse=True)
+def _as_of_the_conversation(monkeypatch):
+    """Run this file's fixtures as of the evening they describe.
+
+    The pipeline drops amendments that are already in the past, judged against
+    the real now. These fixtures are dated, so without a frozen clock they stop
+    proposing anything the moment the date rolls over -- which is the rule
+    working, not the pipeline breaking. `tests/test_rescan_window.py` is where
+    that rule itself is tested, with explicit times.
+    """
+    from datetime import timedelta
+
+    from bot.extract import pipeline as pipeline_module
+
+    monkeypatch.setattr(pipeline_module, "utcnow", lambda: ANCHOR + timedelta(minutes=1))
+
+
 def plan(extraction, runs, **kwargs):
     kwargs.setdefault("anchor", ANCHOR)
     kwargs.setdefault("tz", TZ)
+    # Pin "now" to the conversation, not the wall clock: these fixtures are
+    # dated, and `plan_burst` drops anything already in the past. Tests that are
+    # *about* that rule pass their own `now` (see tests/test_rescan_window.py).
+    kwargs.setdefault("now", ANCHOR)
     return plan_burst(extraction, channel_runs=runs, **kwargs)
 
 

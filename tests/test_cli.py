@@ -45,6 +45,8 @@ SCHEDULE = {
     "week_start": "2026-08-26T16:00:00+00:00",
     "week_label": "Thu 27 Aug",
     "timezone": "Asia/Kuala_Lumpur",
+    "show_past": False,
+    "hidden": 0,
     "count": 1,
     "runs": [],
     "days": [
@@ -135,12 +137,24 @@ def test_all_is_the_default_and_sends_no_filter(api):
     assert dict(route.calls.last.request.url.params) == {"week": "this"}
 
 
+def test_past_runs_are_hidden_and_the_count_is_reported(api):
+    api.get("/api/schedule").mock(return_value=httpx.Response(200, json={**SCHEDULE, "hidden": 3}))
+    # rich wraps the header at the terminal width, so match on the words only.
+    assert "past/cancelled hidden" in run("schedule").output.replace("\n", " ")
+
+
+def test_all_statuses_asks_for_them(api):
+    route = api.get("/api/schedule").mock(return_value=httpx.Response(200, json=SCHEDULE))
+    run("schedule", "--all-statuses")
+    assert dict(route.calls.last.request.url.params) == {"week": "this", "show_past": "true"}
+
+
 def test_an_empty_week_says_so_instead_of_printing_an_empty_table(api):
     api.get("/api/schedule").mock(
         return_value=httpx.Response(200, json={**SCHEDULE, "days": [], "count": 0})
     )
     result = run("schedule")
-    assert "Nothing scheduled" in result.output
+    assert "Nothing left" in result.output
 
 
 def test_amend_sends_the_phrase_verbatim(api):
@@ -358,43 +372,129 @@ def test_config_set_turns_a_flag_into_a_boolean(api):
     assert json.loads(route.calls.last.request.content) == {"extract_enabled": False}
 
 
-def test_rescan_reports_what_the_model_found(api):
+CHANNEL_RESCAN = {
+    "channel_id": "5",
+    "channel_name": "#hstar-party",
+    "asked": True,
+    "window": "week",
+    "since": "2026-08-26T16:00:00+00:00",
+    "widened": False,
+    "backfilled": 312,
+    "stored": 40,
+    "gated": 18,
+    "bursts": 4,
+    "extracted": 4,
+    "proposals": 1,
+    "dropped": 3,
+    "stale": 2,
+    "elapsed_ms": 42000,
+    "error": None,
+    "summary": "",
+    "proposed": [{"kind": "move", "bosses": ["HStar"], "confidence": 0.9, "run_id": None}],
+}
+
+RESCAN = {
+    "window": "week",
+    "channels": [CHANNEL_RESCAN],
+    "asked": True,
+    "widened": False,
+    "backfilled": 312,
+    "gated": 18,
+    "bursts": 4,
+    "extracted": 4,
+    "proposals": 1,
+    "dropped": 3,
+    "stale": 2,
+    "elapsed_ms": 42000,
+    "errors": [],
+    "proposed": [{"kind": "move", "bosses": ["HStar"], "confidence": 0.9, "run_id": None}],
+}
+
+
+def test_rescan_defaults_to_every_watched_channel(api):
+    route = api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
+    result = run("rescan")
+    assert json.loads(route.calls.last.request.content) == {
+        "channels": [],
+        "window": "week",
+        "post": True,
+    }
+    assert "every watched channel" in result.output
+
+
+def test_rescan_reports_a_row_per_channel(api):
+    api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
+    output = " ".join(run("rescan").output.split())
+    assert "#hstar-party" in output
+    assert "312" in output
+    assert "1 card(s) posted, 3 dropped (2 already passed)" in output
+    assert "move HStar" in output
+
+
+def test_rescan_takes_channels_and_a_window(api):
+    route = api.post("/api/rescan").mock(return_value=httpx.Response(200, json=RESCAN))
+    run("rescan", "-c", "5", "-c", "6", "-w", "2weeks", "--dry-run")
+    assert json.loads(route.calls.last.request.content) == {
+        "channels": ["5", "6"],
+        "window": "2weeks",
+        "post": False,
+    }
+
+
+def test_rescan_says_when_a_channel_widened_to_last_week(api):
     api.post("/api/rescan").mock(
         return_value=httpx.Response(
             200,
             json={
-                "asked": True,
-                "hours": 24,
-                "error": None,
-                "latency_ms": 4200,
-                "dropped": 1,
-                "proposed": [{"kind": "move", "bosses": ["HStar"], "confidence": 0.9}],
+                **RESCAN,
+                "widened": True,
+                "channels": [{**CHANNEL_RESCAN, "widened": True}],
             },
         )
     )
-    result = run("rescan", "--channel", "5")
-    assert "4200 ms" in result.output
-    assert "1 change(s), 1 dropped" in result.output
-    assert "move HStar" in result.output
+    assert "checked last week too" in " ".join(run("rescan").output.split())
 
 
 def test_rescan_that_never_asked_the_model(api):
     api.post("/api/rescan").mock(
-        return_value=httpx.Response(200, json={"asked": False, "hours": 6, "proposed": []})
+        return_value=httpx.Response(
+            200,
+            json={
+                **RESCAN,
+                "asked": False,
+                "gated": 0,
+                "bursts": 0,
+                "extracted": 0,
+                "proposed": [],
+                "channels": [{**CHANNEL_RESCAN, "asked": False, "proposals": 0}],
+            },
+        )
     )
-    assert "wasn't asked" in run("rescan", "-c", "5", "-h", "6").output
+    assert "wasn't asked" in run("rescan").output
 
 
 def test_rescan_reports_a_model_failure_and_exits_non_zero(api):
     api.post("/api/rescan").mock(
-        return_value=httpx.Response(
-            200,
-            json={"asked": True, "hours": 24, "error": "connection refused", "proposed": []},
-        )
+        return_value=httpx.Response(200, json={**RESCAN, "errors": ["connection refused"]})
     )
-    result = run("rescan", "-c", "5")
+    result = run("rescan")
     assert result.exit_code == 1
     assert "connection refused" in result.output
+
+
+def test_channels_lists_what_a_rescan_would_cover(api):
+    api.get("/api/rescan/targets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": "5", "name": "#hstar-party", "has_runs": True},
+                {"id": "9", "name": "#boss-chat-general", "has_runs": False},
+            ],
+        )
+    )
+    output = run("channels").output
+    assert "#hstar-party" in output
+    assert "#boss-chat-general" in output
 
 
 def test_digest_and_ping_print_the_message_link(api):
@@ -542,3 +642,74 @@ def test_every_command_carries_the_bearer_token(api):
     route = api.get("/api/members").mock(return_value=httpx.Response(200, json=[]))
     run("members")
     assert route.calls.last.request.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+# --- status, restore and access (items 8 and 10) ----------------------------
+
+RUN_RESULT = {
+    "bosses": ["HStar"],
+    "local_day": "Wed 02 Sep",
+    "local_time": "21:30",
+    "status": "otot",
+    "status_label": "🕒 own time",
+}
+
+
+def test_status_patches_the_run(api):
+    route = api.patch("/api/runs/aaaa/status").mock(
+        return_value=httpx.Response(200, json=RUN_RESULT)
+    )
+    result = run("status", "aaaa", "otot")
+    assert json.loads(route.calls.last.request.content) == {"status": "otot"}
+    assert "own time" in result.output
+
+
+def test_an_invalid_status_comes_back_from_the_server(api):
+    """The server owns the list of statuses; the CLI just relays the refusal."""
+    api.patch("/api/runs/aaaa/status").mock(
+        return_value=httpx.Response(422, json={"error": "`maybe` is not a status you can set"})
+    )
+    result = runner.invoke(cli.app, ["status", "aaaa", "maybe"], standalone_mode=False)
+    assert isinstance(result.exception, cli.ApiFailed)
+    assert "not a status you can set" in str(result.exception)
+
+
+def test_restore_puts_a_run_back(api):
+    api.post("/api/runs/aaaa/restore").mock(
+        return_value=httpx.Response(
+            200, json={**RUN_RESULT, "status": "planned", "status_label": "⚠️ unconfirmed"}
+        )
+    )
+    assert "back on for Wed 02 Sep 21:30" in run("restore", "aaaa").output
+
+
+def test_access_shows_a_tick_per_permission(api):
+    api.get("/api/access").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "5",
+                    "name": "#hstar-party",
+                    "watched": True,
+                    "is_digest_channel": False,
+                    "view": True,
+                    "send": False,
+                    "history": True,
+                    "embed": True,
+                    "react": True,
+                    "unknown": False,
+                }
+            ],
+        )
+    )
+    output = run("access").output
+    assert "#hstar-party" in output
+    assert "cannot post there" in output
+
+
+def test_access_when_the_bot_is_offline_exits_non_zero(api):
+    api.get("/api/access").mock(return_value=httpx.Response(200, json=[]))
+    result = run("access")
+    assert result.exit_code == 1
+    assert "isn't connected" in result.output

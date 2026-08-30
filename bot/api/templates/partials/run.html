@@ -1,3 +1,4 @@
+{% from "partials/macros.html" import boss_list %}
 {# One run. Swapped in place by htmx after an action; re-rendered whole by the
    server so the status, the tally and the buttons can never disagree. #}
 <article class="run run--{{ run.status }}" id="run-{{ run.short_id }}" style="animation-delay: {{ (index|default(0)) * 24 }}ms">
@@ -7,12 +8,17 @@
   </div>
 
   <div>
-    <p class="run__bosses">{% with detail = run.boss_detail %}{% include "partials/bosses.html" %}{% endwith %}</p>
+    <p class="run__bosses">{{ boss_list(run.boss_detail) }}</p>
     <div class="run__meta">
       <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
       <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
       {% if run.no %}<span class="status status--at_risk mono">{{ run.no }} out</span>{% endif %}
-      {% if run.channel_name %}<span>{{ run.channel_name }}</span>{% endif %}
+      {% if run.channel_name %}
+      <span class="chanmark">{{ run.channel_name }}
+        <button class="chanmark__btn" type="submit" form="reread-{{ run.channel_id }}"
+                title="Re-read {{ run.channel_name }} from Discord and propose any changes">⟳</button>
+      </span>
+      {% endif %}
       <span class="id">#{{ run.short_id }}</span>
     </div>
     <div class="run__people">
@@ -32,22 +38,32 @@
              aria-label="Move run {{ run.short_id }} to a new day and time">
       <button class="btn" type="submit">Move</button>
     </form>
-    <form method="post" action="/runs/{{ run.id }}/otot"
-          hx-post="/runs/{{ run.id }}/otot" hx-target="closest .run" hx-swap="outerHTML">
-      <input type="hidden" name="next" value="{{ back }}">
-      <button class="btn" type="submit" title="Own time: stays in the morning ping, no countdowns">Own time</button>
-    </form>
     <form method="post" action="/runs/{{ run.id }}/ping"
           hx-post="/runs/{{ run.id }}/ping" hx-target="closest .run" hx-swap="outerHTML">
       <input type="hidden" name="next" value="{{ back }}">
       <input type="hidden" name="kind" value="day_of">
-      <button class="btn btn--ghost" type="submit" title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
-    </form>
-    <form method="post" action="/runs/{{ run.id }}/cancel"
-          hx-post="/runs/{{ run.id }}/cancel" hx-target="closest .run" hx-swap="outerHTML"
-          hx-confirm="Cancel {{ run.bosses|join(' + ') }} on {{ run.local_day }}?">
-      <input type="hidden" name="next" value="{{ back }}">
-      <button class="btn btn--danger" type="submit">Cancel</button>
+      <button class="btn btn--ghost" type="submit"
+              title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
     </form>
   </div>
+
+  <form class="statusbar" method="post" action="/runs/{{ run.id }}/status"
+        hx-post="/runs/{{ run.id }}/status" hx-target="closest .run" hx-swap="outerHTML"
+        aria-label="Status of {{ run.bosses|join(' + ') }}">
+    <input type="hidden" name="next" value="{{ back }}">
+    <span class="statusbar__label">Status</span>
+    <div class="seg seg--status">
+      {% for value, label in status_choices %}
+      <button class="seg__btn{% if run.status == value %} seg__btn--on{% endif %}"
+              type="submit" name="status" value="{{ value }}"
+              {% if run.status == value %}aria-current="true"{% endif %}
+              {% if value == "cancelled" and run.status != "cancelled" %}
+              hx-confirm="Cancel {{ run.bosses|join(' + ') }} on {{ run.local_day }}?"
+              {% endif %}>{{ label }}</button>
+      {% endfor %}
+    </div>
+    {% if run.status == "at_risk" %}
+    <span class="statusbar__note">someone said no — pick a status to settle it</span>
+    {% endif %}
+  </form>
 </article>

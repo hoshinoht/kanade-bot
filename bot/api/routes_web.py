@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from ..weeks import WEEKDAY_NAMES
 from . import service
@@ -30,7 +30,7 @@ from .auth import (
     token_matches,
 )
 from .deps import Bot, Caller, get_bot
-from .errors import ApiError, NotConfigured
+from .errors import ApiError, NotConfigured, NotFound
 from .models import Week
 
 log = logging.getLogger(__name__)
@@ -72,6 +72,23 @@ def fragment(request: Request, name: str, **context: Any) -> HTMLResponse:
 def back_to(request: Request, path: str, message: str | None = None, kind: str = "ok") -> Response:
     query = urlencode({"msg": message, "kind": kind}) if message else ""
     return RedirectResponse(f"{path}{'?' if query else ''}{query}", status_code=303)
+
+
+def safe_next(candidate: str | None, fallback: str = "/") -> str:
+    r"""A ``next=`` value that can only point back into this portal.
+
+    ``/login?next=https://evil.example`` would otherwise turn the sign-in page
+    into an open redirect: a link that looks like the portal and lands
+    somewhere else, with the token already typed. Only a path is allowed --
+    one leading slash, no scheme, no protocol-relative ``//host``, no backslash
+    (browsers normalise ``/\evil`` to ``//evil``), no control characters.
+    """
+    value = (candidate or "").strip()
+    if not value.startswith("/") or value.startswith(("//", "/\\")):
+        return fallback
+    if any(ch in value for ch in "\r\n\t\\") or ":" in value.split("/", 2)[1][:16]:
+        return fallback
+    return value
 
 
 def _next(request: Request, fallback: str = "/") -> str:
@@ -119,13 +136,14 @@ async def login_form(request: Request, next: str = "/") -> Response:
     bot = get_bot(request)
     if not bot.settings.admin_token:
         raise NotConfigured()
+    destination = safe_next(next)
     try:
         authenticate(request, bot.settings)
     except ApiError:
         return _templates(request).TemplateResponse(
-            request, "login.html", {"next": next, "error": None}
+            request, "login.html", {"next": destination, "error": None}
         )
-    return RedirectResponse(next or "/", status_code=303)
+    return RedirectResponse(destination, status_code=303)
 
 
 @router.post("/login")
@@ -133,14 +151,15 @@ async def login(request: Request, token: str = Form(), next: str = Form(default=
     bot = get_bot(request)
     if not bot.settings.admin_token:
         raise NotConfigured()
+    destination = safe_next(next)
     if not token_matches(token.strip(), bot.settings.admin_token):
         return _templates(request).TemplateResponse(
             request,
             "login.html",
-            {"next": next, "error": "That isn't ADMIN_TOKEN. Check .env on the host."},
+            {"next": destination, "error": "That isn't ADMIN_TOKEN. Check .env on the host."},
             status_code=401,
         )
-    response = RedirectResponse(next or "/", status_code=303)
+    response = RedirectResponse(destination, status_code=303)
     response.set_cookie(
         SESSION_COOKIE,
         issue_session(bot.settings.admin_token, Identity(who="admin token", via="cookie")),
@@ -175,12 +194,20 @@ async def week_page(
     channel: str | None = None,
     user: str | None = None,
     boss: str | None = None,
+    show_past: bool = False,
 ) -> Response:
     request.state.caller = caller
-    schedule = service.schedule(bot, week=week, channel_id=channel, user_id=user, boss=boss)
+    schedule = service.schedule(
+        bot, week=week, channel_id=channel, user_id=user, boss=boss, show_past=show_past
+    )
+    filters = {"channel": channel, "user": user, "boss": boss}
 
     def url_for_week(which: str) -> str:
-        params = {"week": which, "channel": channel, "user": user, "boss": boss}
+        params = {"week": which, **filters, "show_past": "1" if show_past else ""}
+        return "/?" + urlencode({k: v for k, v in params.items() if v})
+
+    def url_toggle_past() -> str:
+        params = {"week": week, **filters, "show_past": "" if show_past else "1"}
         return "/?" + urlencode({k: v for k, v in params.items() if v})
 
     return render(
@@ -194,7 +221,11 @@ async def week_page(
         members=service.members(bot),
         selected={"channel": channel, "user": user, "boss": boss},
         filtered=bool(channel or user or boss),
+        show_past=show_past,
         url_for_week=url_for_week,
+        url_toggle_past=url_toggle_past,
+        status_choices=STATUS_CHOICES,
+        rescan_targets=service.rescan_targets(bot),
         back=str(request.url.path) + (f"?{request.url.query}" if request.url.query else ""),
     )
 
@@ -206,9 +237,10 @@ async def fixed_page(request: Request, bot: Bot, caller: Caller) -> Response:
         request,
         "fixed.html",
         "fixed",
-        fixed=[service.fixed_view(bot, f) for f in bot.repo.list_fixed_runs()],
+        fixed=[service.fixed_view(bot, f, with_grid=True) for f in bot.repo.list_fixed_runs()],
         members=service.members(bot),
         channels=watched_channels(bot),
+        grid=service.boss_grid(bot),
     )
 
 
@@ -244,6 +276,53 @@ async def extraction_page(
     )
 
 
+@router.get("/static/portraits/{short}")
+async def portrait(request: Request, bot: Bot, short: str) -> Response:
+    """A boss portrait, straight off the bind-mounted config directory.
+
+    Deliberately unauthenticated, like the stylesheet: it is a picture of a
+    game boss, and gating it would mean the browser could not cache it. The
+    filename never comes from the URL -- ``short`` is looked up in the boss
+    table -- so this cannot be walked out of ``config/portraits``.
+    """
+    path = bot.bosses.portrait_path(short)
+    if path is None:
+        raise NotFound(f"no portrait for {short}")
+    return FileResponse(
+        path,
+        # Long-lived but revalidated: a replaced file should show up on a
+        # reload, not in a week.
+        headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
+    )
+
+
+@router.get("/access")
+async def access_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLResponse:
+    """The permission table on its own, for the Config page's "check again"."""
+    return fragment(request, "partials/access.html", access=service.access_report(bot))
+
+
+@router.post("/access")
+async def access_recheck(request: Request, bot: Bot, caller: Caller) -> Response:
+    """The no-JavaScript path: re-render Config, which rebuilds the table."""
+    return back_to(request, "/config", "Checked.")
+
+
+@router.get("/bosses")
+async def bosses_page(request: Request, bot: Bot, caller: Caller) -> Response:
+    """The in-game boss list, with what the guild actually runs ticked."""
+    request.state.caller = caller
+    in_use = service.bosses_in_use(bot)
+    return render(
+        request,
+        "bosses.html",
+        "bosses",
+        rows=service.boss_grid(bot, in_use),
+        in_use=in_use,
+        total=sum(len(row["difficulties"]) for row in service.boss_grid(bot)),
+    )
+
+
 @router.get("/members")
 async def members_page(request: Request, bot: Bot, caller: Caller) -> Response:
     request.state.caller = caller
@@ -274,6 +353,9 @@ async def config_page(request: Request, bot: Bot, caller: Caller) -> Response:
         "config",
         config=service.get_config(bot),
         channels=watched_channels(bot),
+        access=service.access_report(bot),
+        rescan_targets=service.rescan_targets(bot),
+        job=request.app.state.jobs.get(request.query_params.get("job", "")),
     )
 
 
@@ -282,15 +364,35 @@ async def config_page(request: Request, bot: Bot, caller: Caller) -> Response:
 # ---------------------------------------------------------------------------
 
 
+#: The status control's buttons, in the order a night actually goes.
+STATUS_CHOICES = [
+    ("planned", "Planned"),
+    ("confirmed", "Confirmed"),
+    ("otot", "Own time"),
+    ("done", "Done"),
+    ("cancelled", "Cancelled"),
+]
+
+
 def _run_fragment(request: Request, bot, run_id: str, back: str) -> HTMLResponse:
     run = service.run_view(bot, service.load_run(bot, run_id))
-    return fragment(request, "partials/run.html", run=run, back=back, index=0)
+    return fragment(
+        request,
+        "partials/run.html",
+        run=run,
+        back=back,
+        index=0,
+        status_choices=STATUS_CHOICES,
+        rescan_targets=service.rescan_targets(bot),
+    )
 
 
 def _after_run_action(request: Request, bot, run_id: str, next_path: str, message: str) -> Response:
+    """An HTMX caller gets the updated row; a plain form post goes back to the page."""
+    destination = safe_next(next_path, "/")
     if request.headers.get("HX-Request"):
-        return _run_fragment(request, bot, run_id, next_path)
-    return back_to(request, next_path, message)
+        return _run_fragment(request, bot, run_id, destination)
+    return back_to(request, destination, message)
 
 
 @router.post("/runs/{run_id}/amend")
@@ -319,9 +421,38 @@ async def web_cancel(
 async def web_otot(
     request: Request, bot: Bot, caller: Caller, run_id: str, next: str = Form("/")
 ) -> Response:
-    run = service.otot_run(bot, run_id)
+    run = await service.otot_run(bot, run_id)
     return _after_run_action(
         request, bot, run["id"], next or _next(request), "Own time: no countdown pings."
+    )
+
+
+@router.post("/runs/{run_id}/status")
+async def web_status(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    run_id: str,
+    status: str = Form(),
+    next: str = Form("/"),
+) -> Response:
+    run = await service.set_status(bot, run_id, status)
+    return _after_run_action(
+        request,
+        bot,
+        run["id"],
+        safe_next(next, _next(request)),
+        f"Now {run['status_label']}.",
+    )
+
+
+@router.post("/runs/{run_id}/restore")
+async def web_restore(
+    request: Request, bot: Bot, caller: Caller, run_id: str, next: str = Form("/")
+) -> Response:
+    run = await service.restore_run(bot, run_id)
+    return _after_run_action(
+        request, bot, run["id"], safe_next(next, _next(request)), "Back on the schedule."
     )
 
 
@@ -382,13 +513,25 @@ async def web_validate_bosses(request: Request, bot: Bot, caller: Caller) -> HTM
     )
 
 
+def boss_field(form) -> str:
+    """The bosses a fixed-run form chose, from the grid and the text fallback.
+
+    Both are accepted and merged: the pills are the ordinary way in, the text
+    box is there for someone who would rather type `hstar, hfa`.
+    ``BossTable.parse`` de-duplicates, so choosing a boss both ways is fine.
+    """
+    picked = list(form.getlist("boss_tokens"))
+    typed = str(form.get("bosses") or "").strip()
+    return ", ".join([*picked, typed]) if typed else ", ".join(picked)
+
+
 @router.post("/fixed/new")
 async def web_fixed_new(request: Request, bot: Bot, caller: Caller) -> Response:
     form = await request.form()
     try:
-        row = service.create_fixed(
+        row = await service.create_fixed(
             bot,
-            bosses=str(form.get("bosses") or ""),
+            bosses=boss_field(form),
             day=str(form.get("day") or "mon"),
             time_hhmm=str(form.get("time") or ""),
             participants=form.getlist("participants"),
@@ -409,14 +552,14 @@ async def web_fixed_edit(request: Request, bot: Bot, caller: Caller, fixed_id: s
     form = await request.form()
     people = form.getlist("participants")
     changes: dict[str, Any] = {
-        "bosses": str(form.get("bosses") or "") or None,
+        "bosses": boss_field(form) or None,
         "day": str(form.get("day")) if form.get("day") not in (None, "") else None,
         "time": str(form.get("time") or "") or None,
         "note": form.get("note") if form.get("note") is not None else None,
         "participants": people or None,
     }
     try:
-        row = service.update_fixed(bot, fixed_id, **changes)
+        row = await service.update_fixed(bot, fixed_id, **changes)
     except ApiError as exc:
         return back_to(request, "/fixed", exc.message, "error")
     return back_to(request, "/fixed", f"Saved #{row['short_id']}.")
@@ -425,7 +568,7 @@ async def web_fixed_edit(request: Request, bot: Bot, caller: Caller, fixed_id: s
 @router.post("/fixed/{fixed_id}/delete")
 async def web_fixed_delete(request: Request, bot: Bot, caller: Caller, fixed_id: str) -> Response:
     try:
-        result = service.delete_fixed(bot, fixed_id)
+        result = await service.delete_fixed(bot, fixed_id)
     except ApiError as exc:
         return back_to(request, "/fixed", exc.message, "error")
     return back_to(
@@ -510,30 +653,74 @@ async def web_digest(
     return back_to(request, "/config", f"Posted the {result['week']}-week digest.")
 
 
+def rescan_channels_from(form) -> list[str]:
+    """The channels a rescan form picked; none ticked means all of them."""
+    return [c for c in form.getlist("channels") if c.strip()]
+
+
 @router.post("/rescan")
-async def web_rescan(
-    request: Request,
-    bot: Bot,
-    caller: Caller,
-    channel_id: str = Form(),
-    hours: int = Form(24),
-) -> Response:
+async def web_rescan(request: Request, bot: Bot, caller: Caller) -> Response:
+    """Start a rescan in the background and hand back something to watch.
+
+    Re-reading eight party channels is minutes of model time, far longer than a
+    browser will hold a form post open, so this returns immediately with a job
+    to poll (:mod:`bot.api.jobs`). Without htmx the redirect lands on Config
+    with the same fragment rendered, plus a refresh link.
+    """
+    form = await request.form()
+    window = str(form.get("window") or "week")
+    channels = rescan_channels_from(form)
+    jobs = request.app.state.jobs
+
+    running = jobs.active("rescan")
+    if running is not None:
+        return back_to(
+            request, "/config", "A rescan is already running; wait for it to finish.", "error"
+        )
     try:
-        result = await service.rescan(bot, channel_id, hours=hours)
+        service._check_rescan_allowed(bot, window)
+        targets = service.resolve_rescan_channels(bot, channels)
     except ApiError as exc:
         return back_to(request, "/config", exc.message, "error")
-    if not result["asked"]:
-        return back_to(
-            request, "/config", f"Nothing in the last {result['hours']}h looked like scheduling."
-        )
-    if result.get("error"):
-        return back_to(request, "/config", f"The model didn't answer: {result['error']}", "error")
-    found = len(result["proposed"])
-    return back_to(
+
+    names = {row["id"]: row["name"] for row in service.rescan_targets(bot)}
+    job = jobs.create(
+        "rescan",
+        steps=[names.get(cid, cid) for cid in targets],
+        label=f"{len(targets)} channel(s), {window}",
+    )
+
+    async def work(job) -> None:
+        # One channel at a time: the model lock serialises the calls anyway, and
+        # in order each party's cards land together in its own channel.
+        for channel_id in targets:
+            job.current = names.get(channel_id, channel_id)
+            job.results.append(await service.rescan_one(bot, channel_id, window=window))
+
+    jobs.start(job, work)
+    if request.headers.get("HX-Request"):
+        return _job_fragment(request, job, window)
+    return RedirectResponse(f"/config?job={job.id}", status_code=303)
+
+
+@router.get("/rescan/{job_id}")
+async def web_rescan_progress(
+    request: Request, bot: Bot, caller: Caller, job_id: str
+) -> HTMLResponse:
+    """The progress (or result) of a rescan, as a fragment that polls itself."""
+    job = request.app.state.jobs.get(job_id)
+    if job is None:
+        raise NotFound("that rescan is no longer in memory - start another one")
+    return _job_fragment(request, job)
+
+
+def _job_fragment(request: Request, job, window: str | None = None) -> HTMLResponse:
+    return fragment(
         request,
-        "/inbox" if found else "/config",
-        f"Read {result['hours']}h in {result['latency_ms']} ms: {found} change(s) found.",
+        "partials/rescan_job.html",
+        job=job,
+        totals=service.rescan_totals(window or job.label, job.results),
     )
 
 
-__all__ = ["router", "watched_channels"]
+__all__ = ["router", "safe_next", "watched_channels"]
