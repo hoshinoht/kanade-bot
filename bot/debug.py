@@ -201,7 +201,8 @@ class DebugGroup(app_commands.Group):
             return
 
         await interaction.response.defer(ephemeral=True)
-        message = await bot._post(channel, TEST_PREFIX + body, mention_users=run["participants"])
+        body.content = TEST_PREFIX + body.content
+        message = await bot._post(channel, body, mention_users=run["participants"])
         if message is None:
             await interaction.followup.send("❌ Couldn't post the test message.", ephemeral=True)
             return
@@ -215,17 +216,26 @@ class DebugGroup(app_commands.Group):
         )
 
     @staticmethod
-    def _render(bot: BossBot, run: dict, kind: str, interaction: discord.Interaction) -> str | None:
+    def _render(
+        bot: BossBot, run: dict, kind: str, interaction: discord.Interaction
+    ) -> formatting.Card | None:
+        rsvps = bot.repo.get_rsvps(run["id"])
         if kind == DAY_OF:
-            return formatting.day_of_message([run], bot.tz, today=run["datetime"])
+            return formatting.day_of_card(
+                [run], bot.tz, {run["id"]: rsvps}, table=bot.bosses, today=run["datetime"]
+            )
         minutes = countdown_minutes(kind)
         if minutes is not None:
-            return formatting.countdown_message(run, minutes, bot.tz)
+            return formatting.countdown_card(run, minutes, bot.tz, rsvps, table=bot.bosses)
         if kind == "amend":
-            return formatting.amend_notice(run, run["datetime"] - timedelta(days=1), bot.tz)
+            return formatting.Card(
+                content=formatting.amend_notice(run, run["datetime"] - timedelta(days=1), bot.tz)
+            )
         if kind == "decline":
-            return formatting.decline_notice(
-                run, interaction.user.id, interaction.user.display_name, bot.tz
+            return formatting.Card(
+                content=formatting.decline_notice(
+                    run, interaction.user.id, interaction.user.display_name, bot.tz
+                )
             )
         return None
 

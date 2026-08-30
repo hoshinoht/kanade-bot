@@ -28,6 +28,17 @@ NO_COUNTDOWN = ("otot", "cancelled")
 #: Statuses that get no reminders at all.
 NO_REMINDERS = ("cancelled", "done")
 
+#: How late a reminder may fire and still be worth posting. The bot's host can
+#: be asleep (a laptop in transit); a morning ping that surfaces at lunch is
+#: still useful, a "1h to go" that surfaces after the run is just noise.
+STALE_GRACE: dict[str, timedelta] = {DAY_OF: timedelta(hours=12)}
+COUNTDOWN_GRACE = timedelta(minutes=30)
+
+
+def is_stale(kind: str, fire_at: datetime, now: datetime) -> bool:
+    """True when ``fire_at`` is so far behind ``now`` that posting would mislead."""
+    return now - fire_at > STALE_GRACE.get(kind, COUNTDOWN_GRACE)
+
 
 def countdown_kind(minutes: int) -> str:
     return f"{COUNTDOWN_PREFIX}{minutes}"
@@ -160,6 +171,22 @@ def materialise_week(
     for run in repo.list_runs(week_start=week_start):
         ensure_reminders(repo, run, tz, ping_time, countdowns, now=now)
     return created
+
+
+def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time) -> int:
+    """Re-place unsent day-of reminders after the ping time changed; returns how many moved."""
+    moved = 0
+    for reminder in repo.unsent_reminders(kind=DAY_OF):
+        run = repo.get_run(reminder["run_id"])
+        if run is None:
+            continue
+        specs = reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
+        wanted = {s.kind: s for s in specs}
+        spec = wanted.get(DAY_OF)
+        if spec is not None and spec.fire_at != reminder["fire_at"]:
+            repo.set_reminder_fire_at(reminder["id"], spec.fire_at)
+            moved += 1
+    return moved
 
 
 def refresh_run_reminders(

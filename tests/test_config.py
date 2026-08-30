@@ -85,7 +85,7 @@ def test_watched_channels_and_categories_are_both_parsed():
     [
         ("tz", "Mars/Olympus"),
         ("boss_week_reset_weekday", "caturday"),
-        ("boss_week_reset_time", "9pm"),
+        ("boss_week_reset_time", "25:00"),
         ("day_of_ping_time", "25:00"),
         ("countdown_minutes", "-5"),
     ],

@@ -7,7 +7,9 @@ Participants are rendered as ``<@id>`` mentions; callers that must not ping
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .ids import short_id
@@ -25,6 +27,30 @@ STATUS_LABEL: dict[str, str] = {
 }
 
 REACT_HINT = f"React {EMOJI_YES} if you're on, {EMOJI_NO} if not."
+
+COLOUR_DAY_OF = 0x5865F2  # blurple
+COLOUR_COUNTDOWN = 0xFEE75C  # yellow
+COLOUR_ALL_SET = 0x57F287  # green
+
+
+@dataclass
+class Card:
+    """A message plus an optional embed, as plain data so wording stays testable.
+
+    ``content`` carries the ``<@id>`` mentions (mentions inside an embed never
+    notify anyone); the embed carries the detail.
+    """
+
+    content: str
+    title: str | None = None
+    description: str | None = None
+    fields: list[tuple[str, str]] = field(default_factory=list)
+    footer: str | None = None
+    colour: int = COLOUR_DAY_OF
+
+    @property
+    def has_embed(self) -> bool:
+        return bool(self.title or self.description or self.fields or self.footer)
 
 
 def format_bosses(bosses: list[str]) -> str:
@@ -63,33 +89,73 @@ def rsvp_tally(participants: list[str], rsvps: dict[str, str]) -> str:
     return text
 
 
-def day_of_line(run: dict, tz: ZoneInfo) -> str:
-    """One line of the grouped morning ping, tagging only that run's people."""
-    bosses = format_bosses(run["bosses"])
-    who = format_participants(run["participants"])
-    if run["status"] == "otot":
-        return f"• **{bosses}** — 🕒 own time — {who}"
-    line = f"• **{bosses}** @ {local_time(run['datetime'], tz)} — {who}"
-    if run["status"] == "planned":
-        line += " ⚠️ unconfirmed"
-    elif run["status"] == "at_risk":
-        line += " ❗ at risk"
-    return line
+def boss_detail(bosses: list[str], table: Any | None) -> str:
+    """One line per boss with its full in-game name and difficulty, if a table is given."""
+    if table is None:
+        return f"**{format_bosses(bosses)}**"
+    return "\n".join(f"**{name}** · {table.describe(name)}" for name in bosses)
 
 
-def day_of_message(runs: list[dict], tz: ZoneInfo, today: datetime | None = None) -> str:
-    """The grouped day-of ping: one message, one line per run."""
-    when = today or (runs[0]["datetime"] if runs else None)
-    header = "📅 **Today**" if when is None else f"📅 **Today — {local_day(when, tz)}**"
-    body = "\n".join(day_of_line(run, tz) for run in runs)
-    return f"{header}\n{body}\n{REACT_HINT}"
+def status_line(run: dict, rsvps: dict[str, str]) -> str:
+    label = STATUS_LABEL.get(run["status"], run["status"])
+    return f"{label} · {rsvp_tally(run['participants'], rsvps)}"
 
 
-def countdown_message(run: dict, minutes: int, tz: ZoneInfo) -> str:
-    return (
+def unconfirmed(run: dict, rsvps: dict[str, str]) -> list[str]:
+    """Participants who have not said ✅ yet - the only people a countdown pings."""
+    return [uid for uid in run["participants"] if rsvps.get(uid) != "yes"]
+
+
+def everyone_on(runs: list[dict]) -> list[str]:
+    seen: list[str] = []
+    for run in runs:
+        for uid in run["participants"]:
+            if uid not in seen:
+                seen.append(uid)
+    return seen
+
+
+def day_of_card(
+    runs: list[dict],
+    tz: ZoneInfo,
+    rsvps_by_run: dict[str, dict[str, str]],
+    table: Any | None = None,
+    today: datetime | None = None,
+) -> Card:
+    """The grouped day-of ping: mentions up top, one embed field per run."""
+    when = today or runs[0]["datetime"]
+    content = f"📅 **Today — {local_day(when, tz)}**\n{format_participants(everyone_on(runs))}"
+    fields: list[tuple[str, str]] = []
+    for run in sorted(runs, key=lambda r: r["datetime"]):
+        own_time = run["status"] == "otot"
+        when_txt = "🕒 own time" if own_time else f"🕘 {local_time(run['datetime'], tz)}"
+        name = f"{when_txt}  ·  {format_bosses(run['bosses'])}"
+        value = "\n".join(
+            [
+                boss_detail(run["bosses"], table),
+                status_line(run, rsvps_by_run.get(run["id"], {})),
+                format_participants(run["participants"]),
+            ]
+        )
+        fields.append((name, value))
+    return Card(content=content, fields=fields, footer=REACT_HINT, colour=COLOUR_DAY_OF)
+
+
+def countdown_card(
+    run: dict, minutes: int, tz: ZoneInfo, rsvps: dict[str, str], table: Any | None = None
+) -> Card:
+    """A countdown pings only the people who haven't ✅'d; everyone else just sees it."""
+    pending = unconfirmed(run, rsvps)
+    who = format_participants(pending) if pending else "everyone's confirmed ✅"
+    content = (
         f"⏰ **{format_bosses(run['bosses'])}** in {format_offset(minutes)} "
-        f"({local_time(run['datetime'], tz)}) — {format_participants(run['participants'])}\n"
-        f"{REACT_HINT}"
+        f"({local_time(run['datetime'], tz)}) — {who}"
+    )
+    return Card(
+        content=content,
+        description=f"{boss_detail(run['bosses'], table)}\n{status_line(run, rsvps)}",
+        footer=REACT_HINT if pending else None,
+        colour=COLOUR_COUNTDOWN if pending else COLOUR_ALL_SET,
     )
 
 

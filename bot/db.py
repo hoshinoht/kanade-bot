@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS debug_messages (
 
 CREATE INDEX IF NOT EXISTS debug_messages_run ON debug_messages (run_id);
 
+-- One "X can't make it" notice per person per run, so a ❌ toggled on and off
+-- (or spammed) never floods the channel; deleted again when they go ✅.
+CREATE TABLE IF NOT EXISTS decline_notices (
+    run_id      TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    channel_id  TEXT,
+    message_id  TEXT,
+    notified_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -242,8 +253,39 @@ def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
     )
 
 
+#: Columns the chat extractor added to ``amendments`` in v3 (all additive).
+_V3_AMENDMENT_COLUMNS: dict[str, str] = {
+    "channel_id": "TEXT",
+    "is_question": "INTEGER NOT NULL DEFAULT 0",
+    "rsvp": "TEXT",
+    "day_ref": "TEXT",
+    "time_ref": "TEXT",
+    "summary": "TEXT",
+    "payload": "TEXT NOT NULL DEFAULT '{}'",
+}
+
+
+def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
+    """v2 -> v3: extractor columns on ``amendments``; ``decline_notices`` table.
+
+    Purely additive: ``ALTER TABLE ... ADD COLUMN`` for anything missing, and the
+    new table arrives via ``SCHEMA_SQL`` (``CREATE TABLE IF NOT EXISTS``) after
+    the step. No data is touched.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(amendments)")}
+    added = []
+    for name, decl in _V3_AMENDMENT_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE amendments ADD COLUMN {name} {decl}")
+            added.append(name)
+    log.info("schema v2->v3: amendments gained %s; decline_notices table added", added or "nothing")
+
+
 #: version -> the step that upgrades *from* that version to the next.
-MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {1: _migrate_1_to_2}
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
+}
 
 
 def _json_list(value: str | None) -> list:
@@ -710,6 +752,47 @@ class Repo:
         self._conn.execute("DELETE FROM debug_messages WHERE message_id = ?", (str(message_id),))
 
     # -- messages (phase 2 groundwork) ------------------------------------
+    # -- decline notices ---------------------------------------------------
+    def get_decline_notice(self, run_id: str, user_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM decline_notices WHERE run_id = ? AND user_id = ?",
+            (run_id, str(user_id)),
+        ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["notified_at"] = from_iso(data["notified_at"])
+        return data
+
+    def set_decline_notice(
+        self,
+        run_id: str,
+        user_id: int | str,
+        message_id: int | str | None,
+        channel_id: int | str | None,
+        at: datetime | None = None,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_id, user_id) DO UPDATE SET "
+            "channel_id = excluded.channel_id, message_id = excluded.message_id, "
+            "notified_at = excluded.notified_at",
+            (
+                run_id,
+                str(user_id),
+                str(channel_id) if channel_id else None,
+                str(message_id) if message_id else None,
+                to_iso(at or utcnow()),
+            ),
+        )
+
+    def clear_decline_notice_message(self, run_id: str, user_id: int | str) -> None:
+        """Forget the posted message (it was deleted) but keep the timestamp for the cooldown."""
+        self._conn.execute(
+            "UPDATE decline_notices SET message_id = NULL WHERE run_id = ? AND user_id = ?",
+            (run_id, str(user_id)),
+        )
+
     def record_message(
         self,
         message_id: int | str,

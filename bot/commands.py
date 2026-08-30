@@ -87,9 +87,9 @@ def _resolve_participants(
     Order is invoker (``/fixed add`` only), then the ``memberN`` pickers, then
     anything typed into ``participants:`` -- de-duplicated, order preserved.
 
-    ``include_invoker`` is true for ``/fixed add`` (you are on the run you
-    create) but false for ``/fixed edit``: an admin or the owner fixing someone
-    else's party must not silently add themselves to it.
+    ``include_invoker`` is off for both ``/fixed add`` and ``/fixed edit``: the
+    person setting a timing up (an admin, a pilot) is not necessarily on the
+    run, and only listed participants get pinged. Pick yourself if you're on it.
 
     Returns ``(participant_ids, error)``.
     """
@@ -333,7 +333,7 @@ class FixedGroup(app_commands.Group):
         bosses="e.g. `hstar, hfa` - each boss needs a difficulty prefix (e/n/h/c/x)",
         day="Day of the week the run happens",
         time="Start time, HH:MM in the guild timezone",
-        member1="Someone on the run (you are added automatically)",
+        member1="Someone on the run (include yourself if you're on it)",
         member2="Someone else on the run",
         member3="Someone else on the run",
         member4="Someone else on the run",
@@ -385,6 +385,9 @@ class FixedGroup(app_commands.Group):
             interaction.user.id,
             interaction.guild,
             picked=(member1, member2, member3, member4, member5, member6),
+            # The person setting up a party's timing is not necessarily on the
+            # run (a guild admin, a pilot) - only listed participants get pinged.
+            include_invoker=False,
         )
         if problem:
             await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
@@ -780,14 +783,9 @@ async def rsvp(
         ephemeral=True,
     )
     if answer.value == "no":
-        await _announce(
-            bot,
-            formatting.decline_notice(
-                run, interaction.user.id, interaction.user.display_name, bot.tz
-            ),
-            [uid for uid in run["participants"] if uid != str(interaction.user.id)],
-            channel_id=run["channel_id"],
-        )
+        await bot.notify_decline(run, interaction.user.id, interaction.user.display_name)
+    else:
+        await bot.retract_decline(run, interaction.user.id)
 
 
 @app_commands.command(name="nick", description="Attach a chat alias to a member")

@@ -9,8 +9,7 @@ in memory, so a container restart neither loses nor replays a reminder.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import discord
@@ -20,7 +19,7 @@ from . import formatting
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
-from .materialise import DAY_OF, countdown_minutes, materialise_week
+from .materialise import DAY_OF, countdown_minutes, is_stale, materialise_week, reconcile_day_of
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
 from .util import roster_rows
@@ -33,6 +32,10 @@ CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
 CFG_LAST_WEEK = "last_materialised_week"
+
+#: A person's "can't make it" notice is posted at most this often per run, so a
+#: ❌ toggled on and off (or mashed) never floods the channel.
+DECLINE_NOTICE_COOLDOWN = timedelta(hours=6)
 
 
 class BossBot(discord.Client):
@@ -53,6 +56,7 @@ class BossBot(discord.Client):
         self.guild_object = discord.Object(id=settings.guild_id)
         self.tree = discord.app_commands.CommandTree(self)
         self._synced = False
+        self._warned_manage_messages = False
         self.tick.change_interval(seconds=settings.tick_seconds)
 
     # -- runtime config (DB-backed, seeded from env on first run) ----------
@@ -184,6 +188,9 @@ class BossBot(discord.Client):
             created = materialise_week(self.repo, week, self.tz, ping_time, countdowns, now=now)
             if created:
                 log.info("materialised %d run(s) for week starting %s", len(created), week)
+        moved = reconcile_day_of(self.repo, self.tz, ping_time)
+        if moved:
+            log.info("re-placed %d day-of reminder(s) at %s", moved, ping_time.strftime("%H:%M"))
         self.repo.set_config(
             CFG_LAST_WEEK,
             to_iso(
@@ -230,6 +237,17 @@ class BossBot(discord.Client):
                 # The run went away after the reminder was queued; retire it quietly.
                 self.repo.mark_reminder_sent(reminder["id"])
                 continue
+            if is_stale(reminder["kind"], reminder["fire_at"], now):
+                # The host was down (asleep laptop) and this is too late to be useful.
+                log.info(
+                    "skipping %s for run %s: due %s, now %s",
+                    reminder["kind"],
+                    run["id"],
+                    reminder["fire_at"],
+                    now,
+                )
+                self.repo.mark_reminder_sent(reminder["id"])
+                continue
             if reminder["kind"] == DAY_OF:
                 day_of.setdefault(run["channel_id"], []).append((reminder, run))
             else:
@@ -268,8 +286,11 @@ class BossBot(discord.Client):
             return
         entries.sort(key=lambda pair: pair[1]["datetime"])
         runs = [run for _, run in entries]
-        content = formatting.day_of_message(runs, self.tz, today=runs[0]["datetime"])
-        message = await self._post(channel, content, mention_users=self._all_participants(runs))
+        rsvps = {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        card = formatting.day_of_card(
+            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"]
+        )
+        message = await self._post(channel, card, mention_users=formatting.everyone_on(runs))
         if message is None:
             return
         for reminder, _ in entries:
@@ -284,34 +305,44 @@ class BossBot(discord.Client):
         if channel is None:
             log.error("no channel available for run %s; leaving its countdown queued", run["id"])
             return
-        content = formatting.countdown_message(run, minutes, self.tz)
-        message = await self._post(channel, content, mention_users=run["participants"])
+        rsvps = self.repo.get_rsvps(run["id"])
+        card = formatting.countdown_card(run, minutes, self.tz, rsvps, table=self.bosses)
+        # Only the people who haven't answered get pinged; the rest just see it.
+        message = await self._post(channel, card, mention_users=formatting.unconfirmed(run, rsvps))
         if message is not None:
             self.repo.mark_reminder_sent(reminder["id"], message.id)
 
     @staticmethod
-    def _all_participants(runs: Iterable[dict]) -> list[str]:
-        seen: list[str] = []
-        for run in runs:
-            for uid in run["participants"]:
-                if uid not in seen:
-                    seen.append(uid)
-        return seen
+    def _embed(card: formatting.Card) -> discord.Embed | None:
+        if not card.has_embed:
+            return None
+        embed = discord.Embed(
+            title=card.title, description=card.description, colour=discord.Colour(card.colour)
+        )
+        for name, value in card.fields:
+            embed.add_field(name=name, value=value, inline=False)
+        if card.footer:
+            embed.set_footer(text=card.footer)
+        return embed
 
     async def _post(
         self,
         channel: discord.abc.Messageable,
-        content: str,
+        card: formatting.Card | str,
         mention_users: list[str] | None = None,
     ) -> discord.Message | None:
         """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back."""
+        if isinstance(card, str):
+            card = formatting.Card(content=card)
         allowed = discord.AllowedMentions(
             everyone=False,
             roles=False,
             users=[discord.Object(id=int(uid)) for uid in (mention_users or [])],
         )
         try:
-            message = await channel.send(content, allowed_mentions=allowed)
+            message = await channel.send(
+                card.content, embed=self._embed(card), allowed_mentions=allowed
+            )
             await message.add_reaction(EMOJI_YES)
             await message.add_reaction(EMOJI_NO)
             return message
@@ -341,6 +372,8 @@ class BossBot(discord.Client):
             return
 
         declines: list[dict] = []
+        confirmations: list[dict] = []
+        applied = False
         for reminder in sources:
             run = self.repo.get_run(reminder["run_id"])
             if run is None:
@@ -348,19 +381,100 @@ class BossBot(discord.Client):
             # A grouped day-of message covers several runs: apply to each run the
             # reactor actually belongs to.
             result = apply_reaction(self.repo, run, payload.user_id, emoji, added)
-            if result.declined:
-                declines.append(self.repo.get_run(run["id"]) or run)
+            if not result.applied:
+                continue
+            applied = True
+            fresh = self.repo.get_run(run["id"]) or run
+            if result.state == "no":
+                declines.append(fresh)
+            elif result.state == "yes":
+                confirmations.append(fresh)
 
-        if not declines:
+        if not applied:
             return
-        channel = await self.post_channel(payload.channel_id)
+        if added:
+            # One answer per person: putting ✅ takes their ❌ off, and vice versa.
+            await self._drop_opposite_reaction(payload, emoji)
+        for run in confirmations:
+            await self.retract_decline(run, payload.user_id)
+        if declines:
+            name = self._display_name(payload)
+            for run in declines:
+                await self.notify_decline(
+                    run,
+                    payload.user_id,
+                    name,
+                    channel_id=payload.channel_id,
+                    reference_id=payload.message_id,
+                )
+
+    async def _drop_opposite_reaction(
+        self, payload: discord.RawReactionActionEvent, emoji: str
+    ) -> None:
+        opposite = EMOJI_NO if emoji == EMOJI_YES else EMOJI_YES
+        try:
+            channel = self.get_channel(payload.channel_id) or await self.fetch_channel(
+                payload.channel_id
+            )
+            message = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
+            await message.remove_reaction(opposite, discord.Object(id=payload.user_id))
+        except discord.Forbidden:
+            if not self._warned_manage_messages:
+                self._warned_manage_messages = True
+                log.warning(
+                    "can't remove other people's reactions: grant the bot 'Manage Messages' "
+                    "in the party channels so ✅/❌ stay one-or-the-other"
+                )
+        except (discord.NotFound, discord.HTTPException, AttributeError):
+            log.debug("could not remove the opposite reaction", exc_info=True)
+
+    async def notify_decline(
+        self,
+        run: dict,
+        user_id: int | str,
+        display_name: str,
+        channel_id: int | str | None = None,
+        reference_id: int | None = None,
+    ) -> None:
+        """Tell the rest of the run someone can't make it - once per person per run.
+
+        Re-posting is suppressed for :data:`DECLINE_NOTICE_COOLDOWN` after the
+        last notice, so toggling or spamming ❌ produces one message, not many.
+        """
+        now = utcnow()
+        existing = self.repo.get_decline_notice(run["id"], user_id)
+        if existing and now - existing["notified_at"] < DECLINE_NOTICE_COOLDOWN:
+            return
+        channel = await self.post_channel(channel_id or run["channel_id"])
         if channel is None:
             return
-        name = self._display_name(payload)
-        for run in declines:
-            content = formatting.decline_notice(run, payload.user_id, name, self.tz)
-            others = [uid for uid in run["participants"] if uid != str(payload.user_id)]
-            await self.post_plain(channel, content, others, reference_id=payload.message_id)
+        content = formatting.decline_notice(run, str(user_id), display_name, self.tz)
+        others = [uid for uid in run["participants"] if uid != str(user_id)]
+        message = await self.post_plain(channel, content, others, reference_id=reference_id)
+        self.repo.set_decline_notice(
+            run["id"],
+            user_id,
+            getattr(message, "id", None),
+            getattr(channel, "id", None),
+            now,
+        )
+
+    async def retract_decline(self, run: dict, user_id: int | str) -> None:
+        """They're back in: delete the "can't make it" notice so it doesn't linger."""
+        existing = self.repo.get_decline_notice(run["id"], user_id)
+        if not existing or not existing["message_id"]:
+            return
+        try:
+            channel = self.get_channel(int(existing["channel_id"])) or await self.fetch_channel(
+                int(existing["channel_id"])
+            )
+            message = await channel.fetch_message(int(existing["message_id"]))  # type: ignore[union-attr]
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException, AttributeError):
+            log.debug("could not delete decline notice", exc_info=True)
+        except (TypeError, ValueError):
+            pass
+        self.repo.clear_decline_notice_message(run["id"], user_id)
 
     def _display_name(self, payload: discord.RawReactionActionEvent) -> str:
         if payload.member is not None:
@@ -376,7 +490,7 @@ class BossBot(discord.Client):
         content: str,
         mention_users: list[str],
         reference_id: int | None = None,
-    ) -> None:
+    ) -> discord.Message | None:
         allowed = discord.AllowedMentions(
             everyone=False,
             roles=False,
@@ -392,6 +506,7 @@ class BossBot(discord.Client):
             else None
         )
         try:
-            await channel.send(content, allowed_mentions=allowed, reference=reference)
+            return await channel.send(content, allowed_mentions=allowed, reference=reference)
         except discord.HTTPException:
             log.exception("failed to post decline notice")
+            return None
