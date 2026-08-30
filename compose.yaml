@@ -1,0 +1,30 @@
+services:
+  bot:
+    build: .
+    container_name: boss-scheduler-bot
+    env_file: .env
+    environment:
+      # Ollama stays native on the host (no Metal passthrough in Docker on macOS).
+      # Unused until phase 2, but wired now so nothing changes later.
+      OLLAMA_HOST: http://host.docker.internal:11434
+      DB_PATH: /app/data/bot.sqlite
+      BOSSES_PATH: /app/config/bosses.yaml
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # Loopback only; reach it from the tailnet with `tailscale serve --bg 8080`
+    # on the host. The HTTP API itself lands in phase 3.
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "bot.health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

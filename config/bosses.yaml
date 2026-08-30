@@ -1,0 +1,87 @@
+# Boss table.  Bind-mounted into the container read-only, so you can edit this
+# file and restart the bot without a rebuild.
+#
+# Format
+# ------
+# difficulties: single-letter prefix -> human name.  A token *must* carry one of
+#   these prefixes: "kalos" alone is rejected, "xkalos" is accepted.
+# bosses: SHORT name -> { full, level, difficulties[], aliases[] }
+#   The canonical name the bot stores and displays is the uppercased prefix plus
+#   the short name, e.g. `hfa` -> "HFA", `ncarling` -> "NCarling".
+#   `difficulties` lists the prefixes that actually exist in game for that boss;
+#   anything else is rejected at parse time with the valid forms listed, so
+#   "hkalos" cannot silently become a run nobody can enter.
+#   `full` and `level` are display-only (shown by /fixed list and in errors).
+#   Aliases are matched case-insensitively with punctuation stripped, and must be
+#   unique across every boss (the bot refuses to start otherwise).
+#
+# Confirmed against the in-game boss list; parties almost never run older bosses,
+# so this table is deliberately short.  Add an entry if that changes.
+
+difficulties:
+  e: Easy
+  n: Normal
+  h: Hard
+  c: Chaos
+  x: Extreme
+
+bosses:
+  Seren:
+    full: Chosen Seren
+    level: 260
+    difficulties: [n, h, x]
+    # NOTE: "cseren" is deliberately NOT an alias. Seren has no Chaos difficulty,
+    # so the token parses as c + seren and is rejected with a suggestion of the
+    # forms that do exist.
+    # `serene`/`sereen` are how the guild spells it in chat.
+    aliases: [seren, serene, sereen, chosenseren]
+
+  Kalos:
+    full: Gatekeeper Kalos
+    level: 265
+    difficulties: [e, n, c, x]
+    aliases: [kalos, gatekeeper, gatekeeperkalos]
+
+  FA:
+    full: The First Adversary
+    level: 270
+    difficulties: [e, n, h, x]
+    aliases: [fa, firstadversary, first-adversary, adversary]
+
+  Carling:
+    full: Carling
+    level: 275
+    difficulties: [e, n, h, x]
+    aliases: [carling, carl, kaling, karling, kalling, caling, carlin, karl]
+
+  BM:
+    full: Black Mage
+    level: 275
+    difficulties: [h, x]
+    aliases: [bm, blackmage, black-mage, bmage]
+
+  Star:
+    full: Radiant Malefic Star
+    level: 280
+    difficulties: [n, h]
+    aliases: [star, rms, rmc, malefic, radiantmaleficstar]
+
+  Limbo:
+    full: Limbo
+    level: 285
+    difficulties: [n, h]
+    # `limb` is the guild's usual short form ("hlimb").
+    aliases: [limbo, limb]
+
+  Baldrix:
+    full: Baldrix
+    level: 290
+    difficulties: [n, h]
+    # The guild's channel names use nbaldguy/hbaldguy.
+    aliases: [baldrix, baldguy, bald, baldrick, bladrix, baldrx]
+
+  Jupiter:
+    full: Jupiter
+    level: 295
+    difficulties: [n, h]
+    aliases: [jupiter, jup]
