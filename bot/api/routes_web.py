@@ -386,7 +386,9 @@ STATUS_CHOICES = [
 ]
 
 
-def _run_fragment(request: Request, bot, run_id: str, back: str) -> HTMLResponse:
+def _run_fragment(
+    request: Request, bot, run_id: str, back: str, answers_open: bool = False
+) -> HTMLResponse:
     run = service.run_view(bot, service.load_run(bot, run_id))
     return fragment(
         request,
@@ -397,14 +399,25 @@ def _run_fragment(request: Request, bot, run_id: str, back: str) -> HTMLResponse
         status_choices=STATUS_CHOICES,
         rescan_targets=service.rescan_targets(bot),
         roster=service.members(bot),
+        # The row is replaced wholesale after every action, so a panel the
+        # reader opened has to be re-opened by the server or it snaps shut
+        # between two answers.
+        answers_open=answers_open,
     )
 
 
-def _after_run_action(request: Request, bot, run_id: str, next_path: str, message: str) -> Response:
+def _after_run_action(
+    request: Request,
+    bot,
+    run_id: str,
+    next_path: str,
+    message: str,
+    answers_open: bool = False,
+) -> Response:
     """An HTMX caller gets the updated row; a plain form post goes back to the page."""
     destination = safe_next(next_path, "/")
     if request.headers.get("HX-Request"):
-        return _run_fragment(request, bot, run_id, destination)
+        return _run_fragment(request, bot, run_id, destination, answers_open)
     return back_to(request, destination, message)
 
 
@@ -491,9 +504,25 @@ async def web_rsvp(
     user_id: str = Form(),
     answer: str = Form(),
     next: str = Form("/"),
+    answers_open: str = Form(""),
 ) -> Response:
+    """Record (or clear) one person's answer, as if they had reacted.
+
+    Deliberately the same `service.set_rsvp` `bossctl` and the API use: it is
+    what fires the card-refresh hook, so the ✅ tally on the message already in
+    Discord catches up with the portal within the second.
+    """
     run = await service.set_rsvp(bot, run_id, user_id, answer)
-    return _after_run_action(request, bot, run["id"], next or _next(request), "Answer recorded.")
+    who = service.member_name(bot, user_id)
+    said = "Cleared" if answer == "clear" else "Recorded"
+    return _after_run_action(
+        request,
+        bot,
+        run["id"],
+        next or _next(request),
+        f"{said} {who}'s answer.",
+        answers_open=bool(answers_open),
+    )
 
 
 @router.post("/runs/{run_id}/ping")

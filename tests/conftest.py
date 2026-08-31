@@ -113,7 +113,7 @@ def seeded(fake_bot):
     kalos = repo.add_fixed_run(
         1002, ["XKalos"], 1, "23:00", ["1002", "1003"], channel_id=OTHER_CHANNEL
     )
-    materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS)
+    materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
     runs = repo.list_runs(week_start=ws)
     star_run = next(r for r in runs if "HStar" in r["bosses"])
     kalos_run = next(r for r in runs if "XKalos" in r["bosses"])

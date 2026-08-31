@@ -130,7 +130,10 @@ def test_the_carried_baselines_rematerialise(v1_db):
 
     repo = Repo(v1_db)
     week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
-    created = materialise_week(repo, week, TZ, time(9, 0), COUNTDOWNS)
+    # As of the reset: `materialise_week` creates nothing for a slot that has
+    # already passed, so run this at the wall clock and the carried baseline
+    # stops rematerialising partway through the week.
+    created = materialise_week(repo, week, TZ, time(9, 0), COUNTDOWNS, now=week)
     assert len(created) == 1
     run = repo.get_run(created[0])
     assert run["bosses"] == ["HStar"]

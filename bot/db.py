@@ -372,6 +372,16 @@ def _dump(value: Iterable[Any]) -> str:
 class Repo:
     """Thin repository over a single SQLite connection."""
 
+    #: Called with a run id whenever something a posted reminder card *shows*
+    #: has changed: the RSVP tally, the run's status, or its line-up. The client
+    #: sets it (:meth:`bot.client.BossBot.card_needs_refresh`) so a card already
+    #: in a channel is re-rendered whoever changed the answer -- a reaction,
+    #: `/rsvp`, the portal, a chat-extracted "Can". Hooking the writes rather
+    #: than the callers is the only way to catch all four without every one of
+    #: them having to remember; a caller that forgets is exactly how the tally
+    #: on a live card froze at "2/4 ✅" while the database said 4/4.
+    on_run_changed: Callable[[str], None] | None = None
+
     def __init__(self, path: str | Path):
         self.path = str(path)
         if self.path != ":memory:":
@@ -744,10 +754,22 @@ class Repo:
             runs = [r for r in runs if r["status"] in wanted]
         return runs
 
+    def _run_changed(self, run_id: str) -> None:
+        """Tell whoever is listening that a card about this run is now out of date."""
+        if self.on_run_changed is None:
+            return
+        try:
+            self.on_run_changed(str(run_id))
+        except Exception:
+            # A stale card is a cosmetic problem; failing the write that caused
+            # it would be a real one.
+            log.exception("the run-changed hook failed for run %s", run_id)
+
     def set_run_status(self, run_id: str, status: str) -> None:
         if status not in RUN_STATUSES:
             raise ValueError(f"unknown run status {status!r}")
         self._conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
+        self._run_changed(run_id)
 
     def set_run_datetime(self, run_id: str, run_at: datetime, week_start: datetime) -> None:
         self._conn.execute(
@@ -769,6 +791,7 @@ class Repo:
             "UPDATE runs SET participants = ? WHERE id = ?",
             (_dump(str(p) for p in participants), run_id),
         )
+        self._run_changed(run_id)
 
     @staticmethod
     def _run(row: sqlite3.Row) -> dict:
@@ -793,11 +816,13 @@ class Repo:
             """,
             (run_id, str(user_id), state, source, to_iso(utcnow())),
         )
+        self._run_changed(run_id)
 
     def clear_rsvp(self, run_id: str, user_id: int | str) -> None:
         self._conn.execute(
             "DELETE FROM rsvps WHERE run_id = ? AND user_id = ?", (run_id, str(user_id))
         )
+        self._run_changed(run_id)
 
     def get_rsvps(self, run_id: str) -> dict[str, str]:
         rows = self._conn.execute("SELECT user_id, state FROM rsvps WHERE run_id = ?", (run_id,))
@@ -897,6 +922,18 @@ class Repo:
                 to_iso(utcnow()),
             ),
         )
+
+    def debug_messages_for_run(self, run_id: str) -> list[dict]:
+        """Test cards posted for one run, oldest first.
+
+        A `/debug ping` is a real card carrying a real tally -- its ✅/❌ drive
+        the genuine RSVP flow -- so it goes stale like any other and has to be
+        re-rendered with it.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM debug_messages WHERE run_id = ? ORDER BY created_at", (run_id,)
+        )
+        return [dict(r) for r in rows]
 
     def debug_messages_for(self, message_id: int | str) -> list[dict]:
         rows = self._conn.execute(

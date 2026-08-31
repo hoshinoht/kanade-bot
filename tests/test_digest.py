@@ -20,7 +20,11 @@ def _week(repo):
     ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, kl(2026, 8, 30, 12, 0))
     repo.add_fixed_run(1, ["HStar", "HFA"], 0, "21:30", ["1", "2"], channel_id=WATCHED_CHANNEL)
     repo.add_fixed_run(2, ["XKalos"], 1, "23:00", ["2", "3"], channel_id=WATCHED_CHANNEL)
-    materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS)
+    # As of the reset, not of whenever the suite runs: `materialise_week` skips
+    # a slot that has already passed, so against the wall clock this fixture
+    # quietly lost its Monday run every evening after 21:30 and the digest had
+    # nothing to group. Same fix as `conftest.seeded`.
+    materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
     return ws
 
 

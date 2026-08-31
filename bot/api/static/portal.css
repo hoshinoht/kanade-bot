@@ -736,6 +736,122 @@ details[open] > summary.btn {
   flex-wrap: wrap;
 }
 
+/* ── the cards a run has produced ───────────────────────────────────────────
+ *
+ * A run's messages in the order the bot says them: morning, then the
+ * countdowns. Mono, because these are times -- the same rule the clock on the
+ * left follows -- and one line, because "did the morning ping go out?" is a
+ * glance, not a page. A posted card is a link out to the message itself; the
+ * two states that are *not* links are the two worth noticing.
+ */
+.run__cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.run__cards-label {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.cardlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.cardlink__at {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.cardlink--posted {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cardlink--posted:hover {
+  border-bottom-color: var(--accent);
+}
+
+.cardlink__out {
+  font-size: 0.62rem;
+  opacity: 0.75;
+}
+
+/* Nothing said yet: dashed, like the chip of somebody who has not answered. */
+.cardlink--queued {
+  color: var(--faint);
+  border-bottom: 1px dashed var(--line);
+}
+
+/* Fired into the void -- the host was asleep, or the run moved. Worth a colour
+   because it is the one state that explains a ping nobody remembers getting. */
+.cardlink--skipped {
+  color: var(--warn);
+}
+
+/* ── answers, folded away ──────────────────────────────────────────────────
+ *
+ * Correcting somebody's ✅ is a rare, deliberate act, so it hides behind a
+ * disclosure rather than putting three buttons per person on every row. Open,
+ * it borrows the status bar's segmented control: one vocabulary for "pick one
+ * of these states", used twice.
+ */
+.answers {
+  grid-column: 1 / -1;
+  margin-top: 0.4rem;
+}
+
+.answers__summary {
+  font-size: 0.68rem;
+  padding: 0.2rem 0.5rem;
+  min-height: 0;
+}
+
+.answers__body {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0 0.2rem;
+}
+
+.answers__hint {
+  font-size: 0.7rem;
+  color: var(--dim);
+  margin: 0;
+}
+
+.answers__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.answers__who {
+  flex: 1 1 8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.seg--answer .seg__btn {
+  font-size: 0.68rem;
+  padding: 0.22rem 0.55rem;
+  min-height: 30px;
+}
+
 .seg__btn {
   font: inherit;
   font-size: 0.72rem;
@@ -858,10 +974,44 @@ details[open] > summary.btn {
   background: color-mix(in srgb, var(--risk) 10%, transparent);
 }
 
+.chip--maybe {
+  color: var(--own);
+  border-color: color-mix(in srgb, var(--own) 35%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, transparent);
+}
+
 .chip--waiting {
   color: var(--faint);
   border-style: dashed;
   background: transparent;
+}
+
+/* The answer as a shape: ● on, ✕ out, ? maybe, ○ nothing yet. Colour alone
+   would leave the row unreadable to anyone who cannot separate the green chip
+   from the red one, and a filled dot beside a hollow one is legible at arm's
+   length in a way two similar words are not. */
+.chip__mark {
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.chip--waiting .chip__mark {
+  opacity: 0.7;
+}
+
+/* For screen readers only: the chips say their state in a glyph, which reads
+   as nothing at all out loud. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .status {
@@ -885,6 +1035,12 @@ details[open] > summary.btn {
 }
 .status--cancelled,
 .status--done {
+  color: var(--faint);
+}
+
+/* Not a run status: the count of people who have not answered at all. It reads
+   quieter than "out" on purpose -- silence is not a problem yet. */
+.status--waiting {
   color: var(--faint);
 }
 

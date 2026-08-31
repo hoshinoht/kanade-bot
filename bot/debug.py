@@ -6,8 +6,9 @@ messages -- prefixed `🧪 TEST — ` so nobody mistakes one for the genuine pin
 without touching the run's reminder rows, so the scheduled pings still go out
 exactly as planned.
 
-Access is restricted to the guild owner, ``ADMIN_ROLE_ID`` members, and anyone
-listed in ``DEBUG_USER_IDS``.
+Access is restricted to whoever runs the bot -- ``ADMIN_ROLE_ID`` members, the
+guild owner, or a server administrator -- plus anyone listed in
+``DEBUG_USER_IDS``. The group is hidden from everyone else's command picker.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from .ids import IdError, resolve_id, short_id
 from .materialise import DAY_OF, countdown_minutes
 from .pings import audience
 from .timeutil import from_iso, utcnow
+from .util import is_bot_admin
 
 if TYPE_CHECKING:  # pragma: no cover
     from .client import BossBot
@@ -53,12 +55,22 @@ def may_debug(
     guild_owner_id: int | None,
     admin_role_id: int | None,
     debug_user_ids: list[int],
+    is_guild_admin: bool = False,
 ) -> bool:
-    """Guild owner, an admin-role holder, or an explicitly listed user."""
+    """Whoever runs the bot, plus anyone explicitly listed in ``DEBUG_USER_IDS``.
+
+    The first part is exactly `/say`'s rule (:func:`bot.util.is_bot_admin`):
+    ``ADMIN_ROLE_ID``, the guild owner, or Discord's Administrator permission.
+    The allow-list stays on top of it, so a tester who is deliberately not an
+    admin keeps the access the operator gave them on purpose.
+    """
     uid = int(user_id)
-    if guild_owner_id is not None and uid == int(guild_owner_id):
-        return True
-    if admin_role_id is not None and int(admin_role_id) in role_ids:
+    if is_bot_admin(
+        is_guild_admin,
+        guild_owner_id is not None and uid == int(guild_owner_id),
+        role_ids,
+        admin_role_id,
+    ):
         return True
     return uid in [int(i) for i in debug_user_ids]
 
@@ -174,22 +186,33 @@ async def _run_autocomplete(
         return []
 
 
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
 class DebugGroup(app_commands.Group):
-    """Testing aids. Restricted; see DEBUG_USER_IDS."""
+    """Testing aids. Admins only; see :func:`may_debug` and DEBUG_USER_IDS.
+
+    Two gates, the same pair `/say` uses. ``default_permissions`` keeps the
+    whole group out of an ordinary member's command picker -- it used to be
+    listed for everyone and merely refuse them, which is an invitation to try --
+    and :meth:`interaction_check` is what actually decides, because a server can
+    hand the default back out under Server Settings -> Integrations.
+    """
 
     def __init__(self) -> None:
-        super().__init__(name="debug", description="Testing aids (restricted)")
+        super().__init__(name="debug", description="Testing aids (admins only)")
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         bot = _bot(interaction)
         guild = interaction.guild
         role_ids = [r.id for r in getattr(interaction.user, "roles", [])]
+        permissions = getattr(interaction.user, "guild_permissions", None)
         if may_debug(
             interaction.user.id,
             role_ids,
             guild.owner_id if guild else None,
             bot.settings.admin_role_id,
             bot.settings.debug_user_id_list,
+            bool(permissions is not None and permissions.administrator),
         ):
             return True
         raise DebugNotAllowed()
@@ -264,9 +287,7 @@ class DebugGroup(app_commands.Group):
             )
         minutes = countdown_minutes(kind)
         if minutes is not None:
-            return formatting.countdown_card(
-                run, minutes, bot.tz, rsvps, table=bot.bosses, who=who
-            )
+            return formatting.countdown_card(run, minutes, bot.tz, rsvps, table=bot.bosses, who=who)
         if kind == "amend":
             return formatting.Card(
                 content=formatting.amend_notice(

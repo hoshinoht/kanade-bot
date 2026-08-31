@@ -164,7 +164,7 @@ def test_a_hint_at_a_run_with_none_of_those_bosses_is_refused(runs):
 
 
 def test_a_hint_is_still_followed_when_no_bosses_are_named(runs):
-    """"change it to wed" plus a hint is exactly what the hint is for."""
+    """ "change it to wed" plus a hint is exactly what the hint is for."""
     hint = short_id(runs["xkalos"]["id"])
     result = match_run(amendment(target_run_hint=f"#{hint}"), channel_runs(runs, PARTY_CHANNEL))
     assert result.run["id"] == runs["xkalos"]["id"]

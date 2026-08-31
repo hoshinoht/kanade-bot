@@ -56,6 +56,9 @@ class Posted:
     content: str
     mentions: list[str] = field(default_factory=list)
     kind: str = "plain"
+    #: Role ids the message may notify. Only `/say` ever passes any: everything
+    #: the bot writes for itself names people one by one.
+    roles: list[str] = field(default_factory=list)
 
     @property
     def allowed_mentions(self) -> list[str]:
@@ -287,6 +290,11 @@ class FakeBot:
 
         return BossBot.can_send_in(self, channel)
 
+    def no_access(self, channel_id, channel=None):
+        from bot.client import BossBot
+
+        return BossBot.no_access(self, channel_id, channel)
+
     def access_report(self):
         from bot.client import BossBot
 
@@ -300,9 +308,17 @@ class FakeBot:
     async def post_channel(self, channel_id=None):
         return (await self.find_channel(channel_id)).channel
 
-    async def post_plain(self, channel, content, mention_users, reference_id=None):
+    async def post_plain(
+        self, channel, content, mention_users, reference_id=None, mention_roles=None
+    ):
         self.posts.append(
-            Posted(getattr(channel, "id", None), content, list(mention_users), "plain")
+            Posted(
+                getattr(channel, "id", None),
+                content,
+                list(mention_users),
+                "plain",
+                list(mention_roles or []),
+            )
         )
         return self._message(channel)
 
@@ -311,9 +327,7 @@ class FakeBot:
         wanted = mention_users
         if wanted is None:
             wanted = getattr(card, "mention_users", [])
-        self.posts.append(
-            Posted(getattr(channel, "id", None), content, list(wanted), "card")
-        )
+        self.posts.append(Posted(getattr(channel, "id", None), content, list(wanted), "card"))
         return self._message(channel)
 
     async def annotate_message(self, channel_id, message_id, notice) -> bool:

@@ -56,6 +56,25 @@ class ParticipantOut(BaseModel):
     rsvp: Answer | None = None
 
 
+class RunCardOut(BaseModel):
+    """One reminder message a run has produced, or still owes.
+
+    ``state`` is `posted` (``url`` opens it in Discord), `queued` (nothing said
+    yet) or `skipped` -- retired without a message, which is what a sleeping
+    host or a cancelled run leaves behind.
+    """
+
+    kind: str
+    label: str
+    state: Literal["posted", "queued", "skipped"]
+    fire_at: str
+    local_fire_at: str
+    sent_at: str | None = None
+    local_sent_at: str | None = None
+    message_id: str | None = None
+    url: str | None = None
+
+
 class RunOut(BaseModel):
     id: str
     short_id: str
@@ -76,7 +95,11 @@ class RunOut(BaseModel):
     participants: list[ParticipantOut]
     yes: int
     no: int
+    maybe: int = 0
     unanswered: int
+    #: The run's reminder messages, oldest first, so a caller can jump straight
+    #: to the card in Discord. `bossctl` can grow the same view from here.
+    cards: list[RunCardOut] = []
     roster_change: RosterChangeOut | None = None
 
 
@@ -152,7 +175,9 @@ class AmendIn(Strict):
 
 class RsvpIn(Strict):
     user_id: str
-    answer: Answer
+    #: `clear` removes the answer instead of recording one -- the correction for
+    #: a ✅ somebody left by accident, which must leave them *unanswered*.
+    answer: Answer | Literal["clear"]
 
 
 #: `at_risk` is derived from the answers people give, and `done` is also set

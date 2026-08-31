@@ -56,25 +56,38 @@ def test_reconcile_moves_unsent_day_of_to_new_ping_time():
     assert reconcile_day_of(repo, TZ, time(1, 0)) == 0  # idempotent
 
 
-def test_countdown_card_pings_only_the_people_who_have_not_answered():
-    """A ❌ is an answer. Asking again at T-1h and T-15m nags somebody who
-    already told the party, whose decline notice has gone out anyway."""
+def test_a_countdown_goes_to_the_whole_party_bar_the_decliners():
+    """An hour out, the people who are coming want the reminder whether or not
+    they have ticked. Only an explicit ❌ takes somebody off the list."""
     repo = Repo(":memory:")
     run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
     rsvps = {"1": "yes", "2": "no"}
-    assert formatting.unanswered(run, rsvps) == ["3"]
+    assert formatting.not_declined(run, rsvps) == ["1", "3"]
 
     card = formatting.countdown_card(run, 60, TZ, rsvps)
-    assert "<@3>" in card.content
-    assert "<@1>" not in card.content and "<@2>" not in card.content
+    assert "<@1>" in card.content and "<@3>" in card.content
+    assert "<@2> out" in card.content
     assert card.footer == formatting.REACT_HINT
 
 
-def test_a_maybe_still_gets_the_countdown():
-    """A "maybe" is exactly the person a T-1h nudge exists for."""
+def test_the_countdown_still_says_who_it_is_waiting_on():
+    """The card names four people; the embed says which of them owe an answer."""
     repo = Repo(":memory:")
     run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
-    assert formatting.unanswered(run, {"1": "yes", "2": "maybe", "3": "no"}) == ["2"]
+    card = formatting.countdown_card(run, 60, TZ, {"1": "yes", "2": "no"})
+
+    assert "Still to answer: <@3>" in card.description
+
+
+def test_a_maybe_is_still_someone_the_countdown_is_waiting_on():
+    """A "maybe" is exactly the person a T-1h nudge exists for -- and unlike a
+    ❌ they are still on the run, so they are pinged as well as chased."""
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    rsvps = {"1": "yes", "2": "maybe", "3": "no"}
+
+    assert formatting.unanswered(run, rsvps) == ["2"]
+    assert formatting.not_declined(run, rsvps) == ["1", "2"]
 
 
 def test_a_countdown_with_everyone_on_is_the_quiet_green_one():
@@ -96,8 +109,9 @@ def test_a_countdown_nobody_is_left_to_answer_still_says_who_is_out():
     run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
     card = formatting.countdown_card(run, 60, TZ, {"1": "yes", "2": "no", "3": "yes"})
 
-    assert "<@2> out" in card.content
+    assert "<@1> <@3> · <@2> out" in card.content
     assert "everyone's confirmed" not in card.content
+    assert "Still to answer" not in card.description
     assert card.footer is None
     assert card.colour == formatting.COLOUR_COUNTDOWN
 

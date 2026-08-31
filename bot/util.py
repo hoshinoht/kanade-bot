@@ -8,7 +8,44 @@ from dataclasses import dataclass, field
 from typing import Any
 
 _MENTION_RE = re.compile(r"<@!?(\d+)>")
+_ROLE_MENTION_RE = re.compile(r"<@&(\d+)>")
 _BARE_ID_RE = re.compile(r"\b(\d{15,25})\b")
+
+
+def is_bot_admin(
+    is_guild_admin: bool,
+    is_guild_owner: bool,
+    role_ids: Iterable[int],
+    admin_role_id: int | None,
+) -> bool:
+    """Who runs this bot: the configured admin role, the owner, or a server admin.
+
+    ``ADMIN_ROLE_ID`` is the point of it -- a role the guild hands out, which is
+    how the guild already thinks about who is in charge. Discord's own
+    Administrator permission and the guild owner stay as fallbacks so an unset
+    or mistyped role id cannot lock the owner out of their own bot.
+
+    ``is_guild_admin`` has to be passed in because no id implies it: it comes
+    from ``member.guild_permissions.administrator``. Kept as a pure predicate so
+    the rule is testable without a gateway.
+    """
+    if is_guild_admin or is_guild_owner:
+        return True
+    return admin_role_id is not None and int(admin_role_id) in [int(r) for r in role_ids]
+
+
+def mentions_in(text: str | None) -> tuple[list[str], list[str]]:
+    """The user and role mentions actually written in a message: ``(users, roles)``.
+
+    Unlike :func:`parse_mentions`, a bare snowflake does not count. This decides
+    who a message is allowed to *notify*, and Discord only notifies what it
+    renders as a mention -- a number in a sentence is a number.
+    """
+    if not text:
+        return [], []
+    users = list(dict.fromkeys(m.group(1) for m in _MENTION_RE.finditer(text)))
+    roles = list(dict.fromkeys(m.group(1) for m in _ROLE_MENTION_RE.finditer(text)))
+    return users, roles
 
 
 def mention(user_id: int | str) -> str:

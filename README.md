@@ -77,7 +77,8 @@ lose or replay a ping.
      > party channel, so `CHAT_CHANNEL_IDS` can stay empty and a channel added
      > for a new party is watched the moment it appears.
    - **Server Settings → Roles**, right-click the bossing role → `BOSSING_ROLE_ID`
-     (and optionally an admin role → `ADMIN_ROLE_ID`)
+     (and optionally an admin role → `ADMIN_ROLE_ID`, which grants `/say`,
+     `/debug` and the right to change anyone's run)
 6. Make sure the bot's role can see and post in every party channel you will run
 `/fixed add` in.
 
@@ -160,7 +161,15 @@ uv run python -m bot
 /pingtime time:08:30            # move the morning ping, reschedules pending ones
 /bot pause | /bot resume        # stop/resume chat watching
 /rescan hours:24                # re-read this channel's recent chat and propose
+
+/say message:... [channel:#x]   # admins only: the bot posts your words verbatim
 ```
+
+**`/say`** is the one thing the bot writes that really notifies people: the
+allow-list is built from the `@mentions` you type, so it reaches exactly who you
+name (roles included) and nobody else. `@everyone`/`@here` is always blocked, and
+quiet mode silences it like everything else. It only posts where the bot can
+already post, and it never falls back to another channel.
 
 
 **About ids.** Runs and fixed runs are identified by a UUID, shown as its first
@@ -187,7 +196,10 @@ match, or that could mean two people, comes back as an error naming the problem.
 The pickers are more reliable.
 
 Only members with the bossing role can use the commands. Only a run's
-participants, its owner, or `ADMIN_ROLE_ID` members can change it. Bot accounts
+participants, its owner, or `ADMIN_ROLE_ID` members can change it. `ADMIN_ROLE_ID`
+is the "who runs the bot" role: it also gates `/say` and `/debug`, alongside
+Discord's own Administrator permission and the server owner, either of which
+works even when the setting is empty. Bot accounts
 are never rostered and cannot be participants, even if they hold the role.
 
 
@@ -315,7 +327,8 @@ strict — everything expected must be found and nothing extra invented.
 
 `/debug` posts the *real* reminder messages on demand so you can check the whole
 flow without waiting for 09:00. Restricted to the server owner, `ADMIN_ROLE_ID`
-members, and ids in `DEBUG_USER_IDS`.
+members, server administrators, and ids in `DEBUG_USER_IDS` — and hidden from
+everyone else's command picker.
 
 ```
 /debug ping run_id:a1b2 kind:day_of   # posts "🧪 TEST — ..." in the run's home

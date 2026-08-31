@@ -31,7 +31,7 @@ from ..export import message_record
 from ..extract.commit import commit, reject
 from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
-from ..materialise import LIVE_STATUSES, refresh_run_reminders
+from ..materialise import DAY_OF, LIVE_STATUSES, countdown_minutes, refresh_run_reminders
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
@@ -181,6 +181,49 @@ def message_url(bot: BossBot, channel_id: Any, message_id: Any) -> str | None:
     return f"https://discord.com/channels/{bot.settings.guild_id}/{channel_id}/{message_id}"
 
 
+def card_label(kind: str) -> str:
+    """What a reminder kind is called on a run row.
+
+    The row is read by a person, not by the scheduler, so a card is named for
+    when it lands: the morning card, then the countdowns as time-to-go.
+    ``format_offset`` is the same function that writes the countdown itself, so
+    the portal and the Discord message cannot end up disagreeing about "1h".
+    """
+    if kind == DAY_OF:
+        return "morning"
+    minutes = countdown_minutes(kind)
+    return f"T-{formatting.format_offset(minutes)}" if minutes is not None else kind
+
+
+def run_cards(bot: BossBot, run: dict) -> list[dict]:
+    """Every message this run has produced or still owes, oldest first.
+
+    Three states, and they are three different facts: **posted** (with a deep
+    link into Discord), **queued** (nothing has been said yet), and **skipped**
+    -- a reminder retired without a message, which is what a sleeping host or a
+    cancelled run leaves behind. Collapsing the last two into "not posted" would
+    hide the one case worth investigating.
+    """
+    cards: list[dict] = []
+    for reminder in bot.repo.list_reminders(run["id"]):
+        sent_at = reminder["sent_at"]
+        url = message_url(bot, run["channel_id"], reminder["message_id"])
+        cards.append(
+            {
+                "kind": reminder["kind"],
+                "label": card_label(reminder["kind"]),
+                "fire_at": to_iso(reminder["fire_at"]),
+                "local_fire_at": formatting.local_time(reminder["fire_at"], bot.tz),
+                "sent_at": to_iso(sent_at) if sent_at else None,
+                "local_sent_at": formatting.local_time(sent_at, bot.tz) if sent_at else None,
+                "message_id": reminder["message_id"],
+                "url": url,
+                "state": "posted" if url else ("skipped" if sent_at else "queued"),
+            }
+        )
+    return cards
+
+
 def channel_is_watched(bot: BossBot, channel_id: int | str) -> bool:
     """Would the bot listen to (and post in) this channel?
 
@@ -321,7 +364,9 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
         "participants": participants,
         "yes": sum(1 for p in participants if p["rsvp"] == "yes"),
         "no": sum(1 for p in participants if p["rsvp"] == "no"),
+        "maybe": sum(1 for p in participants if p["rsvp"] == "maybe"),
         "unanswered": sum(1 for p in participants if p["rsvp"] is None),
+        "cards": run_cards(bot, run),
         "roster_change": roster_change(bot, run),
     }
 
@@ -952,14 +997,24 @@ def roster_change(bot: BossBot, run: dict) -> dict:
     }
 
 
+#: What an answer can be set to from the portal, the API or `bossctl`.
+#: ``clear`` is not an answer but the removal of one -- the correction for a
+#: reaction somebody left by accident, which needs to leave the person
+#: *unanswered* rather than recorded as a maybe.
+RSVP_ANSWERS = ("yes", "no", "maybe", "clear")
+
+
 async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -> dict:
     run = load_run(bot, run_id)
-    if answer not in ("yes", "no", "maybe"):
-        raise BadRequest("answer must be `yes`, `no` or `maybe`")
+    if answer not in RSVP_ANSWERS:
+        raise BadRequest("answer must be `yes`, `no`, `maybe` or `clear`")
     uid = str(user_id)
     if uid not in run["participants"]:
         raise BadRequest(f"{member_name(bot, uid)} isn't on run {short_id(run['id'])}")
-    bot.repo.set_rsvp(run["id"], uid, answer, source="chat")
+    if answer == "clear":
+        bot.repo.clear_rsvp(run["id"], uid)
+    else:
+        bot.repo.set_rsvp(run["id"], uid, answer, source="chat")
     new_status = compute_status(run["status"], run["participants"], bot.repo.get_rsvps(run["id"]))
     if new_status != run["status"]:
         bot.repo.set_run_status(run["id"], new_status)

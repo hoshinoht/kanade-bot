@@ -25,7 +25,14 @@ from .materialise import LIVE_STATUSES, refresh_run_reminders
 from .pings import PING_LEVELS, audience, normalise_level
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
-from .util import can_modify_fixed, can_modify_run, mention, resolve_participant_text
+from .util import (
+    can_modify_fixed,
+    can_modify_run,
+    is_bot_admin,
+    mention,
+    mentions_in,
+    resolve_participant_text,
+)
 from .watch import origin_ids
 from .weeks import (
     WEEKDAY_NAMES,
@@ -86,6 +93,10 @@ class NotAllowed(app_commands.CheckFailure):
     """Raised when a member touches a run they are not part of."""
 
 
+class NotAnAdmin(app_commands.CheckFailure):
+    """Raised when a non-admin tries to make the bot speak."""
+
+
 def _bot(interaction: discord.Interaction) -> BossBot:
     return interaction.client  # type: ignore[return-value]
 
@@ -98,6 +109,32 @@ async def _require_role(interaction: discord.Interaction) -> bool:
 
 def require_role():
     return app_commands.check(_require_role)
+
+
+def is_guild_admin(user: object) -> bool:
+    """Discord's own Administrator permission, if this object carries one."""
+    permissions = getattr(user, "guild_permissions", None)
+    return bool(permissions is not None and permissions.administrator)
+
+
+async def _require_admin(interaction: discord.Interaction) -> bool:
+    """The runtime half of `/say`'s gate; `/debug` applies the same rule.
+
+    ``default_permissions(administrator=True)`` hides the command from everyone
+    else, but it is only a *default*: a server can hand it back out under Server
+    Settings -> Integrations, so the permission is checked again here -- and it
+    is here, not in the visibility default, that ``ADMIN_ROLE_ID`` grants access.
+    """
+    bot = _bot(interaction)
+    guild = interaction.guild
+    if is_bot_admin(
+        is_guild_admin(interaction.user),
+        guild is not None and guild.owner_id == interaction.user.id,
+        [r.id for r in getattr(interaction.user, "roles", [])],
+        bot.settings.admin_role_id,
+    ):
+        return True
+    raise NotAnAdmin()
 
 
 # ---------------------------------------------------------------------------
@@ -1218,6 +1255,86 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
     )
 
 
+#: How long a `/say` may be. Discord's own limit is 2000, and `post_plain` can
+#: add the quiet-mode note underneath, so leave that room rather than have the
+#: send rejected after the command has already reported success.
+SAY_LIMIT = 1900
+
+
+@app_commands.command(name="say", description="Post a message as the bot (admins only)")
+@app_commands.describe(
+    message="What the bot should post, word for word",
+    channel="Where to post it (default: this channel)",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
+@app_commands.check(_require_admin)
+async def say(
+    interaction: discord.Interaction,
+    message: str,
+    channel: discord.TextChannel | None = None,
+) -> None:
+    """Speak as the bot, in a channel it can already post in.
+
+    Unlike everything else the bot writes, this really does notify: an admin who
+    types `@kanon` into it meant to reach kanon, and a bot announcement nobody
+    sees is not worth having. The allow-list is built from the mentions actually
+    written in the text, so it can never notify anybody the message does not
+    name. `@everyone`/`@here` stays blocked -- that is the one mention nobody
+    can opt out of -- and quiet mode still silences the lot.
+    """
+    bot = _bot(interaction)
+    target = channel or interaction.channel
+    text = message.strip()
+    if not text:
+        await interaction.response.send_message("❌ Nothing to say.", ephemeral=True)
+        return
+    if len(text) > SAY_LIMIT:
+        await interaction.response.send_message(
+            f"❌ That's {len(text)} characters; keep it under {SAY_LIMIT}.", ephemeral=True
+        )
+        return
+
+    target_id = getattr(target, "id", None)
+    lookup = await bot.find_channel(target_id)
+    # `find_channel` falls back to POST_CHANNEL_ID, which is right for a
+    # reminder that must land somewhere and wrong here: "post this in #general"
+    # must not quietly become "post this in the digest channel".
+    if lookup.channel is None or getattr(lookup.channel, "id", None) != target_id:
+        # A successful fallback leaves `problem` empty, so the reason the *asked
+        # for* channel was refused comes from the same helper `find_channel`
+        # would have used -- "grant the role View Channel + Send Messages there"
+        # is the sentence that gets this fixed.
+        problem = lookup.problem or bot.no_access(target_id, target)
+        await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
+        return
+
+    users, roles = mentions_in(text)
+    posted = await bot.post_plain(lookup.channel, text, users, mention_roles=roles)
+    if posted is None:
+        await interaction.response.send_message(
+            "❌ Discord refused the message. Check the bot logs.", ephemeral=True
+        )
+        return
+    log.info(
+        "/say by %s (%s) in channel %s: %d character(s), %d user + %d role mention(s)",
+        interaction.user,
+        interaction.user.id,
+        target_id,
+        len(text),
+        len(users),
+        len(roles),
+    )
+    notified = "notifying nobody"
+    if users or roles:
+        notified = f"notifying {len(users)} member(s)" + (
+            f" and {len(roles)} role(s)" if roles else ""
+        )
+    await interaction.response.send_message(
+        f"✅ Posted in <#{target_id}> ({notified}).", ephemeral=True
+    )
+
+
 # ---------------------------------------------------------------------------
 # registration + error handling
 # ---------------------------------------------------------------------------
@@ -1233,6 +1350,8 @@ async def on_app_command_error(
         )
     elif isinstance(error, MissingBossingRole):
         message = "❌ You need the bossing role to use this bot."
+    elif isinstance(error, NotAnAdmin):
+        message = "❌ `/say` is for server admins, the server owner and the admin role."
     elif isinstance(error, (NotAllowed, app_commands.CheckFailure)):
         message = f"❌ {error}" if str(error) else "❌ You can't do that."
     else:
@@ -1267,6 +1386,7 @@ def register_commands(bot: BossBot) -> None:
         pings,
         pingtime,
         rescan,
+        say,
     ):
         tree.add_command(command)
     tree.on_error = on_app_command_error

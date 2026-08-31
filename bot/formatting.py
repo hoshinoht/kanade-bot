@@ -181,6 +181,18 @@ def declined(run: dict, rsvps: dict[str, str]) -> list[str]:
     return [uid for uid in run["participants"] if rsvps.get(uid) == "no"]
 
 
+def not_declined(run: dict, rsvps: dict[str, str]) -> list[str]:
+    """Everyone still on the run - the people a countdown may notify.
+
+    A countdown goes to the whole party, minus anybody who has already said
+    they can't make it: the run is an hour away and the people on it want the
+    reminder whether or not they have ticked yet. Only an explicit ❌ takes
+    somebody off the list, and they are still *named* on the card so the party
+    can see who is out.
+    """
+    return [uid for uid in run["participants"] if rsvps.get(uid) != "no"]
+
+
 def everyone_on(runs: list[dict]) -> list[str]:
     seen: list[str] = []
     for run in runs:
@@ -233,28 +245,35 @@ def countdown_card(
     table: Any | None = None,
     who: Audience | None = None,
 ) -> Card:
-    """A countdown pings only the people who haven't answered; everyone else just sees it.
+    """A countdown names the whole party except whoever has already declined.
 
     Three things it can say, and they are not the same thing: somebody still
     has to answer, everybody has and one of them can't come, or everybody is
     on. Only the last is the green "all set" card -- a run somebody dropped out
-    of has nothing left to ask but is not settled either.
+    of has nothing left to ask but is not settled either. Whoever is still to
+    answer goes in the embed, so a card that lists four people still says which
+    two of them the run is waiting on.
     """
     pending = unanswered(run, rsvps)
     out = declined(run, rsvps)
-    if pending:
-        waiting = format_participants(pending, who)
-    elif out:
-        waiting = f"{format_participants(out, who)} out"
-    else:
+    still_on = not_declined(run, rsvps)
+    if not pending and not out:
         waiting = "everyone's confirmed ✅"
+    else:
+        parts = [format_participants(still_on, who)] if still_on else []
+        if out:
+            parts.append(f"{format_participants(out, who)} out")
+        waiting = " · ".join(parts) if parts else "(nobody)"
     content = (
         f"⏰ **{format_bosses(run['bosses'])}** in {format_offset(minutes)} "
         f"({local_time(run['datetime'], tz)}) — {waiting}"
     )
+    detail = [boss_detail(run["bosses"], table), status_line(run, rsvps)]
+    if pending:
+        detail.append(f"Still to answer: {format_participants(pending, who)}")
     return Card(
         content=content,
-        description=f"{boss_detail(run['bosses'], table)}\n{status_line(run, rsvps)}",
+        description="\n".join(detail),
         footer=REACT_HINT if pending else None,
         colour=COLOUR_COUNTDOWN if pending or out else COLOUR_ALL_SET,
         thumbnail_path=lead_portrait(run["bosses"], table),

@@ -165,8 +165,9 @@ def test_the_countdown_says_it_too(repo, bosses):
 
 
 def test_the_countdown_does_not_ping_the_person_who_declined(repo):
-    """Built exactly as `_send_countdown` builds it: the decliner is still named
-    on the card -- the party can see who is out -- but their phone stays quiet."""
+    """Built exactly as `_send_countdown` builds it: everyone else on the run is
+    pinged, and the decliner is named -- the party can see who is out -- but
+    their phone stays quiet."""
     from bot.pings import audience
 
     repo.upsert_member(1001, "Alvin tan", None, True)
@@ -175,13 +176,15 @@ def test_the_countdown_does_not_ping_the_person_who_declined(repo):
     rsvps = repo.get_rsvps(run["id"])
 
     who = audience(
-        repo, run["participants"], "countdown", candidates=formatting.unanswered(run, rsvps)
+        repo, run["participants"], "countdown", candidates=formatting.not_declined(run, rsvps)
     )
     card = formatting.countdown_card(run, 60, TZ, rsvps, who=who)
 
     assert who.mentioned == ("1001",)
     assert card.mention_users == ["1001"]
+    assert "<@1001>" in card.content
     assert "<@1002>" not in card.content
+    assert "kanon out" in card.content
 
 
 def test_an_at_risk_run_keeps_all_of_its_reminders(repo):

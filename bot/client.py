@@ -24,11 +24,13 @@ from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
+from .debug import TEST_PREFIX
 from .extract.commit import CommitResult, commit, expire_stale, may_commit, reject
 from .extract.pipeline import Pipeline
 from .materialise import (
     DAY_OF,
     countdown_minutes,
+    is_past,
     is_stale,
     mark_done,
     materialise_week,
@@ -104,6 +106,12 @@ class BossBot(discord.Client):
         #: once rather than every 30 s until midnight. Deliberately in memory:
         #: a restart is a good moment to try again.
         self._backup_failed_on: str | None = None
+        #: Runs whose posted cards no longer match the database, and the task
+        #: draining them. Every write that a card displays goes through
+        #: :attr:`bot.db.Repo.on_run_changed`, so no caller has to remember.
+        self._stale_cards: set[str] = set()
+        self._card_refresh: asyncio.Task | None = None
+        repo.on_run_changed = self.card_needs_refresh
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
         self.extractor = Pipeline(self)
@@ -148,8 +156,9 @@ class BossBot(discord.Client):
         For developing against a live guild: the bot keeps saying exactly what
         it would say, but every message goes out with an empty mention
         allow-list, so a week of testing never puts a red badge on anyone's
-        Discord. Enforced in :meth:`_post` and :meth:`post_plain`, which are the
-        only two places the bot builds a non-empty one.
+        Discord. Enforced in :meth:`_prepared` (which every card goes through,
+        sent or edited) and :meth:`post_plain`, the only two places the bot
+        builds a non-empty one.
         """
         return (self.repo.get_config(CFG_QUIET, "0") or "0") == "1"
 
@@ -212,6 +221,16 @@ class BossBot(discord.Client):
 
     async def on_ready(self) -> None:
         log.info("logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
+        # Which role runs the bot, at INFO: `/say` and `/debug` turn on this one
+        # id, and "it says I'm not an admin" is otherwise a guessing game
+        # between a wrong id, a missing role and Discord's own permissions.
+        admin_role = self.settings.admin_role_id
+        log.info(
+            "admin role for /say and /debug: %s",
+            admin_role
+            if admin_role is not None
+            else "unset (ADMIN_ROLE_ID) - server administrators and the owner only",
+        )
         await self.sync_roster()
         self.materialise_weeks()
         if self.settings.backfill_on_start:
@@ -472,7 +491,7 @@ class BossBot(discord.Client):
                 try:
                     channel = await self.fetch_channel(target)
                 except discord.Forbidden:
-                    problems.append(self._no_access(target))
+                    problems.append(self.no_access(target))
                     continue
                 except discord.NotFound:
                     problems.append(
@@ -486,7 +505,7 @@ class BossBot(discord.Client):
                 problems.append(f"channel {target} is not a text channel")
                 continue
             if not self.can_send_in(channel):
-                problems.append(self._no_access(target, channel))
+                problems.append(self.no_access(target, channel))
                 continue
             return ChannelLookup(channel=channel, problem=None)
 
@@ -498,7 +517,7 @@ class BossBot(discord.Client):
         log.warning("nowhere to post: %s", "; ".join(problems))
         return ChannelLookup(channel=None, problem="; ".join(problems))
 
-    def _no_access(self, channel_id: int, channel: object | None = None) -> str:
+    def no_access(self, channel_id: int, channel: object | None = None) -> str:
         name = getattr(channel, "name", None)
         where = f"#{name}" if name else f"channel {channel_id}"
         who = getattr(self.user, "name", "the bot")
@@ -588,6 +607,186 @@ class BossBot(discord.Client):
             if row["watched"] and not row["unknown"] and not row["manage_messages"]
         ]
 
+    # -- building the reminder cards --------------------------------------
+    #
+    # Both builders read the run and its answers out of the database every
+    # time, so the same call that first posts a card can re-render it later
+    # (:meth:`refresh_run_cards`) and get wording identical to the original
+    # but a current tally. Nothing about a card is remembered in memory.
+    def day_of_card_for(self, runs: list[dict]) -> formatting.Card:
+        """The morning card for one channel's runs, sorted by time."""
+        runs = sorted(runs, key=lambda run: run["datetime"])
+        rsvps = {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        # The morning card asks everyone on tonight's runs to answer, so it is
+        # one of the four posts that may actually notify people.
+        who = audience(self.repo, formatting.everyone_on(runs), "day_of")
+        return formatting.day_of_card(
+            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"], who=who
+        )
+
+    def countdown_card_for(self, run: dict, minutes: int) -> formatting.Card:
+        """The T-minus card: the whole party bar anyone who has already declined."""
+        rsvps = self.repo.get_rsvps(run["id"])
+        who = audience(
+            self.repo,
+            run["participants"],
+            "countdown",
+            candidates=formatting.not_declined(run, rsvps),
+        )
+        return formatting.countdown_card(run, minutes, self.tz, rsvps, table=self.bosses, who=who)
+
+    # -- keeping posted cards in step -------------------------------------
+    def card_needs_refresh(self, run_id: str) -> None:
+        """A run changed; queue its posted cards for a re-render.
+
+        Called *synchronously* from :class:`bot.db.Repo` on every write a card
+        displays, so a reaction, `/rsvp`, the portal and a chat-extracted answer
+        all arrive here without any of them knowing this exists. The work is
+        queued rather than done: a single handler often writes several times
+        (an rsvp row, then a status), and the drain task does not start until
+        that handler yields, so the burst collapses into one edit per card.
+        """
+        self._stale_cards.add(str(run_id))
+        if self._card_refresh is not None and not self._card_refresh.done():
+            return  # already draining; it will pick this one up
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop: a CLI, an export or a test wrote to the database.
+            # Nothing was posted from this process, so there is nothing to fix.
+            # Asked before building the coroutine, so none is left un-awaited.
+            self._stale_cards.clear()
+            return
+        self._card_refresh = loop.create_task(self._drain_stale_cards())
+
+    async def _drain_stale_cards(self) -> None:
+        while self._stale_cards:
+            run_id = self._stale_cards.pop()
+            try:
+                await self.refresh_run_cards(run_id)
+            except Exception:  # pragma: no cover - a stale card is not worth a crash
+                log.exception("could not refresh the cards for run %s", run_id)
+
+    async def refresh_run_cards(self, run_id: str) -> int:
+        """Re-render this run's already-posted reminders; returns how many were edited.
+
+        Discord does not notify anyone about an edit, so this is the cheap way
+        to keep a morning card honest: the tally on it goes on meaning what it
+        said at 09:00 unless somebody rewrites it, which is how a run everybody
+        had ✅'d still read "2/4 ✅" at 21:00.
+        """
+        run = self.repo.get_run(run_id)
+        if run is None or is_past(run["datetime"], utcnow()):
+            # The night has been and gone: its cards are a record of it now,
+            # not a live tally, and editing them would only cost API calls.
+            return 0
+        edited = 0
+        seen: set[str] = set()
+        for reminder in self.repo.list_reminders(run_id):
+            message_id = reminder["message_id"]
+            if not message_id or message_id in seen:
+                continue  # never posted, or already re-rendered as part of a group
+            seen.add(message_id)
+            card = self._rebuild_card(reminder, run)
+            if card is not None and await self.edit_card(run["channel_id"], message_id, card):
+                edited += 1
+        # A `/debug ping` is deliberately not a reminder row -- the real ping
+        # must still fire -- but it is a real card in a real channel whose ✅/❌
+        # drive the real RSVP flow, so its tally goes stale in exactly the same
+        # way. This is the card the "frozen 2/4 ✅" report was actually about.
+        for test in self.repo.debug_messages_for_run(run_id):
+            message_id = test["message_id"]
+            if not message_id or message_id in seen:
+                continue
+            seen.add(message_id)
+            card = self._rebuild_test_card(test["kind"], run)
+            if card is not None and await self.edit_card(
+                test["channel_id"] or run["channel_id"], message_id, card
+            ):
+                edited += 1
+        return edited
+
+    def _rebuild_card(self, reminder: dict, run: dict) -> formatting.Card | None:
+        """What that message would say if it were posted right now."""
+        if reminder["kind"] == DAY_OF:
+            # One morning message covers every run that channel has that day,
+            # so it is rebuilt from all of them: re-rendering it from the one
+            # run that changed would drop the others off the card.
+            runs = [
+                self.repo.get_run(other["run_id"])
+                for other in self.repo.reminders_by_message(reminder["message_id"])
+            ]
+            live = [r for r in runs if r is not None]
+            return self.day_of_card_for(live) if live else None
+        minutes = countdown_minutes(reminder["kind"])
+        return None if minutes is None else self.countdown_card_for(run, minutes)
+
+    def _rebuild_test_card(self, kind: str, run: dict) -> formatting.Card | None:
+        """A `/debug ping` card, re-rendered exactly as `/debug ping` built it.
+
+        Its own audience (``test``), so a rehearsal that named the party without
+        summoning it does not start notifying anyone on the way through, and its
+        own ``🧪 TEST —`` prefix, so it still cannot be mistaken for the real
+        thing. The static notices `/debug ping` can also post (an amend, a
+        decline) carry no tally, so there is nothing in them to bring up to date.
+        """
+        rsvps = self.repo.get_rsvps(run["id"])
+        who = audience(self.repo, run["participants"], "test")
+        if kind == DAY_OF:
+            card = formatting.day_of_card(
+                [run],
+                self.tz,
+                {run["id"]: rsvps},
+                table=self.bosses,
+                today=run["datetime"],
+                who=who,
+            )
+        else:
+            minutes = countdown_minutes(kind)
+            if minutes is None:
+                return None
+            card = formatting.countdown_card(
+                run, minutes, self.tz, rsvps, table=self.bosses, who=who
+            )
+        card.content = TEST_PREFIX + card.content
+        return card
+
+    async def edit_card(
+        self, channel_id: int | str | None, message_id: int | str, card: formatting.Card
+    ) -> bool:
+        """Rewrite one of the bot's own cards in place; ``True`` if it stuck.
+
+        An edit never notifies anyone, but it still goes out with the same
+        explicit allow-list a send would build, so nothing here can become a
+        second way to ping. Attachments are left untouched, so a card's boss
+        portrait survives the edit and its ``attachment://`` thumbnail keeps
+        resolving. A message that has been deleted, or that lives in a channel
+        the bot can no longer see, is skipped without comment -- there is
+        nothing to fix and nothing anybody can do about it.
+        """
+        if channel_id is None:
+            return False
+        card, allowed = self._prepared(card)
+        try:
+            channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(message_id))  # type: ignore[union-attr]
+            await message.edit(
+                content=card.content, embed=self._embed(card), allowed_mentions=allowed
+            )
+            return True
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            TimeoutError,
+        ):
+            log.debug("could not refresh card %s", message_id, exc_info=True)
+            return False
+
     async def _send_day_of(self, channel_id: str | None, entries: list[tuple[dict, dict]]) -> None:
         """One message per home channel, one line per run, each tagging its own people."""
         channel = await self.post_channel(channel_id)
@@ -595,15 +794,7 @@ class BossBot(discord.Client):
             log.error("no channel available for the day-of ping; leaving it queued")
             return
         entries.sort(key=lambda pair: pair[1]["datetime"])
-        runs = [run for _, run in entries]
-        rsvps = {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
-        # The morning card asks everyone on tonight's runs to answer, so it is
-        # one of the four posts that may actually notify people.
-        who = audience(self.repo, formatting.everyone_on(runs), "day_of")
-        card = formatting.day_of_card(
-            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"], who=who
-        )
-        message = await self._post(channel, card)
+        message = await self._post(channel, self.day_of_card_for([run for _, run in entries]))
         if message is None:
             return
         for reminder, _ in entries:
@@ -618,19 +809,7 @@ class BossBot(discord.Client):
         if channel is None:
             log.error("no channel available for run %s; leaving its countdown queued", run["id"])
             return
-        rsvps = self.repo.get_rsvps(run["id"])
-        # Only the people who have not answered at all get pinged; a ❌ is an
-        # answer, and its own notice already went to the rest of the party.
-        who = audience(
-            self.repo,
-            run["participants"],
-            "countdown",
-            candidates=formatting.unanswered(run, rsvps),
-        )
-        card = formatting.countdown_card(
-            run, minutes, self.tz, rsvps, table=self.bosses, who=who
-        )
-        message = await self._post(channel, card)
+        message = await self._post(channel, self.countdown_card_for(run, minutes))
         if message is not None:
             self.repo.mark_reminder_sent(reminder["id"], message.id)
 
@@ -663,6 +842,28 @@ class BossBot(discord.Client):
             log.warning("could not read the portrait at %s", path)
             return None
 
+    def _prepared(
+        self, card: formatting.Card | str, mention_users: list[str] | None = None
+    ) -> tuple[formatting.Card, discord.AllowedMentions]:
+        """A card and the allow-list it may go out with -- the one quiet-mode gate.
+
+        Shared by :meth:`_post` and :meth:`edit_card` so a card cannot notify
+        anybody through one path that it could not through the other.
+        """
+        if isinstance(card, str):
+            card = formatting.Card(content=card)
+        if self.quiet_mode:
+            # `AllowedMentions.none()` rather than `users=[]`: it also clears
+            # `replied_user`, which defaults to *on* and would otherwise notify
+            # whoever is being replied to.
+            return formatting.quieted(card), discord.AllowedMentions.none()
+        wanted = card.mention_users if mention_users is None else mention_users
+        return card, discord.AllowedMentions(
+            everyone=False,
+            roles=False,
+            users=[discord.Object(id=int(uid)) for uid in wanted],
+        )
+
     async def _post(
         self,
         channel: discord.abc.Messageable,
@@ -680,23 +881,7 @@ class BossBot(discord.Client):
         rather than asks -- the weekly digest, whose runs are each answered on
         their own reminder.
         """
-        if isinstance(card, str):
-            card = formatting.Card(content=card)
-        if self.quiet_mode:
-            card, mention_users = formatting.quieted(card), []
-        wanted = card.mention_users if mention_users is None else mention_users
-        allowed = (
-            # `AllowedMentions.none()` rather than `users=[]`: it also clears
-            # `replied_user`, which defaults to *on* and would otherwise notify
-            # whoever is being replied to.
-            discord.AllowedMentions.none()
-            if self.quiet_mode
-            else discord.AllowedMentions(
-                everyone=False,
-                roles=False,
-                users=[discord.Object(id=int(uid)) for uid in wanted],
-            )
-        )
+        card, allowed = self._prepared(card, mention_users)
         attachment = self._attachment(card)
         message: discord.Message | None = None
         for attempt in range(1, POST_ATTEMPTS + 1):
@@ -1197,17 +1382,34 @@ class BossBot(discord.Client):
         content: str,
         mention_users: list[str],
         reference_id: int | None = None,
+        mention_roles: list[str] | None = None,
     ) -> discord.Message | None:
+        """Send a plain message, notifying exactly the ids the caller lists.
+
+        ``mention_roles`` defaults to none at all, which is what every notice
+        the bot writes for itself wants: a run's people are named individually,
+        and a role ping would reach a guild rather than a party. `/say` is the
+        one caller that passes any, because an admin writing a role mention by
+        hand means it.
+        """
         if self.quiet_mode:
-            content, mention_users = formatting.quiet_line(content), []
+            content, mention_users, mention_roles = formatting.quiet_line(content), [], []
         allowed = (
             # See `_post`: `none()` also clears `replied_user`, and this is the
             # path that actually replies to a message.
             discord.AllowedMentions.none()
             if self.quiet_mode
             else discord.AllowedMentions(
+                # `@everyone` / `@here` is never allowed, from any caller: it is
+                # the one mention nobody can opt out of.
                 everyone=False,
-                roles=False,
+                # `False` rather than an empty list when there are none, so every
+                # existing caller sends exactly the allow-list it always did.
+                roles=(
+                    [discord.Object(id=int(rid)) for rid in mention_roles]
+                    if mention_roles
+                    else False
+                ),
                 users=[discord.Object(id=int(uid)) for uid in mention_users],
             )
         )

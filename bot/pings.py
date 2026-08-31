@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 #: candidate list except the people who chose ``off``.
 #:
 #: * ``day_of``    -- the morning card: RSVP for tonight.
-#: * ``countdown`` -- T-1h/T-15m, and only the people who have not answered yet.
+#: * ``countdown`` -- T-1h/T-15m, everyone on the run bar whoever has declined.
 #: * ``proposal``  -- an extractor card someone has to ✅ or ❌.
 #: * ``decline``   -- "X can't make it": the rest of the run decide whether to re-plan.
 ESSENTIAL_KINDS = frozenset({"day_of", "countdown", "proposal", "decline"})
