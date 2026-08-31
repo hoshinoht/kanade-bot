@@ -48,7 +48,9 @@ def setup(repo: Repo, week):
         participants=["1", "2", "3"],
         channel_id=900,
     )
-    materialise_week(repo, week, TZ, PING_TIME, COUNTDOWNS)
+    # As of the reset, not the wall clock: `materialise_week` skips a slot that
+    # has already passed, so from Monday 21:30 onwards there was no run to edit.
+    materialise_week(repo, week, TZ, PING_TIME, COUNTDOWNS, now=week)
     run = repo.list_runs(week_start=week)[0]
     return FakeBot(repo), fixed_id, run["id"]
 

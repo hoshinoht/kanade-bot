@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import boss_grid %}
+{% block title %}Bosses — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Reference</p>
+    <h1>{{ rows|length }} bosses, {{ total }} difficulties</h1>
+    <p>Every boss in <code>config/bosses.yaml</code>, in level order, with the difficulties that
+      actually exist in game. The <strong>{{ in_use|length }}</strong> ticked ones have a weekly
+      timing.</p>
+  </div>
+</div>
+
+{{ boss_grid(rows, readonly=True) }}
+
+<p class="footnote" style="margin-top:1rem">
+  <span>Edit <code>config/bosses.yaml</code> and restart to change this list — it is bind-mounted,
+    so no rebuild.</span>
+</p>
+{% endblock %}

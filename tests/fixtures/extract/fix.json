@@ -1,0 +1,62 @@
+{
+  "name": "fix",
+  "note": "A stated recurring timing -- this is what /fixed add would create, so it must come back as `fix`, never as a one-off run. B's \"Ok\" is extracted as an rsvp but has no run to attach to (this channel has none yet), so the pipeline drops it: agreeing to a proposed fixed timing is a ✅ on the 📌 card, not an attendance record.",
+  "channel": "party-limbo",
+  "tz": "Asia/Kuala_Lumpur",
+  "roster": [
+    {
+      "id": "100000000000000001",
+      "name": "A"
+    },
+    {
+      "id": "100000000000000002",
+      "name": "B"
+    },
+    {
+      "id": "100000000000000003",
+      "name": "C"
+    },
+    {
+      "id": "100000000000000004",
+      "name": "D"
+    },
+    {
+      "id": "100000000000000005",
+      "name": "E"
+    },
+    {
+      "id": "100000000000000006",
+      "name": "F"
+    }
+  ],
+  "fixed_runs": [],
+  "runs": [],
+  "context": [],
+  "messages": [
+    {
+      "id": "1101",
+      "author": "D",
+      "at": "2026-06-05 18:46",
+      "text": "HLimbo+Nbaldrix we just lockin Tue night 1030pm onwards as the default time?"
+    },
+    {
+      "id": "1102",
+      "author": "B",
+      "at": "2026-06-05 18:47",
+      "text": "Ok"
+    }
+  ],
+  "expected": [
+    {
+      "kind": "fix",
+      "bosses": [
+        "HLimbo",
+        "NBaldrix"
+      ],
+      "resolved_local_datetime": "2026-06-09 22:30",
+      "participants": [],
+      "is_question": true,
+      "rsvp": null
+    }
+  ]
+}

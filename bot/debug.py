@@ -6,8 +6,9 @@ messages -- prefixed `🧪 TEST — ` so nobody mistakes one for the genuine pin
 without touching the run's reminder rows, so the scheduled pings still go out
 exactly as planned.
 
-Access is restricted to the guild owner, ``ADMIN_ROLE_ID`` members, and anyone
-listed in ``DEBUG_USER_IDS``.
+Access is restricted to whoever runs the bot -- ``ADMIN_ROLE_ID`` members, the
+guild owner, or a server administrator -- plus anyone listed in
+``DEBUG_USER_IDS``. The group is hidden from everyone else's command picker.
 """
 
 from __future__ import annotations
@@ -23,9 +24,12 @@ import discord
 from discord import app_commands
 
 from . import formatting
+from .extract.window import WINDOWS
 from .ids import IdError, resolve_id, short_id
 from .materialise import DAY_OF, countdown_minutes
+from .pings import audience
 from .timeutil import from_iso, utcnow
+from .util import is_bot_admin
 
 if TYPE_CHECKING:  # pragma: no cover
     from .client import BossBot
@@ -51,12 +55,22 @@ def may_debug(
     guild_owner_id: int | None,
     admin_role_id: int | None,
     debug_user_ids: list[int],
+    is_guild_admin: bool = False,
 ) -> bool:
-    """Guild owner, an admin-role holder, or an explicitly listed user."""
+    """Whoever runs the bot, plus anyone explicitly listed in ``DEBUG_USER_IDS``.
+
+    The first part is exactly `/say`'s rule (:func:`bot.util.is_bot_admin`):
+    ``ADMIN_ROLE_ID``, the guild owner, or Discord's Administrator permission.
+    The allow-list stays on top of it, so a tester who is deliberately not an
+    admin keeps the access the operator gave them on purpose.
+    """
     uid = int(user_id)
-    if guild_owner_id is not None and uid == int(guild_owner_id):
-        return True
-    if admin_role_id is not None and int(admin_role_id) in role_ids:
+    if is_bot_admin(
+        is_guild_admin,
+        guild_owner_id is not None and uid == int(guild_owner_id),
+        role_ids,
+        admin_role_id,
+    ):
         return True
     return uid in [int(i) for i in debug_user_ids]
 
@@ -104,6 +118,27 @@ def render_reminder_rows(reminders: list[dict], tz: ZoneInfo) -> str:
     return "\n".join(lines)
 
 
+def manage_messages_lines(access: list[dict]) -> list[str]:
+    """Per-channel Manage Messages, for `/debug status`.
+
+    Without it the bot cannot take somebody's old reaction off, so a person who
+    switches ❌ to ✅ ends up counted as both -- silently, which is why it is
+    worth a line of its own rather than a log entry nobody reads.
+    """
+    if not access:
+        return ["**manage messages** _(not connected; nothing to check)_"]
+    rows = [
+        f"{row['name']} {'✅' if row.get('manage_messages') else '❌'}"
+        for row in access
+        if row["watched"]
+    ]
+    if not rows:
+        return ["**manage messages** _(no watched channels)_"]
+    missing = sum(1 for row in access if row["watched"] and not row.get("manage_messages"))
+    header = "**manage messages** " + ("all good" if not missing else f"missing in {missing}")
+    return [f"{header} · " + " · ".join(rows)]
+
+
 # ---------------------------------------------------------------------------
 # the group
 # ---------------------------------------------------------------------------
@@ -112,6 +147,10 @@ KIND_CHOICES = [
     app_commands.Choice(name=n, value=n)
     for n in ("day_of", "countdown_60", "countdown_15", "amend", "decline")
 ]
+
+#: Declared here rather than imported from `bot.commands`, which imports this
+#: module -- the labels live with the windows themselves.
+WINDOW_CHOICES = [app_commands.Choice(name=value, value=value) for value in WINDOWS]
 
 
 def _bot(interaction: discord.Interaction) -> BossBot:
@@ -147,22 +186,33 @@ async def _run_autocomplete(
         return []
 
 
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
 class DebugGroup(app_commands.Group):
-    """Testing aids. Restricted; see DEBUG_USER_IDS."""
+    """Testing aids. Admins only; see :func:`may_debug` and DEBUG_USER_IDS.
+
+    Two gates, the same pair `/say` uses. ``default_permissions`` keeps the
+    whole group out of an ordinary member's command picker -- it used to be
+    listed for everyone and merely refuse them, which is an invitation to try --
+    and :meth:`interaction_check` is what actually decides, because a server can
+    hand the default back out under Server Settings -> Integrations.
+    """
 
     def __init__(self) -> None:
-        super().__init__(name="debug", description="Testing aids (restricted)")
+        super().__init__(name="debug", description="Testing aids (admins only)")
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         bot = _bot(interaction)
         guild = interaction.guild
         role_ids = [r.id for r in getattr(interaction.user, "roles", [])]
+        permissions = getattr(interaction.user, "guild_permissions", None)
         if may_debug(
             interaction.user.id,
             role_ids,
             guild.owner_id if guild else None,
             bot.settings.admin_role_id,
             bot.settings.debug_user_id_list,
+            bool(permissions is not None and permissions.administrator),
         ):
             return True
         raise DebugNotAllowed()
@@ -201,7 +251,10 @@ class DebugGroup(app_commands.Group):
             return
 
         await interaction.response.defer(ephemeral=True)
-        message = await bot._post(channel, TEST_PREFIX + body, mention_users=run["participants"])
+        body.content = TEST_PREFIX + body.content
+        # `_render` resolved the card's allow-list already: a test ping names the
+        # party but does not summon it (DESIGN.md §3, "Mention policy").
+        message = await bot._post(channel, body)
         if message is None:
             await interaction.followup.send("❌ Couldn't post the test message.", ephemeral=True)
             return
@@ -215,17 +268,39 @@ class DebugGroup(app_commands.Group):
         )
 
     @staticmethod
-    def _render(bot: BossBot, run: dict, kind: str, interaction: discord.Interaction) -> str | None:
+    def _render(
+        bot: BossBot, run: dict, kind: str, interaction: discord.Interaction
+    ) -> formatting.Card | None:
+        rsvps = bot.repo.get_rsvps(run["id"])
+        # `test`, not the kind being imitated: the message looks exactly like the
+        # real one, but nobody should get a notification from a rehearsal.
+        who = audience(bot.repo, run["participants"], "test")
+        mentions = list(who.mentioned)
         if kind == DAY_OF:
-            return formatting.day_of_message([run], bot.tz, today=run["datetime"])
+            return formatting.day_of_card(
+                [run],
+                bot.tz,
+                {run["id"]: rsvps},
+                table=bot.bosses,
+                today=run["datetime"],
+                who=who,
+            )
         minutes = countdown_minutes(kind)
         if minutes is not None:
-            return formatting.countdown_message(run, minutes, bot.tz)
+            return formatting.countdown_card(run, minutes, bot.tz, rsvps, table=bot.bosses, who=who)
         if kind == "amend":
-            return formatting.amend_notice(run, run["datetime"] - timedelta(days=1), bot.tz)
+            return formatting.Card(
+                content=formatting.amend_notice(
+                    run, run["datetime"] - timedelta(days=1), bot.tz, who
+                ),
+                mention_users=mentions,
+            )
         if kind == "decline":
-            return formatting.decline_notice(
-                run, interaction.user.id, interaction.user.display_name, bot.tz
+            return formatting.Card(
+                content=formatting.decline_notice(
+                    run, interaction.user.id, interaction.user.display_name, bot.tz, who
+                ),
+                mention_users=mentions,
             )
         return None
 
@@ -322,13 +397,51 @@ class DebugGroup(app_commands.Group):
             f"**countdowns** {', '.join(str(m) for m in bot.countdowns)}m",
             f"**watched** {len(bot.settings.chat_channel_id_list)} channel(s), "
             f"{len(bot.settings.chat_category_id_list)} categor(y/ies)",
-            f"**paused** {'yes' if bot.paused else 'no'}",
+            f"**paused** {'yes' if bot.paused else 'no'}"
+            + (f" · **{formatting.QUIET_NOTE}**" if bot.quiet_mode else ""),
             f"**roster** {len(bot.repo.list_members())} with the bossing role",
             f"**runs** {len(bot.repo.list_runs())} · **fixed** {len(bot.repo.list_fixed_runs())}",
             f"**model** `{bot.settings.ollama_model}` · "
             f"**ollama** {'✅' if reachable else '❌'} {detail}",
         ]
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        lines.extend(manage_messages_lines(bot.access_report()))
+        await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
+
+    # -- extract -----------------------------------------------------------
+    @app_commands.command(
+        name="extract", description="Run the chat extractor over this channel and show its JSON"
+    )
+    @app_commands.describe(window="How far back to read (default: this boss week)")
+    @app_commands.choices(window=WINDOW_CHOICES)
+    async def extract(
+        self, interaction: discord.Interaction, window: app_commands.Choice[str] | None = None
+    ) -> None:
+        from .commands import DEFAULT_WINDOW, rescan_summary
+        from .watch import origin_ids
+
+        bot = _bot(interaction)
+        if not bot.is_watched(interaction.channel):
+            await interaction.response.send_message(
+                "❌ This channel isn't watched, so nothing is stored for it.", ephemeral=True
+            )
+            return
+        if bot.paused:
+            await interaction.response.send_message(
+                "⏸️ Chat watching is paused - `/bot resume` first.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        channel_id, _thread = origin_ids(interaction.channel)
+        # `post=False`: /debug never posts a card, so this is safe to run on a
+        # busy channel without spamming everyone. It still backfills.
+        report = await bot.extractor.rescan_window(
+            channel_id, window=window.value if window else DEFAULT_WINDOW, post=False
+        )
+        body = rescan_summary(report)
+        raw = next((plan.raw for plan in reversed(report.plans) if plan.raw), "")
+        if raw:
+            body += f"\n```json\n{raw[:1000]}\n```"
+        await interaction.followup.send(body[:1900], ephemeral=True)
 
     # -- clear_test --------------------------------------------------------
     @app_commands.command(
@@ -363,6 +476,7 @@ __all__ = [
     "DebugGroup",
     "DebugNotAllowed",
     "format_uptime",
+    "manage_messages_lines",
     "may_debug",
     "ollama_reachable",
     "render_reminder_rows",

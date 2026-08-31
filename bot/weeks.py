@@ -8,6 +8,7 @@ database or a Discord connection.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -57,18 +58,38 @@ def parse_weekday(value: str | int) -> int:
         ) from None
 
 
+_HHMM_RE = re.compile(r"^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a|p)?$", re.IGNORECASE)
+_COMPACT_RE = re.compile(r"^(\d{3,4})\s*(am|pm|a|p)?$", re.IGNORECASE)
+
+
 def parse_hhmm(value: str) -> time:
-    """Parse ``"09:00"`` / ``"9:00"`` into a :class:`datetime.time`."""
+    """Parse a clock time the way people actually type it.
+
+    Accepts ``09:00``, ``9:05``, ``9.30``, 24-hour compact ``2130`` / ``930``,
+    and 12-hour forms ``9pm``, ``9:30pm``, ``930pm``, ``12am``. Compact digits
+    are read as 24-hour (``2359`` is 23:59, ``930`` is 09:30).
+    """
     text = value.strip()
-    parts = text.split(":")
-    if len(parts) != 2:
-        raise ValueError(f"expected HH:MM, got {value!r}")
-    try:
-        hour, minute = int(parts[0]), int(parts[1])
-    except ValueError:
-        raise ValueError(f"expected HH:MM, got {value!r}") from None
+    hint = f"expected a time like 21:30, 2130 or 9:30pm, got {value!r}"
+    match = _COMPACT_RE.match(text)
+    if match:
+        digits, suffix = match.group(1), match.group(2)
+        hour, minute = int(digits[:-2]), int(digits[-2:])
+    else:
+        match = _HHMM_RE.match(text)
+        if not match:
+            raise ValueError(hint)
+        hour, minute, suffix = int(match.group(1)), int(match.group(2) or 0), match.group(3)
+    if suffix:
+        if not 1 <= hour <= 12:
+            raise ValueError(hint)
+        meridiem = suffix.lower()[0]
+        if meridiem == "p" and hour != 12:
+            hour += 12
+        elif meridiem == "a" and hour == 12:
+            hour = 0
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise ValueError(f"expected HH:MM, got {value!r}")
+        raise ValueError(hint)
     return time(hour, minute)
 
 

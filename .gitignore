@@ -8,3 +8,13 @@ __pycache__/
 *.sqlite-shm
 .pytest_cache/
 .ruff_cache/
+.DS_Store
+
+# Boss portraits are game assets; the README explains what to drop in.
+config/portraits/*
+!config/portraits/README.md
+
+.claude
+
+# The design spec is kept locally rather than published.
+DESIGN.md

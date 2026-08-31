@@ -28,6 +28,28 @@ NO_COUNTDOWN = ("otot", "cancelled")
 #: Statuses that get no reminders at all.
 NO_REMINDERS = ("cancelled", "done")
 
+#: How long after its start time a run is still "on". Past that it is `done`:
+#: it drops out of `/schedule`, out of the id dropdowns, and out of anything the
+#: extractor could propose a change to. Generous, because a boss night that
+#: starts at 23:00 is still happening at midnight.
+RUN_DONE_AFTER = timedelta(hours=2)
+
+#: Statuses that mean "still to come". `mark_done` retires these; `/schedule`,
+#: the portal, `bossctl` and the id dropdowns show only these unless asked
+#: otherwise. `cancelled` stays cancelled (it never happened), `done` is over.
+LIVE_STATUSES = ("planned", "confirmed", "at_risk", "otot")
+
+#: How late a reminder may fire and still be worth posting. The bot's host can
+#: be asleep (a laptop in transit); a morning ping that surfaces at lunch is
+#: still useful, a "1h to go" that surfaces after the run is just noise.
+STALE_GRACE: dict[str, timedelta] = {DAY_OF: timedelta(hours=12)}
+COUNTDOWN_GRACE = timedelta(minutes=30)
+
+
+def is_stale(kind: str, fire_at: datetime, now: datetime) -> bool:
+    """True when ``fire_at`` is so far behind ``now`` that posting would mislead."""
+    return now - fire_at > STALE_GRACE.get(kind, COUNTDOWN_GRACE)
+
 
 def countdown_kind(minutes: int) -> str:
     return f"{COUNTDOWN_PREFIX}{minutes}"
@@ -119,6 +141,34 @@ def ensure_reminders(
     return created
 
 
+def is_past(run_at: datetime, now: datetime) -> bool:
+    """True once a run's slot is far enough behind ``now`` to count as over."""
+    return run_at + RUN_DONE_AFTER < now
+
+
+def mark_done(repo: Repo, now: datetime | None = None) -> list[str]:
+    """Retire runs whose slot has passed; returns the ids that changed.
+
+    Materialisation fills a whole boss week at once, so by Sunday the week
+    already holds Thursday's and Friday's runs. Left alone they sit in
+    `/schedule` and in every id dropdown looking like something still to do.
+    Their unsent reminders go too -- a `day_of` for a night that has been and
+    gone is exactly the stale ping :func:`is_stale` exists to avoid, and this
+    removes the row rather than relying on the tick to skip it.
+    """
+    now = now or utcnow()
+    changed: list[str] = []
+    for run in repo.list_runs():
+        if run["status"] not in LIVE_STATUSES or not is_past(run["datetime"], now):
+            continue
+        repo.set_run_status(run["id"], "done")
+        repo.delete_unsent_reminders(run["id"])
+        changed.append(run["id"])
+    if changed:
+        log.info("marked %d run(s) done", len(changed))
+    return changed
+
+
 def materialise_week(
     repo: Repo,
     week_start: datetime,
@@ -131,7 +181,9 @@ def materialise_week(
 
     Idempotent: a fixed run already materialised for that week is skipped (the
     partial unique index on ``(fixed_run_id, week_start)`` backs this up).
-    Returns the ids of newly created runs.
+    A slot that has already passed is not created at all -- materialising
+    mid-week would otherwise conjure Thursday's run on Sunday, complete with
+    reminders that immediately count as sent. Returns the ids of new runs.
     """
     now = now or utcnow()
     end = week_end(week_start, tz)
@@ -143,6 +195,11 @@ def materialise_week(
         run_at = slot_in_week(week_start, tz, fixed["weekday"], time(hour, minute))
         if not (week_start <= run_at < end):  # pragma: no cover - slot_in_week guarantees this
             log.warning("fixed run %s landed outside its week; skipping", fixed["id"])
+            continue
+        if is_past(run_at, now):
+            log.debug(
+                "fixed run %s falls at %s, already past; not materialising it", fixed["id"], run_at
+            )
             continue
         run_id = repo.create_run(
             week_start=week_start,
@@ -160,6 +217,22 @@ def materialise_week(
     for run in repo.list_runs(week_start=week_start):
         ensure_reminders(repo, run, tz, ping_time, countdowns, now=now)
     return created
+
+
+def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time) -> int:
+    """Re-place unsent day-of reminders after the ping time changed; returns how many moved."""
+    moved = 0
+    for reminder in repo.unsent_reminders(kind=DAY_OF):
+        run = repo.get_run(reminder["run_id"])
+        if run is None:
+            continue
+        specs = reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
+        wanted = {s.kind: s for s in specs}
+        spec = wanted.get(DAY_OF)
+        if spec is not None and spec.fire_at != reminder["fire_at"]:
+            repo.set_reminder_fire_at(reminder["id"], spec.fire_at)
+            moved += 1
+    return moved
 
 
 def refresh_run_reminders(

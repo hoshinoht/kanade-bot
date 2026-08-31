@@ -1,0 +1,117 @@
+{
+  "name": "otot",
+  "note": "DESIGN §8 row 3, last line: the HCarling run happens on people's own time, so it keeps its slot but gets no countdown pings.",
+  "channel": "party-hstar",
+  "tz": "Asia/Kuala_Lumpur",
+  "roster": [
+    {
+      "id": "100000000000000001",
+      "name": "A"
+    },
+    {
+      "id": "100000000000000002",
+      "name": "B"
+    },
+    {
+      "id": "100000000000000003",
+      "name": "C"
+    },
+    {
+      "id": "100000000000000004",
+      "name": "D"
+    },
+    {
+      "id": "100000000000000005",
+      "name": "E"
+    },
+    {
+      "id": "100000000000000006",
+      "name": "F"
+    }
+  ],
+  "fixed_runs": [
+    {
+      "id": "f0000001",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "weekday": "mon",
+      "time": "21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "id": "f0000002",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "weekday": "tue",
+      "time": "23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "id": "a1a1a1a1",
+      "bosses": [
+        "HStar",
+        "HFA"
+      ],
+      "at": "2026-08-31 21:30",
+      "participants": [
+        "A",
+        "B",
+        "C"
+      ],
+      "fixed": "f0000001"
+    },
+    {
+      "id": "b2b2b2b2",
+      "bosses": [
+        "HCarling",
+        "XKalos"
+      ],
+      "at": "2026-09-01 23:00",
+      "participants": [
+        "A",
+        "C",
+        "D",
+        "B",
+        "E"
+      ],
+      "fixed": "f0000002"
+    }
+  ],
+  "context": [],
+  "messages": [
+    {
+      "id": "701",
+      "author": "D",
+      "at": "2026-08-30 13:15",
+      "text": "So Mon/tue we otot do the hcarl"
+    }
+  ],
+  "expected": [
+    {
+      "kind": "otot",
+      "bosses": [
+        "HCarling"
+      ],
+      "resolved_local_datetime": null,
+      "participants": [],
+      "is_question": false,
+      "rsvp": null
+    }
+  ]
+}

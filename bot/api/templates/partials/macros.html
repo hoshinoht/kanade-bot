@@ -1,0 +1,64 @@
+{# Shared components. Imported, not included, so a caller can pick one:
+   {% from "partials/macros.html" import boss_line, boss_grid %} #}
+
+{% macro portrait(item, size="sm") %}
+{#- A boss portrait, or a monogram badge in the same box so nothing shifts. -#}
+{% if item.portrait %}
+<img class="portrait portrait--{{ size }}" src="{{ item.portrait }}" alt="" loading="lazy" decoding="async">
+{% elif item.monogram %}
+<span class="portrait portrait--{{ size }} portrait--mono"
+      style="--mono-hue: {{ item.monogram.hue }}" aria-hidden="true">{{ item.monogram.text }}</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro difficulty_pill(letter, label) %}
+<span class="pill pill--{{ (letter or '')|lower }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro boss_line(boss, level=True) %}
+{#- One boss the way the in-game list reads it: name, difficulty, level. -#}
+<span class="boss" title="{{ boss.label }}">
+  {{ portrait(boss) }}
+  <span class="boss__name">{{ boss.full }}</span>
+  {{ difficulty_pill(boss.letter, boss.difficulty) }}
+  {%- if level and boss.level %} <span class="boss__lv">Lv. {{ boss.level }}</span>{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro boss_list(detail, level=True) %}
+{% for boss in detail %}{{ boss_line(boss, level) }}{% endfor %}
+{%- endmacro %}
+
+{% macro boss_grid(rows, name="boss_tokens", readonly=False) %}
+{#- The in-game boss list. As a picker each difficulty is a checkbox styled as
+    a pill, so the form still submits with JavaScript off; read-only, the same
+    markup shows what the guild actually runs. -#}
+<div class="grid-bosses" role="group" aria-label="Bosses">
+  {% for row in rows %}
+  <div class="bossrow{% if row.any_selected %} bossrow--on{% endif %}">
+    <div class="bossrow__id">
+      {{ portrait(row, size="md") }}
+      <span>
+        <span class="bossrow__name">{{ row.full }}</span>
+        {% if row.level %}<span class="bossrow__lv">Lv. {{ row.level }}</span>{% endif %}
+      </span>
+    </div>
+    <div class="bossrow__pills">
+      {% for option in row.difficulties %}
+      {% if readonly %}
+      <span class="pill-toggle pill-toggle--{{ option.letter|lower }}{% if option.selected %} pill-toggle--on{% endif %}">
+        <span class="pill-toggle__tick" aria-hidden="true">✓</span>{{ option.difficulty }}
+      </span>
+      {% else %}
+      <label class="pill-toggle pill-toggle--{{ option.letter|lower }}">
+        <input type="checkbox" name="{{ name }}" value="{{ option.token }}"
+               {% if option.selected %}checked{% endif %}>
+        <span class="pill-toggle__tick" aria-hidden="true">✓</span>{{ option.difficulty }}
+      </label>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{%- endmacro %}

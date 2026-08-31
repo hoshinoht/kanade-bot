@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import boss_list %}
+{% block title %}Reminders — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">The scheduler, as rows</p>
+    <h1>{{ upcoming|length }} queued, {{ sent|length }} sent</h1>
+    <p>Each row is a message the bot will post, or already posted. Nothing is held in memory, so a
+      restart neither loses nor replays one.</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Queued</h2></div>
+  {% if not upcoming %}
+  <p class="run__meta">Nothing pending. Reminders appear as soon as a run is materialised.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fires</th><th>Kind</th><th>Run</th><th>Bosses</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for row in upcoming %}
+        <tr>
+          <td class="mono">{{ row.local_fire_at }}</td>
+          <td class="mono">{{ row.kind }}</td>
+          <td class="id">#{{ row.run_short_id }}</td>
+          <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
+          <td><span class="status status--{{ row.status }}">{{ row.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Sent</h2></div>
+  {% if not sent %}
+  <p class="run__meta">Nothing posted yet.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fired</th><th>Kind</th><th>Run</th><th>Bosses</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for row in sent %}
+        <tr>
+          <td class="mono">{{ row.sent_at|local_dt }}</td>
+          <td class="mono">{{ row.kind }}</td>
+          <td class="id">#{{ row.run_short_id }}</td>
+          <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
+          <td>{% if row.url %}<a href="{{ row.url }}">open in Discord</a>{% else %}<span class="id">no message</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

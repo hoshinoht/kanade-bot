@@ -84,7 +84,7 @@ def test_unknown_boss_is_reported(bosses: BossTable):
 
 
 def test_bosses_the_guild_does_not_run_are_not_in_the_table(bosses: BossTable):
-    # The table is deliberately only the nine current bosses (DESIGN.md §10).
+    # The table is deliberately only the ten current bosses (DESIGN.md §10).
     for token in ("nlotus", "hdamien", "hlucid", "xwill", "cgloom", "hvhilla", "nslime"):
         with pytest.raises(BossParseError, match="unknown boss"):
             bosses.parse_token(token)
@@ -132,7 +132,7 @@ def test_describe_all(bosses: BossTable):
     )
 
 
-def test_the_shipped_table_is_exactly_the_nine_current_bosses(bosses: BossTable):
+def test_the_shipped_table_is_exactly_the_ten_current_bosses(bosses: BossTable):
     assert set(bosses.bosses) == {
         "Seren",
         "Kalos",
@@ -140,6 +140,7 @@ def test_the_shipped_table_is_exactly_the_nine_current_bosses(bosses: BossTable)
         "Carling",
         "BM",
         "Star",
+        "Bellona",
         "Limbo",
         "Baldrix",
         "Jupiter",

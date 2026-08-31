@@ -1,0 +1,62 @@
+{# A rescan in flight, or its result. While it runs the fragment replaces itself
+   every couple of seconds; with htmx blocked the Refresh link does the same job
+   by hand. #}
+<div id="rescan-job"
+     {% if job.running %}hx-get="/rescan/{{ job.job_id }}" hx-trigger="load delay:2s"
+     hx-target="this" hx-swap="outerHTML"{% endif %}>
+  {% if job.running %}
+  <p class="flash flash--ok" role="status">
+    {% if job.status == "queued" %}Queued behind another rescan…{% else %}
+    Re-reading {{ job.done }} of {{ job.total }} channel(s)…
+    {% if job.current %}<strong>{{ job.current }}</strong> now.{% endif %}
+    {% endif %}
+    <a href="/config?job={{ job.job_id }}">Refresh</a>
+    <button class="btn btn--danger" type="submit" form="cancel-{{ job.short_id }}">Stop</button>
+  </p>
+  <form id="cancel-{{ job.short_id }}" method="post" action="/rescan/{{ job.job_id }}/cancel"
+        hx-post="/rescan/{{ job.job_id }}/cancel" hx-target="#rescan-job" hx-swap="outerHTML"
+        hidden></form>
+  {% elif job.error %}
+  <p class="flash flash--error" role="alert">The rescan stopped: {{ job.error }}</p>
+  {% elif job.status == "cancelled" %}
+  <p class="flash flash--error" role="status">
+    Stopped after {{ job.done }} of {{ job.total }} channel(s).
+  </p>
+  {% else %}
+  <p class="flash flash--ok" role="status">
+    Read {{ job.total }} channel(s) in {{ "%.1f"|format(job.elapsed_ms / 1000) }}s —
+    {{ totals.backfilled }} message(s) pulled from Discord,
+    <strong>{{ totals.proposals }}</strong> card(s) posted.
+    {% if totals.proposals %}<a href="/inbox">Open the inbox</a>.{% endif %}
+  </p>
+  {% endif %}
+
+  {% if job.results %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Channel</th><th>Pulled</th><th>Worth reading</th><th>Conversations</th>
+          <th>Cards</th><th>Time</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in job.results %}
+        <tr>
+          <td>{{ row.channel_name }}</td>
+          <td class="mono">{{ row.backfilled }}</td>
+          <td class="mono">{{ row.gated }}</td>
+          <td class="mono">{{ row.bursts }}</td>
+          <td class="mono">{{ row.proposals }}</td>
+          <td class="mono">{{ "%.1f"|format(row.elapsed_ms / 1000) }}s</td>
+          <td>
+            {% if row.error %}<span class="status status--at_risk">{{ row.error }}</span>
+            {% elif row.widened %}<span class="chip chip--waiting">checked last week too</span>
+            {% elif row.stale %}<span class="chip">{{ row.stale }} already passed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Extraction {{ extraction.short_id }} — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><a href="/extractions">Extractions</a> · #{{ extraction.short_id }}</p>
+    <h1>{{ extraction.local_time }}</h1>
+    <p>{{ extraction.model }} ·
+      {% if extraction.latency_ms is not none %}{{ extraction.latency_ms }} ms{% else %}latency not recorded{% endif %} ·
+      {{ extraction.messages|length }} message(s) in, {{ extraction.amendments|length }} change(s) out</p>
+  </div>
+</div>
+
+{% if extraction.messages %}
+<section class="card">
+  <div class="card__head"><h2 class="card__title">The chat it read</h2></div>
+  <div class="evidence">
+    {% for line in extraction.messages %}
+    <p class="evidence__line">
+      {% if line.missing %}<span class="evidence__text">message {{ line.id }} is no longer stored</span>
+      {% else %}
+      <span class="evidence__who">{{ line.author_name }}</span><span class="evidence__at">{{ line.local_time }}</span>
+      <br><span class="evidence__text">{{ line.content }}</span>
+      {% endif %}
+    </p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if extraction.amendments %}
+<section class="card">
+  <div class="card__head"><h2 class="card__title">What it produced</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kind</th><th>Bosses</th><th>When</th><th>Confidence</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for item in extraction.amendments %}
+        <tr>
+          <td>{{ item.kind_label }}</td>
+          <td>{{ item.bosses|join(" + ") or "—" }}</td>
+          <td class="mono">{{ item.when }}</td>
+          <td><span class="conf conf--{{ item.confidence|confidence_band }}">{% if item.confidence is not none %}{{ "%.2f"|format(item.confidence) }}{% else %}—{% endif %}</span></td>
+          <td><span class="status status--{{ 'confirmed' if item.status == 'confirmed' else 'planned' }}">{{ item.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Raw response</h2></div>
+  <pre>{{ extraction.raw_response }}</pre>
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Prompt as sent</h2></div>
+  <pre>{{ extraction.prompt }}</pre>
+</section>
+{% endblock %}

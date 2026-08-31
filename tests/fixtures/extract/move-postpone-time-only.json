@@ -1,0 +1,86 @@
+{
+  "name": "move-postpone-time-only",
+  "note": "Real export: a run on the night itself is pushed back two hours.",
+  "channel": "party-limbo",
+  "tz": "Asia/Kuala_Lumpur",
+  "roster": [
+    {
+      "id": "100000000000000001",
+      "name": "A"
+    },
+    {
+      "id": "100000000000000002",
+      "name": "B"
+    },
+    {
+      "id": "100000000000000003",
+      "name": "C"
+    },
+    {
+      "id": "100000000000000004",
+      "name": "D"
+    },
+    {
+      "id": "100000000000000005",
+      "name": "E"
+    },
+    {
+      "id": "100000000000000006",
+      "name": "F"
+    }
+  ],
+  "fixed_runs": [
+    {
+      "id": "f0000003",
+      "bosses": [
+        "HLimbo",
+        "NBaldrix"
+      ],
+      "weekday": "tue",
+      "time": "22:30",
+      "participants": [
+        "A",
+        "B",
+        "D"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "id": "c3c3c3c3",
+      "bosses": [
+        "HLimbo",
+        "NBaldrix"
+      ],
+      "at": "2026-06-16 21:30",
+      "participants": [
+        "A",
+        "B",
+        "D"
+      ],
+      "fixed": "f0000003"
+    }
+  ],
+  "context": [],
+  "messages": [
+    {
+      "id": "301",
+      "author": "A",
+      "at": "2026-06-16 16:51",
+      "text": "<@100000000000000002> <@100000000000000004> 930 can postpone to 11 anot boss ask me go makan ltr"
+    }
+  ],
+  "expected": [
+    {
+      "kind": "move",
+      "bosses": [
+        "HLimbo",
+        "NBaldrix"
+      ],
+      "resolved_local_datetime": "2026-06-16 23:00",
+      "participants": [],
+      "is_question": true,
+      "rsvp": null
+    }
+  ]
+}

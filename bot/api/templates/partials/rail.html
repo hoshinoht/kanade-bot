@@ -1,0 +1,18 @@
+{# The boss week's own shape: seven columns starting on the reset day, one pip
+   per run. A glance answers "which nights are busy" before any reading. #}
+<nav class="rail" aria-label="Days of this boss week">
+  {% for day in rail %}
+  <a class="rail__day{% if day.is_today %} rail__day--today{% endif %}{% if not day.runs %} rail__day--empty{% endif %}"
+     href="#day-{{ day.date }}"
+     aria-label="{{ day.weekday }} {{ day.day }} {{ day.month }}, {{ day.runs|length }} run(s)">
+    {% if loop.first %}<span class="rail__reset" title="The boss week starts here">reset</span>{% endif %}
+    <span class="rail__dow">{{ day.weekday }}</span>
+    <span class="rail__num">{{ "%02d"|format(day.day) }}</span>
+    <span class="rail__pips">
+      {% for run in day.runs %}
+      <span class="pip-dot pip-dot--{{ run.status }}" title="{{ run.time }} {{ run.bosses }}"></span>
+      {% endfor %}
+    </span>
+  </a>
+  {% endfor %}
+</nav>

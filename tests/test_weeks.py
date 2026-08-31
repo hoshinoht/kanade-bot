@@ -104,12 +104,29 @@ def test_parse_weekday_rejects_nonsense():
         parse_weekday("caturday")
 
 
-@pytest.mark.parametrize(("text", "expected"), [("09:00", time(9, 0)), ("9:05", time(9, 5))])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("09:00", time(9, 0)),
+        ("9:05", time(9, 5)),
+        ("9.30", time(9, 30)),
+        ("0900", time(9, 0)),
+        ("2359", time(23, 59)),
+        ("930", time(9, 30)),
+        ("2130", time(21, 30)),
+        ("9pm", time(21, 0)),
+        ("9:30pm", time(21, 30)),
+        ("930pm", time(21, 30)),
+        ("12am", time(0, 0)),
+        ("12pm", time(12, 0)),
+        (" 11 PM ", time(23, 0)),
+    ],
+)
 def test_parse_hhmm(text, expected):
     assert parse_hhmm(text) == expected
 
 
-@pytest.mark.parametrize("text", ["9pm", "25:00", "09:70", "", "0900"])
+@pytest.mark.parametrize("text", ["25:00", "09:70", "", "13pm", "0pm", "abc", "12345", "9:3"])
 def test_parse_hhmm_rejects_bad_input(text):
     with pytest.raises(ValueError):
         parse_hhmm(text)

@@ -19,11 +19,21 @@ from discord import app_commands
 from . import formatting
 from .bosses import BossParseError
 from .debug import DebugGroup, DebugNotAllowed
+from .extract.window import DEFAULT_WINDOW, WINDOWS
 from .ids import IdAmbiguous, IdError, resolve_id, short_id
-from .materialise import refresh_run_reminders
+from .materialise import LIVE_STATUSES, refresh_run_reminders
+from .pings import PING_LEVELS, audience, normalise_level
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
-from .util import can_modify_fixed, can_modify_run, mention, resolve_participant_text
+from .util import (
+    can_modify_fixed,
+    can_modify_run,
+    is_bot_admin,
+    mention,
+    mentions_in,
+    resolve_participant_text,
+)
+from .watch import origin_ids
 from .weeks import (
     WEEKDAY_NAMES,
     current_week_start,
@@ -46,6 +56,34 @@ DAY_CHOICES = [
     )
 ]
 
+WINDOW_LABELS = {
+    "week": "this boss week",
+    "2weeks": "this and last boss week",
+    "48h": "the last 48 hours",
+    "24h": "the last 24 hours",
+}
+
+WINDOW_CHOICES = [app_commands.Choice(name=WINDOW_LABELS[value], value=value) for value in WINDOWS]
+
+#: Runs a human is offered to act on, and the ones `/schedule` shows: a night
+#: that has been and gone is neither. `/debug` deliberately still sees everything.
+ACTIONABLE_STATUSES = LIVE_STATUSES
+
+#: `/restore` and `/status` have to reach the runs the others hide -- putting a
+#: cancelled run back is the whole point of them.
+RESTORABLE_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
+
+STATUS_CHOICES = [
+    app_commands.Choice(name=name, value=value)
+    for value, name in (
+        ("planned", "planned"),
+        ("confirmed", "confirmed"),
+        ("otot", "own time"),
+        ("done", "done"),
+        ("cancelled", "cancelled"),
+    )
+]
+
 
 class MissingBossingRole(app_commands.CheckFailure):
     """Raised when a non-member tries to use a scheduling command."""
@@ -53,6 +91,10 @@ class MissingBossingRole(app_commands.CheckFailure):
 
 class NotAllowed(app_commands.CheckFailure):
     """Raised when a member touches a run they are not part of."""
+
+
+class NotAnAdmin(app_commands.CheckFailure):
+    """Raised when a non-admin tries to make the bot speak."""
 
 
 def _bot(interaction: discord.Interaction) -> BossBot:
@@ -67,6 +109,32 @@ async def _require_role(interaction: discord.Interaction) -> bool:
 
 def require_role():
     return app_commands.check(_require_role)
+
+
+def is_guild_admin(user: object) -> bool:
+    """Discord's own Administrator permission, if this object carries one."""
+    permissions = getattr(user, "guild_permissions", None)
+    return bool(permissions is not None and permissions.administrator)
+
+
+async def _require_admin(interaction: discord.Interaction) -> bool:
+    """The runtime half of `/say`'s gate; `/debug` applies the same rule.
+
+    ``default_permissions(administrator=True)`` hides the command from everyone
+    else, but it is only a *default*: a server can hand it back out under Server
+    Settings -> Integrations, so the permission is checked again here -- and it
+    is here, not in the visibility default, that ``ADMIN_ROLE_ID`` grants access.
+    """
+    bot = _bot(interaction)
+    guild = interaction.guild
+    if is_bot_admin(
+        is_guild_admin(interaction.user),
+        guild is not None and guild.owner_id == interaction.user.id,
+        [r.id for r in getattr(interaction.user, "roles", [])],
+        bot.settings.admin_role_id,
+    ):
+        return True
+    raise NotAnAdmin()
 
 
 # ---------------------------------------------------------------------------
@@ -87,9 +155,9 @@ def _resolve_participants(
     Order is invoker (``/fixed add`` only), then the ``memberN`` pickers, then
     anything typed into ``participants:`` -- de-duplicated, order preserved.
 
-    ``include_invoker`` is true for ``/fixed add`` (you are on the run you
-    create) but false for ``/fixed edit``: an admin or the owner fixing someone
-    else's party must not silently add themselves to it.
+    ``include_invoker`` is off for both ``/fixed add`` and ``/fixed edit``: the
+    person setting a timing up (an admin, a pilot) is not necessarily on the
+    run, and only listed participants get pinged. Pick yourself if you're on it.
 
     Returns ``(participant_ids, error)``.
     """
@@ -158,19 +226,26 @@ def _resolve(bot: BossBot, raw: str, candidates: list[str], noun: str) -> str:
 
 
 def _visible_runs(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
-    """Runs the invoker may act on: this week and next, theirs unless admin."""
+    """Runs the invoker may act on: this week and next, theirs unless admin.
+
+    "Theirs" is on-the-run *or* owner of the fixed timing behind it, and a run
+    whose night has passed is left out -- see :data:`ACTIONABLE_STATUSES`.
+    """
     runs: list[dict] = []
     for which in ("this", "next"):
-        runs.extend(bot.repo.list_runs(week_start=_week_for(bot, which)))
+        runs.extend(
+            bot.repo.list_runs(week_start=_week_for(bot, which), statuses=ACTIONABLE_STATUSES)
+        )
     if bot.is_admin(interaction.user):
         return runs
-    return [r for r in runs if str(interaction.user.id) in r["participants"]]
+    mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
+    return [r for r in runs if r["id"] in mine]
 
 
 def _visible_fixed(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
     if bot.is_admin(interaction.user):
         return bot.repo.list_fixed_runs()
-    return bot.repo.list_fixed_runs(participant=str(interaction.user.id))
+    return bot.repo.list_fixed_runs(involving=interaction.user.id)
 
 
 def _channel_name(interaction: discord.Interaction, channel_id: str | None) -> str:
@@ -217,6 +292,33 @@ async def run_autocomplete(
         out = []
         for run in sorted(_visible_runs(bot, interaction), key=lambda r: r["datetime"]):
             label = _run_label(bot, run, interaction)
+            if _matches(current, label, run["id"]):
+                out.append(app_commands.Choice(name=label, value=run["id"]))
+        return out[:25]
+    except Exception:  # noqa: BLE001
+        log.exception("run autocomplete failed")
+        return []
+
+
+async def any_run_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    """Like :func:`run_autocomplete`, but including cancelled/own-time/done runs.
+
+    `/restore` and `/status` exist precisely to reach those, so hiding them
+    would make the commands unusable from the dropdown.
+    """
+    try:
+        bot = _bot(interaction)
+        runs: list[dict] = []
+        for which in ("this", "next"):
+            runs.extend(bot.repo.list_runs(week_start=_week_for(bot, which)))
+        if not bot.is_admin(interaction.user):
+            mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
+            runs = [r for r in runs if r["id"] in mine]
+        out = []
+        for run in sorted(runs, key=lambda r: r["datetime"]):
+            label = f"{_run_label(bot, run, interaction)} · {run['status']}"[:100]
             if _matches(current, label, run["id"]):
                 out.append(app_commands.Choice(name=label, value=run["id"]))
         return out[:25]
@@ -333,7 +435,7 @@ class FixedGroup(app_commands.Group):
         bosses="e.g. `hstar, hfa` - each boss needs a difficulty prefix (e/n/h/c/x)",
         day="Day of the week the run happens",
         time="Start time, HH:MM in the guild timezone",
-        member1="Someone on the run (you are added automatically)",
+        member1="Someone on the run (include yourself if you're on it)",
         member2="Someone else on the run",
         member3="Someone else on the run",
         member4="Someone else on the run",
@@ -385,6 +487,9 @@ class FixedGroup(app_commands.Group):
             interaction.user.id,
             interaction.guild,
             picked=(member1, member2, member3, member4, member5, member6),
+            # The person setting up a party's timing is not necessarily on the
+            # run (a guild admin, a pilot) - only listed participants get pinged.
+            include_invoker=False,
         )
         if problem:
             await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
@@ -400,15 +505,24 @@ class FixedGroup(app_commands.Group):
             channel_id=interaction.channel_id,
         )
         bot.materialise_weeks()
+        # The invoker is not added automatically, so say plainly when they have
+        # set up a run that will never ping them.
+        not_on_it = (
+            "\n(you're the owner but not on this run — it won't ping you; "
+            "`/fixed edit` to add yourself)"
+            if str(interaction.user.id) not in ids
+            else ""
+        )
         await interaction.response.send_message(
             f"✅ Fixed run `#{short_id(fixed_id)}` added — this channel is its home channel, "
             f"so its pings land here.\n"
-            f"{formatting.fixed_run_line(bot.repo.get_fixed_run(fixed_id), bot.bosses)}",
+            f"{formatting.fixed_run_line(bot.repo.get_fixed_run(fixed_id), bot.bosses)}"
+            f"{not_on_it}",
             ephemeral=True,
         )
 
     @app_commands.command(name="list", description="List the fixed weekly runs")
-    @app_commands.describe(scope="`mine` (default) or `all`")
+    @app_commands.describe(scope="`mine` (default: on it or you own it) or `all`")
     @app_commands.choices(
         scope=[
             app_commands.Choice(name="mine", value="mine"),
@@ -420,10 +534,17 @@ class FixedGroup(app_commands.Group):
     ) -> None:
         bot = _bot(interaction)
         only_mine = (scope.value if scope else "mine") == "mine"
-        rows = bot.repo.list_fixed_runs(participant=str(interaction.user.id) if only_mine else None)
+        # "Mine" is owner *or* participant: `/fixed add` does not put the
+        # invoker on the run, so filtering on participation alone hides a
+        # pilot's own timings from them and reads as data loss.
+        rows = bot.repo.list_fixed_runs(involving=interaction.user.id if only_mine else None)
         if not rows:
             await interaction.response.send_message(
-                "No fixed runs yet - add one with `/fixed add`.", ephemeral=True
+                "No fixed runs yet - add one with `/fixed add`."
+                if not only_mine
+                else "None of the fixed runs are yours. "
+                "`/fixed list scope:all` shows every party's.",
+                ephemeral=True,
             )
             return
         body = "\n".join(formatting.fixed_run_line(f, bot.bosses) for f in rows)
@@ -587,6 +708,7 @@ class BotGroup(app_commands.Group):
 @app_commands.describe(
     scope="`channel` (default in a party channel), `mine`, or `all`",
     week="`this` (default) or `next`",
+    show_past="Include runs that already happened, and cancelled ones",
 )
 @app_commands.choices(
     scope=[
@@ -604,6 +726,7 @@ async def schedule(
     interaction: discord.Interaction,
     scope: app_commands.Choice[str] | None = None,
     week: app_commands.Choice[str] | None = None,
+    show_past: bool = False,
 ) -> None:
     bot = _bot(interaction)
     which_week = week.value if week else "this"
@@ -612,36 +735,72 @@ async def schedule(
     default_scope = "channel" if bot.is_watched(interaction.channel) else "mine"
     which_scope = scope.value if scope else default_scope
     ws = _week_for(bot, which_week)
-    runs = bot.repo.list_runs(
+    # "Mine" counts runs whose fixed timing you own as well as ones you are on.
+    everything = bot.repo.list_runs(
         week_start=ws,
-        participant=str(interaction.user.id) if which_scope == "mine" else None,
+        involving=interaction.user.id if which_scope == "mine" else None,
         channel_id=interaction.channel_id if which_scope == "channel" else None,
     )
+    # A boss week is materialised whole, so by Sunday it already holds
+    # Thursday's finished runs. They are hidden unless asked for.
+    runs = everything if show_past else [r for r in everything if r["status"] in LIVE_STATUSES]
+    hidden = len(everything) - len(runs)
 
     local_ws = ws.astimezone(bot.tz)
     title = f"Boss week of {local_ws.strftime('%a %d %b')} ({which_scope})"
     embed = discord.Embed(title=title, colour=discord.Colour.blurple())
     if not runs:
         embed.description = {
-            "all": "Nothing scheduled. Add a baseline with `/fixed add`.",
-            "mine": "You have no runs this week. `/schedule scope:all` shows everyone's.",
+            "all": "Nothing still to come. Add a baseline with `/fixed add`.",
+            "mine": "You have nothing left this week. `/schedule scope:all` shows everyone's.",
             "channel": (
-                "No runs in this channel this week. `/schedule scope:mine` shows yours, "
+                "Nothing left in this channel this week. `/schedule scope:mine` shows yours, "
                 "`scope:all` the whole guild's."
             ),
         }[which_scope]
+        if hidden:
+            embed.description += f"\n{_hidden_note(hidden)}"
     else:
         for heading, day_runs in formatting.group_by_day(runs, bot.tz):
             lines = [
-                formatting.schedule_line(run, bot.tz, bot.repo.get_rsvps(run["id"]))
+                formatting.schedule_line(
+                    run, bot.tz, bot.repo.get_rsvps(run["id"]), _roster_delta(bot, run)
+                )
                 for run in day_runs
             ]
             embed.add_field(name=heading, value="\n".join(lines), inline=False)
-        embed.set_footer(text="✅/❌ react on a reminder to RSVP · /amend to move a run")
+        footer = "✅/❌ react on a reminder to RSVP · /amend to move a run"
+        if hidden:
+            footer += f" · {_hidden_note(hidden)}"
+        embed.set_footer(text=footer)
 
     await interaction.response.send_message(
         embed=embed, allowed_mentions=discord.AllowedMentions.none()
     )
+
+
+def _roster_delta(bot: BossBot, run: dict) -> str:
+    """``"this week: -MY +kanon"`` when the party differs from the fixed timing."""
+    fixed = bot.repo.get_fixed_run(run["fixed_run_id"]) if run["fixed_run_id"] else None
+    if fixed is None:
+        return ""
+    baseline = list(fixed["participants"])
+    out = [uid for uid in baseline if uid not in run["participants"]]
+    joined = [uid for uid in run["participants"] if uid not in baseline]
+    return formatting.roster_delta(
+        [_member_name(bot, uid) for uid in out], [_member_name(bot, uid) for uid in joined]
+    )
+
+
+def _member_name(bot: BossBot, user_id: str) -> str:
+    member = bot.repo.get_member(user_id)
+    if member:
+        return member["nickname"] or member["display_name"] or str(user_id)
+    return str(user_id)
+
+
+def _hidden_note(hidden: int) -> str:
+    return f"{hidden} past/cancelled run(s) hidden — `show_past:True` to see them"
 
 
 @app_commands.command(name="amend", description="Move a run to a new day/time")
@@ -689,10 +848,14 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
         f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}.",
         ephemeral=True,
     )
+    # The move is already applied, and everyone on it gets the morning card and
+    # its countdowns anyway, so this receipt names people rather than pinging
+    # them (DESIGN.md §3, "Mention policy").
+    who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
-        formatting.amend_notice(updated, old_at, bot.tz),
-        updated["participants"],
+        formatting.amend_notice(updated, old_at, bot.tz, who),
+        list(who.mentioned),
         channel_id=updated["channel_id"],
     )
 
@@ -702,25 +865,7 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
 @app_commands.autocomplete(run_id=run_autocomplete)
 @require_role()
 async def cancel(interaction: discord.Interaction, run_id: str) -> None:
-    bot = _bot(interaction)
-    try:
-        run = _load_run(bot, interaction, run_id)
-    except NotAllowed as exc:
-        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
-        return
-    bot.repo.set_run_status(run["id"], "cancelled")
-    _sync_run_reminders(bot, run["id"])
-    await interaction.response.send_message(
-        f"🚫 Run `#{short_id(run['id'])}` cancelled.", ephemeral=True
-    )
-    await _announce(
-        bot,
-        f"🚫 **{formatting.format_bosses(run['bosses'])}** "
-        f"({formatting.local_day(run['datetime'], bot.tz)}) is cancelled — "
-        f"{formatting.format_participants(run['participants'])}",
-        run["participants"],
-        channel_id=run["channel_id"],
-    )
+    await _set_status(interaction, run_id, "cancelled")
 
 
 @app_commands.command(name="otot", description="Mark a run as own-time (no countdown pings)")
@@ -728,17 +873,129 @@ async def cancel(interaction: discord.Interaction, run_id: str) -> None:
 @app_commands.autocomplete(run_id=run_autocomplete)
 @require_role()
 async def otot(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "otot")
+
+
+@app_commands.command(name="restore", description="Put a run back on the schedule")
+@app_commands.describe(run_id="A cancelled, own-time or finished run")
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def restore(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "planned")
+
+
+@app_commands.command(name="done", description="Mark a run as cleared")
+@app_commands.describe(run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`")
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def done(interaction: discord.Interaction, run_id: str) -> None:
+    await _set_status(interaction, run_id, "done")
+
+
+@app_commands.command(name="status", description="Set a run's status")
+@app_commands.describe(
+    run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`",
+    state="What the run is now",
+)
+@app_commands.choices(state=STATUS_CHOICES)
+@app_commands.autocomplete(run_id=any_run_autocomplete)
+@require_role()
+async def status(
+    interaction: discord.Interaction, run_id: str, state: app_commands.Choice[str]
+) -> None:
+    await _set_status(interaction, run_id, state.value)
+
+
+async def _set_status(interaction: discord.Interaction, run_id: str, state: str) -> None:
+    """The one path behind `/status`, `/otot`, `/cancel`, `/restore` and `/done`.
+
+    It goes through the same service function the portal and `bossctl` use, so
+    a transition means the same thing however it was asked for -- including the
+    channel notice, which is posted once and only when something changed.
+    """
+    # Imported here rather than at module scope: `bot.api` pulls in FastAPI and
+    # the whole portal, and the slash-command layer must not depend on that
+    # being importable to work.
+    from .api import service
+    from .api.errors import ApiError
+
     bot = _bot(interaction)
     try:
         run = _load_run(bot, interaction, run_id)
     except NotAllowed as exc:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
-    bot.repo.set_run_status(run["id"], "otot")
-    _sync_run_reminders(bot, run["id"])
-    await interaction.response.send_message(
-        f"🕒 Run `#{short_id(run['id'])}` is own-time: it still shows in the morning "
-        f"ping, but no countdowns.",
+    was = run["status"]
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # The reply is ephemeral, so the channel still needs telling -- but
+        # without the "(via portal)" marker, because this *was* a chat decision.
+        updated = await service.set_status(bot, run["id"], state, mark=False)
+    except ApiError as exc:
+        await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
+        return
+    if was == updated["status"]:
+        await interaction.followup.send(
+            f"Run `#{short_id(run['id'])}` is already {updated['status_label']}.", ephemeral=True
+        )
+        return
+    await interaction.followup.send(
+        f"{updated['status_label']} — run `#{short_id(run['id'])}` "
+        f"({formatting.format_bosses(updated['bosses'])}, "
+        f"{updated['local_day']} {updated['local_time']}).",
+        ephemeral=True,
+    )
+
+
+@app_commands.command(name="swap", description="Swap someone in or out for this week only")
+@app_commands.describe(
+    run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`",
+    out="Who is dropping out this week",
+    into="Who is standing in",
+    out2="Someone else dropping out",
+    into2="Someone else standing in",
+)
+@app_commands.autocomplete(run_id=run_autocomplete)
+@app_commands.rename(into="in", into2="in2")
+@require_role()
+async def swap(
+    interaction: discord.Interaction,
+    run_id: str,
+    out: discord.Member | None = None,
+    into: discord.Member | None = None,
+    out2: discord.Member | None = None,
+    into2: discord.Member | None = None,
+) -> None:
+    from .api import service
+    from .api.errors import ApiError
+
+    bot = _bot(interaction)
+    try:
+        run = _load_run(bot, interaction, run_id)
+    except NotAllowed as exc:
+        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        return
+    leaving = [str(m.id) for m in (out, out2) if m is not None]
+    joining = [str(m.id) for m in (into, into2) if m is not None]
+    if not leaving and not joining:
+        await interaction.response.send_message(
+            "❌ Pick someone to swap out, in, or both.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # `mark=False`: this is a chat decision, not a portal one.
+        updated = await service.swap_participants(
+            bot, run["id"], remove=leaving, add=joining, mark=False
+        )
+    except ApiError as exc:
+        await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
+        return
+    await interaction.followup.send(
+        f"✅ Run `#{short_id(run['id'])}` this week: "
+        + ", ".join(p["name"] for p in updated["participants"])
+        + "\nThe weekly timing is unchanged — use `/fixed edit` for that.",
         ephemeral=True,
     )
 
@@ -780,14 +1037,182 @@ async def rsvp(
         ephemeral=True,
     )
     if answer.value == "no":
-        await _announce(
-            bot,
-            formatting.decline_notice(
-                run, interaction.user.id, interaction.user.display_name, bot.tz
-            ),
-            [uid for uid in run["participants"] if uid != str(interaction.user.id)],
-            channel_id=run["channel_id"],
+        await bot.notify_decline(run, interaction.user.id, interaction.user.display_name)
+    else:
+        await bot.retract_decline(run, interaction.user.id)
+
+
+@app_commands.command(
+    name="rescan", description="Re-read this channel's chat from Discord and propose any changes"
+)
+@app_commands.describe(
+    window="How far back to read (default: this boss week)",
+    scope="This channel (default), or every watched channel",
+    cancel="Stop the rescan that is running",
+)
+@app_commands.choices(
+    window=WINDOW_CHOICES,
+    scope=[
+        app_commands.Choice(name="this channel", value="this-channel"),
+        app_commands.Choice(name="all channels", value="all-channels"),
+    ],
+)
+@require_role()
+async def rescan(
+    interaction: discord.Interaction,
+    window: app_commands.Choice[str] | None = None,
+    scope: app_commands.Choice[str] | None = None,
+    cancel: bool = False,
+) -> None:
+    bot = _bot(interaction)
+    from .api import service
+    from .api.errors import ApiError
+
+    if cancel:
+        await _cancel_rescan(interaction, bot)
+        return
+
+    everywhere = (scope.value if scope else "this-channel") == "all-channels"
+    if not everywhere and not bot.is_watched(interaction.channel):
+        await interaction.response.send_message(
+            "❌ This channel isn't watched, so there's nothing to re-read. "
+            "`/rescan scope:all channels` reads the ones that are.",
+            ephemeral=True,
         )
+        return
+
+    which = window.value if window else DEFAULT_WINDOW
+    channels = None
+    if not everywhere:
+        channel_id, _thread = origin_ids(interaction.channel)
+        channels = [str(channel_id)]
+    try:
+        job = service.queue_rescan(
+            bot,
+            channels,
+            window=which,
+            source="slash",
+            requested_by=interaction.user.id,
+        )
+    except ApiError as exc:
+        await interaction.response.send_message(f"❌ {exc.message}", ephemeral=True)
+        return
+
+    where = ", ".join(job["channel_names"]) if job["channel_names"] else "every watched channel"
+    # Queued, not awaited: re-reading a week is minutes of model time, and the
+    # bot has to keep answering everything else while it happens.
+    await interaction.response.send_message(
+        f"🔎 Re-reading **{where}** ({WINDOW_LABELS.get(job['window'], job['window'])}) — "
+        f"I'll post the cards in {'each channel' if everywhere else 'this channel'} as I find "
+        f"them. `/rescan cancel:True` stops it.\n"
+        f"-# job `{job['short_id']}`",
+        ephemeral=True,
+    )
+
+
+async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None:
+    running = bot.rescans.active()
+    if running is None:
+        await interaction.response.send_message("Nothing is being re-read.", ephemeral=True)
+        return
+    bot.rescans.cancel(running.id)
+    await interaction.response.send_message(
+        f"🛑 `{running.short_id}` will stop after the channel it is on "
+        f"({running.done} of {running.total} done).",
+        ephemeral=True,
+    )
+
+
+def rescan_summary(report) -> str:
+    """The ephemeral reply for `/debug extract` (a `RescanReport`).
+
+    Leads with what it read rather than what it found, because "nothing found"
+    means something quite different after backfilling 300 messages than after
+    backfilling none.
+    """
+    label = WINDOW_LABELS.get(report.window, report.window)
+    head = (
+        f"Read **{label}** in {report.elapsed_ms / 1000:.1f}s — "
+        f"{report.backfilled} message(s) pulled from Discord, "
+        f"{report.gated} worth reading, {report.bursts} conversation(s), "
+        f"{report.extracted} sent to the model."
+    )
+    if report.widened:
+        head += "\nNothing this boss week, so I checked last week too."
+    if report.errors:
+        return head + f"\n❌ The model didn't answer: {report.errors[0]}"
+    if not report.asked:
+        return head + "\nNothing looked like scheduling, so the model wasn't asked."
+
+    planned = report.planned
+    extra = []
+    if report.stale:
+        extra.append(f"{report.stale} already passed")
+    below = report.dropped - report.stale
+    if below > 0:
+        extra.append(f"{below} below threshold, unmatched or already scheduled")
+    note = ("\n_" + ", ".join(extra) + "._") if extra else ""
+    if not planned:
+        return head + "\n**No change found.**" + note
+    lines = [
+        f"• `{p.kind}` "
+        f"{formatting.format_bosses(p.amendment.bosses) if p.amendment.bosses else ''}"
+        f" ({p.amendment.confidence:.2f})"
+        for p in planned
+    ]
+    posted = f" ({report.proposals} card(s) posted)" if report.proposals else " (nothing posted)"
+    return head + f"\n**{len(planned)} change(s) found**{posted}:\n" + "\n".join(lines) + note
+
+
+#: What each level means, in the words the command itself uses.
+PING_LEVEL_HELP: dict[str, str] = {
+    "essential": (
+        "only when you need to answer — the morning card, the countdowns you "
+        "haven't ✅'d, a card waiting on your ✅, and someone dropping out of your run"
+    ),
+    "all": "everything that lists you, including moves, swaps and weekly-timing changes",
+    "off": "never — you'll still be named in every post, just not notified",
+}
+
+PING_LEVEL_CHOICES = [
+    app_commands.Choice(name=f"{level} — {PING_LEVEL_HELP[level]}"[:100], value=level)
+    for level in PING_LEVELS
+]
+
+
+@app_commands.command(name="pings", description="Choose how much the bot @mentions you")
+@app_commands.describe(level="Leave this empty to see what you're on now")
+@app_commands.choices(level=PING_LEVEL_CHOICES)
+@require_role()
+async def pings(
+    interaction: discord.Interaction, level: app_commands.Choice[str] | None = None
+) -> None:
+    """Set (or read back) the invoker's own mention level. Nobody can set anyone else's."""
+    bot = _bot(interaction)
+    user = interaction.user
+    # A member who has the role but has never been synced has no row to update.
+    if bot.repo.get_member(user.id) is None:
+        bot.repo.upsert_member(
+            user.id, user.display_name, getattr(user, "nick", None), bot.has_bossing_role(user)
+        )
+    if level is None:
+        current = bot.repo.get_ping_level(user.id)
+        others = " · ".join(f"`{name}`" for name in PING_LEVELS if name != current)
+        await interaction.response.send_message(
+            f"🔔 You're on **{current}** — {PING_LEVEL_HELP[current]}.\n"
+            f"`/pings level:` to change it ({others}).",
+            ephemeral=True,
+        )
+        return
+    try:
+        chosen = normalise_level(level.value)
+    except ValueError as exc:  # pragma: no cover - the choices constrain this
+        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        return
+    bot.repo.set_ping_level(user.id, chosen)
+    await interaction.response.send_message(
+        f"🔔 Pings set to **{chosen}** — {PING_LEVEL_HELP[chosen]}.", ephemeral=True
+    )
 
 
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
@@ -830,6 +1255,86 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
     )
 
 
+#: How long a `/say` may be. Discord's own limit is 2000, and `post_plain` can
+#: add the quiet-mode note underneath, so leave that room rather than have the
+#: send rejected after the command has already reported success.
+SAY_LIMIT = 1900
+
+
+@app_commands.command(name="say", description="Post a message as the bot (admins only)")
+@app_commands.describe(
+    message="What the bot should post, word for word",
+    channel="Where to post it (default: this channel)",
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.guild_only()
+@app_commands.check(_require_admin)
+async def say(
+    interaction: discord.Interaction,
+    message: str,
+    channel: discord.TextChannel | None = None,
+) -> None:
+    """Speak as the bot, in a channel it can already post in.
+
+    Unlike everything else the bot writes, this really does notify: an admin who
+    types `@kanon` into it meant to reach kanon, and a bot announcement nobody
+    sees is not worth having. The allow-list is built from the mentions actually
+    written in the text, so it can never notify anybody the message does not
+    name. `@everyone`/`@here` stays blocked -- that is the one mention nobody
+    can opt out of -- and quiet mode still silences the lot.
+    """
+    bot = _bot(interaction)
+    target = channel or interaction.channel
+    text = message.strip()
+    if not text:
+        await interaction.response.send_message("❌ Nothing to say.", ephemeral=True)
+        return
+    if len(text) > SAY_LIMIT:
+        await interaction.response.send_message(
+            f"❌ That's {len(text)} characters; keep it under {SAY_LIMIT}.", ephemeral=True
+        )
+        return
+
+    target_id = getattr(target, "id", None)
+    lookup = await bot.find_channel(target_id)
+    # `find_channel` falls back to POST_CHANNEL_ID, which is right for a
+    # reminder that must land somewhere and wrong here: "post this in #general"
+    # must not quietly become "post this in the digest channel".
+    if lookup.channel is None or getattr(lookup.channel, "id", None) != target_id:
+        # A successful fallback leaves `problem` empty, so the reason the *asked
+        # for* channel was refused comes from the same helper `find_channel`
+        # would have used -- "grant the role View Channel + Send Messages there"
+        # is the sentence that gets this fixed.
+        problem = lookup.problem or bot.no_access(target_id, target)
+        await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
+        return
+
+    users, roles = mentions_in(text)
+    posted = await bot.post_plain(lookup.channel, text, users, mention_roles=roles)
+    if posted is None:
+        await interaction.response.send_message(
+            "❌ Discord refused the message. Check the bot logs.", ephemeral=True
+        )
+        return
+    log.info(
+        "/say by %s (%s) in channel %s: %d character(s), %d user + %d role mention(s)",
+        interaction.user,
+        interaction.user.id,
+        target_id,
+        len(text),
+        len(users),
+        len(roles),
+    )
+    notified = "notifying nobody"
+    if users or roles:
+        notified = f"notifying {len(users)} member(s)" + (
+            f" and {len(roles)} role(s)" if roles else ""
+        )
+    await interaction.response.send_message(
+        f"✅ Posted in <#{target_id}> ({notified}).", ephemeral=True
+    )
+
+
 # ---------------------------------------------------------------------------
 # registration + error handling
 # ---------------------------------------------------------------------------
@@ -845,6 +1350,8 @@ async def on_app_command_error(
         )
     elif isinstance(error, MissingBossingRole):
         message = "❌ You need the bossing role to use this bot."
+    elif isinstance(error, NotAnAdmin):
+        message = "❌ `/say` is for server admins, the server owner and the admin role."
     elif isinstance(error, (NotAllowed, app_commands.CheckFailure)):
         message = f"❌ {error}" if str(error) else "❌ You can't do that."
     else:
@@ -865,6 +1372,21 @@ def register_commands(bot: BossBot) -> None:
     tree.add_command(FixedGroup())
     tree.add_command(BotGroup())
     tree.add_command(DebugGroup())
-    for command in (schedule, amend, cancel, otot, rsvp, nick, pingtime):
+    for command in (
+        schedule,
+        amend,
+        swap,
+        cancel,
+        otot,
+        restore,
+        done,
+        status,
+        rsvp,
+        nick,
+        pings,
+        pingtime,
+        rescan,
+        say,
+    ):
         tree.add_command(command)
     tree.on_error = on_app_command_error

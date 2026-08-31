@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"
     ollama_model: str = "gpt-oss:20b"
-    #: Seconds to wait for one extraction call. `gpt-oss:20b` on this Mac takes
+    #: Seconds to wait for one extraction call. `gpt-oss:20b` on an M4 Pro takes
     #: roughly 10-40 s for a ~3k-token prompt; the first call after a cold start
     #: also pays for loading 13 GB of weights.
     ollama_timeout: float = Field(default=120.0, gt=0)
@@ -94,10 +94,31 @@ class Settings(BaseSettings):
     extract_context_messages: int = Field(default=25, ge=0, le=100)
     #: Below this, an extracted amendment is logged but never posted.
     extract_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    #: Pull each watched channel's history for the current boss week on start.
+    #: No model call is made -- it only fills `messages`, so a `/rescan` (or a
+    #: card's evidence links) still works after the database has been reset.
+    backfill_on_start: bool = True
 
-    # --- phase 3 (parsed now, unused until the portal lands) -------------
+    # --- phase 3: the portal + `bossctl` ---------------------------------
+    #: Bearer token for the HTTP API. Empty means the API starts but refuses
+    #: every non-health request, so a half-configured deployment fails loudly
+    #: instead of quietly serving the schedule to whoever can reach the port.
     admin_token: str = ""
+    #: Tailscale logins allowed through `tailscale serve`, comma separated.
     allowed_tailscale_logins: str = ""
+    #: Trust `Tailscale-User-Login` on requests arriving from the host. Off by
+    #: default: without `tailscale serve` in front, the header is just a string
+    #: anyone can send. See README "Portal & CLI".
+    trust_tailscale_headers: bool = False
+    #: Discord user id credited for changes made in the portal. Defaults to the
+    #: guild owner when unset.
+    portal_actor_id: int | None = None
+    #: Interface the API binds. ``127.0.0.1`` is right when the bot runs
+    #: natively on the host. **Inside the container it must be ``0.0.0.0``** --
+    #: compose sets it -- because the loopback of a container namespace is not
+    #: the host's; the "loopback only" guarantee comes from the compose port
+    #: mapping ``127.0.0.1:8080:8080``, not from this value.
+    api_host: str = "127.0.0.1"
     api_port: int = 8080
 
     log_level: str = "INFO"
@@ -119,6 +140,11 @@ class Settings(BaseSettings):
         cleaned: dict[str, Any] = {}
         for key, value in values.items():
             if not isinstance(value, str) or str(key).lower() in _VERBATIM:
+                # A secret is whatever was pasted, `#` included -- but a line
+                # left as `ADMIN_TOKEN=   # generate with ...` is a comment, not
+                # a token, and must read as "unset" rather than authenticate.
+                if isinstance(value, str) and value.strip().startswith("#"):
+                    continue
                 cleaned[key] = value
                 continue
             text = _INLINE_COMMENT_RE.sub("", value).strip()
@@ -206,12 +232,24 @@ class Settings(BaseSettings):
 
     @property
     def think(self) -> str | bool | None:
-        """The value the ollama client wants: a level, or ``None`` for off."""
-        return self.ollama_think if self.ollama_think in ("low", "medium", "high") else None
+        """The value the ollama client wants.
+
+        A level passes through; ``off`` becomes an explicit ``False``. Omitting
+        the key is *not* the same as ``False``: a model that reasons by default
+        (Gemma 4) then puts its whole answer into ``message.thinking`` and
+        leaves ``content`` empty -- 500+ s for nothing, measured. Anything else
+        (unset, a typo) omits the key and lets the model do its default.
+        """
+        level = (self.ollama_think or "").strip().lower()
+        if level in ("low", "medium", "high"):
+            return level
+        if level in ("off", "false", "none", "0"):
+            return False
+        return None
 
     @property
     def allowed_login_list(self) -> list[str]:
-        return [p.strip() for p in self.allowed_tailscale_logins.split(",") if p.strip()]
+        return [p.strip().lower() for p in self.allowed_tailscale_logins.split(",") if p.strip()]
 
 
 @lru_cache(maxsize=1)

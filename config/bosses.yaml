@@ -66,6 +66,12 @@ bosses:
     difficulties: [n, h]
     aliases: [star, rms, rmc, malefic, radiantmaleficstar]
 
+  Bellona:
+    full: Bellona
+    level: 280
+    difficulties: [e, n, h]
+    aliases: [bellona, bell, bella, belona]
+
   Limbo:
     full: Limbo
     level: 285

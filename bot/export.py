@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 
+from .backfill import AccessDenied, iter_history, thread_list
 from .config import Settings, get_settings
 from .db import Repo
 from .timeutil import to_iso
@@ -183,19 +184,6 @@ def _resolve_channels(
     return list(picked.values())
 
 
-async def _thread_list(channel: discord.TextChannel) -> list[discord.Thread]:
-    threads = list(channel.threads)
-    seen = {t.id for t in threads}
-    try:
-        async for thread in channel.archived_threads(private=False, limit=None):
-            if thread.id not in seen:
-                threads.append(thread)
-                seen.add(thread.id)
-    except (discord.Forbidden, discord.HTTPException):
-        log.warning("could not list archived threads for #%s", channel.name)
-    return threads
-
-
 async def _reactions(message: discord.Message) -> dict[str, list[int]]:
     out: dict[str, list[int]] = {}
     for reaction in message.reactions:
@@ -204,10 +192,6 @@ async def _reactions(message: discord.Message) -> dict[str, list[int]]:
         except discord.HTTPException:  # pragma: no cover - network
             out[str(reaction.emoji)] = []
     return out
-
-
-class AccessDenied(Exception):
-    """The bot cannot read a channel's history."""
 
 
 async def _export_channel(
@@ -230,7 +214,7 @@ async def _export_channel(
             total += await _export_source(channel, channel.name, since, until, repo, handle)
         except discord.Forbidden as exc:
             raise AccessDenied(str(exc)) from exc
-        for thread in await _thread_list(channel):
+        for thread in await thread_list(channel):
             try:
                 total += await _export_source(thread, channel.name, since, until, repo, handle)
             except discord.Forbidden:
@@ -246,18 +230,26 @@ async def _export_source(
     repo: Repo,
     handle,
 ) -> int:
+    """One channel or thread -> JSONL lines, and rows in ``messages``.
+
+    The JSONL keeps the bot's own messages (a fixture wants to see the card the
+    conversation was answering), but they are deliberately *not* stored: the
+    extractor must never read its own proposals back as chat. That is the same
+    rule :func:`bot.backfill.record_source` and the live listener apply.
+    """
     count = 0
-    async for message in source.history(after=since, before=until, oldest_first=True, limit=None):
+    async for message in iter_history(source, since, until):
         record = message_record(message, channel_name, await _reactions(message))
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-        # Keep the DB in step so a later rescan already has the history.
-        repo.record_message(
-            message.id,
-            record["channel_id"],
-            message.author.id,
-            message.created_at,
-            message.content or "",
-        )
+        if not record["author_bot"]:
+            # Keep the DB in step so a later rescan already has the history.
+            repo.record_message(
+                message.id,
+                record["channel_id"],
+                message.author.id,
+                message.created_at,
+                message.content or "",
+            )
         count += 1
     return count
 

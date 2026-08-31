@@ -181,3 +181,45 @@ def test_deleting_a_debug_message_row(repo: Repo):
     repo.add_debug_message(4242, run_id, 900, "day_of")
     repo.delete_debug_message(4242)
     assert repo.debug_messages_for(4242) == []
+
+
+# --- /debug extract's reply ---------------------------------------------------
+
+
+def _report(**kw):
+    from bot.extract.pipeline import RescanReport
+
+    from .conftest import kl
+
+    base = dict(channel_id="900", window="week", since=kl(2026, 8, 27, 0, 0), elapsed_ms=1500)
+    base.update(kw)
+    return RescanReport(**base)
+
+
+def test_rescan_summary_is_importable_by_debug_extract():
+    """The worker refactor once dropped this and `/debug extract` raised ImportError."""
+    from bot.commands import rescan_summary  # noqa: F401
+
+
+def test_rescan_summary_says_when_the_model_was_not_asked():
+    from bot.commands import rescan_summary
+
+    text = rescan_summary(_report(backfilled=12, gated=0))
+    assert "12 message(s) pulled" in text
+    assert "wasn't asked" in text
+
+
+def test_rescan_summary_leads_with_the_model_error():
+    from bot.commands import rescan_summary
+
+    text = rescan_summary(_report(gated=3, bursts=1, extracted=1, errors=["ReadTimeout"]))
+    assert "ReadTimeout" in text
+
+
+def test_rescan_summary_reports_no_change_with_the_drop_reasons():
+    from bot.commands import rescan_summary
+
+    text = rescan_summary(_report(gated=3, bursts=1, extracted=1, dropped=2, stale=1))
+    assert "No change found" in text
+    assert "1 already passed" in text
+    assert "1 below threshold" in text

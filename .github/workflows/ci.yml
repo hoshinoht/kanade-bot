@@ -1,0 +1,58 @@
+name: CI
+
+# Gates merges to master. Runs on pull requests from forks too (this repo is
+# public), so nothing here may need a secret.
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# A new push to a branch makes the run in flight pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv stopped publishing moving major/minor tags at v8, so there is
+      # no `@v10` to pin to -- the full version tag is the immutable one.
+      - uses: astral-sh/setup-uv@v10.0.1
+
+      # Reads `requires-python` from pyproject.toml (3.12), the same as the image.
+      - name: Install Python
+        run: uv python install
+
+      # `--locked` fails if uv.lock has drifted from pyproject.toml, so a
+      # dependency bump that forgot to relock cannot merge.
+      - name: Install the project
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      # The `ollama` marker hits a 13 GB local model on the developer's machine
+      # and is deliberately never run here; `uv run pytest -m ollama` is a
+      # local-only step. Everything else must pass.
+      - name: Tests
+        run: uv run pytest -q -m "not ollama"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build validity only: the image is never pushed, so there is no registry
+      # login and no secret to leak to a fork's pull request.
+      - name: Build the image
+        run: docker build .

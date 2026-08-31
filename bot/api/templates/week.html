@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Week — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Boss week of {{ schedule.week_label }}</p>
+    <h1>{{ schedule.count }} run{{ "" if schedule.count == 1 else "s" }}{% if filtered %}, filtered{% endif %}</h1>
+    {% if schedule.hidden %}
+    <p>{{ schedule.hidden }} past or cancelled run{{ "" if schedule.hidden == 1 else "s" }} hidden.
+      <a href="{{ url_toggle_past() }}">Show {{ "them" if schedule.hidden > 1 else "it" }}</a>.</p>
+    {% elif show_past %}
+    <p>Showing everything, past runs included. <a href="{{ url_toggle_past() }}">Hide the past</a>.</p>
+    {% endif %}
+  </div>
+  <div class="seg" role="group" aria-label="Which week">
+    <a href="{{ url_for_week('this') }}" aria-current="{{ 'true' if week == 'this' else 'false' }}">This week</a>
+    <a href="{{ url_for_week('next') }}" aria-current="{{ 'true' if week == 'next' else 'false' }}">Next week</a>
+  </div>
+</div>
+
+{% include "partials/rail.html" %}
+
+<form class="filters" method="get" action="/">
+  <input type="hidden" name="week" value="{{ week }}">
+  <label class="field"><span>Channel</span>
+    <select name="channel">
+      <option value="">every party</option>
+      {% for channel in channels %}
+      <option value="{{ channel.id }}"{% if channel.id == selected.channel %} selected{% endif %}>{{ channel.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Member</span>
+    <select name="user">
+      <option value="">everyone</option>
+      {% for member in members %}
+      <option value="{{ member.user_id }}"{% if member.user_id == selected.user %} selected{% endif %}>{{ member.display_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field"><span>Boss</span>
+    <input name="boss" value="{{ selected.boss or '' }}" placeholder="hstar" size="10">
+  </label>
+  <button class="btn btn--primary" type="submit">Filter</button>
+  {% if filtered %}<a class="btn btn--ghost" href="/?week={{ week }}">Clear</a>{% endif %}
+</form>
+
+<div id="days">
+{% include "partials/days.html" %}
+</div>
+{% endblock %}
