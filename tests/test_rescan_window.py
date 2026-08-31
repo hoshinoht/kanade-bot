@@ -362,16 +362,36 @@ def test_a_day_too_big_for_one_prompt_is_split_at_its_longest_pause():
     morning = [at(30, 9, m) for m in range(0, 60, 2)]  # 30 messages
     evening = [at(30, 21, m) for m in range(0, 40, 2)]  # 20 messages
     groups = group_for_rescan(morning + evening, TZ)
-    assert [len(g) for g in groups] == [30, 20]
     assert all(len(g) <= MAX_BURST_MESSAGES for g in groups)
+    # The eleven-hour gap is the first cut, so no burst straddles it and the
+    # morning's messages are never read as context for the evening's.
+    assert [len(g) for g in groups if g[0] in morning] == [
+        len(g) for g in groups if g[-1] in morning
+    ]
+    assert sum(len(g) for g in groups if g[0] in morning) == len(morning)
 
 
 def test_evenly_spaced_chatter_splits_down_the_middle():
     """No natural break, so the cap decides -- and it should not shave one off."""
-    from bot.extract.window import group_for_rescan
+    from bot.extract.window import MAX_BURST_MESSAGES, group_for_rescan
 
     rows = [at(30, 10 + i // 6, (i % 6) * 10) for i in range(50)]
-    assert [len(g) for g in group_for_rescan(rows, TZ)] == [25, 25]
+    sizes = [len(g) for g in group_for_rescan(rows, TZ)]
+    assert sum(sizes) == 50
+    assert max(sizes) <= MAX_BURST_MESSAGES
+    # Halving, not shaving: each cut lands mid-conversation, so no piece comes
+    # out as the one or two messages a split-at-the-cap would leave behind.
+    assert min(sizes) >= MAX_BURST_MESSAGES // 2
+
+
+def test_a_burst_is_capped_at_what_one_prompt_can_carry():
+    """The cap is what stopped a 21-message day overrunning the context window."""
+    from bot.extract.window import MAX_BURST_MESSAGES, group_for_rescan
+
+    day = [at(30, 9 + i // 6, (i % 6) * 10) for i in range(21)]
+    groups = group_for_rescan(day, TZ)
+    assert len(groups) > 1
+    assert all(len(g) <= MAX_BURST_MESSAGES for g in groups)
 
 
 def test_the_local_day_is_what_counts_not_utc():
@@ -510,7 +530,7 @@ def test_a_rescan_posts_one_card_for_the_whole_window(fake_bot):
     )
     applied: list[list] = []
 
-    async def apply_plan(channel_id, rsvps, proposals, week, summary):
+    async def apply_plan(channel_id, rsvps, proposals, week, summary, report=None):
         applied.append(proposals)
         return ["one-card"]
 
@@ -644,3 +664,242 @@ def test_a_move_that_already_has_a_time_keeps_it():
         message_order=["101", "102"],
     )
     assert next(a for a in merged if a.bosses == ["HStar"]).time_ref == "10pm"
+
+
+# --- what reaches the database and the channel ------------------------------
+
+
+def effects_pipeline(fake_bot):
+    """A real Pipeline over the fake bot: `_record` and `_post_card` are the real ones."""
+    from bot.extract.pipeline import Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.bot = fake_bot
+    pipeline._bursts = {}
+    return pipeline
+
+
+def seeded_run(repo, channel_id, bosses=("HStar", "HFA")):
+    run_id = repo.create_run(
+        kl(2026, 8, 27), list(bosses), NOW + timedelta(days=3), ["1001"], channel_id=channel_id
+    )
+    return repo.get_run(run_id)
+
+
+def test_two_changes_for_one_run_are_both_still_pressable(fake_bot):
+    """Live: a card whose ✅ silently did nothing on two of its six lines.
+
+    `_record` superseded as it went, so recording the `sub` retired the `move`
+    it had just written -- and committing needs the row to still be `proposed`.
+    """
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    run = seeded_run(repo, WATCHED_CHANNEL)
+    pipeline = effects_pipeline(fake_bot)
+    ids, _retired = pipeline._record(
+        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4)), planned_for("sub", [], run)],
+        str(WATCHED_CHANNEL),
+        kl(2026, 8, 27),
+        "",
+    )
+    assert len(ids) == 2
+    assert [repo.get_amendment(i)["status"] for i in ids] == ["proposed", "proposed"]
+
+
+def test_an_older_card_for_the_same_run_is_still_retired(fake_bot):
+    """The reason `supersede` exists must survive the fix to when it runs."""
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    run = seeded_run(repo, WATCHED_CHANNEL)
+    stale = repo.create_amendment(
+        week_start=kl(2026, 8, 27), kind="move", run_id=run["id"], channel_id=str(WATCHED_CHANNEL)
+    )
+    pipeline = effects_pipeline(fake_bot)
+    ids, retired = pipeline._record(
+        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+        str(WATCHED_CHANNEL),
+        kl(2026, 8, 27),
+        "",
+    )
+    assert [a["id"] for a in retired] == [stale]
+    assert repo.get_amendment(stale)["status"] == "superseded"
+    assert repo.get_amendment(ids[0])["status"] == "proposed"
+
+
+def test_each_row_carries_its_own_bursts_summary(fake_bot):
+    """A week is several conversations; one summary describes one of them."""
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    run = seeded_run(repo, WATCHED_CHANNEL)
+    first = planned_for("move", ["HStar"], run, NOW + timedelta(days=4))
+    first.summary = "Sunday: HStar moved to Wed"
+    second = planned_for("add", ["NStar"], None, NOW + timedelta(days=5))
+    second.summary = "Monday: NStar proposed for Thu"
+    pipeline = effects_pipeline(fake_bot)
+    ids, _retired = pipeline._record(
+        [first, second], str(WATCHED_CHANNEL), kl(2026, 8, 27), "the first burst only"
+    )
+    assert [repo.get_amendment(i)["summary"] for i in ids] == [
+        "Sunday: HStar moved to Wed",
+        "Monday: NStar proposed for Thu",
+    ]
+
+
+def test_a_row_with_no_summary_of_its_own_falls_back(fake_bot):
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    pipeline = effects_pipeline(fake_bot)
+    ids, _retired = pipeline._record(
+        [planned_for("add", ["NStar"], None, NOW + timedelta(days=5))],
+        str(WATCHED_CHANNEL),
+        kl(2026, 8, 27),
+        "whatever the window said",
+    )
+    assert repo.get_amendment(ids[0])["summary"] == "whatever the window said"
+
+
+# --- rows stranded by a failed post -----------------------------------------
+
+
+def test_rows_left_without_a_card_get_one_on_the_next_pass(fake_bot):
+    """A DNS failure mid-post left `proposed` rows nobody could see or answer."""
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    stranded = repo.create_amendment(
+        week_start=kl(2026, 8, 27),
+        kind="add",
+        bosses=["NStar"],
+        channel_id=str(WATCHED_CHANNEL),
+        confidence=0.9,
+    )
+    assert repo.get_amendment(stranded)["proposal_message_id"] is None
+    pipeline = effects_pipeline(fake_bot)
+    asyncio.run(pipeline.apply_plan(str(WATCHED_CHANNEL), [], [], kl(2026, 8, 27), ""))
+    assert repo.get_amendment(stranded)["proposal_message_id"] is not None
+    assert len(fake_bot.posts) == 1
+
+
+def test_a_row_that_already_has_a_card_is_not_posted_again(fake_bot):
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    posted = repo.create_amendment(
+        week_start=kl(2026, 8, 27),
+        kind="add",
+        bosses=["NStar"],
+        channel_id=str(WATCHED_CHANNEL),
+        confidence=0.9,
+    )
+    repo.set_amendment_proposal_message(posted, 900000000000000009)
+    pipeline = effects_pipeline(fake_bot)
+    asyncio.run(pipeline.apply_plan(str(WATCHED_CHANNEL), [], [], kl(2026, 8, 27), ""))
+    assert fake_bot.posts == []
+
+
+def test_a_card_that_cannot_be_posted_is_reported(fake_bot):
+    from bot.extract.pipeline import RescanReport
+
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    run = seeded_run(repo, WATCHED_CHANNEL)
+
+    async def no_post(channel, card, mention_users=None):
+        return None
+
+    fake_bot._post = no_post
+    pipeline = effects_pipeline(fake_bot)
+    report = RescanReport(channel_id=str(WATCHED_CHANNEL), window="week", since=NOW)
+    ids = asyncio.run(
+        pipeline.apply_plan(
+            str(WATCHED_CHANNEL),
+            [],
+            [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+            kl(2026, 8, 27),
+            "",
+            report=report,
+        )
+    )
+    # The rows are written either way; what changes is that somebody is told.
+    assert len(ids) == 1
+    assert report.unposted == 1
+    assert report.errors
+    assert repo.get_amendment(ids[0])["proposal_message_id"] is None
+
+
+# --- the prompt budget, which is what actually bounds a burst ----------------
+
+
+def test_the_estimator_charges_a_snowflake_far_more_than_its_length():
+    """An 18-digit id is ~8 tokens, not the ~4 a characters/token ratio implies."""
+    from bot.extract.prompt import estimate_tokens
+
+    bare = estimate_tokens("hello there friend" * 4)
+    with_ids = estimate_tokens("hello there friend" * 4 + " <@100000000000000001>")
+    assert with_ids - bare >= 8
+
+
+def test_the_estimator_leaves_short_numbers_alone():
+    """ "930" is a time and "290" a level; neither is an id."""
+    from bot.extract.prompt import estimate_tokens
+
+    assert estimate_tokens("930 can postpone to 11") < 15
+
+
+def test_the_budget_keeps_room_for_the_answer():
+    from bot.extract.prompt import CONTEXT_RESERVE, prompt_budget
+
+    assert prompt_budget(8192) == 8192 - CONTEXT_RESERVE
+
+
+def test_split_until_leaves_a_burst_that_fits_alone():
+    from bot.extract.window import split_until
+
+    rows = [row(0), row(5), row(10)]
+    assert split_until(rows, lambda chunk: True) == [rows]
+
+
+def test_split_until_halves_at_the_longest_pause():
+    from bot.extract.window import split_until
+
+    rows = [row(0), row(2), row(240), row(242)]
+    assert [len(g) for g in split_until(rows, lambda chunk: len(chunk) <= 2)] == [2, 2]
+
+
+def test_split_until_gives_up_on_a_single_message():
+    """One message that still does not fit is sent as it is, not dropped."""
+    from bot.extract.window import split_until
+
+    assert split_until([row(0)], lambda chunk: False) == [[row(0)]]
+
+
+def test_a_burst_too_big_for_the_context_window_is_read_in_pieces(fake_bot):
+    """The 21-message morning that came back as truncated JSON."""
+    from bot.extract.pipeline import Pipeline
+
+    from .fake_bot import WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    seed_chat(
+        repo,
+        WATCHED_CHANNEL,
+        [kl(2026, 8, 30, 9, 0) + timedelta(minutes=7 * i) for i in range(12)],
+    )
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.bot = fake_bot
+    pipeline._bursts = {}
+    rows = repo.recent_messages(WATCHED_CHANNEL, kl(2026, 8, 30, 0, 0))
+
+    assert len(pipeline.fit_to_budget(str(WATCHED_CHANNEL), rows)) == 1
+    fake_bot.settings = type(fake_bot.settings)(
+        _env_file=None, **{**fake_bot.settings.model_dump(), "ollama_num_ctx": 2560}
+    )
+    chunks = pipeline.fit_to_budget(str(WATCHED_CHANNEL), rows)
+    assert len(chunks) > 1
+    assert sum(len(c) for c in chunks) == len(rows)
+    assert [r["id"] for c in chunks for r in c] == [r["id"] for r in rows]

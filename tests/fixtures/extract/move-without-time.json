@@ -1,6 +1,6 @@
 {
   "name": "move-without-time",
-  "note": "The same proposal with no time stated: both the Monday and the Tuesday run move, the day is known, the time stays TBD, and it is still a question.",
+  "note": "The same proposal with no time stated: both the Monday and the Tuesday run move to Wednesday, each keeping the time it already runs at (DESIGN §2b.1 -- the unsaid half is read off the run, not left TBD), and it is still a question.",
   "channel": "party-hstar",
   "tz": "Asia/Kuala_Lumpur",
   "roster": [
@@ -109,7 +109,7 @@
         "HStar",
         "HFA"
       ],
-      "resolved_local_datetime": null,
+      "resolved_local_datetime": "2026-09-02 21:30",
       "participants": [],
       "is_question": true,
       "rsvp": null,
@@ -121,7 +121,7 @@
         "HCarling",
         "XKalos"
       ],
-      "resolved_local_datetime": null,
+      "resolved_local_datetime": "2026-09-02 23:00",
       "participants": [],
       "is_question": true,
       "rsvp": null,

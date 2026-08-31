@@ -23,8 +23,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timedelta
+from datetime import time as clock_time
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -38,7 +39,7 @@ from . import gate
 from . import prompt as prompt_mod
 from .commit import supersede
 from .llm import Extractor
-from .match import NO_BOSS_OVERLAP, match_run, needs_run, runs_spanned
+from .match import NO_BOSS_OVERLAP, match_run, needs_run, reachable, runs_spanned
 from .merge import merge
 from .resolve import Resolved, resolve
 from .schema import Amendment, Extraction
@@ -48,6 +49,7 @@ from .window import (
     group_for_rescan,
     previous_week_start,
     should_widen,
+    split_until,
     window_since,
 )
 
@@ -62,8 +64,25 @@ CONTEXT_WINDOW_HOURS = 48
 
 #: Kinds that can legitimately be about several runs at once, and are split into
 #: one candidate per run rather than being forced onto the best single match.
-#: "find temp for me for mon and tues" is one sentence and two stand-ins.
-SPLIT_ACROSS_RUNS = frozenset({"sub"})
+#: "find temp for me for mon and tues" is one sentence and two stand-ins, and
+#: DESIGN.md §8 reads "mon and tuesday suddenly got things on can change to
+#: wed?" as two moves. The model is asked for one amendment per run (prompt rule
+#: 6) and mostly obliges; when it does not, forcing four bosses onto whichever
+#: run scored highest silently threw the other run's half away.
+#: `split` is absent because it already changes one run and creates another, and
+#: `rsvp` because an answer belongs to the run it answers about.
+SPLIT_ACROSS_RUNS = frozenset({"sub", "move", "cancel", "otot"})
+
+#: Kinds still worth acting on when the match was a coin toss.  What reaches
+#: here after :data:`SPLIT_ACROSS_RUNS` is a tie with no boss evidence at all --
+#: "change to wed?" in a channel with two runs -- and guessing there moves
+#: somebody's night, so a `move`/`cancel`/`otot`/`split` is dropped instead.
+#: These two are the reversible ones: an `rsvp` is an opinion, and
+#: :func:`bot.rsvp.apply_reaction` ignores it outright unless the person is on
+#: the run it landed on, which is most of the guesswork undone already -- a bare
+#: "Can" is the commonest thing anyone says and never names a boss. A stand-in
+#: on the wrong one of two equally likely runs is a `/swap` away.
+ACT_ON_AMBIGUOUS = frozenset({"sub", "rsvp"})
 
 #: Kinds that become an `add` when the channel has no run with those bosses and
 #: the thread did settle on a day and time.
@@ -95,6 +114,13 @@ class Planned:
     #: Kinds that lost to this one for the same run (see :func:`one_per_run`).
     #: Named on the card so nothing the thread said disappears silently.
     also_mentioned: list[str] = field(default_factory=list)
+    #: Several runs matched this equally well, so the match is a coin toss.
+    ambiguous: bool = False
+    #: The model's one-line summary of the burst this came from.  Carried per
+    #: entry because a rescan consolidates several bursts onto one card, and
+    #: stamping the first burst's summary on all of them describes the wrong
+    #: conversation.
+    summary: str = ""
 
     @property
     def kind(self) -> str:
@@ -133,6 +159,20 @@ class Plan:
     @property
     def proposals(self) -> list[Planned]:
         return [p for p in self.planned if not p.is_rsvp]
+
+
+def _merge_plans(plans: Sequence[Plan]) -> Plan:
+    """Fold the pieces of one oversized burst back into a single plan."""
+    return Plan(
+        planned=[entry for plan in plans for entry in plan.planned],
+        dropped=[entry for plan in plans for entry in plan.dropped],
+        summary=next((p.summary for p in plans if p.summary), ""),
+        raw="\n".join(p.raw for p in plans if p.raw),
+        latency_ms=sum(p.latency_ms for p in plans),
+        error=next((p.error for p in plans if p.error), None),
+        message_ids=sorted({mid for plan in plans for mid in plan.message_ids}),
+        week_start=next((p.week_start for p in plans if p.week_start is not None), None),
+    )
 
 
 def _fix_payload(resolved: Resolved) -> dict:
@@ -184,12 +224,30 @@ def _precedence(entry: Planned) -> int:
     return RUN_PRECEDENCE.index(kind) if kind in RUN_PRECEDENCE else -1
 
 
+def _claim(entry: Planned) -> tuple[bool, int]:
+    """How strongly an entry claims its run: settled first, then kind.
+
+    A question is a proposal the thread may well have talked out of; a
+    statement is what the group landed on. Live: "can change to wed?" was
+    pushed back on ("This Sunday can anot?", "weds later damn packed") and the thread
+    settled on doing HCarling on its own time -- but `move-with-day` outranks
+    `otot`, so the abandoned question took the run and the decision was demoted
+    to "(also mentioned: own time)". Asking beats deciding on no reading of
+    that conversation, so settledness is compared before kind.
+    """
+    return (not entry.amendment.is_question, _precedence(entry))
+
+
 def one_per_run(entries: Sequence[Planned]) -> list[Planned]:
-    """Keep one change per run, by :data:`RUN_PRECEDENCE`; note the rest.
+    """Keep one change per run; note the rest.
 
     A card that offers two contradictory things for the same run cannot be
     confirmed with one ✅, and the loser is not thrown away -- the winning line
     says "(also mentioned: own time)" so the reader can see what else was said.
+
+    The winner is chosen by :func:`_claim`: a settled change beats a question
+    whatever the two kinds are, :data:`RUN_PRECEDENCE` separates two of the same
+    settledness, and the later evidence takes an outright tie.
 
     Kinds outside the precedence list (`add`, `fix`, `split`, `sub`) are left
     alone: `add`/`fix` have no run to collide over, a `split` deliberately
@@ -209,9 +267,13 @@ def one_per_run(entries: Sequence[Planned]) -> list[Planned]:
             best[run_id] = entry
             out.append(entry)
             continue
-        winner, loser = (entry, held) if _precedence(entry) > _precedence(held) else (held, entry)
+        # A tie goes to `entry`, which is the later of the two: the entries
+        # arrive in evidence order, and when a thread says the same *kind* of
+        # thing twice about one run the second time is the group changing its
+        # mind ("wed" then "no, thu"), not repeating itself.
+        winner, loser = (entry, held) if _claim(entry) >= _claim(held) else (held, entry)
         if winner is entry:
-            out[out.index(held)] = entry
+            out[next(i for i, held_entry in enumerate(out) if held_entry is held)] = entry
             best[run_id] = entry
         if loser.kind not in winner.also_mentioned:
             winner.also_mentioned.append(loser.kind)
@@ -224,18 +286,71 @@ def one_per_run(entries: Sequence[Planned]) -> list[Planned]:
     return out
 
 
-def is_no_op(entry: Planned) -> bool:
+def _at(day: date, clock: clock_time, tz: ZoneInfo, assumed_pm: bool) -> Resolved:
+    return Resolved(
+        day=day,
+        clock=clock,
+        at=datetime.combine(day, clock, tzinfo=tz),
+        assumed_pm=assumed_pm,
+    )
+
+
+def inherit_from_run(entry: Planned, tz: ZoneInfo) -> Resolved:
+    """Fill a `move`'s unsaid half from the run it is moving.
+
+    "can change to wed?" states a day and no time, and the time is not unknown:
+    it is the one the run already has. A card reading "Mon 21:30 -> Wed, time
+    **TBD**" asks the party to re-decide something nobody proposed changing, and
+    a row with no ``new_datetime`` cannot be applied at all -- ✅ on it answers
+    "no new time was agreed".
+
+    The other way round, "amend to 9:45pm" about Monday's run is about *Monday*.
+    :func:`bot.extract.resolve.resolve` has no run to consult, so it anchors a
+    bare clock time to the day the message was sent and rolls it forward once it
+    has passed; both are wrong for a thread discussing another night. The run's
+    own date replaces them, and anything that still lands in the past is
+    :func:`already_passed`'s business rather than a reason to invent a day.
+
+    This is not the guessing DESIGN.md §2b.1 forbids: every value here is read
+    off the run being changed, which is evidence, not availability modelling.
+    """
+    run, resolved = entry.run, entry.resolved
+    if entry.kind != "move" or run is None:
+        return resolved
+    local = run["datetime"].astimezone(tz)
+    if resolved.day is not None and resolved.clock is None:
+        return _at(resolved.day, local.time(), tz, resolved.assumed_pm)
+    # `resolved.day` is never None once a clock parsed, so what marks "no day was
+    # said" is the amendment's own empty `day_ref`, not the resolved value.
+    if resolved.clock is not None and not entry.amendment.day_ref:
+        return _at(local.date(), resolved.clock, tz, resolved.assumed_pm)
+    return resolved
+
+
+def is_no_op(entry: Planned, tz: ZoneInfo | None = None) -> bool:
     """True when applying this would change nothing at all.
 
     A rescan re-reads chat that has already been acted on, so it routinely
     proposes the schedule that already exists -- "Wed 21:30 -> Wed 21:30" is a
     card asking someone to confirm a decision they made days ago.
+
+    A day-only move needs ``tz`` to answer: "move it to Wednesday" about a run
+    that is already on Wednesday changes nothing, and whether it is already on
+    Wednesday is a question about the guild's local calendar.
     """
     run = entry.run
     if run is None:
         return False
+    if entry.kind == "add":
+        # This `add` matched a run that already exists, so it is proposing a
+        # night the channel is already having.
+        return True
     if entry.kind == "move":
-        return entry.resolved.at is not None and entry.resolved.at == run["datetime"]
+        at = entry.resolved.at
+        if at is not None:
+            return at == run["datetime"]
+        day = entry.resolved.day
+        return day is not None and tz is not None and day == run["datetime"].astimezone(tz).date()
     if entry.kind == "otot":
         return run["status"] == "otot"
     if entry.kind == "cancel":
@@ -342,8 +457,16 @@ def plan_burst(
         mentioned = list(amendment.participants)
 
         entries: list[Planned] = []
+        # Runs whose boss week starts after the night this amendment is about
+        # are not candidates for it, on any of the three paths below -- the
+        # model's own hint, the best single match, or the split across runs.
+        # Filtered before matching rather than after, so the *right* run can
+        # still win when both weeks have one with those bosses.
+        here = reachable(channel_runs, resolved.day, tz)
+        guild_here = reachable(guild_runs, resolved.day, tz)
+
         spanned = (
-            runs_spanned(amendment, channel_runs, author_id=author)
+            runs_spanned(amendment, here, author_id=author)
             if amendment.kind in SPLIT_ACROSS_RUNS
             else []
         )
@@ -366,9 +489,9 @@ def plan_burst(
                     )
                 )
         else:
-            result = match_run(
-                amendment, channel_runs, guild_runs, author_id=author, mentioned=mentioned
-            )
+            result = match_run(amendment, here, guild_here, author_id=author, mentioned=mentioned)
+            if result.run is None and channel_runs and not here:
+                result = replace(result, reason="every run here belongs to a later boss week")
             if (
                 result.run is None
                 and result.reason_code == NO_BOSS_OVERLAP
@@ -400,10 +523,12 @@ def plan_burst(
                     ),
                     match_reason=result.reason,
                     match_code=result.reason_code,
+                    ambiguous=result.ambiguous,
                 )
             )
 
         for entry in entries:
+            entry.summary = extraction.summary
             if entry.amendment.confidence < min_confidence:
                 plan.dropped.append(entry)
                 continue
@@ -412,14 +537,41 @@ def plan_burst(
                 entry.match_reason = f"no run matched ({entry.match_reason})"
                 plan.dropped.append(entry)
                 continue
+            if entry.ambiguous and entry.kind not in ACT_ON_AMBIGUOUS:
+                # Two runs fit equally well and nothing in the message picks one.
+                # `match_run` returns the first rival so the caller *can* guess;
+                # guessing here renames somebody else's night, so it does not.
+                entry.match_reason = f"ambiguous ({entry.match_reason})"
+                plan.dropped.append(entry)
+                continue
+            if entry.kind == "add" and not entry.resolved.known and not entry.amendment.is_question:
+                # A new run stated flatly, with neither a day nor a time, is not
+                # schedulable and nobody asked about it -- it is the shape a
+                # truncated extraction leaves behind. A *question* with no day or
+                # time is DESIGN.md §8 row 4 ("wanna try trio ncarling also?")
+                # and is exactly what a card asking "when?" is for.
+                entry.match_reason = "a stated add with no day or time"
+                plan.dropped.append(entry)
+                continue
+            # Before the staleness and no-op checks, both of which judge the
+            # instant a move points at -- which a half-stated move only has once
+            # the run has filled in the half nobody changed.
+            entry.resolved = inherit_from_run(entry, tz)
             if already_passed(entry, now, tz):
                 entry.match_reason = "already passed"
                 plan.dropped.append(entry)
                 continue
-            if is_no_op(entry):
+            if is_no_op(entry, tz):
                 entry.match_reason = "already scheduled"
                 plan.dropped.append(entry)
                 continue
+            if entry.kind == "add":
+                # An `add` creates a run; it never edits the one its bosses
+                # happened to match. Carrying a `run_id` made it supersede that
+                # run's other proposals and commit against the wrong night.
+                # Nulled *after* `is_no_op`, which needs the match to spot an
+                # `add` for a run the channel already has.
+                entry.run = None
             plan.planned.append(entry)
     # One change per run, so a card can never offer two contradictory things
     # for the same night.
@@ -458,6 +610,9 @@ class RescanReport:
     proposals: int = 0
     dropped: int = 0
     stale: int = 0
+    #: Rows written but left without a card, because Discord could not be
+    #: reached. They are re-posted by the next :meth:`Pipeline.apply_plan`.
+    unposted: int = 0
     elapsed_ms: int = 0
     cancelled: bool = False
     errors: list[str] = field(default_factory=list)
@@ -471,6 +626,19 @@ class RescanReport:
     @property
     def planned(self) -> list[Planned]:
         return [entry for plan in self.plans for entry in plan.planned]
+
+
+@dataclass
+class _Prepared:
+    """One burst's prompt and the schedule it was built against."""
+
+    messages: list[dict[str, str]]
+    burst: list[prompt_mod.Msg]
+    context: list[prompt_mod.Msg]
+    anchor: datetime
+    this_week: datetime
+    channel_runs: list[dict]
+    guild_runs: list[dict]
 
 
 @dataclass
@@ -704,7 +872,9 @@ class Pipeline:
                 [e for e in entries if e.is_rsvp],
                 [e for e in entries if not e.is_rsvp],
                 week,
+                # Only the fallback: each entry carries its own burst's summary.
                 next((p.summary for p in report.plans if p.summary), ""),
+                report=report,
             )
             report.proposals = len(amendment_ids)
             self.bot.repo.mark_messages_processed(sorted(set(consumed)))
@@ -767,17 +937,13 @@ class Pipeline:
     def _msgs(self, rows: list[dict]) -> list[prompt_mod.Msg]:
         return [prompt_mod.Msg.from_row(row, self._name_for(row["author_id"])) for row in rows]
 
-    async def extract(self, channel_id: str, rows: list[dict], post: bool = True) -> Plan | None:
-        """Prompt -> model -> resolve/match -> rows + one card.  Never raises."""
-        try:
-            return await self._extract(channel_id, rows, post=post)
-        except Exception:  # noqa: BLE001 - the extractor must never take the bot down
-            log.exception("extraction failed for channel %s", channel_id)
-            return None
+    def _prepare(self, channel_id: str, rows: list[dict]) -> _Prepared:
+        """Everything one burst's model call needs, gathered from the database.
 
-    async def _extract(self, channel_id: str, rows: list[dict], post: bool) -> Plan | None:
+        Split out so the budget check in :meth:`fit_to_budget` measures the
+        prompt that would actually be sent rather than an approximation of it.
+        """
         bot, repo = self.bot, self.bot.repo
-        burst_ids = {str(row["id"]) for row in rows}
         burst = self._msgs(rows)
         context = self._msgs(self._context_rows(channel_id, rows))
         anchor = burst[-1].created_at
@@ -806,8 +972,83 @@ class Pipeline:
             channel_name=self._channel_name(channel_id),
             guild_runs=guild_runs,
         )
-        messages = prompt_mod.build_messages(context_obj)
-        call = await self.extractor.extract(messages)
+        return _Prepared(
+            messages=prompt_mod.build_messages(context_obj),
+            burst=burst,
+            context=context,
+            anchor=anchor,
+            this_week=this_week,
+            channel_runs=channel_runs,
+            guild_runs=guild_runs,
+        )
+
+    def fit_to_budget(self, channel_id: str, rows: list[dict]) -> list[list[dict]]:
+        """Cut ``rows`` into pieces whose prompts each fit the context window.
+
+        :data:`bot.extract.window.MAX_BURST_MESSAGES` caps a burst by message
+        count, which is only a guess: twelve long messages in a channel with
+        four runs and a full roster still overrun. This measures the real
+        prompt, so nothing is ever sent that leaves the model no room to answer.
+        """
+        budget = prompt_mod.prompt_budget(self.bot.settings.ollama_num_ctx)
+
+        def fits(chunk: list[dict]) -> bool:
+            return prompt_mod.estimate_messages(self._prepare(channel_id, chunk).messages) <= budget
+
+        return split_until(rows, fits)
+
+    async def extract(self, channel_id: str, rows: list[dict], post: bool = True) -> Plan | None:
+        """Prompt -> model -> resolve/match -> rows + one card.  Never raises."""
+        try:
+            chunks = self.fit_to_budget(channel_id, rows)
+            if len(chunks) == 1:
+                return await self._extract(channel_id, chunks[0], post=post)
+            log.info(
+                "channel %s: a burst of %d message(s) is too big for one prompt; reading it as %d",
+                channel_id,
+                len(rows),
+                len(chunks),
+            )
+            return await self._extract_chunks(channel_id, chunks, post=post)
+        except Exception:  # noqa: BLE001 - the extractor must never take the bot down
+            log.exception("extraction failed for channel %s", channel_id)
+            return None
+
+    async def _extract_chunks(
+        self, channel_id: str, chunks: list[list[dict]], post: bool
+    ) -> Plan | None:
+        """Read an oversized burst in pieces, and still post one card for it.
+
+        The pieces are separate model calls but one conversation, so they are
+        consolidated exactly as a rescan consolidates a week -- otherwise
+        splitting a burst would turn one card into three.
+        """
+        plans = [await self._extract(channel_id, chunk, post=False) for chunk in chunks]
+        plans = [plan for plan in plans if plan is not None]
+        if not plans:
+            return None
+        merged = _merge_plans(plans)
+        if post and merged.planned and merged.week_start is not None:
+            merged.planned = consolidate(merged.planned)
+            merged.amendment_ids = await self.apply_plan(
+                channel_id,
+                merged.rsvps,
+                merged.proposals,
+                merged.week_start,
+                merged.summary,
+            )
+            self.bot.repo.mark_messages_processed(merged.message_ids)
+        return merged
+
+    async def _extract(self, channel_id: str, rows: list[dict], post: bool) -> Plan | None:
+        bot, repo = self.bot, self.bot.repo
+        burst_ids = {str(row["id"]) for row in rows}
+        prepared = self._prepare(channel_id, rows)
+        burst, context = prepared.burst, prepared.context
+        anchor, this_week = prepared.anchor, prepared.this_week
+        channel_runs, guild_runs = prepared.channel_runs, prepared.guild_runs
+
+        call = await self.extractor.extract(prepared.messages)
         extraction_id = repo.log_extraction(
             model=bot.settings.ollama_model,
             prompt=call.prompt,
@@ -879,20 +1120,55 @@ class Pipeline:
         proposals: list[Planned],
         week: datetime,
         summary: str,
+        report: RescanReport | None = None,
     ) -> list[str]:
         """Turn planned entries into answers, rows and one card. Returns the row ids.
 
         Shared by the live path (one burst) and a rescan (a whole window,
         consolidated), so a card looks the same whichever produced it.
         """
+        await self._repost_stranded(channel_id, report)
         for entry in rsvps:
             await self._apply_rsvp(entry, channel_id)
         if not proposals:
             return []
         amendment_ids, retired = self._record(proposals, channel_id, week, summary)
         await self._mark_superseded(retired)
-        await self._post_card(channel_id, amendment_ids)
+        if not await self._post_card(channel_id, amendment_ids):
+            self._note_unposted(channel_id, amendment_ids, report)
         return amendment_ids
+
+    async def _repost_stranded(self, channel_id: str, report: RescanReport | None) -> None:
+        """Give a card to rows a previous pass wrote but never managed to post.
+
+        A DNS failure inside :meth:`_post_card` used to leave rows ``proposed``
+        with no ``proposal_message_id``: invisible in the channel, unanswerable,
+        and still blocking their run's next proposal as an older sibling. They
+        are the same rows a card would have carried, so they get one now.
+        """
+        stranded = [
+            a
+            for a in self.bot.repo.list_amendments(status="proposed", channel_id=channel_id)
+            if not a["proposal_message_id"]
+        ]
+        if not stranded:
+            return
+        ids = [a["id"] for a in stranded]
+        log.info("channel %s: re-posting %d proposal(s) left without a card", channel_id, len(ids))
+        if not await self._post_card(channel_id, ids):
+            self._note_unposted(channel_id, ids, report)
+
+    def _note_unposted(
+        self, channel_id: str, amendment_ids: list[str], report: RescanReport | None
+    ) -> None:
+        log.error(
+            "channel %s: could not post the card for %d proposal(s); they stay unposted",
+            channel_id,
+            len(amendment_ids),
+        )
+        if report is not None:
+            report.unposted += len(amendment_ids)
+            report.errors.append(f"{len(amendment_ids)} proposal(s) could not be posted")
 
     async def _apply_rsvp(self, entry: Planned, channel_id: str) -> None:
         """Apply a chat answer through the same path the ✅/❌ reactions use."""
@@ -923,8 +1199,15 @@ class Pipeline:
         followed by the ordinary debounce flush of the same conversation would
         otherwise leave two live cards for one run, and a ✅ on the older one
         would re-apply a change the group has already moved past.
+
+        Every retirement happens *before* the first row is written, so nothing
+        this pass creates can be retired by a later entry in the same pass. A
+        rescan puts several changes for one run on one card -- a `move` and the
+        `sub` that goes with it -- and superseding as it went marked the `move`
+        stale the moment the `sub` was recorded: the card was posted with a line
+        whose ✅ silently did nothing, because committing requires the row to
+        still be ``proposed``.
         """
-        ids: list[str] = []
         retired: list[dict] = []
         for entry in entries:
             if entry.run is not None:
@@ -933,6 +1216,9 @@ class Pipeline:
                 retired.extend(
                     supersede(self.bot.repo, channel_id=channel_id, bosses=entry.amendment.bosses)
                 )
+
+        ids: list[str] = []
+        for entry in entries:
             when = entry.resolved.at
             # An amendment that points past the reset belongs to next boss week.
             target_week = (
@@ -957,7 +1243,7 @@ class Pipeline:
                     rsvp=entry.amendment.rsvp,
                     day_ref=entry.amendment.day_ref,
                     time_ref=entry.amendment.time_ref,
-                    summary=summary,
+                    summary=entry.summary or summary,
                     payload={**entry.payload, "also_mentioned": list(entry.also_mentioned)},
                 )
             )
@@ -977,12 +1263,13 @@ class Pipeline:
             seen.add(message_id)
             await annotate(amendment.get("channel_id"), message_id, formatting.SUPERSEDED_NOTICE)
 
-    async def _post_card(self, channel_id: str, amendment_ids: list[str]) -> None:
+    async def _post_card(self, channel_id: str, amendment_ids: list[str]) -> bool:
+        """Post one card for these rows.  False when it could not be posted."""
         repo = self.bot.repo
         amendments = [repo.get_amendment(aid) for aid in amendment_ids]
         amendments = [a for a in amendments if a is not None]
         if not amendments:
-            return
+            return True
         runs = {}
         for amendment in amendments:
             if amendment["run_id"]:
@@ -993,7 +1280,7 @@ class Pipeline:
         channel = await self.bot.post_channel(channel_id)
         if channel is None:
             log.error("no channel available for the proposal card; leaving it unposted")
-            return
+            return False
         for amendment in amendments:
             # `payload` is the row's kind-specific bag; the card reads the note
             # from the top level, so lift it there.
@@ -1019,9 +1306,10 @@ class Pipeline:
         )
         message = await self.bot._post(channel, card)
         if message is None:
-            return
+            return False
         for amendment in amendments:
             repo.set_amendment_proposal_message(amendment["id"], message.id)
+        return True
 
     @staticmethod
     def _unanswered(amendments: list[dict], runs: dict[str, dict]) -> list[str]:

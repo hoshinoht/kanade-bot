@@ -376,7 +376,8 @@ class DebugGroup(app_commands.Group):
             f"**countdowns** {', '.join(str(m) for m in bot.countdowns)}m",
             f"**watched** {len(bot.settings.chat_channel_id_list)} channel(s), "
             f"{len(bot.settings.chat_category_id_list)} categor(y/ies)",
-            f"**paused** {'yes' if bot.paused else 'no'}",
+            f"**paused** {'yes' if bot.paused else 'no'}"
+            + (f" · **{formatting.QUIET_NOTE}**" if bot.quiet_mode else ""),
             f"**roster** {len(bot.repo.list_members())} with the bossing role",
             f"**runs** {len(bot.repo.list_runs())} · **fixed** {len(bot.repo.list_fixed_runs())}",
             f"**model** `{bot.settings.ollama_model}` · "

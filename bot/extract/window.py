@@ -27,8 +27,13 @@ from ..weeks import current_week_start, week_start
 BURST_GAP = timedelta(hours=3)
 
 #: A burst this big is already more than one prompt should carry, so it is split
-#: at its longest internal pause rather than sent whole.
-MAX_BURST_MESSAGES = 40
+#: at its longest internal pause rather than sent whole. A real morning rescan
+#: packed 21 messages of one calendar day into a single 7.5k-token prompt, which
+#: overran the model's context window and came back as truncated JSON; a
+#: six-message burst of the same chat extracted cleanly. The token budget in
+#: :func:`bot.extract.prompt.prompt_budget` is what actually guarantees a prompt
+#: fits -- this is the cheap cap that keeps most bursts well clear of it.
+MAX_BURST_MESSAGES = 12
 
 #: What `/rescan window:` offers, longest first.
 WINDOWS: tuple[str, ...] = ("week", "2weeks", "48h", "24h")
@@ -148,18 +153,45 @@ def _by_local_day(
     return sorted(days.items())
 
 
+def _longest_pause(rows: list[Any], key: Callable[[Any], datetime]) -> int:
+    """Where to cut ``rows`` in two: the index after the longest silence.
+
+    Evenly-spaced chatter has no natural break, so ties go to the most central
+    split rather than shaving one message off the front.
+    """
+    middle = len(rows) // 2
+    return max(
+        range(1, len(rows)),
+        key=lambda index: (key(rows[index]) - key(rows[index - 1]), -abs(index - middle)),
+    )
+
+
 def _split_to_fit(rows: list[Any], cap: int, key: Callable[[Any], datetime]) -> list[list[Any]]:
     """Halve at the longest pause until every piece is at most ``cap`` long."""
     if len(rows) <= cap:
         return [rows]
-    middle = len(rows) // 2
-    # Longest pause wins; evenly-spaced chatter has no natural break, so ties go
-    # to the most central split rather than shaving one message off the front.
-    at = max(
-        range(1, len(rows)),
-        key=lambda index: (key(rows[index]) - key(rows[index - 1]), -abs(index - middle)),
-    )
+    at = _longest_pause(rows, key)
     return _split_to_fit(rows[:at], cap, key) + _split_to_fit(rows[at:], cap, key)
+
+
+def split_until(
+    rows: Sequence[Any],
+    fits: Callable[[list[Any]], bool],
+    key: Callable[[Any], datetime] = _created_at,
+) -> list[list[Any]]:
+    """Halve at the longest pause until every piece satisfies ``fits``.
+
+    The message-count cap above is a guess at "one prompt's worth"; this is the
+    same halving driven by the real answer, which only the caller can work out
+    because it depends on how long the messages are and how much context and how
+    many runs go in beside them.  A single message that still does not fit comes
+    back on its own -- there is nothing left to split.
+    """
+    rows = list(rows)
+    if len(rows) <= 1 or fits(rows):
+        return [rows]
+    at = _longest_pause(rows, key)
+    return split_until(rows[:at], fits, key) + split_until(rows[at:], fits, key)
 
 
 def group_bursts(
@@ -198,5 +230,6 @@ __all__ = [
     "group_for_rescan",
     "previous_week_start",
     "should_widen",
+    "split_until",
     "window_since",
 ]

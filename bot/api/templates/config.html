@@ -55,6 +55,21 @@
   </section>
 
   <section class="card">
+    <div class="card__head"><h2 class="card__title">Notifications</h2></div>
+    <div class="run__actions" style="justify-content: flex-start">
+      <form method="post" action="/config">
+        <input type="hidden" name="quiet_mode" value="{{ '0' if config.quiet_mode else '1' }}">
+        <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
+      </form>
+    </div>
+    <p class="run__meta">
+      Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
+      While it is on the bot posts everything as usual but notifies nobody —
+      names still show, no pings go out, and each message is marked 🔕.
+    </p>
+  </section>
+
+  <section class="card">
     <div class="card__head"><h2 class="card__title">Weekly digest</h2></div>
     <form method="post" action="/digest" class="filters">
       <label class="field"><span>Week</span>

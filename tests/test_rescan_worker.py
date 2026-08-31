@@ -189,6 +189,41 @@ def test_one_failing_channel_does_not_end_the_worker(fake_bot, monkeypatch):
     assert fake_bot.repo.get_rescan_job(job.id)["error"]
 
 
+def test_one_failing_channel_does_not_abandon_the_others(fake_bot, monkeypatch):
+    """Live: a DNS failure in the first channel took every channel behind it.
+
+    The remaining channels are still read, and the failure is reported beside
+    what did work rather than instead of it.
+    """
+    from bot.api import service
+
+    async def boom_on_the_first(bot, channel_id, **kwargs):
+        if str(channel_id) == str(WATCHED_CHANNEL):
+            raise OSError("[Errno -3] Temporary failure in name resolution")
+        return {"channel_id": str(channel_id), "channel_name": "#other", "proposals": 2}
+
+    monkeypatch.setattr(service, "rescan_one", boom_on_the_first)
+    worker = RescanWorker(fake_bot)
+    job = drain(worker, worker.submit([WATCHED_CHANNEL, OTHER_CHANNEL]))
+    assert job.status == DONE
+    assert [r["channel_id"] for r in job.results] == [str(OTHER_CHANNEL)]
+    assert "name resolution" in job.error
+    assert fake_bot.repo.get_rescan_job(job.id)["error"]
+
+
+def test_a_failure_with_no_message_is_still_named(fake_bot, monkeypatch):
+    """A bare `RuntimeError()` is falsy-looking only if you test the instance."""
+    from bot.api import service
+
+    async def boom(bot, channel_id, **kwargs):
+        raise RuntimeError()
+
+    monkeypatch.setattr(service, "rescan_one", boom)
+    worker = RescanWorker(fake_bot)
+    job = drain(worker, worker.submit([WATCHED_CHANNEL, OTHER_CHANNEL]))
+    assert "RuntimeError" in job.error
+
+
 # --- cancelling -------------------------------------------------------------
 
 

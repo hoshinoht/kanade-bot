@@ -36,8 +36,9 @@
   </div>
 
   <p>
-    {% if item.run %}
-      <span class="mono">{{ item.run.local_day }} {{ item.run.local_time }}</span> →
+    {# Only a move reads "old → new"; see service.amendment_view. #}
+    {% if item.from_when %}
+      <span class="mono was">{{ item.from_when }}</span> <span class="arrow" aria-hidden="true">→</span>
     {% endif %}
     <strong class="mono">{{ item.when }}</strong>
     {% if item.participants %}
@@ -68,9 +69,11 @@
       <button class="btn btn--primary" type="submit">Approve</button>
     </form>
     {% if item.run %}
-    <form method="post" action="/inbox/{{ item.id }}/approve" class="filters" style="margin:0">
-      <label class="field"><span>Edit, then approve</span>
-        <input name="to" placeholder="{{ item.run.local_time }} or wed 21:30" size="14">
+    <form method="post" action="/inbox/{{ item.id }}/approve" class="filters amend-edit">
+      <label class="field field--grow"><span>Edit, then approve</span>
+        <input class="input--when mono" name="to"
+               placeholder="{{ item.run.local_time }} or wed 21:30"
+               aria-label="New day and time for this run">
       </label>
       <button class="btn" type="submit">Move &amp; approve</button>
     </form>

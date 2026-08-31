@@ -20,9 +20,15 @@ services:
     # which would publish it to the internet. See README "Portal & CLI".
     ports: ["127.0.0.1:8080:8080"]
     volumes:
-      - ./data:/app/data
+      # Named volume, not a bind mount: SQLite over macOS VirtioFS has weak
+      # fsync guarantees, and a hard kill mid-write corrupted the DB once
+      # (2026-08-31). Host-side access goes through `docker compose cp`.
+      - botdata:/app/data
       - ./config:/app/config:ro
     restart: unless-stopped
+    # An extraction call can run 30-120s; the default 10s grace period
+    # SIGKILLs a mid-write shutdown, which is how the DB got corrupted.
+    stop_grace_period: 60s
     healthcheck:
       # Checks both halves of the process: the tick loop's SQLite heartbeat and
       # the in-process API answering /healthz.
@@ -36,3 +42,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  botdata:

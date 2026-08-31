@@ -186,7 +186,8 @@ def test_a_sub_card_names_both_halves():
     assert "<@1002> in" in value
 
 
-def test_a_sub_card_with_nobody_offering_asks_for_one():
+def test_a_sub_card_with_nobody_offering_just_proposes_the_removal():
+    """No volunteer means the proposal is the "-1 for this week", not a job advert."""
     amendment = {
         "kind": "sub",
         "bosses": ["HStar"],
@@ -198,7 +199,8 @@ def test_a_sub_card_with_nobody_offering_asks_for_one():
         "time_ref": None,
     }
     _name, value = formatting.proposal_line(amendment, None, formatting.ZoneInfo("UTC"))
-    assert "temp needed" in value
+    assert "<@1001>" in value and "out this week" in value
+    assert "temp" not in value.lower()
 
 
 def test_approving_a_sub_applies_both_halves(repo, bosses):

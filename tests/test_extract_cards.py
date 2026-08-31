@@ -110,7 +110,7 @@ def test_otot_says_what_it_does_to_the_pings():
 
 def test_a_sub_names_the_person_dropping_out():
     _name, value = proposal_line(amendment("sub", participants=[MY]), RUN, TZ)
-    assert "temp needed" in value and f"<@{MY}>" in value
+    assert "out this week" in value and f"<@{MY}>" in value
 
 
 def test_a_new_run_falls_back_to_the_runs_bosses_when_none_were_named():

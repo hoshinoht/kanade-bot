@@ -212,6 +212,8 @@ class AmendmentOut(BaseModel):
     run: RunOut | None
     new_datetime: str | None
     when: str
+    #: The run's current time, set only for a move -- the "old" side of the arrow.
+    from_when: str | None = None
     day_ref: str | None
     time_ref: str | None
     confidence: float | None
@@ -330,6 +332,7 @@ class ConfigOut(BaseModel):
     countdown_minutes: str
     paused: bool
     extract_enabled: bool
+    quiet_mode: bool
     timezone: str
     reset: str
     model: str
@@ -351,6 +354,7 @@ class ConfigIn(Strict):
     countdown_minutes: str | None = None
     paused: bool | None = None
     extract_enabled: bool | None = None
+    quiet_mode: bool | None = None
 
 
 class DigestIn(Strict):

@@ -191,6 +191,10 @@ class FakeBot:
         return (self.repo.get_config("extract_enabled", default) or default) == "1"
 
     @property
+    def quiet_mode(self) -> bool:
+        return (self.repo.get_config("quiet_mode", "0") or "0") == "1"
+
+    @property
     def portal_actor_id(self) -> str:
         if self.settings.portal_actor_id is not None:
             return str(self.settings.portal_actor_id)

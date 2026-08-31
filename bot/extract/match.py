@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
+from datetime import date
+from zoneinfo import ZoneInfo
 
 from ..ids import canonical as canonical_id
 from ..ids import short_id
@@ -30,6 +32,35 @@ NEEDS_RUN = ("move", "cancel", "otot", "split", "sub", "rsvp")
 #: The caller acts on this rather than on the prose reason: with a day and time
 #: it becomes an `add`, without one it is dropped.
 NO_BOSS_OVERLAP = "no-boss-overlap"
+
+
+def starts_after(run: dict, day: date | None, tz: ZoneInfo) -> bool:
+    """True when ``run``'s boss week begins after ``day``.
+
+    Such a run cannot be what an amendment about ``day`` means: the night it is
+    talking about had already happened before that run's week began.
+    """
+    week = run.get("week_start")
+    if day is None or week is None:
+        return False
+    return week.astimezone(tz).date() > day
+
+
+def reachable(runs: Sequence[dict], day: date | None, tz: ZoneInfo) -> list[dict]:
+    """The runs an amendment about ``day`` is allowed to be about.
+
+    The rule is deliberately one-directional. Moving a run *forward* past the
+    reset is ordinary -- "shift our monday run to next friday" is a real request,
+    and ``_record`` files the row under the week the new time lands in. Reaching
+    *backwards* is not: it is how "move HStar+HFA to Wed" ended up proposing to
+    drag next week's freshly-materialised Monday runs back to a Wednesday that
+    belongs to the week before them. The thread never mentioned those runs; they
+    merely had the right bosses and the right people on them.
+
+    A run with no ``week_start`` is left in -- a caller that assembled the dict
+    by hand has told us nothing about which week it belongs to.
+    """
+    return [run for run in runs if not starts_after(run, day, tz)]
 
 
 @dataclass(frozen=True)
@@ -196,5 +227,7 @@ __all__ = [
     "MatchResult",
     "match_run",
     "needs_run",
+    "reachable",
     "runs_spanned",
+    "starts_after",
 ]

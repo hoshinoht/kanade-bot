@@ -463,3 +463,82 @@ def test_an_unknown_kind_is_refused_not_applied(repo: Repo, run):
     amendment = make(repo, "teleport", run_id=run["id"])
     result = apply(repo, amendment)
     assert not result.applied and "don't know how" in result.problem
+
+
+def test_a_day_only_move_now_commits_instead_of_refusing(repo: Repo, run):
+    """The payoff of reading the unsaid half off the run (DESIGN §2b.1).
+
+    "can change to wed?" used to reach `_record` with no `new_datetime`, so the
+    row was written, the card said "-> TBD", and ✅ answered "no new time was
+    agreed - use /amend". The pipeline now fills the time in from the run, and
+    the same press moves the night.
+    """
+    amendment = make(repo, "move", run_id=run["id"], new_datetime=kl(2026, 9, 2, 21, 30))
+    result = apply(repo, amendment)
+    assert result.applied and result.problem is None
+    assert repo.get_run(run["id"])["datetime"] == kl(2026, 9, 2, 21, 30)
+
+
+def test_a_move_with_no_datetime_still_refuses(repo: Repo, run):
+    """Unchanged for the cases that genuinely have nothing to apply."""
+    result = apply(repo, make(repo, "move", run_id=run["id"]))
+    assert not result.applied
+    assert "no new time was agreed" in result.problem
+
+
+def test_a_sub_with_nobody_joining_just_removes_the_person(repo: Repo, run):
+    """The default proposal is the weekly "-1", the same as `/swap out:`."""
+    amendment = make(
+        repo, "sub", run_id=run["id"], participants=[ALVIN], payload={"remove": [ALVIN], "add": []}
+    )
+    result = apply(repo, amendment)
+    assert result.applied and result.problem is None
+    assert repo.get_run(run["id"])["participants"] == [MY, PRIYA]
+
+
+def test_removing_someone_clears_the_rsvp_they_left(repo: Repo, run):
+    from bot.rsvp import EMOJI_YES, apply_reaction
+
+    apply_reaction(repo, run, ALVIN, EMOJI_YES, added=True)
+    assert ALVIN in repo.get_rsvps(run["id"])
+    apply(
+        repo,
+        make(
+            repo,
+            "sub",
+            run_id=run["id"],
+            participants=[ALVIN],
+            payload={"remove": [ALVIN], "add": []},
+        ),
+    )
+    assert ALVIN not in repo.get_rsvps(run["id"])
+
+
+def test_removing_the_last_unanswered_person_settles_the_run(repo: Repo, run):
+    """The roster-change recompute runs on a plain removal too."""
+    from bot.rsvp import EMOJI_YES, apply_reaction
+
+    for uid in (MY, PRIYA):
+        apply_reaction(repo, repo.get_run(run["id"]), uid, EMOJI_YES, added=True)
+    assert repo.get_run(run["id"])["status"] == "planned"
+    apply(
+        repo,
+        make(
+            repo,
+            "sub",
+            run_id=run["id"],
+            participants=[ALVIN],
+            payload={"remove": [ALVIN], "add": []},
+        ),
+    )
+    assert repo.get_run(run["id"])["status"] == "confirmed"
+
+
+def test_a_sub_that_removes_everybody_is_refused(repo: Repo):
+    run_id = repo.create_run(WEEK, ["HStar"], kl(2026, 8, 31, 21, 30), [MY], channel_id=CHANNEL)
+    amendment = make(
+        repo, "sub", run_id=run_id, participants=[MY], payload={"remove": [MY], "add": []}
+    )
+    result = apply(repo, amendment)
+    assert not result.applied
+    assert "nobody on it" in result.problem

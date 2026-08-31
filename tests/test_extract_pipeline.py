@@ -100,13 +100,30 @@ def test_a_move_is_resolved_and_matched(runs):
     assert entry.run["id"] == runs[0]["id"]
 
 
-def test_a_day_with_no_time_is_planned_but_still_tbd(runs):
+def test_a_day_with_no_time_takes_the_time_the_run_already_has(runs):
+    """Nobody proposed changing the time, so it is not TBD -- it is 21:30."""
     result = plan(
         Extraction(amendments=[amendment(bosses=["HStar"], day_ref="wed", confidence=0.9)]),
         runs,
     )
     (entry,) = result.planned
-    assert entry.resolved.at is None and entry.resolved.day is not None
+    assert entry.resolved.day == kl(2026, 9, 2).date()
+    assert entry.resolved.at == kl(2026, 9, 2, 21, 30)
+    # A stated change with a concrete instant is a decision, not a question.
+    assert not entry.needs_answer
+
+
+def test_a_day_with_no_time_that_was_asked_stays_a_question(runs):
+    result = plan(
+        Extraction(
+            amendments=[
+                amendment(bosses=["HStar"], day_ref="wed", confidence=0.9, is_question=True)
+            ]
+        ),
+        runs,
+    )
+    (entry,) = result.planned
+    assert entry.resolved.at == kl(2026, 9, 2, 21, 30)
     assert entry.needs_answer
 
 
@@ -824,7 +841,13 @@ def test_a_sub_only_spans_the_runs_the_author_is_on(runs):
     assert result.planned[0].run["id"] == runs[1]["id"]
 
 
-def test_other_kinds_are_still_matched_to_a_single_run(runs):
+def test_a_cancel_naming_two_runs_worth_of_bosses_cancels_both(runs):
+    """DESIGN.md §8: "mon and tuesday suddenly got things on" is about both.
+
+    The model is asked for one amendment per run and usually gives it. When it
+    does not, the four bosses used to be forced onto whichever run scored
+    highest -- and half the sentence was thrown away without a word.
+    """
     result = plan(
         Extraction(
             amendments=[
@@ -833,7 +856,34 @@ def test_other_kinds_are_still_matched_to_a_single_run(runs):
         ),
         runs,
     )
-    assert len(result.planned) == 1
+    assert [e.run["id"] for e in result.planned] == [runs[0]["id"], runs[1]["id"]]
+    # Each line names only its own run's bosses, not all four.
+    assert [list(e.amendment.bosses) for e in result.planned] == [
+        list(runs[0]["bosses"]),
+        list(runs[1]["bosses"]),
+    ]
+
+
+def test_a_kind_with_no_boss_evidence_is_dropped_rather_than_guessed(runs):
+    """Two runs match a bare "change to wed?" equally well; picking one moves a night."""
+    # MY is on both runs, so the author's own name cannot pick one either.
+    result = plan(
+        Extraction(
+            amendments=[
+                amendment(
+                    "move",
+                    bosses=[],
+                    day_ref="wed",
+                    confidence=0.9,
+                    evidence_message_ids=["7"],
+                )
+            ]
+        ),
+        runs,
+        author_ids={"7": MY},
+    )
+    assert result.planned == []
+    assert any("ambiguous" in e.match_reason for e in result.dropped)
 
 
 def test_the_card_names_who_still_has_to_answer(runs):

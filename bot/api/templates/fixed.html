@@ -9,12 +9,13 @@
     <p>Materialised into runs for this week and next. Editing a day or time moves the runs that
       have not happened yet; editing a note leaves them alone.</p>
   </div>
+  <a class="btn btn--primary" href="#add-fixed" data-dialog="add-fixed">Add a weekly timing</a>
 </div>
 
 {% if not fixed %}
 <div class="empty">
   <strong>No baseline yet.</strong>
-  Add one below, or run <code>/fixed add</code> inside a party channel.
+  Add one with the button above, or run <code>/fixed add</code> inside a party channel.
 </div>
 {% else %}
 <div class="table-wrap">
@@ -40,51 +41,76 @@
         </td>
         <td>{{ row.owner_name }}</td>
         <td>
-          <details>
-            <summary class="btn">Edit</summary>
-            <form method="post" action="/fixed/{{ row.id }}/edit">
-              <p class="eyebrow">Bosses</p>
-              {{ boss_grid(row.grid) }}
-              <div class="filters">
-              <label class="field"><span>…or type them</span>
-                <input name="bosses" placeholder="hstar, hfa" size="16"
-                       hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
-                       hx-target="next .boss-check" hx-swap="innerHTML">
-              </label>
-              <span class="boss-check"></span>
-              <label class="field"><span>Day</span>
-                <select name="day">
-                  {% for name in weekday_names %}
-                  <option value="{{ loop.index0 }}"{% if loop.index0 == row.weekday %} selected{% endif %}>{{ name }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label class="field"><span>Time</span>
-                <input name="time" value="{{ row.time }}" size="6" class="mono">
-              </label>
-              <label class="field"><span>Note</span>
-                <input name="note" value="{{ row.note or '' }}" size="14">
-              </label>
-              <fieldset class="field">
-                <span class="label">Party</span>
-                <div class="run__people">
-                  {% for member in members %}
-                  <label class="chip">
-                    <input type="checkbox" name="participants" value="{{ member.user_id }}"
-                      {% if member.user_id in row.participants|map(attribute='id')|list %}checked{% endif %}>
-                    {{ member.display_name }}
-                  </label>
-                  {% endfor %}
-                </div>
-              </fieldset>
-              <button class="btn btn--primary" type="submit">Save</button>
-              </div>
-            </form>
+          <div class="rowbtns">
+            {# The editor is a dialog, not an inline panel: the boss picker is
+               taller than the screen, and unfolding it inside a table row
+               pushed every other timing out of sight. Without JavaScript the
+               link is still a real fragment link and `dialog:target` opens the
+               same form in place. #}
+            <a class="btn" href="#edit-{{ row.short_id }}" data-dialog="edit-{{ row.short_id }}">Edit</a>
             <form method="post" action="/fixed/{{ row.id }}/delete"
                   hx-confirm="Remove {{ row.bosses|join(' + ') }} {{ row.weekday_name }} {{ row.time }}? Its upcoming runs are cancelled.">
               <button class="btn btn--danger" type="submit">Remove</button>
             </form>
-          </details>
+          </div>
+
+          <dialog class="modal" id="edit-{{ row.short_id }}"
+                  aria-labelledby="edit-{{ row.short_id }}-title">
+            <form method="post" action="/fixed/{{ row.id }}/edit" class="modal__panel">
+              <header class="modal__head">
+                <div>
+                  <p class="eyebrow">#{{ row.short_id }} · {{ row.channel_name or row.channel_id or "no channel" }}</p>
+                  <h2 class="modal__title" id="edit-{{ row.short_id }}-title">
+                    {{ row.weekday_name }} {{ row.time }} — {{ row.bosses|join(" + ") }}
+                  </h2>
+                </div>
+                <button class="modal__x" type="button" data-dialog-close aria-label="Close">✕</button>
+              </header>
+
+              <div class="modal__body">
+                <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
+                <div class="modal__well">{{ boss_grid(row.grid) }}</div>
+                <div class="filters">
+                  <label class="field field--grow"><span>…or type them</span>
+                    <input name="bosses" placeholder="hstar, hfa"
+                           hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
+                           hx-target="next .boss-check" hx-swap="innerHTML">
+                  </label>
+                  <span class="boss-check"></span>
+                  <label class="field"><span>Day</span>
+                    <select name="day">
+                      {% for name in weekday_names %}
+                      <option value="{{ loop.index0 }}"{% if loop.index0 == row.weekday %} selected{% endif %}>{{ name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label class="field"><span>Time</span>
+                    <input name="time" value="{{ row.time }}" size="6" class="mono">
+                  </label>
+                  <label class="field field--grow"><span>Note</span>
+                    <input name="note" value="{{ row.note or '' }}">
+                  </label>
+                </div>
+                <fieldset class="field">
+                  <span class="label">Party</span>
+                  <div class="run__people">
+                    {% for member in members %}
+                    <label class="chip">
+                      <input type="checkbox" name="participants" value="{{ member.user_id }}"
+                        {% if member.user_id in row.participants|map(attribute='id')|list %}checked{% endif %}>
+                      {{ member.display_name }}
+                    </label>
+                    {% endfor %}
+                  </div>
+                </fieldset>
+              </div>
+
+              <footer class="modal__foot">
+                <button class="btn" type="button" data-dialog-close>Cancel</button>
+                <button class="btn btn--primary" type="submit">Save changes</button>
+              </footer>
+            </form>
+          </dialog>
         </td>
       </tr>
       {% endfor %}
@@ -93,53 +119,64 @@
 </div>
 {% endif %}
 
-<hr class="rule">
-
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Add a weekly timing</h2></div>
-  <form method="post" action="/fixed/new">
-    <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
-    {{ boss_grid(grid) }}
-    <div class="filters">
-    <label class="field"><span>…or type them</span>
-      <input name="bosses" placeholder="hstar, hfa" size="18"
-             hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
-             hx-target="#new-boss-check" hx-swap="innerHTML">
-    </label>
-    <span class="boss-check" id="new-boss-check"></span>
-    <label class="field"><span>Day</span>
-      <select name="day">
-        {% for name in weekday_names %}<option value="{{ loop.index0 }}">{{ name }}</option>{% endfor %}
-      </select>
-    </label>
-    <label class="field"><span>Time</span>
-      <input name="time" placeholder="21:30" required size="6" class="mono">
-    </label>
-    <label class="field"><span>Home channel</span>
-      <select name="channel_id" required>
-        {% for channel in channels %}
-        <option value="{{ channel.id }}">{{ channel.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field"><span>Note</span><input name="note" size="14"></label>
-    <fieldset class="field">
-      <span class="label">Party</span>
-      <div class="run__people">
-        {% for member in members %}
-        <label class="chip">
-          <input type="checkbox" name="participants" value="{{ member.user_id }}"> {{ member.display_name }}
-        </label>
-        {% endfor %}
+<dialog class="modal" id="add-fixed" aria-labelledby="add-fixed-title">
+  <form method="post" action="/fixed/new" class="modal__panel">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Baseline</p>
+        <h2 class="modal__title" id="add-fixed-title">Add a weekly timing</h2>
       </div>
-    </fieldset>
-    <button class="btn btn--primary" type="submit">Add timing</button>
+      <button class="modal__x" type="button" data-dialog-close aria-label="Close">✕</button>
+    </header>
+
+    <div class="modal__body">
+      {% if not channels %}
+      <p class="flash flash--error">No watched channel is visible right now, so a new timing has
+        nowhere to post. Set <code>CHAT_CHANNEL_IDS</code> or <code>CHAT_CATEGORY_IDS</code>, and
+        check the bot is connected.</p>
+      {% endif %}
+      <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
+      <div class="modal__well">{{ boss_grid(grid) }}</div>
+      <div class="filters">
+        <label class="field field--grow"><span>…or type them</span>
+          <input name="bosses" placeholder="hstar, hfa"
+                 hx-post="/validate/bosses" hx-trigger="keyup changed delay:400ms"
+                 hx-target="#new-boss-check" hx-swap="innerHTML">
+        </label>
+        <span class="boss-check" id="new-boss-check"></span>
+        <label class="field"><span>Day</span>
+          <select name="day">
+            {% for name in weekday_names %}<option value="{{ loop.index0 }}">{{ name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field"><span>Time</span>
+          <input name="time" placeholder="21:30" required size="6" class="mono">
+        </label>
+        <label class="field field--grow"><span>Home channel</span>
+          <select name="channel_id" required>
+            {% for channel in channels %}
+            <option value="{{ channel.id }}">{{ channel.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field--grow"><span>Note</span><input name="note"></label>
+      </div>
+      <fieldset class="field">
+        <span class="label">Party</span>
+        <div class="run__people">
+          {% for member in members %}
+          <label class="chip">
+            <input type="checkbox" name="participants" value="{{ member.user_id }}"> {{ member.display_name }}
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
     </div>
+
+    <footer class="modal__foot">
+      <button class="btn" type="button" data-dialog-close>Cancel</button>
+      <button class="btn btn--primary" type="submit">Add timing</button>
+    </footer>
   </form>
-  {% if not channels %}
-  <p class="flash flash--error">No watched channel is visible right now, so a new timing has
-    nowhere to post. Set <code>CHAT_CHANNEL_IDS</code> or <code>CHAT_CATEGORY_IDS</code>, and check
-    the bot is connected.</p>
-  {% endif %}
-</section>
+</dialog>
 {% endblock %}

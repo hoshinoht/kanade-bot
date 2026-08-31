@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from ..db import Repo
 from ..materialise import ensure_reminders, refresh_run_reminders
+from ..rsvp import recompute_after_roster_change
 from ..weeks import week_start
 
 log = logging.getLogger(__name__)
@@ -282,6 +283,9 @@ def _sub(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
     for uid in run["participants"]:
         if uid not in people:
             repo.clear_rsvp(run["id"], uid)
+    # The same rule `/swap` follows: a stand-in never agreed to this run, so a
+    # confirmed one goes back to being derived from the tally.
+    recompute_after_roster_change(repo, run["id"])
     return None
 
 

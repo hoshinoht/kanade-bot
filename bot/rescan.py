@@ -263,21 +263,38 @@ class RescanWorker:
 
         from .api import service
 
+        failure: str | None = None
         for channel_id in job.channels:
             if job.stop_requested:
                 break
             job.current = job.names.get(channel_id, channel_id)
-            job.results.append(
-                await service.rescan_one(
-                    self.bot,
-                    channel_id,
-                    window=job.window,
-                    automated=job.automated,
-                    should_stop=lambda: job.stop_requested,
+            try:
+                job.results.append(
+                    await service.rescan_one(
+                        self.bot,
+                        channel_id,
+                        window=job.window,
+                        automated=job.automated,
+                        should_stop=lambda: job.stop_requested,
+                    )
                 )
-            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - the other channels still get read
+                # One channel losing its connection to Discord used to abandon
+                # every channel queued behind it.
+                log.exception("rescan of channel %s failed", channel_id)
+                if failure is None:
+                    failure = f"{job.current}: {str(exc) or exc.__class__.__name__}"
             self.bot.repo.update_rescan_job(job.id, results=job.results)
-        self._finish(job, CANCELLED if job.stop_requested else DONE)
+        if job.stop_requested:
+            self._finish(job, CANCELLED, failure)
+        elif failure is not None and not job.results:
+            # Every channel failed, so the job did too. One failure among
+            # several channels is reported beside the channels that worked.
+            self._finish(job, FAILED, failure)
+        else:
+            self._finish(job, DONE, failure)
 
 
 def job_view(job: RescanJob) -> dict[str, Any]:

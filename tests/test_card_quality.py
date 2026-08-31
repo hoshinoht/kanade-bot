@@ -6,7 +6,7 @@ been on it.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -224,6 +224,158 @@ def test_setting_the_status_a_run_already_has_is_dropped(kind, status):
     assert is_no_op(entry(kind, ["HStar"], run)) is True
 
 
+def test_a_day_only_move_to_the_day_the_run_is_already_on_is_dropped():
+    """Live: `HCarling: Tue -> Tue`, from a rescan re-reading a settled thread."""
+    run = run_row("r1", ["HCarling"], kl(2026, 9, 1, 23, 0))
+    day_only = entry("move", ["HCarling"], run, day=date(2026, 9, 1))
+    assert is_no_op(day_only, TZ) is True
+
+
+def test_a_day_only_move_to_a_different_day_is_not_a_no_op():
+    run = run_row("r1", ["HCarling"], kl(2026, 9, 1, 23, 0))
+    assert is_no_op(entry("move", ["HCarling"], run, day=date(2026, 9, 2)), TZ) is False
+
+
+def test_the_day_is_judged_in_the_guild_timezone():
+    """A 00:20 run is 16:20 the previous day in UTC; "wed" means the local Wed."""
+    run = run_row("r1", ["HCarling"], kl(2026, 9, 3, 0, 20))
+    assert is_no_op(entry("move", ["HCarling"], run, day=date(2026, 9, 3)), TZ) is True
+    assert is_no_op(entry("move", ["HCarling"], run, day=date(2026, 9, 2)), TZ) is False
+
+
+def test_adding_a_run_the_channel_already_has_is_a_no_op():
+    run = run_row("r1", ["NStar"], NOW + timedelta(days=1))
+    assert is_no_op(entry("add", ["NStar"], run), TZ) is True
+
+
+def test_an_add_for_a_boss_the_channel_already_runs_is_dropped(bosses):
+    """The week already has that night; proposing it again is a card about nothing."""
+    existing = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 2, 21, 30))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="add",
+                    bosses=["HStar"],
+                    day_ref="thu",
+                    time_ref="10pm",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[existing],
+        now=NOW,
+    )
+    assert plan.planned == []
+    assert plan.dropped[0].match_reason == "already scheduled"
+
+
+def test_an_add_never_carries_a_run(bosses):
+    """`commit` creates a run for an `add`; a run_id on one points it at a night
+    it never meant to touch, and makes it supersede that night's other cards."""
+    existing = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 2, 21, 30))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="add",
+                    bosses=["NStar"],
+                    day_ref="thu",
+                    time_ref="10pm",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                    participants=["1001"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[existing],
+        author_ids={"1": "1001"},
+        now=NOW,
+    )
+    assert [e.kind for e in plan.planned] == ["add"]
+    assert plan.planned[0].run is None
+
+
+def test_a_stated_add_with_neither_a_day_nor_a_time_is_dropped(bosses):
+    """Live: an `HLimbo` line with nothing to schedule it by and nobody asking."""
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="add",
+                    bosses=["HLimbo"],
+                    confidence=0.9,
+                    is_question=False,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[],
+        now=NOW,
+    )
+    assert plan.planned == []
+    assert plan.dropped[0].match_reason == "a stated add with no day or time"
+
+
+def test_an_asked_add_with_no_day_or_time_still_becomes_a_question(bosses):
+    """DESIGN.md §8 row 4: "wanna try trio ncarling also?" is a card asking "when?".
+
+    The same shape as the dropped one above, and the only difference that
+    matters: somebody asked. The card carries it with the day and time TBD.
+    """
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="add",
+                    bosses=["NCarling"],
+                    confidence=0.9,
+                    is_question=True,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[],
+        now=NOW,
+    )
+    assert [e.kind for e in plan.planned] == ["add"]
+    assert plan.planned[0].needs_answer is True
+    assert plan.planned[0].resolved.known is False
+
+
+def test_an_add_with_a_day_but_no_time_still_asks(bosses):
+    """A day is a schedulable anchor; the time is what the card asks for."""
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="add",
+                    bosses=["HLimbo"],
+                    day_ref="thu",
+                    confidence=0.9,
+                    is_question=True,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[],
+        now=NOW,
+    )
+    assert [e.kind for e in plan.planned] == ["add"]
+    assert plan.planned[0].needs_answer is True
+
+
 def test_a_no_op_never_reaches_the_card(bosses):
     at = kl(2026, 9, 2, 21, 30)
     run = run_row("r1", ["HStar"], at)
@@ -357,6 +509,25 @@ def test_withdrawn_is_a_real_status():
     assert "withdrawn" in AMENDMENT_STATUSES
 
 
+def test_a_tie_between_two_changes_goes_to_the_later_one():
+    """ "wed" then "no, thu" is the group changing its mind, not repeating itself.
+
+    Entries reach `one_per_run` in evidence order, so on a tie the second one
+    said is the decision and the first is only "(also mentioned)".
+    """
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    wed = entry("move", ["HCarling"], run, day=date(2026, 9, 2))
+    thu = entry("move", ["HCarling"], run, day=date(2026, 9, 3))
+    kept = one_per_run([wed, thu])
+    assert [e.resolved.day for e in kept] == [date(2026, 9, 3)]
+
+
+def test_a_tie_keeps_only_one_line_for_the_run():
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    kept = one_per_run([entry("otot", ["HCarling"], run), entry("otot", ["HCarling"], run)])
+    assert len(kept) == 1
+
+
 def test_a_stand_in_survives_beside_a_move_for_the_same_run():
     """ "ZedRS's out, X fills, and we do Wed" is one decision: both lines stay."""
     run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
@@ -366,3 +537,398 @@ def test_a_stand_in_survives_beside_a_move_for_the_same_run():
     assert [e.kind for e in kept] == ["sub", "move"]
     assert kept[1].also_mentioned == ["otot"]
     assert kept[0].also_mentioned == []
+
+
+def test_a_bare_answer_is_still_recorded_when_two_runs_tie():
+    """ "Can" never names a boss, so in a two-run channel it always ties.
+
+    Dropping it broke chat RSVPs outright. It is safe to guess: an rsvp is an
+    opinion, and `apply_reaction` ignores one from somebody who is not on the
+    run it landed on.
+    """
+    hstar = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
+    kalos = run_row("r2", ["HCarling", "XKalos"], NOW + timedelta(days=2))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="rsvp",
+                    bosses=[],
+                    rsvp="yes",
+                    confidence=0.9,
+                    participants=["1001"],
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[hstar, kalos],
+        author_ids={"1": "1001"},
+        now=NOW,
+    )
+    assert [e.kind for e in plan.planned] == ["rsvp"]
+    assert plan.planned[0].ambiguous is True
+
+
+def test_a_coin_toss_move_is_still_dropped():
+    """The kinds that change a night do not get to guess."""
+    hstar = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
+    kalos = run_row("r2", ["HCarling", "XKalos"], NOW + timedelta(days=2))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=[],
+                    day_ref="wed",
+                    confidence=0.9,
+                    participants=["1001"],
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[hstar, kalos],
+        author_ids={"1": "1001"},
+        now=NOW,
+    )
+    assert plan.planned == []
+    assert plan.dropped[0].match_reason.startswith("ambiguous")
+
+
+# --- 6. a half-stated move keeps the run's other half -----------------------
+
+
+def test_a_move_that_names_only_a_day_keeps_the_runs_time(bosses):
+    """Live: three `move` rows with day_ref=wed rendered "→ TBD" on the card."""
+    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar"],
+                    day_ref="wed",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[run],
+        now=NOW,
+    )
+    (only,) = plan.planned
+    assert only.resolved.at == kl(2026, 9, 2, 21, 30)
+    assert only.resolved.clock == time(21, 30)
+    assert only.resolved.day == date(2026, 9, 2)
+
+
+def test_a_move_that_names_only_a_time_keeps_the_runs_day(bosses):
+    """ "amend to 9:45pm" about Monday's run is about Monday, not about today."""
+    run = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 7, 21, 30))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar"],
+                    time_ref="9:45pm",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[run],
+        now=NOW,
+    )
+    (only,) = plan.planned
+    # NOW is 31 Aug; without the run it would have resolved to 31 Aug 21:45.
+    assert only.resolved.at == kl(2026, 9, 7, 21, 45)
+
+
+def test_a_move_stating_both_halves_is_left_alone(bosses):
+    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar"],
+                    day_ref="wed",
+                    time_ref="10pm",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[run],
+        now=NOW,
+    )
+    assert plan.planned[0].resolved.at == kl(2026, 9, 2, 22, 0)
+
+
+def test_only_a_move_inherits(bosses):
+    """An `add` has no run to read from and keeps the question-card "when?" path."""
+    from bot.extract.pipeline import inherit_from_run
+
+    run = run_row("r1", ["HStar"], kl(2026, 8, 31, 21, 30))
+    for kind in ("add", "otot", "cancel", "sub"):
+        untouched = entry(kind, ["HStar"], run, day=date(2026, 9, 2))
+        assert inherit_from_run(untouched, TZ).at is None, kind
+
+
+def test_a_day_only_move_onto_the_runs_own_day_collapses_to_a_no_op(bosses):
+    """Inheriting the time makes "move it to Tuesday" on a Tuesday run exact."""
+    run = run_row("r1", ["HCarling"], kl(2026, 9, 1, 23, 0))
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HCarling"],
+                    day_ref="tue",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[run],
+        now=NOW,
+    )
+    assert plan.planned == []
+    assert plan.dropped[0].match_reason == "already scheduled"
+
+
+def test_a_question_move_now_names_the_night_it_asks_about():
+    """It stays a question; it just stops asking "TBD?"."""
+    amendment = {
+        "kind": "move",
+        "bosses": ["HStar", "HFA"],
+        "participants": [],
+        "summary": None,
+        "new_datetime": kl(2026, 9, 2, 21, 30),
+        "day_ref": "wed",
+        "time_ref": None,
+        "is_question": True,
+        "also_mentioned": [],
+    }
+    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    _name, value = formatting.proposal_line(amendment, run, TZ)
+    assert "TBD" not in value
+    assert "Wed 02 Sep 21:30" in value
+
+
+def test_a_move_with_no_run_still_reads_TBD():
+    """Nothing to inherit from means the card must still say so."""
+    amendment = {
+        "kind": "move",
+        "bosses": ["HStar"],
+        "participants": [],
+        "summary": None,
+        "new_datetime": None,
+        "day_ref": "wed",
+        "time_ref": None,
+        "also_mentioned": [],
+    }
+    _name, value = formatting.proposal_line(amendment, None, TZ)
+    assert "TBD" in value
+
+
+# --- 7. a decision beats a question for the same run ------------------------
+
+
+def asked(kind, bosses=(), run=None, day=None, at=None):
+    """The same as `entry`, but the thread was still asking."""
+    planned = entry(kind, bosses, run, day, at)
+    planned.amendment.is_question = True
+    return planned
+
+
+def test_a_settled_decision_beats_an_unanswered_question():
+    """Live: `move HCarling -> wed` was asked and pushed back on; a later burst
+    settled on own time. `move-with-day` outranks `otot`, so the abandoned
+    question took the run and the decision became "(also mentioned: own time)".
+    """
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    question = asked("move", ["HCarling"], run, day=date(2026, 9, 2))
+    decision = entry("otot", ["HCarling"], run)
+    kept = one_per_run([question, decision])
+    assert [e.kind for e in kept] == ["otot"]
+    assert kept[0].also_mentioned == ["move"]
+
+
+def test_the_decision_wins_whichever_order_it_arrives_in():
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    question = asked("move", ["HCarling"], run, day=date(2026, 9, 2))
+    decision = entry("otot", ["HCarling"], run)
+    assert [e.kind for e in one_per_run([decision, question])] == ["otot"]
+
+
+def test_two_decisions_still_follow_precedence():
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    move = entry("move", ["HCarling"], run, day=date(2026, 9, 2))
+    assert [e.kind for e in one_per_run([entry("otot", ["HCarling"], run), move])] == ["move"]
+
+
+def test_two_questions_still_follow_precedence():
+    """Nothing is settled either way, so the stronger kind still wins."""
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    move = asked("move", ["HCarling"], run, day=date(2026, 9, 2))
+    assert [e.kind for e in one_per_run([asked("otot", ["HCarling"], run), move])] == ["move"]
+
+
+def test_a_cancel_that_was_only_asked_loses_to_a_settled_move():
+    """Even the top of the precedence list does not outrank being decided."""
+    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
+    kept = one_per_run(
+        [
+            asked("cancel", ["HCarling"], run),
+            entry("move", ["HCarling"], run, day=date(2026, 9, 2)),
+        ]
+    )
+    assert [e.kind for e in kept] == ["move"]
+
+
+# --- 8. never reach backwards into a later boss week ------------------------
+
+
+THIS_WEEK = kl(2026, 8, 27)  # Thu reset
+NEXT_WEEK = kl(2026, 9, 3)
+
+
+def dated_run(run_id, bosses, at, week, participants=("1001", "1002")):
+    row = run_row(run_id, bosses, at, participants=participants)
+    row["week_start"] = week
+    return row
+
+
+def test_a_move_never_drags_a_later_weeks_run_backwards(bosses):
+    """Live: "move HStar+HFA to Wed" matched next week's freshly-materialised
+    Monday runs and proposed pulling them back to a Wednesday before their week.
+    """
+    next_weeks = dated_run("17d1e8be", ["HStar", "HFA"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar", "HFA"],
+                    day_ref="wed",
+                    confidence=0.9,
+                    participants=["1001"],
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[next_weeks],
+        author_ids={"1": "1001"},
+        now=NOW,
+    )
+    assert plan.planned == []
+    assert "later boss week" in plan.dropped[0].match_reason
+
+
+def test_a_move_forward_past_the_reset_is_still_allowed(bosses):
+    """ "shift our monday run to next friday" is a real request."""
+    this_weeks = dated_run("a1a1a1a1", ["HStar"], kl(2026, 8, 31, 21, 30), THIS_WEEK)
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar"],
+                    day_ref="fri",
+                    time_ref="10pm",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=NOW,
+        tz=TZ,
+        channel_runs=[this_weeks],
+        now=NOW,
+    )
+    (only,) = plan.planned
+    assert only.run["id"] == "a1a1a1a1"
+    assert only.resolved.at == kl(2026, 9, 4, 22, 0)
+
+
+def test_a_backwards_move_inside_one_week_is_still_allowed(bosses):
+    """Wed -> Mon of the same boss week changes nothing about which week it is."""
+    wednesday = dated_run("a1a1a1a1", ["HStar"], kl(2026, 9, 2, 21, 30), THIS_WEEK)
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="move",
+                    bosses=["HStar"],
+                    day_ref="mon",
+                    confidence=0.9,
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=kl(2026, 8, 30, 12, 0),
+        tz=TZ,
+        channel_runs=[wednesday],
+        now=kl(2026, 8, 30, 12, 0),
+    )
+    (only,) = plan.planned
+    assert only.run["id"] == "a1a1a1a1"
+    assert only.resolved.day == date(2026, 8, 31)
+
+
+def test_an_otot_spanning_two_weeks_only_lands_on_this_weeks_run(bosses):
+    """Live: "otot HCarling on Mon" produced a row for next week's run too."""
+    mine = dated_run("5e7dccd2", ["HCarling"], kl(2026, 8, 31, 23, 0), THIS_WEEK)
+    next_weeks = dated_run("ec9eaecf", ["HCarling"], kl(2026, 9, 7, 23, 0), NEXT_WEEK)
+    plan = plan_burst(
+        Extraction(
+            amendments=[
+                Amendment(
+                    kind="otot",
+                    bosses=["HCarling"],
+                    day_ref="mon",
+                    confidence=0.9,
+                    participants=["1001"],
+                    evidence_message_ids=["1"],
+                )
+            ]
+        ),
+        anchor=kl(2026, 8, 30, 12, 0),
+        tz=TZ,
+        channel_runs=[mine, next_weeks],
+        author_ids={"1": "1001"},
+        now=kl(2026, 8, 30, 12, 0),
+    )
+    assert [e.run["id"] for e in plan.planned] == ["5e7dccd2"]
+
+
+def test_a_run_with_no_week_recorded_is_left_alone():
+    """Hand-built run dicts say nothing about which week they belong to."""
+    from bot.extract.match import reachable, starts_after
+
+    plain = run_row("r1", ["HStar"], kl(2026, 9, 7, 21, 30))
+    assert starts_after(plain, date(2026, 9, 2), TZ) is False
+    assert reachable([plain], date(2026, 9, 2), TZ) == [plain]
+
+
+def test_no_target_day_means_no_week_filtering():
+    """A bare "change it" names no night, so it cannot be pointed at one."""
+    from bot.extract.match import reachable
+
+    later = dated_run("r1", ["HStar"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
+    assert reachable([later], None, TZ) == [later]

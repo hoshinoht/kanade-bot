@@ -25,8 +25,25 @@ from ..ids import short_id
 from ..weeks import WEEKDAY_NAMES
 from .gate import find_bosses
 
-#: Rough characters-per-token for budget checks; English/Manglish sits near 4.
-CHARS_PER_TOKEN = 4
+#: Rough characters-per-token for the prose part of a prompt.  Prose alone sits
+#: near 4, but this prompt is not prose: it is dense with timestamps, boss names
+#: and punctuation, and measured against ``gpt-oss:20b`` it comes out nearer 3.
+CHARS_PER_TOKEN = 2.8
+
+#: What one Discord snowflake costs.  An 18-digit id tokenises at roughly one
+#: token per two digits, so the ``[msg_id]`` prefix and ``<@id>`` mention on
+#: every rendered line cost about 4x what their length suggests.  Ignoring that
+#: is how a 21-message burst was budgeted at 2.9k tokens and arrived as 4.1k.
+TOKENS_PER_ID = 8
+
+#: Tokens held back from ``num_ctx`` for the model's answer.  A burst of a dozen
+#: messages can legitimately produce a page of JSON, and a prompt that leaves no
+#: room for it comes back with ``done_reason="length"`` -- truncated JSON that
+#: fails to validate, twice, and yields a garbage card.
+CONTEXT_RESERVE = 2500
+
+#: Runs of digits this long are ids rather than times or levels.
+_ID_RE = re.compile(r"\d{5,}")
 
 SYSTEM_PROMPT = """\
 You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)
@@ -328,8 +345,26 @@ def build_messages(context: PromptContext) -> list[dict[str, str]]:
 
 
 def estimate_tokens(text: str) -> int:
-    """Cheap size check -- the prompt is budgeted at roughly 3k tokens."""
-    return len(text) // CHARS_PER_TOKEN
+    """Roughly what ``text`` costs the model, erring high.
+
+    Not a tokeniser, and deliberately not a tight one: it decides whether a
+    burst is split, so guessing low is the expensive mistake.  Calibrated
+    against ``gpt-oss:20b``'s own ``prompt_eval_count`` over the fixtures and
+    over synthetic bursts of 6 to 40 messages, it lands 4-17% above the truth.
+    """
+    ids = _ID_RE.findall(text)
+    rest = _ID_RE.sub("", text)
+    return len(ids) * TOKENS_PER_ID + int(len(rest) / CHARS_PER_TOKEN)
+
+
+def estimate_messages(messages: Sequence[dict[str, str]]) -> int:
+    """:func:`estimate_tokens` over a whole ``messages=`` payload."""
+    return estimate_tokens("\n\n".join(m["content"] for m in messages))
+
+
+def prompt_budget(num_ctx: int) -> int:
+    """The most a prompt may cost and still leave the model room to answer."""
+    return max(num_ctx - CONTEXT_RESERVE, CONTEXT_RESERVE)
 
 
 __all__ = [
@@ -338,9 +373,11 @@ __all__ = [
     "PromptContext",
     "build_messages",
     "build_user_prompt",
+    "estimate_messages",
     "estimate_tokens",
     "member_name",
     "name_map",
+    "prompt_budget",
     "relevant_roster",
     "render_message",
 ]

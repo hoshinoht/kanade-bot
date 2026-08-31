@@ -587,3 +587,113 @@ def test_rechecking_without_javascript_reloads_config(auth, seeded):
     response = auth.post("/access", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"].startswith("/config")
+
+
+# --- inbox: mentions, and the "old → new" that only a move has --------------
+
+
+def test_the_inbox_reads_a_mention_as_a_name_not_a_snowflake(auth, fake_bot, seeded):
+    """A chat line quoted on a card must not print raw ``<@id>`` markup.
+
+    Discord resolves mentions itself, so what is stored is the markup; the
+    portal has to do that resolution on the way out or the evidence -- the one
+    thing an approver actually reads -- is a wall of snowflakes.
+    """
+    from .conftest import kl
+    from .fake_bot import WATCHED_CHANNEL
+
+    fake_bot.repo.record_message(
+        800000000000000009,
+        WATCHED_CHANNEL,
+        1002,
+        kl(2026, 8, 30, 11, 55),
+        "<@1001> <@!1003> <@4040404040404040404> we doing our nstar tonight?",
+    )
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="move",
+        bosses=["HStar"],
+        run_id=seeded["run_star"],
+        new_datetime=kl(2026, 9, 2, 22, 0),
+        participants=["1002"],
+        confidence=0.7,
+        evidence_msg_ids=["800000000000000009"],
+        channel_id=WATCHED_CHANNEL,
+        summary="<@1001> asked to move it",
+    )
+    assert amendment
+    body = auth.get("/inbox").text
+    assert "<@1001>" not in body and "&lt;@1001&gt;" not in body
+    assert "@Alvin tan" in body  # a mention resolves to the roster name
+    assert "@Priya" in body  # ...and so does the <@!id> spelling
+    assert "@member" in body  # ...while an id nobody matches stays anonymous
+    assert "4040404040404040404" not in body
+
+
+def test_the_extraction_page_reads_mentions_too(auth, fake_bot, seeded):
+    from .conftest import kl
+    from .fake_bot import WATCHED_CHANNEL
+
+    fake_bot.repo.record_message(
+        800000000000000010, WATCHED_CHANNEL, 1002, kl(2026, 8, 30, 11, 56), "<@1001> ok"
+    )
+    extraction = fake_bot.repo.log_extraction(
+        model="gpt-oss:20b",
+        prompt="you are an extractor...",
+        raw_response="{}",
+        latency_ms=10,
+        message_ids=["800000000000000010"],
+        amendment_ids=[],
+    )
+    body = auth.get(f"/extractions/{short_id(extraction)}").text
+    assert "@Alvin tan" in body
+    assert "&lt;@1001&gt;" not in body
+
+
+def test_a_new_run_has_no_old_time_to_move_away_from(fake_bot, seeded):
+    """`add`/`fix` cards used to render "<run's time> → TBD".
+
+    The old time belongs to the run the amendment *matched*, which for a new
+    run is only context, not the left half of a transition -- so it is only
+    set for a move.
+    """
+    from bot.api import service
+
+    added = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="add",
+        bosses=["HStar"],
+        run_id=seeded["run_star"],
+        participants=["1002"],
+        confidence=0.5,
+        evidence_msg_ids=[],
+        channel_id=None,
+    )
+    view = service.amendment_view(fake_bot, fake_bot.repo.get_amendment(added))
+    assert view["run"] is not None  # it did match an existing run
+    assert view["from_when"] is None
+    assert view["when"] == "TBD"
+
+    moved = service.amendment_view(fake_bot, fake_bot.repo.get_amendment(seeded["amendment"]))
+    assert moved["from_when"] == f"{moved['run']['local_day']} {moved['run']['local_time']}"
+
+
+def test_the_inbox_draws_the_arrow_only_for_a_move(auth, fake_bot, seeded):
+    added = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="add",
+        bosses=["HStar"],
+        run_id=seeded["run_star"],
+        participants=["1002"],
+        confidence=0.5,
+        evidence_msg_ids=[],
+        channel_id=None,
+    )
+    cards = auth.get("/inbox").text.split('<article class="card"')
+    new_run = next(c for c in cards if short_id(added) in c)
+    moved = next(c for c in cards if short_id(seeded["amendment"]) in c)
+    # The struck-out "was" time and its arrow are the transition; a new run
+    # shows its proposed time (here TBD) on its own.
+    assert 'class="mono was"' not in new_run and 'class="arrow"' not in new_run
+    assert "TBD" in new_run
+    assert 'class="mono was"' in moved and 'class="arrow"' in moved

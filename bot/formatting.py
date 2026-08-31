@@ -12,7 +12,7 @@ unit tests that only care about wording) everybody is rendered as a mention, and
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -305,6 +305,31 @@ def via_portal(content: str) -> str:
     return f"{content}\n{VIA_PORTAL}"
 
 
+#: Shown on everything posted while quiet mode is on.  The bot still writes the
+#: same words, and Discord still renders `<@id>` as a highlighted name, so
+#: without this there is nothing on the message to say the party was never
+#: actually pinged -- and nothing to remind whoever left it on.
+QUIET_MARKER = "🔕"
+QUIET_NOTE = f"{QUIET_MARKER} quiet mode - nobody was notified"
+
+
+def quiet_line(content: str) -> str:
+    """Mark a plain message, which has no embed to carry a footer."""
+    return f"{content}\n_{QUIET_NOTE}_"
+
+
+def quieted(card: Card) -> Card:
+    """``card``, notifying nobody and saying so.
+
+    The allow-list is emptied here as well as at the send, so a card that has
+    been through this cannot ping even if it is handed to something else.
+    """
+    if card.has_embed:
+        footer = f"{card.footer}  ·  {QUIET_NOTE}" if card.footer else QUIET_NOTE
+        return replace(card, footer=footer, mention_users=[])
+    return replace(card, content=quiet_line(card.content), mention_users=[])
+
+
 def otot_notice(run: dict, tz: ZoneInfo, who: Audience | None = None) -> str:
     """Posted when a run is switched to own time outside Discord."""
     return (
@@ -482,7 +507,11 @@ def proposal_line(
                 f"{format_participants(out, who)} out · {format_participants(joining, who)} in"
             )
         else:
-            lines.append(f"{format_participants(out, who)} out · **temp needed**")
+            # Nobody offered to cover, so the proposal is the removal itself --
+            # the same "-1 for this week" a `/swap out:` does. Asking the channel
+            # to find a temp is a job nothing here does, and a card that says
+            # "temp needed" is a to-do item rather than something to ✅.
+            lines.append(f"{format_participants(out, who)} **out this week**")
     else:  # pragma: no cover - rsvp never reaches a card
         lines.append(when_text(amendment, tz))
 

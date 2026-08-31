@@ -31,7 +31,11 @@ pytestmark = pytest.mark.ollama
 LOCAL_HOST = "http://127.0.0.1:11434"
 
 #: A prompt bigger than this would not fit the budget in DESIGN.md §4 (~3k tokens).
-MAX_PROMPT_TOKENS = 3000
+#: A fixture prompt should stay well under the real ceiling, which is
+#: `prompt_budget(8192)` = 5692. Raised from 3000 when `estimate_tokens` stopped
+#: undercounting by a third, not because the prompts grew: the same fixtures
+#: that measured ~1900 now measure ~2800, and the model always did read ~2500.
+MAX_PROMPT_TOKENS = 4400
 
 
 @pytest.fixture(scope="session")

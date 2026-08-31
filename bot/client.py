@@ -8,6 +8,7 @@ in memory, so a container restart neither loses nor replays a reminder.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
@@ -42,6 +43,11 @@ from .weeks import current_week_start, next_week_start, parse_hhmm
 
 log = logging.getLogger(__name__)
 
+#: How many times a post is attempted when the network, rather than Discord,
+#: is what failed -- and how long the first wait between attempts is, doubling.
+POST_ATTEMPTS = 3
+POST_BACKOFF_SECONDS = 1.0
+
 
 @dataclass(frozen=True)
 class ChannelLookup:
@@ -59,6 +65,7 @@ CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
+CFG_QUIET = "quiet_mode"
 CFG_LAST_WEEK = "last_materialised_week"
 
 #: A person's "can't make it" notice is posted at most this often per run, so a
@@ -121,6 +128,18 @@ class BossBot(discord.Client):
         """
         default = "1" if self.settings.extract_enabled else "0"
         return (self.repo.get_config(CFG_EXTRACT, default) or default) == "1"
+
+    @property
+    def quiet_mode(self) -> bool:
+        """Post everything, notify nobody.
+
+        For developing against a live guild: the bot keeps saying exactly what
+        it would say, but every message goes out with an empty mention
+        allow-list, so a week of testing never puts a red badge on anyone's
+        Discord. Enforced in :meth:`_post` and :meth:`post_plain`, which are the
+        only two places the bot builds a non-empty one.
+        """
+        return (self.repo.get_config(CFG_QUIET, "0") or "0") == "1"
 
     @property
     def portal_actor_id(self) -> str:
@@ -639,28 +658,66 @@ class BossBot(discord.Client):
         """
         if isinstance(card, str):
             card = formatting.Card(content=card)
+        if self.quiet_mode:
+            card, mention_users = formatting.quieted(card), []
         wanted = card.mention_users if mention_users is None else mention_users
-        allowed = discord.AllowedMentions(
-            everyone=False,
-            roles=False,
-            users=[discord.Object(id=int(uid)) for uid in wanted],
+        allowed = (
+            # `AllowedMentions.none()` rather than `users=[]`: it also clears
+            # `replied_user`, which defaults to *on* and would otherwise notify
+            # whoever is being replied to.
+            discord.AllowedMentions.none()
+            if self.quiet_mode
+            else discord.AllowedMentions(
+                everyone=False,
+                roles=False,
+                users=[discord.Object(id=int(uid)) for uid in wanted],
+            )
         )
         attachment = self._attachment(card)
+        message: discord.Message | None = None
+        for attempt in range(1, POST_ATTEMPTS + 1):
+            try:
+                # `file=` is omitted entirely when there is no portrait, so a
+                # guild that ships none sends exactly the message it did before.
+                message = await channel.send(
+                    card.content,
+                    embed=self._embed(card),
+                    allowed_mentions=allowed,
+                    **({"file": attachment} if attachment is not None else {}),
+                )
+                break
+            except discord.HTTPException:
+                # Discord answered and refused. Sending the same rejected
+                # request again just gets refused again.
+                log.exception("failed to post reminder")
+                return None
+            except (OSError, TimeoutError):
+                # Never reached Discord at all -- a DNS failure or a dropped
+                # connection. One of these during the first morning rescan took
+                # the whole job down and left its rows without a card, so it is
+                # worth a few seconds of waiting before giving up.
+                if attempt == POST_ATTEMPTS:
+                    log.exception("failed to post reminder after %d attempts", attempt)
+                    return None
+                delay = POST_BACKOFF_SECONDS * 2 ** (attempt - 1)
+                log.warning(
+                    "could not reach Discord to post (attempt %d/%d); retrying in %.0fs",
+                    attempt,
+                    POST_ATTEMPTS,
+                    delay,
+                    exc_info=True,
+                )
+                await asyncio.sleep(delay)
+        if message is None:  # pragma: no cover - the loop returns on every failure
+            return None
         try:
-            # `file=` is omitted entirely when there is no portrait, so a guild
-            # that ships none sends exactly the message it did before.
-            message = await channel.send(
-                card.content,
-                embed=self._embed(card),
-                allowed_mentions=allowed,
-                **({"file": attachment} if attachment is not None else {}),
-            )
             await message.add_reaction(EMOJI_YES)
             await message.add_reaction(EMOJI_NO)
-            return message
-        except discord.HTTPException:
-            log.exception("failed to post reminder")
-            return None
+        except (discord.HTTPException, OSError, TimeoutError):
+            # The card is up; losing its reactions is a worse card, not a lost
+            # one, and the caller still needs the message id to record.
+            log.warning("posted the card but could not add its reactions", exc_info=True)
+        return message
 
     # -- reactions --------------------------------------------------------
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
@@ -1044,10 +1101,18 @@ class BossBot(discord.Client):
         mention_users: list[str],
         reference_id: int | None = None,
     ) -> discord.Message | None:
-        allowed = discord.AllowedMentions(
-            everyone=False,
-            roles=False,
-            users=[discord.Object(id=int(uid)) for uid in mention_users],
+        if self.quiet_mode:
+            content, mention_users = formatting.quiet_line(content), []
+        allowed = (
+            # See `_post`: `none()` also clears `replied_user`, and this is the
+            # path that actually replies to a message.
+            discord.AllowedMentions.none()
+            if self.quiet_mode
+            else discord.AllowedMentions(
+                everyone=False,
+                roles=False,
+                users=[discord.Object(id=int(uid)) for uid in mention_users],
+            )
         )
         reference = (
             discord.MessageReference(

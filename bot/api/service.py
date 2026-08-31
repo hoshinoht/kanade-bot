@@ -33,7 +33,7 @@ from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
 from ..materialise import LIVE_STATUSES, refresh_run_reminders
 from ..pings import audience, normalise_level
-from ..rsvp import compute_status
+from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
 from ..weeks import (
     WEEKDAY_NAMES,
@@ -58,7 +58,7 @@ PORTAL_REJECTED = "❌ rejected via portal"
 #: Runtime config the portal may read and write, and how to validate each one.
 #: Anything not listed here is refused -- `config set` is not a way to write
 #: arbitrary rows into the `config` table.
-CONFIG_KEYS = ("day_of_ping_time", "countdown_minutes", "paused", "extract_enabled")
+CONFIG_KEYS = ("day_of_ping_time", "countdown_minutes", "paused", "extract_enabled", "quiet_mode")
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +131,31 @@ def member_name(bot: BossBot, user_id: int | str) -> str:
     if member:
         return member["nickname"] or member["display_name"] or str(user_id)
     return f"user {short_id(str(user_id)) or user_id}"
+
+
+#: Discord's raw mention markup, as it is stored on a message.
+_MENTION_RE = re.compile(r"<@!?(\d+)>")
+
+
+def render_mentions(bot: BossBot, text: str | None) -> str | None:
+    """``<@100000000000000002>`` as ``@kanon``, for text shown in the portal.
+
+    Discord renders mentions itself; a page that shows the same string raw
+    prints a snowflake at the reader, which is unreadable exactly where it
+    matters most -- the chat line that justifies a change. The stored message
+    keeps the markup (it is what the extractor read, and what a re-post needs),
+    so this resolves only on the way out. An id nobody in the roster matches
+    reads ``@member`` rather than leaking the number.
+    """
+    if not text:
+        return text
+
+    def name_for(match: re.Match[str]) -> str:
+        member = bot.repo.get_member(match.group(1))
+        name = (member["nickname"] or member["display_name"]) if member else None
+        return f"@{name}" if name else "@member"
+
+    return _MENTION_RE.sub(name_for, text)
 
 
 def channel_name(bot: BossBot, channel_id: int | str | None) -> str | None:
@@ -344,7 +369,7 @@ def evidence_view(bot: BossBot, message_ids: Sequence[str]) -> list[dict]:
                 "author_name": member_name(bot, row["author_id"]),
                 "created_at": to_iso(row["created_at"]),
                 "local_time": row["created_at"].astimezone(bot.tz).strftime("%a %d %b %H:%M"),
-                "content": row["content"],
+                "content": render_mentions(bot, row["content"]),
                 "url": message_url(bot, row["channel_id"], row["id"]),
             }
         )
@@ -368,9 +393,19 @@ def amendment_view(bot: BossBot, amendment: dict, with_evidence: bool = True) ->
         "when": formatting.when_text(amendment, bot.tz).replace("**", ""),
         "day_ref": amendment["day_ref"],
         "time_ref": amendment["time_ref"],
+        # Only a move has an "old → new": a new run or a correction has no
+        # earlier time to arrow away from, even when it matched an existing run
+        # (which is how `new run` cards came to read "Sat 21:30 → TBD"). The
+        # Discord card already reads it this way; see formatting.proposal_line.
+        "from_when": (
+            f"{formatting.local_day(run['datetime'], bot.tz)} "
+            f"{formatting.local_time(run['datetime'], bot.tz)}"
+            if run is not None and amendment["kind"] == "move"
+            else None
+        ),
         "confidence": amendment["confidence"],
         "is_question": amendment["is_question"],
-        "summary": amendment["summary"],
+        "summary": render_mentions(bot, amendment["summary"]),
         "rsvp": amendment["rsvp"],
         "payload": amendment["payload"],
         "channel_id": amendment["channel_id"],
@@ -880,13 +915,11 @@ async def swap_participants(
     for uid in leaving:
         bot.repo.clear_rsvp(run["id"], uid)
 
-    fresh = bot.repo.get_run(run["id"])
     # Recompute: losing the person who said no can settle a run, and gaining
-    # someone who has not answered unsettles one.
-    status = compute_status(fresh["status"], fresh["participants"], bot.repo.get_rsvps(run["id"]))
-    if status != fresh["status"]:
-        bot.repo.set_run_status(run["id"], status)
-        fresh = bot.repo.get_run(run["id"])
+    # someone who has not answered unsettles one -- including one that was
+    # confirmed by hand, which an incomplete tally alone would no longer undo.
+    recompute_after_roster_change(bot.repo, run["id"])
+    fresh = bot.repo.get_run(run["id"])
 
     who = audience(bot.repo, [*fresh["participants"], *leaving], "swap")
     await _announce(
@@ -1105,6 +1138,7 @@ def get_config(bot: BossBot) -> dict:
         "countdown_minutes": ",".join(str(m) for m in bot.countdowns),
         "paused": bot.paused,
         "extract_enabled": bot.extract_enabled,
+        "quiet_mode": bot.quiet_mode,
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",
@@ -1278,7 +1312,9 @@ async def rescan_one(
         "elapsed_ms": report.elapsed_ms,
         "cancelled": report.cancelled,
         "error": report.errors[0] if report.errors else None,
-        "summary": next((p.summary for p in report.plans if p.summary), ""),
+        # Every burst that had something to say, not just the first one: a week
+        # is several conversations and one of their summaries describes one.
+        "summary": "; ".join(dict.fromkeys(p.summary for p in report.plans if p.summary)),
         "proposed": [
             {
                 "kind": p.kind,
@@ -1515,6 +1551,7 @@ __all__ = [
     "load_fixed",
     "load_run",
     "member_name",
+    "render_mentions",
     "members",
     "SETTABLE_STATUSES",
     "otot_run",
