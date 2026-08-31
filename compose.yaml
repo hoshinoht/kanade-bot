@@ -10,7 +10,7 @@ services:
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
-      # would make the published port unreachable. "Never leaves this Mac" is
+      # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.
       API_HOST: "0.0.0.0"
     extra_hosts: ["host.docker.internal:host-gateway"]

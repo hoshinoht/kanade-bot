@@ -1,10 +1,10 @@
-"""The keyword gate, exercised on lines lifted from the guild's real chat.
+"""The keyword gate, exercised on the kind of lines a party channel really carries.
 
-Every quoted string below is (or is a light anonymisation of) a message from
-``data/exports/*.jsonl`` or ``tests/fixtures/sample_chat.txt``.  The gate is
-allowed to be generous -- a false positive costs one local model call -- but it
-must never drop a message that changes the schedule, and it must not turn
-ordinary words into bosses.
+The quoted strings below are anonymised scheduling chat and invented banter, in
+the register the gate has to cope with: abbreviations, Manglish, and times
+written a dozen ways.  The gate is allowed to be generous -- a false positive
+costs one local model call -- but it must never drop a message that changes the
+schedule, and it must not turn ordinary words into bosses.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def sig(text: str, table) -> set[str]:
         ),
         ("then weds we do xkalos and u 3 the nbaldrix", ["XKalos", "NBaldrix"]),
         ("we doing our nstar and ncarl tonight?", ["NStar", "NCarling"]),
-        ("then alvin and i just duo hlimbo again this week first", ["HLimbo"]),
+        ("then alvin and i can duo hlimbo again this week", ["HLimbo"]),
         ("i carry them hstar hfa", ["HStar", "HFA"]),
         ("wanna do xserene", ["XSeren"]),
         ("exkalos when", ["XKalos"]),

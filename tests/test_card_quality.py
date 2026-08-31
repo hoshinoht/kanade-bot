@@ -325,7 +325,7 @@ def test_a_stated_add_with_neither_a_day_nor_a_time_is_dropped(bosses):
 
 
 def test_an_asked_add_with_no_day_or_time_still_becomes_a_question(bosses):
-    """DESIGN.md §8 row 4: "wanna try trio ncarling also?" is a card asking "when?".
+    """DESIGN.md §8 row 4: "wanna try trio ncarling?" is a card asking "when?".
 
     The same shape as the dropped one above, and the only difference that
     matters: somebody asked. The card carries it with the day and time TBD.

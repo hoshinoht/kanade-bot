@@ -249,8 +249,8 @@ def runner_rss() -> dict[str, Any]:
     one -- not the small ``serve`` parent -- is where the resident gigabytes live.
 
     Matching is on the *executable*, not on the line: other tools ship a
-    ``llama-server`` of their own (this Mac runs one for ``opencode-recall``'s
-    embeddings), and any process whose arguments merely mention Ollama -- this
+    ``llama-server`` of their own (another local tool may be running one for
+    its embeddings), and any process whose arguments merely mention Ollama -- this
     script's own command line included -- would otherwise be counted as gigabytes.
     """
     out, error = _run(["ps", "-axo", "rss,command"])
@@ -434,7 +434,7 @@ async def run_bench(
             try:
                 # One unrecorded call first. `llm.py` pins num_ctx=8192, so if the model
                 # is already resident at a different context length Ollama *reloads* the
-                # weights on the first call -- 78 s instead of ~15 s on this Mac. Timing
+                # weights on the first call -- 78 s instead of ~15 s. Timing
                 # that would measure a disk read, not the model.
                 if not args.no_warmup:
                     warm = await run_one(

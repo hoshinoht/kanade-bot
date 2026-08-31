@@ -284,7 +284,7 @@ def build_user_prompt(context: PromptContext) -> str:
     tz = context.tz
     roster = relevant_roster(context)
     names = name_map(roster)
-    # A short table is easier for a small model than the full nine bosses; fall
+    # A short table is easier for a small model than the full ten bosses; fall
     # back to everything when the burst named nothing recognisable.
     table_text = render_bosses(context.table, named_bosses(context)) or render_bosses(context.table)
 

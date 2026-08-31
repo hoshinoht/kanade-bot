@@ -1,6 +1,6 @@
 {
   "name": "banter",
-  "note": "DESIGN §8 row 5: gear, money and insults. Nothing here changes a schedule, and the numbers are levels, prices and phone numbers, not times.",
+  "note": "Gear, trade and grumbling. Nothing here changes a schedule, and the numbers are levels, prices and phone numbers, not times.",
   "channel": "party-hstar",
   "tz": "Asia/Kuala_Lumpur",
   "roster": [
@@ -111,7 +111,7 @@
       "id": "1303",
       "author": "C",
       "at": "2026-08-27 19:34",
-      "text": "290"
+      "text": "185"
     },
     {
       "id": "1304",

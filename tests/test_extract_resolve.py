@@ -1,8 +1,8 @@
 """``day_ref``/``time_ref`` -> a real datetime, anchored on the evidence message.
 
-The phrasings below are taken from ``data/exports/*.jsonl`` and
-``tests/fixtures/sample_chat.txt``.  Anything this module cannot read must come
-back empty rather than guess -- a wrong guess silently moves a run.
+The phrasings below are the ones a party channel actually uses.  Anything this
+module cannot read must come back empty rather than guess -- a wrong guess
+silently moves a run.
 """
 
 from __future__ import annotations
@@ -171,14 +171,15 @@ def test_neither_day_nor_time_resolves_to_nothing():
 
 
 def test_the_worked_example_amend_to_945pm():
-    # sample_chat.txt: kanon "we doing our nstar and ncarl tonight?" (29/08 11:54)
-    # -> Alvin "9pm" -> Alvin "amend to 9:45pm" (29/08 14:52)
+    # The `add-tonight` fixture: "we doing our nstar and ncarl tonight?" (29/08
+    # 11:54) -> "9pm i reach kk early" -> "amend to 9:45pm" (29/08 14:52)
     anchor = kl(2026, 8, 29, 14, 52)
     assert resolve("tonight", "9:45pm", anchor, TZ).at == kl(2026, 8, 29, 21, 45)
 
 
 def test_the_worked_example_move_to_weds_930pm():
-    # sample_chat.txt: Alvin "Wed i done with boss so 9:30pm onwards" (30/08 13:13)
+    # The `move-with-time` fixture: "Wed i done with boss so 9:30pm onwards"
+    # (30/08 13:13)
     anchor = kl(2026, 8, 30, 13, 13)
     assert resolve("wed", "9:30pm onwards", anchor, TZ).at == kl(2026, 9, 2, 21, 30)
 

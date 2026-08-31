@@ -473,7 +473,7 @@ def test_the_bosses_page_ticks_what_the_guild_runs(auth, seeded):
     body = auth.get("/bosses").text
     assert "pill-toggle--on" in body  # HStar, HFA and XKalos have timings
     assert 'class="grid-bosses"' in body
-    assert "9 bosses, 25 difficulties" in body
+    assert "10 bosses, 28 difficulties" in body
     assert "<strong>3</strong> ticked" in body
 
 

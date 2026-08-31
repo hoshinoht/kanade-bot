@@ -3,8 +3,8 @@
 A Discord bot that keeps a MapleStory guild's weekly boss schedule and posts
 tagged reminders.
 
-**Phases 1, 2 and 3 are built.** You set baseline timings with `/fixed`, the bot
-materialises them into concrete runs each boss week, and it pings exactly the
+You set baseline timings with `/fixed`, the bot materialises them into concrete
+runs each boss week, and it pings exactly the
 people on each run — a grouped morning message plus countdowns — with ✅/❌
 reactions as the attendance record. On top of that it **reads the party's chat**
 with a local LLM and posts a card proposing the change it found; nothing reaches
@@ -38,7 +38,7 @@ lose or replay a ping.
 ## 1. Discord developer portal setup
 
 1. Go to <https://discord.com/developers/applications> → **New Application**.
-   Name it whatever you like (the design suggests `YuukiSakuna`).
+   Name it whatever you like.
 2. **Bot** tab → **Reset Token** → copy it. This is `DISCORD_TOKEN`; treat it
    like a password. Never commit it.
 3. Still on the **Bot** tab, under *Privileged Gateway Intents*, enable **both**:
@@ -59,8 +59,7 @@ lose or replay a ping.
      whether it is actually granted.
      *Mention Everyone is not needed*: pinging a run's participants is an
      ordinary user mention, and the bot never pings `@everyone` or a role — every
-     message goes out with an allow-list of exactly the users who need to act
-     (DESIGN.md §3, "Mention policy").
+     message goes out with an allow-list of exactly the users who need to act.
    - Open the generated URL and invite the bot to your server.
 5. In Discord: **User Settings → Advanced → Developer Mode** on. Then right-click
    to copy the ids you need:
@@ -97,9 +96,9 @@ have sensible defaults (`TZ=Asia/Kuala_Lumpur`, reset `Thu 00:00`, morning ping
 
 Boss names, levels, aliases and the difficulties each boss actually has live in
 [`config/bosses.yaml`](config/bosses.yaml). It is bind-mounted read-only, so you
-can edit it and restart — no rebuild. It ships with the nine bosses parties
+can edit it and restart — no rebuild. It ships with the ten bosses parties
 currently run: Chosen Seren, Gatekeeper Kalos, The First Adversary, Carling,
-Radiant Malefic Star, Limbo, Baldrix, Jupiter and Black Mage.
+Radiant Malefic Star, Bellona, Limbo, Baldrix, Jupiter and Black Mage.
 
 **Boss portraits are optional.** Drop `Star.png`, `Kalos.png` and friends into
 [`config/portraits/`](config/portraits/README.md) and the portal shows them next
@@ -258,8 +257,8 @@ path as a ✅ reaction, because it records an opinion rather than changing a
 schedule.
 
 Every call — prompt, raw JSON, latency, the amendments it produced — is written
-to the `extractions` table. That is the prompt-tuning tool, and phase 3's portal
-will render it.
+to the `extractions` table. That is the prompt-tuning tool, and the portal
+renders it.
 
 ```
 /rescan                                  # queue a re-read of this channel's boss week
@@ -441,7 +440,7 @@ TRUST_TAILSCALE_HEADERS=true
 That header is only a string, so the portal accepts it under three conditions at
 once: the flag above is on, the login is on the allow-list, and the connection
 came from this machine (loopback or the Docker bridge). Anyone who can already
-open `127.0.0.1:8080` on this Mac can run code as you anyway, so that is where
+open `127.0.0.1:8080` on the host can run code as you anyway, so that is where
 the trust boundary genuinely is. With the flag off — the default — the phone just
 asks for the token once and keeps a seven-day cookie.
 
@@ -555,7 +554,7 @@ bot/
   export.py      `python -m bot.export` -- channel history -> JSONL
   health.py      container healthcheck (heartbeat + /healthz)
   cli.py         `bossctl` -- the Typer CLI, over the same HTTP API
-  extract/       the chat extractor (phase 2)
+  extract/       the chat extractor
     gate.py      keyword gate + boss-token finder (pure, no model)
     prompt.py    the prompt: boss table, channel runs, roster, messages
     schema.py    the JSON schema the model is constrained to (pydantic)
@@ -566,7 +565,7 @@ bot/
     pipeline.py  per-channel buffering and the whole flow
     commit.py    ✅ on a card -> the schedule change (pure repo work)
     __main__.py  `python -m bot.extract` -- offline dry run over an export
-  api/           the portal + CLI API (phase 3), served on the bot's own loop
+  api/           the portal + CLI API, served on the bot's own loop
     server.py    uvicorn as a task next to discord.py; start/stop
     app.py       the FastAPI app, built around the live client
     auth.py      bearer token, tailnet identity, signed session cookie
@@ -580,6 +579,10 @@ bot/
 config/bosses.yaml
 tests/
 ```
+
+## Changelog
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Troubleshooting
 

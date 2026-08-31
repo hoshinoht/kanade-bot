@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"
     ollama_model: str = "gpt-oss:20b"
-    #: Seconds to wait for one extraction call. `gpt-oss:20b` on this Mac takes
+    #: Seconds to wait for one extraction call. `gpt-oss:20b` on an M4 Pro takes
     #: roughly 10-40 s for a ~3k-token prompt; the first call after a cold start
     #: also pays for loading 13 GB of weights.
     ollama_timeout: float = Field(default=120.0, gt=0)
@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     #: guild owner when unset.
     portal_actor_id: int | None = None
     #: Interface the API binds. ``127.0.0.1`` is right when the bot runs
-    #: natively on this Mac. **Inside the container it must be ``0.0.0.0``** --
+    #: natively on the host. **Inside the container it must be ``0.0.0.0``** --
     #: compose sets it -- because the loopback of a container namespace is not
     #: the host's; the "loopback only" guarantee comes from the compose port
     #: mapping ``127.0.0.1:8080:8080``, not from this value.

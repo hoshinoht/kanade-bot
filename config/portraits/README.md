@@ -12,6 +12,7 @@ config/portraits/FA.png         The First Adversary
 config/portraits/Carling.png    Carling
 config/portraits/BM.png         Black Mage
 config/portraits/Star.png       Radiant Malefic Star
+config/portraits/Bellona.png    Bellona
 config/portraits/Limbo.png      Limbo
 config/portraits/Baldrix.png    Baldrix
 config/portraits/Jupiter.png    Jupiter

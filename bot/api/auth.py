@@ -12,7 +12,7 @@ Two paths, and a request needs exactly one of them (DESIGN.md §5,
 
 The header is a plain string, so trusting it is only safe because of where the
 socket is: compose publishes the port as ``127.0.0.1:8080:8080``, so the only
-thing that can reach it is a process on this Mac, and the only thing on this Mac
+thing that can reach it is a process on the host, and the only thing there
 that sets the header is `tailscale serve`.  Anyone who can already open
 ``127.0.0.1:8080`` on the host can run arbitrary code as that user anyway.  The
 flag defaults to off so a deployment without `tailscale serve` in front cannot

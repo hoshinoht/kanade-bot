@@ -548,7 +548,7 @@ def plan_burst(
                 # A new run stated flatly, with neither a day nor a time, is not
                 # schedulable and nobody asked about it -- it is the shape a
                 # truncated extraction leaves behind. A *question* with no day or
-                # time is DESIGN.md §8 row 4 ("wanna try trio ncarling also?")
+                # time is DESIGN.md §8 row 4 ("wanna try trio ncarling?")
                 # and is exactly what a card asking "when?" is for.
                 entry.match_reason = "a stated add with no day or time"
                 plan.dropped.append(entry)

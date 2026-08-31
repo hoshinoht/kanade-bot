@@ -1,7 +1,7 @@
 """The rescan queue: re-reading channels without blocking the bot.
 
 Re-reading a boss week is one model call per conversation per channel, which on
-this Mac is minutes. Doing that inside a slash command or an HTTP request meant
+the host is minutes. Doing that inside a slash command or an HTTP request meant
 the reminder tick, reactions and every other command waited on Ollama.
 
 So a request *enqueues*. One worker task drains the queue in order -- the model
