@@ -426,6 +426,32 @@ class Repo:
     def close(self) -> None:
         self._conn.close()
 
+    def backup_to(self, path: str | Path) -> None:
+        """Write a consistent snapshot of the whole database to ``path``.
+
+        SQLite's online backup API, not a file copy: in WAL mode the ``.sqlite``
+        file on its own is only whatever was last checkpointed, so copying it
+        while the bot is writing can produce a file that will not open. This
+        copies page by page against the live connection and takes the WAL with
+        it. See :mod:`bot.backup` for when it is called.
+
+        The copy is left in rollback-journal mode rather than the WAL mode it
+        inherits, so the snapshot is one self-contained file: opening it to look
+        at it does not litter the backups directory with ``-wal``/``-shm``
+        siblings, and restoring it is a copy of exactly one path.
+        """
+        dest = sqlite3.connect(str(path))
+        try:
+            with dest:
+                self._conn.backup(dest)
+            dest.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            dest.close()
+        # Leaving WAL takes the -wal with it but not always the -shm, and both
+        # belong to a file written seconds ago by this call alone.
+        for sibling in (f"{path}-wal", f"{path}-shm"):
+            Path(sibling).unlink(missing_ok=True)
+
     # -- config -----------------------------------------------------------
     def get_config(self, key: str, default: str | None = None) -> str | None:
         row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()

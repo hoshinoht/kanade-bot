@@ -24,6 +24,13 @@ services:
       # fsync guarantees, and a hard kill mid-write corrupted the DB once
       # (2026-08-31). Host-side access goes through `docker compose cp`.
       - botdata:/app/data
+      # Nested inside the volume above (docker mounts by path depth, so the
+      # deeper path wins): the volume is now the only live copy of the schedule,
+      # and a copy nobody can see from the host is not much of a backup. The
+      # bot writes one snapshot a day here, so `data/backups` on the Mac holds
+      # the last fortnight. Consistency comes from SQLite's backup API
+      # (`bot.backup`), never from copying the WAL file underneath it.
+      - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
     restart: unless-stopped
     # An extraction call can run 30-120s; the default 10s grace period

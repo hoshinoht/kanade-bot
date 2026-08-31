@@ -169,6 +169,7 @@ class FakeBot:
         self.backfill_count = 0
         self.digest_channel: Any = "unset"
         self.digest_fails = False
+        self.digests: list[FakeMessage] = []
         self._next_message_id = 700000000000000000
 
     # -- runtime config ----------------------------------------------------
@@ -305,7 +306,7 @@ class FakeBot:
         )
         return self._message(channel)
 
-    async def _post(self, channel, card, mention_users=None):
+    async def _post(self, channel, card, mention_users=None, react=True):
         content = card if isinstance(card, str) else card.content
         wanted = mention_users
         if wanted is None:
@@ -342,7 +343,9 @@ class FakeBot:
         channel = await self.post_channel(channel_id)
         if channel is None:
             return None
-        return self._message(channel)
+        message = self._message(channel)
+        self.digests.append(message)
+        return message
 
 
 __all__ = [

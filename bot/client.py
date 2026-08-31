@@ -12,12 +12,13 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import tasks
 
-from . import formatting
+from . import backup, formatting
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
@@ -67,6 +68,13 @@ CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
 CFG_LAST_WEEK = "last_materialised_week"
+#: The boss week whose reset digest has already gone out, and the local day the
+#: database was last snapshotted. Both are "have I done this yet?" markers rather
+#: than schedules: the host is a laptop that sleeps, so every periodic job is
+#: driven by comparing state to the clock on each tick, never by firing at an
+#: instant that may pass while the machine is off.
+CFG_LAST_DIGEST = "last_digest_week"
+CFG_LAST_BACKUP = "last_backup_day"
 
 #: A person's "can't make it" notice is posted at most this often per run, so a
 #: ❌ toggled on and off (or mashed) never floods the channel.
@@ -92,6 +100,10 @@ class BossBot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
         self._synced = False
         self._warned_manage_messages = False
+        #: The day a backup failed on, so a broken backups directory is logged
+        #: once rather than every 30 s until midnight. Deliberately in memory:
+        #: a restart is a good moment to try again.
+        self._backup_failed_on: str | None = None
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
         self.extractor = Pipeline(self)
@@ -389,8 +401,14 @@ class BossBot(discord.Client):
             # looks at them: a `done` run gets no pings and shows in nobody's
             # schedule or dropdown.
             mark_done(self.repo, now)
+            # After `mark_done`, so the week the guild reads has last week's
+            # leftovers already retired out of it.
+            await self.post_week_digest(now)
             await self.expire_proposals(now)
             await self.dispatch_reminders(now)
+            # Last: a snapshot is worth a few hundred milliseconds of the tick,
+            # but never worth delaying somebody's reminder by them.
+            self.back_up(now)
         except Exception:  # pragma: no cover - keep the loop alive
             log.exception("tick failed")
 
@@ -601,12 +619,13 @@ class BossBot(discord.Client):
             log.error("no channel available for run %s; leaving its countdown queued", run["id"])
             return
         rsvps = self.repo.get_rsvps(run["id"])
-        # Only the people who haven't answered get pinged; the rest just see it.
+        # Only the people who have not answered at all get pinged; a ❌ is an
+        # answer, and its own notice already went to the rest of the party.
         who = audience(
             self.repo,
             run["participants"],
             "countdown",
-            candidates=formatting.unconfirmed(run, rsvps),
+            candidates=formatting.unanswered(run, rsvps),
         )
         card = formatting.countdown_card(
             run, minutes, self.tz, rsvps, table=self.bosses, who=who
@@ -649,12 +668,17 @@ class BossBot(discord.Client):
         channel: discord.abc.Messageable,
         card: formatting.Card | str,
         mention_users: list[str] | None = None,
+        react: bool = True,
     ) -> discord.Message | None:
         """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back.
 
         The allow-list comes from the card itself (already resolved against the
         mention policy) unless the caller overrides it; either way it is
         explicit, so nothing in a message can ping by accident.
+
+        ``react=False`` sends the card without them, for a post that reports
+        rather than asks -- the weekly digest, whose runs are each answered on
+        their own reminder.
         """
         if isinstance(card, str):
             card = formatting.Card(content=card)
@@ -710,6 +734,8 @@ class BossBot(discord.Client):
                 await asyncio.sleep(delay)
         if message is None:  # pragma: no cover - the loop returns on every failure
             return None
+        if not react:
+            return message
         try:
             await message.add_reaction(EMOJI_YES)
             await message.add_reaction(EMOJI_NO)
@@ -746,6 +772,7 @@ class BossBot(discord.Client):
 
         declines: list[dict] = []
         confirmations: list[dict] = []
+        retractions: list[dict] = []
         applied = False
         for reminder in sources:
             run = self.repo.get_run(reminder["run_id"])
@@ -762,13 +789,20 @@ class BossBot(discord.Client):
                 declines.append(fresh)
             elif result.state == "yes":
                 confirmations.append(fresh)
+            elif not added and emoji == EMOJI_NO:
+                # They took the ❌ back without putting a ✅ up. The run stops
+                # being `at_risk`, so the "can't make it - reschedule?" notice
+                # has to go with it: left standing it has the party re-planning
+                # a night around somebody who is available again. `/rsvp` and
+                # the portal already retract on any answer that is not "no".
+                retractions.append(fresh)
 
         if not applied:
             return
         if added:
             # One answer per person: putting ✅ takes their ❌ off, and vice versa.
             await self._drop_opposite_reaction(payload, emoji)
-        for run in confirmations:
+        for run in confirmations + retractions:
             await self.retract_decline(run, payload.user_id)
         if declines:
             name = self._display_name(payload)
@@ -963,15 +997,78 @@ class BossBot(discord.Client):
         card = formatting.digest_card(
             runs, ws, self.tz, {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
         )
-        try:
-            return await channel.send(
-                card.content,
-                embed=self._embed(card),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        except discord.HTTPException:
-            log.exception("failed to post the weekly digest")
+        # Through `_post` like every other card, so quiet mode marks it and a
+        # dropped connection is retried rather than losing the week's digest.
+        # `mention_users=[]` because the card names people instead of tagging
+        # them; `react=False` because a summary is not something to answer.
+        return await self._post(channel, card, mention_users=[], react=False)
+
+    async def post_week_digest(self, now: datetime) -> discord.Message | None:
+        """Post the digest once at each boss-week reset (DESIGN.md §3).
+
+        Idempotent through a key of its own rather than :data:`CFG_LAST_WEEK`,
+        which ``materialise_weeks`` stamps on every start: sharing it would mean
+        a restart between the reset and the first tick swallowed the digest
+        entirely. The key holds the week already posted for, so a Mac that slept
+        through Thursday midnight posts exactly one digest when it wakes --
+        not one per missed tick, and not none.
+        """
+        current = to_iso(
+            current_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+        )
+        last = self.repo.get_config(CFG_LAST_DIGEST)
+        if last == current:
             return None
+        if self.settings.post_channel_id is None:
+            # Nowhere guild-wide to post. The week is stamped anyway, so setting
+            # POST_CHANNEL_ID on a Sunday does not then back-post a digest for a
+            # reset three days gone.
+            self.repo.set_config(CFG_LAST_DIGEST, current)
+            log.debug("no POST_CHANNEL_ID, so no weekly digest for %s", current)
+            return None
+        if last is None:
+            # A database that has never seen a reset. This week began without
+            # the bot, so it has no reset of its own to report.
+            self.repo.set_config(CFG_LAST_DIGEST, current)
+            log.info("the weekly digest starts at the next reset (this week is %s)", current)
+            return None
+        message = await self.post_digest()
+        if message is None:
+            # Leave the key alone and try again next tick, the way a day-of ping
+            # stays queued when its channel is briefly unreachable.
+            log.warning("the weekly digest for %s did not post; will retry", current)
+            return None
+        self.repo.set_config(CFG_LAST_DIGEST, current)
+        log.info("posted the weekly digest for the boss week starting %s", current)
+        return message
+
+    # -- daily backup -----------------------------------------------------
+    def back_up(self, now: datetime) -> Path | None:
+        """Snapshot the database once a local day; returns the file if it wrote one.
+
+        The database lives in a named volume, so this is what puts a copy back
+        on the host (``bot.backup``). Failing to write one is a thing to fix, not
+        a reason to stop reminding people about tonight's boss, so nothing here
+        is allowed to escape into the tick.
+        """
+        directory = backup.backup_dir(self.repo.path)
+        if directory is None:  # an in-memory database has nothing to snapshot
+            return None
+        local = now.astimezone(self.tz)
+        day = backup.due_day(self.repo.get_config(CFG_LAST_BACKUP), local)
+        if day is None or day == self._backup_failed_on:
+            return None
+        try:
+            path, removed = backup.take(self.repo, directory, local)
+        except Exception:
+            self._backup_failed_on = day
+            log.exception("could not back up the database to %s; retrying tomorrow", directory)
+            return None
+        self.repo.set_config(CFG_LAST_BACKUP, day)
+        log.info("backed up the database to %s", path)
+        for stale in removed:
+            log.info("pruned old backup %s", stale.name)
+        return path
 
     # -- deleted cards ----------------------------------------------------
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:

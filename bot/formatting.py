@@ -164,9 +164,21 @@ def status_line(run: dict, rsvps: dict[str, str]) -> str:
     return f"{label} · {rsvp_tally(run['participants'], rsvps)}"
 
 
-def unconfirmed(run: dict, rsvps: dict[str, str]) -> list[str]:
-    """Participants who have not said ✅ yet - the only people a countdown pings."""
-    return [uid for uid in run["participants"] if rsvps.get(uid) != "yes"]
+def unanswered(run: dict, rsvps: dict[str, str]) -> list[str]:
+    """Participants who have not answered at all - the only people a countdown pings.
+
+    Not "has not said ✅": somebody who reacted ❌ *has* answered, and pinging
+    them at T-1h and again at T-15m asks a question they took the trouble to
+    answer -- while the run is already `at_risk` and the rest of the party has
+    already had the decline notice. A ``maybe`` still counts as unanswered,
+    because "maybe" is exactly the person a countdown is for.
+    """
+    return [uid for uid in run["participants"] if rsvps.get(uid) not in ("yes", "no")]
+
+
+def declined(run: dict, rsvps: dict[str, str]) -> list[str]:
+    """Participants who said ❌."""
+    return [uid for uid in run["participants"] if rsvps.get(uid) == "no"]
 
 
 def everyone_on(runs: list[dict]) -> list[str]:
@@ -221,9 +233,21 @@ def countdown_card(
     table: Any | None = None,
     who: Audience | None = None,
 ) -> Card:
-    """A countdown pings only the people who haven't ✅'d; everyone else just sees it."""
-    pending = unconfirmed(run, rsvps)
-    waiting = format_participants(pending, who) if pending else "everyone's confirmed ✅"
+    """A countdown pings only the people who haven't answered; everyone else just sees it.
+
+    Three things it can say, and they are not the same thing: somebody still
+    has to answer, everybody has and one of them can't come, or everybody is
+    on. Only the last is the green "all set" card -- a run somebody dropped out
+    of has nothing left to ask but is not settled either.
+    """
+    pending = unanswered(run, rsvps)
+    out = declined(run, rsvps)
+    if pending:
+        waiting = format_participants(pending, who)
+    elif out:
+        waiting = f"{format_participants(out, who)} out"
+    else:
+        waiting = "everyone's confirmed ✅"
     content = (
         f"⏰ **{format_bosses(run['bosses'])}** in {format_offset(minutes)} "
         f"({local_time(run['datetime'], tz)}) — {waiting}"
@@ -232,7 +256,7 @@ def countdown_card(
         content=content,
         description=f"{boss_detail(run['bosses'], table)}\n{status_line(run, rsvps)}",
         footer=REACT_HINT if pending else None,
-        colour=COLOUR_COUNTDOWN if pending else COLOUR_ALL_SET,
+        colour=COLOUR_COUNTDOWN if pending or out else COLOUR_ALL_SET,
         thumbnail_path=lead_portrait(run["bosses"], table),
         mention_users=list(who.mentioned) if who else [],
     )
@@ -603,8 +627,13 @@ def rejected_notice(display_name: str) -> str:
 COLOUR_DIGEST = 0x5865F2
 
 #: Statuses that mean "nobody has committed to this yet" -- the digest calls
-#: these out, because the reset morning is when they can still be settled.
-UNSETTLED = ("planned", "at_risk")
+#: these out, because the reset morning is when they can still be settled -- and
+#: the marker each one gets. They are not the same problem: `planned` is waiting
+#: on answers, while `at_risk` already *has* one and it was a no, so the party
+#: has a night to re-plan rather than a form to fill in. One shared ⚠️ hid that
+#: difference in the one post meant to surface it.
+UNSETTLED_MARKERS: dict[str, str] = {"planned": "⚠️ ", "at_risk": "❗ "}
+UNSETTLED = tuple(UNSETTLED_MARKERS)
 
 
 def digest_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
@@ -614,7 +643,7 @@ def digest_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
     them -- 30 bossers must not all get a notification for every party's run.
     """
     when = "own time" if run["status"] == "otot" else local_time(run["datetime"], tz)
-    marker = "⚠️ " if run["status"] in UNSETTLED else ""
+    marker = UNSETTLED_MARKERS.get(run["status"], "")
     where = f" · <#{run['channel_id']}>" if run.get("channel_id") else ""
     return (
         f"{marker}`{when}` **{format_bosses(run['bosses'])}** · "
@@ -641,6 +670,7 @@ def digest_card(
         )
 
     unsettled = sum(1 for r in live if r["status"] in UNSETTLED)
+    at_risk = sum(1 for r in live if r["status"] == "at_risk")
     fields = [
         (heading, "\n".join(digest_line(run, tz, rsvps_by_run.get(run["id"], {})) for run in day))
         for heading, day in group_by_day(live, tz)
@@ -648,6 +678,10 @@ def digest_card(
     summary = f"{len(live)} run(s) across {len(fields)} day(s)"
     if unsettled:
         summary += f" · **{unsettled}** still unconfirmed ⚠️"
+    if at_risk:
+        # Counted in the line above as well: they are unconfirmed *and* somebody
+        # has said no, which is the half that needs a decision this morning.
+        summary += f" · **{at_risk}** at risk ❗"
     return Card(
         content=title,
         description=summary,

@@ -37,8 +37,11 @@ class Sent:
 class FakeMessage:
     id = 900000000000000321
 
+    def __init__(self):
+        self.reactions: list[str] = []
+
     async def add_reaction(self, emoji):
-        return None
+        self.reactions.append(str(emoji))
 
 
 class RecordingChannel:
@@ -46,10 +49,12 @@ class RecordingChannel:
 
     def __init__(self):
         self.sends: list[Sent] = []
+        self.messages: list[FakeMessage] = []
 
     async def send(self, content=None, **kwargs):
         self.sends.append(Sent({"content": content, **kwargs}))
-        return FakeMessage()
+        self.messages.append(FakeMessage())
+        return self.messages[-1]
 
 
 @pytest.fixture
@@ -145,6 +150,50 @@ def test_a_plain_string_card_gets_the_marker_in_its_content(bot, repo):
     asyncio.run(bot._post(channel, "just a line <@1001>"))
     assert formatting.QUIET_MARKER in channel.sends[0].content
     assert "just a line <@1001>" in channel.sends[0].content
+
+
+# --- the weekly digest goes the same way -------------------------------------
+
+
+def digest_bot(bot, channel) -> None:
+    """Give ``bot`` the little it needs to build and post a digest."""
+    from .fake_bot import make_settings
+
+    bot.settings = make_settings()
+    bot.tz = bot.settings.zoneinfo
+
+    async def post_channel(channel_id=None):
+        return channel
+
+    bot.post_channel = post_channel
+
+
+def test_the_weekly_digest_is_covered_by_quiet_mode(bot, repo):
+    """It used to call `channel.send` itself, which is one send path too many."""
+    quiet(repo, True)
+    channel = RecordingChannel()
+    digest_bot(bot, channel)
+
+    asyncio.run(bot.post_digest())
+    assert formatting.QUIET_NOTE in channel.sends[0].embed.footer.text
+
+
+def test_the_digest_carries_no_reactions_to_answer(bot, repo):
+    """Every run in it is answered on its own reminder; ✅ on a whole week means
+    nothing, and the bot would be reading it back as an RSVP for run one."""
+    channel = RecordingChannel()
+    digest_bot(bot, channel)
+
+    asyncio.run(bot.post_digest())
+    assert channel.messages[0].reactions == []
+
+
+def test_a_digest_notifies_nobody_even_when_it_is_not_quiet(bot, repo):
+    channel = RecordingChannel()
+    digest_bot(bot, channel)
+
+    asyncio.run(bot.post_digest())
+    assert channel.sends[0].allowed.users == []
 
 
 # --- post_plain: decline notices and portal notices --------------------------

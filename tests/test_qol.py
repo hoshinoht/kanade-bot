@@ -56,17 +56,50 @@ def test_reconcile_moves_unsent_day_of_to_new_ping_time():
     assert reconcile_day_of(repo, TZ, time(1, 0)) == 0  # idempotent
 
 
-def test_countdown_card_pings_only_the_unconfirmed():
+def test_countdown_card_pings_only_the_people_who_have_not_answered():
+    """A ❌ is an answer. Asking again at T-1h and T-15m nags somebody who
+    already told the party, whose decline notice has gone out anyway."""
     repo = Repo(":memory:")
     run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
     rsvps = {"1": "yes", "2": "no"}
-    assert formatting.unconfirmed(run, rsvps) == ["2", "3"]
+    assert formatting.unanswered(run, rsvps) == ["3"]
+
     card = formatting.countdown_card(run, 60, TZ, rsvps)
-    assert "<@2>" in card.content and "<@3>" in card.content and "<@1>" not in card.content
+    assert "<@3>" in card.content
+    assert "<@1>" not in card.content and "<@2>" not in card.content
     assert card.footer == formatting.REACT_HINT
-    quiet = formatting.countdown_card(run, 60, TZ, {"1": "yes", "2": "yes", "3": "yes"})
-    assert formatting.unconfirmed(run, {"1": "yes", "2": "yes", "3": "yes"}) == []
-    assert "everyone's confirmed" in quiet.content and quiet.footer is None
+
+
+def test_a_maybe_still_gets_the_countdown():
+    """A "maybe" is exactly the person a T-1h nudge exists for."""
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    assert formatting.unanswered(run, {"1": "yes", "2": "maybe", "3": "no"}) == ["2"]
+
+
+def test_a_countdown_with_everyone_on_is_the_quiet_green_one():
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    everyone = {"1": "yes", "2": "yes", "3": "yes"}
+    assert formatting.unanswered(run, everyone) == []
+
+    card = formatting.countdown_card(run, 60, TZ, everyone)
+    assert "everyone's confirmed" in card.content
+    assert card.footer is None
+    assert card.colour == formatting.COLOUR_ALL_SET
+
+
+def test_a_countdown_nobody_is_left_to_answer_still_says_who_is_out():
+    """Everybody has answered and one of them can't come: nothing left to ask,
+    but "everyone's confirmed ✅" in green would be a lie."""
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    card = formatting.countdown_card(run, 60, TZ, {"1": "yes", "2": "no", "3": "yes"})
+
+    assert "<@2> out" in card.content
+    assert "everyone's confirmed" not in card.content
+    assert card.footer is None
+    assert card.colour == formatting.COLOUR_COUNTDOWN
 
 
 class _Table:
