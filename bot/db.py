@@ -26,11 +26,28 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
-AMENDMENT_STATUSES = ("proposed", "confirmed", "rejected", "expired")
+#: How much a member wants to be @mentioned (DESIGN.md s3, "Mention policy").
+#: `essential` is the default: only the posts that ask them to act.
+PING_LEVELS = ("essential", "all", "off")
+DEFAULT_PING_LEVEL = "essential"
+#: `superseded` = a newer card about the same run replaced this one, or a sibling
+#: amendment for the run was committed. Kept rather than deleted so the
+#: extraction log still shows what was proposed and why it never applied.
+#: `withdrawn` = the card itself was deleted from Discord, so there is nothing
+#: left to react to. Kept rather than deleted so the extraction log still shows
+#: what was proposed and why it never applied.
+AMENDMENT_STATUSES = (
+    "proposed",
+    "confirmed",
+    "rejected",
+    "expired",
+    "superseded",
+    "withdrawn",
+)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -43,6 +60,8 @@ CREATE TABLE IF NOT EXISTS members (
     nickname     TEXT,
     aliases      TEXT NOT NULL DEFAULT '[]',
     has_role     INTEGER NOT NULL DEFAULT 0,
+    -- how much this member wants to be @mentioned: essential | all | off
+    ping_level   TEXT NOT NULL DEFAULT 'essential',
     updated_at   TEXT NOT NULL
 );
 
@@ -163,10 +182,41 @@ CREATE TABLE IF NOT EXISTS debug_messages (
 
 CREATE INDEX IF NOT EXISTS debug_messages_run ON debug_messages (run_id);
 
+-- One "X can't make it" notice per person per run, so a ❌ toggled on and off
+-- (or spammed) never floods the channel; deleted again when they go ✅.
+CREATE TABLE IF NOT EXISTS decline_notices (
+    run_id      TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    channel_id  TEXT,
+    message_id  TEXT,
+    notified_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- v4. One row per rescan asked for, so the portal can show the last few runs
+-- after a restart. The live queue is in memory (bot/rescan.py); this is the
+-- record of what was asked and what came of it.
+CREATE TABLE IF NOT EXISTS rescan_jobs (
+    id           TEXT PRIMARY KEY,
+    channels     TEXT NOT NULL DEFAULT '[]',
+    window       TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT 'manual',
+    automated    INTEGER NOT NULL DEFAULT 0,
+    requested_by TEXT,
+    status       TEXT NOT NULL DEFAULT 'queued',
+    created_at   TEXT NOT NULL,
+    started_at   TEXT,
+    finished_at  TEXT,
+    results      TEXT NOT NULL DEFAULT '[]',
+    error        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS rescan_jobs_recent ON rescan_jobs (created_at DESC);
 """
 
 
@@ -242,8 +292,71 @@ def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
     )
 
 
+#: Columns the chat extractor added to ``amendments`` in v3 (all additive).
+_V3_AMENDMENT_COLUMNS: dict[str, str] = {
+    "channel_id": "TEXT",
+    "is_question": "INTEGER NOT NULL DEFAULT 0",
+    "rsvp": "TEXT",
+    "day_ref": "TEXT",
+    "time_ref": "TEXT",
+    "summary": "TEXT",
+    "payload": "TEXT NOT NULL DEFAULT '{}'",
+}
+
+
+def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
+    """v2 -> v3: extractor columns on ``amendments``; ``decline_notices`` table.
+
+    Purely additive: ``ALTER TABLE ... ADD COLUMN`` for anything missing, and the
+    new table arrives via ``SCHEMA_SQL`` (``CREATE TABLE IF NOT EXISTS``) after
+    the step. No data is touched.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(amendments)")}
+    added = []
+    for name, decl in _V3_AMENDMENT_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE amendments ADD COLUMN {name} {decl}")
+            added.append(name)
+    log.info("schema v2->v3: amendments gained %s; decline_notices table added", added or "nothing")
+
+
 #: version -> the step that upgrades *from* that version to the next.
-MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {1: _migrate_1_to_2}
+def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
+    """v4 only adds ``rescan_jobs``, which ``SCHEMA_SQL`` creates on its own.
+
+    A numbered step is still needed so :meth:`Repo.migrate` can walk past v3;
+    the work is the ``CREATE TABLE IF NOT EXISTS`` that runs afterwards.
+    """
+
+
+def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
+    """v4 -> v5: ``members.ping_level``, the per-person mention preference.
+
+    Additive, and everyone starts on the default (``essential``), which is the
+    behaviour the guild already had for the posts that ask them to act.
+    ``SCHEMA_SQL`` cannot do this itself: the table already exists, so its
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op on an upgrade.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(members)")}
+    if not existing:
+        # No `members` table yet: a database old enough to predate it walks
+        # through this step on its way forward, and `SCHEMA_SQL` creates the
+        # table -- with the column already on it -- once the steps are done.
+        return
+    if "ping_level" in existing:
+        return
+    conn.execute(
+        f"ALTER TABLE members ADD COLUMN ping_level TEXT NOT NULL DEFAULT '{DEFAULT_PING_LEVEL}'"
+    )
+    log.info("schema v4->v5: members gained ping_level (everyone on %s)", DEFAULT_PING_LEVEL)
+
+
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
+    3: _migrate_3_to_4,
+    4: _migrate_4_to_5,
+}
 
 
 def _json_list(value: str | None) -> list:
@@ -259,11 +372,28 @@ def _dump(value: Iterable[Any]) -> str:
 class Repo:
     """Thin repository over a single SQLite connection."""
 
+    #: Called with a run id whenever something a posted reminder card *shows*
+    #: has changed: the RSVP tally, the run's status, or its line-up. The client
+    #: sets it (:meth:`bot.client.BossBot.card_needs_refresh`) so a card already
+    #: in a channel is re-rendered whoever changed the answer -- a reaction,
+    #: `/rsvp`, the portal, a chat-extracted "Can". Hooking the writes rather
+    #: than the callers is the only way to catch all four without every one of
+    #: them having to remember; a caller that forgets is exactly how the tally
+    #: on a live card froze at "2/4 ✅" while the database said 4/4.
+    on_run_changed: Callable[[str], None] | None = None
+
     def __init__(self, path: str | Path):
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path, isolation_level=None)
+        # `check_same_thread=False`: the connection is created wherever the
+        # process happens to start (``python -m bot`` builds it inside
+        # ``asyncio.run``; a test builds it on the pytest thread) and then used
+        # from the bot's event loop. There is exactly one connection and one
+        # user of it at a time -- every HTTP handler in `bot.api` is `async def`
+        # so it runs on that loop rather than in FastAPI's worker threadpool,
+        # which `tests/test_api_app.py::test_every_route_is_async` enforces.
+        self._conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -305,6 +435,32 @@ class Repo:
 
     def close(self) -> None:
         self._conn.close()
+
+    def backup_to(self, path: str | Path) -> None:
+        """Write a consistent snapshot of the whole database to ``path``.
+
+        SQLite's online backup API, not a file copy: in WAL mode the ``.sqlite``
+        file on its own is only whatever was last checkpointed, so copying it
+        while the bot is writing can produce a file that will not open. This
+        copies page by page against the live connection and takes the WAL with
+        it. See :mod:`bot.backup` for when it is called.
+
+        The copy is left in rollback-journal mode rather than the WAL mode it
+        inherits, so the snapshot is one self-contained file: opening it to look
+        at it does not litter the backups directory with ``-wal``/``-shm``
+        siblings, and restoring it is a copy of exactly one path.
+        """
+        dest = sqlite3.connect(str(path))
+        try:
+            with dest:
+                self._conn.backup(dest)
+            dest.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            dest.close()
+        # Leaving WAL takes the -wal with it but not always the -shm, and both
+        # belong to a file written seconds ago by this call alone.
+        for sibling in (f"{path}-wal", f"{path}-shm"):
+            Path(sibling).unlink(missing_ok=True)
 
     # -- config -----------------------------------------------------------
     def get_config(self, key: str, default: str | None = None) -> str | None:
@@ -391,11 +547,34 @@ class Repo:
         member = self.get_member(user_id)
         return bool(member and member["has_role"])
 
+    def get_ping_level(self, user_id: int | str) -> str:
+        """How much this person wants to be @mentioned.
+
+        Somebody the roster has never seen (a guest on a run, a member who left)
+        gets the default rather than an error: a missing row must never stop a
+        reminder going out.
+        """
+        member = self.get_member(user_id)
+        return member["ping_level"] if member else DEFAULT_PING_LEVEL
+
+    def set_ping_level(self, user_id: int | str, level: str) -> str:
+        """Record a member's mention preference; returns the level that was stored."""
+        if level not in PING_LEVELS:
+            raise ValueError(f"ping level must be one of {', '.join(PING_LEVELS)}, not {level!r}")
+        updated = self._conn.execute(
+            "UPDATE members SET ping_level = ?, updated_at = ? WHERE user_id = ?",
+            (level, to_iso(utcnow()), str(user_id)),
+        ).rowcount
+        if not updated:
+            raise KeyError(str(user_id))
+        return level
+
     @staticmethod
     def _member(row: sqlite3.Row) -> dict:
         data = dict(row)
         data["aliases"] = _json_list(data["aliases"])
         data["has_role"] = bool(data["has_role"])
+        data["ping_level"] = data.get("ping_level") or DEFAULT_PING_LEVEL
         return data
 
     # -- fixed runs -------------------------------------------------------
@@ -436,7 +615,28 @@ class Repo:
         ).fetchone()
         return self._fixed(row) if row else None
 
-    def list_fixed_runs(self, participant: str | None = None) -> list[dict]:
+    def list_fixed_runs(
+        self, participant: str | None = None, involving: int | str | None = None
+    ) -> list[dict]:
+        """Every baseline timing, ordered by when it happens.
+
+        ``participant`` narrows to runs someone is *on*.  ``involving`` is the
+        wider "mine": the runs someone is on **or owns**.  Setting a party's
+        timing up does not put you on it (`/fixed add` deliberately does not add
+        the invoker), so filtering on participation alone hides a pilot's or an
+        admin's own timings from them, which reads as data loss.
+        """
+        if involving is not None:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM fixed_runs
+                WHERE owner_id = :uid
+                   OR EXISTS (SELECT 1 FROM json_each(fixed_runs.participants) WHERE value = :uid)
+                ORDER BY weekday, time, id
+                """,
+                {"uid": str(involving)},
+            )
+            return [self._fixed(r) for r in rows]
         rows = self._conn.execute("SELECT * FROM fixed_runs ORDER BY weekday, time, id")
         out = [self._fixed(r) for r in rows]
         if participant is not None:
@@ -520,7 +720,16 @@ class Repo:
         participant: str | None = None,
         channel_id: int | str | None = None,
         include_cancelled: bool = True,
+        involving: int | str | None = None,
+        statuses: Sequence[str] | None = None,
     ) -> list[dict]:
+        """Runs, newest-slot last.
+
+        ``participant`` is "on this run"; ``involving`` also counts runs
+        materialised from a fixed timing the person owns, which is what "mine"
+        means everywhere a human reads it.  ``statuses`` keeps only those
+        statuses -- the callers that hide `done`/`cancelled` pass it.
+        """
         sql = "SELECT * FROM runs"
         params: list[Any] = []
         if week_start is not None:
@@ -530,16 +739,37 @@ class Repo:
         runs = [self._run(r) for r in self._conn.execute(sql, params)]
         if participant is not None:
             runs = [r for r in runs if str(participant) in r["participants"]]
+        if involving is not None:
+            uid = str(involving)
+            owned = {f["id"] for f in self.list_fixed_runs(involving=uid)}
+            runs = [
+                r for r in runs if uid in r["participants"] or (r["fixed_run_id"] or "") in owned
+            ]
         if channel_id is not None:
             runs = [r for r in runs if r["channel_id"] == str(channel_id)]
         if not include_cancelled:
             runs = [r for r in runs if r["status"] != "cancelled"]
+        if statuses is not None:
+            wanted = set(statuses)
+            runs = [r for r in runs if r["status"] in wanted]
         return runs
+
+    def _run_changed(self, run_id: str) -> None:
+        """Tell whoever is listening that a card about this run is now out of date."""
+        if self.on_run_changed is None:
+            return
+        try:
+            self.on_run_changed(str(run_id))
+        except Exception:
+            # A stale card is a cosmetic problem; failing the write that caused
+            # it would be a real one.
+            log.exception("the run-changed hook failed for run %s", run_id)
 
     def set_run_status(self, run_id: str, status: str) -> None:
         if status not in RUN_STATUSES:
             raise ValueError(f"unknown run status {status!r}")
         self._conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
+        self._run_changed(run_id)
 
     def set_run_datetime(self, run_id: str, run_at: datetime, week_start: datetime) -> None:
         self._conn.execute(
@@ -561,6 +791,7 @@ class Repo:
             "UPDATE runs SET participants = ? WHERE id = ?",
             (_dump(str(p) for p in participants), run_id),
         )
+        self._run_changed(run_id)
 
     @staticmethod
     def _run(row: sqlite3.Row) -> dict:
@@ -585,11 +816,13 @@ class Repo:
             """,
             (run_id, str(user_id), state, source, to_iso(utcnow())),
         )
+        self._run_changed(run_id)
 
     def clear_rsvp(self, run_id: str, user_id: int | str) -> None:
         self._conn.execute(
             "DELETE FROM rsvps WHERE run_id = ? AND user_id = ?", (run_id, str(user_id))
         )
+        self._run_changed(run_id)
 
     def get_rsvps(self, run_id: str) -> dict[str, str]:
         rows = self._conn.execute("SELECT user_id, state FROM rsvps WHERE run_id = ?", (run_id,))
@@ -690,6 +923,18 @@ class Repo:
             ),
         )
 
+    def debug_messages_for_run(self, run_id: str) -> list[dict]:
+        """Test cards posted for one run, oldest first.
+
+        A `/debug ping` is a real card carrying a real tally -- its ✅/❌ drive
+        the genuine RSVP flow -- so it goes stale like any other and has to be
+        re-rendered with it.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM debug_messages WHERE run_id = ? ORDER BY created_at", (run_id,)
+        )
+        return [dict(r) for r in rows]
+
     def debug_messages_for(self, message_id: int | str) -> list[dict]:
         rows = self._conn.execute(
             "SELECT * FROM debug_messages WHERE message_id = ?", (str(message_id),)
@@ -710,6 +955,47 @@ class Repo:
         self._conn.execute("DELETE FROM debug_messages WHERE message_id = ?", (str(message_id),))
 
     # -- messages (phase 2 groundwork) ------------------------------------
+    # -- decline notices ---------------------------------------------------
+    def get_decline_notice(self, run_id: str, user_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM decline_notices WHERE run_id = ? AND user_id = ?",
+            (run_id, str(user_id)),
+        ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["notified_at"] = from_iso(data["notified_at"])
+        return data
+
+    def set_decline_notice(
+        self,
+        run_id: str,
+        user_id: int | str,
+        message_id: int | str | None,
+        channel_id: int | str | None,
+        at: datetime | None = None,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_id, user_id) DO UPDATE SET "
+            "channel_id = excluded.channel_id, message_id = excluded.message_id, "
+            "notified_at = excluded.notified_at",
+            (
+                run_id,
+                str(user_id),
+                str(channel_id) if channel_id else None,
+                str(message_id) if message_id else None,
+                to_iso(at or utcnow()),
+            ),
+        )
+
+    def clear_decline_notice_message(self, run_id: str, user_id: int | str) -> None:
+        """Forget the posted message (it was deleted) but keep the timestamp for the cooldown."""
+        self._conn.execute(
+            "UPDATE decline_notices SET message_id = NULL WHERE run_id = ? AND user_id = ?",
+            (run_id, str(user_id)),
+        )
+
     def record_message(
         self,
         message_id: int | str,
@@ -731,3 +1017,356 @@ class Repo:
                 content,
             ),
         )
+
+    def get_message(self, message_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (str(message_id),)
+        ).fetchone()
+        return self._message(row) if row else None
+
+    def recent_messages(
+        self,
+        channel_id: int | str,
+        since: datetime,
+        until: datetime | None = None,
+        unprocessed_only: bool = False,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """One channel's stored messages in ``[since, until)``, oldest first.
+
+        ``limit`` keeps the *newest* rows (the tail of the window), because that
+        is what a prompt wants when a channel has been busy.
+        """
+        sql = "SELECT * FROM messages WHERE channel_id = ? AND created_at >= ?"
+        params: list[Any] = [str(channel_id), to_iso(since)]
+        if until is not None:
+            sql += " AND created_at < ?"
+            params.append(to_iso(until))
+        if unprocessed_only:
+            sql += " AND processed_at IS NULL"
+        sql += " ORDER BY created_at, id"
+        rows = [self._message(r) for r in self._conn.execute(sql, params)]
+        return rows[-limit:] if limit is not None and limit >= 0 else rows
+
+    def mark_messages_processed(
+        self, message_ids: Sequence[int | str], at: datetime | None = None
+    ) -> None:
+        stamp = to_iso(at or utcnow())
+        self._conn.executemany(
+            "UPDATE messages SET processed_at = ? WHERE id = ?",
+            [(stamp, str(mid)) for mid in message_ids],
+        )
+
+    @staticmethod
+    def _message(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["created_at"] = from_iso(data["created_at"])
+        data["processed_at"] = from_iso(data["processed_at"]) if data["processed_at"] else None
+        return data
+
+    # -- amendments (the chat extractor's proposals) -----------------------
+    def create_amendment(
+        self,
+        week_start: datetime,
+        kind: str,
+        bosses: Sequence[str] = (),
+        run_id: str | None = None,
+        new_datetime: datetime | None = None,
+        participants: Sequence[int | str] = (),
+        confidence: float | None = None,
+        evidence_msg_ids: Sequence[int | str] = (),
+        channel_id: int | str | None = None,
+        is_question: bool = False,
+        rsvp: str | None = None,
+        day_ref: str | None = None,
+        time_ref: str | None = None,
+        summary: str | None = None,
+        payload: dict | None = None,
+        status: str = "proposed",
+    ) -> str:
+        if status not in AMENDMENT_STATUSES:
+            raise ValueError(f"unknown amendment status {status!r}")
+        amendment_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO amendments
+                (id, week_start, kind, bosses, run_id, new_datetime, participants, status,
+                 confidence, evidence_msg_ids, proposal_message_id, created_at, channel_id,
+                 is_question, rsvp, day_ref, time_ref, summary, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                amendment_id,
+                to_iso(week_start),
+                kind,
+                _dump(bosses),
+                run_id,
+                to_iso(new_datetime) if new_datetime else None,
+                _dump(str(p) for p in participants),
+                status,
+                confidence,
+                _dump(str(m) for m in evidence_msg_ids),
+                to_iso(utcnow()),
+                str(channel_id) if channel_id is not None else None,
+                int(bool(is_question)),
+                rsvp,
+                day_ref,
+                time_ref,
+                summary,
+                json.dumps(payload or {}),
+            ),
+        )
+        return amendment_id
+
+    def get_amendment(self, amendment_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM amendments WHERE id = ?", (amendment_id,)
+        ).fetchone()
+        return self._amendment(row) if row else None
+
+    def amendments_by_message(self, message_id: int | str) -> list[dict]:
+        """Every amendment on one proposal card -- a burst posts one card for all of them."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE proposal_message_id = ? ORDER BY created_at, id",
+            (str(message_id),),
+        )
+        return [self._amendment(r) for r in rows]
+
+    def list_amendments(
+        self,
+        status: str | None = None,
+        channel_id: int | str | None = None,
+        week_start: datetime | None = None,
+    ) -> list[dict]:
+        sql = "SELECT * FROM amendments"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(str(channel_id))
+        if week_start is not None:
+            clauses.append("week_start = ?")
+            params.append(to_iso(week_start))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at, id"
+        return [self._amendment(r) for r in self._conn.execute(sql, params)]
+
+    def set_amendment_status(self, amendment_id: str, status: str) -> None:
+        if status not in AMENDMENT_STATUSES:
+            raise ValueError(f"unknown amendment status {status!r}")
+        self._conn.execute("UPDATE amendments SET status = ? WHERE id = ?", (status, amendment_id))
+
+    def set_amendment_proposal_message(
+        self, amendment_id: str, message_id: int | str | None
+    ) -> None:
+        self._conn.execute(
+            "UPDATE amendments SET proposal_message_id = ? WHERE id = ?",
+            (str(message_id) if message_id is not None else None, amendment_id),
+        )
+
+    def set_amendment_datetime(self, amendment_id: str, new_datetime: datetime | None) -> None:
+        """Overwrite the instant a proposal would move a run to.
+
+        Used by the portal's "edit, then approve": the reader corrects the time
+        the extractor read, and the correction -- not the model's value -- is
+        what `commit()` then applies.
+        """
+        self._conn.execute(
+            "UPDATE amendments SET new_datetime = ? WHERE id = ?",
+            (to_iso(new_datetime) if new_datetime else None, amendment_id),
+        )
+
+    def set_amendment_run(self, amendment_id: str, run_id: str | None) -> None:
+        self._conn.execute("UPDATE amendments SET run_id = ? WHERE id = ?", (run_id, amendment_id))
+
+    def proposed_for_run(self, run_id: str, exclude: str | None = None) -> list[dict]:
+        """Still-`proposed` amendments targeting one run, newest last."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = 'proposed' AND run_id = ? "
+            "ORDER BY created_at, id",
+            (run_id,),
+        )
+        return [self._amendment(r) for r in rows if r["id"] != exclude]
+
+    def proposed_for_bosses(
+        self, channel_id: int | str, bosses: Sequence[str], exclude: str | None = None
+    ) -> list[dict]:
+        """Still-`proposed` amendments in one channel that create the same thing.
+
+        Used for `add`/`fix`, which have no run to key on yet: two cards for the
+        same new run in the same channel are the same proposal.
+        """
+        wanted = {str(b) for b in bosses}
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = 'proposed' AND channel_id = ? "
+            "AND run_id IS NULL ORDER BY created_at, id",
+            (str(channel_id),),
+        )
+        return [
+            row
+            for row in (self._amendment(r) for r in rows)
+            if row["id"] != exclude and {str(b) for b in row["bosses"]} == wanted
+        ]
+
+    def stale_amendments(self, before: datetime, status: str = "proposed") -> list[dict]:
+        """Proposals older than ``before`` -- the tick expires these."""
+        rows = self._conn.execute(
+            "SELECT * FROM amendments WHERE status = ? AND created_at < ? ORDER BY created_at",
+            (status, to_iso(before)),
+        )
+        return [self._amendment(r) for r in rows]
+
+    @staticmethod
+    def _amendment(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["bosses"] = _json_list(data["bosses"])
+        data["participants"] = _json_list(data["participants"])
+        data["evidence_msg_ids"] = _json_list(data["evidence_msg_ids"])
+        data["payload"] = json.loads(data["payload"] or "{}")
+        data["is_question"] = bool(data["is_question"])
+        data["week_start"] = from_iso(data["week_start"])
+        data["created_at"] = from_iso(data["created_at"])
+        data["new_datetime"] = from_iso(data["new_datetime"]) if data["new_datetime"] else None
+        return data
+
+    # -- extraction log ----------------------------------------------------
+    def log_extraction(
+        self,
+        model: str,
+        prompt: str,
+        raw_response: str,
+        latency_ms: int | None = None,
+        message_ids: Sequence[int | str] = (),
+        amendment_ids: Sequence[str] = (),
+        at: datetime | None = None,
+    ) -> str:
+        """Record one model call. This is the prompt-tuning tool (DESIGN.md §5)."""
+        extraction_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO extractions
+                (id, at, model, prompt, raw_response, latency_ms, message_ids, amendment_ids)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                extraction_id,
+                to_iso(at or utcnow()),
+                model,
+                prompt,
+                raw_response,
+                int(latency_ms) if latency_ms is not None else None,
+                _dump(str(m) for m in message_ids),
+                _dump(amendment_ids),
+            ),
+        )
+        return extraction_id
+
+    def set_extraction_amendments(self, extraction_id: str, amendment_ids: Sequence[str]) -> None:
+        self._conn.execute(
+            "UPDATE extractions SET amendment_ids = ? WHERE id = ?",
+            (_dump(amendment_ids), extraction_id),
+        )
+
+    # -- rescan jobs -------------------------------------------------------
+    def create_rescan_job(
+        self,
+        job_id: str,
+        channels: Sequence[str],
+        window: str,
+        source: str = "manual",
+        automated: bool = False,
+        requested_by: int | str | None = None,
+        at: datetime | None = None,
+    ) -> str:
+        """Record a rescan the moment it is asked for, before it runs."""
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO rescan_jobs
+                (id, channels, window, source, automated, requested_by, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)
+            """,
+            (
+                job_id,
+                _dump(str(c) for c in channels),
+                window,
+                source,
+                int(bool(automated)),
+                str(requested_by) if requested_by is not None else None,
+                to_iso(at or utcnow()),
+            ),
+        )
+        return job_id
+
+    def update_rescan_job(self, job_id: str, **fields: Any) -> None:
+        allowed = {
+            "status",
+            "started_at",
+            "finished_at",
+            "results",
+            "error",
+            "channels",
+            "window",
+        }
+        sets, values = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            if key in ("started_at", "finished_at") and isinstance(value, datetime):
+                value = to_iso(value)
+            if key in ("results", "channels") and not isinstance(value, str):
+                value = json.dumps(value)
+            sets.append(f"{key} = ?")
+            values.append(value)
+        if not sets:
+            return
+        values.append(job_id)
+        self._conn.execute(f"UPDATE rescan_jobs SET {', '.join(sets)} WHERE id = ?", values)
+
+    def get_rescan_job(self, job_id: str) -> dict | None:
+        row = self._conn.execute("SELECT * FROM rescan_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._rescan_job(row) if row else None
+
+    def recent_rescan_jobs(self, limit: int = 10) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM rescan_jobs ORDER BY created_at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        return [self._rescan_job(r) for r in rows]
+
+    @staticmethod
+    def _rescan_job(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["channels"] = _json_list(data["channels"])
+        data["results"] = json.loads(data["results"] or "[]")
+        data["automated"] = bool(data["automated"])
+        data["created_at"] = from_iso(data["created_at"])
+        for key in ("started_at", "finished_at"):
+            data[key] = from_iso(data[key]) if data[key] else None
+        return data
+
+    def recent_extractions(self, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM extractions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        return [self._extraction(row) for row in rows]
+
+    def get_extraction(self, extraction_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM extractions WHERE id = ?", (extraction_id,)
+        ).fetchone()
+        return self._extraction(row) if row else None
+
+    def list_extraction_ids(self) -> list[str]:
+        """Every extraction id, newest first -- what a short-prefix lookup resolves against."""
+        return [r["id"] for r in self._conn.execute("SELECT id FROM extractions ORDER BY at DESC")]
+
+    @staticmethod
+    def _extraction(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["at"] = from_iso(data["at"])
+        data["message_ids"] = _json_list(data["message_ids"])
+        data["amendment_ids"] = _json_list(data["amendment_ids"])
+        return data

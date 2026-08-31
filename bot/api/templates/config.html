@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Config — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Runtime</p>
+    <h1>Config</h1>
+    <p>These four take effect immediately and survive a restart. Everything below them is set in
+      <code>.env</code> and needs a redeploy.</p>
+  </div>
+</div>
+
+{% if config.missing_manage_messages %}
+<div class="empty" role="status">
+  <strong>Missing “Manage Messages” in {{ config.missing_manage_messages|join(", ") }}.</strong>
+  The bot needs it to take somebody's old reaction off, so ✅ and ❌ stay one-or-the-other. Until
+  it is granted, a person who switches answer is counted as both there. Fix it in
+  <strong>Edit Channel → Permissions</strong>, or re-invite the bot with the permissions in the
+  README.
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Pings</h2></div>
+    <form method="post" action="/config" class="filters">
+      <label class="field"><span>Morning ping</span>
+        <input name="day_of_ping_time" value="{{ config.day_of_ping_time }}" size="6" class="mono">
+      </label>
+      <label class="field"><span>Countdowns (minutes)</span>
+        <input name="countdown_minutes" value="{{ config.countdown_minutes }}" size="10" class="mono">
+      </label>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </form>
+    <p class="run__meta">Changing either re-places every ping that has not fired yet.</p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Chat watching</h2></div>
+    <div class="run__actions" style="justify-content: flex-start">
+      <form method="post" action="/config">
+        <input type="hidden" name="paused" value="{{ '0' if config.paused else '1' }}">
+        <button class="btn" type="submit">{{ "Resume watching" if config.paused else "Pause watching" }}</button>
+      </form>
+      <form method="post" action="/config">
+        <input type="hidden" name="extract_enabled" value="{{ '0' if config.extract_enabled else '1' }}">
+        <button class="btn" type="submit">{{ "Turn the extractor on" if not config.extract_enabled else "Turn the extractor off" }}</button>
+      </form>
+    </div>
+    <p class="run__meta">
+      Watching is <strong>{{ "paused" if config.paused else "on" }}</strong> ·
+      extractor <strong>{{ "on" if config.extract_enabled else "off" }}</strong>.
+      Messages are stored either way, so a rescan can catch up later.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Notifications</h2></div>
+    <div class="run__actions" style="justify-content: flex-start">
+      <form method="post" action="/config">
+        <input type="hidden" name="quiet_mode" value="{{ '0' if config.quiet_mode else '1' }}">
+        <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
+      </form>
+    </div>
+    <p class="run__meta">
+      Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
+      While it is on the bot posts everything as usual but notifies nobody —
+      names still show, no pings go out, and each message is marked 🔕.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Weekly digest</h2></div>
+    <form method="post" action="/digest" class="filters">
+      <label class="field"><span>Week</span>
+        <select name="week"><option value="this">This week</option><option value="next">Next week</option></select>
+      </label>
+      <label class="field"><span>Channel</span>
+        <select name="channel_id">
+          <option value="">POST_CHANNEL_ID</option>
+          {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="btn btn--primary" type="submit">Post it now</button>
+    </form>
+    <p class="run__meta">Posts the whole guild's week. It names people rather than pinging them.</p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Re-read the party channels</h2></div>
+    <form method="post" action="/rescan" hx-post="/rescan" hx-target="#rescan-job"
+          hx-swap="outerHTML">
+      <div class="filters">
+        <label class="field"><span>How far back</span>
+          <select name="window">
+            <option value="week">This boss week</option>
+            <option value="2weeks">Last 2 weeks</option>
+            <option value="48h">48h</option>
+            <option value="24h">24h</option>
+          </select>
+        </label>
+        <button class="btn btn--primary" type="submit">Rescan</button>
+      </div>
+      <fieldset class="field">
+        <span class="label">Channels — leave all unticked for every one</span>
+        <div class="run__people">
+          {% for target in rescan_targets %}
+          <label class="chip">
+            <input type="checkbox" name="channels" value="{{ target.id }}"> {{ target.name }}
+            {% if not target.has_runs %}<span class="id">general</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </form>
+    <div id="rescan-job">
+      {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
+    </div>
+    <p class="run__meta">Pulls each channel's history from Discord, splits it back into
+      conversations, and posts one card per channel at the end. One channel at a time, so a full
+      sweep takes a few minutes — it runs in the background, and the bot keeps working while it
+      does, so you can leave the page.</p>
+    {% if recent_rescans %}
+    <details>
+      <summary class="btn">Recent rescans</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>Channels</th><th>Window</th><th>Cards</th><th></th></tr></thead>
+          <tbody>
+            {% for past in recent_rescans %}
+            <tr>
+              <td class="mono">{{ "%.0f"|format(past.elapsed_ms / 1000) }}s</td>
+              <td>{{ past.channel_names|join(", ") }}</td>
+              <td class="mono">{{ past.window }}</td>
+              <td class="mono">{{ past.results|sum(attribute="proposals") }}</td>
+              <td><a href="/config?job={{ past.job_id }}">{{ past.status }}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  </section>
+</div>
+
+<hr class="rule">
+
+<section class="card">
+  <div class="card__head">
+    <h2 class="card__title">Channel access</h2>
+    <form method="post" action="/access" hx-get="/access" hx-target="#access" hx-swap="innerHTML"
+          style="margin-left:auto">
+      <button class="btn" type="submit">Check again</button>
+    </form>
+  </div>
+  <div id="access">{% include "partials/access.html" %}</div>
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Set in <code>.env</code></h2></div>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+        <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
+        <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
+        <tr><th>Model</th><td class="mono">{{ config.model }}</td></tr>
+        <tr><th>Ollama</th><td class="mono">{{ config.ollama_host }}</td></tr>
+        <tr><th>Minimum confidence</th><td class="mono">{{ config.min_confidence }}</td></tr>
+        <tr><th>Digest channel</th><td class="mono">{{ config.post_channel_id or "not set" }}</td></tr>
+        <tr><th>Watched channels</th><td class="mono">{{ config.watched_channels|join(", ") or "none" }}</td></tr>
+        <tr><th>Watched categories</th><td class="mono">{{ config.watched_categories|join(", ") or "none" }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

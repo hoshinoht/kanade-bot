@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "partials/macros.html" import boss_list %}
+{% block title %}Inbox — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">From the party chat</p>
+    <h1>{{ pending|length }} change{{ "" if pending|length == 1 else "s" }} waiting</h1>
+    <p>Approving here is the same as reacting ✅ on the card in Discord — it applies the change and
+      edits the card to say so.</p>
+  </div>
+</div>
+
+{% if not pending %}
+<div class="empty">
+  <strong>Nothing waiting.</strong>
+  The extractor posts a card when it reads a change in a watched channel; unanswered cards expire
+  after 24 hours.
+</div>
+{% endif %}
+
+{% for item in pending %}
+<article class="card" id="amendment-{{ item.short_id }}" style="animation-delay: {{ loop.index0 * 30 }}ms">
+  <div class="card__head">
+    <h2 class="card__title">
+      {{ item.kind_label }}
+      {% set detail = item.boss_detail or (item.run.boss_detail if item.run else []) %}
+      {% if detail %}— {{ boss_list(detail, level=False) }}{% endif %}
+    </h2>
+    <span class="conf conf--{{ item.confidence|confidence_band }}">
+      {% if item.confidence is not none %}{{ "%.2f"|format(item.confidence) }}{% else %}no score{% endif %}
+    </span>
+    {% if item.is_question %}<span class="chip chip--waiting">still a question</span>{% endif %}
+    {% if item.channel_name %}<span class="chip">{{ item.channel_name }}</span>{% endif %}
+    <span class="id">#{{ item.short_id }} · read {{ item.created_at|local_dt }}</span>
+  </div>
+
+  <p>
+    {# Only a move reads "old → new"; see service.amendment_view. #}
+    {% if item.from_when %}
+      <span class="mono was">{{ item.from_when }}</span> <span class="arrow" aria-hidden="true">→</span>
+    {% endif %}
+    <strong class="mono">{{ item.when }}</strong>
+    {% if item.participants %}
+      — {% for person in item.participants %}<span class="chip">{{ person.name }}</span> {% endfor %}
+    {% endif %}
+  </p>
+  {% if item.summary %}<p class="run__meta"><em>{{ item.summary }}</em></p>{% endif %}
+
+  {% if item.evidence %}
+  <div class="evidence">
+    {% for line in item.evidence %}
+    <p class="evidence__line">
+      {% if line.missing %}
+        <span class="evidence__text">message {{ line.id }} is no longer stored</span>
+      {% else %}
+        <span class="evidence__who">{{ line.author_name }}</span>
+        <span class="evidence__at">{{ line.local_time }}</span>
+        <br><span class="evidence__text">{{ line.content }}</span>
+        {% if line.url %} <a href="{{ line.url }}" class="id">open</a>{% endif %}
+      {% endif %}
+    </p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="run__actions" style="justify-content: flex-start; margin-top: 0.8rem">
+    <form method="post" action="/inbox/{{ item.id }}/approve">
+      <button class="btn btn--primary" type="submit">Approve</button>
+    </form>
+    {% if item.run %}
+    <form method="post" action="/inbox/{{ item.id }}/approve" class="filters amend-edit">
+      <label class="field field--grow"><span>Edit, then approve</span>
+        <input class="input--when mono" name="to"
+               placeholder="{{ item.run.local_time }} or wed 21:30"
+               aria-label="New day and time for this run">
+      </label>
+      <button class="btn" type="submit">Move &amp; approve</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/inbox/{{ item.id }}/reject" hx-confirm="Reject this change?">
+      <button class="btn btn--danger" type="submit">Reject</button>
+    </form>
+    {% if item.card_url %}<a class="btn btn--ghost" href="{{ item.card_url }}">See the card</a>{% endif %}
+  </div>
+</article>
+{% endfor %}
+{% endblock %}

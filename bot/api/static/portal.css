@@ -1,0 +1,1782 @@
+/* Boss scheduler portal.
+ *
+ * Read on a phone, at night, to answer one question: what is on, and has
+ * everyone answered? So the week keeps its own shape -- seven columns starting
+ * on the reset day, not a Monday-first calendar -- and the clock time is the
+ * loudest thing on every row.
+ *
+ * Type: Archivo for everything spoken, IBM Plex Mono for everything counted
+ * (times, ids, latencies). The contrast between tracked caps and tabular
+ * figures is the whole personality; nothing else needs decorating.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --ground: #f1f0f5;
+  --surface: #ffffff;
+  --raise: #f8f7fb;
+  --ink: #17161f;
+  --dim: #6b6879;
+  --faint: #9794a5;
+  --line: #e1dfe8;
+  --line-soft: #ecebf1;
+  --accent: #4b3bd1;
+  --accent-ink: #ffffff;
+  --accent-wash: #ece9fb;
+
+  --ok: #16794f;
+  --warn: #8f6205;
+  --risk: #b8323d;
+  --own: #34648f;
+  --off: #8b8898;
+
+  /* Difficulty pills, keyed to the in-game boss list rather than to this
+     page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
+     black-and-ember Extreme. They are the one saturated thing here. */
+  --pill-e-bg: #d7d9dd;
+  --pill-e-fg: #23252b;
+  --pill-n-bg: #2f93b3;
+  --pill-n-fg: #ffffff;
+  --pill-h-bg: #d9407f;
+  --pill-h-fg: #ffffff;
+  --pill-c-bg: #17161c;
+  --pill-c-fg: #f0a030;
+  --pill-x-bg: #17161c;
+  --pill-x-fg: #ff5a3c;
+
+  --sans: "Archivo", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
+    monospace;
+
+  --r: 10px;
+  --r-sm: 6px;
+  --shadow: 0 1px 2px rgb(23 22 31 / 6%), 0 8px 24px -18px rgb(23 22 31 / 40%);
+  --gutter: clamp(0.9rem, 3vw, 2rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #131219;
+    --surface: #1b1a24;
+    --raise: #22212d;
+    --ink: #ecebf3;
+    --dim: #9a95a9;
+    --faint: #746f83;
+    --line: #2e2c3b;
+    --line-soft: #262533;
+    --accent: #a691ff;
+    --accent-ink: #191428;
+    --accent-wash: #241f3d;
+
+    --ok: #4fd39c;
+    --warn: #e5b656;
+    --risk: #ff8b93;
+    --own: #83b6e8;
+    --off: #77738a;
+
+    --pill-e-bg: #3a3d45;
+    --pill-e-fg: #e6e8ee;
+    --pill-n-bg: #3aa7c9;
+    --pill-n-fg: #06222b;
+    --pill-h-bg: #e8579a;
+    --pill-h-fg: #2b0716;
+    --pill-c-bg: #0e0d12;
+    --pill-c-fg: #f5b452;
+    --pill-x-bg: #0e0d12;
+    --pill-x-fg: #ff7050;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px -20px rgb(0 0 0 / 80%);
+  }
+
+  .portrait--mono {
+    background: hsl(var(--mono-hue) 32% 24%);
+    color: hsl(var(--mono-hue) 65% 78%);
+    border-color: hsl(var(--mono-hue) 28% 34%);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Utility classes below set `display`, which would otherwise out-specify the
+   user agent's rule for the `hidden` attribute. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: currentcolor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ── shell ──────────────────────────────────────────────────────────────── */
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--gutter) 5rem;
+  min-width: 0;
+}
+
+body {
+  overflow-x: clip;
+}
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.7rem var(--gutter) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+  min-width: 0;
+}
+
+.masthead__inner > * {
+  min-width: 0;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.brand__mark {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 3px;
+  padding: 0.1rem 0.32rem;
+}
+
+.masthead__meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+  letter-spacing: 0.02em;
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.nav {
+  display: flex;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1 0 100%;
+  min-width: 0;
+  margin-top: 0.35rem;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.nav a {
+  flex: none;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.nav a:hover {
+  color: var(--ink);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.nav .pip {
+  display: inline-block;
+  min-width: 1.15em;
+  margin-left: 0.35em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+/* ── page furniture ─────────────────────────────────────────────────────── */
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1rem;
+  margin: 1.8rem 0 1rem;
+}
+
+h1 {
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.8rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.page-head p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 0.15rem;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.5rem 0;
+}
+
+/* ── the week rail: the shape of a boss week ────────────────────────────── */
+
+.rail {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.rail__day {
+  position: relative;
+  display: block;
+  padding: 0.6rem 0.35rem 0.55rem;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  border-right: 1px solid var(--line-soft);
+  min-height: 5.1rem;
+}
+
+.rail__day:last-child {
+  border-right: 0;
+}
+
+.rail__day:hover {
+  background: var(--raise);
+}
+
+.rail__dow {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.rail__num {
+  display: block;
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.rail__day--empty .rail__num {
+  color: var(--faint);
+}
+
+.rail__day--today .rail__num {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.rail__day--today::after {
+  content: "";
+  position: absolute;
+  inset: auto 22% 0;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+
+/* The reset day is where the boss week actually begins -- the one piece of
+   domain knowledge a generic calendar would flatten away. */
+.rail__reset {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+.rail__pips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 0.4rem;
+  min-height: 8px;
+}
+
+.pip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--off);
+}
+
+.pip-dot--planned {
+  background: var(--warn);
+}
+.pip-dot--confirmed {
+  background: var(--ok);
+}
+.pip-dot--at_risk {
+  background: var(--risk);
+}
+.pip-dot--otot {
+  background: var(--own);
+}
+.pip-dot--cancelled,
+.pip-dot--done {
+  background: var(--faint);
+  opacity: 0.5;
+}
+
+/* ── filter bar ─────────────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 1.1rem 0 0.4rem;
+}
+
+.filters input,
+.filters select,
+.filters .btn {
+  height: 2.1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.field > span,
+.label {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  max-width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.42rem 0.6rem;
+  min-width: 0;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+textarea {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.seg a {
+  padding: 0.42rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-right: 1px solid var(--line);
+}
+
+.seg a:last-child {
+  border-right: 0;
+}
+
+.seg a[aria-current="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+
+.btn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.38rem 0.7rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn--primary:hover {
+  color: var(--accent-ink);
+  filter: brightness(1.08);
+}
+
+.btn--danger:hover {
+  border-color: var(--risk);
+  color: var(--risk);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+summary.btn {
+  list-style: none;
+  user-select: none;
+}
+
+summary.btn::-webkit-details-marker {
+  display: none;
+}
+
+details[open] > summary.btn {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+/* A checkbox inside a chip is how the party is picked. */
+.chip:has(input) {
+  cursor: pointer;
+  padding-left: 0.3rem;
+}
+
+.chip input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* ── day sections and run rows ──────────────────────────────────────────── */
+
+.day {
+  margin-top: 1.6rem;
+  scroll-margin-top: 7rem;
+}
+
+.day__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.day__name {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.day__count {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+.day__head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.runs {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.run {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 0.4rem 1rem;
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--off);
+  border-radius: var(--r);
+  padding: 0.8rem 0.9rem;
+  box-shadow: var(--shadow);
+}
+
+.run--planned {
+  border-left-color: var(--warn);
+}
+.run--confirmed {
+  border-left-color: var(--ok);
+}
+.run--at_risk {
+  border-left-color: var(--risk);
+}
+.run--otot {
+  border-left-color: var(--own);
+}
+.run--cancelled,
+.run--done {
+  border-left-color: var(--faint);
+  opacity: 0.62;
+}
+
+.run__time {
+  font-family: var(--mono);
+  font-size: 1.42rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* "own time" is words, not a clock reading, so it drops out of the big
+   tabular-figure treatment rather than wrapping inside it. */
+.run--otot .run__time {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding-top: 0.35rem;
+}
+
+.run__time small {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 0.15rem;
+}
+
+.run > * {
+  min-width: 0;
+}
+
+.run__bosses {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.3rem;
+}
+
+.run__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.run__actions form {
+  display: flex;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.run__actions input {
+  min-width: 0;
+  max-width: 7.5rem;
+}
+
+/* The status of a run is one choice out of five, so it reads as one control
+   rather than as four unrelated buttons. */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.statusbar__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.statusbar__note {
+  font-size: 0.72rem;
+  color: var(--risk);
+}
+
+.seg--status {
+  flex-wrap: wrap;
+}
+
+/* ── the cards a run has produced ───────────────────────────────────────────
+ *
+ * A run's messages in the order the bot says them: morning, then the
+ * countdowns. Mono, because these are times -- the same rule the clock on the
+ * left follows -- and one line, because "did the morning ping go out?" is a
+ * glance, not a page. A posted card is a link out to the message itself; the
+ * two states that are *not* links are the two worth noticing.
+ */
+.run__cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.run__cards-label {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.cardlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.cardlink__at {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.cardlink--posted {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cardlink--posted:hover {
+  border-bottom-color: var(--accent);
+}
+
+.cardlink__out {
+  font-size: 0.62rem;
+  opacity: 0.75;
+}
+
+/* Nothing said yet: dashed, like the chip of somebody who has not answered. */
+.cardlink--queued {
+  color: var(--faint);
+  border-bottom: 1px dashed var(--line);
+}
+
+/* Fired into the void -- the host was asleep, or the run moved. Worth a colour
+   because it is the one state that explains a ping nobody remembers getting. */
+.cardlink--skipped {
+  color: var(--warn);
+}
+
+/* ── answers, folded away ──────────────────────────────────────────────────
+ *
+ * Correcting somebody's ✅ is a rare, deliberate act, so it hides behind a
+ * disclosure rather than putting three buttons per person on every row. Open,
+ * it borrows the status bar's segmented control: one vocabulary for "pick one
+ * of these states", used twice.
+ */
+.answers {
+  grid-column: 1 / -1;
+  margin-top: 0.4rem;
+}
+
+.answers__summary {
+  font-size: 0.68rem;
+  padding: 0.2rem 0.5rem;
+  min-height: 0;
+}
+
+.answers__body {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0 0.2rem;
+}
+
+.answers__hint {
+  font-size: 0.7rem;
+  color: var(--dim);
+  margin: 0;
+}
+
+.answers__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.answers__who {
+  flex: 1 1 8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.seg--answer .seg__btn {
+  font-size: 0.68rem;
+  padding: 0.22rem 0.55rem;
+  min-height: 30px;
+}
+
+.seg__btn {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.34rem 0.7rem;
+  min-height: 34px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg__btn:last-child {
+  border-right: 0;
+}
+
+.seg__btn:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+.seg__btn--on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg__btn--on:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chanmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chanmark__btn {
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chanmark__btn:hover {
+  color: var(--accent);
+  background: var(--raise);
+}
+
+.run__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.45rem;
+}
+
+/* ── chips ──────────────────────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  background: var(--raise);
+  white-space: nowrap;
+}
+
+.chip--mono {
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.chip__x {
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  margin-left: 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chip__x:hover {
+  color: var(--risk);
+}
+
+.chip__add {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--dim);
+}
+
+.chip--yes {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.chip--no {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, transparent);
+}
+
+.chip--maybe {
+  color: var(--own);
+  border-color: color-mix(in srgb, var(--own) 35%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, transparent);
+}
+
+.chip--waiting {
+  color: var(--faint);
+  border-style: dashed;
+  background: transparent;
+}
+
+/* The answer as a shape: ● on, ✕ out, ? maybe, ○ nothing yet. Colour alone
+   would leave the row unreadable to anyone who cannot separate the green chip
+   from the red one, and a filled dot beside a hollow one is legible at arm's
+   length in a way two similar words are not. */
+.chip__mark {
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.chip--waiting .chip__mark {
+  opacity: 0.7;
+}
+
+/* For screen readers only: the chips say their state in a glyph, which reads
+   as nothing at all out loud. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status--planned {
+  color: var(--warn);
+}
+.status--confirmed {
+  color: var(--ok);
+}
+.status--at_risk {
+  color: var(--risk);
+}
+.status--otot {
+  color: var(--own);
+}
+.status--cancelled,
+.status--done {
+  color: var(--faint);
+}
+
+/* Not a run status: the count of people who have not answered at all. It reads
+   quieter than "out" on purpose -- silence is not a problem yet. */
+.status--waiting {
+  color: var(--faint);
+}
+
+/* ── bosses: portrait, name, difficulty pill, level ─────────────────────── */
+
+.boss {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.boss + .boss {
+  margin-left: 0.55rem;
+}
+
+/* A portrait and its monogram stand-in occupy the same box, so adding an image
+   never reflows the row. */
+.portrait {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+}
+
+.portrait--sm {
+  width: 26px;
+  height: 26px;
+  font-size: 0.6rem;
+}
+
+.portrait--md {
+  width: 38px;
+  height: 38px;
+  font-size: 0.78rem;
+}
+
+.portrait--mono {
+  background: hsl(var(--mono-hue) 42% 88%);
+  color: hsl(var(--mono-hue) 55% 26%);
+  border-color: hsl(var(--mono-hue) 35% 78%);
+}
+
+.boss__name {
+  font-weight: 600;
+  white-space: normal;
+}
+
+.boss__lv {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+/* The difficulty tier is a real thing in game, and these are its colours. */
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.42rem 0.09rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.5;
+  background: var(--off);
+  color: #fff;
+  vertical-align: 0.06em;
+}
+
+.pill--e {
+  background: var(--pill-e-bg);
+  color: var(--pill-e-fg);
+}
+.pill--n {
+  background: var(--pill-n-bg);
+  color: var(--pill-n-fg);
+}
+.pill--h {
+  background: var(--pill-h-bg);
+  color: var(--pill-h-fg);
+}
+.pill--c {
+  background: var(--pill-c-bg);
+  color: var(--pill-c-fg);
+}
+.pill--x {
+  background: var(--pill-x-bg);
+  color: var(--pill-x-fg);
+}
+
+/* ── the boss grid: the in-game list, as a picker ───────────────────────── */
+
+.grid-bosses {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.bossrow {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) 1fr;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+}
+
+.bossrow--on {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.bossrow__id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.bossrow__name {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.bossrow__lv {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
+.bossrow__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* A pill you can press. Selected = filled, unselected = outlined and dim, so
+   the two states differ by more than colour. */
+.pill-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 36px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pill-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.pill-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
+}
+
+.pill-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pill-toggle__tick {
+  visibility: hidden;
+}
+
+.pill-toggle:has(input:checked) .pill-toggle__tick,
+.pill-toggle--on .pill-toggle__tick {
+  visibility: visible;
+}
+
+.pill-toggle--e:has(input:checked),
+.pill-toggle--e.pill-toggle--on {
+  background: var(--pill-e-bg);
+  color: var(--pill-e-fg);
+  border-color: var(--pill-e-bg);
+}
+.pill-toggle--n:has(input:checked),
+.pill-toggle--n.pill-toggle--on {
+  background: var(--pill-n-bg);
+  color: var(--pill-n-fg);
+  border-color: var(--pill-n-bg);
+}
+.pill-toggle--h:has(input:checked),
+.pill-toggle--h.pill-toggle--on {
+  background: var(--pill-h-bg);
+  color: var(--pill-h-fg);
+  border-color: var(--pill-h-bg);
+}
+.pill-toggle--c:has(input:checked),
+.pill-toggle--c.pill-toggle--on {
+  background: var(--pill-c-bg);
+  color: var(--pill-c-fg);
+  border-color: #3a3742;
+}
+.pill-toggle--x:has(input:checked),
+.pill-toggle--x.pill-toggle--on {
+  background: var(--pill-x-bg);
+  color: var(--pill-x-fg);
+  border-color: #3a3742;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.id {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--faint);
+}
+
+/* ── cards, tables, empties ─────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.card + .card {
+  margin-top: 0.75rem;
+}
+
+.card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.card__title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.grid-2 {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+th {
+  text-align: left;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--raise);
+}
+
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  padding: 2rem 1.2rem;
+  text-align: center;
+  color: var(--dim);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.empty strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.95rem;
+  margin-bottom: 0.3rem;
+}
+
+.flash {
+  border-radius: var(--r-sm);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+  margin: 0.6rem 0;
+  border: 1px solid;
+}
+
+.flash--ok {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+
+.flash--error {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+  background: color-mix(in srgb, var(--risk) 8%, transparent);
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.75rem 0.85rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ── inbox evidence: the chat that justifies a change ───────────────────── */
+
+details form.filters {
+  padding: 0.6rem 0;
+  align-items: flex-end;
+}
+
+details fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.evidence {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line);
+}
+
+.evidence__line {
+  font-size: 0.82rem;
+}
+
+.evidence__who {
+  font-weight: 600;
+}
+
+.evidence__at {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--faint);
+  margin-left: 0.4rem;
+}
+
+.evidence__text {
+  color: var(--dim);
+}
+
+.conf {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.conf--high {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.conf--mid {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.conf--low,
+.conf--unknown {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+}
+
+/* ── login ──────────────────────────────────────────────────────────────── */
+
+.gate {
+  min-height: 82vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.gate__card {
+  width: min(26rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 1.6rem;
+  box-shadow: var(--shadow);
+}
+
+.gate__card h1 {
+  margin-bottom: 0.3rem;
+}
+
+.gate__card p {
+  color: var(--dim);
+  font-size: 0.85rem;
+  margin-top: 0;
+}
+
+.gate__card label {
+  display: block;
+}
+
+.gate__card input {
+  width: 100%;
+  font-family: var(--mono);
+}
+
+.gate__card .btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.7rem;
+}
+
+.footnote {
+  color: var(--faint);
+  font-size: 0.75rem;
+  margin-top: 2.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+}
+
+/* ── motion: a short settle on load, nothing else ───────────────────────── */
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.run,
+.card {
+  animation: settle 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+.htmx-swapping {
+  opacity: 0.35;
+  transition: opacity 0.12s;
+}
+
+.htmx-request .btn,
+.btn.htmx-request {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── phone ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .run {
+    grid-template-columns: 1fr;
+    padding: 0.75rem;
+  }
+
+  .run__time {
+    font-size: 1.15rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  /* "own time" is words, not a clock reading, so it drops out of the big
+   tabular-figure treatment rather than wrapping inside it. */
+.run--otot .run__time {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding-top: 0.35rem;
+}
+
+.run__time small {
+    margin-top: 0;
+  }
+
+  .run__actions {
+    justify-content: flex-start;
+  }
+
+  .rail__day {
+    padding: 0.5rem 0.15rem;
+    min-height: 4.4rem;
+  }
+
+  .rail__num {
+    font-size: 1.05rem;
+  }
+
+  .rail__reset {
+    display: none;
+  }
+
+  .masthead__meta {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* ── modal: an editor that is too tall to unfold in place ───────────────── */
+
+/* The fixed-timing editor contains the whole in-game boss list. Unfolded
+   inside its table row it pushed every other timing several screens down, so
+   it opens as a dialog instead: head and foot pinned, the body scrolling
+   between them. Without JavaScript the Edit link is an ordinary fragment
+   link, and this reveals the same form in place. */
+dialog.modal {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  width: min(46rem, calc(100% - 1.6rem));
+  max-width: none;
+  max-height: min(88vh, 48rem);
+  overflow: visible;
+}
+
+dialog.modal::backdrop {
+  background: rgb(12 11 18 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+dialog.modal:target {
+  display: block;
+  position: static;
+  margin: 0.8rem 0;
+}
+
+.modal__panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 48rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 24px 60px -22px rgb(12 11 18 / 55%);
+  overflow: hidden;
+}
+
+.modal__head,
+.modal__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: none;
+  padding: 0.75rem 1rem;
+  background: var(--raise);
+}
+
+.modal__head {
+  border-bottom: 1px solid var(--line);
+}
+
+.modal__foot {
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
+}
+
+.modal__head > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.modal__x {
+  flex: none;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.modal__x:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.7rem 1rem 1rem;
+}
+
+.modal__body .filters {
+  margin-top: 0.7rem;
+}
+
+/* The boss picker is the tall part, so it gets its own recess and its own
+   scrollbar rather than making the whole dialog a mile of pills. */
+.modal__well {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--ground);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+dialog.modal[open] {
+  animation: lift 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.rowbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.page-head > .btn {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  dialog.modal {
+    width: calc(100% - 0.8rem);
+    max-height: 92vh;
+  }
+
+  .modal__panel {
+    max-height: 92vh;
+  }
+
+  .modal__well {
+    max-height: 46vh;
+  }
+}
+
+/* ── inbox: the day-and-time an approver can overwrite ──────────────────── */
+
+/* This form lives in .run__actions, whose inputs are capped at 7.5rem so the
+   week page's amend boxes stay compact. Here the field takes a whole
+   "wed 21:30", so it opts out of that cap and takes the leftover row. */
+.amend-edit {
+  margin: 0;
+  flex: 1 1 15rem;
+}
+
+.field--grow {
+  flex: 1 1 11rem;
+  min-width: 0;
+}
+
+.run__actions .amend-edit .input--when {
+  width: 100%;
+  min-width: 9rem;
+  max-width: none;
+}
+
+/* A move shows the time it is leaving; nothing else has one. */
+.was {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.arrow {
+  color: var(--faint);
+  padding: 0 0.1rem;
+}

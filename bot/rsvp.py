@@ -30,11 +30,26 @@ def state_for_emoji(emoji: str) -> str | None:
 def compute_status(current_status: str, participants: list[str], rsvps: dict[str, str]) -> str:
     """Derive a run's status from its RSVP tally.
 
-    * anyone declined -> ``at_risk``
-    * every participant said yes -> ``confirmed``
-    * otherwise -> ``planned``
+    ==================  ==========================================  ============
+    from                tally                                       result
+    ==================  ==========================================  ============
+    any                 a participant declined                      ``at_risk``
+    any                 every participant said yes                  ``confirmed``
+    ``confirmed``       anything else (incomplete, or a retraction)  ``confirmed``
+    anything else       anything else                               ``planned``
+    :data:`STICKY_STATUSES`  (not consulted)                        unchanged
+    ==================  ==========================================  ============
 
-    Statuses in :data:`STICKY_STATUSES` are returned unchanged.
+    The ``confirmed`` row is the important one. A run reaches ``confirmed``
+    either by a full tally or because somebody decided it was on, and a decision
+    is not undone by a tally that is merely *incomplete*: the owner confirmed a
+    run with two of four answers in, a rescan applied one more chat "yes", and
+    the recomputation silently put it back to ``planned``. Only an explicit
+    "no" argues against a confirmed run; silence does not.
+
+    A change of *line-up* does undo it, because the person who just joined never
+    agreed to anything -- but that is not visible from the tally, so the caller
+    handles it (:func:`recompute_after_roster_change`).
     """
     if current_status in STICKY_STATUSES:
         return current_status
@@ -43,7 +58,28 @@ def compute_status(current_status: str, participants: list[str], rsvps: dict[str
         return "at_risk"
     if participants and all(relevant.get(uid) == "yes" for uid in participants):
         return "confirmed"
+    if current_status == "confirmed":
+        return "confirmed"
     return "planned"
+
+
+def recompute_after_roster_change(repo: Repo, run_id: str) -> str:
+    """Re-derive a run's status after its participants changed; returns the status.
+
+    The one case where a ``confirmed`` run *should* lose it: whoever just joined
+    never agreed to the run, so it goes back to being whatever the tally says.
+    Done here rather than by weakening :func:`compute_status`, which cannot tell
+    an incomplete tally from a changed line-up -- and keeping a manual confirm
+    through an incomplete tally is the whole point of it.
+    """
+    run = repo.get_run(run_id)
+    if run is None:  # pragma: no cover - the caller just wrote to it
+        return "planned"
+    derive_from = "planned" if run["status"] == "confirmed" else run["status"]
+    status = compute_status(derive_from, run["participants"], repo.get_rsvps(run_id))
+    if status != run["status"]:
+        repo.set_run_status(run_id, status)
+    return status
 
 
 @dataclass

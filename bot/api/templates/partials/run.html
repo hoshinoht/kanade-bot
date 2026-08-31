@@ -1,0 +1,160 @@
+{% from "partials/macros.html" import boss_list %}
+{# One run. Swapped in place by htmx after an action; re-rendered whole by the
+   server so the status, the tally and the buttons can never disagree. #}
+{# An answer, as a shape and as a word. The shape is what makes a row scannable
+   without reading it -- and being a shape rather than only a colour, it still
+   works for a reader who cannot tell the green chip from the red one. #}
+{% set answer_marks = {"yes": "●", "no": "✕", "maybe": "?", "waiting": "○"} %}
+{% set answer_words = {"yes": "on", "no": "out", "maybe": "maybe", "waiting": "no answer yet"} %}
+<article class="run run--{{ run.status }}" id="run-{{ run.short_id }}" style="animation-delay: {{ (index|default(0)) * 24 }}ms">
+  <div class="run__time">
+    {% if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif %}
+    <small>{{ run.local_day }}</small>
+  </div>
+
+  <div>
+    <p class="run__bosses">{{ boss_list(run.boss_detail) }}</p>
+    <div class="run__meta">
+      <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
+      <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
+      {% if run.no %}<span class="status status--at_risk mono">{{ run.no }} out</span>{% endif %}
+      {% if run.maybe %}<span class="status status--otot mono">{{ run.maybe }} maybe</span>{% endif %}
+      {% if run.unanswered %}<span class="status status--waiting mono">{{ run.unanswered }} waiting</span>{% endif %}
+      {% if run.channel_name %}
+      <span class="chanmark">{{ run.channel_name }}
+        <button class="chanmark__btn" type="submit" form="reread-{{ run.channel_id }}"
+                title="Re-read {{ run.channel_name }} from Discord and propose any changes">⟳</button>
+      </span>
+      {% endif %}
+      <span class="id">#{{ run.short_id }}</span>
+    </div>
+    <div class="run__people">
+      {% for person in run.participants %}
+      {# Every chip says its own answer -- a run row's job is "who is out and
+         who has not answered", and a name with nothing on it used to mean both
+         "waiting" and "said maybe". #}
+      <span class="chip chip--{{ person.rsvp or 'waiting' }}"
+            title="{{ person.name }}: {{ answer_words[person.rsvp or 'waiting'] }}">
+        <span class="chip__mark" aria-hidden="true">{{ answer_marks[person.rsvp or 'waiting'] }}</span>
+        {{ person.name }}
+        <span class="vh">— {{ answer_words[person.rsvp or 'waiting'] }}</span>
+        <button class="chip__x" type="submit" name="remove" value="{{ person.id }}"
+                form="swap-{{ run.short_id }}"
+                title="Take {{ person.name }} off this run for this week only">×</button>
+      </span>
+      {% endfor %}
+      {% if roster %}
+      <select class="chip__add" name="add" form="swap-{{ run.short_id }}"
+              aria-label="Add someone to {{ run.bosses|join(' + ') }} for this week"
+              onchange="this.form.requestSubmit()">
+        <option value="">+ add…</option>
+        {% for member in roster %}
+        {% if member.user_id not in run.participants|map(attribute='id')|list %}
+        <option value="{{ member.user_id }}">{{ member.display_name }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+      {% endif %}
+    </div>
+    {% if run.cards %}
+    {# What the bot has actually said about this run, in the order it says it.
+       Posted cards link straight to the message; a queued one has not been
+       said yet; a skipped one fired while nobody could hear it. #}
+    <p class="run__cards">
+      <span class="run__cards-label">Cards</span>
+      {% for card in run.cards %}
+      {% if card.state == "posted" %}
+      <a class="cardlink cardlink--posted" href="{{ card.url }}" target="_blank" rel="noopener"
+         title="Open the {{ card.label }} card in Discord (posted {{ card.local_sent_at }})">
+        {{ card.label }} <span class="cardlink__at">{{ card.local_sent_at }}</span><span class="cardlink__out" aria-hidden="true">↗</span>
+      </a>
+      {% elif card.state == "skipped" %}
+      <span class="cardlink cardlink--skipped"
+            title="Due {{ card.local_fire_at }}, retired without posting — the host was asleep, or the run changed">
+        {{ card.label }} skipped
+      </span>
+      {% else %}
+      <span class="cardlink cardlink--queued" title="Not posted yet; fires at {{ card.local_fire_at }}">
+        {{ card.label }} <span class="cardlink__at">{{ card.local_fire_at }}</span>
+      </span>
+      {% endif %}
+      {% endfor %}
+    </p>
+    {% endif %}
+    {% if run.roster_change and run.roster_change.changed %}
+    <p class="run__meta"><span class="chip chip--waiting">this week:
+      {%- for person in run.roster_change.out %} −{{ person.name }}{% endfor %}
+      {%- for person in run.roster_change["in"] %} +{{ person.name }}{% endfor %}
+    </span></p>
+    {% endif %}
+    <form id="swap-{{ run.short_id }}" method="post" action="/runs/{{ run.id }}/participants"
+          hx-post="/runs/{{ run.id }}/participants" hx-target="closest .run" hx-swap="outerHTML"
+          hidden><input type="hidden" name="next" value="{{ back }}"></form>
+  </div>
+
+  <div class="run__actions">
+    <form method="post" action="/runs/{{ run.id }}/amend"
+          hx-post="/runs/{{ run.id }}/amend" hx-target="closest .run" hx-swap="outerHTML">
+      <input type="hidden" name="next" value="{{ back }}">
+      <input name="to" placeholder="wed 21:30" size="10" required
+             aria-label="Move run {{ run.short_id }} to a new day and time">
+      <button class="btn" type="submit">Move</button>
+    </form>
+    <form method="post" action="/runs/{{ run.id }}/ping"
+          hx-post="/runs/{{ run.id }}/ping" hx-target="closest .run" hx-swap="outerHTML">
+      <input type="hidden" name="next" value="{{ back }}">
+      <input type="hidden" name="kind" value="day_of">
+      <button class="btn btn--ghost" type="submit"
+              title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
+    </form>
+  </div>
+
+  <form class="statusbar" method="post" action="/runs/{{ run.id }}/status"
+        hx-post="/runs/{{ run.id }}/status" hx-target="closest .run" hx-swap="outerHTML"
+        aria-label="Status of {{ run.bosses|join(' + ') }}">
+    <input type="hidden" name="next" value="{{ back }}">
+    <span class="statusbar__label">Status</span>
+    <div class="seg seg--status">
+      {% for value, label in status_choices %}
+      <button class="seg__btn{% if run.status == value %} seg__btn--on{% endif %}"
+              type="submit" name="status" value="{{ value }}"
+              {% if run.status == value %}aria-current="true"{% endif %}
+              {% if value == "cancelled" and run.status != "cancelled" %}
+              hx-confirm="Cancel {{ run.bosses|join(' + ') }} on {{ run.local_day }}?"
+              {% endif %}>{{ label }}</button>
+      {% endfor %}
+    </div>
+    {% if run.status == "at_risk" %}
+    <span class="statusbar__note">someone said no — pick a status to settle it</span>
+    {% endif %}
+  </form>
+
+  {# Answers, folded away: correcting one is rare, and three buttons per person
+     on every row would drown the thing the row is for. `open` is carried
+     through the swap by the hidden field below, so recording two answers in a
+     row does not close the panel between them. #}
+  <details class="answers" {% if answers_open %}open{% endif %}>
+    <summary class="btn btn--ghost answers__summary">Answers</summary>
+    <div class="answers__body">
+      <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
+      {% for person in run.participants %}
+      <form class="answers__row" method="post" action="/runs/{{ run.id }}/rsvp"
+            hx-post="/runs/{{ run.id }}/rsvp" hx-target="closest .run" hx-swap="outerHTML">
+        <input type="hidden" name="next" value="{{ back }}">
+        <input type="hidden" name="user_id" value="{{ person.id }}">
+        <input type="hidden" name="answers_open" value="1">
+        <span class="answers__who">{{ person.name }}</span>
+        <div class="seg seg--answer" role="group"
+             aria-label="Answer for {{ person.name }} on {{ run.bosses|join(' + ') }}">
+          {% for value, label in [("yes", "On"), ("no", "Out"), ("clear", "Clear")] %}
+          <button class="seg__btn{% if person.rsvp == value %} seg__btn--on{% endif %}"
+                  type="submit" name="answer" value="{{ value }}"
+                  {% if person.rsvp == value %}aria-current="true"{% endif %}
+                  {% if value == "clear" and not person.rsvp %}disabled{% endif %}>{{ label }}</button>
+          {% endfor %}
+        </div>
+      </form>
+      {% endfor %}
+    </div>
+  </details>
+</article>

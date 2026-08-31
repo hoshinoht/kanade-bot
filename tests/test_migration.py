@@ -78,7 +78,7 @@ def v1_db(tmp_path):
 def test_opening_a_v1_database_migrates_it(v1_db):
     repo = Repo(v1_db)
     version = repo._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-    assert version == SCHEMA_VERSION == 2
+    assert version == SCHEMA_VERSION
     repo.close()
 
 
@@ -130,7 +130,10 @@ def test_the_carried_baselines_rematerialise(v1_db):
 
     repo = Repo(v1_db)
     week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
-    created = materialise_week(repo, week, TZ, time(9, 0), COUNTDOWNS)
+    # As of the reset: `materialise_week` creates nothing for a slot that has
+    # already passed, so run this at the wall clock and the carried baseline
+    # stops rematerialising partway through the week.
+    created = materialise_week(repo, week, TZ, time(9, 0), COUNTDOWNS, now=week)
     assert len(created) == 1
     run = repo.get_run(created[0])
     assert run["bosses"] == ["HStar"]
@@ -153,7 +156,10 @@ def test_migrating_is_idempotent(v1_db):
     first.close()
 
     repo = Repo(v1_db)  # second open must be a no-op
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()["version"] == 2
+    assert (
+        repo._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
+        == SCHEMA_VERSION
+    )
     assert repo.get_member("7") is not None
     assert [f["id"] for f in repo.list_fixed_runs()] == ids  # not duplicated or re-keyed
     repo.close()

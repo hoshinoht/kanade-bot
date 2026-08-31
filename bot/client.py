@@ -8,19 +8,36 @@ in memory, so a container restart neither loses nor replays a reminder.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Iterable
-from datetime import datetime, time
+from dataclasses import dataclass
+from datetime import datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import tasks
 
-from . import formatting
+from . import backup, formatting
+from .api.server import ApiServer
+from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
 from .config import Settings
 from .db import Repo
-from .materialise import DAY_OF, countdown_minutes, materialise_week
+from .debug import TEST_PREFIX
+from .extract.commit import CommitResult, commit, expire_stale, may_commit, reject
+from .extract.pipeline import Pipeline
+from .materialise import (
+    DAY_OF,
+    countdown_minutes,
+    is_past,
+    is_stale,
+    mark_done,
+    materialise_week,
+    reconcile_day_of,
+)
+from .pings import audience
+from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
 from .util import roster_rows
@@ -29,10 +46,41 @@ from .weeks import current_week_start, next_week_start, parse_hhmm
 
 log = logging.getLogger(__name__)
 
+#: How many times a post is attempted when the network, rather than Discord,
+#: is what failed -- and how long the first wait between attempts is, doubling.
+POST_ATTEMPTS = 3
+POST_BACKOFF_SECONDS = 1.0
+
+
+@dataclass(frozen=True)
+class ChannelLookup:
+    """Somewhere to post, or the reason there is nowhere."""
+
+    channel: discord.abc.Messageable | None
+    problem: str | None
+
+    @property
+    def ok(self) -> bool:
+        return self.channel is not None
+
+
 CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
+CFG_EXTRACT = "extract_enabled"
+CFG_QUIET = "quiet_mode"
 CFG_LAST_WEEK = "last_materialised_week"
+#: The boss week whose reset digest has already gone out, and the local day the
+#: database was last snapshotted. Both are "have I done this yet?" markers rather
+#: than schedules: the host is a laptop that sleeps, so every periodic job is
+#: driven by comparing state to the clock on each tick, never by firing at an
+#: instant that may pass while the machine is off.
+CFG_LAST_DIGEST = "last_digest_week"
+CFG_LAST_BACKUP = "last_backup_day"
+
+#: A person's "can't make it" notice is posted at most this often per run, so a
+#: ❌ toggled on and off (or mashed) never floods the channel.
+DECLINE_NOTICE_COOLDOWN = timedelta(hours=6)
 
 
 class BossBot(discord.Client):
@@ -53,6 +101,27 @@ class BossBot(discord.Client):
         self.guild_object = discord.Object(id=settings.guild_id)
         self.tree = discord.app_commands.CommandTree(self)
         self._synced = False
+        self._warned_manage_messages = False
+        #: The day a backup failed on, so a broken backups directory is logged
+        #: once rather than every 30 s until midnight. Deliberately in memory:
+        #: a restart is a good moment to try again.
+        self._backup_failed_on: str | None = None
+        #: Runs whose posted cards no longer match the database, and the task
+        #: draining them. Every write that a card displays goes through
+        #: :attr:`bot.db.Repo.on_run_changed`, so no caller has to remember.
+        self._stale_cards: set[str] = set()
+        self._card_refresh: asyncio.Task | None = None
+        repo.on_run_changed = self.card_needs_refresh
+        # The chat extractor: buffers each channel's messages and runs one model
+        # call per burst. Constructing it does not touch Ollama.
+        self.extractor = Pipeline(self)
+        # The portal/CLI HTTP API, served on this same loop (DESIGN.md §5) so it
+        # reads live state and drives Discord without a second process fighting
+        # over SQLite. Constructing the bot does not bind the port.
+        self.api = ApiServer(self)
+        # Re-reading a channel is minutes of model time, so requests are queued
+        # and drained by one task rather than blocking whoever asked.
+        self.rescans = RescanWorker(self)
         self.tick.change_interval(seconds=settings.tick_seconds)
 
     # -- runtime config (DB-backed, seeded from env on first run) ----------
@@ -68,6 +137,44 @@ class BossBot(discord.Client):
     @property
     def paused(self) -> bool:
         return (self.repo.get_config(CFG_PAUSED, "0") or "0") == "1"
+
+    @property
+    def extract_enabled(self) -> bool:
+        """Runtime master switch for reading chat, seeded from ``EXTRACT_ENABLED``.
+
+        Kept in the ``config`` table rather than read from the environment so
+        the portal and ``bossctl config set`` can turn the model off without a
+        redeploy, and the choice survives a restart.
+        """
+        default = "1" if self.settings.extract_enabled else "0"
+        return (self.repo.get_config(CFG_EXTRACT, default) or default) == "1"
+
+    @property
+    def quiet_mode(self) -> bool:
+        """Post everything, notify nobody.
+
+        For developing against a live guild: the bot keeps saying exactly what
+        it would say, but every message goes out with an empty mention
+        allow-list, so a week of testing never puts a red badge on anyone's
+        Discord. Enforced in :meth:`_prepared` (which every card goes through,
+        sent or edited) and :meth:`post_plain`, the only two places the bot
+        builds a non-empty one.
+        """
+        return (self.repo.get_config(CFG_QUIET, "0") or "0") == "1"
+
+    @property
+    def portal_actor_id(self) -> str:
+        """Who a portal-driven change is attributed to.
+
+        ``PORTAL_ACTOR_ID`` when set, otherwise the guild owner -- the one
+        account that is always allowed to confirm anything (see
+        :func:`bot.extract.commit.may_commit`).
+        """
+        if self.settings.portal_actor_id is not None:
+            return str(self.settings.portal_actor_id)
+        guild = self.get_guild(self.settings.guild_id)
+        owner_id = getattr(guild, "owner_id", None)
+        return str(owner_id) if owner_id else "0"
 
     def is_admin(self, user: discord.abc.User) -> bool:
         role_id = self.settings.admin_role_id
@@ -101,16 +208,109 @@ class BossBot(discord.Client):
         self._synced = True
         log.info("synced application commands to guild %s", self.settings.guild_id)
         self.tick.start()
+        await self.rescans.start()
+        await self.api.start()
 
     async def close(self) -> None:
         if self.tick.is_running():
             self.tick.cancel()
+        await self.api.stop()
+        await self.rescans.stop()
+        await self.extractor.shutdown()
         await super().close()
 
     async def on_ready(self) -> None:
         log.info("logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
+        # Which role runs the bot, at INFO: `/say` and `/debug` turn on this one
+        # id, and "it says I'm not an admin" is otherwise a guessing game
+        # between a wrong id, a missing role and Discord's own permissions.
+        admin_role = self.settings.admin_role_id
+        log.info(
+            "admin role for /say and /debug: %s",
+            admin_role
+            if admin_role is not None
+            else "unset (ADMIN_ROLE_ID) - server administrators and the owner only",
+        )
         await self.sync_roster()
         self.materialise_weeks()
+        if self.settings.backfill_on_start:
+            await self.backfill_all()
+
+    # -- history ----------------------------------------------------------
+    def watched_text_channels(self) -> list[discord.abc.GuildChannel]:
+        """Every text channel the bot watches, resolved from the live guild.
+
+        Categories are expanded here rather than from config, so a channel added
+        to a watched category is picked up without a restart -- the same rule
+        :func:`bot.watch.is_watched` applies per message.
+        """
+        guild = self.get_guild(self.settings.guild_id)
+        if guild is None:
+            return []
+        return [c for c in getattr(guild, "text_channels", []) if self.is_watched(c)]
+
+    def resolve_channel(self, channel_id: int | str) -> discord.abc.GuildChannel | None:
+        """A channel by id, with **no** ``POST_CHANNEL_ID`` fallback.
+
+        Distinct from :meth:`post_channel`, whose fallback is right for posting
+        and wrong for reading: backfilling "the channel we could not find" from
+        the digest channel would file one party's chat under another's.
+        """
+        try:
+            return self.get_channel(int(channel_id))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
+
+    async def backfill(
+        self, channel: object, since: datetime, until: datetime | None = None
+    ) -> int:
+        """Pull one watched channel's history into ``messages``; returns the count.
+
+        Reads only -- no model call, no card, no reaction. Idempotent, because
+        ``record_message`` ignores ids it already has, so running it on every
+        start costs one paginated read and writes nothing new.
+        """
+        if not self.is_watched(channel):
+            log.debug("refusing to backfill unwatched channel %s", getattr(channel, "id", "?"))
+            return 0
+        try:
+            return await record_channel(self.repo, channel, since, until)
+        except AccessDenied:
+            log.warning("no access to #%s's history; skipping", getattr(channel, "name", "?"))
+            return 0
+        except discord.HTTPException:
+            log.exception("backfill of #%s failed", getattr(channel, "name", "?"))
+            return 0
+
+    async def backfill_channel(
+        self, channel_id: int | str, since: datetime, until: datetime | None = None
+    ) -> int:
+        """:meth:`backfill` by id -- what the extractor's rescan calls."""
+        channel = self.resolve_channel(channel_id)
+        if channel is None:
+            log.warning("channel %s is not visible; nothing to backfill", channel_id)
+            return 0
+        return await self.backfill(channel, since, until)
+
+    async def backfill_all(self, since: datetime | None = None) -> int:
+        """Sweep every watched channel for the current boss week, one at a time.
+
+        Sequential on purpose: discord.py handles rate limits, and fanning a
+        category of channels out concurrently only makes it throttle harder.
+        """
+        since = since or current_week_start(
+            self.tz, self.settings.reset_weekday, self.settings.reset_time
+        )
+        channels = self.watched_text_channels()
+        if not channels:
+            log.info("no watched channels visible; nothing to backfill")
+            return 0
+        total = 0
+        for channel in channels:
+            count = await self.backfill(channel, since)
+            total += count
+            log.info("backfilled #%s: %d message(s) since %s", channel.name, count, since.date())
+        return total
 
     # -- roster -----------------------------------------------------------
     async def sync_roster(self) -> None:
@@ -151,9 +351,10 @@ class BossBot(discord.Client):
 
     # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
-        """Log messages from watched channels.
+        """Store messages from watched channels, then offer them to the extractor.
 
-        Phase 1 only stores them; the phase-2 extractor reads the table back.
+        Storing happens whether or not extraction is enabled, so `/rescan` can
+        always look back over history that was captured while it was paused.
         """
         if message.author.bot or message.guild is None:
             return
@@ -171,6 +372,10 @@ class BossBot(discord.Client):
             message.created_at,
             message.content,
         )
+        try:
+            await self.extractor.offer(message)
+        except Exception:  # pragma: no cover - chat must never break the bot
+            log.exception("extractor rejected a message")
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
@@ -184,6 +389,9 @@ class BossBot(discord.Client):
             created = materialise_week(self.repo, week, self.tz, ping_time, countdowns, now=now)
             if created:
                 log.info("materialised %d run(s) for week starting %s", len(created), week)
+        moved = reconcile_day_of(self.repo, self.tz, ping_time)
+        if moved:
+            log.info("re-placed %d day-of reminder(s) at %s", moved, ping_time.strftime("%H:%M"))
         self.repo.set_config(
             CFG_LAST_WEEK,
             to_iso(
@@ -208,7 +416,18 @@ class BossBot(discord.Client):
             if self._week_rolled_over(now):
                 log.info("boss week rolled over; materialising")
                 self.materialise_weeks()
+            # Retire runs whose night has been and gone, before anything else
+            # looks at them: a `done` run gets no pings and shows in nobody's
+            # schedule or dropdown.
+            mark_done(self.repo, now)
+            # After `mark_done`, so the week the guild reads has last week's
+            # leftovers already retired out of it.
+            await self.post_week_digest(now)
+            await self.expire_proposals(now)
             await self.dispatch_reminders(now)
+            # Last: a snapshot is worth a few hundred milliseconds of the tick,
+            # but never worth delaying somebody's reminder by them.
+            self.back_up(now)
         except Exception:  # pragma: no cover - keep the loop alive
             log.exception("tick failed")
 
@@ -230,6 +449,17 @@ class BossBot(discord.Client):
                 # The run went away after the reminder was queued; retire it quietly.
                 self.repo.mark_reminder_sent(reminder["id"])
                 continue
+            if is_stale(reminder["kind"], reminder["fire_at"], now):
+                # The host was down (asleep laptop) and this is too late to be useful.
+                log.info(
+                    "skipping %s for run %s: due %s, now %s",
+                    reminder["kind"],
+                    run["id"],
+                    reminder["fire_at"],
+                    now,
+                )
+                self.repo.mark_reminder_sent(reminder["id"])
+                continue
             if reminder["kind"] == DAY_OF:
                 day_of.setdefault(run["channel_id"], []).append((reminder, run))
             else:
@@ -238,27 +468,324 @@ class BossBot(discord.Client):
         for channel_id, entries in day_of.items():
             await self._send_day_of(channel_id, entries)
 
-    async def post_channel(
-        self, channel_id: int | str | None = None
-    ) -> discord.abc.Messageable | None:
-        """Resolve a run's home channel, falling back to ``POST_CHANNEL_ID``.
+    async def find_channel(self, channel_id: int | str | None = None) -> ChannelLookup:
+        """Resolve somewhere to post, and say why if there is nowhere.
 
-        The home channel can disappear (deleted, or the bot loses access), so the
-        guild-wide channel is always tried as a backstop before giving up.
+        The home channel can disappear (deleted, or the bot loses access), so
+        ``POST_CHANNEL_ID`` is always tried as a backstop before giving up. When
+        both fail the *reason* matters far more than the failure: "no access"
+        and "no such channel" need completely different fixes, and a bare
+        "couldn't post" sends the owner hunting.
         """
+        problems: list[str] = []
         for candidate in (channel_id, self.settings.post_channel_id):
             if candidate is None:
                 continue
-            channel = self.get_channel(int(candidate))
+            try:
+                target = int(candidate)
+            except (TypeError, ValueError):
+                problems.append(f"`{candidate}` is not a channel id")
+                continue
+            channel = self.get_channel(target)
             if channel is None:
                 try:
-                    channel = await self.fetch_channel(int(candidate))
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    log.warning("channel %s unavailable", candidate)
+                    channel = await self.fetch_channel(target)
+                except discord.Forbidden:
+                    problems.append(self.no_access(target))
                     continue
-            if isinstance(channel, discord.abc.Messageable):
-                return channel
-        return None
+                except discord.NotFound:
+                    problems.append(
+                        f"channel {target} does not exist, or the bot is not in that server"
+                    )
+                    continue
+                except discord.HTTPException as exc:
+                    problems.append(f"Discord would not hand over channel {target}: {exc}")
+                    continue
+            if not isinstance(channel, discord.abc.Messageable):
+                problems.append(f"channel {target} is not a text channel")
+                continue
+            if not self.can_send_in(channel):
+                problems.append(self.no_access(target, channel))
+                continue
+            return ChannelLookup(channel=channel, problem=None)
+
+        if not problems:
+            problems.append(
+                "no channel was given and POST_CHANNEL_ID is not set in .env - "
+                "set it, or pass a channel"
+            )
+        log.warning("nowhere to post: %s", "; ".join(problems))
+        return ChannelLookup(channel=None, problem="; ".join(problems))
+
+    def no_access(self, channel_id: int, channel: object | None = None) -> str:
+        name = getattr(channel, "name", None)
+        where = f"#{name}" if name else f"channel {channel_id}"
+        who = getattr(self.user, "name", "the bot")
+        return (
+            f"the bot has no access to {where} - grant the {who} role "
+            "View Channel + Send Messages there"
+        )
+
+    def can_send_in(self, channel: object) -> bool:
+        """Whether the bot may actually post in a channel it can see.
+
+        A guild the bot has not finished loading has no ``me``, and a DM has no
+        permissions at all; both are treated as "go ahead and try", so this can
+        only ever turn a *known* refusal into a better message.
+        """
+        guild = getattr(channel, "guild", None)
+        me = getattr(guild, "me", None)
+        permissions_for = getattr(channel, "permissions_for", None)
+        if me is None or permissions_for is None:
+            return True
+        permissions = permissions_for(me)
+        return bool(permissions.view_channel and permissions.send_messages)
+
+    async def post_channel(
+        self, channel_id: int | str | None = None
+    ) -> discord.abc.Messageable | None:
+        """Just the channel, for callers that have nothing useful to say about failure."""
+        return (await self.find_channel(channel_id)).channel
+
+    def access_report(self) -> list[dict]:
+        """Every channel the bot is meant to use, and what it may do there.
+
+        The permissions a Discord bot ends up with are the product of role
+        permissions, category overwrites and per-channel overwrites, which is
+        genuinely hard to reason about in the client. This says what it can
+        actually do, per channel.
+        """
+        guild = self.get_guild(self.settings.guild_id)
+        if guild is None:
+            return []
+        me = getattr(guild, "me", None)
+        post_channel_id = self.settings.post_channel_id
+        wanted = {c.id: c for c in self.watched_text_channels()}
+        if post_channel_id is not None:
+            channel = self.get_channel(int(post_channel_id))
+            if channel is not None:
+                wanted.setdefault(channel.id, channel)
+
+        rows: list[dict] = []
+        for channel in sorted(wanted.values(), key=lambda c: getattr(c, "name", "")):
+            permissions = (
+                channel.permissions_for(me)
+                if me is not None and hasattr(channel, "permissions_for")
+                else None
+            )
+            rows.append(
+                {
+                    "id": str(channel.id),
+                    "name": f"#{channel.name}",
+                    "watched": self.is_watched(channel),
+                    "is_digest_channel": post_channel_id is not None
+                    and int(post_channel_id) == channel.id,
+                    "view": permissions is None or permissions.view_channel,
+                    "send": permissions is None or permissions.send_messages,
+                    "history": permissions is None or permissions.read_message_history,
+                    "embed": permissions is None or permissions.embed_links,
+                    "react": permissions is None or permissions.add_reactions,
+                    # Needed to take the *other* reaction off when somebody
+                    # switches ✅ <-> ❌; without it both stick and the tally lies.
+                    "manage_messages": permissions is None or permissions.manage_messages,
+                    "unknown": permissions is None,
+                }
+            )
+        return rows
+
+    def missing_manage_messages(self) -> list[str]:
+        """Watched channels where ✅/❌ cannot be kept exclusive, by name.
+
+        Read live from ``channel.permissions_for(guild.me)`` every time rather
+        than from :attr:`_warned_manage_messages`, which only says whether the
+        bot has *already tripped over* the missing permission -- it stays false
+        until someone reacts, and stays true after the permission is granted.
+        """
+        return [
+            row["name"]
+            for row in self.access_report()
+            if row["watched"] and not row["unknown"] and not row["manage_messages"]
+        ]
+
+    # -- building the reminder cards --------------------------------------
+    #
+    # Both builders read the run and its answers out of the database every
+    # time, so the same call that first posts a card can re-render it later
+    # (:meth:`refresh_run_cards`) and get wording identical to the original
+    # but a current tally. Nothing about a card is remembered in memory.
+    def day_of_card_for(self, runs: list[dict]) -> formatting.Card:
+        """The morning card for one channel's runs, sorted by time."""
+        runs = sorted(runs, key=lambda run: run["datetime"])
+        rsvps = {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        # The morning card asks everyone on tonight's runs to answer, so it is
+        # one of the four posts that may actually notify people.
+        who = audience(self.repo, formatting.everyone_on(runs), "day_of")
+        return formatting.day_of_card(
+            runs, self.tz, rsvps, table=self.bosses, today=runs[0]["datetime"], who=who
+        )
+
+    def countdown_card_for(self, run: dict, minutes: int) -> formatting.Card:
+        """The T-minus card: the whole party bar anyone who has already declined."""
+        rsvps = self.repo.get_rsvps(run["id"])
+        who = audience(
+            self.repo,
+            run["participants"],
+            "countdown",
+            candidates=formatting.not_declined(run, rsvps),
+        )
+        return formatting.countdown_card(run, minutes, self.tz, rsvps, table=self.bosses, who=who)
+
+    # -- keeping posted cards in step -------------------------------------
+    def card_needs_refresh(self, run_id: str) -> None:
+        """A run changed; queue its posted cards for a re-render.
+
+        Called *synchronously* from :class:`bot.db.Repo` on every write a card
+        displays, so a reaction, `/rsvp`, the portal and a chat-extracted answer
+        all arrive here without any of them knowing this exists. The work is
+        queued rather than done: a single handler often writes several times
+        (an rsvp row, then a status), and the drain task does not start until
+        that handler yields, so the burst collapses into one edit per card.
+        """
+        self._stale_cards.add(str(run_id))
+        if self._card_refresh is not None and not self._card_refresh.done():
+            return  # already draining; it will pick this one up
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop: a CLI, an export or a test wrote to the database.
+            # Nothing was posted from this process, so there is nothing to fix.
+            # Asked before building the coroutine, so none is left un-awaited.
+            self._stale_cards.clear()
+            return
+        self._card_refresh = loop.create_task(self._drain_stale_cards())
+
+    async def _drain_stale_cards(self) -> None:
+        while self._stale_cards:
+            run_id = self._stale_cards.pop()
+            try:
+                await self.refresh_run_cards(run_id)
+            except Exception:  # pragma: no cover - a stale card is not worth a crash
+                log.exception("could not refresh the cards for run %s", run_id)
+
+    async def refresh_run_cards(self, run_id: str) -> int:
+        """Re-render this run's already-posted reminders; returns how many were edited.
+
+        Discord does not notify anyone about an edit, so this is the cheap way
+        to keep a morning card honest: the tally on it goes on meaning what it
+        said at 09:00 unless somebody rewrites it, which is how a run everybody
+        had ✅'d still read "2/4 ✅" at 21:00.
+        """
+        run = self.repo.get_run(run_id)
+        if run is None or is_past(run["datetime"], utcnow()):
+            # The night has been and gone: its cards are a record of it now,
+            # not a live tally, and editing them would only cost API calls.
+            return 0
+        edited = 0
+        seen: set[str] = set()
+        for reminder in self.repo.list_reminders(run_id):
+            message_id = reminder["message_id"]
+            if not message_id or message_id in seen:
+                continue  # never posted, or already re-rendered as part of a group
+            seen.add(message_id)
+            card = self._rebuild_card(reminder, run)
+            if card is not None and await self.edit_card(run["channel_id"], message_id, card):
+                edited += 1
+        # A `/debug ping` is deliberately not a reminder row -- the real ping
+        # must still fire -- but it is a real card in a real channel whose ✅/❌
+        # drive the real RSVP flow, so its tally goes stale in exactly the same
+        # way. This is the card the "frozen 2/4 ✅" report was actually about.
+        for test in self.repo.debug_messages_for_run(run_id):
+            message_id = test["message_id"]
+            if not message_id or message_id in seen:
+                continue
+            seen.add(message_id)
+            card = self._rebuild_test_card(test["kind"], run)
+            if card is not None and await self.edit_card(
+                test["channel_id"] or run["channel_id"], message_id, card
+            ):
+                edited += 1
+        return edited
+
+    def _rebuild_card(self, reminder: dict, run: dict) -> formatting.Card | None:
+        """What that message would say if it were posted right now."""
+        if reminder["kind"] == DAY_OF:
+            # One morning message covers every run that channel has that day,
+            # so it is rebuilt from all of them: re-rendering it from the one
+            # run that changed would drop the others off the card.
+            runs = [
+                self.repo.get_run(other["run_id"])
+                for other in self.repo.reminders_by_message(reminder["message_id"])
+            ]
+            live = [r for r in runs if r is not None]
+            return self.day_of_card_for(live) if live else None
+        minutes = countdown_minutes(reminder["kind"])
+        return None if minutes is None else self.countdown_card_for(run, minutes)
+
+    def _rebuild_test_card(self, kind: str, run: dict) -> formatting.Card | None:
+        """A `/debug ping` card, re-rendered exactly as `/debug ping` built it.
+
+        Its own audience (``test``), so a rehearsal that named the party without
+        summoning it does not start notifying anyone on the way through, and its
+        own ``🧪 TEST —`` prefix, so it still cannot be mistaken for the real
+        thing. The static notices `/debug ping` can also post (an amend, a
+        decline) carry no tally, so there is nothing in them to bring up to date.
+        """
+        rsvps = self.repo.get_rsvps(run["id"])
+        who = audience(self.repo, run["participants"], "test")
+        if kind == DAY_OF:
+            card = formatting.day_of_card(
+                [run],
+                self.tz,
+                {run["id"]: rsvps},
+                table=self.bosses,
+                today=run["datetime"],
+                who=who,
+            )
+        else:
+            minutes = countdown_minutes(kind)
+            if minutes is None:
+                return None
+            card = formatting.countdown_card(
+                run, minutes, self.tz, rsvps, table=self.bosses, who=who
+            )
+        card.content = TEST_PREFIX + card.content
+        return card
+
+    async def edit_card(
+        self, channel_id: int | str | None, message_id: int | str, card: formatting.Card
+    ) -> bool:
+        """Rewrite one of the bot's own cards in place; ``True`` if it stuck.
+
+        An edit never notifies anyone, but it still goes out with the same
+        explicit allow-list a send would build, so nothing here can become a
+        second way to ping. Attachments are left untouched, so a card's boss
+        portrait survives the edit and its ``attachment://`` thumbnail keeps
+        resolving. A message that has been deleted, or that lives in a channel
+        the bot can no longer see, is skipped without comment -- there is
+        nothing to fix and nothing anybody can do about it.
+        """
+        if channel_id is None:
+            return False
+        card, allowed = self._prepared(card)
+        try:
+            channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(message_id))  # type: ignore[union-attr]
+            await message.edit(
+                content=card.content, embed=self._embed(card), allowed_mentions=allowed
+            )
+            return True
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            TimeoutError,
+        ):
+            log.debug("could not refresh card %s", message_id, exc_info=True)
+            return False
 
     async def _send_day_of(self, channel_id: str | None, entries: list[tuple[dict, dict]]) -> None:
         """One message per home channel, one line per run, each tagging its own people."""
@@ -267,9 +794,7 @@ class BossBot(discord.Client):
             log.error("no channel available for the day-of ping; leaving it queued")
             return
         entries.sort(key=lambda pair: pair[1]["datetime"])
-        runs = [run for _, run in entries]
-        content = formatting.day_of_message(runs, self.tz, today=runs[0]["datetime"])
-        message = await self._post(channel, content, mention_users=self._all_participants(runs))
+        message = await self._post(channel, self.day_of_card_for([run for _, run in entries]))
         if message is None:
             return
         for reminder, _ in entries:
@@ -284,40 +809,126 @@ class BossBot(discord.Client):
         if channel is None:
             log.error("no channel available for run %s; leaving its countdown queued", run["id"])
             return
-        content = formatting.countdown_message(run, minutes, self.tz)
-        message = await self._post(channel, content, mention_users=run["participants"])
+        message = await self._post(channel, self.countdown_card_for(run, minutes))
         if message is not None:
             self.repo.mark_reminder_sent(reminder["id"], message.id)
 
     @staticmethod
-    def _all_participants(runs: Iterable[dict]) -> list[str]:
-        seen: list[str] = []
-        for run in runs:
-            for uid in run["participants"]:
-                if uid not in seen:
-                    seen.append(uid)
-        return seen
+    def _embed(card: formatting.Card) -> discord.Embed | None:
+        if not card.has_embed:
+            return None
+        embed = discord.Embed(
+            title=card.title, description=card.description, colour=discord.Colour(card.colour)
+        )
+        for name, value in card.fields:
+            embed.add_field(name=name, value=value, inline=False)
+        if card.footer:
+            embed.set_footer(text=card.footer)
+        if card.thumbnail_path is not None:
+            # The file travels with the message, so the thumbnail keeps working
+            # without hosting anything: `attachment://` refers to it by name.
+            embed.set_thumbnail(url=f"attachment://{card.thumbnail_path.name}")
+        return embed
+
+    @staticmethod
+    def _attachment(card: formatting.Card) -> discord.File | None:
+        """The boss portrait to send alongside a card, if there is one."""
+        path = card.thumbnail_path
+        if path is None:
+            return None
+        try:
+            return discord.File(str(path), filename=path.name)
+        except OSError:
+            log.warning("could not read the portrait at %s", path)
+            return None
+
+    def _prepared(
+        self, card: formatting.Card | str, mention_users: list[str] | None = None
+    ) -> tuple[formatting.Card, discord.AllowedMentions]:
+        """A card and the allow-list it may go out with -- the one quiet-mode gate.
+
+        Shared by :meth:`_post` and :meth:`edit_card` so a card cannot notify
+        anybody through one path that it could not through the other.
+        """
+        if isinstance(card, str):
+            card = formatting.Card(content=card)
+        if self.quiet_mode:
+            # `AllowedMentions.none()` rather than `users=[]`: it also clears
+            # `replied_user`, which defaults to *on* and would otherwise notify
+            # whoever is being replied to.
+            return formatting.quieted(card), discord.AllowedMentions.none()
+        wanted = card.mention_users if mention_users is None else mention_users
+        return card, discord.AllowedMentions(
+            everyone=False,
+            roles=False,
+            users=[discord.Object(id=int(uid)) for uid in wanted],
+        )
 
     async def _post(
         self,
         channel: discord.abc.Messageable,
-        content: str,
+        card: formatting.Card | str,
         mention_users: list[str] | None = None,
+        react: bool = True,
     ) -> discord.Message | None:
-        """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back."""
-        allowed = discord.AllowedMentions(
-            everyone=False,
-            roles=False,
-            users=[discord.Object(id=int(uid)) for uid in (mention_users or [])],
-        )
+        """Send a reminder and attach the ✅/❌ reactions the RSVP flow reads back.
+
+        The allow-list comes from the card itself (already resolved against the
+        mention policy) unless the caller overrides it; either way it is
+        explicit, so nothing in a message can ping by accident.
+
+        ``react=False`` sends the card without them, for a post that reports
+        rather than asks -- the weekly digest, whose runs are each answered on
+        their own reminder.
+        """
+        card, allowed = self._prepared(card, mention_users)
+        attachment = self._attachment(card)
+        message: discord.Message | None = None
+        for attempt in range(1, POST_ATTEMPTS + 1):
+            try:
+                # `file=` is omitted entirely when there is no portrait, so a
+                # guild that ships none sends exactly the message it did before.
+                message = await channel.send(
+                    card.content,
+                    embed=self._embed(card),
+                    allowed_mentions=allowed,
+                    **({"file": attachment} if attachment is not None else {}),
+                )
+                break
+            except discord.HTTPException:
+                # Discord answered and refused. Sending the same rejected
+                # request again just gets refused again.
+                log.exception("failed to post reminder")
+                return None
+            except (OSError, TimeoutError):
+                # Never reached Discord at all -- a DNS failure or a dropped
+                # connection. One of these during the first morning rescan took
+                # the whole job down and left its rows without a card, so it is
+                # worth a few seconds of waiting before giving up.
+                if attempt == POST_ATTEMPTS:
+                    log.exception("failed to post reminder after %d attempts", attempt)
+                    return None
+                delay = POST_BACKOFF_SECONDS * 2 ** (attempt - 1)
+                log.warning(
+                    "could not reach Discord to post (attempt %d/%d); retrying in %.0fs",
+                    attempt,
+                    POST_ATTEMPTS,
+                    delay,
+                    exc_info=True,
+                )
+                await asyncio.sleep(delay)
+        if message is None:  # pragma: no cover - the loop returns on every failure
+            return None
+        if not react:
+            return message
         try:
-            message = await channel.send(content, allowed_mentions=allowed)
             await message.add_reaction(EMOJI_YES)
             await message.add_reaction(EMOJI_NO)
-            return message
-        except discord.HTTPException:
-            log.exception("failed to post reminder")
-            return None
+        except (discord.HTTPException, OSError, TimeoutError):
+            # The card is up; losing its reactions is a worse card, not a lost
+            # one, and the caller still needs the message id to record.
+            log.warning("posted the card but could not add its reactions", exc_info=True)
+        return message
 
     # -- reactions --------------------------------------------------------
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
@@ -338,9 +949,16 @@ class BossBot(discord.Client):
             self.repo.debug_messages_for(payload.message_id)
         )
         if not sources:
+            # ...and a ✅ on a proposal card is a confirmation, not an RSVP.
+            proposals = self.repo.amendments_by_message(payload.message_id)
+            if proposals and added:
+                await self._handle_proposal_reaction(payload, proposals, emoji)
             return
 
         declines: list[dict] = []
+        confirmations: list[dict] = []
+        retractions: list[dict] = []
+        applied = False
         for reminder in sources:
             run = self.repo.get_run(reminder["run_id"])
             if run is None:
@@ -348,19 +966,407 @@ class BossBot(discord.Client):
             # A grouped day-of message covers several runs: apply to each run the
             # reactor actually belongs to.
             result = apply_reaction(self.repo, run, payload.user_id, emoji, added)
-            if result.declined:
-                declines.append(self.repo.get_run(run["id"]) or run)
+            if not result.applied:
+                continue
+            applied = True
+            fresh = self.repo.get_run(run["id"]) or run
+            if result.state == "no":
+                declines.append(fresh)
+            elif result.state == "yes":
+                confirmations.append(fresh)
+            elif not added and emoji == EMOJI_NO:
+                # They took the ❌ back without putting a ✅ up. The run stops
+                # being `at_risk`, so the "can't make it - reschedule?" notice
+                # has to go with it: left standing it has the party re-planning
+                # a night around somebody who is available again. `/rsvp` and
+                # the portal already retract on any answer that is not "no".
+                retractions.append(fresh)
 
-        if not declines:
+        if not applied:
             return
-        channel = await self.post_channel(payload.channel_id)
+        if added:
+            # One answer per person: putting ✅ takes their ❌ off, and vice versa.
+            await self._drop_opposite_reaction(payload, emoji)
+        for run in confirmations + retractions:
+            await self.retract_decline(run, payload.user_id)
+        if declines:
+            name = self._display_name(payload)
+            for run in declines:
+                await self.notify_decline(
+                    run,
+                    payload.user_id,
+                    name,
+                    channel_id=payload.channel_id,
+                    reference_id=payload.message_id,
+                )
+
+    # -- proposal cards ---------------------------------------------------
+    async def _handle_proposal_reaction(
+        self, payload: discord.RawReactionActionEvent, proposals: list[dict], emoji: str
+    ) -> None:
+        """✅/❌ on an extractor card: commit or reject every amendment on it.
+
+        Only a participant of the run being changed (or an admin, or the guild
+        owner) counts; anyone else's reaction is ignored in silence, exactly as a
+        reaction from a non-participant is on a reminder.
+        """
+        actor = payload.user_id
+        member = payload.member
+        is_admin = self.is_admin(member) if member is not None else False
+        guild = self.get_guild(self.settings.guild_id)
+        is_owner = guild is not None and guild.owner_id == actor
+        # The role is the outer gate: a card that names nobody (a new run, a new
+        # fixed timing) must not be confirmable by whoever happens to be in the
+        # channel. `has_bossing_role` reads the live member when there is one and
+        # falls back to the synced roster when there is not.
+        has_role = (
+            self.has_bossing_role(member) if member is not None else self.repo.has_role(actor)
+        )
+
+        open_proposals = [a for a in proposals if a["status"] == "proposed"]
+        if not open_proposals:
+            return
+        allowed = [
+            a
+            for a in open_proposals
+            if may_commit(
+                a,
+                self.repo.get_run(a["run_id"]) if a["run_id"] else None,
+                actor,
+                has_role=has_role,
+                is_admin=is_admin,
+                is_owner=is_owner,
+            )
+        ]
+        if not allowed:
+            log.info("ignoring %s on a proposal card from %s: not theirs to confirm", emoji, actor)
+            return
+
+        name = self._display_name(payload)
+        if emoji == EMOJI_NO:
+            for amendment in allowed:
+                reject(self.repo, amendment)
+            await self._annotate_card(payload, formatting.rejected_notice(name))
+            return
+
+        results = [await self._commit_one(amendment, actor, payload) for amendment in allowed]
+        applied = [r for r in results if r.applied]
+        problems = [r.problem for r in results if r.problem]
+        if applied:
+            await self._annotate_card(payload, formatting.applied_notice(name))
+        if problems:
+            channel = await self.post_channel(payload.channel_id)
+            if channel is not None:
+                await self.post_plain(
+                    channel,
+                    "⚠️ " + "; ".join(problems),
+                    [],
+                    reference_id=payload.message_id,
+                )
+
+    async def _commit_one(
+        self, amendment: dict, actor: int | str, payload: discord.RawReactionActionEvent
+    ) -> CommitResult:
+        # A card can carry several amendments for one run; committing the first
+        # supersedes the rest, and a superseded row must not then be applied.
+        fresh = self.repo.get_amendment(amendment["id"])
+        if fresh is None or fresh["status"] != "proposed":
+            return CommitResult(amendment_id=amendment["id"], kind=amendment["kind"])
+        result = commit(
+            self.repo,
+            amendment,
+            tz=self.tz,
+            reset_weekday=self.settings.reset_weekday,
+            reset_time=self.settings.reset_time,
+            ping_time=self.ping_time,
+            countdowns=self.countdowns,
+            actor_id=actor,
+            channel_id=amendment.get("channel_id") or payload.channel_id,
+            on_fixed_created=lambda _fixed_id: self.materialise_weeks(),
+        )
+        if not result.applied:
+            return result
+        await self._mark_superseded(result.superseded)
+        # A move is the one change the party needs to see spelled out, and the
+        # phase-1 notice already says it exactly right.
+        if result.kind == "move" and result.run_id:
+            run = self.repo.get_run(result.run_id)
+            if run is not None and result.old_datetime is not None:
+                await self._announce_move(run, result.old_datetime)
+        return result
+
+    async def _announce_move(self, run: dict, old_at: datetime) -> None:
+        channel = await self.post_channel(run["channel_id"])
         if channel is None:
             return
-        name = self._display_name(payload)
-        for run in declines:
-            content = formatting.decline_notice(run, payload.user_id, name, self.tz)
-            others = [uid for uid in run["participants"] if uid != str(payload.user_id)]
-            await self.post_plain(channel, content, others, reference_id=payload.message_id)
+        # The move has already been applied and the party will be pinged again
+        # on the day, so this is a receipt: names, not notifications.
+        who = audience(self.repo, run["participants"], "amend")
+        await self.post_plain(
+            channel,
+            formatting.amend_notice(run, old_at, self.tz, who),
+            list(who.mentioned),
+        )
+
+    async def _annotate_card(self, payload: discord.RawReactionActionEvent, notice: str) -> None:
+        """Append "✅ applied by X" to the card so its state is visible in the channel."""
+        await self.annotate_message(payload.channel_id, payload.message_id, notice)
+
+    async def annotate_message(
+        self, channel_id: int | str | None, message_id: int | str | None, notice: str
+    ) -> bool:
+        """Append a line to one of the bot's own messages; ``True`` if it stuck.
+
+        Used for "✅ applied by ...", "↪ superseded by a newer card", and the
+        portal's "✅ applied via portal", so a card's state is visible in the
+        channel however the decision was actually made.
+        """
+        if channel_id is None or message_id is None:
+            return False
+        try:
+            channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(message_id))  # type: ignore[union-attr]
+            if notice in (message.content or ""):
+                return True
+            await message.edit(
+                content=f"{message.content}\n{notice}",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return True
+        except (
+            discord.NotFound,
+            discord.Forbidden,
+            discord.HTTPException,
+            AttributeError,
+            TypeError,
+            ValueError,
+        ):
+            log.debug("could not annotate message %s", message_id, exc_info=True)
+            return False
+
+    async def _mark_superseded(self, retired: list[dict]) -> None:
+        """Put the superseded notice on every card this commit retired."""
+        seen: set[str] = set()
+        for amendment in retired:
+            message_id = amendment.get("proposal_message_id")
+            if not message_id or message_id in seen:
+                continue
+            seen.add(message_id)
+            await self.annotate_message(
+                amendment.get("channel_id"), message_id, formatting.SUPERSEDED_NOTICE
+            )
+
+    # -- weekly digest ----------------------------------------------------
+    async def post_digest(
+        self, channel_id: int | str | None = None, week: str = "this"
+    ) -> discord.Message | None:
+        """Post the whole guild's week (DESIGN.md §3, "Weekly digest").
+
+        Goes to ``channel_id`` if given, else ``POST_CHANNEL_ID``. It names
+        people rather than mentioning them: a guild-wide post must not notify
+        thirty bossers about every party's run.
+        """
+        now = utcnow()
+        ws = (
+            next_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+            if week == "next"
+            else current_week_start(
+                self.tz, self.settings.reset_weekday, self.settings.reset_time, now
+            )
+        )
+        runs = self.repo.list_runs(week_start=ws)
+        channel = await self.post_channel(channel_id)
+        if channel is None:
+            log.error("no channel available for the weekly digest")
+            return None
+        card = formatting.digest_card(
+            runs, ws, self.tz, {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+        )
+        # Through `_post` like every other card, so quiet mode marks it and a
+        # dropped connection is retried rather than losing the week's digest.
+        # `mention_users=[]` because the card names people instead of tagging
+        # them; `react=False` because a summary is not something to answer.
+        return await self._post(channel, card, mention_users=[], react=False)
+
+    async def post_week_digest(self, now: datetime) -> discord.Message | None:
+        """Post the digest once at each boss-week reset (DESIGN.md §3).
+
+        Idempotent through a key of its own rather than :data:`CFG_LAST_WEEK`,
+        which ``materialise_weeks`` stamps on every start: sharing it would mean
+        a restart between the reset and the first tick swallowed the digest
+        entirely. The key holds the week already posted for, so a Mac that slept
+        through Thursday midnight posts exactly one digest when it wakes --
+        not one per missed tick, and not none.
+        """
+        current = to_iso(
+            current_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+        )
+        last = self.repo.get_config(CFG_LAST_DIGEST)
+        if last == current:
+            return None
+        if self.settings.post_channel_id is None:
+            # Nowhere guild-wide to post. The week is stamped anyway, so setting
+            # POST_CHANNEL_ID on a Sunday does not then back-post a digest for a
+            # reset three days gone.
+            self.repo.set_config(CFG_LAST_DIGEST, current)
+            log.debug("no POST_CHANNEL_ID, so no weekly digest for %s", current)
+            return None
+        if last is None:
+            # A database that has never seen a reset. This week began without
+            # the bot, so it has no reset of its own to report.
+            self.repo.set_config(CFG_LAST_DIGEST, current)
+            log.info("the weekly digest starts at the next reset (this week is %s)", current)
+            return None
+        message = await self.post_digest()
+        if message is None:
+            # Leave the key alone and try again next tick, the way a day-of ping
+            # stays queued when its channel is briefly unreachable.
+            log.warning("the weekly digest for %s did not post; will retry", current)
+            return None
+        self.repo.set_config(CFG_LAST_DIGEST, current)
+        log.info("posted the weekly digest for the boss week starting %s", current)
+        return message
+
+    # -- daily backup -----------------------------------------------------
+    def back_up(self, now: datetime) -> Path | None:
+        """Snapshot the database once a local day; returns the file if it wrote one.
+
+        The database lives in a named volume, so this is what puts a copy back
+        on the host (``bot.backup``). Failing to write one is a thing to fix, not
+        a reason to stop reminding people about tonight's boss, so nothing here
+        is allowed to escape into the tick.
+        """
+        directory = backup.backup_dir(self.repo.path)
+        if directory is None:  # an in-memory database has nothing to snapshot
+            return None
+        local = now.astimezone(self.tz)
+        day = backup.due_day(self.repo.get_config(CFG_LAST_BACKUP), local)
+        if day is None or day == self._backup_failed_on:
+            return None
+        try:
+            path, removed = backup.take(self.repo, directory, local)
+        except Exception:
+            self._backup_failed_on = day
+            log.exception("could not back up the database to %s; retrying tomorrow", directory)
+            return None
+        self.repo.set_config(CFG_LAST_BACKUP, day)
+        log.info("backed up the database to %s", path)
+        for stale in removed:
+            log.info("pruned old backup %s", stale.name)
+        return path
+
+    # -- deleted cards ----------------------------------------------------
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        self.withdraw_card(payload.message_id)
+
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        for message_id in payload.message_ids:
+            self.withdraw_card(message_id)
+
+    def withdraw_card(self, message_id: int | str) -> list[dict]:
+        """Retire the amendments on a card somebody deleted; returns them.
+
+        Without this the rows stay ``proposed`` forever: the tick keeps them
+        alive until the 24 h TTL, `/pending` and the portal's inbox keep
+        offering an Approve button for a card nobody can see, and a supersede
+        check still treats them as the live proposal for that run.
+        """
+        withdrawn = [
+            a for a in self.repo.amendments_by_message(message_id) if a["status"] == "proposed"
+        ]
+        for amendment in withdrawn:
+            self.repo.set_amendment_status(amendment["id"], "withdrawn")
+        if withdrawn:
+            log.info(
+                "card %s was deleted; withdrew %d proposal(s): %s",
+                message_id,
+                len(withdrawn),
+                ", ".join(a["kind"] for a in withdrawn),
+            )
+        return withdrawn
+
+    async def expire_proposals(self, now: datetime) -> None:
+        """Drop proposal cards nobody answered (see `bot.extract.commit.PROPOSAL_TTL`)."""
+        for amendment in expire_stale(self.repo, now):
+            log.info(
+                "expired %s proposal %s (posted %s)",
+                amendment["kind"],
+                amendment["id"][:8],
+                amendment["created_at"],
+            )
+
+    async def _drop_opposite_reaction(
+        self, payload: discord.RawReactionActionEvent, emoji: str
+    ) -> None:
+        opposite = EMOJI_NO if emoji == EMOJI_YES else EMOJI_YES
+        try:
+            channel = self.get_channel(payload.channel_id) or await self.fetch_channel(
+                payload.channel_id
+            )
+            message = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
+            await message.remove_reaction(opposite, discord.Object(id=payload.user_id))
+        except discord.Forbidden:
+            if not self._warned_manage_messages:
+                self._warned_manage_messages = True
+                log.warning(
+                    "can't remove other people's reactions: grant the bot 'Manage Messages' "
+                    "in the party channels so ✅/❌ stay one-or-the-other"
+                )
+        except (discord.NotFound, discord.HTTPException, AttributeError):
+            log.debug("could not remove the opposite reaction", exc_info=True)
+
+    async def notify_decline(
+        self,
+        run: dict,
+        user_id: int | str,
+        display_name: str,
+        channel_id: int | str | None = None,
+        reference_id: int | None = None,
+    ) -> None:
+        """Tell the rest of the run someone can't make it - once per person per run.
+
+        Re-posting is suppressed for :data:`DECLINE_NOTICE_COOLDOWN` after the
+        last notice, so toggling or spamming ❌ produces one message, not many.
+        """
+        now = utcnow()
+        existing = self.repo.get_decline_notice(run["id"], user_id)
+        if existing and now - existing["notified_at"] < DECLINE_NOTICE_COOLDOWN:
+            return
+        channel = await self.post_channel(channel_id or run["channel_id"])
+        if channel is None:
+            return
+        others = [uid for uid in run["participants"] if uid != str(user_id)]
+        # The rest of the run have to decide whether to re-plan the night, so
+        # this is one of the four posts that may notify people.
+        who = audience(self.repo, others, "decline")
+        content = formatting.decline_notice(run, str(user_id), display_name, self.tz, who)
+        message = await self.post_plain(
+            channel, content, list(who.mentioned), reference_id=reference_id
+        )
+        self.repo.set_decline_notice(
+            run["id"],
+            user_id,
+            getattr(message, "id", None),
+            getattr(channel, "id", None),
+            now,
+        )
+
+    async def retract_decline(self, run: dict, user_id: int | str) -> None:
+        """They're back in: delete the "can't make it" notice so it doesn't linger."""
+        existing = self.repo.get_decline_notice(run["id"], user_id)
+        if not existing or not existing["message_id"]:
+            return
+        try:
+            channel = self.get_channel(int(existing["channel_id"])) or await self.fetch_channel(
+                int(existing["channel_id"])
+            )
+            message = await channel.fetch_message(int(existing["message_id"]))  # type: ignore[union-attr]
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException, AttributeError):
+            log.debug("could not delete decline notice", exc_info=True)
+        except (TypeError, ValueError):
+            pass
+        self.repo.clear_decline_notice_message(run["id"], user_id)
 
     def _display_name(self, payload: discord.RawReactionActionEvent) -> str:
         if payload.member is not None:
@@ -376,11 +1382,36 @@ class BossBot(discord.Client):
         content: str,
         mention_users: list[str],
         reference_id: int | None = None,
-    ) -> None:
-        allowed = discord.AllowedMentions(
-            everyone=False,
-            roles=False,
-            users=[discord.Object(id=int(uid)) for uid in mention_users],
+        mention_roles: list[str] | None = None,
+    ) -> discord.Message | None:
+        """Send a plain message, notifying exactly the ids the caller lists.
+
+        ``mention_roles`` defaults to none at all, which is what every notice
+        the bot writes for itself wants: a run's people are named individually,
+        and a role ping would reach a guild rather than a party. `/say` is the
+        one caller that passes any, because an admin writing a role mention by
+        hand means it.
+        """
+        if self.quiet_mode:
+            content, mention_users, mention_roles = formatting.quiet_line(content), [], []
+        allowed = (
+            # See `_post`: `none()` also clears `replied_user`, and this is the
+            # path that actually replies to a message.
+            discord.AllowedMentions.none()
+            if self.quiet_mode
+            else discord.AllowedMentions(
+                # `@everyone` / `@here` is never allowed, from any caller: it is
+                # the one mention nobody can opt out of.
+                everyone=False,
+                # `False` rather than an empty list when there are none, so every
+                # existing caller sends exactly the allow-list it always did.
+                roles=(
+                    [discord.Object(id=int(rid)) for rid in mention_roles]
+                    if mention_roles
+                    else False
+                ),
+                users=[discord.Object(id=int(uid)) for uid in mention_users],
+            )
         )
         reference = (
             discord.MessageReference(
@@ -392,6 +1423,7 @@ class BossBot(discord.Client):
             else None
         )
         try:
-            await channel.send(content, allowed_mentions=allowed, reference=reference)
+            return await channel.send(content, allowed_mentions=allowed, reference=reference)
         except discord.HTTPException:
             log.exception("failed to post decline notice")
+            return None
