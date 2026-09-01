@@ -78,6 +78,21 @@ def fragment(request: Request, name: str, **context: Any) -> HTMLResponse:
     return HTMLResponse(_templates(request).get_template(name).render(**context))
 
 
+def table_page(
+    request: Request, name: str, active: str, rows_partial: str, **context: Any
+) -> Response:
+    """A table page, or just its rows when htmx asked for them.
+
+    One URL, two answers, the way every action on the portal already works: a
+    plain GET renders the page, an ``HX-Request`` gets the region the search box
+    and the pager target. There is no second route to keep in step, and no
+    second template -- the page includes the same partial this returns.
+    """
+    if request.headers.get("HX-Request"):
+        return fragment(request, rows_partial, **context)
+    return render(request, name, active, **context)
+
+
 def back_to(request: Request, path: str, message: str | None = None, kind: str = "ok") -> Response:
     query = urlencode({"msg": message, "kind": kind}) if message else ""
     return RedirectResponse(f"{path}{'?' if query else ''}{query}", status_code=303)
@@ -273,6 +288,8 @@ async def week_page(
         "week",
         schedule=schedule,
         rail=service.week_rail(bot, week),
+        board=service.board_columns(bot, week, schedule["runs"]),
+        now_strip=service.week_now(bot, schedule["runs"]),
         week=week,
         channels=watched_channels(bot),
         members=service.members(bot),
@@ -289,13 +306,14 @@ async def week_page(
 
 
 @router.get("/fixed")
-async def fixed_page(request: Request, bot: Bot, caller: Caller) -> Response:
+async def fixed_page(request: Request, bot: Bot, caller: Caller, q: str = "") -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "fixed.html",
         "fixed",
-        fixed=[service.fixed_view(bot, f, with_grid=True) for f in bot.repo.list_fixed_runs()],
+        "partials/fixed_rows.html",
+        listing=service.fixed_listing(bot, q=q),
         members=service.members(bot),
         channels=watched_channels(bot),
         grid=service.boss_grid(bot),
@@ -309,13 +327,16 @@ async def inbox_page(request: Request, bot: Bot, caller: Caller) -> Response:
 
 
 @router.get("/extractions")
-async def extractions_page(request: Request, bot: Bot, caller: Caller, limit: int = 50) -> Response:
+async def extractions_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "extractions.html",
         "extractions",
-        extractions=[service.extraction_view(bot, e) for e in bot.repo.recent_extractions(limit)],
+        "partials/extraction_rows.html",
+        listing=service.extractions_listing(bot, page=page, q=q),
         config=service.get_config(bot),
     )
 
@@ -335,13 +356,16 @@ async def extraction_page(
 
 
 @router.get("/chat")
-async def chat_page(request: Request, bot: Bot, caller: Caller, limit: int = 50) -> Response:
+async def chat_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "chat.html",
         "chat",
-        interactions=service.chat_interactions(bot, limit),
+        "partials/chat_rows.html",
+        listing=service.chat_listing(bot, page=page, q=q),
         summary=service.chat_summary(bot),
         config=service.get_config(bot),
     )
@@ -518,10 +542,18 @@ async def web_limits_override_clear(
 
 
 @router.get("/audit")
-async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
+async def audit_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     """Who changed what, newest first. Read-only -- there is nothing to do here."""
     request.state.caller = caller
-    return render(request, "audit.html", "audit", rows=service.audit_log(bot, limit), limit=limit)
+    return table_page(
+        request,
+        "audit.html",
+        "audit",
+        "partials/audit_rows.html",
+        listing=service.audit_listing(bot, page=page, q=q),
+    )
 
 
 @router.get("/static/portraits/{short}")
@@ -572,23 +604,33 @@ async def bosses_page(request: Request, bot: Bot, caller: Caller) -> Response:
 
 
 @router.get("/members")
-async def members_page(request: Request, bot: Bot, caller: Caller) -> Response:
+async def members_page(request: Request, bot: Bot, caller: Caller, q: str = "") -> Response:
     request.state.caller = caller
-    return render(request, "members.html", "members", members=service.members(bot))
+    return table_page(
+        request,
+        "members.html",
+        "members",
+        "partials/member_rows.html",
+        listing=service.members_listing(bot, q=q),
+    )
 
 
 @router.get("/reminders")
 async def reminders_page(
-    request: Request, bot: Bot, caller: Caller, run_id: str | None = None
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    q: str = "",
+    page: int = 1,
+    run_id: str | None = None,
 ) -> Response:
     request.state.caller = caller
-    rows = service.reminders(bot, run_id=run_id, limit=400)
-    return render(
+    return table_page(
         request,
         "reminders.html",
         "reminders",
-        upcoming=sorted([r for r in rows if not r["sent_at"]], key=lambda r: r["fire_at"]),
-        sent=[r for r in rows if r["sent_at"]],
+        "partials/reminder_rows.html",
+        listing=service.reminders_listing(bot, page=page, q=q, run_id=run_id),
     )
 
 

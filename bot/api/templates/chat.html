@@ -1,24 +1,21 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import search_form %}
 {% block title %}Chat — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">The speech pilot</p>
     <h1>{{ summary.count }} interaction{{ "" if summary.count == 1 else "s" }}</h1>
-    <p>Every question the chatbot actually answered, what it looked up to answer it, and what the
-      answer cost. A question the rate limiter turned away is not one of these.</p>
+    <p class="note">Every question the chatbot actually answered, what it looked up to answer it,
+      and what the answer cost. A question the rate limiter turned away is not one of these.</p>
   </div>
   <span class="chip chip--mono">{{ config.chat_model or "no model set" }}</span>
 </div>
 
-{% if not interactions %}
-<div class="empty">
-  <strong>Nothing asked yet.</strong>
-  The chatbot answers when somebody @mentions it in a chat channel and holds the chat role.
-  Turn it on under <a href="/config">Config</a>.
-</div>
-{% else %}
-
+{% if summary.models %}
+{# Over the whole log, not the page: these are totals, and a total that changed
+   when you turned to page two would be a different number every time. #}
 <div class="stats">
   {% for row in summary.models %}
   <section class="stat">
@@ -31,34 +28,15 @@
   </section>
   {% endfor %}
 </div>
+{% endif %}
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Interactions</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>When</th><th>Who</th><th>Channel</th><th>Model</th>
-          <th>Rounds</th><th>Tools</th><th>Latency</th><th>Outcome</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in interactions %}
-        <tr>
-          <td class="mono">{{ row.local_time }}</td>
-          <td>{{ row.author_name }}</td>
-          <td class="mono">{{ row.channel_name or "—" }}</td>
-          <td class="mono">{{ row.model }}</td>
-          <td class="mono">{{ row.rounds }}</td>
-          <td>{% if row.tool_names %}<span class="mono">{{ row.tool_names|join(", ") }}</span>{% else %}<span class="id">none</span>{% endif %}</td>
-          <td class="mono">{{ row.latency_ms|duration }}</td>
-          <td><span class="status status--{{ 'confirmed' if row.outcome == 'answered' else 'cancelled' }}">{{ row.outcome }}</span></td>
-          <td><a class="btn" href="/chat/{{ row.id }}">Open</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<section class="card pane">
+  <div class="card__head">
+    <h2 class="card__title">Interactions</h2>
+    {{ search_form("/chat", "chat-rows", "member, channel, question…", listing.q) }}
+  </div>
+  <div id="chat-rows" class="pane__swap">
+    {% include "partials/chat_rows.html" %}
   </div>
 </section>
-{% endif %}
 {% endblock %}

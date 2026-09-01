@@ -27,7 +27,11 @@
         referrerpolicy="no-referrer" defer></script>
 <script src="/static/portal.js" defer></script>
 </head>
-<body>
+{# `framed` is the no-scroll app frame: on a wide viewport the page itself does
+   not scroll, the window inside it does (see portal.css). Opted into per page
+   rather than applied to all, because only the pages that are one long table
+   want it -- and a phone gets ordinary vertical flow either way. #}
+<body class="{% block body_class %}{% endblock %}">
 {# One link, rendered wherever the nav needs it. The phone keeps Week and Inbox
    in reach and folds the rest into a <details>, which means those two are
    written twice -- once in each layout -- and exactly one copy is ever

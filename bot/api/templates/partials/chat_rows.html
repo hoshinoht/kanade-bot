@@ -1,0 +1,39 @@
+{% from "partials/macros.html" import pager, no_match %}
+<div class="pane__body">
+  {% if not listing.rows %}
+    {% if listing.q %}
+    {{ no_match(listing.q, "The search reads the question, the reply, the model — and the member and channel by name.") }}
+    {% else %}
+    <div class="empty">
+      <strong>Nothing asked yet.</strong>
+      The chatbot answers when somebody @mentions it in a chat channel and holds the chat role.
+      Turn it on under <a href="/config">Config</a>.
+    </div>
+    {% endif %}
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>When</th><th>Who</th><th>Channel</th><th>Model</th>
+        <th>Rounds</th><th>Tools</th><th>Latency</th><th>Outcome</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in listing.rows %}
+      <tr>
+        <td class="mono">{{ row.local_time }}</td>
+        <td>{{ row.author_name }}</td>
+        <td class="mono">{{ row.channel_name or "—" }}</td>
+        <td class="mono">{{ row.model }}</td>
+        <td class="mono">{{ row.rounds }}</td>
+        <td>{% if row.tool_names %}<span class="mono">{{ row.tool_names|join(", ") }}</span>{% else %}<span class="id">none</span>{% endif %}</td>
+        <td class="mono">{{ row.latency_ms|duration }}</td>
+        <td><span class="status status--{{ 'confirmed' if row.outcome == 'answered' else 'cancelled' }}">{{ row.outcome }}</span></td>
+        <td><a class="btn" href="/chat/{{ row.id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{{ pager("/chat", "chat-rows", listing) }}

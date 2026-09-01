@@ -41,7 +41,7 @@ from ..materialise import (
 )
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
-from ..timeutil import local_naive, to_iso, utcnow
+from ..timeutil import from_iso, local_naive, to_iso, utcnow
 from ..util import is_bot_admin
 from ..weeks import (
     WEEKDAY_NAMES,
@@ -713,8 +713,195 @@ def audit_view(bot: BossBot, row: dict) -> dict:
 
 
 def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
-    """The most recent changes, newest first -- what the Audit page lists."""
+    """The most recent changes, newest first -- what the JSON API returns."""
     return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
+
+
+# ---------------------------------------------------------------------------
+# the table pages: one search box, one pager, six listings
+# ---------------------------------------------------------------------------
+#
+# Every page that is a list of rows answers the same two questions -- "which
+# rows" and "where in them am I" -- so they answer them the same way and the
+# templates share one contract: ``rows``, ``q``, and the numbers a pager needs.
+#
+# Where the search happens differs, and deliberately. The three log tables are
+# searched in SQL (:meth:`bot.db.Repo.list_audit` and friends), because their
+# columns are the text being looked for and paging in SQL is the only way not
+# to build two thousand views to show twenty. Reminders, members and fixed
+# timings are searched here, over rows that have already been rendered, because
+# what a reader searches for on those pages -- a boss's full name, a member's
+# nickname, a channel's ``#name`` -- is not in the database at all: it comes
+# from the boss table, the roster and the live guild.
+
+#: Rows per page on the logs. Twenty fills a laptop window without the table
+#: pane having to scroll at all; the pane's own scrollbar is a shock absorber
+#: for a short window, not how the page is meant to be read.
+PAGE_SIZE = 20
+
+#: How far back the Reminders page looks. Unlike the logs this list is built by
+#: joining every run to its reminders, so it is capped before it is filtered
+#: rather than paged in SQL -- and a cap is honest here: nobody scrolls to a
+#: ping from four months ago, they search for it.
+REMINDER_SCAN = 1000
+
+
+def _page_meta(total: int, page: int, per_page: int = PAGE_SIZE) -> dict:
+    """Where in a result set we are, clamped to somewhere that exists.
+
+    A ``?page=`` past the end is a stale bookmark, or a search that narrowed
+    under somebody -- not an error worth a 404, so it lands on the last page
+    there actually is.
+    """
+    pages = max(1, (total + per_page - 1) // per_page)
+    current = min(max(int(page or 1), 1), pages)
+    return {
+        "page": current,
+        "pages": pages,
+        "total": total,
+        "offset": (current - 1) * per_page,
+        "per_page": per_page,
+        "prev": current - 1 if current > 1 else None,
+        "next": current + 1 if current < pages else None,
+    }
+
+
+def _listing(rows: list[dict], meta: dict, q: str) -> dict:
+    return {"rows": rows, "q": q, **meta}
+
+
+def _found(rows: list[dict], q: str) -> dict:
+    """A search-only listing: everything that matched, and no pager.
+
+    Same shape as a paged one so the templates need no branch -- one page of
+    one, which is what "no paging" actually is.
+    """
+    return _listing(rows, _page_meta(len(rows), 1, max(len(rows), 1)), q)
+
+
+def _matches(q: str, *fields: object) -> bool:
+    """Does the query appear in any of these already-rendered strings?
+
+    Case-insensitive substring, matching what the SQL side does, so the search
+    box means one thing on all six pages.
+    """
+    term = (q or "").strip().casefold()
+    if not term:
+        return True
+    return any(term in str(field).casefold() for field in fields if field is not None)
+
+
+def audit_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
+    meta = _page_meta(bot.repo.count_audit(q), page)
+    rows = bot.repo.list_audit(limit=meta["per_page"], offset=meta["offset"], q=q)
+    return _listing([audit_view(bot, row) for row in rows], meta, q)
+
+
+def extractions_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
+    meta = _page_meta(bot.repo.count_extractions(q), page)
+    rows = bot.repo.recent_extractions(limit=meta["per_page"], offset=meta["offset"], q=q)
+    return _listing([extraction_view(bot, row) for row in rows], meta, q)
+
+
+def _named_ids(bot: BossBot, q: str) -> list[str]:
+    """Members and channels whose *name* contains the query.
+
+    The chat log stores both as ids and every page shows them as names, so a
+    search box has to be answered against the name. Resolved here because this
+    is the layer that knows what a name is: a channel's comes from the live
+    guild and is not in the database at all, and a member's may be a nickname
+    or one of the aliases the extractor matches on.
+    """
+    term = (q or "").strip().casefold()
+    if not term:
+        return []
+    ids: list[str] = []
+    for member in bot.repo.list_members(with_role=False):
+        names = [member["display_name"], member["nickname"], *member["aliases"]]
+        if any(term in str(name).casefold() for name in names if name):
+            ids.append(str(member["user_id"]))
+    for channel in bot.watched_text_channels():
+        if term in f"#{getattr(channel, 'name', '')}".casefold():
+            ids.append(str(channel.id))
+    return ids
+
+
+def chat_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
+    ids = _named_ids(bot, q)
+    meta = _page_meta(bot.repo.count_chat_interactions(q, ids), page)
+    rows = bot.repo.recent_chat_interactions(
+        limit=meta["per_page"], offset=meta["offset"], q=q, ids=ids
+    )
+    return _listing([chat_interaction_view(bot, row) for row in rows], meta, q)
+
+
+def reminders_listing(
+    bot: BossBot, page: int = 1, q: str = "", run_id: str | None = None
+) -> dict:
+    """Queued and sent, both searched; only the sent half is paged.
+
+    Queued is bounded by what has been materialised -- two boss weeks, so tens
+    of rows -- and a pager over it would be a control that never has a second
+    page. Sent grows for as long as the runs do, so that is the half that gets
+    one.
+
+    ``run_id`` is the narrower "just this run's pings", which the page offers no
+    control for; it is here because ``/reminders?run_id=`` has always answered
+    it and a URL that used to work should keep working.
+    """
+    rows = reminders(bot, run_id=run_id, limit=REMINDER_SCAN)
+    kept = [
+        row
+        for row in rows
+        if _matches(
+            q,
+            row["kind"],
+            row["run_short_id"],
+            " ".join(row["bosses"]),
+            " ".join(row["party"]),
+            row["local_fire_at"],
+        )
+    ]
+    upcoming = sorted((r for r in kept if not r["sent_at"]), key=lambda r: r["fire_at"])
+    sent = [r for r in kept if r["sent_at"]]
+    meta = _page_meta(len(sent), page)
+    listing = _listing(sent[meta["offset"] : meta["offset"] + meta["per_page"]], meta, q)
+    listing["upcoming"] = upcoming
+    return listing
+
+
+def members_listing(bot: BossBot, q: str = "") -> dict:
+    rows = [
+        member
+        for member in members(bot)
+        if _matches(
+            q,
+            member["display_name"],
+            member["nickname"],
+            " ".join(member["aliases"]),
+            member["user_id"],
+        )
+    ]
+    return _found(rows, q)
+
+
+def fixed_listing(bot: BossBot, q: str = "") -> dict:
+    rows = [fixed_view(bot, f, with_grid=True) for f in bot.repo.list_fixed_runs()]
+    kept = [
+        row
+        for row in rows
+        if _matches(
+            q,
+            " ".join(row["bosses"]),
+            " ".join(boss["full"] for boss in row["boss_detail"]),
+            row["weekday_name"],
+            row["time"],
+            row["short_id"],
+            " ".join(person["name"] for person in row["participants"]),
+            row["channel_name"],
+        )
+    ]
+    return _found(kept, q)
 
 
 def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
@@ -744,6 +931,10 @@ def reminder_view(bot: BossBot, reminder: dict, run: dict | None) -> dict:
         "url": message_url(bot, run["channel_id"] if run else None, reminder["message_id"]),
         "bosses": run["bosses"] if run else [],
         "boss_detail": [boss_view(bot, b) for b in run["bosses"]] if run else [],
+        # Who the ping is for, by the name the roster knows them by. The page
+        # shows it and the search box matches on it: "which of Priya's pings
+        # went out?" is the question this table is opened with.
+        "party": [member_name(bot, uid) for uid in run["participants"]] if run else [],
         "run_local": formatting.local_day(run["datetime"], bot.tz) if run else None,
         "status": run["status"] if run else None,
     }
@@ -834,6 +1025,112 @@ def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
             }
         )
     return days
+
+
+# ---------------------------------------------------------------------------
+# the week, as a board
+# ---------------------------------------------------------------------------
+#
+# The rail drew the shape of a boss week in seven cells and then handed off to a
+# list underneath it, which meant the shape and the runs were never on screen
+# together: you looked at the pips, scrolled past them, and lost the week.
+# On a desktop the seven cells grow into seven columns and become the page --
+# the rail's job, done properly. A phone keeps the rail and the list, because
+# seven columns on a 360px screen is seven columns nobody can read.
+
+
+def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
+    """The week's runs in seven day columns, reset day first.
+
+    Built from the *filtered* run views the page already has rather than from
+    the database again, so the board narrows with the filter bar and cannot
+    disagree with the list under it. The seven dates come from the week itself,
+    so a day with nothing on it is still a column -- an empty Tuesday is a fact
+    about the week, not a row to omit.
+    """
+    local_ws = week_for(bot, week).astimezone(bot.tz)
+    today = utcnow().astimezone(bot.tz).date()
+    by_date: dict[str, list[dict]] = {}
+    for run in runs:
+        by_date.setdefault(run["local_date"], []).append(run)
+
+    columns = []
+    for offset in range(7):
+        date = (local_ws.replace(tzinfo=None) + timedelta(days=offset)).date()
+        key = date.strftime("%Y-%m-%d")
+        columns.append(
+            {
+                "date": key,
+                "weekday": WEEKDAY_NAMES[date.weekday()],
+                "day": date.day,
+                "month": date.strftime("%b"),
+                "is_today": date == today,
+                "is_reset": offset == 0,
+                "runs": sorted(by_date.get(key, []), key=lambda run: run["datetime"]),
+            }
+        )
+    return columns
+
+
+def countdown(target: datetime, now: datetime | None = None) -> str:
+    """How long until something, in the coarsest unit that is still useful.
+
+    Rendered on the server and left alone: it is read once, at a glance, on a
+    page somebody opens to find out whether they have time to eat first. A
+    ticking clock would be a second thing on the page that can be wrong.
+    """
+    seconds = int((target - (now or utcnow())).total_seconds())
+    if seconds <= 0:
+        return "now"
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"in {days}d {hours}h"
+    if hours:
+        return f"in {hours}h {minutes:02d}m"
+    return f"in {minutes} min"
+
+
+def week_now(bot: BossBot, runs: Sequence[dict]) -> dict:
+    """The four things worth knowing before reading the board at all.
+
+    What is next, who has not answered, what is waiting in the inbox, and
+    whether the model is free -- the questions the page was opened with, in the
+    order they get asked. All server-rendered: none of them changes fast enough
+    to be worth a socket, and the page is a glance rather than a dashboard.
+    """
+    now = utcnow()
+    ahead = sorted(
+        (
+            run
+            for run in runs
+            if run["status"] in LIVE_STATUSES and from_iso(run["datetime"]) > now
+        ),
+        key=lambda run: run["datetime"],
+    )
+    nxt = ahead[0] if ahead else None
+    model = limits(bot)["model"]
+    return {
+        "next": (
+            {
+                "id": nxt["id"],
+                "short_id": nxt["short_id"],
+                "when": f"{nxt['local_day']} {nxt['local_time']}",
+                "countdown": countdown(from_iso(nxt["datetime"]), now),
+                "bosses": formatting.format_bosses(nxt["bosses"]),
+                "yes": nxt["yes"],
+                "of": len(nxt["participants"]),
+            }
+            if nxt
+            else None
+        ),
+        # Only the runs still ahead: nobody can answer for a night that has been.
+        "unanswered": sum(run["unanswered"] for run in ahead),
+        "pending": len(bot.repo.list_amendments(status="proposed")),
+        "model_busy": model["busy"],
+        "model_holder": model["holder"],
+    }
 
 
 # ---------------------------------------------------------------------------

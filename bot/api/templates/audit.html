@@ -1,46 +1,28 @@
 {% extends "base.html" %}
+{% from "partials/macros.html" import search_form %}
 {% block title %}Audit — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Who changed what</p>
-    <h1>{{ rows|length }} change{{ "" if rows|length == 1 else "s" }}</h1>
-    <p>Every change to the schedule, and the closest thing to a name the surface it came from
-      could give. <span class="mono">token</span> means the admin token was the only credential
-      the request carried — put <code>tailscale serve</code> in front to get a login here.</p>
+    <h1>{{ "{:,}".format(listing.total) }} change{{ "" if listing.total == 1 else "s" }}</h1>
+    <p class="note">Every change to the schedule, and the closest thing to a name the surface it
+      came from could give. <span class="mono">token</span> means the admin token was the only
+      credential the request carried — put <code>tailscale serve</code> in front to get a login
+      here.</p>
   </div>
-  <span class="chip chip--mono">newest {{ limit }}</span>
 </div>
 
-{% if not rows %}
-<div class="empty">
-  <strong>Nothing recorded yet.</strong>
-  The trail starts when the bot does: it holds nothing from before this page existed.
-</div>
-{% else %}
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Changes</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>When</th><th>From</th><th>Who</th><th>Did</th><th>To</th><th>What happened</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td class="mono">{{ row.local_time }}</td>
-          <td><span class="chip chip--mono">{{ row.surface }}</span></td>
-          <td class="mono">{{ row.actor }}</td>
-          <td class="mono">{{ row.action }}</td>
-          <td class="mono id">{{ row.short_subject or "—" }}</td>
-          <td>{{ row.detail }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<section class="card pane">
+  <div class="card__head">
+    <h2 class="card__title">Changes</h2>
+    {{ search_form("/audit", "audit-rows", "actor, action, run id…", listing.q) }}
+  </div>
+  {# The swap target. Everything a search or a page change replaces is inside
+     it; the box that does the searching is above, outside. #}
+  <div id="audit-rows" class="pane__swap">
+    {% include "partials/audit_rows.html" %}
   </div>
 </section>
-{% endif %}
 {% endblock %}

@@ -1,0 +1,51 @@
+{# What the page is opened to find out, before any of it is read: what is next,
+   who has not answered, what is waiting to be approved, and whether the model
+   is free. Server-rendered and left alone -- none of it changes fast enough to
+   be worth a socket, and a countdown that ticks is a second clock to be wrong.
+
+   Three of the four are links to where the thing lives. "Unanswered" is not:
+   there is no "show me only the ones nobody has answered" view to link to, and
+   the board underneath is already that answer, run by run. #}
+<div class="now" role="group" aria-label="Right now">
+  {% if now_strip.next %}
+  <a class="now__tile now__tile--next" href="#sheet-{{ now_strip.next.short_id }}"
+     data-dialog="sheet-{{ now_strip.next.short_id }}">
+    <span class="now__label">Next</span>
+    <span class="now__big mono">{{ now_strip.next.countdown }}</span>
+    <span class="now__sub">{{ now_strip.next.bosses }} · {{ now_strip.next.when }}
+      · <span class="mono">{{ now_strip.next.yes }}/{{ now_strip.next.of }} on</span></span>
+  </a>
+  {% else %}
+  <div class="now__tile">
+    <span class="now__label">Next</span>
+    <span class="now__big">nothing ahead</span>
+    <span class="now__sub">Every run this week has been and gone.</span>
+  </div>
+  {% endif %}
+
+  <div class="now__tile{% if now_strip.unanswered %} now__tile--warn{% endif %}">
+    <span class="now__label">Unanswered</span>
+    <span class="now__big mono">{{ now_strip.unanswered }}</span>
+    <span class="now__sub">
+      {%- if now_strip.unanswered -%}
+      answer{{ "" if now_strip.unanswered == 1 else "s" }} still owed on the runs ahead
+      {%- else -%}
+      everybody has said, on every run ahead
+      {%- endif -%}
+    </span>
+  </div>
+
+  <a class="now__tile{% if now_strip.pending %} now__tile--warn{% endif %}" href="/inbox">
+    <span class="now__label">Inbox</span>
+    <span class="now__big mono">{{ now_strip.pending }}</span>
+    <span class="now__sub">
+      {{- "waiting on you" if now_strip.pending else "nothing proposed" -}}
+    </span>
+  </a>
+
+  <a class="now__tile{% if now_strip.model_busy %} now__tile--warn{% endif %}" href="/limits">
+    <span class="now__label">Model</span>
+    <span class="now__big">{{ "busy" if now_strip.model_busy else "free" }}</span>
+    <span class="now__sub">{{ now_strip.model_holder or "nothing is holding it" }}</span>
+  </a>
+</div>

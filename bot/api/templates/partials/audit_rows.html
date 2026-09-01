@@ -1,0 +1,34 @@
+{% from "partials/macros.html" import pager, no_match %}
+<div class="pane__body">
+  {% if not listing.rows %}
+    {% if listing.q %}
+    {{ no_match(listing.q, "The trail holds the newest few thousand changes; older ones are pruned.") }}
+    {% else %}
+    <div class="empty">
+      <strong>Nothing recorded yet.</strong>
+      The trail starts when the bot does: it holds nothing from before this page existed.
+    </div>
+    {% endif %}
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>When</th><th>From</th><th>Who</th><th>Did</th><th>To</th><th>What happened</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in listing.rows %}
+      <tr>
+        <td class="mono">{{ row.local_time }}</td>
+        <td><span class="chip chip--mono">{{ row.surface }}</span></td>
+        <td class="mono">{{ row.actor }}</td>
+        <td class="mono">{{ row.action }}</td>
+        <td class="mono id">{{ row.short_subject or "—" }}</td>
+        <td>{{ row.detail }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{{ pager("/audit", "audit-rows", listing) }}
