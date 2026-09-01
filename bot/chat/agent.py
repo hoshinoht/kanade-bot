@@ -654,7 +654,11 @@ class ChatPilot:
             read_only=True,
         )
         question = followup.prompt(self.bot, amendments, author_id)
-        conversation = self.assemble([*self.history(channel_id), ChatTurn("system", question)])
+        # A ``user`` turn, though nobody said it: gpt-oss's template lifts every
+        # system message out of the conversation and into the instructions header
+        # at the top, which would put this synthetic turn *before* the history it
+        # is a reaction to. Its bracketed opener carries the provenance instead.
+        conversation = self.assemble([*self.history(channel_id), ChatTurn("user", question)])
         result = await self.generate(conversation, context)
         log.info(
             "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
@@ -668,10 +672,12 @@ class ChatPilot:
             posted = await self._post_followup(channel, result.reply, author_id, card_message_id)
             # Remembered only once it has been said, exactly as an answer is.
             # The note goes in as well: without it the member's "make it friday"
-            # arrives with no idea what "it" was.
+            # arrives with no idea what "it" was. Remembered as ``user`` for the
+            # same reason the question above is: a system turn would be hoisted
+            # out of the history and stop sitting where it happened.
             note = followup.memory_note(self.bot, amendments)
             posted_id = str(getattr(posted, "id", "") or "") or None
-            self.remember(channel_id, ChatTurn("system", note))
+            self.remember(channel_id, ChatTurn("user", note))
             self.remember(channel_id, ChatTurn("assistant", result.reply, posted_id))
         self._record(card_message_id, channel_id, author_id, question, result.reply, result)
         return result
@@ -884,11 +890,23 @@ class ChatPilot:
         and those are precisely the turns with the most tool output in front of
         them.
 
+        Sent as **user**, not system, and that is not a stylistic choice.
+        Ollama's gpt-oss template does not render system messages in the message
+        flow at all: it skips every one of them and concatenates them into the
+        developer "# Instructions" header at the very top. A trailing system
+        message is therefore not trailing -- it is hoisted back up behind the
+        whole persona document, which is precisely the buried copy this exists to
+        escape. ``user`` is the only role the template renders in place at the
+        end. That role is also why this is worded differently from the system
+        prompt's own footer: arriving in the conversation it looks like a member
+        typed it, so :data:`bot.chat.persona.REMINDER_PREFIX` opens by saying who
+        it is from and that it is not to be answered.
+
         Appended rather than woven in, so it never accumulates in the remembered
         conversation, and re-derived from the cached persona each turn so a
         `reload_persona` takes effect immediately.
         """
-        return {"role": "system", "content": persona.voice_reminder(self.persona_text())}
+        return {"role": "user", "content": persona.voice_reminder(self.persona_text())}
 
     async def _chat(
         self, messages: list[dict[str, Any]], with_tools: bool, context: tools.ToolContext

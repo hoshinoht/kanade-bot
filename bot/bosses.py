@@ -5,6 +5,11 @@ Chat and slash-command input names bosses as ``nstar``, ``HFA``, ``xkalos``,
 by a boss alias; the canonical form the bot stores is the uppercased prefix plus
 the boss's short name, e.g. ``HStar``, ``HFA``, ``XKalos``, ``NCarling``.
 
+The difficulty may also be spelled out as a word in front of the boss --
+``Hard Baldrix``, ``Extreme Kalos`` -- which is how members say it out loud and
+how the chatbot repeats it back.  Such a pair is folded into the prefixed form
+before anything is resolved, so both spellings meet the same two refusals.
+
 Two things are rejected rather than guessed:
 
 * a token with no difficulty prefix -- the guild runs Normal and Hard of the same
@@ -160,6 +165,32 @@ class BossTable:
             return boss.canonical(letter)
         raise BossParseError(f"unknown boss `{token}`")
 
+    def _fold_difficulty_words(self, tokens: list[str]) -> list[str]:
+        """``["Hard", "Baldrix"]`` -> ``["hBaldrix"]``, left to right.
+
+        Members say the difficulty out loud, and the chatbot says it back to
+        them: live, "schedule a Hard Baldrix run tonight" was refused as a bare
+        boss name, so the bot asked which difficulty it should be after being
+        told. A word is folded only when a boss alias actually follows it, which
+        leaves a stray "hard" an unknown boss rather than a silent prefix.
+        """
+        letters = {word.lower(): letter for letter, word in self.difficulties.items()}
+        out: list[str] = []
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            letter = letters.get(token.lower())
+            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+            if letter and nxt is not None and _normalise(nxt) in self.aliases:
+                # The prefixed form, not the resolved boss: `parse_token` still
+                # has to reject "Chaos Seren", exactly as it rejects `cseren`.
+                out.append(letter + nxt)
+                index += 2
+                continue
+            out.append(token)
+            index += 1
+        return out
+
     def parse(self, text: str) -> list[str]:
         """Parse a comma/space separated list of tokens, preserving order.
 
@@ -168,6 +199,7 @@ class BossTable:
         tokens = [t for t in _SPLIT_RE.split(text or "") if t]
         if not tokens:
             raise BossParseError("no bosses given")
+        tokens = self._fold_difficulty_words(tokens)
         out: list[str] = []
         problems: list[str] = []
         for token in tokens:

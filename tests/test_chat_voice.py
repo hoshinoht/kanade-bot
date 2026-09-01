@@ -125,9 +125,10 @@ def test_the_tracked_template_has_a_slot_that_reads_as_unfilled():
     assert persona.voice_line(text) == persona.DEFAULT_VOICE
 
 
-def test_the_voice_reminder_is_the_last_thing_in_the_prompt():
-    built = persona.system_prompt("**Voice:** Deadpan.\n\nlots of persona", "CLOCK")
-    assert built.rstrip().endswith(persona.VOICE_PREFIX + "Deadpan.")
+def test_the_voice_footer_is_the_last_thing_in_the_prompt():
+    text = "**Voice:** Deadpan.\n\nlots of persona"
+    built = persona.system_prompt(text, "CLOCK")
+    assert built.rstrip().endswith(persona.voice_footer(text))
     # ...and it really is after the rules and the clock, not merely present.
     assert built.index("CLOCK") < built.index(persona.VOICE_PREFIX)
     assert built.index("Operating rules") < built.index(persona.VOICE_PREFIX)
@@ -144,7 +145,7 @@ def test_the_order_is_persona_rules_clock_voice():
     assert positions == sorted(positions)
 
 
-async def test_the_reminder_reaches_the_model_as_the_last_system_line(chat_bot, chat_seeded):
+async def test_the_footer_reaches_the_model_as_the_last_system_line(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("ok"))
     await agent.offer(message(chat_bot))
     system = agent._client.system
@@ -167,11 +168,36 @@ async def test_a_real_voice_line_reaches_the_model(tmp_path, repo, bosses):
     )
 
 
-def test_the_reminder_carries_no_ids_or_secrets(repo, bosses):
+def test_neither_form_carries_ids_or_secrets(repo, bosses):
     bot = build_bot(repo, bosses)
-    reminder = persona.VOICE_PREFIX + persona.voice_line(persona.load_persona(None))
-    for secret in (str(bot.settings.guild_id), bot.settings.admin_token, "CHAT_PILOT"):
-        assert secret not in reminder
+    text = persona.load_persona(None)
+    for form in (persona.voice_footer(text), persona.voice_reminder(text)):
+        for secret in (str(bot.settings.guild_id), bot.settings.admin_token, "CHAT_PILOT"):
+            assert secret not in form
+
+
+def test_the_two_forms_differ_only_where_position_demands_it():
+    """The footer is instructions; the reminder is a message and must say so.
+
+    "answer the conversation above it" is true of the trailing message and false
+    of the system prompt, which has no conversation above it -- so the bracketed
+    opener must never leak into the footer.
+    """
+    text = "**Voice:** Deadpan.\n\nlots of persona"
+    footer, reminder = persona.voice_footer(text), persona.voice_reminder(text)
+
+    assert "not from anybody in the channel" in reminder
+    assert "not from anybody in the channel" not in footer
+    assert "answer the conversation above it" not in footer
+    # ...and both still carry the persona's own sentence, which is the point.
+    assert "Deadpan." in footer
+    assert "Deadpan." in reminder
+
+
+def test_the_bracketed_opener_never_reaches_the_system_prompt():
+    built = persona.system_prompt("**Voice:** Deadpan.\n\nlots of persona", "CLOCK")
+    assert persona.REMINDER_PREFIX not in built
+    assert persona.REMINDER_SUFFIX not in built
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +218,7 @@ async def test_the_persona_survives_a_conversation_that_blows_the_budget(chat_bo
 
     assert built[0]["role"] == "system"
     assert whole in system, "the persona document was truncated"
-    assert system.rstrip().endswith(persona.voice_line(whole))
+    assert system.rstrip().endswith(persona.voice_footer(whole))
     assert len(built) < 122  # turns really were dropped
 
 

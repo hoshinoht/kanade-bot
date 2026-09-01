@@ -71,6 +71,17 @@ async def test_it_posts_a_card_and_creates_no_run(chat_bot, chat_seeded):
     assert row["proposal_message_id"]
 
 
+async def test_a_spelled_out_difficulty_is_accepted(chat_bot, chat_seeded):
+    """The live failure: the member said "Hard Baldrix" and was asked which difficulty."""
+    answer = await tools.dispatch(
+        context(chat_bot),
+        "propose_add",
+        {"boss": "Hard Baldrix", "when": tomorrow_at(chat_bot)},
+    )
+    assert "✅" in answer
+    assert proposals(chat_bot)[0]["bosses"] == ["HBaldrix"]
+
+
 @pytest.mark.parametrize(
     "spoken", ["tonight 23:00", "tonight at 2300", "tmr 2300", "ltr 10pm", "2300"]
 )

@@ -153,9 +153,11 @@ def memory_note(bot: Any, amendments: list[dict]) -> str:
     model nothing about what "it" was, and the member's answer -- "friday, and
     put priya on it" -- arrives as a correction to nothing.
 
-    Kept short and kept as a note rather than as a line of dialogue, because
-    nobody said it. It is remembered, so it is trimmed by the ordinary budget
-    and forgotten with the rest of the conversation.
+    Kept short and marked ``[Note]`` rather than written as a line of dialogue,
+    because nobody said it -- the bracket does that job, since the turn itself is
+    remembered as a ``user`` one for the same reason :func:`prompt` is. It is
+    remembered, so it is trimmed by the ordinary budget and forgotten with the
+    rest of the conversation.
     """
     return (
         "[Note] The card you posted was rejected and is off; nothing changed. It said: "
@@ -167,11 +169,18 @@ def memory_note(bot: Any, amendments: list[dict]) -> str:
 def prompt(bot: Any, amendments: list[dict], author_id: str) -> str:
     """The synthetic turn the model answers, built entirely from the rows.
 
-    Written as a note *to* the bot rather than as a line from the member, and
-    fed in as a ``system`` turn, because that is what it is: nobody said any of
-    this. A member's own words never reach it, so there is nothing in it for a
-    message to steer -- the facts come from the amendment rows and the names
-    from the roster.
+    Written as a note *to* the bot rather than as a line from the member: nobody
+    said any of this. A member's own words never reach it, so there is nothing in
+    it for a message to steer -- the facts come from the amendment rows and the
+    names from the roster.
+
+    Fed in as a ``user`` turn all the same, which is a fact about the runtime
+    rather than about the note. Ollama's gpt-oss template skips system messages
+    in the message loop and concatenates them into the instructions header at the
+    top of the prompt, so a ``system`` turn does not stay where it was put -- and
+    a note about a reaction that just happened is worthless before the
+    conversation it reacted to. The bracketed opener keeps the provenance
+    explicit where the role no longer can.
 
     It ends by saying what the answer is for, because a small model handed a
     rejection will otherwise apologise and stop, and an apology asks nothing.

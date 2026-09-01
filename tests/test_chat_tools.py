@@ -8,6 +8,8 @@ existing ✅ path is run over the row the tool created.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 from bot.chat import tools
@@ -40,6 +42,11 @@ def cards(bot):
 
 def proposals(bot):
     return bot.repo.list_amendments(status="proposed")
+
+
+def line_for(answer: str, run_id: str) -> str:
+    """The one line of a listing that is about ``run_id``."""
+    return next(line for line in answer.splitlines() if short_id(run_id) in line)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +106,50 @@ async def test_get_schedule_says_so_when_a_week_is_empty(chat_bot, chat_seeded):
 async def test_get_schedule_rejects_a_week_it_does_not_have(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "last"})
     assert "this" in answer and "next" in answer
+
+
+async def test_get_schedule_marks_a_run_that_has_already_happened(
+    chat_bot, chat_seeded, monkeypatch
+):
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=7))
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    assert "already happened" in line_for(answer, chat_seeded["star"])
+
+
+async def test_get_schedule_leaves_an_upcoming_run_unmarked(chat_bot, chat_seeded, monkeypatch):
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"])
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    assert "already happened" not in line_for(answer, chat_seeded["star"])
+
+
+async def test_get_schedule_marks_a_done_run_whose_time_has_not_come(
+    chat_bot, chat_seeded, monkeypatch
+):
+    """`done` is over whatever the clock says -- a run can be finished early."""
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"])
+    chat_bot.repo.set_run_status(chat_seeded["kalos"], "done")
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    assert "already happened" in line_for(answer, chat_seeded["kalos"])
+    assert "already happened" not in line_for(answer, chat_seeded["star"])
+
+
+async def test_get_schedule_says_when_nothing_upcoming_is_left(chat_bot, chat_seeded, monkeypatch):
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=7))
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    assert "nothing upcoming is left" in answer
+
+
+async def test_get_schedule_stays_quiet_while_one_run_is_still_to_come(
+    chat_bot, chat_seeded, monkeypatch
+):
+    """Monday 22:00: the Monday run is over, the Tuesday one is not."""
+    monkeypatch.setattr(
+        tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=4, hours=22)
+    )
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    assert "already happened" in line_for(answer, chat_seeded["star"])
+    assert "already happened" not in line_for(answer, chat_seeded["kalos"])
+    assert "nothing upcoming" not in answer
 
 
 async def test_get_run_by_short_id(chat_bot, chat_seeded):

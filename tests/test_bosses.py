@@ -104,6 +104,51 @@ def test_parse_list(bosses: BossTable, text, expected):
     assert bosses.parse(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Hard Baldrix", ["HBaldrix"]),  # the live case: the member had said Hard
+        ("Extreme Kalos", ["XKalos"]),
+        ("HARD baldrix", ["HBaldrix"]),
+        ("hard bald", ["HBaldrix"]),  # a word in front of an alias, not just the short
+        ("Easy Carling", ["ECarling"]),
+        ("Chaos Kalos", ["CKalos"]),
+        ("hard star hard fa", ["HStar", "HFA"]),
+        ("HBellona, hard star", ["HBellona", "HStar"]),  # the two spellings mix
+    ],
+)
+def test_a_spelled_out_difficulty_is_folded_into_the_prefix(bosses: BossTable, text, expected):
+    assert bosses.parse(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_valid"),
+    [
+        ("Hard Kalos", "EKalos, NKalos, CKalos, XKalos"),
+        ("Chaos Seren", "NSeren, HSeren, XSeren"),
+    ],
+)
+def test_a_spelled_out_difficulty_the_boss_lacks_is_still_rejected(
+    bosses: BossTable, text, expected_valid
+):
+    """Folding produces the prefixed token; `parse_token` judges it as it always did."""
+    with pytest.raises(BossParseError) as exc:
+        bosses.parse(text)
+    message = str(exc.value)
+    assert "difficulty" in message
+    assert expected_valid in message
+
+
+def test_a_difficulty_word_with_no_boss_after_it_is_not_a_prefix(bosses: BossTable):
+    with pytest.raises(BossParseError, match="unknown boss `hard`"):
+        bosses.parse("hard")
+
+
+def test_a_bare_name_is_still_refused_now_the_word_form_exists(bosses: BossTable):
+    with pytest.raises(BossParseError, match="missing a difficulty prefix"):
+        bosses.parse("baldrix")
+
+
 def test_parse_reports_every_bad_token_at_once(bosses: BossTable):
     with pytest.raises(BossParseError) as exc:
         bosses.parse("hstar, kalos, hzzz, hkalos")
