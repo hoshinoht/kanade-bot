@@ -281,4 +281,9 @@ def _parse_weekday_only(day_ref: str | None) -> bool:
     return any(w in _WEEKDAY_ALIASES for w in re.split(r"[^a-z0-9]+", cleaned) if w)
 
 
-__all__ = ["PM_CUTOFF", "Resolved", "parse_clock", "resolve"]
+#: Every spelling of a weekday this guild actually uses, mapped to its index.
+#: Public because it is not only the extractor's: :mod:`bot.chat.tools` reads
+#: "hstar weds" the same way, and two tables would drift.
+WEEKDAY_ALIASES = _WEEKDAY_ALIASES
+
+__all__ = ["PM_CUTOFF", "WEEKDAY_ALIASES", "Resolved", "parse_clock", "resolve"]

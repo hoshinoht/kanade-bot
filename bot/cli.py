@@ -857,12 +857,13 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(
-        help="day_of_ping_time, countdown_minutes, paused, extract_enabled or quiet_mode."
+        help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
+        "quiet_mode or chat_mode."
     ),
     value: str = typer.Argument(help="The new value."),
 ) -> None:
     """Change one runtime setting. Takes effect at once and survives a restart."""
-    flags = {"paused", "extract_enabled", "quiet_mode"}
+    flags = {"paused", "extract_enabled", "quiet_mode", "chat_mode"}
     if key in flags:
         parsed: Any = value.strip().lower() in ("1", "true", "yes", "on")
     else:

@@ -491,6 +491,13 @@ KIND_VERB: dict[str, str] = {
     "rsvp": "answer",
 }
 
+#: How an `rsvp` amendment reads on a proposal card.
+RSVP_ANSWER: dict[str | None, str] = {
+    "yes": "**can make it**",
+    "no": "**can't make it**",
+    "maybe": "**not sure yet**",
+}
+
 TBD = "**TBD**"
 
 
@@ -555,7 +562,12 @@ def proposal_line(
             # to find a temp is a job nothing here does, and a card that says
             # "temp needed" is a to-do item rather than something to ✅.
             lines.append(f"{format_participants(out, who)} **out this week**")
-    else:  # pragma: no cover - rsvp never reaches a card
+    elif kind == "rsvp":
+        # The extractor applies a chat answer straight away and never cards one.
+        # The chatbot does card it: it is answering on somebody's behalf from a
+        # sentence it was told, so the person gets to see it before it counts.
+        lines.append(RSVP_ANSWER.get(amendment.get("rsvp"), "**answered**"))
+    else:  # pragma: no cover - every kind above is handled
         lines.append(when_text(amendment, tz))
 
     people = amendment["participants"] or (run["participants"] if run else [])

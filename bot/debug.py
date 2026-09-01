@@ -118,6 +118,27 @@ def render_reminder_rows(reminders: list[dict], tz: ZoneInfo) -> str:
     return "\n".join(lines)
 
 
+def _chat_state(bot) -> str:
+    """One line for the chatbot: is it on, and can it be?
+
+    Reports the *number* of chat channels rather than their ids, and never the
+    chat role id. `/debug status` is posted into a channel, and the two ids that
+    gate the chatbot are the two worth not printing there.
+    """
+    settings = bot.settings
+    if not settings.chat_pilot_configured:
+        return (
+            "not configured (CHAT_PILOT_ROLE_ID + CHAT_PILOT_CHANNEL_IDS/CHAT_PILOT_CATEGORY_IDS)"
+        )
+    channels = len(settings.chat_pilot_channel_id_list)
+    categories = len(settings.chat_pilot_category_id_list)
+    return (
+        f"{'on' if bot.chat_mode else 'off'} · {channels} channel(s), "
+        f"{categories} categor(y/ies) · `{settings.chat_pilot_model}` · "
+        f"{settings.chat_pilot_rate_count}/{settings.chat_pilot_rate_window_s:.0f}s per person"
+    )
+
+
 def manage_messages_lines(access: list[dict]) -> list[str]:
     """Per-channel Manage Messages, for `/debug status`.
 
@@ -403,6 +424,7 @@ class DebugGroup(app_commands.Group):
             f"**runs** {len(bot.repo.list_runs())} · **fixed** {len(bot.repo.list_fixed_runs())}",
             f"**model** `{bot.settings.ollama_model}` · "
             f"**ollama** {'✅' if reachable else '❌'} {detail}",
+            f"**chatbot** {_chat_state(bot)}",
         ]
         lines.extend(manage_messages_lines(bot.access_report()))
         await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)

@@ -18,6 +18,7 @@ import discord
 
 from .bosses import BossTable, BossTableError
 from .client import (
+    CFG_CHAT,
     CFG_COUNTDOWNS,
     CFG_EXTRACT,
     CFG_PAUSED,
@@ -87,6 +88,10 @@ def build_repo(settings: Settings) -> Repo:
             CFG_EXTRACT: "1" if settings.extract_enabled else "0",
             # Off by default: a fresh deployment is meant to ping people.
             CFG_QUIET: "0",
+            # On when the chat role and channel are both set, because setting
+            # them is what asking for the chatbot looks like. It still answers
+            # nobody without them.
+            CFG_CHAT: "1" if settings.chat_pilot_configured else "0",
         }
     )
     return repo

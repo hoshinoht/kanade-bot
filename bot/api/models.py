@@ -358,6 +358,12 @@ class ConfigOut(BaseModel):
     paused: bool
     extract_enabled: bool
     quiet_mode: bool
+    chat_mode: bool
+    #: The chatbot needs a role and a channel before `chat_mode` means anything.
+    chat_configured: bool = False
+    chat_channels: list[str] = []
+    chat_categories: list[str] = []
+    chat_model: str = ""
     timezone: str
     reset: str
     model: str
@@ -380,6 +386,7 @@ class ConfigIn(Strict):
     paused: bool | None = None
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
+    chat_mode: bool | None = None
 
 
 class DigestIn(Strict):

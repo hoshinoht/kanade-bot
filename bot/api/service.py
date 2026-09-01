@@ -58,7 +58,14 @@ PORTAL_REJECTED = "❌ rejected via portal"
 #: Runtime config the portal may read and write, and how to validate each one.
 #: Anything not listed here is refused -- `config set` is not a way to write
 #: arbitrary rows into the `config` table.
-CONFIG_KEYS = ("day_of_ping_time", "countdown_minutes", "paused", "extract_enabled", "quiet_mode")
+CONFIG_KEYS = (
+    "day_of_ping_time",
+    "countdown_minutes",
+    "paused",
+    "extract_enabled",
+    "quiet_mode",
+    "chat_mode",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1194,6 +1201,14 @@ def get_config(bot: BossBot) -> dict:
         "paused": bot.paused,
         "extract_enabled": bot.extract_enabled,
         "quiet_mode": bot.quiet_mode,
+        "chat_mode": bot.chat_mode,
+        # Whether the chatbot *could* answer at all: a chat role and at least
+        # one chat channel. `chat_mode` on top of an unconfigured pilot answers
+        # nobody, and the page needs to be able to say so.
+        "chat_configured": bot.settings.chat_pilot_configured,
+        "chat_channels": [str(c) for c in bot.settings.chat_pilot_channel_id_list],
+        "chat_categories": [str(c) for c in bot.settings.chat_pilot_category_id_list],
+        "chat_model": bot.settings.chat_pilot_model,
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",

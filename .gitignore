@@ -1,4 +1,8 @@
 .env
+# Backups and variants of it are the same secrets in a different filename.
+# `.env.example` is the tracked template and stays tracked (negated below).
+.env.*
+!.env.example
 data/
 .venv/
 __pycache__/
@@ -15,6 +19,13 @@ config/portraits/*
 !config/portraits/README.md
 
 .claude
+
+# The live persona is deployment flavour text: it names a character and the
+# guild's in-jokes, it is edited far more often than code, and it belongs on the
+# data volume (`data/` above is already ignored). Only the template is tracked.
+persona.md
+persona-*.md
+!persona.example.md
 
 # The design spec is kept locally rather than published.
 DESIGN.md
