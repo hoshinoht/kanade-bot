@@ -118,12 +118,12 @@
 
   <section class="card">
     <div class="card__head"><h2 class="card__title">Theme</h2></div>
-    {# The one control on the portal that is not a real form, deliberately: the
-       colourway is kept in this browser's localStorage and applied by
-       `static/portal.js`, so there is no server state for a POST to write and
-       nothing to redirect back to. The reasoning is written out at the top of
-       portal.js. Which one is ticked here is the *default*; portal.js re-ticks
-       the stored one as soon as it runs. #}
+    {# The two controls on the portal that are not real forms, deliberately: both
+       are kept in this browser's localStorage and applied by `static/portal.js`,
+       so there is no server state for a POST to write and nothing to redirect
+       back to. The reasoning is written out at the top of portal.js. What is
+       ticked here is the *default*; portal.js re-ticks whatever is stored as
+       soon as it runs. #}
     <fieldset class="field">
       <span class="label">Colourway</span>
       <div class="swatches">
@@ -137,14 +137,34 @@
         {% endfor %}
       </div>
     </fieldset>
+    {# "System" is stored as nothing at all -- see portal.js -- so it is the one
+       ticked here, which is also what a browser with no script gets. #}
+    <fieldset class="field">
+      <span class="label">Mode</span>
+      <div class="swatches">
+        <label class="swatch swatch--plain">
+          <input type="radio" name="thememode" value="system" checked>
+          <span class="swatch__name">System</span>
+        </label>
+        <label class="swatch swatch--plain">
+          <input type="radio" name="thememode" value="light">
+          <span class="swatch__name">Light</span>
+        </label>
+        <label class="swatch swatch--plain">
+          <input type="radio" name="thememode" value="dark">
+          <span class="swatch__name">Dark</span>
+        </label>
+      </div>
+    </fieldset>
     <noscript>
-      <p class="note">Choosing a colourway needs JavaScript — it is kept in this browser
-        rather than on the server, so there is nothing here to submit. Without it the portal
-        stays on {{ colorways[0].name }}.</p>
+      <p class="note">Both of these need JavaScript — they are kept in this browser rather than
+        on the server, so there is nothing here to submit. Without it the portal stays on
+        {{ colorways[0].name }} and follows whatever this device says about light and dark.</p>
     </noscript>
-    <p class="note">Takes effect as you pick it, and only on this device — the choice never
-      reaches the bot. Each colourway has an after-hours face your system's dark mode picks on
-      its own; there is no switch for that here, because the answer is already on the device.</p>
+    <p class="note">Takes effect as you pick it, and only on this device — neither choice ever
+      reaches the bot. Every colourway has a daytime and an after-hours face:
+      <strong>System</strong> follows what the device already knows, which is usually the right
+      answer. Pick Light or Dark when you want the portal to disagree with it.</p>
   </section>
 
   <section class="card">

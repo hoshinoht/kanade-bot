@@ -1,11 +1,15 @@
 {# Inline, and above the stylesheet, because it has to run before the first
-   paint: read after it and the page shows the default colourway and then swaps.
+   paint: read after it and the page shows the default look and then swaps.
    Included by base.html and by login.html, which is its own document. #}
 <script>
   try {
     const c = localStorage.getItem("colorway");
+    const t = localStorage.getItem("theme");
     if (["otonose", "nazuna", "sumire", "coral", "hinano"].indexOf(c) > -1) {
       document.documentElement.dataset.colorway = c;
+    }
+    if (["light", "dark"].indexOf(t) > -1) {
+      document.documentElement.dataset.theme = t;
     }
   } catch (e) {} // a private window can throw rather than answer
 </script>
