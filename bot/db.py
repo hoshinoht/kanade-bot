@@ -34,6 +34,12 @@ SCHEMA_VERSION = 6
 #: pilot is actually used, and it bounds a table nothing else ever deletes from.
 CHAT_INTERACTIONS_KEPT = 500
 
+#: The `amendments.payload` key that says the chat pilot has already asked what
+#: this card should have said. Set once, by :meth:`Repo.claim_chat_followup`,
+#: and never cleared: "one follow-up per card" is a promise about the card's
+#: whole life, not about the current reaction.
+CHAT_FOLLOWUP_KEY = "chat_followup_at"
+
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
 #: How much a member wants to be @mentioned (DESIGN.md s3, "Mention policy").
@@ -1255,6 +1261,37 @@ class Repo:
     def set_amendment_run(self, amendment_id: str, run_id: str | None) -> None:
         self._conn.execute("UPDATE amendments SET run_id = ? WHERE id = ?", (run_id, amendment_id))
 
+    def claim_chat_followup(self, amendment_id: str, at: datetime | None = None) -> bool:
+        """Take the right to follow up on this card, once and for all.
+
+        ``True`` the first time it is asked about a card and ``False`` for ever
+        after, so a member who reacts ❌, un-reacts and reacts again gets one
+        question rather than three -- and two ❌ arriving together produce one
+        between them.
+
+        The check and the set are one statement, so there is no window between
+        them to lose: the ``WHERE`` clause *is* the check. It lives in
+        :data:`CHAT_FOLLOWUP_KEY` inside the amendment's own ``payload`` rather
+        than in a table of its own, because it is a fact about one card, it dies
+        with that card, and a marker in a side table is a thing to forget to
+        delete. Nothing else reads the key: the commit handlers take only the
+        keys their kind writes.
+        """
+        # `json_valid` guards the one row shape this cannot assume: `payload` is
+        # NOT NULL DEFAULT '{}', but a v1 database rebuilt by hand could hold
+        # something else, and a JSON error here would unwind into a rejection.
+        payload = "CASE WHEN json_valid(payload) THEN payload ELSE '{}' END"
+        cursor = self._conn.execute(
+            f"""
+            UPDATE amendments
+               SET payload = json_set({payload}, '$.{CHAT_FOLLOWUP_KEY}', ?)
+             WHERE id = ?
+               AND json_extract({payload}, '$.{CHAT_FOLLOWUP_KEY}') IS NULL
+            """,  # noqa: S608 - `payload` is a literal above, not caller input
+            (to_iso(at or utcnow()), amendment_id),
+        )
+        return bool(cursor.rowcount)
+
     def proposed_for_run(self, run_id: str, exclude: str | None = None) -> list[dict]:
         """Still-`proposed` amendments targeting one run, newest last."""
         rows = self._conn.execute(
@@ -1527,6 +1564,34 @@ class Repo:
             "SELECT * FROM chat_interactions WHERE id = ?", (interaction_id,)
         ).fetchone()
         return self._chat_interaction(row) if row else None
+
+    def chat_interaction_for_amendment(self, amendment_id: str) -> dict | None:
+        """The interaction whose tool calls raised ``amendment_id``, if one did.
+
+        This is the provenance the rejection follow-up runs on: a card the
+        chatbot posted has an interaction here naming it in a tool call's
+        ``created`` list, and a card the *extractor* raised has none at all. It
+        also answers the other half of the question -- ``author_id`` is the
+        member who asked for the card, which is the only person a follow-up is
+        ever addressed to.
+
+        The ``LIKE`` narrows the scan; the loop is what decides, because a
+        substring of a JSON blob is not an id. Newest first, so a card somehow
+        named twice is attributed to the interaction that last touched it.
+        Nothing older than :data:`CHAT_INTERACTIONS_KEPT` interactions is
+        findable, which is the same as saying a card outlived the log of how it
+        came to exist -- proposals expire in a day and the log holds weeks.
+        """
+        wanted = str(amendment_id)
+        rows = self._conn.execute(
+            "SELECT * FROM chat_interactions WHERE tool_calls LIKE ? ORDER BY at DESC, id DESC",
+            (f"%{wanted}%",),
+        )
+        for row in rows:
+            interaction = self._chat_interaction(row)
+            if any(wanted in (call.get("created") or []) for call in interaction["tool_calls"]):
+                return interaction
+        return None
 
     def list_chat_interaction_ids(self) -> list[str]:
         """Every interaction id, newest first -- what a short-prefix lookup resolves against."""

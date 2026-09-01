@@ -1096,6 +1096,7 @@ class BossBot(discord.Client):
             for amendment in allowed:
                 reject(self.repo, amendment)
             await self._annotate_card(payload, formatting.rejected_notice(name))
+            await self._followup_on_rejection(payload, allowed)
             return
 
         results = [await self._commit_one(amendment, actor, payload) for amendment in allowed]
@@ -1112,6 +1113,30 @@ class BossBot(discord.Client):
                     [],
                     reference_id=payload.message_id,
                 )
+
+    async def _followup_on_rejection(
+        self, payload: discord.RawReactionActionEvent, rejected: list[dict]
+    ) -> None:
+        """Let the chat pilot ask what the card should have said.
+
+        Only its own cards, only to the member who asked for one, and at most
+        once per card -- all of which :meth:`bot.chat.agent.ChatPilot.on_rejection`
+        decides. Everything here does is hand it the rejection and refuse to let
+        a chatbot fault break a reaction: a ❌ has already been applied and
+        annotated by this point, and losing the card's rejection because the
+        model was down would be the worse bug by far.
+
+        Reached only from the ❌ path above, so a rejection made in the portal
+        does nothing new: nobody is standing in the channel to answer.
+        """
+        try:
+            await self.chat.on_rejection(
+                rejected,
+                reactor_id=payload.user_id,
+                card_message_id=payload.message_id,
+            )
+        except Exception:  # noqa: BLE001 - chat must never break a reaction
+            log.exception("the chat pilot could not follow up on a rejected card")
 
     async def _commit_one(
         self, amendment: dict, actor: int | str, payload: discord.RawReactionActionEvent

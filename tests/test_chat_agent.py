@@ -12,7 +12,13 @@ import asyncio
 import pytest
 
 from bot.chat import gate
-from bot.chat.agent import FAILURE_REPLY, MAX_TOOL_ROUNDS, ChatPilot, ChatTurn
+from bot.chat.agent import (
+    FAILURE_REPLY,
+    MAX_TOOL_ROUNDS,
+    ChatPilot,
+    ChatTurn,
+    unglue_first_bullet,
+)
 from bot.ids import short_id
 
 from .chat_support import (
@@ -241,6 +247,48 @@ async def test_an_essay_is_trimmed(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("word " * 1000))
     result = (await agent.offer(message(chat_bot))).answered
     assert len(result.reply) <= 1200
+
+
+# ---------------------------------------------------------------------------
+# a list that starts on the header line
+# ---------------------------------------------------------------------------
+
+
+def test_a_first_bullet_stuck_to_the_header_is_put_on_its_own_line():
+    glued = "This week, all channels: - **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    assert unglue_first_bullet(glued) == (
+        "This week, all channels:\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    )
+
+
+def test_a_list_that_was_already_right_is_left_alone():
+    correct = "This week, all channels:\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    assert unglue_first_bullet(correct) == correct
+
+
+def test_prose_that_merely_contains_the_sequence_is_untouched():
+    """The guard: ": - " in a sentence is punctuation, not a list."""
+    prose = "There's one catch: - and this is the annoying part - Kalos moved."
+    assert unglue_first_bullet(prose) == prose
+
+
+async def test_the_blank_lines_tidy_collapses_are_repaired_on_the_way_out(chat_bot, chat_seeded):
+    """`_tidy` turns a correctly written list into a glued one; this undoes it."""
+    agent = pilot(chat_bot, says("This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"))
+    result = (await agent.offer(message(chat_bot))).answered
+
+    assert result.reply == "This week:\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+
+
+async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, chat_seeded):
+    """One version of a reply, and it is the one the channel saw."""
+    agent = pilot(chat_bot, says("This week: - **Hard Star** Mon\n- **Hard Baldrix** Wed"))
+    await agent.offer(message(chat_bot))
+
+    wanted = "This week:\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+    assert replies(chat_bot)[0].content == wanted
+    assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == wanted
+    assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == wanted
 
 
 # ---------------------------------------------------------------------------

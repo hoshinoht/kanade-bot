@@ -43,9 +43,31 @@ __all__ = [
     "SEEN_REACTION",
     "ChatDecision",
     "decide",
+    "is_chat_channel",
     "mentions_bot",
     "would_check_mention",
 ]
+
+
+def is_chat_channel(channel: Any, settings: Settings) -> bool:
+    """Is this one of the pilot's own channels?
+
+    The pilot's allow-list, read from ``CHAT_PILOT_*`` and never from the
+    extractor's ``CHAT_*`` watch list. Named rather than inlined because
+    :mod:`bot.chat.followup` has to apply the same rule to a channel it was
+    handed rather than to a message, and two spellings of an allow-list is one
+    too many.
+
+    ``is_watched`` is reused rather than reimplemented so both features resolve
+    a category and a thread identically: a channel under an allowed category is
+    allowed (including one added to that category later), and a thread counts as
+    its parent channel.
+    """
+    return is_watched(
+        channel,
+        settings.chat_pilot_channel_id_list,
+        settings.chat_pilot_category_id_list,
+    )
 
 
 @dataclass(frozen=True)
@@ -146,22 +168,12 @@ def _before_the_mention_check(
     if not settings.chat_pilot_configured:
         return ChatDecision(False, "the chat pilot is not configured")
 
-    # The pilot's own allow-list: its own channels and its own categories, read
-    # from `CHAT_PILOT_*` and never from the extractor's `CHAT_*` watch list. The
-    # two are independent rather than mutually exclusive -- pointing the pilot's
-    # category list at the bossing category *does* make the bot answer in every
-    # party channel under it, which is a deliberate choice for whoever writes
-    # `.env`, not something this gate second-guesses.
-    #
-    # `is_watched` is reused rather than reimplemented so both features resolve a
-    # category and a thread identically: a channel under an allowed category is
-    # allowed (including one added to that category later), and a thread counts
-    # as its parent channel.
-    if not is_watched(
-        getattr(message, "channel", None),
-        settings.chat_pilot_channel_id_list,
-        settings.chat_pilot_category_id_list,
-    ):
+    # The pilot's own allow-list (:func:`is_chat_channel`). It is independent of
+    # the extractor's watch list rather than mutually exclusive with it --
+    # pointing the pilot's category list at the bossing category *does* make the
+    # bot answer in every party channel under it, which is a deliberate choice
+    # for whoever writes `.env`, not something this gate second-guesses.
+    if not is_chat_channel(getattr(message, "channel", None), settings):
         return ChatDecision(False, "not a chat channel")
     return None
 

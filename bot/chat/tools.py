@@ -57,6 +57,7 @@ UNKNOWN_TOOL = (
 __all__ = [
     "FAILED",
     "MAX_RUNS",
+    "READ_ONLY_TURN",
     "REFUSED",
     "TOOLS",
     "UNKNOWN",
@@ -64,6 +65,7 @@ __all__ = [
     "ToolError",
     "ToolOutcome",
     "dispatch",
+    "read_tools",
     "resolve_fixed",
     "resolve_run",
     "run",
@@ -89,6 +91,13 @@ class ToolContext:
     author_id: str
     channel_id: str
     message_id: str
+    #: No card may be posted in this turn, whatever the model asks for. Set for
+    #: the bot's *own* turns -- the rejection follow-up
+    #: (:mod:`bot.chat.followup`), which is generated from a card rather than
+    #: from anything a member said and must only ever produce a question. It is
+    #: enforced in :func:`run`, not by withholding the schemas alone, so a model
+    #: that names a write tool from memory is refused rather than obeyed.
+    read_only: bool = False
     #: Amendment ids this turn created, so the agent can report accurately.
     created: list[str] = None  # type: ignore[assignment]
 
@@ -1042,6 +1051,27 @@ _WRITE = {
 }
 
 
+def read_tools() -> list[dict]:
+    """:data:`TOOLS` with the five ``propose_*`` schemas taken out.
+
+    What a read-only turn (:attr:`ToolContext.read_only`) is offered. Deriving
+    it from :data:`TOOLS` rather than listing the read schemas again means a
+    tool added tomorrow is write-shaped here unless somebody puts it in
+    :data:`_READ`, which is the safe way round to be wrong.
+    """
+    return [t for t in TOOLS if t["function"]["name"] in _READ]
+
+
+#: What a read-only turn tells the model when it reaches for a card anyway.
+#: Phrased as the thing to do instead, for the reason :data:`UNKNOWN_TOOL` is:
+#: a bare refusal makes a small model try the same call again.
+READ_ONLY_TURN = (
+    "You cannot post a card in this message. Ask them in words what it should be "
+    "instead, and stop there -- their answer comes back to you as a normal "
+    "message and you can post the card then."
+)
+
+
 def _arguments(raw: Any) -> dict:
     """The model's arguments as a dict, whatever shape the client handed back.
 
@@ -1111,6 +1141,13 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
             duration_ms=int((time.monotonic() - started) * 1000),
             created=list(ctx.created[already:]),
         )
+
+    if ctx.read_only and name in _WRITE:
+        # Structural, not advisory: the schemas were withheld from this turn
+        # too, but a model that names one from memory must be refused by the
+        # dispatcher rather than trusted not to try.
+        log.info("chat: %s is not available in a read-only turn", name)
+        return done(READ_ONLY_TURN, False, REFUSED)
 
     handler = _READ.get(name) or _WRITE.get(name)
     if handler is None:

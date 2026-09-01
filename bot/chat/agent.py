@@ -29,7 +29,7 @@ from ..timeutil import utcnow
 from ..util import is_bot_admin
 from ..watch import origin_ids
 from ..weeks import current_week_start
-from . import gate, persona, tools
+from . import followup, gate, persona, tools
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -64,7 +64,15 @@ REFERENCE_CACHE = 256
 #: in-persona apology written here would be a second, worse persona.
 FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
 
-__all__ = ["MAX_TOOL_ROUNDS", "ChatPilot", "ChatTurn", "Generation", "Handling", "tool_trace"]
+__all__ = [
+    "MAX_TOOL_ROUNDS",
+    "ChatPilot",
+    "ChatTurn",
+    "Generation",
+    "Handling",
+    "tool_trace",
+    "unglue_first_bullet",
+]
 
 
 @dataclass
@@ -219,6 +227,36 @@ def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
     ]
 
 
+#: A list whose first item is sitting on the header line: ``... all channels: -
+#: **Hard Star** ...``. Four characters, and so is what replaces it, so nothing
+#: downstream has to be told the text got longer.
+GLUED_BULLET = ": - "
+
+
+def unglue_first_bullet(text: str) -> str:
+    """Put a first list item that ended up on the header line onto its own line.
+
+    Live, a schedule answer was stored as ``...(all channels): - **Hard Star**
+    ... ✅ – #x\\n- **Hard Baldrix** ...`` -- every item but the first correctly
+    its own bullet -- and the same question answered cleanly seconds later. Two
+    separate things produce that, and this repairs both:
+
+    * the model writes it that way sometimes, which is a stochastic habit and
+      not something a prompt rule reliably removes; and
+    * :meth:`ChatPilot._tidy` collapses blank lines into spaces, so a *correctly*
+      written ``header:\\n\\n- one\\n- two`` is glued by the time it gets here.
+
+    Done at post time rather than asked for in the persona because only one of
+    those two causes can read a persona. The normalised text is what is posted,
+    remembered and recorded -- there is one version of a reply, and it is the
+    one the channel saw.
+
+    Guarded on the text already being a list (``\\n- `` somewhere else), so
+    ordinary prose that happens to contain ": - " is never touched.
+    """
+    return text.replace(GLUED_BULLET, ":\n- ") if "\n- " in text else text
+
+
 def _call_parts(call: Any) -> tuple[str, Any]:
     """``(name, arguments)`` from one tool call, object or dict."""
     function = call.get("function") if isinstance(call, dict) else getattr(call, "function", None)
@@ -243,6 +281,11 @@ class ChatPilot:
         #: Per channel, so two channels can be answered at once but one channel
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
+        #: Per channel, when the last rejection follow-up was *started*. The
+        #: cheap half of the anti-spam rule: `_busy` stops two at once, this
+        #: stops a run of them across different cards. See
+        #: :data:`bot.chat.followup.COOLDOWN_S`.
+        self._followed_up_at: dict[str, float] = {}
         self._history: dict[str, deque[ChatTurn]] = {}
         #: Referenced message id -> its author id (or None). One API call per
         #: replied-to message, however many people reply to it.
@@ -462,12 +505,12 @@ class ChatPilot:
             f" -> proposal {', '.join(result.created)}" if result.created else "",
             f" [{result.error}]" if result.error else "",
         )
-        self._record(message, channel_id, author_id, text, reply, result)
+        self._record(getattr(message, "id", None), channel_id, author_id, text, reply, result)
         return result
 
     def _record(
         self,
-        message: Any,
+        message_id: Any,
         channel_id: str,
         author_id: str,
         question: str,
@@ -483,7 +526,9 @@ class ChatPilot:
 
         Only *handled generations* land here -- ⏳ and 💬 never reach
         :meth:`_answer` -- so every row is a question that actually cost model
-        time.
+        time. A rejection follow-up (:meth:`on_rejection`) is one of them: the
+        bot asked rather than answered, but it cost a generation like any other
+        and the trace is worth the same.
         """
         try:
             self.bot.repo.log_chat_interaction(
@@ -494,7 +539,7 @@ class ChatPilot:
                 error=result.error,
                 rounds=result.rounds,
                 channel_id=channel_id,
-                message_id=getattr(message, "id", None),
+                message_id=message_id,
                 author_id=author_id,
                 latency_ms=result.latency_ms,
                 model_ms=result.model_ms,
@@ -505,6 +550,156 @@ class ChatPilot:
             )
         except Exception:  # noqa: BLE001 - analytics must never cost an answer
             log.exception("chat: could not record the interaction")
+
+    # -- rejections --------------------------------------------------------
+    async def on_rejection(
+        self,
+        amendments: Sequence[dict],
+        *,
+        reactor_id: int | str,
+        card_message_id: int | str | None = None,
+    ) -> Handling:
+        """A ❌ landed on a card the pilot posted: ask what it should be instead.
+
+        Called from :meth:`bot.client.BossBot._handle_proposal_reaction` after
+        the amendments have been rejected, and does nothing at all unless
+        :func:`bot.chat.followup.scope` says this rejection is the pilot's --
+        see there for the gates, and for why the question is built from the row
+        rather than from anything anybody wrote.
+
+        Everything from the guards down to marking the channel busy is
+        deliberately **synchronous**. This runs on the event loop, so a stretch
+        with no ``await`` in it cannot be interleaved: two ❌ arriving together
+        cannot both find the channel free, and cannot both claim the card. The
+        claim (:meth:`bot.db.Repo.claim_chat_followup`) is a single atomic
+        statement as well, so the promise survives a future edit that puts an
+        ``await`` in the middle of this.
+
+        The answer is not built here. It arrives as an ordinary reply to the
+        bot's message, which :meth:`offer` already treats as a mention -- so
+        what this has to leave behind is the *context* for it, which is why the
+        question and the card's facts are remembered before it returns.
+        """
+        rows = [a for a in amendments if a.get("id")]
+        if not rows:
+            return Handling(False, "nothing was rejected")
+        channel = self.bot.resolve_channel(rows[0].get("channel_id"))
+        allowed = followup.scope(
+            self.bot,
+            rows[0],
+            reactor_id=reactor_id,
+            channel=channel,
+            enabled=self.enabled,
+        )
+        if not allowed.act:
+            log.debug("chat: no follow-up on a rejected card (%s)", allowed.reason)
+            return Handling(False, allowed.reason)
+
+        channel_id = str(origin_ids(channel)[0])
+        now = time.monotonic()
+        last = self._followed_up_at.get(channel_id)
+        if last is not None and now - last < followup.COOLDOWN_S:
+            # Somebody clearing out several cards at once. The cards are all
+            # visibly rejected already; a question per card would be the bot
+            # talking over a tidy-up.
+            log.info("chat: channel %s had a follow-up %.0fs ago; dropping", channel_id, now - last)
+            return Handling(False, "a follow-up was asked here too recently")
+        if channel_id in self._busy:
+            # The channel is mid-answer. Queuing this would land a question
+            # about a dead card after the answer to a live one.
+            log.info("chat: channel %s is already answering; dropping the follow-up", channel_id)
+            return Handling(False, "already answering")
+
+        # Every amendment on the card, so a card carrying two of them cannot be
+        # followed up once per amendment. Anything already claimed means this
+        # card has had its question, and the rest are burnt on the way past.
+        mine = [a for a in rows if self.bot.repo.chat_interaction_for_amendment(a["id"])]
+        claimed = [a for a in mine if self.bot.repo.claim_chat_followup(a["id"])]
+        if len(claimed) != len(mine):
+            log.info("chat: card %s has already been followed up", card_message_id)
+            return Handling(False, "already followed up")
+
+        self._busy.add(channel_id)
+        self._followed_up_at[channel_id] = now
+        try:
+            result = await self._ask_instead(claimed, allowed.author_id, channel, card_message_id)
+        finally:
+            self._busy.discard(channel_id)
+        return Handling(True, "ok", result)
+
+    async def _ask_instead(
+        self,
+        amendments: list[dict],
+        author_id: str,
+        channel: Any,
+        card_message_id: int | str | None,
+    ) -> Generation:
+        """Generate the question, post it, and leave the context for the answer.
+
+        ``read_only`` is the load-bearing argument: the read tools still run, so
+        the bot can look the run up before asking, and no write tool exists for
+        this turn however the model asks for one.
+
+        A generation that failed says **nothing**. :data:`FAILURE_REPLY` is the
+        right answer to somebody who asked a question and is waiting; posted
+        unprompted into a channel because a reaction happened, it is the bot
+        apologising for a conversation nobody started.
+        """
+        channel_id = str(origin_ids(channel)[0])
+        context = tools.ToolContext(
+            bot=self.bot,
+            author_id=author_id,
+            channel_id=channel_id,
+            message_id=str(card_message_id or ""),
+            read_only=True,
+        )
+        question = followup.prompt(self.bot, amendments, author_id)
+        conversation = self.assemble([*self.history(channel_id), ChatTurn("system", question)])
+        result = await self.generate(conversation, context)
+        log.info(
+            "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
+            channel_id,
+            result.latency_ms,
+            result.rounds,
+            f": {result.trace}" if result.outcomes else "",
+            f" [{result.error}]" if result.error else "",
+        )
+        if result.reply:
+            posted = await self._post_followup(channel, result.reply, author_id, card_message_id)
+            # Remembered only once it has been said, exactly as an answer is.
+            # The note goes in as well: without it the member's "make it friday"
+            # arrives with no idea what "it" was.
+            note = followup.memory_note(self.bot, amendments)
+            posted_id = str(getattr(posted, "id", "") or "") or None
+            self.remember(channel_id, ChatTurn("system", note))
+            self.remember(channel_id, ChatTurn("assistant", result.reply, posted_id))
+        self._record(card_message_id, channel_id, author_id, question, result.reply, result)
+        return result
+
+    async def _post_followup(
+        self,
+        channel: Any,
+        content: str,
+        author_id: str,
+        card_message_id: int | str | None,
+    ) -> Any:
+        """Post the question as a reply to the card itself. Never raises.
+
+        Through ``post_plain`` like every other chat reply, so the allow-list is
+        the asker and nobody else, ``@everyone`` is impossible, and quiet mode is
+        applied -- though quiet mode has already stopped this in
+        :func:`bot.chat.followup.scope`.
+        """
+        try:
+            return await self.bot.post_plain(
+                channel,
+                content,
+                [str(author_id)],
+                reference_id=int(card_message_id) if card_message_id else None,
+            )
+        except Exception:  # noqa: BLE001 - a failed question is not worth a crash
+            log.exception("chat: could not post the rejection follow-up")
+            return None
 
     # -- context assembly --------------------------------------------------
     def _speaker(self, user_id: str, text: str) -> str:
@@ -568,6 +763,23 @@ class ChatPilot:
         for it. Trimming, when the budget needs it, drops the oldest remembered
         exchanges -- never the system prompt and never the question.
         """
+        seen = {turn.message_id for turn in self.history(channel_id) if turn.message_id}
+        earlier = list(self.history(channel_id))
+        earlier += [turn for turn in self.reply_chain(message) if turn.message_id not in seen]
+        question = ChatTurn(
+            "user", self._speaker(str(message.author.id), (message.content or "").strip())
+        )
+        return self.assemble([*earlier, question])
+
+    def assemble(self, turns: Sequence[ChatTurn]) -> list[dict[str, str]]:
+        """The system prompt, then as much of ``turns`` as the budget allows.
+
+        Shared by :meth:`build_conversation` and by the rejection follow-up
+        (:meth:`on_rejection`), which assembles the same prompt around a
+        synthetic last turn rather than a member's question -- so a follow-up is
+        composed under the persona, the clock and the budget an answer is, and
+        there is one place where "what the model sees" is decided.
+        """
         now = utcnow()
         week = current_week_start(
             self.bot.tz, self.settings.reset_weekday, self.settings.reset_time, now
@@ -575,23 +787,15 @@ class ChatPilot:
         system = persona.system_prompt(
             self.persona_text(), persona.clock_header(now, self.bot.tz, week)
         )
-
-        seen = {turn.message_id for turn in self.history(channel_id) if turn.message_id}
-        earlier = list(self.history(channel_id))
-        earlier += [turn for turn in self.reply_chain(message) if turn.message_id not in seen]
-        question = ChatTurn(
-            "user", self._speaker(str(message.author.id), (message.content or "").strip())
-        )
-
-        turns = [{"role": t.role, "content": t.content} for t in (*earlier, question)]
+        rendered = [{"role": t.role, "content": t.content} for t in turns]
         # Measured over the conversation alone. The system prompt is a whole
         # persona document -- a few thousand tokens on its own -- so budgeting
         # the two together would leave a long conversation trimmed to nothing
         # and still over the line. What grows without bound is the deque, and
         # the deque is what this trims.
-        while len(turns) > 1 and estimate_messages(turns) > CONVERSATION_BUDGET_TOKENS:
-            turns.pop(0)
-        return [{"role": "system", "content": system}, *turns]
+        while len(rendered) > 1 and estimate_messages(rendered) > CONVERSATION_BUDGET_TOKENS:
+            rendered.pop(0)
+        return [{"role": "system", "content": system}, *rendered]
 
     # -- the model ---------------------------------------------------------
     async def generate(
@@ -629,7 +833,7 @@ class ChatPilot:
             # that never arrives because it kept looking things up.
             last = round_number == MAX_TOOL_ROUNDS
             asked_at = time.monotonic()
-            response = await self._chat(messages, with_tools=not last)
+            response = await self._chat(messages, with_tools=not last, context=context)
             content, calls = _message_text(response)
             model_ms = int((time.monotonic() - asked_at) * 1000)
             result.model_ms += model_ms
@@ -686,7 +890,13 @@ class ChatPilot:
         """
         return {"role": "system", "content": persona.voice_reminder(self.persona_text())}
 
-    async def _chat(self, messages: list[dict[str, Any]], with_tools: bool) -> Any:
+    async def _chat(
+        self, messages: list[dict[str, Any]], with_tools: bool, context: tools.ToolContext
+    ) -> Any:
+        # A read-only turn is offered the read schemas only. That is the polite
+        # half of the rule; `tools.run` refuses a write by name whatever the
+        # model asks for, which is the half that actually holds.
+        offered = tools.read_tools() if context.read_only else tools.TOOLS
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
             messages=[*messages, self.voice_reminder()],
@@ -699,7 +909,7 @@ class ChatPilot:
             },
             keep_alive=-1,
             think=self.settings.think,
-            **({"tools": tools.TOOLS} if with_tools else {}),
+            **({"tools": offered} if with_tools else {}),
         )
 
     @staticmethod
@@ -709,9 +919,12 @@ class ChatPilot:
         Discord's own limit is 2000 characters; this is far below it because a
         chatbot that writes an essay in a party channel is a worse chatbot, and
         the persona already asks for four sentences.
+
+        The blank-line collapse is also what makes :func:`unglue_first_bullet`
+        necessary, so the repair happens here, immediately after the damage.
         """
         text = " ".join((content or "").split("\n\n")).strip()
-        return text[:1200].strip()
+        return unglue_first_bullet(text)[:1200].strip()
 
     # -- discord -----------------------------------------------------------
     async def _post(self, message: Any, content: str) -> None:
