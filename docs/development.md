@@ -7,6 +7,12 @@ uv run ruff check .
 uv run ruff format .
 ```
 
+If the project directory is ever moved or renamed, run `uv sync --reinstall`
+once: the venv's console scripts (`.venv/bin/pytest` and friends) carry absolute
+shebang paths, and a stale one fails as *bad interpreter* — after which the
+shell quietly falls through to whatever `pytest` is next on `PATH`, which then
+can't import the project's dependencies.
+
 Tests cover the pure layers — boss-week arithmetic, token parsing,
 materialisation idempotency, reminder generation and pruning, the
 reaction → RSVP → status transitions, and every stage of the extractor (gate,

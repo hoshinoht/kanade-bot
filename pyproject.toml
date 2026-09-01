@@ -44,7 +44,9 @@ packages = ["bot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -m 'not ollama'"
+# Only the marker filter belongs here: baking a verbosity flag into addopts
+# means a hand-typed `pytest -q` becomes `-qq` and silently loses the summary.
+addopts = "-m 'not ollama'"
 markers = [
     "ollama: hits the real local model; slow. Run with `uv run pytest -m ollama`.",
 ]
