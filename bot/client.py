@@ -52,6 +52,20 @@ log = logging.getLogger(__name__)
 POST_ATTEMPTS = 3
 POST_BACKOFF_SECONDS = 1.0
 
+#: What the embed's *image* attachment is called on the wire. A card can carry
+#: two pictures of the same boss -- `config/portraits/Star.png` in the corner
+#: and `config/artwork/entry/Star.png` along the bottom -- and on disk those are
+#: both `Star.png`. Two attachments with one name make `attachment://Star.png`
+#: ambiguous, and Discord resolves it to whichever it likes, which is how a
+#: 550px splash ends up in the thumbnail slot.
+#:
+#: Only the newcomer is renamed, deliberately. `edit_card` rewrites an embed
+#: without re-uploading anything, so every card already posted still has an
+#: attachment called `Star.png`; prefixing the thumbnail too would point every
+#: future edit at a filename those messages do not have, and break the portrait
+#: on all of them.
+IMAGE_PREFIX = "image-"
+
 
 @dataclass(frozen=True)
 class ChannelLookup:
@@ -930,19 +944,34 @@ class BossBot(discord.Client):
             # The file travels with the message, so the thumbnail keeps working
             # without hosting anything: `attachment://` refers to it by name.
             embed.set_thumbnail(url=f"attachment://{card.thumbnail_path.name}")
+        if card.image_path is not None:
+            embed.set_image(url=f"attachment://{IMAGE_PREFIX}{card.image_path.name}")
         return embed
 
     @staticmethod
-    def _attachment(card: formatting.Card) -> discord.File | None:
-        """The boss portrait to send alongside a card, if there is one."""
-        path = card.thumbnail_path
+    def _file(path: Path | None, prefix: str = "") -> discord.File | None:
+        """One attachment, or nothing when the file is not there to be read."""
         if path is None:
             return None
         try:
-            return discord.File(str(path), filename=path.name)
+            return discord.File(str(path), filename=f"{prefix}{path.name}")
         except OSError:
-            log.warning("could not read the portrait at %s", path)
+            log.warning("could not read the card image at %s", path)
             return None
+
+    @staticmethod
+    def _attachments(card: formatting.Card) -> list[discord.File]:
+        """The pictures that travel with a card: a portrait, a splash, or both.
+
+        A list because a day-of card carries two, and `send(file=...)` takes
+        one. Either can be missing on its own -- a boss with a portrait and no
+        entry art sends exactly the message it did before the splash existed.
+        """
+        files = (
+            BossBot._file(card.thumbnail_path),
+            BossBot._file(card.image_path, IMAGE_PREFIX),
+        )
+        return [item for item in files if item is not None]
 
     def _prepared(
         self, card: formatting.Card | str, mention_users: list[str] | None = None
@@ -984,17 +1013,17 @@ class BossBot(discord.Client):
         their own reminder.
         """
         card, allowed = self._prepared(card, mention_users)
-        attachment = self._attachment(card)
+        attachments = self._attachments(card)
         message: discord.Message | None = None
         for attempt in range(1, POST_ATTEMPTS + 1):
             try:
-                # `file=` is omitted entirely when there is no portrait, so a
+                # `files=` is omitted entirely when there is no artwork, so a
                 # guild that ships none sends exactly the message it did before.
                 message = await channel.send(
                     card.content,
                     embed=self._embed(card),
                     allowed_mentions=allowed,
-                    **({"file": attachment} if attachment is not None else {}),
+                    **({"files": attachments} if attachments else {}),
                 )
                 break
             except discord.HTTPException:
