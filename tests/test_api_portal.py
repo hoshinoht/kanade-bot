@@ -15,9 +15,25 @@ from bot.api import routes_api, routes_web
 from bot.api.templating import HTMX_SRC, confidence_band
 from bot.ids import short_id
 
-from .fake_bot import ADMIN_TOKEN, OTHER_CHANNEL, UNWATCHED_CHANNEL, WATCHED_CHANNEL
+from .fake_bot import (
+    ADMIN_TOKEN,
+    OTHER_CHANNEL,
+    UNWATCHED_CHANNEL,
+    WATCHED_CHANNEL,
+    add_pilot,
+)
 
-PAGES = ["/", "/fixed", "/inbox", "/extractions", "/chat", "/members", "/reminders", "/config"]
+PAGES = [
+    "/",
+    "/fixed",
+    "/inbox",
+    "/extractions",
+    "/chat",
+    "/limits",
+    "/members",
+    "/reminders",
+    "/config",
+]
 
 
 # --- the invariant that lets the bot share one SQLite connection ------------
@@ -192,6 +208,252 @@ def test_an_unknown_chat_interaction_renders_the_error_page_not_a_traceback(auth
 
 def test_an_empty_chat_log_explains_what_turns_it_on(auth):
     assert "Nothing asked yet." in auth.get("/chat").text
+
+
+def test_the_limits_page_says_the_model_is_free_when_it_is(auth, fake_bot):
+    body = auth.get("/limits").text
+    assert "The model is free" in body
+    assert "Nothing running." in body
+    assert "Nobody is mid-window." in body
+
+
+def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded, model_lock):
+    from bot import modellock
+    from bot.chat.gate import GLOBAL_KEY
+
+    fake_bot.chat.limiter.allow(1002)
+    fake_bot.chat.global_limiter.allow(GLOBAL_KEY)
+    fake_bot.chat._busy.add(str(WATCHED_CHANNEL))
+    assert auth.portal.call(modellock.acquire_within, 5, modellock.EXTRACTOR) is True
+    try:
+        body = auth.get("/limits").text
+    finally:
+        modellock.release()
+
+    assert "The model is busy" in body
+    assert "extractor" in body
+    assert "#hstar-party" in body
+    assert "kanon" in body  # the member mid-window, by roster name
+    assert f"of {fake_bot.settings.chat_pilot_global_rate_count} left" in body
+
+
+def test_the_live_region_is_a_wrapper_the_swap_cannot_replace(auth, fake_bot):
+    """Everything that refetches hangs off the wrapper, so a swap never rebuilds it."""
+    page = auth.get("/limits").text
+    assert 'id="limits-live"' in page
+    assert 'data-live-src="/limits/events"' in page  # the stream portal.js opens
+    assert 'hx-get="/limits/live"' in page
+    assert 'hx-swap="innerHTML"' in page
+
+    fragment = auth.get("/limits/live")
+    assert fragment.status_code == 200
+    # The fragment is content only: it must not carry the wrapper, or a swap
+    # would nest a second one and leave two of everything running.
+    assert 'id="limits-live"' not in fragment.text
+    assert "Windows in use" in fragment.text
+
+
+def test_the_poll_is_only_a_slow_fallback_behind_the_stream(auth, fake_bot):
+    """Updates arrive as events; the timer is for a browser that cannot have them."""
+    page = auth.get("/limits").text
+    assert "hx-trigger=\"every 60s [document.visibilityState === 'visible']\"" in page
+    # ...and the manual link still works with no JavaScript at all.
+    assert '<a class="btn btn--ghost" href="/limits">Refresh</a>' in page
+
+
+def test_the_polled_region_contains_no_inputs(auth, fake_bot, seeded):
+    """The invariant that makes refreshing safe: nothing in here can be typed into.
+
+    A ten-second swap landing on a half-filled form would eat it, so the one
+    form on the page lives outside the polled region -- and this is the test
+    that notices when somebody puts a field back inside it.
+    """
+    fake_bot.chat.limiter.allow(1002)
+    add_pilot(fake_bot, 1002, "kanon")
+
+    live = auth.get("/limits/live").text
+
+    assert "<input" not in live
+    assert "<textarea" not in live
+    assert "<select" not in live
+    # ...while the page as a whole does have the form.
+    assert "<input" in auth.get("/limits").text
+
+
+def test_the_form_survives_a_refresh_of_the_live_panel(auth, fake_bot, seeded):
+    """Structural: the form is not in what a poll replaces."""
+    page = auth.get("/limits").text
+    live_start = page.index('id="limits-live"')
+    form_start = page.index('id="set-allowance"')
+    assert form_start > live_start
+    assert '<input name="user_id"' not in page[live_start:form_start]
+
+
+def test_resetting_a_window_from_the_page_removes_its_row(auth, fake_bot, seeded):
+    """The refreshed panel is the confirmation: the row is simply not in it."""
+    fake_bot.chat.limiter.allow(1002)
+    assert "kanon" in auth.get("/limits").text
+
+    response = auth.post("/limits/windows/1002/reset", headers={"HX-Request": "true"})
+
+    assert response.status_code == 200
+    assert "Nobody is mid-window." in response.text  # the live panel came back
+    assert fake_bot.chat.limiter.remaining(1002) == fake_bot.settings.chat_pilot_rate_count
+
+
+def test_the_reset_button_is_a_real_form_too(auth, fake_bot, seeded):
+    """htmx blocked: the same POST still lands and the page says what happened."""
+    fake_bot.chat.limiter.allow(1002)
+    assert 'action="/limits/windows/1002/reset"' in auth.get("/limits").text
+
+    response = auth.post("/limits/windows/1002/reset", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/limits?")
+    assert "kanon" in response.headers["location"]
+
+
+def test_giving_a_member_their_own_allowance_from_the_page(auth, fake_bot, seeded):
+    response = auth.post(
+        "/limits/overrides",
+        data={"user_id": "1002", "count": "10", "window_s": "60"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert "own allowance" not in response.text or "kanon" in response.text
+    assert "10 per 60s" in response.text  # the overrides table
+    assert fake_bot.chat.limiter.limit_for("1002") == (10, 60.0)
+
+
+def test_an_override_can_be_set_for_somebody_with_no_open_window(auth, fake_bot, seeded):
+    """The usual reason to raise it is that they are about to need it."""
+    assert fake_bot.chat.limiter.snapshot() == {}
+
+    auth.post("/limits/overrides", data={"user_id": "1003", "count": "8", "window_s": "120"})
+
+    assert fake_bot.chat.limiter.limit_for("1003") == (8, 120.0)
+    assert "8 per 120s" in auth.get("/limits").text
+
+
+def test_a_bad_allowance_comes_back_as_a_flash_not_a_traceback(auth, fake_bot, seeded):
+    response = auth.post(
+        "/limits/overrides",
+        data={"user_id": "1002", "count": "0", "window_s": "60"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "kind=error" in response.headers["location"]
+    assert fake_bot.repo.list_rate_limits() == []
+
+
+def test_clearing_an_override_from_the_page_removes_its_row(auth, fake_bot, seeded):
+    auth.post("/limits/overrides", data={"user_id": "1002", "count": "10", "window_s": "60"})
+    assert "10 per 60s" in auth.get("/limits").text
+
+    response = auth.post("/limits/overrides/1002/clear", headers={"HX-Request": "true"})
+
+    assert response.status_code == 200
+    assert "10 per 60s" not in response.text
+    assert fake_bot.repo.list_rate_limits() == []
+
+
+def test_an_overridden_window_is_marked_and_counted_against_its_own_allowance(
+    auth, fake_bot, seeded
+):
+    auth.post("/limits/overrides", data={"user_id": "1002", "count": "10", "window_s": "60"})
+    fake_bot.chat.limiter.allow(1002)
+
+    body = auth.get("/limits").text
+
+    assert "own allowance" in body
+    assert "1 of 10" in body
+
+
+def test_the_limits_page_lists_who_may_ask(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    add_pilot(fake_bot, 1001, "Alvin tan", staff=True)
+
+    body = auth.get("/limits").text
+
+    assert "Who may ask" in body
+    assert "kanon" in body and "Alvin tan" in body
+    # Staff are marked and given no controls, because every one would change a
+    # number nothing consults for them.
+    assert "staff" in body
+    assert "exempt" in body
+    assert 'href="/limits?user=1002#set-allowance"' in body
+    assert 'href="/limits?user=1001#set-allowance"' not in body
+
+
+def test_the_page_says_when_it_cannot_read_the_role(auth, fake_bot):
+    body = auth.get("/limits").text
+    assert "No holders to show." in body
+    assert "not connected to read it" in body
+
+
+def test_a_pilots_set_button_prefills_the_form_with_their_own_numbers(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+
+    body = auth.get("/limits?user=1002").text
+
+    form = body[body.index('id="set-allowance"') :]
+    assert 'value="1002"' in form
+    assert 'value="10"' in form
+    assert 'value="60"' in form
+
+
+def test_the_prefill_falls_back_to_the_guild_default(auth, fake_bot, seeded):
+    """No `?user=`, or a nonsense one, offers the numbers everybody else is on."""
+    for path in ("/limits", "/limits?user=notanid"):
+        form = auth.get(path).text
+        form = form[form.index('id="set-allowance"') :]
+        assert 'name="user_id" required inputmode="numeric" size="20" class="mono"\n' in form
+        assert f'value="{fake_bot.settings.chat_pilot_rate_count}"' in form
+
+
+def test_a_pilots_row_offers_the_actions_that_apply_to_them(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    plain = auth.get("/limits").text
+    # Nothing to clear and no window to reset yet.
+    assert "/limits/overrides/1002/clear" not in plain
+    assert "/limits/windows/1002/reset" not in plain
+
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    fake_bot.chat.limiter.allow(1002)
+    body = auth.get("/limits").text
+
+    assert "/limits/overrides/1002/clear" in body
+    assert "/limits/windows/1002/reset" in body
+
+
+def test_the_capacity_numbers_are_editable_from_the_config_page(auth, fake_bot):
+    response = auth.post(
+        "/config",
+        data={"chat_pilot_rate_count": "9", "chat_pilot_rate_window_s": "600"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert fake_bot.chat.limiter.count == 9
+    assert fake_bot.chat.limiter.window == 600.0
+    assert 'name="chat_pilot_rate_count"' in auth.get("/config").text
+
+
+def test_the_event_stream_needs_signing_in(client):
+    response = client.get("/limits/events", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?next=/limits/events"
+
+
+def test_the_limits_page_needs_signing_in(client):
+    """A portal page sends you to the sign-in form; the JSON behind it 401s."""
+    for path in ("/limits", "/limits/live"):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/login?next={path}"
 
 
 def test_the_reminders_page_separates_queued_from_sent(auth, fake_bot, seeded):
@@ -779,3 +1041,144 @@ def test_the_inbox_draws_the_arrow_only_for_a_move(auth, fake_bot, seeded):
     assert 'class="mono was"' not in new_run and 'class="arrow"' not in new_run
     assert "TBD" in new_run
     assert 'class="mono was"' in moved and 'class="arrow"' in moved
+
+
+# --- the three `fix` cards --------------------------------------------------
+
+
+def weekly_card(fake_bot, seeded, **payload) -> dict:
+    """One `fix` amendment carrying ``payload``, as the chatbot's tools raise it."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar", "HFA"],
+        participants=["1001", "1002"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload=payload or None,
+    )
+    return service.amendment_view(fake_bot, fake_bot.repo.get_amendment(amendment))
+
+
+def test_a_weekly_being_changed_is_not_announced_as_a_new_one(fake_bot, seeded):
+    """Three cards share the `fix` kind, so the kind alone names two of them wrong.
+
+    Read from the payload marker, exactly as the Discord card is
+    (`formatting.proposal_line`) -- the portal calling a change "new weekly" is
+    how somebody approves what they think is a second timing.
+    """
+    view = weekly_card(
+        fake_bot,
+        seeded,
+        op="edit",
+        fixed_run_id=seeded["fixed_star"],
+        weekly_when="Mon 21:30",
+        weekday=2,
+        time="23:30",
+    )
+
+    assert view["kind_label"] == "change weekly"
+    assert view["when"] == "every Wed 23:30"
+
+
+def test_a_weekly_being_retired_is_not_announced_as_a_new_one_either(fake_bot, seeded):
+    """A remove card carries no new night at all -- only the one it is retiring."""
+    view = weekly_card(
+        fake_bot, seeded, op="remove", fixed_run_id=seeded["fixed_star"], weekly_when="Mon 21:30"
+    )
+
+    assert view["kind_label"] == "remove weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_change_to_the_party_alone_says_the_night_is_unchanged(fake_bot, seeded):
+    """Half a change is the common request, and the payload leaves the other half out."""
+    view = weekly_card(
+        fake_bot,
+        seeded,
+        op="edit",
+        fixed_run_id=seeded["fixed_star"],
+        weekly_when="Mon 21:30",
+        participants=["1002", "1003"],
+    )
+
+    assert view["kind_label"] == "change weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_new_weekly_still_reads_as_one(fake_bot, seeded):
+    """Every `fix` written before the two markers existed has no `op` at all.
+
+    Its night is in the payload like the other two, so it is read from there
+    like the other two: this card said "TBD" while the Discord card beside it
+    said "every Mon 21:30" about the same proposal.
+    """
+    view = weekly_card(fake_bot, seeded, weekday=0, time="21:30")
+
+    assert view["kind_label"] == "new weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_weekly_with_no_night_falls_back_to_what_was_written(fake_bot, seeded):
+    """A day with no time never reaches the payload; the card says so, and so does this."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.4,
+        evidence_msg_ids=[],
+        channel_id=None,
+        day_ref="wed",
+    )
+    view = service.amendment_view(fake_bot, fake_bot.repo.get_amendment(amendment))
+
+    assert view["kind_label"] == "new weekly"
+    assert view["when"] == "wed — time TBD"
+
+
+def test_the_inbox_names_a_weekly_change_for_what_it_is(auth, fake_bot, seeded):
+    fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload={
+            "op": "edit",
+            "fixed_run_id": seeded["fixed_star"],
+            "weekly_when": "Mon 21:30",
+            "weekday": 2,
+            "time": "23:30",
+        },
+    )
+
+    body = auth.get("/inbox").text
+    assert "change weekly" in body
+    assert "every Wed 23:30" in body
+
+
+def test_the_cards_one_chat_answer_raised_are_named_the_same_way(fake_bot, seeded):
+    """The interaction trace lists them through its own view; one rule, both places."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload={"op": "remove", "fixed_run_id": seeded["fixed_star"], "weekly_when": "Mon 21:30"},
+    )
+
+    (card,) = service.created_cards(fake_bot, [amendment])
+    assert card["kind_label"] == "remove weekly"

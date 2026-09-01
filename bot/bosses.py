@@ -214,6 +214,33 @@ class BossTable:
             raise BossParseError("; ".join(problems))
         return out
 
+    def names_in(self, text: str) -> list[str]:
+        """The bosses a loose sentence names, by short name, in the order said.
+
+        Difficulty-agnostic and forgiving where :meth:`parse` is neither, because
+        the question is a different one: not "which run did they mean" but "did
+        they name a boss at all". So ``hard jupiter tue``, ``hjup`` and
+        ``jupiter`` all name Jupiter, and a weekday, a stray word or a run id
+        names nothing.
+
+        What it exists for: a search that finds no weekly timing has to tell a
+        query that named a boss with none (say so, and stop) from one that named
+        no boss at all (ask which boss they meant). Falling back to the day token
+        in the first case listed three other parties' Tuesday nights back to a
+        member who had asked about Jupiter.
+        """
+        out: list[str] = []
+        for token in _SPLIT_RE.split(text or ""):
+            key = _normalise(token)
+            if not key:
+                continue
+            short = self.aliases.get(key)
+            if short is None and key[:1] in self.difficulties:
+                short = self.aliases.get(key[1:])
+            if short is not None and short not in out:
+                out.append(short)
+        return out
+
     # -- display ----------------------------------------------------------
     def split(self, canonical: str) -> tuple[str, Boss] | None:
         """``"HFA"`` -> ``("h", <Boss FA>)``, or ``None`` if it is not ours."""

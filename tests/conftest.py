@@ -47,6 +47,43 @@ def bosses(tmp_path_factory: pytest.TempPathFactory) -> BossTable:
     return BossTable.load(path)
 
 
+@pytest.fixture(autouse=True)
+def model_lock(monkeypatch):
+    """A fresh :data:`bot.modellock.MODEL_LOCK` per test, in every namespace.
+
+    The host's one model is guarded by one process-global lock, which makes it
+    the one piece of state the suite genuinely shares: a test that leaves it held
+    -- a cancelled generation, an event loop closed mid-answer -- would leave
+    every later chat test shedding its question instead of answering it, and the
+    failure would land nowhere near the cause.
+
+    Autouse rather than opt-in for that reason, and also because `asyncio.Lock`
+    binds itself to the first event loop it ever has to *wait* on: contend for it
+    in one test and the next test's loop is the wrong one. Every module that
+    imported the name is patched, because two features holding two different
+    locks would serialise nothing while looking exactly like this.
+
+    Requested by name to get the lock itself, which is how a test holds the model
+    against the code under test.
+
+    The holder label is reset with it: it is the same shared state seen from the
+    portal's end, and a stale "chat #777… has had it for 4000 seconds" would be
+    reported by :func:`bot.modellock.holder` in every test that followed.
+    """
+    import asyncio
+
+    from bot import modellock
+    from bot.chat import agent
+    from bot.extract import llm
+
+    lock = asyncio.Lock()
+    for module in (modellock, agent, llm):
+        monkeypatch.setattr(module, "MODEL_LOCK", lock)
+    monkeypatch.setattr(modellock, "_HOLDER", None)
+    monkeypatch.setattr(modellock, "_SINCE", 0.0)
+    return lock
+
+
 # ---------------------------------------------------------------------------
 # phase 3: the portal + API
 # ---------------------------------------------------------------------------

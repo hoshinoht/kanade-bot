@@ -353,6 +353,47 @@ async def test_a_channel_already_answering_drops_the_question(chat_bot, chat_see
     assert posts(chat_bot) == []
 
 
+async def test_a_busy_model_anywhere_on_the_host_drops_the_question(
+    chat_bot, chat_seeded, model_lock
+):
+    """Nobody is waiting for this one, so it is the first thing to give up the model.
+
+    And it gives it up *without* claiming the card: a claim is for ever, so
+    burning one on a generation that never runs would silence the card for good.
+    """
+    agent = pilot(chat_bot, says("What should it be instead?"))
+    card = synthetic_card(chat_bot)
+
+    await model_lock.acquire()
+    try:
+        skipped = await reject(agent, chat_bot, [card])
+    finally:
+        model_lock.release()
+
+    assert skipped.handled is False
+    assert posts(chat_bot) == []
+    # The same ❌ once the model is free: still asked about, and asked once.
+    assert (await reject(agent, chat_bot, [card])).handled is True
+    assert [post.content for post in posts(chat_bot)] == ["What should it be instead?"]
+
+
+async def test_the_question_holds_the_model_while_it_generates(chat_bot, chat_seeded, model_lock):
+    """An extraction starting underneath it would stretch it past its timeout."""
+    agent = pilot(chat_bot, says("What should it be instead?"))
+    held: list[bool] = []
+    real_chat = agent._client.chat
+
+    async def watched(**kwargs):
+        held.append(model_lock.locked())
+        return await real_chat(**kwargs)
+
+    agent._client.chat = watched
+    await reject(agent, chat_bot, [synthetic_card(chat_bot)])
+
+    assert held == [True]
+    assert model_lock.locked() is False
+
+
 # ---------------------------------------------------------------------------
 # the turn that cannot post a card
 # ---------------------------------------------------------------------------

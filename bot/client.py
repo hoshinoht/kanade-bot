@@ -41,7 +41,7 @@ from .pings import audience
 from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
 from .timeutil import to_iso, utcnow
-from .util import roster_rows
+from .util import positive_float, positive_int, roster_rows
 from .watch import is_watched, origin_ids
 from .weeks import current_week_start, next_week_start, parse_hhmm
 
@@ -71,6 +71,15 @@ CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
 CFG_CHAT = "chat_mode"
+#: The chatbot's four capacity numbers. Runtime rows rather than environment
+#: variables for the same reason :data:`CFG_QUIET` is one: they are what an
+#: operator reaches for while the guild is busy, and "edit `.env` and restart"
+#: is the wrong answer at that moment. The environment seeds them and the row
+#: wins from then on.
+CFG_RATE_COUNT = "chat_pilot_rate_count"
+CFG_RATE_WINDOW = "chat_pilot_rate_window_s"
+CFG_POOL_COUNT = "chat_pilot_global_rate_count"
+CFG_POOL_WINDOW = "chat_pilot_global_rate_window_s"
 CFG_LAST_WEEK = "last_materialised_week"
 #: The boss week whose reset digest has already gone out, and the local day the
 #: database was last snapshotted. Both are "have I done this yet?" markers rather
@@ -181,6 +190,32 @@ class BossBot(discord.Client):
         """
         default = "1" if self.settings.chat_pilot_configured else "0"
         return (self.repo.get_config(CFG_CHAT, default) or default) == "1"
+
+    @property
+    def chat_rate_count(self) -> int:
+        """Answers per person per window, seeded from ``CHAT_PILOT_RATE_COUNT``."""
+        return positive_int(
+            self.repo.get_config(CFG_RATE_COUNT), self.settings.chat_pilot_rate_count
+        )
+
+    @property
+    def chat_rate_window_s(self) -> float:
+        return positive_float(
+            self.repo.get_config(CFG_RATE_WINDOW), self.settings.chat_pilot_rate_window_s
+        )
+
+    @property
+    def chat_pool_count(self) -> int:
+        """Answers per window across everybody, seeded from the environment."""
+        return positive_int(
+            self.repo.get_config(CFG_POOL_COUNT), self.settings.chat_pilot_global_rate_count
+        )
+
+    @property
+    def chat_pool_window_s(self) -> float:
+        return positive_float(
+            self.repo.get_config(CFG_POOL_WINDOW), self.settings.chat_pilot_global_rate_window_s
+        )
 
     @property
     def portal_actor_id(self) -> str:

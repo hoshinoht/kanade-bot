@@ -15,6 +15,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from .db import Repo
+from .rsvp import recompute_after_roster_change
 from .timeutil import utcnow
 from .weeks import slot_in_week, week_end
 
@@ -169,6 +170,72 @@ def mark_done(repo: Repo, now: datetime | None = None) -> list[str]:
     return changed
 
 
+def _same_home(left: object, right: object) -> bool:
+    """Do a run and a weekly timing share a home channel? Both unset counts."""
+    return (str(left) if left is not None else None) == (str(right) if right is not None else None)
+
+
+def adoptable_run(repo: Repo, fixed: dict, week_start: datetime, now: datetime) -> dict | None:
+    """The standalone run in that week which ``fixed`` should take over, if any.
+
+    A member who already has a one-off on the board and then says "make it every
+    week" means *that* run, not a second one beside it. Nothing used to hear
+    that: the weekly was created, the week was materialised, and the party ended
+    up with two nights for the same boss -- one carrying their answers and one
+    carrying the reminders.
+
+    Adoptable is deliberately narrow, because a wrong adoption silently
+    reschedules a night nobody asked about while a missed one leaves a duplicate
+    anybody can cancel. So: the same bosses, the same home channel, the same
+    week, still to come, not already spoken for by another timing, and not a
+    night that has been called off or is over. Exactly one candidate or none --
+    two runs that both fit is precisely the case where guessing is worst.
+    """
+    wanted = set(fixed["bosses"])
+    found = [
+        run
+        for run in repo.list_runs(week_start=week_start)
+        if run["fixed_run_id"] is None
+        and run["status"] not in ("done", "cancelled")
+        and set(run["bosses"]) == wanted
+        and _same_home(run["channel_id"], fixed["channel_id"])
+        and not is_past(run["datetime"], now)
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+def adopt_run(
+    repo: Repo,
+    run: dict,
+    fixed: dict,
+    week_start: datetime,
+    run_at: datetime,
+    tz: ZoneInfo,
+    ping_time: time,
+    countdowns: Sequence[int],
+    now: datetime | None = None,
+) -> None:
+    """Make an existing standalone run that week's run for ``fixed``, in place.
+
+    In place is the point: the run keeps its id, so the card that created it, the
+    answers people have already given and the message ids of the pings that have
+    already fired all still refer to the night they were about. Only the three
+    things the weekly actually decides are pushed onto it -- which slot, which
+    party, and which timing it belongs to.
+
+    The party goes through :func:`bot.rsvp.recompute_after_roster_change` for the
+    reason ``/swap`` does: somebody added by the weekly never agreed to this run,
+    so a ``confirmed`` goes back to being derived, while the answers of members
+    still on it survive (:func:`bot.rsvp.compute_status` ignores the rest).
+    """
+    repo.set_run_fixed(run["id"], fixed["id"])
+    repo.set_run_datetime(run["id"], run_at, week_start)
+    if list(run["participants"]) != [str(p) for p in fixed["participants"]]:
+        repo.set_run_participants(run["id"], fixed["participants"])
+        recompute_after_roster_change(repo, run["id"])
+    refresh_run_reminders(repo, run["id"], tz, ping_time, countdowns, now=now)
+
+
 def materialise_week(
     repo: Repo,
     week_start: datetime,
@@ -184,6 +251,11 @@ def materialise_week(
     A slot that has already passed is not created at all -- materialising
     mid-week would otherwise conjure Thursday's run on Sunday, complete with
     reminders that immediately count as sent. Returns the ids of new runs.
+
+    A timing whose week already holds a matching one-off adopts it rather than
+    creating a second night beside it (:func:`adoptable_run`). Adopted runs are
+    not in the returned ids: nothing was created, and the callers that report
+    "materialised N run(s)" would be counting a run the guild already had.
     """
     now = now or utcnow()
     end = week_end(week_start, tz)
@@ -199,6 +271,19 @@ def materialise_week(
         if is_past(run_at, now):
             log.debug(
                 "fixed run %s falls at %s, already past; not materialising it", fixed["id"], run_at
+            )
+            continue
+        adoptable = adoptable_run(repo, fixed, week_start, now)
+        if adoptable is not None:
+            adopt_run(
+                repo, adoptable, fixed, week_start, run_at, tz, ping_time, countdowns, now=now
+            )
+            log.info(
+                "fixed run %s adopted run %s (week starting %s) and moved it to %s",
+                fixed["id"],
+                adoptable["id"],
+                week_start,
+                run_at,
             )
             continue
         run_id = repo.create_run(
@@ -248,6 +333,58 @@ def refresh_run_reminders(
     if run is None:
         return
     ensure_reminders(repo, run, tz, ping_time, countdowns, now=now, rebuild=True)
+
+
+def apply_fixed_to_runs(
+    repo: Repo,
+    fixed_id: str,
+    changed: Sequence[str],
+    week_starts: Sequence[datetime],
+    tz: ZoneInfo,
+    ping_time: time,
+    countdowns: Sequence[int],
+) -> int:
+    """Push an edited weekly timing onto the runs it has already produced.
+
+    The pure half of `/fixed edit`, in the shape :func:`retire_fixed_run` is the
+    pure half of `/fixed remove`: the chatbot's ratified ``fix``/``edit`` card
+    commits through it, so a timing changed from chat leaves the database in the
+    state the slash command and the portal leave it in.
+
+    Only the fields the edit actually *touched* are pushed, which is the rule the
+    other two routes follow (``bot.commands._apply_fixed_to_runs``,
+    ``bot.api.service._apply_fixed_to_runs``): re-snapping every field would undo
+    this week's `/amend` -- editing a note would drag a run that was moved
+    Mon -> Wed back to Monday. A run that is already ``done`` or ``cancelled`` is
+    left alone, because rewriting a night that has happened would falsify the
+    record of it.
+
+    Returns how many runs were touched.
+    """
+    fixed = repo.get_fixed_run(fixed_id)
+    fields = set(changed)
+    if fixed is None or not fields:
+        return 0
+    reschedule = bool(fields & {"weekday", "time"})
+    touched = 0
+    for week_start in week_starts:
+        run = repo.run_for_fixed(fixed_id, week_start)
+        if run is None or run["status"] in ("done", "cancelled"):
+            continue
+        if "bosses" in fields:
+            repo.set_run_bosses(run["id"], fixed["bosses"])
+        if "participants" in fields:
+            repo.set_run_participants(run["id"], fixed["participants"])
+        if "channel_id" in fields:
+            repo.set_run_channel(run["id"], fixed["channel_id"])
+        if reschedule:
+            hour, minute = (int(part) for part in fixed["time"].split(":"))
+            run_at = slot_in_week(week_start, tz, fixed["weekday"], time(hour, minute))
+            repo.set_run_datetime(run["id"], run_at, week_start)
+            # Only the slot moved, so only the reminders need re-placing.
+            refresh_run_reminders(repo, run["id"], tz, ping_time, countdowns)
+        touched += 1
+    return touched
 
 
 def retire_fixed_run(

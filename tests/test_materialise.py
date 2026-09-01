@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import time, timedelta
 
+import pytest
+
 from bot.db import Repo
 from bot.materialise import (
     ensure_reminders,
@@ -17,6 +19,8 @@ from .conftest import COUNTDOWNS, PING_TIME, TZ, kl
 WEEK = kl(2026, 8, 27)  # Thu 00:00
 MON = kl(2026, 8, 31, 21, 30)
 TUE = kl(2026, 9, 1, 23, 0)
+#: Half an hour after the Monday weekly, so an adoption is visible as a retime.
+MON_LATE = kl(2026, 8, 31, 22, 0)
 
 
 def add_mon_run(repo: Repo, channel_id: int | None = 900) -> int:
@@ -43,6 +47,29 @@ def add_tue_run(repo: Repo, channel_id: int | None = 901) -> int:
 
 def materialise(repo: Repo, now=None):
     return materialise_week(repo, WEEK, TZ, PING_TIME, COUNTDOWNS, now=now or kl(2026, 8, 27, 1))
+
+
+def add_oneoff(
+    repo: Repo,
+    at=MON_LATE,
+    bosses=("HStar", "HFA"),
+    channel_id: int | None = 900,
+    participants=("1", "9"),
+    status: str = "planned",
+    week_start=WEEK,
+) -> str:
+    """A standalone run somebody scheduled for themselves -- no weekly behind it."""
+    run_id = repo.create_run(
+        week_start=week_start,
+        bosses=list(bosses),
+        run_at=at,
+        participants=list(participants),
+        status=status,
+        source="amend",
+        channel_id=channel_id,
+    )
+    ensure_reminders(repo, repo.get_run(run_id), TZ, PING_TIME, COUNTDOWNS, now=kl(2026, 8, 27, 1))
+    return run_id
 
 
 # -- materialisation ---------------------------------------------------------
@@ -85,6 +112,174 @@ def test_each_week_gets_its_own_run(repo: Repo):
     assert len(repo.list_runs(week_start=WEEK)) == 1
     assert len(repo.list_runs(week_start=next_week)) == 1
     assert repo.list_runs(week_start=next_week)[0]["datetime"] == kl(2026, 9, 7, 21, 30)
+
+
+# -- adoption: a weekly folds in the one-off the week already had -------------
+#
+# "Make this run every week" used to leave the party with two nights for the
+# same boss: the one carrying their answers, and the one carrying the pings.
+# `/fixed add`, the portal and the chatbot's ✅ all reach materialisation, so
+# adoption living here is what makes the three doors agree.
+
+
+def test_a_new_weekly_takes_over_this_weeks_matching_one_off(repo: Repo):
+    run_id = add_oneoff(repo)
+    add_mon_run(repo)
+
+    created = materialise(repo)
+
+    assert created == []  # nothing was made; something was taken over
+    runs = repo.list_runs(week_start=WEEK)
+    assert [r["id"] for r in runs] == [run_id]
+    assert runs[0]["datetime"] == MON  # retimed to the weekly's slot
+    assert runs[0]["participants"] == ["1", "2", "3"]  # and to its party
+    assert runs[0]["source"] == "amend"  # still the run it always was
+
+
+def test_the_adopted_run_belongs_to_the_timing_afterwards(repo: Repo):
+    run_id = add_oneoff(repo)
+    fixed_id = add_mon_run(repo)
+    materialise(repo)
+
+    assert repo.get_run(run_id)["fixed_run_id"] == fixed_id
+    assert repo.run_for_fixed(fixed_id, WEEK)["id"] == run_id
+    # And the week is settled: a second pass has nothing left to do.
+    assert materialise(repo) == []
+    assert len(repo.list_runs(week_start=WEEK)) == 1
+
+
+def test_the_adopted_run_is_pinged_for_its_new_slot(repo: Repo):
+    run_id = add_oneoff(repo, at=MON_LATE)
+    add_mon_run(repo)
+    materialise(repo)
+
+    by_kind = {r["kind"]: r["fire_at"] for r in repo.list_reminders(run_id)}
+    assert by_kind["countdown_60"] == MON - timedelta(minutes=60)
+    assert by_kind["day_of"] == kl(2026, 8, 31, 9, 0)
+
+
+def test_answers_from_members_who_stayed_survive_the_adoption(repo: Repo):
+    """The party changes, so the run goes back to being derived -- not wiped."""
+    run_id = add_oneoff(repo, participants=("1", "9"))
+    repo.set_rsvp(run_id, "1", "yes")
+    repo.set_rsvp(run_id, "9", "yes")
+    repo.set_run_status(run_id, "confirmed")
+    add_mon_run(repo)
+
+    materialise(repo)
+
+    assert repo.get_rsvps(run_id)["1"] == "yes"
+    # 1 stayed, 2 and 3 have not answered: nobody may call that confirmed.
+    assert repo.get_run(run_id)["status"] == "planned"
+
+
+def test_a_party_that_does_not_change_leaves_a_confirmed_run_confirmed(repo: Repo):
+    """Nobody joined, so nothing argues with the decision somebody made.
+
+    The tally is deliberately incomplete: recomputing anyway would put this run
+    back to `planned`, which is the thing a manual confirm exists to resist.
+    """
+    run_id = add_oneoff(repo, participants=("1", "2", "3"))
+    repo.set_rsvp(run_id, "1", "yes")
+    repo.set_run_status(run_id, "confirmed")
+    add_mon_run(repo)
+
+    materialise(repo)
+
+    assert repo.get_run(run_id)["datetime"] == MON  # it was adopted
+    assert repo.get_run(run_id)["status"] == "confirmed"
+
+
+# -- ...and the cases where a duplicate is the safer answer ------------------
+
+
+def test_two_runs_that_both_fit_are_left_alone(repo: Repo):
+    """Ambiguous adoption reschedules a night nobody asked about; a duplicate
+    is something anybody can cancel."""
+    first = add_oneoff(repo, at=MON_LATE)
+    second = add_oneoff(repo, at=kl(2026, 8, 31, 23, 0))
+    add_mon_run(repo)
+
+    created = materialise(repo)
+
+    assert len(created) == 1
+    assert repo.get_run(first)["fixed_run_id"] is None
+    assert repo.get_run(second)["fixed_run_id"] is None
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_a_night_that_is_over_or_called_off_is_not_adopted(repo: Repo, status: str):
+    run_id = add_oneoff(repo, status=status)
+    add_mon_run(repo)
+
+    assert len(materialise(repo)) == 1
+    assert repo.get_run(run_id)["fixed_run_id"] is None
+
+
+def test_a_run_whose_night_has_passed_is_not_adopted(repo: Repo):
+    run_id = add_oneoff(repo, at=kl(2026, 8, 28, 21, 30))  # Friday, long gone
+    add_mon_run(repo)
+
+    assert len(materialise(repo, now=kl(2026, 8, 31, 12, 0))) == 1
+    assert repo.get_run(run_id)["fixed_run_id"] is None
+
+
+def test_a_different_boss_set_is_not_adopted(repo: Repo):
+    run_id = add_oneoff(repo, bosses=("HStar",))  # the weekly is HStar + HFA
+    add_mon_run(repo)
+
+    assert len(materialise(repo)) == 1
+    assert repo.get_run(run_id)["fixed_run_id"] is None
+
+
+def test_another_partys_channel_is_not_adopted_from(repo: Repo):
+    run_id = add_oneoff(repo, channel_id=901)
+    add_mon_run(repo, channel_id=900)
+
+    assert len(materialise(repo)) == 1
+    assert repo.get_run(run_id)["fixed_run_id"] is None
+
+
+def test_a_run_another_timing_already_produced_is_not_adopted(repo: Repo):
+    """Its own timing decides its slot; a second one must not take it over."""
+    add_mon_run(repo)
+    materialise(repo)
+    existing = repo.list_runs(week_start=WEEK)[0]
+
+    add_tue_run(repo, channel_id=900)
+    repo.update_fixed_run(
+        next(f["id"] for f in repo.list_fixed_runs() if "HCarling" in f["bosses"]),
+        bosses=["HStar", "HFA"],
+    )
+    created = materialise(repo)
+
+    assert len(created) == 1
+    assert repo.get_run(existing["id"])["datetime"] == MON
+
+
+def test_next_weeks_one_off_is_not_this_weeks_run(repo: Repo):
+    next_week = kl(2026, 9, 3)
+    run_id = add_oneoff(repo, at=kl(2026, 9, 7, 22, 0), week_start=next_week)
+    add_mon_run(repo)
+
+    assert len(materialise(repo)) == 1
+    assert repo.get_run(run_id)["fixed_run_id"] is None
+
+
+def test_fixed_add_now_adopts_where_it_used_to_duplicate(repo: Repo):
+    """`/fixed add` writes the row and calls ``materialise_weeks``; nothing else.
+
+    So the door gets adoption for free, and this pins that: before, the member
+    who already had Monday's run on the board ended up with two.
+    """
+    run_id = add_oneoff(repo)
+    fixed_id = repo.add_fixed_run(
+        "1", ["HStar", "HFA"], weekday=0, time_hhmm="21:30", participants=["1", "2"], channel_id=900
+    )
+    materialise(repo)
+
+    assert [r["id"] for r in repo.list_runs(week_start=WEEK)] == [run_id]
+    assert repo.get_run(run_id)["fixed_run_id"] == fixed_id
 
 
 # -- reminder specs (pure) ---------------------------------------------------

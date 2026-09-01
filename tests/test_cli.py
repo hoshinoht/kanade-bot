@@ -886,3 +886,270 @@ def test_access_when_the_bot_is_offline_exits_non_zero(api):
     result = run("access")
     assert result.exit_code == 1
     assert "isn't connected" in result.output
+
+
+# --- limits -----------------------------------------------------------------
+
+IDLE_LIMITS = {
+    "model": {"busy": False, "holder": None, "held_for_s": 0.0},
+    "global_pool": {"count": 12, "window_s": 900.0, "used": 0, "remaining": 12},
+    "per_user": {"count": 4, "window_s": 300.0, "windows": [], "overrides": []},
+    "pilots": [],
+    "jobs": {
+        "answering": [],
+        "extracting": False,
+        "rescan": {"worker_running": True, "queued": 0, "job": None, "channel": None},
+    },
+}
+
+
+def busy_limits() -> dict:
+    """The same payload with something happening in every part of it."""
+    return {
+        "model": {"busy": True, "holder": "extractor", "held_for_s": 12.5},
+        "global_pool": {"count": 12, "window_s": 900.0, "used": 5, "remaining": 7},
+        "per_user": {
+            "count": 4,
+            "window_s": 300.0,
+            "windows": [
+                {
+                    "user_id": "1002",
+                    "name": "kanon",
+                    "used": 4,
+                    "remaining": 0,
+                    "count": 4,
+                    "window_s": 300.0,
+                    "overridden": False,
+                },
+                {
+                    "user_id": "1001",
+                    "name": "Alvin",
+                    "used": 6,
+                    "remaining": 4,
+                    "count": 10,
+                    "window_s": 600.0,
+                    "overridden": True,
+                },
+            ],
+            "overrides": [{"user_id": "1001", "name": "Alvin", "count": 10, "window_s": 600.0}],
+        },
+        "pilots": [
+            {
+                "user_id": "1002",
+                "name": "kanon",
+                "staff": False,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 4,
+                "remaining": 0,
+                "has_window": True,
+            },
+            {
+                "user_id": "1001",
+                "name": "Alvin",
+                "staff": False,
+                "count": 10,
+                "window_s": 600.0,
+                "overridden": True,
+                "used": 6,
+                "remaining": 4,
+                "has_window": True,
+            },
+            {
+                "user_id": "1003",
+                "name": "Priya",
+                "staff": False,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 0,
+                "remaining": 4,
+                "has_window": False,
+            },
+            {
+                "user_id": "1009",
+                "name": "Hoshino",
+                "staff": True,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 0,
+                "remaining": 4,
+                "has_window": False,
+            },
+        ],
+        "jobs": {
+            "answering": [{"channel_id": "5", "channel_name": "#ask-the-bot"}],
+            "extracting": True,
+            "rescan": {
+                "worker_running": True,
+                "queued": 2,
+                "job": "abcd1234",
+                "channel": "#hstar-party",
+            },
+        },
+    }
+
+
+def test_limits_says_the_model_is_idle(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=IDLE_LIMITS))
+    output = run("limits").output
+    assert "idle" in output
+    assert "12 of 12 left" in output
+
+
+def test_limits_reports_the_holder_the_budgets_and_the_queue(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=busy_limits()))
+    output = run("limits").output
+    assert "busy" in output and "extractor" in output
+    assert "7 of 12 left" in output
+    assert "2 queued" in output and "#hstar-party" in output
+    assert "#ask-the-bot" in output
+    # The window table names the member and what they have spent.
+    assert "kanon" in output and "4 of 4" in output
+
+
+def test_limits_reset_takes_a_bare_user_id_without_the_roster(api):
+    """Holding the chat role does not require being on the bossing roster."""
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    output = run("limits", "reset", "1002").output
+    assert route.called
+    assert "kanon's answer window is clear" in output
+
+
+def test_limits_reset_accepts_a_mention(api):
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    assert run("limits", "reset", "<@1002>").exit_code == 0
+    assert route.called
+
+
+def test_limits_reset_resolves_a_name_through_the_roster(api):
+    api.get("/api/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "user_id": "1002",
+                    "display_name": "kanon [AZUR]",
+                    "nickname": "kanon",
+                    "aliases": [],
+                    "has_role": True,
+                    "ping_level": "essential",
+                    "runs_this_week": 1,
+                }
+            ],
+        )
+    )
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    assert run("limits", "reset", "kanon").exit_code == 0
+    assert route.called
+
+
+def test_limits_reset_says_so_when_the_name_matches_nobody(api):
+    api.get("/api/members").mock(return_value=httpx.Response(200, json=[]))
+    result = run("limits", "reset", "nobody")
+    assert result.exit_code == 1
+    assert "no member matches" in result.output
+
+
+def test_limits_lists_who_is_on_their_own_allowance(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=busy_limits()))
+    output = run("limits").output
+    assert "own allowance" in output
+    # The overridden window is counted against its own number, not the default.
+    assert "6 of 10" in output
+    assert "Alvin" in output and "600s" in output
+
+
+def test_limits_set_sends_the_allowance_as_numbers(api):
+    route = api.put("/api/limits/overrides/1002").mock(
+        return_value=httpx.Response(
+            200, json={"user_id": "1002", "name": "kanon", "count": 10, "window_s": 60.0}
+        )
+    )
+    output = run("limits", "set", "1002", "10", "60").output
+    assert json.loads(route.calls[0].request.content) == {"count": 10, "window_s": 60.0}
+    assert "kanon now gets 10 answer(s) per 60s" in output
+
+
+def test_limits_set_resolves_a_name_like_the_other_commands(api):
+    api.get("/api/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "user_id": "1002",
+                    "display_name": "kanon [AZUR]",
+                    "nickname": "kanon",
+                    "aliases": [],
+                    "has_role": True,
+                    "ping_level": "essential",
+                    "runs_this_week": 1,
+                }
+            ],
+        )
+    )
+    route = api.put("/api/limits/overrides/1002").mock(
+        return_value=httpx.Response(
+            200, json={"user_id": "1002", "name": "kanon", "count": 3, "window_s": 30.0}
+        )
+    )
+    assert run("limits", "set", "kanon", "3", "30").exit_code == 0
+    assert route.called
+
+
+def test_limits_unset_puts_them_back_on_the_default(api):
+    route = api.delete("/api/limits/overrides/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    output = run("limits", "unset", "1002").output
+    assert route.called
+    assert "back on the default allowance" in output
+
+
+def test_limits_set_reports_what_the_api_refused(api):
+    api.put("/api/limits/overrides/1002").mock(
+        return_value=httpx.Response(400, json={"error": "count must be at least 1"})
+    )
+    result = runner.invoke(cli.app, ["limits", "set", "1002", "0", "60"], standalone_mode=False)
+    assert isinstance(result.exception, cli.ApiFailed)
+    assert "count must be at least 1" in str(result.exception)
+
+
+def test_config_set_sends_a_capacity_number_as_a_number(api):
+    route = api.put("/api/config").mock(
+        return_value=httpx.Response(200, json={"chat_pilot_rate_count": 9})
+    )
+    output = run("config", "set", "chat_pilot_rate_count", "9").output
+    assert json.loads(route.calls[0].request.content) == {"chat_pilot_rate_count": 9}
+    assert "chat_pilot_rate_count = 9" in output
+
+
+def test_config_set_refuses_a_capacity_value_that_is_not_a_number(api):
+    result = run("config", "set", "chat_pilot_rate_window_s", "soon")
+    assert result.exit_code == 1
+    assert "must be a number" in result.output
+
+
+def test_limits_lists_the_chat_role_holders(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=busy_limits()))
+    output = run("limits").output
+    assert "4 chat-role holder(s)" in output
+    assert "4 per 300s" in output
+    assert "10 per 600s" in output and "(own)" in output
+    # Staff are marked and given no allowance to read.
+    assert "Hoshino (staff)" in output
+    assert "exempt" in output
+    assert "idle" in output
+
+
+def test_limits_says_when_no_holders_can_be_read(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=IDLE_LIMITS))
+    assert "No chat-role holders to show" in run("limits").output.replace("\n", " ")

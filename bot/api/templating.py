@@ -38,6 +38,7 @@ NAV = [
     ("inbox", "/inbox", "Inbox"),
     ("extractions", "/extractions", "Extractions"),
     ("chat", "/chat", "Chat"),
+    ("limits", "/limits", "Limits"),
     ("audit", "/audit", "Audit"),
     ("members", "/members", "Members"),
     ("bosses", "/bosses", "Bosses"),

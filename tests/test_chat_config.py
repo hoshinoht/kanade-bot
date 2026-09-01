@@ -72,9 +72,24 @@ def test_the_defaults_are_the_documented_ones():
     settings = chat_settings()
     assert settings.chat_pilot_rate_count == 4
     assert settings.chat_pilot_rate_window_s == 300.0
+    assert settings.chat_pilot_global_rate_count == 12
+    assert settings.chat_pilot_global_rate_window_s == 900.0
+    assert settings.chat_pilot_lock_wait_s == 2.0
     assert settings.chat_pilot_model == "gpt-oss:20b"
     assert settings.chat_pilot_timeout == 60.0
     assert settings.persona_path == "data/persona.md"
+
+
+def test_the_capacity_settings_are_read_from_the_environment():
+    """The two knobs an operator reaches for when the host is struggling."""
+    settings = chat_settings(
+        chat_pilot_global_rate_count="30",
+        chat_pilot_global_rate_window_s="3600",
+        chat_pilot_lock_wait_s="0.5",
+    )
+    assert settings.chat_pilot_global_rate_count == 30
+    assert settings.chat_pilot_global_rate_window_s == 3600.0
+    assert settings.chat_pilot_lock_wait_s == 0.5
 
 
 def test_the_env_example_documents_every_new_setting():
@@ -87,6 +102,9 @@ def test_the_env_example_documents_every_new_setting():
         "CHAT_PILOT_CATEGORY_IDS",
         "CHAT_PILOT_RATE_COUNT",
         "CHAT_PILOT_RATE_WINDOW_S",
+        "CHAT_PILOT_GLOBAL_RATE_COUNT",
+        "CHAT_PILOT_GLOBAL_RATE_WINDOW_S",
+        "CHAT_PILOT_LOCK_WAIT_S",
         "CHAT_PILOT_MODEL",
         "CHAT_PILOT_TIMEOUT",
         "PERSONA_PATH",
@@ -102,6 +120,84 @@ def test_the_env_example_carries_no_real_ids():
     for key in ("CHAT_PILOT_ROLE_ID", "CHAT_PILOT_CHANNEL_IDS", "CHAT_PILOT_CATEGORY_IDS"):
         line = next(ln for ln in text.splitlines() if ln.startswith(f"{key}="))
         assert line == f"{key}="
+
+
+# ---------------------------------------------------------------------------
+# the capacity numbers, as runtime settings
+# ---------------------------------------------------------------------------
+
+
+def test_the_capacity_numbers_seed_from_the_environment(chat_bot):
+    """No stored row yet, so `.env` is what the bot is running on."""
+    assert chat_bot.chat_rate_count == chat_bot.settings.chat_pilot_rate_count
+    assert chat_bot.chat_rate_window_s == chat_bot.settings.chat_pilot_rate_window_s
+    assert chat_bot.chat_pool_count == chat_bot.settings.chat_pilot_global_rate_count
+    assert chat_bot.chat_pool_window_s == chat_bot.settings.chat_pilot_global_rate_window_s
+
+
+def test_the_numbers_are_seeded_on_first_run_and_not_re_seeded_after(tmp_path):
+    """`.env` fills the rows once; a value tuned at 9pm survives the next restart."""
+    from bot import __main__ as entrypoint
+
+    settings = chat_settings(db_path=str(tmp_path / "seed.sqlite"))
+    repo = entrypoint.build_repo(settings)
+    assert repo.get_config("chat_pilot_rate_count") == str(settings.chat_pilot_rate_count)
+    assert repo.get_config("chat_pilot_global_rate_window_s") == str(
+        settings.chat_pilot_global_rate_window_s
+    )
+
+    repo.set_config("chat_pilot_rate_count", "9")
+    repo.close()
+    restarted = entrypoint.build_repo(settings)
+
+    assert restarted.get_config("chat_pilot_rate_count") == "9"
+    restarted.close()
+
+
+def test_a_stored_number_wins_over_the_environment(chat_bot):
+    chat_bot.repo.set_config("chat_pilot_rate_count", "9")
+    chat_bot.repo.set_config("chat_pilot_global_rate_window_s", "1800")
+    assert chat_bot.chat_rate_count == 9
+    assert chat_bot.chat_pool_window_s == 1800.0
+
+
+def test_a_nonsense_row_falls_back_rather_than_taking_the_bot_down(chat_bot):
+    """Read on the hot path of every message; a hand-edited row must not raise."""
+    for stored in ("", "lots", "0", "-3"):
+        chat_bot.repo.set_config("chat_pilot_rate_count", stored)
+        assert chat_bot.chat_rate_count == chat_bot.settings.chat_pilot_rate_count
+
+
+def test_saving_a_number_moves_the_live_limiters_at_once(chat_bot):
+    """The limiters outlive the request, so a new value means nothing until told."""
+    pilot = chat_bot.chat
+    assert pilot.limiter.count == 4
+
+    service.set_config(chat_bot, "chat_pilot_rate_count", 7)
+    service.set_config(chat_bot, "chat_pilot_global_rate_window_s", 60)
+
+    assert pilot.limiter.count == 7
+    assert pilot.global_limiter.window == 60.0
+
+
+def test_the_capacity_numbers_are_validated_like_every_other_setting(chat_bot):
+    from bot.api.errors import BadRequest
+
+    for key, bad in (
+        ("chat_pilot_rate_count", "none"),
+        ("chat_pilot_rate_count", 0),
+        ("chat_pilot_global_rate_window_s", "soon"),
+        ("chat_pilot_global_rate_window_s", 0),
+    ):
+        with pytest.raises(BadRequest):
+            service.set_config(chat_bot, key, bad)
+
+
+def test_the_numbers_are_reported_by_get_config(chat_bot):
+    chat_bot.repo.set_config("chat_pilot_rate_count", "6")
+    values = service.get_config(chat_bot)
+    assert values["chat_pilot_rate_count"] == 6
+    assert values["chat_pilot_global_rate_count"] == 12
 
 
 # ---------------------------------------------------------------------------

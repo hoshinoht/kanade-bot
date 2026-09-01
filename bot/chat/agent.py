@@ -3,14 +3,31 @@
 Structured so that the interesting parts are testable without a gateway or a
 model. :meth:`ChatPilot.offer` is the only entry point and does no reasoning of
 its own -- it asks :mod:`bot.chat.gate` whether to answer, holds a per-channel
-lock so one channel cannot have two answers in flight, and hands the assembled
-conversation to :meth:`ChatPilot.generate`, which is the part with the model in
-it.
+lock so one channel cannot have two answers in flight, takes the host's one
+model lock (:mod:`bot.modellock`) so the whole machine cannot, and hands the
+assembled conversation to :meth:`ChatPilot.generate`, which is the part with the
+model in it.
 
 Nothing here is allowed to take the bot down, and nothing here is allowed to be
 slow forever: the whole answer, tool rounds included, lives inside one
 ``asyncio.wait_for``. A model that is offline, wedged, or looping produces a
 short apology in the channel and a full traceback in the log.
+
+What the bot remembers between messages is three things, and they answer three
+different failures. The channel's recent exchanges (:meth:`ChatPilot.history`)
+expire after ``CHAT_PILOT_HISTORY_TTL_S``, because an hour-old transcript makes
+"move it to 22:00" bind to a topic everybody has left. The last card the write
+tools posted (:meth:`ChatPilot.note_card`) is carried as one line of the system
+prompt on the same clock, because a multi-step job -- create the run, move it,
+add people -- says "it" at every step after the first and the card it means may
+have scrolled off. And an answer a member *replies to* is put back whatever its
+age (:meth:`ChatPilot.reanchored`), because a reply names the exchange it means
+and no staleness rule should overrule somebody pointing.
+
+There is deliberately no attempt to detect "a new conversation has started".
+Every mechanism here is about ageing and about what somebody pointed at, both
+of which are facts; where one topic ends and the next begins is a guess, and a
+wrong guess loses a live conversation to save a stale one.
 """
 
 from __future__ import annotations
@@ -18,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import re
 import time
 from collections import deque
@@ -25,7 +43,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import events
 from ..extract.prompt import estimate_messages
+from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
 from ..timeutil import utcnow
 from ..util import is_bot_admin
 from ..watch import origin_ids
@@ -61,21 +81,60 @@ CONVERSATION_BUDGET_TOKENS = 2500
 #: the same parent message once per reply.
 REFERENCE_CACHE = 256
 
+#: How many of the bot's own answers are kept re-anchorable (see
+#: :meth:`ChatPilot.anchor`). Smaller than :data:`REFERENCE_CACHE` because each
+#: entry holds two whole turns of text rather than one id, and because a reply
+#: to something the bot said days ago is a new conversation whatever it quotes.
+ANCHOR_CACHE = 64
+
 #: Said in the channel when the model could not answer. Deliberately plain: an
 #: in-persona apology written here would be a second, worse persona.
 FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
 
+#: What a refused asker is told, and the only sentences the bot says without the
+#: model. Constants on purpose, and not negotiable: a refusal has to be *free*.
+#: Spending a generation to explain that there is no capacity for generations
+#: would be funny once and would also mean the rate limit does not limit
+#: anything -- anyone could keep the model busy by being refused at speed.
+#: ``{wait}`` is :func:`retry_note`; ``{count}`` is the personal allowance, and
+#: ``{plural}`` exists because a guild may well set that allowance to one.
+RATE_LIMITED_REPLY = "That's your {count} answer{plural} for now — ask me again in about {wait}."
+POOL_SPENT_REPLY = "The guild's used up its answers for the moment — try me again in about {wait}."
+
+#: Where "90s" becomes "2 min". Two minutes of seconds is still a number
+#: somebody can hold in their head; past that, minutes are what they are
+#: actually going to wait, and "in about 400s" is arithmetic homework.
+RETRY_SECONDS_UNTIL = 120
+
 __all__ = [
+    "ANCHOR_CACHE",
     "MAX_TOOL_ROUNDS",
+    "POOL_SPENT_REPLY",
+    "RATE_LIMITED_REPLY",
     "SPOOFED_NOTE",
+    "Anchor",
     "ChatPilot",
     "ChatTurn",
+    "Focus",
     "Generation",
     "Handling",
     "defuse_notes",
+    "retry_note",
     "tool_trace",
     "unglue_first_bullet",
 ]
+
+
+def retry_note(seconds: float) -> str:
+    """``45s`` / ``3 min`` -- how long to wait, in a unit somebody can act on.
+
+    Rounded **up**, always: a member told "10s" who comes back in ten seconds
+    and is refused again learns to ignore the number, and one told "1 min" who
+    gets in at fifty seconds has lost nothing. Never below a second, so a window
+    about to roll still reads as a wait rather than as "0s".
+    """
+    whole = max(math.ceil(seconds), 1)
+    return f"{whole}s" if whole <= RETRY_SECONDS_UNTIL else f"{math.ceil(whole / 60)} min"
 
 
 @dataclass
@@ -87,6 +146,45 @@ class ChatTurn:
     #: The Discord message id, so a reply chain and the history cannot both
     #: contribute the same line.
     message_id: str | None = None
+    #: When this turn was remembered, on :attr:`ChatPilot._clock`'s monotonic
+    #: scale. Stamped by :meth:`ChatPilot.remember`, which is the one door into a
+    #: channel's history, so a turn built by a caller need not know about it.
+    #: ``None`` means "never stamped", which never expires -- a turn that was
+    #: assembled rather than remembered has no age to be old for.
+    at: float | None = None
+
+
+@dataclass
+class Focus:
+    """The last card one channel's write tools posted, and when.
+
+    A single slot per channel: what "it" means is the most recent card, and
+    keeping the one before it would only offer the model a second answer to a
+    question with one right answer.
+    """
+
+    #: The card in the words the card itself used -- see
+    #: :meth:`ChatPilot._card_summary`.
+    card: str
+    at: float
+
+
+@dataclass
+class Anchor:
+    """One of the bot's own answers, kept so a reply to it can find it again.
+
+    The history TTL is a blunt instrument on purpose, and this is the exception
+    it needs: a member replying *to a specific message* has said which exchange
+    they mean, and "that one expired" is not an answer. Keyed by the id of the
+    message the bot posted, which is what a reply points at.
+    """
+
+    channel_id: str
+    #: The question that was asked and the answer that was given, as the turns
+    #: they were remembered as -- so re-injecting them puts back exactly what
+    #: aged out, not a paraphrase of it.
+    question: ChatTurn
+    answer: ChatTurn
 
 
 @dataclass
@@ -311,23 +409,47 @@ def _call_parts(call: Any) -> tuple[str, Any]:
 class ChatPilot:
     """The chatbot. Constructing it touches neither Ollama nor Discord."""
 
-    def __init__(self, bot: Any, client: Any | None = None):
+    def __init__(self, bot: Any, client: Any | None = None, clock=time.monotonic):
         self.bot = bot
         self.settings = bot.settings
         self._client = client
         self._own_client = client is None
-        self.limiter = RateLimiter(
-            self.settings.chat_pilot_rate_count, self.settings.chat_pilot_rate_window_s
-        )
+        #: The one clock every ageing decision in here reads: the history TTL and
+        #: the current-focus line. Injectable for the same reason
+        #: :class:`bot.chat.ratelimit.RateLimiter`'s is -- the TTL is 45 minutes
+        #: in production, and a test that waits it out is a test nobody runs.
+        #: Monotonic, so a clock correction cannot expire a live conversation.
+        self._clock = clock
+        self.limiter = RateLimiter(bot.chat_rate_count, bot.chat_rate_window_s)
+        #: The same limiter over one shared key (:data:`bot.chat.gate.GLOBAL_KEY`):
+        #: everybody's answers come out of one pool, so a guild that hands the
+        #: pilot role around cannot spend more of the host than it has to give.
+        self.global_limiter = RateLimiter(bot.chat_pool_count, bot.chat_pool_window_s)
+        # Loads the per-member overrides, which is what makes them survive a
+        # restart: the spent windows do not and should not, but an allowance
+        # somebody was granted is not the sort of thing to forget overnight.
+        self.apply_limits()
         #: Per channel, so two channels can be answered at once but one channel
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
+        #: Per user id, when their rate-limit notice stops being suppressed --
+        #: set to the moment their window is due to free. The ⏳ goes on every
+        #: refused message; the *sentence* is said once per episode, because a
+        #: bot that repeats "you have had your answers" at somebody spamming it
+        #: is spamming back. Pruned as it is read, so what is remembered is the
+        #: people currently being refused rather than everybody who ever was.
+        self._told_until: dict[str, float] = {}
         #: Per channel, when the last rejection follow-up was *started*. The
         #: cheap half of the anti-spam rule: `_busy` stops two at once, this
         #: stops a run of them across different cards. See
         #: :data:`bot.chat.followup.COOLDOWN_S`.
         self._followed_up_at: dict[str, float] = {}
         self._history: dict[str, deque[ChatTurn]] = {}
+        #: Channel -> the last card its write tools posted. One slot each.
+        self._focus: dict[str, Focus] = {}
+        #: The id of a message the bot posted -> the exchange behind it, so a
+        #: reply to it can put that exchange back after the TTL has dropped it.
+        self._anchors: dict[str, Anchor] = {}
         #: Referenced message id -> its author id (or None). One API call per
         #: replied-to message, however many people reply to it.
         self._replied: dict[str, str | None] = {}
@@ -364,6 +486,14 @@ class ChatPilot:
     def reload_persona(self) -> str:
         self._persona = None
         return self.persona_text()
+
+    def answering(self) -> list[str]:
+        """The channels with an answer in flight, for the portal's Limits page.
+
+        A copy, sorted: the page must not be able to hold a reference to the set
+        the answer path is adding to and removing from.
+        """
+        return sorted(self._busy)
 
     # -- intake ------------------------------------------------------------
     async def offer(self, message: Any) -> Handling:
@@ -404,13 +534,21 @@ class ChatPilot:
             enabled=self.enabled,
             is_admin=is_admin,
             limiter=self.limiter,
+            global_limiter=self.global_limiter,
             self_role_id=self._self_role_id(message),
             replied_author_id=replied_author_id,
         )
+        if decision.act or decision.busy:
+            # A budget moved: either a slot was just spent or one was found
+            # empty, and both change what the Limits page shows. Nudged from
+            # here rather than from inside `gate.decide`, which is a pure
+            # function of its arguments and is worth keeping that way.
+            events.notify()
         if not decision.act:
             if decision.busy:
                 log.info("chat: %s from %s", decision.reason, getattr(message.author, "id", "?"))
                 await self._react(message, gate.RATE_LIMITED_REACTION)
+                await self._say_limited(message, decision)
                 # Rate limited, but addressed to the bot: ours, and not the
                 # extractor's to read as ambient chat.
                 return Handling(True, decision.reason)
@@ -432,11 +570,135 @@ class ChatPilot:
         # ignored. The 👀 goes on before any of that starts and comes off when
         # the reply lands, so the reaction is only ever "still working".
         await self._react(message, gate.SEEN_REACTION)
-        try:
-            return Handling(True, "ok", await self._answer(message, channel_id, is_admin))
-        finally:
+        # The channel lock above says nobody else in *this* channel is being
+        # answered; this one says nothing else on the host is using the model
+        # at all -- another channel's answer, an extraction, a rescan. Staff
+        # wait a whole answer's worth, because `asyncio.Lock` wakes its waiters
+        # in order and being next in that queue is the only priority the feature
+        # has. Everybody else waits a couple of seconds and is then turned away:
+        # a reply that lands two minutes after the question is worse than a
+        # visible "not now".
+        wait_s = (
+            self.settings.chat_pilot_timeout if is_admin else self.settings.chat_pilot_lock_wait_s
+        )
+        if not await acquire_within(wait_s, chat_label(channel_id)):
+            # This costs the asker a rate-limit slot, because the gate spent one
+            # on the way in. The alternative -- gating after the model instead of
+            # before it -- would leave a queue of already-admitted questions
+            # piled up on the lock, which is the pile-up the wait exists to
+            # prevent. Its own emoji again: this one clears in seconds.
+            log.info(
+                "chat: the model was busy for %.1fs; shedding %s in channel %s",
+                wait_s,
+                getattr(message.author, "id", "?"),
+                channel_id,
+            )
             self._busy.discard(channel_id)
             await self._unreact(message, gate.SEEN_REACTION)
+            await self._react(message, gate.CHANNEL_BUSY_REACTION)
+            return Handling(True, "the model is busy")
+        try:
+            # Held across the *whole* answer -- every tool round and the Discord
+            # send -- rather than round each model call. Releasing between rounds
+            # would let an extraction take the model in the middle of a
+            # conversation and stretch one answer past its own timeout.
+            return Handling(True, "ok", await self._answer(message, channel_id, is_admin))
+        finally:
+            release()
+            self._busy.discard(channel_id)
+            await self._unreact(message, gate.SEEN_REACTION)
+
+    async def _say_limited(self, message: Any, decision: gate.ChatDecision) -> None:
+        """Tell a refused asker why, and when to come back. Once per episode.
+
+        The reply is :data:`RATE_LIMITED_REPLY` or :data:`POOL_SPENT_REPLY` with
+        the wait filled in -- a constant either way, with **no model call and no
+        possibility of one**. The reason is the limit itself: a refusal that
+        cost a generation would let anybody occupy the host by being turned away
+        repeatedly, which is the opposite of a rate limit.
+
+        Which of the two is chosen by the gate's own reason, because the gate
+        already had to tell the budgets apart to refuse. Silence here is not a
+        failure -- it means this person has already been told for this episode
+        and is now getting the ⏳ alone.
+        """
+        author_id = str(getattr(getattr(message, "author", None), "id", ""))
+        if not self._first_refusal(author_id, decision.retry_after_s):
+            return
+        template = POOL_SPENT_REPLY if decision.reason == gate.POOL_SPENT else RATE_LIMITED_REPLY
+        # Their own allowance, not the guild's: telling somebody with a raised
+        # limit that they have had the default number of answers is worse than
+        # saying nothing, because it is confidently wrong about their own case.
+        count = self.limiter.limit_for(author_id)[0]
+        await self._post(
+            message,
+            template.format(
+                count=count,
+                plural="" if count == 1 else "s",
+                wait=retry_note(decision.retry_after_s),
+            ),
+        )
+
+    def _first_refusal(self, user_id: str, retry_after_s: float) -> bool:
+        """Is this the first refusal of this episode for ``user_id``?
+
+        An episode lasts until their window is due to free, which is exactly how
+        long the answer "come back in 90s" stays true for. Whoever is refused
+        again after that has waited, been answered or not, and been refused
+        afresh -- which is a new thing to say rather than a repetition.
+
+        Expired deadlines are dropped on the way past, so the dict holds the
+        people currently mid-episode rather than growing once per member for the
+        life of the process.
+        """
+        now = time.monotonic()
+        for key in [key for key, until in self._told_until.items() if until <= now]:
+            del self._told_until[key]
+        if self._told_until.get(user_id, 0.0) > now:
+            return False
+        self._told_until[user_id] = now + max(retry_after_s, 0.0)
+        return True
+
+    def apply_limits(self) -> None:
+        """Take the runtime numbers and the per-member overrides from the database.
+
+        Called when the pilot is built and again whenever one of them is edited
+        (:func:`bot.api.service.set_config`,
+        :func:`bot.api.service.set_user_limit`), which is what "takes effect at
+        once" means for a limiter that lives for the process's whole life.
+
+        ``count`` and ``window`` are read per call inside
+        :class:`bot.chat.ratelimit.RateLimiter`, so assigning them is the whole
+        of it -- windows already open are simply reinterpreted under the new
+        numbers. Raising the count lets somebody mid-window carry on rather than
+        giving them a fresh one; lowering it can refuse their next message. Both
+        are what an operator changing the number at that moment is asking for.
+        """
+        self.limiter.count = self.bot.chat_rate_count
+        self.limiter.window = self.bot.chat_rate_window_s
+        self.global_limiter.count = self.bot.chat_pool_count
+        self.global_limiter.window = self.bot.chat_pool_window_s
+        self.limiter.replace_overrides(
+            {
+                row["user_id"]: (row["count"], row["window_s"])
+                for row in self.bot.repo.list_rate_limits()
+            }
+        )
+
+    def forget_limit(self, user_id: int | str) -> None:
+        """Give one member their answers back, notice and all.
+
+        The two pieces of state are cleared together because they are one fact:
+        somebody whose window has been wiped is not mid-episode any more, and
+        leaving the notice behind would silently deny them the sentence next
+        time they *are* refused. Reached from the portal and ``bossctl`` through
+        :func:`bot.api.service.reset_user_limit`.
+
+        Individual windows only. Nothing here resets the guild's pool: that one
+        is a fact about the host rather than about a person.
+        """
+        self.limiter.reset(user_id)
+        self._told_until.pop(str(user_id), None)
 
     def _self_role_id(self, message: Any) -> int | None:
         """The bot's own managed integration role, if the guild has one.
@@ -539,11 +801,17 @@ class ChatPilot:
         result = await self.generate(conversation, context)
 
         reply = result.reply or FAILURE_REPLY
-        await self._post(message, reply)
+        posted = await self._post(message, reply)
         # Remembered only once it has actually been said, so a failed generation
         # does not leave the bot talking about an answer nobody saw.
-        self.remember(channel_id, ChatTurn("user", self._speaker(author_id, text), str(message.id)))
-        self.remember(channel_id, ChatTurn("assistant", reply))
+        asked = ChatTurn("user", self._speaker(author_id, text), str(message.id))
+        # The reply carries the id of the message it went out as, which is what
+        # lets a later reply to it find this exchange again (:meth:`anchor`) and
+        # what stops the reply chain contributing it a second time.
+        answered = ChatTurn("assistant", reply, str(getattr(posted, "id", "") or "") or None)
+        self.remember(channel_id, asked)
+        self.remember(channel_id, answered)
+        self.anchor(answered.message_id, channel_id, asked, answered)
         # One line per completed interaction. Everything needed to decide whether
         # a turn is worth reading the DEBUG trace for: how many rounds it took,
         # how long it took, what it called and how each call went. Turn on
@@ -629,6 +897,14 @@ class ChatPilot:
         statement as well, so the promise survives a future edit that puts an
         ``await`` in the middle of this.
 
+        That stretch is also what lets the model be checked with a plain
+        ``MODEL_LOCK.locked()`` and taken further down: nothing can have claimed
+        it in between. The check sits *before* the claim on purpose -- a claim is
+        permanent, and burning a card's one follow-up on a generation that then
+        never runs would silence it for good. A busy model simply means no
+        question: this one is the bot's own idea, and unlike an answer nobody is
+        waiting for it.
+
         The answer is not built here. It arrives as an ordinary reply to the
         bot's message, which :meth:`offer` already treats as a mention -- so
         what this has to leave behind is the *context* for it, which is why the
@@ -663,6 +939,14 @@ class ChatPilot:
             # about a dead card after the answer to a live one.
             log.info("chat: channel %s is already answering; dropping the follow-up", channel_id)
             return Handling(False, "already answering")
+        if MODEL_LOCK.locked():
+            # Somebody else on the host has the model -- another channel, an
+            # extraction, a rescan. A question nobody asked for is the first
+            # thing to drop: it is worth a generation only while the ❌ is still
+            # fresh, and nobody is waiting on it. Read rather than acquired
+            # because this stretch may not await; see the docstring.
+            log.debug("chat: the model is busy; no follow-up on the rejected card")
+            return Handling(False, "the model is busy")
 
         # Every amendment on the card, so a card carrying two of them cannot be
         # followed up once per amendment. Anything already claimed means this
@@ -676,7 +960,14 @@ class ChatPilot:
         self._busy.add(channel_id)
         self._followed_up_at[channel_id] = now
         try:
-            result = await self._ask_instead(claimed, allowed.author_id, channel, card_message_id)
+            # Free by construction: the ``locked()`` check above said so and
+            # nothing since it has awaited, so nobody can have taken it in the
+            # meantime. Held for the whole generation all the same, so an
+            # extraction cannot start underneath the question.
+            async with held(FOLLOWUP):
+                result = await self._ask_instead(
+                    claimed, allowed.author_id, channel, card_message_id
+                )
         finally:
             self._busy.discard(channel_id)
         return Handling(True, "ok", result)
@@ -712,7 +1003,9 @@ class ChatPilot:
         # system message out of the conversation and into the instructions header
         # at the top, which would put this synthetic turn *before* the history it
         # is a reaction to. Its bracketed opener carries the provenance instead.
-        conversation = self.assemble([*self.history(channel_id), ChatTurn("user", question)])
+        conversation = self.assemble(
+            [*self.history(channel_id), ChatTurn("user", question)], channel_id
+        )
         result = await self.generate(conversation, context)
         log.info(
             "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
@@ -731,8 +1024,14 @@ class ChatPilot:
             # out of the history and stop sitting where it happened.
             note = followup.memory_note(self.bot, amendments)
             posted_id = str(getattr(posted, "id", "") or "") or None
-            self.remember(channel_id, ChatTurn("user", note))
-            self.remember(channel_id, ChatTurn("assistant", result.reply, posted_id))
+            asked = ChatTurn("user", note)
+            answered = ChatTurn("assistant", result.reply, posted_id)
+            self.remember(channel_id, asked)
+            self.remember(channel_id, answered)
+            # Anchored like an answer, because this is the exchange most likely
+            # to be replied to late: the bot asked a question and is waiting for
+            # somebody to get back to it.
+            self.anchor(posted_id, channel_id, asked, answered)
         self._record(card_message_id, channel_id, author_id, question, result.reply, result)
         return result
 
@@ -779,16 +1078,174 @@ class ChatPilot:
         return f"{service.member_name(self.bot, user_id)}: {defuse_notes(text)}"
 
     def history(self, channel_id: str) -> deque[ChatTurn]:
-        return self._history.setdefault(str(channel_id), deque(maxlen=HISTORY_EXCHANGES * 2))
+        """This channel's live conversation, with anything past the TTL dropped.
+
+        Expiry happens here, at read time, exactly as
+        :meth:`bot.chat.ratelimit.RateLimiter.allow` slides its window: a
+        background task would wake up thousands of times a day to find nothing to
+        do, and the only moment the answer matters is the moment somebody asks.
+
+        The age is per turn, so an active back-and-forth loses nothing -- each
+        exchange is stamped as it lands and only the genuinely old end of the
+        deque falls off. The deque is ordered oldest-first, so the sweep stops at
+        the first live turn.
+        """
+        turns = self._history.setdefault(str(channel_id), deque(maxlen=HISTORY_EXCHANGES * 2))
+        cutoff = self._clock() - self.settings.chat_pilot_history_ttl_s
+        while turns and turns[0].at is not None and turns[0].at <= cutoff:
+            turns.popleft()
+        return turns
 
     def remember(self, channel_id: str, turn: ChatTurn) -> None:
+        """Add one turn to a channel's conversation, stamping it with the clock.
+
+        The one door into :attr:`_history`, which is why the stamp is applied
+        here rather than by every caller. A turn that arrives already stamped
+        keeps its own time -- that is how a test builds an old conversation, and
+        it costs nothing to honour.
+        """
+        if turn.at is None:
+            turn.at = self._clock()
         self.history(channel_id).append(turn)
 
     def forget(self, channel_id: str | None = None) -> None:
+        """Drop what the bot remembers: one channel's, or every channel's.
+
+        All three memories go together. Leaving the focus line or an anchor
+        behind would mean a channel that had been told to forget still opening
+        its next prompt with the card it is supposed to have forgotten.
+        """
         if channel_id is None:
             self._history.clear()
-        else:
-            self._history.pop(str(channel_id), None)
+            self._focus.clear()
+            self._anchors.clear()
+            return
+        key = str(channel_id)
+        self._history.pop(key, None)
+        self._focus.pop(key, None)
+        for message_id in [mid for mid, a in self._anchors.items() if a.channel_id == key]:
+            del self._anchors[message_id]
+
+    # -- the current focus -------------------------------------------------
+    def note_card(self, channel_id: str, amendment_id: str) -> None:
+        """Remember the card a write tool just posted as this channel's focus.
+
+        Called from :meth:`_loop` the moment a tool comes back with an amendment
+        id on it, which is the only place the pilot learns that a write
+        succeeded. Deliberately *not* deferred to the end of the answer the way
+        :meth:`remember` is: the card was posted to the channel by the tool
+        itself, so it exists whether or not the model goes on to say anything
+        about it, and a generation that then times out must not leave the next
+        question with no idea what is on screen.
+
+        Never raises. This is context for a nicer answer, not part of one -- a
+        row that cannot be read is a line in the log and no focus line.
+        """
+        summary = self._card_summary(amendment_id)
+        if summary:
+            self._focus[str(channel_id)] = Focus(summary, self._clock())
+
+    def _card_summary(self, amendment_id: str) -> str:
+        """One card in the words it was written in: what it does, and who is on it.
+
+        Built from the stored row rather than from the tool's reply text, because
+        the row is what the ✅ will act on. Its ``summary`` is the sentence
+        :mod:`bot.chat.tools` composed for the card ("new weekly: Hard Limbo
+        every Mon 23:30"), which already carries the kind, the bosses and the
+        when; the party is added because "add Priya to it" is the step that
+        needs it and the summary does not name anybody.
+
+        No run id and no card id: an amendment's id is not something
+        :func:`bot.chat.tools.resolve_run` accepts, and offering the model a
+        short id here would invite it to pass one where a run query belongs.
+        """
+        try:
+            from ..api import service
+
+            row = self.bot.repo.get_amendment(amendment_id) or {}
+            summary = (row.get("summary") or "").strip()
+            people = row.get("participants") or ()
+            party = ", ".join(service.member_name(self.bot, uid) for uid in people)
+            return f"{summary} — {party}" if summary and party else summary
+        except Exception:  # noqa: BLE001 - context must never cost an answer
+            log.exception("chat: could not describe card %s", amendment_id)
+            return ""
+
+    def focus(self, channel_id: str) -> str:
+        """The last card this channel saw, or ``""`` once it has aged out.
+
+        On the same TTL as the history and expired the same way, at read time.
+        An hour-old card is the same hazard an hour-old exchange is: it makes
+        "move it" mean something nobody is talking about any more.
+        """
+        key = str(channel_id)
+        entry = self._focus.get(key)
+        if entry is None:
+            return ""
+        # `>=`, matching the cutoff `history` sweeps with, so a card and the
+        # exchange that raised it never disagree about whether they are still
+        # current.
+        if self._clock() - entry.at >= self.settings.chat_pilot_history_ttl_s:
+            del self._focus[key]
+            return ""
+        return entry.card
+
+    # -- re-anchoring a reply ----------------------------------------------
+    def anchor(
+        self, message_id: str | None, channel_id: str, question: ChatTurn, answer: ChatTurn
+    ) -> None:
+        """Keep one answered exchange findable by the id of the reply it went out as.
+
+        Bounded like :meth:`_remember_reference`, and for the same reason: this
+        exists to make a *recent* reply work, and an unbounded dict of every
+        answer the process has ever given is a slow leak with a plausible excuse.
+        """
+        if not message_id:
+            return
+        if len(self._anchors) >= ANCHOR_CACHE:
+            self._anchors.pop(next(iter(self._anchors)), None)
+        self._anchors[str(message_id)] = Anchor(str(channel_id), question, answer)
+
+    @staticmethod
+    def replied_message_id(message: Any) -> str | None:
+        """The id of the message this one replies to, resolved or not.
+
+        Both halves are needed: discord.py fills ``reference.resolved`` from its
+        in-memory cache, which a restart empties, and leaves ``message_id`` set
+        either way.
+        """
+        reference = getattr(message, "reference", None)
+        if reference is None:
+            return None
+        resolved = getattr(reference, "resolved", None)
+        parent_id = getattr(resolved, "id", None) if resolved is not None else None
+        return str(parent_id or getattr(reference, "message_id", None) or "") or None
+
+    def reanchored(self, message: Any, seen: set[str]) -> list[ChatTurn]:
+        """The exchange a reply points at, when the history no longer holds it.
+
+        A member replying to a specific message has named the exchange they mean,
+        which is a stronger signal than any staleness rule -- so the TTL does not
+        get to overrule it. Only the turns the prompt does not already carry come
+        back: an exchange still in the live history, or one the reply chain
+        resolved by itself, is not repeated.
+
+        Returned unlabelled and placed oldest-first by
+        :meth:`build_conversation`. A bracketed "this is from earlier" opener
+        would be exactly the shape :func:`defuse_notes` exists to make
+        untrustworthy, and these are the real turns rather than a note about
+        them.
+
+        A reply to a message the bot no longer has -- evicted, or from before a
+        restart -- is simply nothing. The question still gets answered.
+        """
+        found = self._anchors.get(self.replied_message_id(message) or "")
+        # The answer is what the reply points at, so its presence is what decides
+        # whether the exchange is already in the prompt -- the question beside it
+        # may have no id of its own (a rejection follow-up's note has none).
+        if found is None or found.answer.message_id in seen:
+            return []
+        return [turn for turn in (found.question, found.answer) if turn.message_id not in seen]
 
     def reply_chain(self, message: Any) -> list[ChatTurn]:
         """The messages ``message`` is replying to, oldest first.
@@ -821,22 +1278,36 @@ class ChatPilot:
         return chain
 
     def build_conversation(self, message: Any, channel_id: str) -> list[dict[str, str]]:
-        """System prompt, remembered exchanges, the reply chain, then the question.
+        """System prompt, the re-anchored exchange, history, reply chain, question.
 
         The schedule is deliberately *not* pre-injected: it is ten runs and a
         roster, it is stale the moment somebody reacts, and the model has tools
         for it. Trimming, when the budget needs it, drops the oldest remembered
         exchanges -- never the system prompt and never the question.
+
+        The re-anchored exchange (:meth:`reanchored`) goes in front of everything
+        else, which is where it belongs in time: it is older than anything still
+        in the history, and it is only here at all because a member replied to
+        it. It is also therefore the first thing the budget trims away, which is
+        the right order to lose things in.
         """
-        seen = {turn.message_id for turn in self.history(channel_id) if turn.message_id}
-        earlier = list(self.history(channel_id))
-        earlier += [turn for turn in self.reply_chain(message) if turn.message_id not in seen]
+        live = self.history(channel_id)
+        seen = {turn.message_id for turn in live if turn.message_id}
+        # The chain is resolved before the anchor is consulted, and its ids join
+        # `seen`, because the two can reach the same message from opposite ends:
+        # a reply whose parent Discord still has in cache arrives *both* as a
+        # chain link and as an anchored answer, and would otherwise be said twice.
+        chain = [turn for turn in self.reply_chain(message) if turn.message_id not in seen]
+        seen |= {turn.message_id for turn in chain if turn.message_id}
+        earlier = [*self.reanchored(message, seen), *live, *chain]
         question = ChatTurn(
             "user", self._speaker(str(message.author.id), (message.content or "").strip())
         )
-        return self.assemble([*earlier, question])
+        return self.assemble([*earlier, question], channel_id)
 
-    def assemble(self, turns: Sequence[ChatTurn]) -> list[dict[str, str]]:
+    def assemble(
+        self, turns: Sequence[ChatTurn], channel_id: str | None = None
+    ) -> list[dict[str, str]]:
         """The system prompt, then as much of ``turns`` as the budget allows.
 
         Shared by :meth:`build_conversation` and by the rejection follow-up
@@ -844,6 +1315,10 @@ class ChatPilot:
         synthetic last turn rather than a member's question -- so a follow-up is
         composed under the persona, the clock and the budget an answer is, and
         there is one place where "what the model sees" is decided.
+
+        ``channel_id`` is what the current-focus line needs and nothing else
+        does; without one the prompt simply carries no focus line, which is also
+        what a channel with no recent card gets.
         """
         now = utcnow()
         week = current_week_start(
@@ -853,6 +1328,7 @@ class ChatPilot:
             self.persona_text(),
             persona.clock_header(now, self.bot.tz, week),
             persona.runtime_line(self.settings.chat_pilot_model),
+            persona.focus_line(self.focus(channel_id) if channel_id is not None else ""),
         )
         rendered = [{"role": t.role, "content": t.content} for t in turns]
         # Measured over the conversation alone. The system prompt is a whole
@@ -923,6 +1399,11 @@ class ChatPilot:
                 outcome = await tools.run(context, name, arguments)
                 result.outcomes.append(outcome)
                 result.tools_ms += outcome.duration_ms
+                if outcome.ok and outcome.created:
+                    # The one place the pilot learns a write tool actually
+                    # posted something. The last id wins: a later card in the
+                    # same turn is the one on screen.
+                    self.note_card(context.channel_id, outcome.created[-1])
                 # The line that answers "why did it propose that": the arguments
                 # the model actually passed, and whether the tool obeyed.
                 log.debug(
@@ -1006,7 +1487,7 @@ class ChatPilot:
         return unglue_first_bullet(text)[:1200].strip()
 
     # -- discord -----------------------------------------------------------
-    async def _post(self, message: Any, content: str) -> None:
+    async def _post(self, message: Any, content: str) -> Any:
         """Reply in the channel, notifying the asker and nobody else.
 
         Through :meth:`bot.client.BossBot.post_plain`, which is the bot's one
@@ -1014,9 +1495,13 @@ class ChatPilot:
         mode, and refuses ``@everyone`` from any caller. Nothing here constructs
         an ``AllowedMentions`` of its own, so the chatbot cannot become a second
         way to ping a guild.
+
+        Returns the message it posted, as :meth:`_post_followup` already did:
+        its id is how a reply to this answer is recognised later. ``None`` when
+        the post failed, which costs the exchange its anchor and nothing else.
         """
         try:
-            await self.bot.post_plain(
+            return await self.bot.post_plain(
                 message.channel,
                 content,
                 [str(message.author.id)],
@@ -1024,6 +1509,7 @@ class ChatPilot:
             )
         except Exception:  # noqa: BLE001 - a failed reply is not worth a crash
             log.exception("chat: could not post the reply")
+            return None
 
     @staticmethod
     async def _react(message: Any, emoji: str) -> None:

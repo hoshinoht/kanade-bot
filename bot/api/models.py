@@ -455,6 +455,10 @@ class ConfigOut(BaseModel):
     extract_enabled: bool
     quiet_mode: bool
     chat_mode: bool
+    chat_pilot_rate_count: int = 4
+    chat_pilot_rate_window_s: float = 300.0
+    chat_pilot_global_rate_count: int = 12
+    chat_pilot_global_rate_window_s: float = 900.0
     #: The chatbot needs a role and a channel before `chat_mode` means anything.
     chat_configured: bool = False
     chat_channels: list[str] = []
@@ -483,6 +487,11 @@ class ConfigIn(Strict):
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
     chat_mode: bool | None = None
+    #: The chatbot's capacity, editable at runtime like the flags above.
+    chat_pilot_rate_count: int | None = Field(default=None, ge=1)
+    chat_pilot_rate_window_s: float | None = Field(default=None, gt=0)
+    chat_pilot_global_rate_count: int | None = Field(default=None, ge=1)
+    chat_pilot_global_rate_window_s: float | None = Field(default=None, gt=0)
 
 
 class DigestIn(Strict):
@@ -616,6 +625,122 @@ class AccessOut(BaseModel):
     unknown: bool
 
 
+# --- capacity: the one model, the two windows, and what is queued -----------
+
+
+class ModelLockOut(BaseModel):
+    """Who has the host's one model, and for how long."""
+
+    busy: bool
+    #: ``extractor``, ``followup``, or ``chat #<channel id>``. ``None`` while
+    #: idle -- or, with ``busy`` set, for a holder that never said who it was.
+    holder: str | None = None
+    held_for_s: float
+
+
+class PoolOut(BaseModel):
+    """One sliding window as used-of-total."""
+
+    count: int
+    window_s: float
+    used: int
+    remaining: int
+
+
+class UserWindowOut(BaseModel):
+    """One member who is currently inside their own window."""
+
+    user_id: str
+    name: str
+    used: int
+    remaining: int
+    #: The allowance this member is on, which is the guild default unless they
+    #: have an override -- so a row can be read without cross-referencing.
+    count: int
+    window_s: float
+    overridden: bool = False
+
+
+class LimitOverrideOut(BaseModel):
+    """One member's own allowance, instead of the guild's."""
+
+    user_id: str
+    name: str
+    count: int
+    window_s: float
+
+
+class PerUserOut(BaseModel):
+    #: The guild default; a row above may be on something else.
+    count: int
+    window_s: float
+    #: Only members mid-window; an empty list means nobody has asked recently.
+    windows: list[UserWindowOut] = []
+    #: Every member with an override, mid-window or not.
+    overrides: list[LimitOverrideOut] = []
+
+
+class AnsweringOut(BaseModel):
+    channel_id: str
+    channel_name: str
+
+
+class RescanQueueOut(BaseModel):
+    worker_running: bool
+    #: Jobs still waiting. The one being drained has already left the queue.
+    queued: int
+    job: str | None = None
+    channel: str | None = None
+
+
+class JobsOut(BaseModel):
+    answering: list[AnsweringOut] = []
+    extracting: bool
+    rescan: RescanQueueOut
+
+
+class PilotOut(BaseModel):
+    """One holder of the chat role, and where they stand right now."""
+
+    user_id: str
+    name: str
+    #: Staff are exempt from every budget, so their allowance is decoration.
+    staff: bool = False
+    count: int
+    window_s: float
+    overridden: bool = False
+    used: int = 0
+    remaining: int = 0
+    has_window: bool = False
+
+
+class LimitsOut(BaseModel):
+    """Live capacity: nothing here is stored, and nothing here is spent by asking."""
+
+    model: ModelLockOut
+    global_pool: PoolOut
+    per_user: PerUserOut
+    jobs: JobsOut
+    #: Everybody holding ``CHAT_PILOT_ROLE_ID``, read live from the guild.
+    #: Empty when the role or the guild cannot be resolved -- which is not the
+    #: same fact as "nobody holds it", and the portal says which.
+    pilots: list[PilotOut] = []
+
+
+class LimitResetOut(BaseModel):
+    """One member's window or override, cleared. The guild's pool is neither."""
+
+    user_id: str
+    name: str
+
+
+class LimitOverrideIn(Strict):
+    """The allowance to put one member on, instead of the guild's."""
+
+    count: int = Field(ge=1, description="answers per window")
+    window_s: float = Field(gt=0, description="the window, in seconds")
+
+
 class HealthOut(BaseModel):
     status: str
 
@@ -642,6 +767,18 @@ __all__ = [
     "FixedOut",
     "FixedUpdate",
     "HealthOut",
+    "AnsweringOut",
+    "JobsOut",
+    "LimitOverrideIn",
+    "LimitOverrideOut",
+    "LimitResetOut",
+    "LimitsOut",
+    "ModelLockOut",
+    "PerUserOut",
+    "PilotOut",
+    "PoolOut",
+    "RescanQueueOut",
+    "UserWindowOut",
     "MemberOut",
     "MemberUpdate",
     "MonogramOut",

@@ -197,6 +197,26 @@ def test_a_live_database_gains_the_chat_log_without_losing_anything(tmp_path):
     migrated.close()
 
 
+def test_a_live_database_gains_the_allowances_without_losing_anything(tmp_path):
+    """v7 -> v8 adds ``chat_rate_limits``, and nobody has one until they are given it."""
+    path = tmp_path / "v7.sqlite"
+    repo = Repo(path)
+    repo.upsert_member(7, "harbour4417", "MY", True)
+    fixed = repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
+    repo._conn.execute("DROP TABLE chat_rate_limits")
+    repo._conn.execute("UPDATE schema_version SET version = 7")
+    repo.close()
+
+    migrated = Repo(path)
+    version = migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
+    assert version == SCHEMA_VERSION
+    # No rows means everybody is on the guild default, which is where they were.
+    assert migrated.list_rate_limits() == []
+    assert migrated.get_member("7")["display_name"] == "harbour4417"
+    assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
+    migrated.close()
+
+
 def test_a_database_from_a_newer_bot_is_refused(tmp_path):
     path = tmp_path / "future.sqlite"
     repo = Repo(path)
