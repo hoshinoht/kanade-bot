@@ -495,13 +495,18 @@ def test_limits_counts_down_both_budgets(auth, fake_bot, seeded):
 
     assert body["global_pool"]["used"] == 2
     assert body["global_pool"]["remaining"] == body["global_pool"]["count"] - 2
-    # Named from the roster, exactly as the chat log names an asker.
+    # Named from the roster, exactly as the chat log names an asker, and
+    # carrying the allowance they are actually on.
+    default = fake_bot.settings.chat_pilot_rate_count
     assert body["per_user"]["windows"] == [
         {
             "user_id": "1002",
             "name": "kanon",
             "used": 1,
-            "remaining": fake_bot.settings.chat_pilot_rate_count - 1,
+            "remaining": default - 1,
+            "count": default,
+            "window_s": fake_bot.settings.chat_pilot_rate_window_s,
+            "overridden": False,
         }
     ]
 
@@ -597,6 +602,128 @@ def test_the_guilds_pool_is_not_resettable(auth, fake_bot, seeded):
 
 def test_resetting_a_window_needs_the_token(client, seeded):
     assert client.delete("/api/limits/windows/1002").status_code == 401
+
+
+# --- per-member allowances --------------------------------------------------
+
+
+def test_an_override_is_stored_applied_and_reported(auth, fake_bot, seeded):
+    body = auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60}).json()
+
+    assert body == {"user_id": "1002", "name": "kanon", "count": 10, "window_s": 60.0}
+    # Stored, so it survives a restart...
+    assert fake_bot.repo.list_rate_limits() == [
+        {
+            "user_id": "1002",
+            "count": 10,
+            "window_s": 60.0,
+            "updated_at": fake_bot.repo.list_rate_limits()[0]["updated_at"],
+        }
+    ]
+    # ...and live, so the very next question is judged by it.
+    assert fake_bot.chat.limiter.limit_for("1002") == (10, 60.0)
+    listed = auth.get("/api/limits").json()["per_user"]["overrides"]
+    assert listed == [{"user_id": "1002", "name": "kanon", "count": 10, "window_s": 60.0}]
+
+
+def test_an_override_shows_on_the_window_it_governs(auth, fake_bot, seeded):
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    fake_bot.chat.limiter.allow(1002)
+
+    (row,) = auth.get("/api/limits").json()["per_user"]["windows"]
+
+    assert (row["count"], row["window_s"], row["overridden"]) == (10, 60.0, True)
+    assert row["remaining"] == 9
+
+
+def test_setting_an_override_replaces_the_previous_one(auth, fake_bot, seeded):
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    auth.put("/api/limits/overrides/1002", json={"count": 2, "window_s": 30})
+
+    assert fake_bot.chat.limiter.limit_for("1002") == (2, 30.0)
+    assert len(fake_bot.repo.list_rate_limits()) == 1
+
+
+def test_clearing_an_override_puts_them_back_on_the_default(auth, fake_bot, seeded):
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+
+    body = auth.delete("/api/limits/overrides/1002").json()
+
+    assert body == {"user_id": "1002", "name": "kanon"}
+    assert fake_bot.repo.list_rate_limits() == []
+    assert fake_bot.chat.limiter.limit_for("1002") == (
+        fake_bot.settings.chat_pilot_rate_count,
+        fake_bot.settings.chat_pilot_rate_window_s,
+    )
+
+
+def test_clearing_an_override_nobody_had_is_not_an_error(auth, fake_bot, seeded):
+    """The caller asked for "this member is on the default", and that is the result."""
+    assert auth.delete("/api/limits/overrides/1002").status_code == 200
+
+
+def test_both_override_changes_are_written_to_the_audit_trail(auth, fake_bot, seeded):
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    set_row = fake_bot.repo.list_audit(limit=1)[0]
+    assert set_row["action"] == "limits"
+    assert set_row["subject"] == "1002"
+    assert "10 answer(s) per 60s" in set_row["detail"]
+
+    auth.delete("/api/limits/overrides/1002")
+    cleared = fake_bot.repo.list_audit(limit=1)[0]
+    assert "back on the guild's default" in cleared["detail"]
+
+
+def test_an_unclearable_override_writes_no_audit_row(auth, fake_bot, seeded):
+    """Nothing changed, so the trail must not claim something did."""
+    before = len(fake_bot.repo.list_audit(limit=50))
+    auth.delete("/api/limits/overrides/4242")
+    assert len(fake_bot.repo.list_audit(limit=50)) == before
+
+
+def test_a_nonsense_allowance_is_refused(auth, fake_bot, seeded):
+    assert auth.put("/api/limits/overrides/1002", json={"count": 0, "window_s": 60}).status_code
+    for body in ({"count": 0, "window_s": 60}, {"count": 4, "window_s": 0}, {"count": "lots"}):
+        assert auth.put("/api/limits/overrides/1002", json=body).status_code == 422
+    assert fake_bot.repo.list_rate_limits() == []
+
+
+def test_an_override_can_be_given_to_somebody_off_the_roster(auth, fake_bot, seeded):
+    """The chat role and the bossing role are different things."""
+    body = auth.put("/api/limits/overrides/4242", json={"count": 3, "window_s": 60}).json()
+    assert body["name"] == "user 4242"
+    assert fake_bot.chat.limiter.limit_for("4242") == (3, 60.0)
+
+
+def test_the_override_routes_need_the_token(client, seeded):
+    assert (
+        client.put("/api/limits/overrides/1002", json={"count": 4, "window_s": 60}).status_code
+        == 401
+    )
+    assert client.delete("/api/limits/overrides/1002").status_code == 401
+
+
+# --- the capacity settings --------------------------------------------------
+
+
+def test_the_capacity_numbers_are_readable_and_writable_over_the_api(auth, fake_bot):
+    before = auth.get("/api/config").json()
+    assert before["chat_pilot_rate_count"] == 4
+
+    body = auth.put("/api/config", json={"chat_pilot_rate_count": 9}).json()
+
+    assert body["chat_pilot_rate_count"] == 9
+    assert fake_bot.chat.limiter.count == 9
+
+
+def test_the_api_refuses_a_capacity_number_that_makes_no_sense(auth, fake_bot):
+    for body in (
+        {"chat_pilot_rate_count": 0},
+        {"chat_pilot_rate_window_s": 0},
+        {"chat_pilot_global_rate_count": -1},
+    ):
+        assert auth.put("/api/config", json=body).status_code == 422
+    assert fake_bot.chat.limiter.count == 4
 
 
 # --- members ----------------------------------------------------------------

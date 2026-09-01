@@ -12,6 +12,31 @@ _ROLE_MENTION_RE = re.compile(r"<@&(\d+)>")
 _BARE_ID_RE = re.compile(r"\b(\d{15,25})\b")
 
 
+def positive_int(raw: str | None, default: int) -> int:
+    """A stored number, or ``default`` when the row is absent or nonsense.
+
+    Runtime config is text in a SQLite column, and the row is written by
+    validated paths only -- but a hand-edited database must not take the bot
+    down, and a limit of zero is worse than the default it replaced. Anything
+    unparseable or non-positive falls back rather than raising, because these
+    are read on the hot path of every message.
+    """
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 1 else default
+
+
+def positive_float(raw: str | None, default: float) -> float:
+    """A stored window in seconds, or ``default``. See :func:`positive_int`."""
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 def is_bot_admin(
     is_guild_admin: bool,
     is_guild_owner: bool,

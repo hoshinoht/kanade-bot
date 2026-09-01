@@ -62,13 +62,37 @@
         <button class="btn" type="submit" {{ "disabled" if not config.chat_configured }}>{{ "Turn the chatbot off" if config.chat_mode else "Turn the chatbot on" }}</button>
       </form>
     </div>
+    {# The four capacity numbers. `.env` seeds them; from here on the stored
+       value wins, so tuning them at 9pm needs neither an edit nor a restart. #}
+    <form method="post" action="/config" class="filters">
+      <label class="field"><span>Answers per person</span>
+        <input name="chat_pilot_rate_count" value="{{ config.chat_pilot_rate_count }}"
+               type="number" min="1" step="1" size="4" class="mono">
+      </label>
+      <label class="field"><span>Their window (s)</span>
+        <input name="chat_pilot_rate_window_s"
+               value="{{ "%g"|format(config.chat_pilot_rate_window_s) }}"
+               type="number" min="1" step="any" size="6" class="mono">
+      </label>
+      <label class="field"><span>Answers per guild</span>
+        <input name="chat_pilot_global_rate_count" value="{{ config.chat_pilot_global_rate_count }}"
+               type="number" min="1" step="1" size="4" class="mono">
+      </label>
+      <label class="field"><span>Its window (s)</span>
+        <input name="chat_pilot_global_rate_window_s"
+               value="{{ "%g"|format(config.chat_pilot_global_rate_window_s) }}"
+               type="number" min="1" step="any" size="6" class="mono">
+      </label>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </form>
     <p class="run__meta">
       {% if config.chat_configured %}
         The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,
         answering in {{ config.chat_channels | length }} channel(s) with
         <strong>{{ config.chat_model }}</strong>. It replies only when mentioned by
         somebody holding the chat role, and every change it drafts is a card
-        somebody still has to ✅.
+        somebody still has to ✅. Individual members can be given their own
+        allowance on the <a href="/limits">Limits</a> page.
       {% else %}
         Not configured — set <span class="mono">CHAT_PILOT_ROLE_ID</span> and
         <span class="mono">CHAT_PILOT_CHANNEL_IDS</span> in <span class="mono">.env</span>

@@ -109,8 +109,12 @@
       <tbody>
         {% for row in limits.per_user.windows %}
         <tr>
-          <td>{{ row.name }}</td>
-          <td class="mono">{{ row.used }} of {{ limits.per_user.count }}</td>
+          <td>
+            {{ row.name }}
+            {# Marked, because the count beside it is then not the heading's. #}
+            {% if row.overridden %}<span class="chip">own allowance</span>{% endif %}
+          </td>
+          <td class="mono">{{ row.used }} of {{ row.count }}</td>
           <td>
             {% if row.remaining %}<span class="mono">{{ row.remaining }}</span>
             {% else %}<span class="status status--cancelled">spent</span>{% endif %}
@@ -122,6 +126,57 @@
                   hx-post="/limits/windows/{{ row.user_id }}/reset"
                   hx-target="#limits" hx-swap="outerHTML">
               <button class="btn" type="submit">Reset</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Own allowances</h2></div>
+  <p class="run__meta">
+    A member listed here gets their own number of answers instead of the guild's
+    {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
+    Overrides are stored, so they survive a restart; the spent windows above are not.
+    Staff are exempt from all of it and never need one.
+  </p>
+  {# Set for anybody, whether or not they are mid-window: the usual reason to
+     raise somebody's allowance is that they are about to need it. #}
+  <form method="post" action="/limits/overrides" class="filters"
+        hx-post="/limits/overrides" hx-target="#limits" hx-swap="outerHTML">
+    <label class="field"><span>Discord user id</span>
+      <input name="user_id" required inputmode="numeric" size="20" class="mono">
+    </label>
+    <label class="field"><span>Answers</span>
+      <input name="count" type="number" min="1" step="1" required size="4" class="mono"
+             value="{{ limits.per_user.count }}">
+    </label>
+    <label class="field"><span>Window (s)</span>
+      <input name="window_s" type="number" min="1" step="any" required size="6" class="mono"
+             value="{{ "%g"|format(limits.per_user.window_s) }}">
+    </label>
+    <button class="btn btn--primary" type="submit">Give them their own</button>
+  </form>
+
+  {% if limits.per_user.overrides %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Member</th><th>User id</th><th>Allowance</th><th></th></tr></thead>
+      <tbody>
+        {% for row in limits.per_user.overrides %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="mono">{{ row.user_id }}</td>
+          <td class="mono">{{ row.count }} per {{ "%.0f"|format(row.window_s) }}s</td>
+          <td>
+            <form method="post" action="/limits/overrides/{{ row.user_id }}/clear"
+                  hx-post="/limits/overrides/{{ row.user_id }}/clear"
+                  hx-target="#limits" hx-swap="outerHTML">
+              <button class="btn" type="submit">Back to default</button>
             </form>
           </td>
         </tr>

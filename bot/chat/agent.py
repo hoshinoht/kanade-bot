@@ -349,16 +349,15 @@ class ChatPilot:
         self.settings = bot.settings
         self._client = client
         self._own_client = client is None
-        self.limiter = RateLimiter(
-            self.settings.chat_pilot_rate_count, self.settings.chat_pilot_rate_window_s
-        )
+        self.limiter = RateLimiter(bot.chat_rate_count, bot.chat_rate_window_s)
         #: The same limiter over one shared key (:data:`bot.chat.gate.GLOBAL_KEY`):
         #: everybody's answers come out of one pool, so a guild that hands the
         #: pilot role around cannot spend more of the host than it has to give.
-        self.global_limiter = RateLimiter(
-            self.settings.chat_pilot_global_rate_count,
-            self.settings.chat_pilot_global_rate_window_s,
-        )
+        self.global_limiter = RateLimiter(bot.chat_pool_count, bot.chat_pool_window_s)
+        # Loads the per-member overrides, which is what makes them survive a
+        # restart: the spent windows do not and should not, but an allowance
+        # somebody was granted is not the sort of thing to forget overnight.
+        self.apply_limits()
         #: Per channel, so two channels can be answered at once but one channel
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
@@ -545,7 +544,10 @@ class ChatPilot:
         if not self._first_refusal(author_id, decision.retry_after_s):
             return
         template = POOL_SPENT_REPLY if decision.reason == gate.POOL_SPENT else RATE_LIMITED_REPLY
-        count = self.limiter.count
+        # Their own allowance, not the guild's: telling somebody with a raised
+        # limit that they have had the default number of answers is worse than
+        # saying nothing, because it is confidently wrong about their own case.
+        count = self.limiter.limit_for(author_id)[0]
         await self._post(
             message,
             template.format(
@@ -574,6 +576,32 @@ class ChatPilot:
             return False
         self._told_until[user_id] = now + max(retry_after_s, 0.0)
         return True
+
+    def apply_limits(self) -> None:
+        """Take the runtime numbers and the per-member overrides from the database.
+
+        Called when the pilot is built and again whenever one of them is edited
+        (:func:`bot.api.service.set_config`,
+        :func:`bot.api.service.set_user_limit`), which is what "takes effect at
+        once" means for a limiter that lives for the process's whole life.
+
+        ``count`` and ``window`` are read per call inside
+        :class:`bot.chat.ratelimit.RateLimiter`, so assigning them is the whole
+        of it -- windows already open are simply reinterpreted under the new
+        numbers. Raising the count lets somebody mid-window carry on rather than
+        giving them a fresh one; lowering it can refuse their next message. Both
+        are what an operator changing the number at that moment is asking for.
+        """
+        self.limiter.count = self.bot.chat_rate_count
+        self.limiter.window = self.bot.chat_rate_window_s
+        self.global_limiter.count = self.bot.chat_pool_count
+        self.global_limiter.window = self.bot.chat_pool_window_s
+        self.limiter.replace_overrides(
+            {
+                row["user_id"]: (row["count"], row["window_s"])
+                for row in self.bot.repo.list_rate_limits()
+            }
+        )
 
     def forget_limit(self, user_id: int | str) -> None:
         """Give one member their answers back, notice and all.

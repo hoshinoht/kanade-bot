@@ -266,6 +266,77 @@ def test_the_reset_button_is_a_real_form_too(auth, fake_bot, seeded):
     assert "kanon" in response.headers["location"]
 
 
+def test_giving_a_member_their_own_allowance_from_the_page(auth, fake_bot, seeded):
+    response = auth.post(
+        "/limits/overrides",
+        data={"user_id": "1002", "count": "10", "window_s": "60"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert "own allowance" not in response.text or "kanon" in response.text
+    assert "10 per 60s" in response.text  # the overrides table
+    assert fake_bot.chat.limiter.limit_for("1002") == (10, 60.0)
+
+
+def test_an_override_can_be_set_for_somebody_with_no_open_window(auth, fake_bot, seeded):
+    """The usual reason to raise it is that they are about to need it."""
+    assert fake_bot.chat.limiter.snapshot() == {}
+
+    auth.post("/limits/overrides", data={"user_id": "1003", "count": "8", "window_s": "120"})
+
+    assert fake_bot.chat.limiter.limit_for("1003") == (8, 120.0)
+    assert "8 per 120s" in auth.get("/limits").text
+
+
+def test_a_bad_allowance_comes_back_as_a_flash_not_a_traceback(auth, fake_bot, seeded):
+    response = auth.post(
+        "/limits/overrides",
+        data={"user_id": "1002", "count": "0", "window_s": "60"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "kind=error" in response.headers["location"]
+    assert fake_bot.repo.list_rate_limits() == []
+
+
+def test_clearing_an_override_from_the_page_removes_its_row(auth, fake_bot, seeded):
+    auth.post("/limits/overrides", data={"user_id": "1002", "count": "10", "window_s": "60"})
+    assert "10 per 60s" in auth.get("/limits").text
+
+    response = auth.post("/limits/overrides/1002/clear", headers={"HX-Request": "true"})
+
+    assert response.status_code == 200
+    assert "10 per 60s" not in response.text
+    assert fake_bot.repo.list_rate_limits() == []
+
+
+def test_an_overridden_window_is_marked_and_counted_against_its_own_allowance(
+    auth, fake_bot, seeded
+):
+    auth.post("/limits/overrides", data={"user_id": "1002", "count": "10", "window_s": "60"})
+    fake_bot.chat.limiter.allow(1002)
+
+    body = auth.get("/limits").text
+
+    assert "own allowance" in body
+    assert "1 of 10" in body
+
+
+def test_the_capacity_numbers_are_editable_from_the_config_page(auth, fake_bot):
+    response = auth.post(
+        "/config",
+        data={"chat_pilot_rate_count": "9", "chat_pilot_rate_window_s": "600"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert fake_bot.chat.limiter.count == 9
+    assert fake_bot.chat.limiter.window == 600.0
+    assert 'name="chat_pilot_rate_count"' in auth.get("/config").text
+
+
 def test_the_limits_page_needs_signing_in(client):
     """A portal page sends you to the sign-in form; the JSON behind it 401s."""
     for path in ("/limits", "/limits/live"):
