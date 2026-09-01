@@ -12,6 +12,8 @@ proposing the change it found; nothing reaches the schedule until someone reacts
 and drafts changes through the same cards. And it serves a **web portal and a
 `bossctl` CLI** on `127.0.0.1:8080`, reachable from your phone over Tailscale.
 
+![Ask the chatbot for a run and ratify the card it drafts](docs/images/chatbot-card.png)
+
 ## What it does
 
 |                      |                                                                                                                                                                                   |
