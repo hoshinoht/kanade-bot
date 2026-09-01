@@ -273,6 +273,7 @@ async def week_page(
         bot, week=week, channel_id=channel, user_id=user, boss=boss, show_past=show_past
     )
     filters = {"channel": channel, "user": user, "boss": boss}
+    board = service.board_columns(bot, week, schedule["runs"])
 
     def url_for_week(which: str) -> str:
         params = {"week": which, **filters, "show_past": "1" if show_past else ""}
@@ -288,7 +289,8 @@ async def week_page(
         "week",
         schedule=schedule,
         rail=service.week_rail(bot, week),
-        board=service.board_columns(bot, week, schedule["runs"]),
+        board=board,
+        board_tracks=service.board_tracks(board),
         now_strip=service.week_now(bot, schedule["runs"]),
         week=week,
         channels=watched_channels(bot),

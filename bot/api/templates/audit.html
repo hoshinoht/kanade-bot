@@ -7,10 +7,10 @@
   <div>
     <p class="eyebrow">Who changed what</p>
     <h1>{{ "{:,}".format(listing.total) }} change{{ "" if listing.total == 1 else "s" }}</h1>
+    {# One line. `token` meaning "the admin token was the only credential" is
+       explained in docs/portal.md, which is where it is read once. #}
     <p class="note">Every change to the schedule, and the closest thing to a name the surface it
-      came from could give. <span class="mono">token</span> means the admin token was the only
-      credential the request carried — put <code>tailscale serve</code> in front to get a login
-      here.</p>
+      came from could give.</p>
   </div>
 </div>
 

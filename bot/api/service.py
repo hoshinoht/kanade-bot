@@ -404,6 +404,9 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
         "weekday": local.weekday(),
         "status": run["status"],
         "status_label": formatting.STATUS_LABEL.get(run["status"], run["status"]),
+        # The label's own emoji, for the board's compact cards, where the words
+        # do not fit and inventing a second vocabulary for them would be worse.
+        "status_mark": formatting.STATUS_MARK.get(run["status"], "•"),
         "source": run["source"],
         "fixed_run_id": run["fixed_run_id"],
         "channel_id": run["channel_id"],
@@ -1039,6 +1042,34 @@ def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
 # seven columns on a 360px screen is seven columns nobody can read.
 
 
+#: A day with nothing on it: wide enough for "Thu" stacked over "04" and for
+#: nothing else. Six of these is the difference between a board that says "the
+#: week is one busy Wednesday" and one that gives six sevenths of the canvas to
+#: emptiness.
+BOARD_SPINE = "3.5rem"
+
+#: A day with runs. Never narrower than a card can be read at, and otherwise an
+#: equal share of what the spines left behind -- equal because a day's *count*
+#: is expressed down its column, not across it. A week busy enough that seven
+#: minimums do not fit scrolls sideways rather than shrinking below legible.
+#: Written without a space inside the ``minmax`` so the track list is a
+#: whitespace-separated list of tracks and nothing else -- which is what CSS
+#: reads it as, and what a reader (or a test) can split on.
+BOARD_RUN_TRACK = "minmax(230px,1fr)"
+
+
+def board_tracks(columns: Sequence[dict]) -> str:
+    """The board's ``grid-template-columns``, sized to what each day holds.
+
+    Built here rather than in the stylesheet because the stylesheet cannot
+    count: which of the seven days have runs is a fact about this week, known
+    at render time, and the alternative is measuring it in the browser.
+    """
+    return " ".join(
+        BOARD_SPINE if not column["runs"] else BOARD_RUN_TRACK for column in columns
+    )
+
+
 def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
     """The week's runs in seven day columns, reset day first.
 
@@ -1069,6 +1100,8 @@ def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
                 "runs": sorted(by_date.get(key, []), key=lambda run: run["datetime"]),
             }
         )
+    for column in columns:
+        column["empty"] = not column["runs"]
     return columns
 
 

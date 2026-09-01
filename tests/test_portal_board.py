@@ -43,6 +43,103 @@ def test_a_day_with_nothing_on_it_is_still_a_column(auth, seeded):
     assert "board__none" in board
 
 
+# --- the area principle: width follows content ------------------------------
+
+
+def tracks_of(body: str) -> list[str]:
+    """The board's column list, as the server wrote it onto the element."""
+    style = re.search(r'class="board"[^>]*style="grid-template-columns:\s*([^"]+)"', body)
+    assert style is not None, "the board carries no track list"
+    return style.group(1).split()
+
+
+def test_a_day_with_nothing_on_it_collapses_to_a_spine(auth, seeded):
+    """Six empty days at an equal seventh each spent the page on nothing.
+
+    The seed runs on two nights, so five of the seven days are spines and two
+    share everything the spines gave back.
+    """
+    tracks = tracks_of(auth.get("/").text)
+
+    assert len(tracks) == 7
+    assert tracks.count(service.BOARD_SPINE) == 5
+    assert tracks.count(service.BOARD_RUN_TRACK) == 2
+
+
+def test_a_spine_is_a_name_wide_and_a_run_day_is_a_card_wide():
+    assert service.BOARD_SPINE == "3.5rem"
+    assert service.BOARD_RUN_TRACK.startswith("minmax(230px")
+
+
+def test_the_track_list_is_counted_from_the_runs(fake_bot, seeded):
+    """A stylesheet cannot count runs, so the server does it and says so inline."""
+    columns = service.board_columns(fake_bot, "this", service.schedule(fake_bot)["runs"])
+    tracks = service.board_tracks(columns).split()
+
+    for column, track in zip(columns, tracks, strict=True):
+        wanted = service.BOARD_SPINE if column["empty"] else service.BOARD_RUN_TRACK
+        assert track == wanted, column["weekday"]
+
+
+def test_an_empty_day_says_so_in_its_class(auth, seeded):
+    assert "board__col--empty" in board_of(auth.get("/").text)
+
+
+def test_an_empty_today_is_slim_but_still_today(auth, fake_bot):
+    """"Today, nothing on" is worth the same glance as a night with four runs."""
+    board = board_of(auth.get("/").text)  # an empty database: every day a spine
+
+    assert tracks_of(auth.get("/").text) == [service.BOARD_SPINE] * 7
+    assert "board__col--empty board__col--today" in board
+    # Today's head wash is written after the empty rules, so it survives them.
+    assert PAGE_CSS.index(".board__col--empty .board__head") < PAGE_CSS.index(
+        ".board__col--today .board__head"
+    )
+
+
+def test_a_busy_day_packs_its_runs_across_as_well_as_down():
+    """A column that took most of the board should not stretch four cards to it.
+
+    Two spaces of indent, so this finds the rule itself rather than the
+    `.board__col--empty .board__runs` override that precedes it.
+    """
+    runs = PAGE_CSS[PAGE_CSS.index("  .board__runs {") :]
+    runs = runs[: runs.index("}")]
+
+    assert "grid-template-columns: repeat(auto-fill" in runs
+    assert "align-content: start" in runs
+
+
+def test_a_difficulty_pill_never_falls_off_a_card():
+    """Measured at 153px columns: EXTREME's right edge overflowed the card by
+    21px and was clipped, because a boss is a name and a pill in one
+    inline-flex box and that box does not wrap. Now the pill drops under the
+    name, and a name too long for the column breaks instead of pushing out."""
+    rule = PAGE_CSS[PAGE_CSS.index(".runcard__bosses .boss {") :]
+    rule = rule[: rule.index("}")]
+
+    assert "flex-wrap: wrap" in rule
+    assert "min-width: 0" in rule
+
+
+def test_a_column_with_more_below_the_fold_says_so():
+    """Measured at 1280x720: the busiest column showed 113px of 631px of runs,
+    with the bottom card sliced and nothing to say the list went on."""
+    rule = PAGE_CSS[PAGE_CSS.index(".board__col:not(.board__col--empty) .board__runs {") :]
+    rule = rule[: rule.index("}")]
+
+    # Covers scroll with the content and hide the shadows at each end; the
+    # shadows are fixed to the box. So the hint is there only when it is true.
+    assert "local no-repeat" in rule
+    assert "scroll no-repeat" in rule
+    assert "scrollbar-gutter: stable" in rule
+
+
+def test_seven_busy_days_scroll_rather_than_shrink_below_legible():
+    board = PAGE_CSS[PAGE_CSS.index("  .board {") :]
+    assert "overflow-x: auto" in board[: board.index("}")]
+
+
 def test_today_is_marked(fake_bot, seeded):
     from bot.timeutil import utcnow
 
@@ -87,6 +184,33 @@ def test_an_own_time_run_says_so_rather_than_showing_a_clock(auth, fake_bot, see
     fake_bot.repo.set_run_status(seeded["run_star"], "otot")
     board = board_of(auth.get("/").text)
     assert "own time" in board
+
+
+def test_the_state_and_the_tally_share_one_line(auth, seeded):
+    """"⚠️ unconfirmed" is an emoji and a word; at a card's width the word
+    wrapped and pushed the tally onto a third line -- three lines, two facts."""
+    board = board_of(auth.get("/").text)
+    card = board[board.index('class="runcard') :]
+    card = card[: card.index("</a>")]
+
+    assert "runcard__top" in card
+    assert "⚠️" in card
+    assert "runcard__tally" in card
+    # The word is not laid out, but it is still read out and still in the tooltip.
+    assert "unconfirmed" in card
+    assert 'class="vh"' in card
+    assert 'aria-hidden="true"' in card
+
+
+def test_the_mark_on_a_card_is_the_labels_own_emoji():
+    """One vocabulary. Somebody who has read "⚠️ unconfirmed" on a Discord card
+    should not have to learn a second glyph for it on the board."""
+    from bot import formatting
+
+    assert set(formatting.STATUS_MARK) == set(formatting.STATUS_LABEL)
+    for status, label in formatting.STATUS_LABEL.items():
+        assert label.startswith(formatting.STATUS_MARK[status]), status
+        assert " " not in formatting.STATUS_MARK[status]
 
 
 # --- one rendering, two containers ------------------------------------------
