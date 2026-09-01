@@ -20,12 +20,12 @@
  * times, ids, latencies, table numbers. Slab against slab against slab: the
  * contrast is weight and width rather than serif against sans.
  *
- * Colour is five user-chosen colourways, each with an after-hours dark face the
- * system picks. The choice is the browser's own: `templates/partials/
- * theme_boot.html` stamps `data-colorway` on <html> from localStorage before
- * the first paint, and a page with no attribute at all -- no stored choice, or
- * no JavaScript -- is already wearing the one on `:root`. Which is why otonose
- * lives there rather than in a block of its own.
+ * Colour is five user-chosen colourways, each with a daytime and an after-hours
+ * face. Both choices are the browser's own: `templates/partials/theme_boot.html`
+ * stamps `data-colorway` and `data-theme` on <html> from localStorage before the
+ * first paint, and a page with neither attribute -- nothing stored, or no
+ * JavaScript -- wears otonose and lets `prefers-color-scheme` decide the hour.
+ * Which is why otonose lives on `:root` rather than in a block of its own.
  *
  * Light values live on `:root` and on the `[data-colorway]` blocks; the dark
  * ones only override inside the one media query, so no component's colour is
@@ -165,15 +165,32 @@
 
 /* ── after hours ────────────────────────────────────────────────────────────
  *
- * Chosen by the system, never by a control here: the device already knows
- * whether it is night, and a second switch in the portal would only be a way
- * for the two to disagree.
+ * Three states, not two: follow the device (the default), or say light, or say
+ * dark. The device is right nearly always, so it stays the default and the
+ * override is a preference like the colourway -- stored in this browser, read
+ * by `templates/partials/theme_boot.html` into `data-theme` before first paint.
+ *
+ * That takes two rules for one night face, and they are written out twice
+ * below. The alternative is resolving the media query in JavaScript and
+ * stamping `data-theme` always, which would mean a browser with the script off
+ * had no way to be dark at all -- exactly the degradation this portal refuses
+ * everywhere else. So: this block, guarded with `:not([data-theme="light"])`
+ * so an explicit light beats a dark device, and its twin below for an explicit
+ * dark on a light device.
+ *
+ *      >>> THE TWO DARK BLOCKS ARE COPIES. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Specificity, which is what makes the three states resolve in the right
+ * order: light `:root` and `[data-colorway]` are (0,1,0); a dark default,
+ * either spelling, is (0,2,0); a dark colourway, either spelling, is (0,3,0).
+ * The two dark spellings tie with each other and carry the same values, so the
+ * tie never shows.
  *
  * Only overrides live in here. `:root` carries otonose's night face and the
  * two shared signal colours; each colourway then restates its own eleven, so
  * every one of them is fully described in both faces. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ground: #232735;
     --surface: #303648;
     --ink: #ece4cd;
@@ -211,7 +228,7 @@
     --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
   }
 
-  [data-colorway="nazuna"] {
+  :root:not([data-theme="light"])[data-colorway="nazuna"] {
     --ground: #322629;
     --surface: #423236;
     --ink: #f0e3e2;
@@ -225,7 +242,7 @@
     --risk: #ee8f85;
   }
 
-  [data-colorway="sumire"] {
+  :root:not([data-theme="light"])[data-colorway="sumire"] {
     --ground: #262c3a;
     --surface: #343d4e;
     --ink: #e7ebf2;
@@ -239,7 +256,7 @@
     --risk: #ef8f93;
   }
 
-  [data-colorway="coral"] {
+  :root:not([data-theme="light"])[data-colorway="coral"] {
     --ground: #322a2e;
     --surface: #453d39;
     --ink: #ece1cf;
@@ -253,7 +270,7 @@
     --risk: #e2828a;
   }
 
-  [data-colorway="hinano"] {
+  :root:not([data-theme="light"])[data-colorway="hinano"] {
     --ground: #2a2436;
     --surface: #383045;
     --ink: #eae4f0;
@@ -266,6 +283,119 @@
     --ok: #86c9a8;
     --risk: #ef8b95;
   }
+}
+
+/* ── the same night, asked for rather than inherited ─────────────────────────
+ *
+ *      >>> COPIES OF THE BLOCK ABOVE. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Everything below this line is the same eleven-plus tokens as the media query
+ * carries, under the selector that means "this reader said dark" rather than
+ * "this device says dark". Nothing new is introduced here; if a token needs a
+ * different value at night, it needs it in both places. */
+
+/* Said light: nothing to override -- the light values are already on `:root`
+   and the media query above has excluded itself. Only the browser's own
+   furniture still has to be told. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  /* Scrollbars, form controls and the canvas behind the page, which otherwise
+     stay light on a light device and give the window a white halo. */
+  color-scheme: dark;
+
+  --ground: #232735;
+  --surface: #303648;
+  --ink: #ece4cd;
+  --dim: #b0ab97;
+  --line: #454b60;
+  --win: #4f5871;
+  --win-ink: #ece4cd;
+  --accent: #e9c25e;
+  --accent-ink: #2a2410;
+  --ok: #7cc79f;
+  --risk: #ef8b8b;
+
+  --warn: #e2a44f;
+  --own: #8ab8e6;
+
+  --pill-e-bg: #3a3d45;
+  --pill-e-fg: #e6e8ee;
+  --pill-n-bg: #3aa7c9;
+  --pill-n-fg: #06222b;
+  --pill-h-bg: #e8579a;
+  --pill-h-fg: #2b0716;
+  --pill-c-bg: #0e0d12;
+  --pill-c-fg: #f5b452;
+  --pill-x-bg: #0e0d12;
+  --pill-x-fg: #ff7050;
+
+  --mono-s: 32%;
+  --mono-l: 24%;
+  --mono-ink-s: 65%;
+  --mono-ink-l: 78%;
+  --mono-line-s: 28%;
+  --mono-line-l: 34%;
+
+  --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+}
+
+:root[data-theme="dark"][data-colorway="nazuna"] {
+  --ground: #322629;
+  --surface: #423236;
+  --ink: #f0e3e2;
+  --dim: #b09aa0;
+  --line: #5a464c;
+  --win: #7d5f66;
+  --win-ink: #f0e3e2;
+  --accent: #f29db4;
+  --accent-ink: #401f2a;
+  --ok: #8cccab;
+  --risk: #ee8f85;
+}
+
+:root[data-theme="dark"][data-colorway="sumire"] {
+  --ground: #262c3a;
+  --surface: #343d4e;
+  --ink: #e7ebf2;
+  --dim: #9aa3b5;
+  --line: #465063;
+  --win: #5d6981;
+  --win-ink: #e7ebf2;
+  --accent: #a8bcf0;
+  --accent-ink: #1c2438;
+  --ok: #83c8a8;
+  --risk: #ef8f93;
+}
+
+:root[data-theme="dark"][data-colorway="coral"] {
+  --ground: #322a2e;
+  --surface: #453d39;
+  --ink: #ece1cf;
+  --dim: #ab9f90;
+  --line: #5c5249;
+  --win: #6e655c;
+  --win-ink: #ece1cf;
+  --accent: #ef939b;
+  --accent-ink: #402226;
+  --ok: #8cccab;
+  --risk: #e2828a;
+}
+
+:root[data-theme="dark"][data-colorway="hinano"] {
+  --ground: #2a2436;
+  --surface: #383045;
+  --ink: #eae4f0;
+  --dim: #a49bb3;
+  --line: #4c4260;
+  --win: #5b4f73;
+  --win-ink: #eae4f0;
+  --accent: #b9a4ec;
+  --accent-ink: #241a3a;
+  --ok: #86c9a8;
+  --risk: #ef8b95;
 }
 
 *,
@@ -349,7 +479,7 @@ a:hover {
 .masthead__inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0.55rem var(--gutter) 0;
+  padding: 0.7rem var(--gutter) 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -361,13 +491,15 @@ a:hover {
   min-width: 0;
 }
 
+/* Stays clearly above the nav links, which are now nearly body size -- a brand
+   only a hair larger than the row under it reads as one more link. */
 .brand {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.18rem;
   color: var(--ink);
   text-decoration: none;
 }
@@ -445,7 +577,7 @@ a:hover {
 .nav {
   flex: 1 0 100%;
   min-width: 0;
-  margin-top: 0.3rem;
+  margin-top: 0.4rem;
 }
 
 .nav__desk {
@@ -472,12 +604,14 @@ a:hover {
   min-width: 0;
 }
 
+/* The group labels stay small -- they are labels, not destinations -- but not
+   so small that they read as noise beside links this size. */
 .nav__eyebrow {
-  padding-left: 0.55rem;
+  padding-left: 0.7rem;
   font-family: var(--mono);
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   font-weight: 500;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);
   white-space: nowrap;
@@ -488,14 +622,18 @@ a:hover {
   gap: 0.1rem;
 }
 
+/* Nearly body size. These are the eleven things the portal can show you, read
+   at arm's length on a phone at night; at 0.8rem they were the smallest type in
+   the masthead, which is the wrong end of the scale for the only navigation
+   there is. */
 .nav__link {
   flex: none;
-  padding: 0.28rem 0.55rem 0.4rem;
-  font-size: 0.8rem;
+  padding: 0.42rem 0.7rem 0.5rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--dim);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   border-radius: var(--r-sm) var(--r-sm) 0 0;
   white-space: nowrap;
 }
@@ -505,8 +643,12 @@ a:hover {
   background: var(--raise);
 }
 
+/* Where you are, said three ways -- ink, weight and the accent underline -- so
+   it does not rest on telling two greys apart in a row of eleven. */
 .nav__link[aria-current="page"] {
   color: var(--ink);
+  font-weight: 700;
+  background: var(--raise);
   border-bottom-color: var(--accent);
 }
 
@@ -1860,6 +2002,11 @@ pre {
   user-select: none;
 }
 
+/* The mode radios carry a word and no lozenge, so they get their padding back. */
+.swatch--plain {
+  padding: 0.3rem 0.8rem;
+}
+
 .swatch:hover {
   color: var(--ink);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
@@ -2129,12 +2276,13 @@ details fieldset {
     margin-left: auto;
   }
 
+  /* Sized as a link, because that is what it stands in for. */
   .nav__more-btn {
     list-style: none;
     cursor: pointer;
     user-select: none;
-    padding: 0.28rem 0.6rem 0.4rem;
-    font-size: 0.8rem;
+    padding: 0.42rem 0.7rem 0.5rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: var(--dim);
   }
@@ -2153,9 +2301,9 @@ details fieldset {
     top: calc(100% + 0.35rem);
     z-index: 30;
     display: grid;
-    gap: 0.65rem;
-    min-width: 12rem;
-    padding: 0.7rem 0.8rem;
+    gap: 0.7rem;
+    min-width: 13.5rem;
+    padding: 0.75rem 0.85rem;
     background: var(--surface);
     border: 2px solid var(--win);
     border-radius: var(--r);

@@ -1,15 +1,16 @@
-"""The colourway picker, the grouped nav, and the bot's own identity art.
+"""The look of the portal, the grouped nav, and the bot's own identity art.
 
-Three things that are only ever seen, never computed, so what is worth testing
-is the plumbing under them: a theme the server never learns and therefore cannot
-get wrong, a nav that still has every page in it, and two image routes that
-answer honestly when nothing has been cached -- which is the state a fresh
-deployment and every test run are in.
+Things that are only ever seen, never computed, so what is worth testing is the
+plumbing under them: a look the server never learns and therefore cannot get
+wrong, the two hand-copied dark blocks staying identical, a nav that still has
+every page in it, and two image routes that answer honestly when nothing has
+been cached -- which is the state a fresh deployment and every test run are in.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
@@ -23,17 +24,62 @@ from .fake_bot import ADMIN_TOKEN, make_settings
 PNG = b"\x89PNG\r\n\x1a\n and then some pixels"
 
 PAGE_JS = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+
+DARK_MEDIA = "@media (prefers-color-scheme: dark)"
 
 
-# --- the theme never reaches the server -------------------------------------
+def rule_body(selector: str) -> str:
+    """What one rule declares, by exact selector.
+
+    Token blocks contain no nested braces, so "up to the next `}`" is the whole
+    rule. The selector is matched with the brace attached, which is what keeps
+    `:root:not([data-theme="light"])` from also matching its colourway variants.
+    """
+    match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS)
+    assert match is not None, f"no rule for {selector}"
+    return match.group(1)
 
 
-def test_no_page_is_rendered_wearing_a_colourway(auth, seeded):
-    """It is this browser's preference: the bot has no opinion and keeps no note."""
+def tokens_of(selector: str) -> dict[str, str]:
+    """The custom properties one rule sets, as name -> value."""
+    return {
+        name: value.strip()
+        for name, value in re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", rule_body(selector))
+    }
+
+
+def dark_twins() -> list[tuple[str, str]]:
+    """Every pair of "the device says dark" / "the reader said dark" blocks."""
+    pairs = [(':root:not([data-theme="light"])', ':root[data-theme="dark"]')]
+    for way in COLORWAYS:
+        if way["key"] == DEFAULT_COLORWAY:
+            continue  # otonose is the unqualified one, already above
+        key = way["key"]
+        pairs.append(
+            (
+                f':root:not([data-theme="light"])[data-colorway="{key}"]',
+                f':root[data-theme="dark"][data-colorway="{key}"]',
+            )
+        )
+    return pairs
+
+
+def media_block() -> str:
+    start = PAGE_CSS.index(DARK_MEDIA)
+    return PAGE_CSS[start : PAGE_CSS.index("\n}\n", start)]
+
+
+# --- the look never reaches the server --------------------------------------
+
+
+def test_no_page_is_rendered_wearing_a_look(auth, seeded):
+    """Both are this browser's preference: the bot has no opinion and keeps no note."""
     for path in ("/", "/config", "/extractions/deadbeef"):
         body = auth.get(path).text
         assert '<html lang="en">' in body
         assert "data-colorway=" not in body
+        assert "data-theme=" not in body
 
 
 def test_choosing_one_writes_nothing_back(auth):
@@ -65,10 +111,22 @@ def test_the_bootstrap_only_ever_stamps_one_of_the_five(auth):
     assert "try {" in snippet and "catch" in snippet
 
 
+def test_the_bootstrap_stamps_the_mode_and_only_the_two(auth):
+    """Same rule as the colourway: validated before it becomes an attribute."""
+    body = auth.get("/").text
+    snippet = body[body.index("<script>") : body.index("</script>")]
+    assert 'localStorage.getItem("theme")' in snippet
+    assert '["light", "dark"].indexOf(t) > -1' in snippet
+    assert "document.documentElement.dataset.theme = t" in snippet
+    # "system" is never stored, so it must not be a value the snippet knows.
+    assert '"system"' not in snippet
+
+
 def test_the_sign_in_page_carries_it_too(client):
     """Its own document, so it needs its own copy -- which is why it is a partial."""
     body = client.get("/login").text
     assert 'localStorage.getItem("colorway")' in body
+    assert 'localStorage.getItem("theme")' in body
     assert body.index("<script>") < body.index('href="/static/portal.css"')
 
 
@@ -97,6 +155,21 @@ def test_the_script_applies_the_choice_and_then_remembers_it(auth):
     assert applied < PAGE_JS.index("window.localStorage.setItem(COLORWAY_KEY, input.value)")
 
 
+def test_the_script_and_the_snippet_agree_on_the_two_modes(auth):
+    """The stylesheet only knows "light" and "dark"; nothing may store a third."""
+    body = auth.get("/").text
+    snippet = body[body.index("<script>") : body.index("</script>")]
+
+    assert 'var THEMES = ["light", "dark"];' in PAGE_JS
+    assert '["light", "dark"]' in snippet
+
+
+def test_choosing_system_puts_the_question_back_to_the_device(auth):
+    """It is the absence of a stored choice, so both the key and the attribute go."""
+    assert "delete document.documentElement.dataset.theme" in PAGE_JS
+    assert "window.localStorage.removeItem(THEME_KEY)" in PAGE_JS
+
+
 # --- the card ---------------------------------------------------------------
 
 
@@ -112,23 +185,99 @@ def test_the_config_page_offers_all_five_with_the_default_ticked(auth):
     # `markColorway` in portal.js moves the tick as soon as it runs.
     flat = " ".join(card.split())
     assert f'value="{DEFAULT_COLORWAY}" checked' in flat
-    assert flat.count("checked") == 1
+    # One per fieldset: the default colourway, and System.
+    assert flat.count("checked") == 2
+
+
+def test_the_config_page_offers_the_three_modes_with_system_checked(auth):
+    """System is what a browser with nothing stored -- and no script -- is on."""
+    body = auth.get("/config").text
+    card = " ".join(body[body.index("Colourway") : body.index("Weekly digest")].split())
+
+    for value, label in (("system", "System"), ("light", "Light"), ("dark", "Dark")):
+        assert f'name="thememode" value="{value}"' in card
+        assert f">{label}<" in card
+    assert 'value="system" checked' in card
+    assert 'value="light" checked' not in card
+    assert 'value="dark" checked' not in card
 
 
 def test_the_card_is_not_a_form_and_says_why(auth):
-    """The one documented exception to "every control is a real form"."""
+    """The two documented exceptions to "every control is a real form"."""
     body = auth.get("/config").text
     card = body[body.index("Colourway") : body.index("Weekly digest")]
 
     assert "<form" not in card
     assert 'action="/theme"' not in card
     assert "<noscript>" in card
-    assert "needs JavaScript" in card
+    assert "JavaScript" in card
 
 
-def test_the_script_moves_the_tick_to_whatever_is_stored(auth):
+def test_the_script_moves_both_ticks_to_whatever_is_stored(auth):
     assert 'querySelectorAll(\'input[name="colorway"]\')' in PAGE_JS
+    assert 'querySelectorAll(\'input[name="thememode"]\')' in PAGE_JS
     assert "onReady(markColorway)" in PAGE_JS
+    assert "onReady(markTheme)" in PAGE_JS
+
+
+# --- the stylesheet's two dark faces ----------------------------------------
+
+
+@pytest.mark.parametrize("inherited,chosen", dark_twins())
+def test_the_two_dark_blocks_say_exactly_the_same_thing(inherited, chosen):
+    """The one real risk in this design: one night face, written out twice.
+
+    A dark palette cannot be expressed once, because "the device says dark" is a
+    media query and "the reader said dark" is a selector, and CSS has no way to
+    or them together. Resolving it in JavaScript instead would leave a browser
+    with the script off unable to be dark at all. So they are copies -- and this
+    is what notices when somebody edits one of them.
+    """
+    assert tokens_of(inherited)
+    assert tokens_of(inherited) == tokens_of(chosen)
+
+
+def test_an_explicit_light_beats_a_dark_device():
+    """Every block in the media query steps aside for a reader who asked for light."""
+    selectors = re.findall(r"^  (\S.*?) \{$", media_block(), re.MULTILINE)
+
+    assert selectors
+    for selector in selectors:
+        assert selector.startswith(':root:not([data-theme="light"])'), selector
+
+
+def test_the_media_query_carries_tokens_and_nothing_else():
+    """A component styled only in there would lose its colours under `data-theme`.
+
+    Everything else in this file reads its colour from a token, and the tokens
+    are declared in both faces; a rule that only exists when the *device* is dark
+    would simply not apply to somebody who asked for dark on a light machine.
+    """
+    body = re.sub(r"/\*.*?\*/", "", media_block(), flags=re.DOTALL)
+    ordinary = re.findall(r"^\s+(?!--)([a-z][\w-]*)\s*:", body, re.MULTILINE)
+
+    assert ordinary == []
+
+
+def test_an_explicit_choice_tells_the_browsers_own_furniture_too():
+    """Scrollbars and form controls, which otherwise stay on the device's answer."""
+    assert "color-scheme: light dark;" in rule_body(":root")
+    assert "color-scheme: light;" in rule_body(':root[data-theme="light"]')
+    assert "color-scheme: dark;" in rule_body(':root[data-theme="dark"]')
+
+
+# --- the nav ----------------------------------------------------------------
+
+
+def test_the_nav_links_are_big_enough_to_read():
+    """From feedback on the live portal: at 0.8rem they were the smallest type in
+    the masthead, which is the wrong end of the scale for the only navigation
+    there is. A floor rather than a fixed size -- the point is that it never
+    goes back to being fine print."""
+    size = re.search(r"font-size:\s*([\d.]+)rem", rule_body(".nav__link"))
+
+    assert size is not None
+    assert float(size.group(1)) >= 0.9
 
 
 # --- the nav ----------------------------------------------------------------
