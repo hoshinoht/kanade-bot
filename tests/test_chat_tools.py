@@ -54,7 +54,7 @@ def line_for(answer: str, run_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_tool_list_is_exactly_the_documented_nine():
+def test_the_tool_list_is_exactly_the_documented_ten():
     assert tools.tool_names() == [
         "get_schedule",
         "get_run",
@@ -64,6 +64,7 @@ def test_the_tool_list_is_exactly_the_documented_nine():
         "propose_add",
         "propose_cancel",
         "propose_remove_fixed",
+        "propose_change_fixed",
         "propose_rsvp",
     ]
 

@@ -250,6 +250,58 @@ def refresh_run_reminders(
     ensure_reminders(repo, run, tz, ping_time, countdowns, now=now, rebuild=True)
 
 
+def apply_fixed_to_runs(
+    repo: Repo,
+    fixed_id: str,
+    changed: Sequence[str],
+    week_starts: Sequence[datetime],
+    tz: ZoneInfo,
+    ping_time: time,
+    countdowns: Sequence[int],
+) -> int:
+    """Push an edited weekly timing onto the runs it has already produced.
+
+    The pure half of `/fixed edit`, in the shape :func:`retire_fixed_run` is the
+    pure half of `/fixed remove`: the chatbot's ratified ``fix``/``edit`` card
+    commits through it, so a timing changed from chat leaves the database in the
+    state the slash command and the portal leave it in.
+
+    Only the fields the edit actually *touched* are pushed, which is the rule the
+    other two routes follow (``bot.commands._apply_fixed_to_runs``,
+    ``bot.api.service._apply_fixed_to_runs``): re-snapping every field would undo
+    this week's `/amend` -- editing a note would drag a run that was moved
+    Mon -> Wed back to Monday. A run that is already ``done`` or ``cancelled`` is
+    left alone, because rewriting a night that has happened would falsify the
+    record of it.
+
+    Returns how many runs were touched.
+    """
+    fixed = repo.get_fixed_run(fixed_id)
+    fields = set(changed)
+    if fixed is None or not fields:
+        return 0
+    reschedule = bool(fields & {"weekday", "time"})
+    touched = 0
+    for week_start in week_starts:
+        run = repo.run_for_fixed(fixed_id, week_start)
+        if run is None or run["status"] in ("done", "cancelled"):
+            continue
+        if "bosses" in fields:
+            repo.set_run_bosses(run["id"], fixed["bosses"])
+        if "participants" in fields:
+            repo.set_run_participants(run["id"], fixed["participants"])
+        if "channel_id" in fields:
+            repo.set_run_channel(run["id"], fixed["channel_id"])
+        if reschedule:
+            hour, minute = (int(part) for part in fixed["time"].split(":"))
+            run_at = slot_in_week(week_start, tz, fixed["weekday"], time(hour, minute))
+            repo.set_run_datetime(run["id"], run_at, week_start)
+            # Only the slot moved, so only the reminders need re-placing.
+            refresh_run_reminders(repo, run["id"], tz, ping_time, countdowns)
+        touched += 1
+    return touched
+
+
 def retire_fixed_run(
     repo: Repo,
     fixed_id: str,

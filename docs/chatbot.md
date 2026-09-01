@@ -42,22 +42,25 @@ Holders of `ADMIN_ROLE_ID` — the existing "who runs this bot" role — pass th
 chat-role check without also holding the pilot role, and stay exempt from the
 rate limit. Everyone else needs the pilot role.
 
-**It cannot change the schedule.** Its read tools answer questions; its four
-write tools (`propose_add`, `propose_move`, `propose_cancel`, `propose_rsvp`)
-post the *same* ✅/❌ proposal card the extractor posts, through the same code,
-and a participant still has to react ✅ before anything happens. It cannot
+**It cannot change the schedule.** Its read tools answer questions; its six
+write tools post the *same* ✅/❌ proposal card the extractor posts, through the
+same code, and a participant still has to react ✅ before anything happens. It cannot
 approve, reject or edit a card, and it can only ever RSVP for the person talking
 to it. Prompt injection is bounded by that structure rather than by prompt
 wording: the worst a "cancel everything" message achieves is a stack of cancel
 *cards*.
 
-Its write tools are `propose_add` (a new run), `propose_move`, `propose_cancel`
-(one dated night off), `propose_remove_fixed` (the recurring weekly baseline —
-future weeks stop being scheduled) and `propose_rsvp`. The two removals are
-deliberately distinct: cancelling frees an evening, removing a fixed timing
-stops the boss being scheduled at all, and the cards say which is which. Ask it
-"what's on in this channel?" and it filters to that channel; ask without that
-and it names which channel each run lives in.
+Its write tools are `propose_add` (a new run), `propose_move` (one dated run to
+another night), `propose_cancel` (one dated night off), `propose_remove_fixed`
+(the recurring weekly baseline — future weeks stop being scheduled),
+`propose_change_fixed` (the same baseline changed in place: a new night, a new
+party, or both) and `propose_rsvp`. The two removals are deliberately distinct:
+cancelling frees an evening, removing a fixed timing stops the boss being
+scheduled at all, and the cards say which is which. So are the two changes:
+`propose_move` moves one week's run, `propose_change_fixed` moves the weekly
+itself — and neither is `propose_add`, which would leave a second weekly beside
+the first. Ask it "what's on in this channel?" and it filters to that channel;
+ask without that and it names which channel each run lives in.
 
 **It asks rather than guesses.** When a write is missing something — no time, a
 boss with no difficulty ("bellona" is three different fights), a name that could

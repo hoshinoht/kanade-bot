@@ -527,6 +527,12 @@ KIND_VERB: dict[str, str] = {
     "rsvp": "answer",
 }
 
+#: The `fix` cards that are not "new weekly", by the ``op`` marker their payload
+#: carries (:data:`bot.extract.commit.FIX_REMOVE` and ``FIX_EDIT``). Spelled out
+#: rather than imported: this module is what everything else formats through and
+#: it knows nothing of the extractor.
+FIX_VERB: dict[str, str] = {"remove": "remove weekly", "edit": "change weekly"}
+
 #: How an `rsvp` amendment reads on a proposal card.
 RSVP_ANSWER: dict[str | None, str] = {
     "yes": "**can make it**",
@@ -579,6 +585,39 @@ def weekly_text(amendment: dict, tz: ZoneInfo) -> str:
     )
 
 
+def weekly_change_text(amendment: dict, who: Audience | None = None) -> list[str]:
+    """How a `fix` that *edits* a baseline reads: what it is now, what it becomes.
+
+    Old → new on both halves, and never one without the other. The failure this
+    card exists for is a weekly that got "changed" by putting a second one beside
+    it: whoever reads this has to see at a glance that it is the same timing
+    moved, not another one added.
+
+    A half that is not changing is simply absent from the payload, so it is shown
+    as it stands rather than arrowed to itself.
+    """
+    payload = amendment.get("payload") or {}
+    was = payload.get("weekly_when")
+    weekday, hhmm = payload.get("weekday"), payload.get("time")
+    lines: list[str] = []
+    if weekday is not None and hhmm:
+        moved = f"**every {WEEKDAY_NAMES[int(weekday)]} {hhmm}**"
+        lines.append(
+            (f"~~every {was}~~ → {moved}" if was else moved)
+            + " — the weekly timing itself, so every week from now on; "
+            "this week's run moves with it"
+        )
+    elif was:
+        lines.append(f"**every {was}** — the night is unchanged")
+    party = [str(uid) for uid in payload.get("participants") or []]
+    if party:
+        lines.append(
+            f"{format_participants([str(u) for u in amendment['participants']], who)} → "
+            f"{format_participants(party, who)}"
+        )
+    return lines
+
+
 def proposal_line(
     amendment: dict, run: dict | None, tz: ZoneInfo, who: Audience | None = None
 ) -> tuple[str, str]:
@@ -598,8 +637,10 @@ def proposal_line(
     #: and "cancel tonight" are a fortnight apart in consequence: one stops the
     #: guild scheduling this boss at all, the other frees up one evening.
     removes_baseline = amendment["kind"] == "fix" and payload.get("op") == "remove"
-    verb = (
-        "remove weekly" if removes_baseline else KIND_VERB.get(amendment["kind"], amendment["kind"])
+    #: The third `fix`: the same baseline, changed rather than created or retired.
+    changes_baseline = amendment["kind"] == "fix" and payload.get("op") == "edit"
+    verb = (FIX_VERB.get(str(payload.get("op"))) if amendment["kind"] == "fix" else None) or (
+        KIND_VERB.get(amendment["kind"], amendment["kind"])
     )
     name = f"{verb} · {bosses}"
     if run is not None:
@@ -613,6 +654,8 @@ def proposal_line(
             f"**stop scheduling this every week**{f' ({when})' if when else ''} — "
             "future weeks will not be scheduled, and this week's run is cancelled"
         )
+    elif changes_baseline:
+        lines.extend(weekly_change_text(amendment, who))
     elif kind == "fix":
         lines.append(weekly_text(amendment, tz))
     elif kind in ("move", "add", "split"):
@@ -649,7 +692,10 @@ def proposal_line(
         lines.append(when_text(amendment, tz))
 
     people = amendment["participants"] or (run["participants"] if run else [])
-    if people and kind != "sub":
+    # A change card that alters the party has already said so as old → new;
+    # repeating the old list under it would read as the party it is becoming.
+    party_shown = changes_baseline and bool(payload.get("participants"))
+    if people and kind != "sub" and not party_shown:
         lines.append(format_participants(people, who))
     if amendment.get("summary"):
         lines.append(f"_{amendment['summary']}_")

@@ -15,7 +15,7 @@ behind it) and is asking from the channel it lives in -- see
 one member could raise cards about every other party's evenings from their own
 channel.
 
-**No write reaches the schedule.**  The five ``propose_*`` tools do not change
+**No write reaches the schedule.**  The six ``propose_*`` tools do not change
 anything: they create a ``proposed`` amendment row and post the same ✅/❌ card
 the extractor posts, through the same :meth:`bot.extract.pipeline.Pipeline.apply_plan`
 call, and a human with the right to confirm it has to react. The chatbot cannot
@@ -38,14 +38,14 @@ from typing import Any
 from .. import formatting
 from ..api import service
 from ..api.errors import BadRequest, NotFound
-from ..extract.commit import FIX_REMOVE
+from ..extract.commit import FIX_EDIT, FIX_REMOVE
 from ..extract.pipeline import Planned
 from ..extract.resolve import WEEKDAY_ALIASES, Resolved
 from ..extract.schema import Amendment
 from ..ids import short_id
 from ..timeutil import utcnow
 from ..util import resolve_participant_text
-from ..weeks import WEEKDAY_NAMES, week_start
+from ..weeks import WEEKDAY_NAMES, parse_hhmm, parse_weekday, week_start
 from . import gate
 
 log = logging.getLogger(__name__)
@@ -195,8 +195,11 @@ TOOLS: list[dict] = [
     ),
     _tool(
         "propose_move",
-        "Post a card proposing that a run moves to a new day and time. This does NOT "
-        "move the run: somebody has to react ✅ on the card first.",
+        "Post a card proposing that ONE dated run moves to a new day and time -- that "
+        "night only, leaving the rest of the schedule alone. If they mean the recurring "
+        'weekly itself ("change the weekly to 23:30", "we do it on Wednesdays now"), use '
+        "propose_change_fixed instead. This does NOT move the run: somebody has to react "
+        "✅ on the card first.",
         {
             "run_query": _RUN_QUERY,
             "to_when": {
@@ -209,7 +212,9 @@ TOOLS: list[dict] = [
     _tool(
         "propose_add",
         "Post a card proposing a NEW run that is not on the schedule yet. By default it is "
-        "a ONE-TIME run that week -- only `weekly` makes it recurring. This does NOT create "
+        "a ONE-TIME run that week -- only `weekly` makes it recurring. Never use this to "
+        "change a weekly that already exists: it would leave a second one beside it and "
+        "the party on neither. Use propose_change_fixed for that. This does NOT create "
         "it: somebody has to react ✅ on the card first.",
         {
             "boss": {
@@ -228,7 +233,13 @@ TOOLS: list[dict] = [
                 "type": "string",
                 "description": (
                     "Optional. Who the run is for, by name, comma separated. Leave it out "
-                    "for just the person asking -- which is the default."
+                    "for just the person asking -- which is the default. When you do fill "
+                    "it in, the person asking goes in it too whenever they put themselves "
+                    "on the run -- 'for me', 'for us', 'I'll come', 'count me in'. Every "
+                    "line you are shown is labelled with who said it, so their name is one "
+                    "you can write; the word 'me' works as well. 'Schedule a run for me "
+                    "and kanon' is a run for BOTH of them: never leave out the person "
+                    "asking for it."
                 ),
             },
             "weekly": {
@@ -236,7 +247,10 @@ TOOLS: list[dict] = [
                 "description": (
                     "Optional, default false, meaning ONE run on that day only. Set it true "
                     "ONLY when they explicitly say it repeats -- 'weekly', 'every week', "
-                    "'every Tuesday', 'recurring', 'fixed'. 'Schedule a run', 'add a run "
+                    "'every Tuesday', 'recurring', 'fixed'. A separate sentence about the "
+                    "run they just asked for counts as saying it: 'tonight 1900, this is "
+                    "fixed', 'make it fixed', 'make it weekly' are all true, even though "
+                    "the rest of the line reads one-time. 'Schedule a run', 'add a run "
                     "tonight', 'can we do HStar friday' are all one-time: leave it out. If "
                     "their wording is unclear, do NOT ask which they mean -- leave it out. "
                     "One-time is the safe default and the card says which one it is."
@@ -269,6 +283,55 @@ TOOLS: list[dict] = [
                     "several) a day, like 'weekly hbellona' or 'bellona tuesday'."
                 ),
             }
+        },
+        ["query"],
+    ),
+    _tool(
+        "propose_change_fixed",
+        "Post a card proposing that an EXISTING recurring weekly timing changes: the day "
+        "and time it happens every week, who is on it, or both. This is the tool for "
+        '"change the weekly to 23:30", "we do the fixed run on Wednesdays now" and "add '
+        "Priya to the weekly\". It is NOT for one week's run on its own -- propose_move "
+        "does that -- and never reach for propose_add instead: adding another weekly "
+        "leaves a duplicate and the party split across the two. This does NOT change "
+        "anything: somebody has to react ✅ on the card first.",
+        {
+            "query": {
+                "type": "string",
+                "description": (
+                    "Which weekly timing: its short id from an earlier tool result, or the "
+                    "boss and the day it runs on NOW, like 'hlimbo monday'. A channel can "
+                    "have several weekly timings -- even two for the same boss on different "
+                    "nights -- so give the boss AND its current day, and the time too if "
+                    "that is still not enough. If you cannot tell which one they mean, ask "
+                    "them; never pick one yourself."
+                ),
+            },
+            "day": {
+                "type": "string",
+                "description": (
+                    "Optional. The new day of the week it should happen on, e.g. "
+                    "'wednesday'. Leave it out when only the time changes."
+                ),
+            },
+            "time": {
+                "type": "string",
+                "description": (
+                    "Optional. The new start time, e.g. '23:30' or '9:30pm'. Leave it out "
+                    "when only the day changes."
+                ),
+            },
+            "participants": {
+                "type": "string",
+                "description": (
+                    "Optional. The WHOLE party it should have from now on, by name, comma "
+                    "separated -- not only the people joining or leaving. That includes "
+                    "the person asking whenever they put themselves on it: 'add me to the "
+                    "weekly' means the party it has now plus them, and every line you are "
+                    "shown is labelled with who said it. Leave it out to keep the party "
+                    "exactly as it is."
+                ),
+            },
         },
         ["query"],
     ),
@@ -744,6 +807,8 @@ def _card_when(
 ) -> str:
     """The day and time a card shows, in the words the card itself uses."""
     if kind == "fix":
+        if payload.get("op") == FIX_EDIT:
+            return _changed_when(payload)
         weekly = payload.get("weekly_when")
         if weekly:
             return f"every {weekly}"
@@ -752,6 +817,20 @@ def _card_when(
             return f"every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
     when = at if at is not None else (run["datetime"] if run is not None else None)
     return f"{when.astimezone(ctx.bot.tz):%a %d %b %H:%M}" if when is not None else ""
+
+
+def _changed_when(payload: dict) -> str:
+    """A change-the-weekly card's night, as ``was → is``.
+
+    The old night is always named, even when only the party is moving, because
+    the sentence the model reads back has to identify *which* weekly timing it
+    just carded -- there may well be two for that boss.
+    """
+    was = payload.get("weekly_when") or ""
+    weekday, hhmm = payload.get("weekday"), payload.get("time")
+    if weekday is not None and hhmm:
+        return f"every {was} → every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
+    return f"every {was} (same night)"
 
 
 def _card_text(
@@ -770,10 +849,26 @@ def _card_text(
     here is the resolved one -- the ids actually written to the row -- by display
     name, and the bosses are spelled out the way the card spells them.
     """
+    payload = dict(payload or {})
     people = list(amendment.participants) or (list(run["participants"]) if run else [])
-    party = ", ".join(service.member_name(ctx.bot, uid) for uid in people) or "nobody yet"
-    when = _card_when(ctx, kind, at, run, dict(payload or {}))
+    party = _names(ctx, people) or "nobody yet"
+    # A card that changes the party says both sides of it, for the same reason
+    # the night is said both ways: the row's own participants are the party as it
+    # stands, and reading that back as "the party on it" would be the old one.
+    joining = (
+        [str(uid) for uid in payload.get("participants") or []]
+        if payload.get("op") == FIX_EDIT
+        else []
+    )
+    if joining:
+        party = f"{party} → {_names(ctx, joining)}"
+    when = _card_when(ctx, kind, at, run, payload)
     return f"{formatting.boss_labels(amendment.bosses)}{f' {when}' if when else ''} — {party}"
+
+
+def _names(ctx: ToolContext, user_ids: Sequence[str]) -> str:
+    """A party by display name, never as mentions -- the model must not learn to ping."""
+    return ", ".join(service.member_name(ctx.bot, uid) for uid in user_ids)
 
 
 async def _propose_move(ctx: ToolContext, args: dict) -> str:
@@ -1057,9 +1152,17 @@ async def _propose_weekly(
 
 
 def _fixed_line(bot: Any, fixed: dict) -> str:
+    """One weekly timing, with enough on it to be told from another.
+
+    The party is named as well as the night because a guild has several weekly
+    timings and the same boss can be on twice a week: "every Mon 21:30 Hard Star"
+    is not, on its own, a question a member can answer. The short id leads, since
+    passing it back is how the model ends the ambiguity for good.
+    """
+    party = ", ".join(service.member_name(bot, uid) for uid in fixed["participants"])
     return (
         f"[{short_id(fixed['id'])}] every {WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']} "
-        f"{formatting.boss_labels(fixed['bosses'])}"
+        f"{formatting.boss_labels(fixed['bosses'])}" + (f" with {party}" if party else "")
     )
 
 
@@ -1073,7 +1176,14 @@ def resolve_fixed(bot: Any, query: str) -> dict:
     The same shape as :func:`resolve_run` and for the same reason: ids first,
     through the service layer's prefix resolution, then a boss/day search that
     refuses rather than guesses. Removing the wrong baseline is worse than
-    cancelling the wrong night -- nothing re-materialises it.
+    cancelling the wrong night -- nothing re-materialises it, and changing the
+    wrong one moves a party's evening without anybody having asked.
+
+    A query that still matches several timings ends here, in a refusal that names
+    all of them (:func:`_fixed_line`) and tells the model to ask. There is no
+    first-match fallback and there must not be one: a guild runs several weekly
+    timings, sometimes the same boss twice a week, and picking one of those is
+    picking somebody's night at random.
     """
     text = (query or "").strip()
     if not text:
@@ -1112,7 +1222,12 @@ def resolve_fixed(bot: Any, query: str) -> dict:
         raise ToolError(f"No weekly timing matches `{text}`.")
     if len(matches) > 1:
         listed = "; ".join(_fixed_line(bot, f) for f in matches[:MAX_RUNS])
-        raise ToolError(f"`{text}` matches more than one weekly timing. Ask which one: {listed}")
+        raise ToolError(
+            f"`{text}` matches more than one weekly timing. Ask which one they mean -- name "
+            "the boss and the night each one is on, and do not pick one yourself. Their "
+            "answer comes back as a normal message and you can call the tool again then, "
+            f"with the short id in brackets if that is clearer: {listed}"
+        )
     return matches[0]
 
 
@@ -1142,6 +1257,108 @@ async def _propose_remove_fixed(ctx: ToolContext, args: dict) -> str:
         },
         summary=(
             f"stop scheduling {formatting.boss_labels(fixed['bosses'])} every {_fixed_when(fixed)}"
+        ),
+    )
+
+
+def _new_slot(args: dict, fixed: dict) -> tuple[int, str]:
+    """The weekday and HH:MM the timing should have, keeping whatever is not changing.
+
+    Each half is optional because half a change is the common request -- "same
+    night, half an hour later" -- and defaulting the other half to the row's own
+    value is the only reading of that sentence. Both are read through the
+    parsers `/fixed edit` uses, so "weds" and "9:30pm" mean here what they mean
+    in the slash command.
+    """
+    raw_day = str(args.get("day") or "").strip()
+    raw_time = str(args.get("time") or "").strip()
+    try:
+        weekday = parse_weekday(raw_day) if raw_day else int(fixed["weekday"])
+    except ValueError as exc:
+        raise ToolError(f"{exc}. Ask them which day of the week it should be.") from None
+    try:
+        hhmm = parse_hhmm(raw_time).strftime("%H:%M") if raw_time else str(fixed["time"])
+    except ValueError as exc:
+        raise ToolError(f"{exc}. Ask them what time it should start.") from None
+    return weekday, hhmm
+
+
+def _new_party(ctx: ToolContext, value: Any) -> list[str] | None:
+    """The party the timing should have, or ``None`` for "leave it alone".
+
+    The empty field means the opposite of what it means to ``propose_add``, where
+    it is the asker. Here the party already exists, and a model that omits the
+    argument -- or copies the trigger mention into it, which is what
+    :func:`_without_the_bot` exists to catch -- must not thereby cut a weekly
+    timing down to whoever happened to ask about it.
+    """
+    raw = ", ".join(str(t) for t in value) if isinstance(value, (list, tuple)) else str(value or "")
+    without_bot, _ = _without_the_bot(ctx, raw)
+    if not without_bot.strip():
+        return None
+    return _validate_participants(ctx, raw)
+
+
+async def _propose_change_fixed(ctx: ToolContext, args: dict) -> str:
+    """Post a card proposing that an existing weekly timing changes.
+
+    The gap this closes, live: asked to "update this hard limbo timing to 23:30",
+    the model had only ``propose_move`` -- which moves the one night already
+    materialised -- and ``propose_add``. It tried the first, was told that was
+    not what was meant, and then created a *second* weekly at 23:30 beside the
+    21:30 one: a duplicate nothing removed, and the other two members left off it.
+
+    Which row is changed comes from :func:`resolve_fixed` and from nothing else
+    the model wrote, exactly as in :func:`_propose_remove_fixed`; the arguments
+    only ever say what the new night or party should be, and are re-validated
+    here before either reaches the payload.
+    """
+    fixed = resolve_fixed(ctx.bot, str(args.get("query") or ""))
+    _require_authority(ctx, fixed=fixed)
+    weekday, hhmm = _new_slot(args, fixed)
+    party = _new_party(ctx, args.get("participants"))
+
+    people = [str(p) for p in fixed["participants"]]
+    moves = (weekday, hhmm) != (int(fixed["weekday"]), str(fixed["time"]))
+    reparties = party is not None and party != people
+    if not moves and not reparties:
+        raise ToolError(
+            f"Nothing about the weekly {formatting.boss_labels(fixed['bosses'])} "
+            f"({_fixed_when(fixed)}) would change. Ask them what should change about it -- "
+            "the day, the time, or who is on it."
+        )
+
+    was, becomes = _fixed_when(fixed), f"{WEEKDAY_NAMES[weekday]} {hhmm}"
+    payload: dict[str, Any] = {
+        "op": FIX_EDIT,
+        "fixed_run_id": fixed["id"],
+        # What it is now, so the card and the ✅ handler can both say which night
+        # is being changed without looking the row up again.
+        "weekly_when": was,
+    }
+    changes = []
+    if moves:
+        payload["weekday"] = weekday
+        payload["time"] = hhmm
+        changes.append(f"{was} → {becomes}")
+    if reparties:
+        payload["participants"] = party
+        changes.append(f"party {_names(ctx, people)} → {_names(ctx, party)}")
+    return await _propose(
+        ctx,
+        kind="fix",
+        run=None,
+        at=None,
+        bosses=list(fixed["bosses"]),
+        # The party it has *now*, not the one proposed: this is the row
+        # `bot.extract.commit.may_commit` reads when a card names no run, so it
+        # decides who may press ✅ -- and that is the people the timing already
+        # affects, never somebody the call has just written onto it.
+        participants=people,
+        week=service.week_for(ctx.bot, "this"),
+        payload=payload,
+        summary=(
+            f"change the weekly {formatting.boss_labels(fixed['bosses'])}: " + "; ".join(changes)
         ),
     )
 
@@ -1207,6 +1424,7 @@ _READ = {
 _WRITE = {
     "propose_add": _propose_add,
     "propose_remove_fixed": _propose_remove_fixed,
+    "propose_change_fixed": _propose_change_fixed,
     "propose_move": _propose_move,
     "propose_cancel": _propose_cancel,
     "propose_rsvp": _propose_rsvp,
@@ -1214,7 +1432,7 @@ _WRITE = {
 
 
 def read_tools() -> list[dict]:
-    """:data:`TOOLS` with the five ``propose_*`` schemas taken out.
+    """:data:`TOOLS` with the six ``propose_*`` schemas taken out.
 
     What a read-only turn (:attr:`ToolContext.read_only`) is offered. Deriving
     it from :data:`TOOLS` rather than listing the read schemas again means a
