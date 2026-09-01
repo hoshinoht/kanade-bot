@@ -1,11 +1,13 @@
-{# Everything on this page is live state, so the panel replaces itself every few
-   seconds -- the same self-polling fragment the rescan progress block uses. Five
-   seconds rather than the rescan's two: nothing here has a finish line to watch
-   for, and the request is free (it reads the limiters, it never spends them).
-   With htmx blocked the Refresh link does the same job by hand. #}
-<div id="limits" hx-get="/limits/live" hx-trigger="load delay:5s"
-     hx-target="this" hx-swap="outerHTML">
+{% from "partials/macros.html" import clear_override, reset_window %}
+{# The live half of the page: everything here is re-read on a timer, so it must
+   hold nothing a person can be part-way through. NO INPUTS BELOW THIS LINE --
+   the one form on this page lives outside the polled region in `limits.html`,
+   which is what stops a refresh eating a half-typed allowance. Buttons and
+   links are fine: a swap that lands between reading one and pressing it costs
+   nothing, because the row it was on is either still there or no longer true.
 
+   The wrapper with the polling attributes is in `limits.html` too, so the timer
+   survives each swap rather than being rebuilt by it. #}
 <div class="stats">
   <section class="stat">
     <p class="stat__name">The model</p>
@@ -16,7 +18,11 @@
     {% endif %}
     <dl class="stat__rows">
       <div><dt>Held for</dt>
-        <dd class="mono">{% if limits.model.busy %}{{ "%.1f"|format(limits.model.held_for_s) }}s{% else %}—{% endif %}</dd></div>
+        {# Counted forward in the browser between events (`static/portal.js`),
+           because the events fire when the lock is taken and given back, not
+           every second in between. #}
+        <dd class="mono">{% if limits.model.busy %}<span
+          data-held-for="{{ "%.0f"|format(limits.model.held_for_s) }}">{{ "%.0f"|format(limits.model.held_for_s) }}s</span>{% else %}—{% endif %}</dd></div>
       <div><dt>Extracting</dt>
         <dd class="mono">{{ "yes" if limits.jobs.extracting else "no" }}</dd></div>
     </dl>
@@ -121,13 +127,7 @@
           </td>
           {# The refreshed panel is the confirmation: clear a window and its row
              is simply not in what comes back. #}
-          <td>
-            <form method="post" action="/limits/windows/{{ row.user_id }}/reset"
-                  hx-post="/limits/windows/{{ row.user_id }}/reset"
-                  hx-target="#limits" hx-swap="outerHTML">
-              <button class="btn" type="submit">Reset</button>
-            </form>
-          </td>
+          <td>{{ reset_window(row.user_id) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -137,47 +137,52 @@
 </section>
 
 <section class="card">
-  <div class="card__head"><h2 class="card__title">Own allowances</h2></div>
+  <div class="card__head"><h2 class="card__title">Who may ask</h2></div>
+  {% if not limits.pilots %}
+  <div class="empty">
+    <strong>No holders to show.</strong>
+    Either nobody holds the chat-pilot role yet, or the bot is not connected to read it —
+    the role is the only record of who may talk to the bot, so there is nothing stored
+    here to fall back on.
+  </div>
+  {% else %}
   <p class="run__meta">
-    A member listed here gets their own number of answers instead of the guild's
-    {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
-    Overrides are stored, so they survive a restart; the spent windows above are not.
-    Staff are exempt from all of it and never need one.
+    Everybody holding the chat-pilot role, read live from Discord. Staff are exempt from
+    every budget, so their allowance is not a number anything reads.
   </p>
-  {# Set for anybody, whether or not they are mid-window: the usual reason to
-     raise somebody's allowance is that they are about to need it. #}
-  <form method="post" action="/limits/overrides" class="filters"
-        hx-post="/limits/overrides" hx-target="#limits" hx-swap="outerHTML">
-    <label class="field"><span>Discord user id</span>
-      <input name="user_id" required inputmode="numeric" size="20" class="mono">
-    </label>
-    <label class="field"><span>Answers</span>
-      <input name="count" type="number" min="1" step="1" required size="4" class="mono"
-             value="{{ limits.per_user.count }}">
-    </label>
-    <label class="field"><span>Window (s)</span>
-      <input name="window_s" type="number" min="1" step="any" required size="6" class="mono"
-             value="{{ "%g"|format(limits.per_user.window_s) }}">
-    </label>
-    <button class="btn btn--primary" type="submit">Give them their own</button>
-  </form>
-
-  {% if limits.per_user.overrides %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Member</th><th>User id</th><th>Allowance</th><th></th></tr></thead>
+      <thead>
+        <tr><th>Member</th><th>User id</th><th>Allowance</th><th>This window</th><th></th></tr>
+      </thead>
       <tbody>
-        {% for row in limits.per_user.overrides %}
+        {% for row in limits.pilots %}
         <tr>
-          <td>{{ row.name }}</td>
-          <td class="mono">{{ row.user_id }}</td>
-          <td class="mono">{{ row.count }} per {{ "%.0f"|format(row.window_s) }}s</td>
           <td>
-            <form method="post" action="/limits/overrides/{{ row.user_id }}/clear"
-                  hx-post="/limits/overrides/{{ row.user_id }}/clear"
-                  hx-target="#limits" hx-swap="outerHTML">
-              <button class="btn" type="submit">Back to default</button>
-            </form>
+            {{ row.name }}
+            {% if row.staff %}<span class="chip">staff</span>
+            {% elif row.overridden %}<span class="chip">own allowance</span>{% endif %}
+          </td>
+          <td class="mono">{{ row.user_id }}</td>
+          <td class="mono">
+            {% if row.staff %}<span class="id">exempt</span>
+            {% else %}{{ row.count }} per {{ "%g"|format(row.window_s) }}s{% endif %}
+          </td>
+          <td class="mono">
+            {% if row.staff %}—
+            {% elif row.has_window %}{{ row.used }} used, {{ row.remaining }} left
+            {% else %}<span class="id">idle</span>{% endif %}
+          </td>
+          <td class="rowbtns">
+            {# Staff get no controls: every one of them would change a number
+               that nothing consults for them. #}
+            {% if not row.staff %}
+            {# A link, not script: it re-renders the page with the form below
+               filled in, so prefilling works with htmx and JavaScript both off. #}
+            <a class="btn" href="/limits?user={{ row.user_id }}#set-allowance">Set</a>
+            {% if row.overridden %}{{ clear_override(row.user_id) }}{% endif %}
+            {% if row.has_window %}{{ reset_window(row.user_id) }}{% endif %}
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -187,4 +192,28 @@
   {% endif %}
 </section>
 
-</div>
+{% if limits.per_user.overrides %}
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Own allowances</h2></div>
+  <p class="run__meta">
+    These members get their own number of answers instead of the guild's
+    {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
+    Overrides are stored, so they survive a restart; the spent windows above are not.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Member</th><th>User id</th><th>Allowance</th><th></th></tr></thead>
+      <tbody>
+        {% for row in limits.per_user.overrides %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="mono">{{ row.user_id }}</td>
+          <td class="mono">{{ row.count }} per {{ "%g"|format(row.window_s) }}s</td>
+          <td>{{ clear_override(row.user_id) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}

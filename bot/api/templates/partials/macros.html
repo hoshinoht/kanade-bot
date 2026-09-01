@@ -62,3 +62,23 @@
   {% endfor %}
 </div>
 {%- endmacro %}
+
+{% macro limit_action(action, label) %}
+{#- One button on the Limits page. A real form with a real action, so it works
+    with htmx blocked; with htmx it swaps the live panel in place. Every one of
+    them targets `#limits-live`, which is the wrapper the poll lives on -- the
+    button must never replace that wrapper, or the swap would take the polling
+    attributes with it. -#}
+<form method="post" action="{{ action }}"
+      hx-post="{{ action }}" hx-target="#limits-live" hx-swap="innerHTML">
+  <button class="btn" type="submit">{{ label }}</button>
+</form>
+{%- endmacro %}
+
+{% macro reset_window(user_id) %}
+{{ limit_action("/limits/windows/" ~ user_id ~ "/reset", "Reset") }}
+{%- endmacro %}
+
+{% macro clear_override(user_id) %}
+{{ limit_action("/limits/overrides/" ~ user_id ~ "/clear", "Back to default") }}
+{%- endmacro %}

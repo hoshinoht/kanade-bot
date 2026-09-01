@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import events
 from ..extract.prompt import estimate_messages
 from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
 from ..timeutil import utcnow
@@ -462,6 +463,12 @@ class ChatPilot:
             self_role_id=self._self_role_id(message),
             replied_author_id=replied_author_id,
         )
+        if decision.act or decision.busy:
+            # A budget moved: either a slot was just spent or one was found
+            # empty, and both change what the Limits page shows. Nudged from
+            # here rather than from inside `gate.decide`, which is a pure
+            # function of its arguments and is worth keeping that way.
+            events.notify()
         if not decision.act:
             if decision.busy:
                 log.info("chat: %s from %s", decision.reason, getattr(message.author, "id", "?"))

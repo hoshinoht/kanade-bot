@@ -894,6 +894,7 @@ IDLE_LIMITS = {
     "model": {"busy": False, "holder": None, "held_for_s": 0.0},
     "global_pool": {"count": 12, "window_s": 900.0, "used": 0, "remaining": 12},
     "per_user": {"count": 4, "window_s": 300.0, "windows": [], "overrides": []},
+    "pilots": [],
     "jobs": {
         "answering": [],
         "extracting": False,
@@ -932,6 +933,52 @@ def busy_limits() -> dict:
             ],
             "overrides": [{"user_id": "1001", "name": "Alvin", "count": 10, "window_s": 600.0}],
         },
+        "pilots": [
+            {
+                "user_id": "1002",
+                "name": "kanon",
+                "staff": False,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 4,
+                "remaining": 0,
+                "has_window": True,
+            },
+            {
+                "user_id": "1001",
+                "name": "Alvin",
+                "staff": False,
+                "count": 10,
+                "window_s": 600.0,
+                "overridden": True,
+                "used": 6,
+                "remaining": 4,
+                "has_window": True,
+            },
+            {
+                "user_id": "1003",
+                "name": "Priya",
+                "staff": False,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 0,
+                "remaining": 4,
+                "has_window": False,
+            },
+            {
+                "user_id": "1009",
+                "name": "Hoshino",
+                "staff": True,
+                "count": 4,
+                "window_s": 300.0,
+                "overridden": False,
+                "used": 0,
+                "remaining": 4,
+                "has_window": False,
+            },
+        ],
         "jobs": {
             "answering": [{"channel_id": "5", "channel_name": "#ask-the-bot"}],
             "extracting": True,
@@ -1089,3 +1136,20 @@ def test_config_set_refuses_a_capacity_value_that_is_not_a_number(api):
     result = run("config", "set", "chat_pilot_rate_window_s", "soon")
     assert result.exit_code == 1
     assert "must be a number" in result.output
+
+
+def test_limits_lists_the_chat_role_holders(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=busy_limits()))
+    output = run("limits").output
+    assert "4 chat-role holder(s)" in output
+    assert "4 per 300s" in output
+    assert "10 per 600s" in output and "(own)" in output
+    # Staff are marked and given no allowance to read.
+    assert "Hoshino (staff)" in output
+    assert "exempt" in output
+    assert "idle" in output
+
+
+def test_limits_says_when_no_holders_can_be_read(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=IDLE_LIMITS))
+    assert "No chat-role holders to show" in run("limits").output.replace("\n", " ")

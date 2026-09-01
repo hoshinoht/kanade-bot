@@ -893,6 +893,34 @@ def limits(ctx: typer.Context) -> None:
                 for o in per_user["overrides"]
             ],
         )
+    pilots = data.get("pilots") or []
+    if pilots:
+        console.print()
+        print_table(
+            f"{len(pilots)} chat-role holder(s)",
+            ["user id", "member", "allowance", "this window"],
+            [
+                [
+                    p["user_id"],
+                    p["name"] + (" (staff)" if p["staff"] else ""),
+                    "exempt"
+                    if p["staff"]
+                    else f"{p['count']} per {p['window_s']:g}s"
+                    + (" (own)" if p["overridden"] else ""),
+                    "—"
+                    if p["staff"]
+                    else (
+                        f"{p['used']} used, {p['remaining']} left" if p["has_window"] else "idle"
+                    ),
+                ]
+                for p in pilots
+            ],
+        )
+    else:
+        console.print(
+            "\n[dim]No chat-role holders to show — nobody holds the role, or the bot is "
+            "not connected to read it.[/dim]"
+        )
 
 
 @limits_app.command("reset")

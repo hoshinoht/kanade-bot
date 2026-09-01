@@ -15,7 +15,13 @@ from bot.api import routes_api, routes_web
 from bot.api.templating import HTMX_SRC, confidence_band
 from bot.ids import short_id
 
-from .fake_bot import ADMIN_TOKEN, OTHER_CHANNEL, UNWATCHED_CHANNEL, WATCHED_CHANNEL
+from .fake_bot import (
+    ADMIN_TOKEN,
+    OTHER_CHANNEL,
+    UNWATCHED_CHANNEL,
+    WATCHED_CHANNEL,
+    add_pilot,
+)
 
 PAGES = [
     "/",
@@ -231,14 +237,56 @@ def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded
     assert f"of {fake_bot.settings.chat_pilot_global_rate_count} left" in body
 
 
-def test_the_limits_panel_polls_itself(auth, fake_bot):
-    """The same self-replacing fragment the rescan progress block uses."""
+def test_the_live_region_is_a_wrapper_the_swap_cannot_replace(auth, fake_bot):
+    """Everything that refetches hangs off the wrapper, so a swap never rebuilds it."""
+    page = auth.get("/limits").text
+    assert 'id="limits-live"' in page
+    assert 'data-live-src="/limits/events"' in page  # the stream portal.js opens
+    assert 'hx-get="/limits/live"' in page
+    assert 'hx-swap="innerHTML"' in page
+
     fragment = auth.get("/limits/live")
     assert fragment.status_code == 200
-    assert 'hx-get="/limits/live"' in fragment.text
-    assert 'hx-swap="outerHTML"' in fragment.text
-    # ...and the page embeds that same fragment rather than a second copy of it.
-    assert 'hx-get="/limits/live"' in auth.get("/limits").text
+    # The fragment is content only: it must not carry the wrapper, or a swap
+    # would nest a second one and leave two of everything running.
+    assert 'id="limits-live"' not in fragment.text
+    assert "Windows in use" in fragment.text
+
+
+def test_the_poll_is_only_a_slow_fallback_behind_the_stream(auth, fake_bot):
+    """Updates arrive as events; the timer is for a browser that cannot have them."""
+    page = auth.get("/limits").text
+    assert "hx-trigger=\"every 60s [document.visibilityState === 'visible']\"" in page
+    # ...and the manual link still works with no JavaScript at all.
+    assert '<a class="btn btn--ghost" href="/limits">Refresh</a>' in page
+
+
+def test_the_polled_region_contains_no_inputs(auth, fake_bot, seeded):
+    """The invariant that makes refreshing safe: nothing in here can be typed into.
+
+    A ten-second swap landing on a half-filled form would eat it, so the one
+    form on the page lives outside the polled region -- and this is the test
+    that notices when somebody puts a field back inside it.
+    """
+    fake_bot.chat.limiter.allow(1002)
+    add_pilot(fake_bot, 1002, "kanon")
+
+    live = auth.get("/limits/live").text
+
+    assert "<input" not in live
+    assert "<textarea" not in live
+    assert "<select" not in live
+    # ...while the page as a whole does have the form.
+    assert "<input" in auth.get("/limits").text
+
+
+def test_the_form_survives_a_refresh_of_the_live_panel(auth, fake_bot, seeded):
+    """Structural: the form is not in what a poll replaces."""
+    page = auth.get("/limits").text
+    live_start = page.index('id="limits-live"')
+    form_start = page.index('id="set-allowance"')
+    assert form_start > live_start
+    assert '<input name="user_id"' not in page[live_start:form_start]
 
 
 def test_resetting_a_window_from_the_page_removes_its_row(auth, fake_bot, seeded):
@@ -249,8 +297,7 @@ def test_resetting_a_window_from_the_page_removes_its_row(auth, fake_bot, seeded
     response = auth.post("/limits/windows/1002/reset", headers={"HX-Request": "true"})
 
     assert response.status_code == 200
-    assert 'id="limits"' in response.text  # the whole panel came back
-    assert "Nobody is mid-window." in response.text
+    assert "Nobody is mid-window." in response.text  # the live panel came back
     assert fake_bot.chat.limiter.remaining(1002) == fake_bot.settings.chat_pilot_rate_count
 
 
@@ -324,6 +371,64 @@ def test_an_overridden_window_is_marked_and_counted_against_its_own_allowance(
     assert "1 of 10" in body
 
 
+def test_the_limits_page_lists_who_may_ask(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    add_pilot(fake_bot, 1001, "Alvin tan", staff=True)
+
+    body = auth.get("/limits").text
+
+    assert "Who may ask" in body
+    assert "kanon" in body and "Alvin tan" in body
+    # Staff are marked and given no controls, because every one would change a
+    # number nothing consults for them.
+    assert "staff" in body
+    assert "exempt" in body
+    assert 'href="/limits?user=1002#set-allowance"' in body
+    assert 'href="/limits?user=1001#set-allowance"' not in body
+
+
+def test_the_page_says_when_it_cannot_read_the_role(auth, fake_bot):
+    body = auth.get("/limits").text
+    assert "No holders to show." in body
+    assert "not connected to read it" in body
+
+
+def test_a_pilots_set_button_prefills_the_form_with_their_own_numbers(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+
+    body = auth.get("/limits?user=1002").text
+
+    form = body[body.index('id="set-allowance"') :]
+    assert 'value="1002"' in form
+    assert 'value="10"' in form
+    assert 'value="60"' in form
+
+
+def test_the_prefill_falls_back_to_the_guild_default(auth, fake_bot, seeded):
+    """No `?user=`, or a nonsense one, offers the numbers everybody else is on."""
+    for path in ("/limits", "/limits?user=notanid"):
+        form = auth.get(path).text
+        form = form[form.index('id="set-allowance"') :]
+        assert 'name="user_id" required inputmode="numeric" size="20" class="mono"\n' in form
+        assert f'value="{fake_bot.settings.chat_pilot_rate_count}"' in form
+
+
+def test_a_pilots_row_offers_the_actions_that_apply_to_them(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    plain = auth.get("/limits").text
+    # Nothing to clear and no window to reset yet.
+    assert "/limits/overrides/1002/clear" not in plain
+    assert "/limits/windows/1002/reset" not in plain
+
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    fake_bot.chat.limiter.allow(1002)
+    body = auth.get("/limits").text
+
+    assert "/limits/overrides/1002/clear" in body
+    assert "/limits/windows/1002/reset" in body
+
+
 def test_the_capacity_numbers_are_editable_from_the_config_page(auth, fake_bot):
     response = auth.post(
         "/config",
@@ -335,6 +440,12 @@ def test_the_capacity_numbers_are_editable_from_the_config_page(auth, fake_bot):
     assert fake_bot.chat.limiter.count == 9
     assert fake_bot.chat.limiter.window == 600.0
     assert 'name="chat_pilot_rate_count"' in auth.get("/config").text
+
+
+def test_the_event_stream_needs_signing_in(client):
+    response = client.get("/limits/events", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login?next=/limits/events"
 
 
 def test_the_limits_page_needs_signing_in(client):
