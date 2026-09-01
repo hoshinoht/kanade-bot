@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
@@ -27,7 +27,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from .. import events
+from .. import events, identity
 from ..weeks import WEEKDAY_NAMES
 from . import service
 from .auth import (
@@ -41,6 +41,7 @@ from .auth import (
 from .deps import Bot, Caller, get_bot
 from .errors import ApiError, NotConfigured, NotFound
 from .models import Week
+from .templating import STATUS_WORDS, read_section
 
 log = logging.getLogger(__name__)
 
@@ -78,9 +79,38 @@ def fragment(request: Request, name: str, **context: Any) -> HTMLResponse:
     return HTMLResponse(_templates(request).get_template(name).render(**context))
 
 
-def back_to(request: Request, path: str, message: str | None = None, kind: str = "ok") -> Response:
+def table_page(
+    request: Request, name: str, active: str, rows_partial: str, **context: Any
+) -> Response:
+    """A table page, or just its rows when htmx asked for them.
+
+    One URL, two answers, the way every action on the portal already works: a
+    plain GET renders the page, an ``HX-Request`` gets the region the search box
+    and the pager target. There is no second route to keep in step, and no
+    second template -- the page includes the same partial this returns.
+    """
+    if request.headers.get("HX-Request"):
+        return fragment(request, rows_partial, **context)
+    return render(request, name, active, **context)
+
+
+def back_to(
+    request: Request,
+    path: str,
+    message: str | None = None,
+    kind: str = "ok",
+    fragment: str = "",
+) -> Response:
+    """Where a plain form post lands, with what it has to say.
+
+    ``fragment`` is how the Config window puts you back on the section you were
+    editing: it is one page with nine panels chosen by ``:target``, so a save
+    made under Chatbot has to redirect to ``/config?msg=…#chatbot`` -- query
+    first, fragment last, which is the one order a URL allows.
+    """
     query = urlencode({"msg": message, "kind": kind}) if message else ""
-    return RedirectResponse(f"{path}{'?' if query else ''}{query}", status_code=303)
+    anchor = f"#{fragment}" if fragment else ""
+    return RedirectResponse(f"{path}{'?' if query else ''}{query}{anchor}", status_code=303)
 
 
 def safe_next(candidate: str | None, fallback: str = "/") -> str:
@@ -200,6 +230,44 @@ async def logout() -> Response:
 
 
 # ---------------------------------------------------------------------------
+# the bot's own artwork
+# ---------------------------------------------------------------------------
+
+
+def _identity_image(bot, name: str) -> Response:
+    path = identity.cached(bot.settings.db_path, name)
+    if path is None:
+        raise NotFound(f"no {name.removesuffix('.png')} has been cached yet")
+    return FileResponse(
+        path,
+        # The bytes are whatever Discord served, under a fixed name; the format
+        # is read back off them rather than guessed from the suffix.
+        media_type=identity.media_type(path),
+        headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
+    )
+
+
+@router.get("/identity/avatar")
+async def identity_avatar(request: Request, bot: Bot) -> Response:
+    """The bot's own avatar, from the disk cache.
+
+    Deliberately unauthenticated, exactly like ``/static/portraits/<boss>`` and
+    the stylesheet: it is the sign-in page's own artwork, so gating it would
+    mean the one page nobody is signed in on could never show it -- and it is a
+    picture the browser has to be allowed to cache. Two static images and no
+    state; ``/healthz`` is still the only route that says anything about the
+    guild without credentials.
+    """
+    return _identity_image(bot, identity.AVATAR_NAME)
+
+
+@router.get("/identity/banner")
+async def identity_banner(request: Request, bot: Bot) -> Response:
+    """The bot's profile banner -- the login window's hero strip. See above."""
+    return _identity_image(bot, identity.BANNER_NAME)
+
+
+# ---------------------------------------------------------------------------
 # pages
 # ---------------------------------------------------------------------------
 
@@ -220,6 +288,7 @@ async def week_page(
         bot, week=week, channel_id=channel, user_id=user, boss=boss, show_past=show_past
     )
     filters = {"channel": channel, "user": user, "boss": boss}
+    board = service.board_columns(bot, week, schedule["runs"])
 
     def url_for_week(which: str) -> str:
         params = {"week": which, **filters, "show_past": "1" if show_past else ""}
@@ -235,6 +304,9 @@ async def week_page(
         "week",
         schedule=schedule,
         rail=service.week_rail(bot, week),
+        board=board,
+        board_tracks=service.board_tracks(board),
+        now_strip=service.week_now(bot, schedule["runs"]),
         week=week,
         channels=watched_channels(bot),
         members=service.members(bot),
@@ -251,13 +323,14 @@ async def week_page(
 
 
 @router.get("/fixed")
-async def fixed_page(request: Request, bot: Bot, caller: Caller) -> Response:
+async def fixed_page(request: Request, bot: Bot, caller: Caller, q: str = "") -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "fixed.html",
         "fixed",
-        fixed=[service.fixed_view(bot, f, with_grid=True) for f in bot.repo.list_fixed_runs()],
+        "partials/fixed_rows.html",
+        listing=service.fixed_listing(bot, q=q),
         members=service.members(bot),
         channels=watched_channels(bot),
         grid=service.boss_grid(bot),
@@ -271,13 +344,16 @@ async def inbox_page(request: Request, bot: Bot, caller: Caller) -> Response:
 
 
 @router.get("/extractions")
-async def extractions_page(request: Request, bot: Bot, caller: Caller, limit: int = 50) -> Response:
+async def extractions_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "extractions.html",
         "extractions",
-        extractions=[service.extraction_view(bot, e) for e in bot.repo.recent_extractions(limit)],
+        "partials/extraction_rows.html",
+        listing=service.extractions_listing(bot, page=page, q=q),
         config=service.get_config(bot),
     )
 
@@ -297,13 +373,16 @@ async def extraction_page(
 
 
 @router.get("/chat")
-async def chat_page(request: Request, bot: Bot, caller: Caller, limit: int = 50) -> Response:
+async def chat_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     request.state.caller = caller
-    return render(
+    return table_page(
         request,
         "chat.html",
         "chat",
-        interactions=service.chat_interactions(bot, limit),
+        "partials/chat_rows.html",
+        listing=service.chat_listing(bot, page=page, q=q),
         summary=service.chat_summary(bot),
         config=service.get_config(bot),
     )
@@ -480,28 +559,62 @@ async def web_limits_override_clear(
 
 
 @router.get("/audit")
-async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
+async def audit_page(
+    request: Request, bot: Bot, caller: Caller, q: str = "", page: int = 1
+) -> Response:
     """Who changed what, newest first. Read-only -- there is nothing to do here."""
     request.state.caller = caller
-    return render(request, "audit.html", "audit", rows=service.audit_log(bot, limit), limit=limit)
+    return table_page(
+        request,
+        "audit.html",
+        "audit",
+        "partials/audit_rows.html",
+        listing=service.audit_listing(bot, page=page, q=q),
+    )
 
 
 @router.get("/static/portraits/{short}")
-async def portrait(request: Request, bot: Bot, short: str) -> Response:
+async def portrait(
+    request: Request, bot: Bot, short: str, size: Literal["full", "icon"] = "full"
+) -> Response:
     """A boss portrait, straight off the bind-mounted config directory.
 
     Deliberately unauthenticated, like the stylesheet: it is a picture of a
     game boss, and gating it would mean the browser could not cache it. The
     filename never comes from the URL -- ``short`` is looked up in the boss
-    table -- so this cannot be walked out of ``config/portraits``.
+    table, and ``size`` is one of two words FastAPI has already refused
+    anything else for -- so this cannot be walked out of ``config/portraits``.
+
+    ``?size=icon`` is the small render. A query rather than a second route
+    because it is one picture at two sizes, and rather than a header because a
+    different URL is a different entry in the browser's cache: the 26px badge
+    and the full picture can never end up sharing whichever was fetched first.
     """
-    path = bot.bosses.portrait_path(short)
+    path = bot.bosses.portrait_path(short, size)
     if path is None:
         raise NotFound(f"no portrait for {short}")
     return FileResponse(
         path,
         # Long-lived but revalidated: a replaced file should show up on a
         # reload, not in a week.
+        headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
+    )
+
+
+@router.get("/static/entry/{short}")
+async def entry_art(request: Request, bot: Bot, short: str) -> Response:
+    """A boss's entry artwork -- the banner the Week page's run cards wear.
+
+    Unauthenticated and cached for the same reasons the portrait above is, and
+    unwalkable for the same one: ``short`` is looked up in the boss table, so
+    the name on disk never comes from the URL. Bigger than a portrait, which is
+    exactly why the browser has to be allowed to keep it.
+    """
+    path = bot.bosses.entry_art_path(short)
+    if path is None:
+        raise NotFound(f"no entry artwork for {short}")
+    return FileResponse(
+        path,
         headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
     )
 
@@ -515,7 +628,7 @@ async def access_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLRes
 @router.post("/access")
 async def access_recheck(request: Request, bot: Bot, caller: Caller) -> Response:
     """The no-JavaScript path: re-render Config, which rebuilds the table."""
-    return back_to(request, "/config", "Checked.")
+    return back_to(request, "/config", "Checked.", fragment="access")
 
 
 @router.get("/bosses")
@@ -534,23 +647,33 @@ async def bosses_page(request: Request, bot: Bot, caller: Caller) -> Response:
 
 
 @router.get("/members")
-async def members_page(request: Request, bot: Bot, caller: Caller) -> Response:
+async def members_page(request: Request, bot: Bot, caller: Caller, q: str = "") -> Response:
     request.state.caller = caller
-    return render(request, "members.html", "members", members=service.members(bot))
+    return table_page(
+        request,
+        "members.html",
+        "members",
+        "partials/member_rows.html",
+        listing=service.members_listing(bot, q=q),
+    )
 
 
 @router.get("/reminders")
 async def reminders_page(
-    request: Request, bot: Bot, caller: Caller, run_id: str | None = None
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    q: str = "",
+    page: int = 1,
+    run_id: str | None = None,
 ) -> Response:
     request.state.caller = caller
-    rows = service.reminders(bot, run_id=run_id, limit=400)
-    return render(
+    return table_page(
         request,
         "reminders.html",
         "reminders",
-        upcoming=sorted([r for r in rows if not r["sent_at"]], key=lambda r: r["fire_at"]),
-        sent=[r for r in rows if r["sent_at"]],
+        "partials/reminder_rows.html",
+        listing=service.reminders_listing(bot, page=page, q=q, run_id=run_id),
     )
 
 
@@ -667,7 +790,9 @@ async def web_status(
         bot,
         run["id"],
         safe_next(next, _next(request)),
-        f"Now {run['status_label']}.",
+        # The word without the label's emoji: this is a banner on the portal,
+        # not a card in Discord, and everything else here draws its own marks.
+        f"Now {STATUS_WORDS.get(run['status'], run['status'])}.",
     )
 
 
@@ -881,15 +1006,18 @@ async def web_nick(
 @router.post("/config")
 async def web_config(request: Request, bot: Bot, caller: Caller) -> Response:
     form = await request.form()
+    # Which panel of the settings window this was submitted from, so the
+    # redirect puts the reader back on it instead of on the first one.
+    section = read_section(str(form.get("section") or ""))
     changes = {k: v for k, v in form.items() if k in service.CONFIG_KEYS}
     if not changes:
-        return back_to(request, "/config", "Nothing to change.", "error")
+        return back_to(request, "/config", "Nothing to change.", "error", fragment=section)
     try:
         for key, value in changes.items():
             service.set_config(bot, key, value)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
-    return back_to(request, "/config", "Saved.")
+        return back_to(request, "/config", exc.message, "error", fragment=section)
+    return back_to(request, "/config", "Saved.", fragment=section)
 
 
 @router.post("/digest")
@@ -903,8 +1031,10 @@ async def web_digest(
     try:
         result = await service.post_digest(bot, channel_id or None, week=week)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
-    return back_to(request, "/config", f"Posted the {result['week']}-week digest.")
+        return back_to(request, "/config", exc.message, "error", fragment="digest")
+    return back_to(
+        request, "/config", f"Posted the {result['week']}-week digest.", fragment="digest"
+    )
 
 
 def rescan_channels_from(form) -> list[str]:
@@ -932,10 +1062,10 @@ async def web_rescan(request: Request, bot: Bot, caller: Caller) -> Response:
             requested_by=bot.portal_actor_id,
         )
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
+        return back_to(request, "/config", exc.message, "error", fragment="rescan")
     if request.headers.get("HX-Request"):
         return _job_fragment(request, bot, job["job_id"])
-    return RedirectResponse(f"/config?job={job['job_id']}", status_code=303)
+    return RedirectResponse(f"/config?job={job['job_id']}#rescan", status_code=303)
 
 
 @router.get("/rescan/{job_id}")
@@ -951,10 +1081,10 @@ async def web_rescan_cancel(request: Request, bot: Bot, caller: Caller, job_id: 
     try:
         service.cancel_rescan(bot, job_id)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
+        return back_to(request, "/config", exc.message, "error", fragment="rescan")
     if request.headers.get("HX-Request"):
         return _job_fragment(request, bot, job_id)
-    return RedirectResponse(f"/config?job={job_id}", status_code=303)
+    return RedirectResponse(f"/config?job={job_id}#rescan", status_code=303)
 
 
 def _job_fragment(request: Request, bot, job_id: str) -> HTMLResponse:

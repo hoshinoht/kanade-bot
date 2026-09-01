@@ -509,6 +509,33 @@ def _int_or_none(value: Any) -> int | None:
     return int(value) if value is not None else None
 
 
+def _like_escape(term: str) -> str:
+    r"""``%``, ``_`` and ``\`` as themselves rather than as wildcards.
+
+    A portal search box takes whatever somebody types, and ``100%`` typed into
+    one that did not do this would match every row in the table.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _search_where(columns: Sequence[str], q: str) -> tuple[str, list[str]]:
+    """``(sql, params)`` for "this text appears in any of these columns".
+
+    One substring, not a set of words that all have to match: these are small
+    logs read by one or two people, and "hstar wed" meaning *neither* row
+    because no single cell holds both words is a search box that has to be
+    learned. Case-insensitive because SQLite's ``LIKE`` is, for ASCII.
+
+    Returns ``("", [])`` for an empty query, so a caller can splice it in
+    without a branch on either side.
+    """
+    term = (q or "").strip()
+    if not term:
+        return "", []
+    ors = " OR ".join(f"{column} LIKE ? ESCAPE '\\'" for column in columns)
+    return f"({ors})", [f"%{_like_escape(term)}%"] * len(columns)
+
+
 def _percentile(ordered: Sequence[int], fraction: float) -> int | None:
     """Nearest-rank percentile of an already-sorted list, or ``None`` if empty.
 
@@ -1573,11 +1600,24 @@ class Repo:
             data[key] = from_iso(data[key]) if data[key] else None
         return data
 
-    def recent_extractions(self, limit: int = 20) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM extractions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
-        )
+    #: What the Extractions page searches. The prompt and the response are the
+    #: point of the page -- it is the prompt-tuning tool, and "find the call
+    #: where it said Wednesday" is the question it exists to answer.
+    EXTRACTION_SEARCH = ("model", "prompt", "raw_response")
+
+    def recent_extractions(self, limit: int = 20, offset: int = 0, q: str = "") -> list[dict]:
+        where, params = _search_where(self.EXTRACTION_SEARCH, q)
+        sql = "SELECT * FROM extractions"
+        if where:
+            sql += f" WHERE {where}"
+        sql += " ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+        rows = self._conn.execute(sql, [*params, int(limit), max(int(offset), 0)])
         return [self._extraction(row) for row in rows]
+
+    def count_extractions(self, q: str = "") -> int:
+        where, params = _search_where(self.EXTRACTION_SEARCH, q)
+        sql = "SELECT COUNT(*) FROM extractions" + (f" WHERE {where}" if where else "")
+        return int(self._conn.execute(sql, params).fetchone()[0])
 
     def get_extraction(self, extraction_id: str) -> dict | None:
         row = self._conn.execute(
@@ -1670,11 +1710,38 @@ class Repo:
         )
         return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
 
-    def recent_chat_interactions(self, limit: int = 50) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM chat_interactions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
-        )
+    #: What the Chat page searches by text. The member and the channel are
+    #: stored here as ids and read everywhere else as names, so those are
+    #: matched through ``ids`` -- resolved against the roster and the guild by
+    #: the caller, which is the only layer that knows what a name is.
+    CHAT_SEARCH = ("model", "question", "reply", "outcome")
+
+    def _chat_where(self, q: str, ids: Sequence[str] = ()) -> tuple[str, list[Any]]:
+        where, params = _search_where(self.CHAT_SEARCH, q)
+        if not where:
+            return "", []
+        wanted = [str(i) for i in ids]
+        if wanted:
+            marks = ",".join("?" * len(wanted))
+            where = f"({where} OR author_id IN ({marks}) OR channel_id IN ({marks}))"
+            params = [*params, *wanted, *wanted]
+        return where, params
+
+    def recent_chat_interactions(
+        self, limit: int = 50, offset: int = 0, q: str = "", ids: Sequence[str] = ()
+    ) -> list[dict]:
+        where, params = self._chat_where(q, ids)
+        sql = "SELECT * FROM chat_interactions"
+        if where:
+            sql += f" WHERE {where}"
+        sql += " ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+        rows = self._conn.execute(sql, [*params, int(limit), max(int(offset), 0)])
         return [self._chat_interaction(row) for row in rows]
+
+    def count_chat_interactions(self, q: str = "", ids: Sequence[str] = ()) -> int:
+        where, params = self._chat_where(q, ids)
+        sql = "SELECT COUNT(*) FROM chat_interactions" + (f" WHERE {where}" if where else "")
+        return int(self._conn.execute(sql, params).fetchone()[0])
 
     def get_chat_interaction(self, interaction_id: str) -> dict | None:
         row = self._conn.execute(
@@ -1715,9 +1782,6 @@ class Repo:
         return [
             r["id"] for r in self._conn.execute("SELECT id FROM chat_interactions ORDER BY at DESC")
         ]
-
-    def count_chat_interactions(self) -> int:
-        return int(self._conn.execute("SELECT COUNT(*) FROM chat_interactions").fetchone()[0])
 
     def chat_interaction_stats(self) -> list[dict]:
         """Per model: how many, how they went, how slow, and what they cost.
@@ -1822,15 +1886,30 @@ class Repo:
         )
         return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
 
-    def list_audit(self, limit: int = 200) -> list[dict]:
-        """The most recent changes, newest first -- what the Audit page lists."""
-        rows = self._conn.execute(
-            "SELECT * FROM audit ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
-        )
+    #: What the Audit page's search box looks in. Every column of the row: an
+    #: audit entry is five short strings, and which one holds the thing being
+    #: looked for is exactly what the reader does not know.
+    AUDIT_SEARCH = ("surface", "actor", "action", "subject", "detail")
+
+    def list_audit(self, limit: int = 200, offset: int = 0, q: str = "") -> list[dict]:
+        """The most recent changes, newest first -- what the Audit page lists.
+
+        ``offset`` and ``q`` are what the portal pages and searches with; the
+        JSON API passes neither and gets what it always did.
+        """
+        where, params = _search_where(self.AUDIT_SEARCH, q)
+        sql = "SELECT * FROM audit"
+        if where:
+            sql += f" WHERE {where}"
+        sql += " ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+        rows = self._conn.execute(sql, [*params, int(limit), max(int(offset), 0)])
         return [self._audit(row) for row in rows]
 
-    def count_audit(self) -> int:
-        return int(self._conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0])
+    def count_audit(self, q: str = "") -> int:
+        """How many rows a search matches -- what "page 2 of 7" is counted from."""
+        where, params = _search_where(self.AUDIT_SEARCH, q)
+        sql = "SELECT COUNT(*) FROM audit" + (f" WHERE {where}" if where else "")
+        return int(self._conn.execute(sql, params).fetchone()[0])
 
     @staticmethod
     def _audit(row: sqlite3.Row) -> dict:

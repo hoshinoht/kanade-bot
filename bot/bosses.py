@@ -35,8 +35,20 @@ _SPLIT_RE = re.compile(r"[,\s/+&]+")
 #: directory is bind-mounted read-only, so dropping a file in is enough --
 #: no rebuild, no restart.
 PORTRAIT_DIR = "portraits"
-#: Tried in order for ``<short>.<ext>`` when no explicit ``portrait:`` is set.
+#: Every image of a boss is looked up as ``<key>.<ext>`` over these, in this
+#: order -- portraits, their small renders, and the entry artwork alike. The one
+#: exception is a portrait named outright by ``portrait:`` in ``bosses.yaml``.
 PORTRAIT_SUFFIXES = (".png", ".webp", ".jpg", ".jpeg")
+#: The small render of a portrait, under ``PORTRAIT_DIR``: the 64px files the
+#: portal drew before the full-size art arrived. Still the right picture for a
+#: 26px badge, where the large one is a download and then a blur.
+PORTRAIT_ICON_DIR = "icon"
+
+#: Where the entry artwork lives, relative to ``bosses.yaml``. A different
+#: picture from a portrait and a different shape -- the wide splash the game
+#: shows behind a boss's entry prompt -- so it gets a directory of its own
+#: rather than a second naming convention inside ``portraits/``.
+ENTRY_ART_DIR = "artwork/entry"
 
 
 class BossParseError(ValueError):
@@ -264,31 +276,78 @@ class BossTable:
     def describe_all(self, canonicals: list[str]) -> str:
         return " · ".join(self.describe(name) for name in canonicals)
 
-    def portrait_path(self, short: str) -> Path | None:
+    @staticmethod
+    def _named_file(directory: Path, stem: str) -> Path | None:
+        """``<stem>.<ext>`` in one directory, over the extensions we accept."""
+        for suffix in PORTRAIT_SUFFIXES:
+            candidate = directory / f"{stem}{suffix}"
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def portrait_path(self, short: str, size: str = "full") -> Path | None:
         """The portrait file for a boss, or ``None`` when there isn't one.
 
         Portraits are entirely optional: ``config/portraits/Star.png`` (the
         ``bosses.yaml`` key), or whatever ``portrait:`` names. The filename is
         never taken from user input -- it is resolved from the table -- so this
         cannot be walked out of the config directory.
+
+        Two renders of the same boss, and the *caller* chooses. ``full`` is the
+        picture in ``portraits/``; ``icon`` is the small one under
+        ``portraits/icon/``, which is what a badge should be fetching now that
+        the full file is artwork rather than a thumbnail. An ``icon`` that is
+        not there falls back to the full picture, so a boss added today draws
+        correctly before anybody has cropped one -- but ``full`` never looks
+        inside ``icon/``, so asking for the big one cannot quietly serve the
+        small one to something that needed the detail.
+
+        The ``portrait:`` override belongs to the full size alone: it is one
+        line naming one file, and there is no second line to name a small one.
+        ``icon/`` is filename-by-key, exactly like the entry artwork.
         """
         boss = self.bosses.get(short)
         if boss is None or self.base_dir is None:
             return None
         directory = self.base_dir / PORTRAIT_DIR
+        if size == "icon":
+            icon = self._named_file(directory / PORTRAIT_ICON_DIR, boss.short)
+            if icon is not None:
+                return icon
         if boss.portrait:
             candidate = directory / Path(boss.portrait).name
             return candidate if candidate.is_file() else None
-        for suffix in PORTRAIT_SUFFIXES:
-            candidate = directory / f"{boss.short}{suffix}"
-            if candidate.is_file():
-                return candidate
-        return None
+        return self._named_file(directory, boss.short)
 
     def portrait_for(self, canonical: str) -> Path | None:
-        """The portrait for a canonical name like ``"HStar"``."""
+        """The portrait for a canonical name like ``"HStar"``, at full size.
+
+        Which is what a card in Discord attaches. Nothing reaches the small
+        render through here: the portal asks :meth:`portrait_path` for the size
+        it wants, and every size it wants is a badge.
+        """
         parts = self.split(canonical)
         return self.portrait_path(parts[1].short) if parts else None
+
+    def entry_art_path(self, short: str) -> Path | None:
+        """The entry artwork for a boss, or ``None`` when there isn't one.
+
+        The same deal as :meth:`portrait_path` one directory along, and just as
+        optional: ``config/artwork/entry/Seren.png``, named after the
+        ``bosses.yaml`` key. There is no ``bosses.yaml`` override to go with it
+        -- one splash per boss, named by key, is the whole rule -- and the
+        filename is still resolved from the table rather than from anything
+        typed, so this cannot be walked out of the config directory either.
+        """
+        boss = self.bosses.get(short)
+        if boss is None or self.base_dir is None:
+            return None
+        return self._named_file(self.base_dir / ENTRY_ART_DIR, boss.short)
+
+    def entry_art_for(self, canonical: str) -> Path | None:
+        """The entry artwork for a canonical name like ``"HStar"``."""
+        parts = self.split(canonical)
+        return self.entry_art_path(parts[1].short) if parts else None
 
     def difficulty_name(self, letter: str) -> str:
         """``"h"`` -> ``"Hard"``. Unknown letters come back as themselves."""

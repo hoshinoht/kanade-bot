@@ -1,0 +1,39 @@
+{% from "partials/macros.html" import no_match %}
+<div class="pane__body">
+  {% if not listing.rows %}
+    {% if listing.q %}
+    {{ no_match(listing.q, "The search reads the Discord name, the server nickname and the chat aliases.") }}
+    {% else %}
+    <div class="empty">
+      <strong>The roster is empty.</strong>
+      It syncs from <code>BOSSING_ROLE_ID</code> when the bot connects. Check the startup log line
+      <code>roster synced: N members</code>.
+    </div>
+    {% endif %}
+  {% else %}
+  <table>
+    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>@mentions</th><th>Add an alias</th></tr></thead>
+    <tbody>
+      {% for member in listing.rows %}
+      <tr>
+        <td><strong>{{ member.display_name }}</strong><div class="id">{{ member.user_id }}</div></td>
+        <td>{{ member.nickname or "—" }}</td>
+        <td>
+          {% for alias in member.aliases %}<span class="chip chip--mono">{{ alias }}</span> {% else %}<span class="id">none</span>{% endfor %}
+        </td>
+        <td class="mono">{{ member.runs_this_week }}</td>
+        <td>
+          <span class="chip {{ 'chip--waiting' if member.ping_level == 'off' }}">{{ member.ping_level }}</span>
+        </td>
+        <td>
+          <form method="post" action="/members/{{ member.user_id }}/nick" class="filters" style="margin:0">
+            <input name="alias" placeholder="MY" size="8" required aria-label="New alias for {{ member.display_name }}">
+            <button class="btn" type="submit">Add</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>

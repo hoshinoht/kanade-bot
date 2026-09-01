@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from bot.chat import persona
 from bot.chat.agent import ChatPilot
 
@@ -50,6 +52,91 @@ def test_the_tracked_example_is_present_and_usable():
     text = persona.load_persona(None)
     assert "scheduler" in text.lower()
     assert len(text) > 500
+
+
+def test_personas_live_in_their_own_directory():
+    """The `config/portraits` pattern: a directory with a README and a template
+    tracked, and everything a deployment actually writes ignored. It is
+    bind-mounted into the container, so a persona is a file on the host."""
+    assert persona.EXAMPLE_PERSONA.parent == persona.PERSONA_DIR
+    assert persona.PERSONA_DIR.name == "personas"
+    assert (persona.PERSONA_DIR / "README.md").is_file()
+
+
+def test_the_loader_says_which_file_it_read(tmp_path):
+    """Not for the loader's sake -- for the Config page's. "Answering in the
+    placeholder voice" is a misconfigured deploy, and it used to be visible only
+    in a WARNING nobody reads."""
+    path = tmp_path / "persona.md"
+    path.write_text("You are Placeholder, a scheduler bot.\n", encoding="utf-8")
+
+    loaded = persona.read_persona(path)
+
+    assert loaded.text == "You are Placeholder, a scheduler bot."
+    assert loaded.path == path
+    assert loaded.name == "persona.md"
+    assert loaded.fell_back is False
+
+
+def test_a_fall_back_says_so_and_names_the_template(tmp_path):
+    fallen = persona.read_persona(tmp_path / "nope.md")
+
+    assert fallen.fell_back is True
+    assert fallen.name == "persona.example.md"
+    assert fallen.text
+
+
+# --- choosing one of several ------------------------------------------------
+
+
+@pytest.fixture
+def staged_personas(tmp_path, monkeypatch):
+    """A personas directory with two voices, a README, and some noise in it."""
+    (tmp_path / "kanade.md").write_text("You are Kanade.\n", encoding="utf-8")
+    (tmp_path / "persona.example.md").write_text("You are <BotName>.\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Personas\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("not a persona\n", encoding="utf-8")
+    (tmp_path / "drafts").mkdir()
+    monkeypatch.setattr(persona, "PERSONA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_every_markdown_file_but_the_readme_is_on_offer(staged_personas):
+    """The README documents the directory; the template is a real voice, and a
+    deployment that has not written its own is legitimately wearing it."""
+    assert persona.available() == ["kanade.md", "persona.example.md"]
+
+
+def test_a_directory_that_is_not_there_offers_nothing(tmp_path):
+    assert persona.available(tmp_path / "nowhere") == []
+
+
+def test_a_chosen_name_resolves_only_by_membership(staged_personas):
+    assert persona.chosen_path("kanade.md") == staged_personas / "kanade.md"
+    assert persona.chosen_path("") is None
+    assert persona.chosen_path("gone.md") is None
+    # Not on the list, so never joined to anything -- there is no path here to
+    # reject, because none was built.
+    assert persona.chosen_path("README.md") is None
+    assert persona.chosen_path("notes.txt") is None
+
+
+@pytest.mark.parametrize(
+    "attempt",
+    [
+        "../persona.example.md",
+        "../../etc/passwd",
+        "/etc/passwd",
+        "drafts/../kanade.md",
+        "drafts",
+        "kanade.md/../../secret.md",
+        ".",
+    ],
+)
+def test_nothing_shaped_like_a_path_ever_resolves(staged_personas, attempt):
+    """Membership rather than sanitising: each of these is simply not one of the
+    two names on offer, so none of them becomes a path at all."""
+    assert persona.chosen_path(attempt) is None
 
 
 def test_the_tracked_example_names_nobody_real():

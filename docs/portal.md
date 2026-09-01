@@ -40,44 +40,44 @@ The pages are server-rendered; [htmx](https://htmx.org) (pinned, from cdnjs, wit
 an integrity hash) only upgrades the actions to in-place swaps. Every control is
 a real form, so with the CDN blocked or JavaScript off the portal still works.
 
-### Reaching it from your phone: `tailscale serve`
+### Reaching it from your phone: the Caddy front door
 
 The container publishes the port on the host's loopback only
-(`ports: ["127.0.0.1:8080:8080"]`), so nothing on your LAN can see it. Tailscale
-puts it on your tailnet, over HTTPS, with a real certificate:
+(`ports: ["127.0.0.1:8080:8080"]`), so nothing on your LAN can see it. The
+`caddy` service in the same compose file puts it on your tailnet, over HTTPS,
+under a name of your own, with a real Let's Encrypt certificate:
 
-```sh
-tailscale serve --bg 8080
-tailscale serve status                       # check what is published
-```
+- **A name that resolves everywhere but routes nowhere public.** The hostname's
+  A record — at your DNS provider, DNS-only, never proxied — points at this
+  machine's Tailscale IP, which nothing outside your tailnet can reach.
+- **A certificate with no open port.** Caddy passes the ACME DNS-01 challenge
+  with a DNS provider API token (in `.env.caddy`), so issuance never needs an
+  inbound connection from the internet.
+- **443 on the tailnet interface alone.** Compose publishes Caddy's port on
+  `CADDY_BIND_IP` (set it to the Tailscale IP in `.env`); the LAN never sees
+  it, and the loopback default keeps a fresh clone off the network entirely.
 
-Then open **https://your-machine.your-tailnet.ts.net** from any device
-signed into your tailnet.
+[`caddy/Caddyfile.example`](../caddy/Caddyfile.example) walks through the
+setup. Then open **https://your-hostname** from any device signed into your
+tailnet; the portal asks for the token once and keeps a seven-day cookie.
 
-To skip the token on the phone, let the portal trust the identity Tailscale
-attaches to each request — add these two to `.env` and restart:
+This replaced `tailscale serve`, and one thing did not survive the move:
+`serve` attached your tailnet login to each request as a `Tailscale-User-Login`
+header, which the portal could be told to trust with
+`TRUST_TAILSCALE_HEADERS=true`. Caddy attaches no identity, so the flag now
+buys nothing — and behind any reverse proxy it must stay **off** (the default).
+A proxied header is whatever the client typed, and the "only this machine can
+set it" argument the trust rested on went away with `serve`.
 
-```sh
-ALLOWED_TAILSCALE_LOGINS=you@example.com     # the login Tailscale shows for you
-TRUST_TAILSCALE_HEADERS=true
-```
-
-`tailscale serve` sets a `Tailscale-User-Login` header on every proxied request.
-That header is only a string, so the portal accepts it under three conditions at
-once: the flag above is on, the login is on the allow-list, and the connection
-came from this machine (loopback or the Docker bridge). Anyone who can already
-open `127.0.0.1:8080` on the host can run code as you anyway, so that is where
-the trust boundary genuinely is. With the flag off — the default — the phone just
-asks for the token once and keeps a seven-day cookie.
-
-> **Never `tailscale funnel`.** Funnel publishes the port to the public internet.
-> `serve` keeps it inside your tailnet. If you want to narrow it further, a
-> Tailscale ACL can restrict port 443 on this node to your own devices.
+> **Keep the DNS record DNS-only.** Proxying the hostname through your DNS
+> provider's CDN would publish the portal to the whole internet, exactly what
+> this arrangement exists to avoid. The same goes for pointing the A record at
+> anything other than the Tailscale IP.
 
 To stop publishing it:
 
 ```sh
-tailscale serve --bg --https=443 off
+docker compose stop caddy
 ```
 
 ### `bossctl`

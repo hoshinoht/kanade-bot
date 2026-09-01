@@ -1,0 +1,22 @@
+# Template - copy to caddy/Caddyfile (gitignored) and set your own hostname.
+# The real file stays untracked because it names a personal domain.
+#
+# The portal's public name. Public DNS only: the A record is the host's
+# Tailscale IP (CGNAT), so the name resolves everywhere but routes nowhere
+# except inside the tailnet. Access control is the compose `ports:` mapping,
+# which publishes 443 on that Tailscale IP alone - NOT a client-IP filter here,
+# because Docker NATs inbound connections and Caddy only ever sees the
+# gateway's address, never the real tailnet peer's.
+portal.example.com {
+	tls {
+		# Cloudflare API token (Zone.DNS Edit, scoped to the one zone),
+		# supplied via .env.caddy.
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+		# ACME zone detection does an SOA walk over nonexistent names, and
+		# MagicDNS answers those with SERVFAIL. Query a public resolver
+		# directly instead of whatever the host resolver chain provides.
+		resolvers 1.1.1.1
+	}
+
+	reverse_proxy bot:8080
+}

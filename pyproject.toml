@@ -1,6 +1,6 @@
 [project]
 name = "boss-scheduler-bot"
-version = "2.1.0"
+version = "3.0.1"
 description = "Discord bot that keeps a MapleStory guild's weekly boss schedule and posts tagged reminders."
 readme = "README.md"
 license = "MIT"
@@ -29,11 +29,7 @@ dependencies = [
 bossctl = "bot.cli:main"
 
 [dependency-groups]
-dev = [
-    "pytest==9.1.1",
-    "ruff==0.16.5",
-    "respx==0.23.1",
-]
+dev = ["pytest==9.1.1", "ruff==0.16.5", "respx==0.23.1"]
 
 [build-system]
 requires = ["hatchling"]
@@ -44,7 +40,9 @@ packages = ["bot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -m 'not ollama'"
+# Only the marker filter belongs here: baking a verbosity flag into addopts
+# means a hand-typed `pytest -q` becomes `-qq` and silently loses the summary.
+addopts = "-m 'not ollama'"
 markers = [
     "ollama: hits the real local model; slow. Run with `uv run pytest -m ollama`.",
 ]

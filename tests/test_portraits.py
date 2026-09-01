@@ -19,10 +19,20 @@ from .fake_bot import ADMIN_TOKEN
 
 @pytest.fixture
 def table_with_portraits(tmp_path: Path):
-    """A boss table whose config directory has portraits for two bosses."""
+    """A boss table whose config directory has portraits for three bosses.
+
+    Between the four of them that is every case the size argument has: Star has
+    both renders, Bellona has only the full one, Kalos names its full file with
+    ``portrait:`` and has a same-named decoy inside ``icon/``, and Limbo has no
+    picture at all.
+    """
     (tmp_path / "portraits").mkdir()
     (tmp_path / "portraits" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
+    (tmp_path / "portraits" / "Bellona.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
     (tmp_path / "portraits" / "kalos-art.webp").write_bytes(b"RIFF fake")
+    (tmp_path / "portraits" / "icon").mkdir()
+    (tmp_path / "portraits" / "icon" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n small")
+    (tmp_path / "portraits" / "icon" / "kalos-art.webp").write_bytes(b"RIFF small")
     (tmp_path / "bosses.yaml").write_text(
         """
 difficulties: {n: Normal, h: Hard, x: Extreme}
@@ -38,6 +48,11 @@ bosses:
     difficulties: [n, x]
     portrait: kalos-art.webp
     aliases: [kalos]
+  Bellona:
+    full: Bellona
+    level: 285
+    difficulties: [n, h]
+    aliases: [bellona]
   Limbo:
     full: Limbo
     level: 285
@@ -94,6 +109,52 @@ def test_a_table_built_without_a_directory_has_no_portraits(bosses):
     )
 
 
+# --- two renders, and the caller picks --------------------------------------
+
+
+def test_the_small_render_comes_out_of_the_icon_directory(table_with_portraits):
+    """Same filename, one directory down -- so the directory is what to assert."""
+    icon = table_with_portraits.portrait_path("Star", "icon")
+
+    assert icon.name == "Star.png"
+    assert icon.parent.name == "icon"
+    assert icon.read_bytes().endswith(b"small")
+
+
+def test_the_full_render_never_looks_inside_icon(table_with_portraits):
+    """Asking for the big one cannot quietly serve the small one to something
+    that needed the detail -- Discord's card thumbnail, for instance."""
+    full = table_with_portraits.portrait_path("Star")
+
+    assert full.parent.name == "portraits"
+    assert table_with_portraits.portrait_path("Star", "full") == full
+
+
+def test_an_icon_that_is_not_there_falls_back_to_the_full_picture(table_with_portraits):
+    """A boss added today draws correctly before anybody has cropped one -- and
+    a fresh clone, where `icon/` does not exist at all, draws the same."""
+    fallen_back = table_with_portraits.portrait_path("Bellona", "icon")
+
+    assert fallen_back.name == "Bellona.png"
+    assert fallen_back.parent.name == "portraits"
+
+
+def test_an_override_is_never_looked_for_inside_icon(table_with_portraits):
+    """`icon/` is filename-by-key, like the entry artwork: the one line in
+    bosses.yaml names the full file and there is no second line naming a small
+    one. `icon/kalos-art.webp` is sitting right there and is still not it --
+    what comes back is the override, reached through the ordinary fallback."""
+    icon = table_with_portraits.portrait_path("Kalos", "icon")
+
+    assert icon.name == "kalos-art.webp"
+    assert icon.parent.name == "portraits"
+
+
+def test_a_boss_with_neither_render_still_has_nothing(table_with_portraits):
+    assert table_with_portraits.portrait_path("Limbo", "icon") is None
+    assert table_with_portraits.portrait_path("Gollux", "icon") is None
+
+
 # --- the shipped table ------------------------------------------------------
 
 
@@ -140,6 +201,9 @@ def test_the_portal_shows_a_monogram_when_there_is_no_portrait(auth, seeded):
 
 
 def test_the_portal_links_the_portrait_when_there_is_one(fake_bot, table_with_portraits, seeded):
+    """And links the *small* one: every portrait either surface draws is a badge
+    -- 26px beside a boss's name, 38px in the boss grid -- so none of them wants
+    the full art, which is a splash now rather than a thumbnail."""
     from fastapi.testclient import TestClient
 
     from bot.api import create_app
@@ -148,11 +212,42 @@ def test_the_portal_links_the_portrait_when_there_is_one(fake_bot, table_with_po
     fake_bot.repo.set_run_bosses(seeded["run_star"], ["HStar"])
     with TestClient(create_app(fake_bot)) as client:
         client.headers["Authorization"] = f"Bearer {ADMIN_TOKEN}"
-        assert 'src="/static/portraits/Star"' in client.get("/").text
-        served = client.get("/static/portraits/Star")
+        assert 'src="/static/portraits/Star?size=icon"' in client.get("/").text
+        served = client.get("/static/portraits/Star", params={"size": "icon"})
         assert served.status_code == 200
-        assert served.content.startswith(b"\x89PNG")
+        assert served.content.endswith(b"small")
         assert "max-age" in served.headers["cache-control"]
+
+
+def test_the_two_sizes_are_two_urls_serving_two_files(fake_bot, table_with_portraits):
+    """A query rather than a header, so the browser caches them apart: one URL
+    for both would show whichever was fetched first at both sizes."""
+    from fastapi.testclient import TestClient
+
+    from bot.api import create_app
+
+    fake_bot.bosses = table_with_portraits
+    with TestClient(create_app(fake_bot)) as client:
+        full = client.get("/static/portraits/Star")
+        icon = client.get("/static/portraits/Star", params={"size": "icon"})
+
+        assert full.content.endswith(b"fake")
+        assert icon.content.endswith(b"small")
+        # No query and `?size=full` are the same request; the portal writes the
+        # short form, and nothing has to normalise anything.
+        assert client.get("/static/portraits/Star", params={"size": "full"}).content == full.content
+
+
+def test_a_size_that_is_not_one_of_the_two_is_refused(fake_bot, table_with_portraits):
+    """Sanitised by being declared: FastAPI checks the word before we see it."""
+    from fastapi.testclient import TestClient
+
+    from bot.api import create_app
+
+    fake_bot.bosses = table_with_portraits
+    with TestClient(create_app(fake_bot)) as client:
+        assert client.get("/static/portraits/Star", params={"size": "../icon"}).status_code == 422
+        assert client.get("/static/portraits/Star", params={"size": "64"}).status_code == 422
 
 
 def test_an_unknown_portrait_is_a_404_not_a_traversal(fake_bot, table_with_portraits):
@@ -246,4 +341,4 @@ def test_a_missing_file_is_survived_not_raised(tmp_path):
     from bot.client import BossBot
 
     card = formatting.Card(content="hi", thumbnail_path=tmp_path / "gone.png")
-    assert BossBot._attachment(card) is None
+    assert BossBot._attachments(card) == []

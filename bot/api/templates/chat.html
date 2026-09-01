@@ -1,64 +1,47 @@
 {% extends "base.html" %}
-{% block title %}Chat — Boss scheduler{% endblock %}
+{% from "partials/macros.html" import search_form %}
+{% block title %}Chat — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
+{# One head band, not a hero card above a stat card. The totals are four
+   label-and-figure pairs per model, which is all they ever were; as tiles they
+   spent two thirds of a laptop screen and left the interactions two rows tall.
+   The prose that used to be here is in docs/portal.md, where it is read once. #}
 <div class="page-head">
   <div>
     <p class="eyebrow">The speech pilot</p>
     <h1>{{ summary.count }} interaction{{ "" if summary.count == 1 else "s" }}</h1>
-    <p>Every question the chatbot actually answered, what it looked up to answer it, and what the
-      answer cost. A question the rate limiter turned away is not one of these.</p>
   </div>
   <span class="chip chip--mono">{{ config.chat_model or "no model set" }}</span>
+  {% if summary.models %}
+  {# Over the whole log, not the page: these are totals, and a total that
+     changed when you turned to page two would be a different number every
+     time. A row per model, so several models each keep their own figures. #}
+  <div class="statline">
+    {% for row in summary.models %}
+    <div class="statline__row">
+      <span class="statline__model mono">{{ row.model or "unknown model" }}</span>
+      <span class="statline__pair"><span class="statline__k">calls</span>
+        <span class="mono">{{ row.count }}</span></span>
+      <span class="statline__pair"><span class="statline__k">outcome</span>
+        <span class="mono">{{ row.answered }} answered · {{ row.failed }} failed</span></span>
+      <span class="statline__pair"><span class="statline__k">latency</span>
+        <span class="mono">{{ row.avg_latency_ms|duration }} avg · {{ row.p95_latency_ms|duration }} p95</span></span>
+      <span class="statline__pair"><span class="statline__k">tokens</span>
+        <span class="mono">{{ "{:,}".format(row.prompt_tokens) }} in · {{ "{:,}".format(row.completion_tokens) }} out</span></span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
-{% if not interactions %}
-<div class="empty">
-  <strong>Nothing asked yet.</strong>
-  The chatbot answers when somebody @mentions it in a chat channel and holds the chat role.
-  Turn it on under <a href="/config">Config</a>.
-</div>
-{% else %}
-
-<div class="stats">
-  {% for row in summary.models %}
-  <section class="stat">
-    <p class="stat__name stat__name--id">{{ row.model or "unknown model" }}</p>
-    <p class="stat__big">{{ row.count }}<span class="stat__unit">answered {{ row.answered }} · failed {{ row.failed }}</span></p>
-    <dl class="stat__rows">
-      <div><dt>Latency</dt><dd class="mono">{{ row.avg_latency_ms|duration }} avg · {{ row.p95_latency_ms|duration }} p95</dd></div>
-      <div><dt>Tokens</dt><dd class="mono">{{ "{:,}".format(row.prompt_tokens) }} in · {{ "{:,}".format(row.completion_tokens) }} out</dd></div>
-    </dl>
-  </section>
-  {% endfor %}
-</div>
-
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Interactions</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>When</th><th>Who</th><th>Channel</th><th>Model</th>
-          <th>Rounds</th><th>Tools</th><th>Latency</th><th>Outcome</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in interactions %}
-        <tr>
-          <td class="mono">{{ row.local_time }}</td>
-          <td>{{ row.author_name }}</td>
-          <td class="mono">{{ row.channel_name or "—" }}</td>
-          <td class="mono">{{ row.model }}</td>
-          <td class="mono">{{ row.rounds }}</td>
-          <td>{% if row.tool_names %}<span class="mono">{{ row.tool_names|join(", ") }}</span>{% else %}<span class="id">none</span>{% endif %}</td>
-          <td class="mono">{{ row.latency_ms|duration }}</td>
-          <td><span class="status status--{{ 'confirmed' if row.outcome == 'answered' else 'cancelled' }}">{{ row.outcome }}</span></td>
-          <td><a class="btn" href="/chat/{{ row.id }}">Open</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<section class="card pane">
+  <div class="card__head">
+    <h2 class="card__title">Interactions</h2>
+    {{ search_form("/chat", "chat-rows", "member, channel, question…", listing.q) }}
+  </div>
+  <div id="chat-rows" class="pane__swap">
+    {% include "partials/chat_rows.html" %}
   </div>
 </section>
-{% endif %}
 {% endblock %}

@@ -1,4 +1,5 @@
 {% from "partials/macros.html" import boss_list %}
+{% from "partials/icons.html" import icon %}
 {# One run. Swapped in place by htmx after an action; re-rendered whole by the
    server so the status, the tally and the buttons can never disagree. #}
 {# An answer, as a shape and as a word. The shape is what makes a row scannable
@@ -7,15 +8,40 @@
 {% set answer_marks = {"yes": "●", "no": "✕", "maybe": "?", "waiting": "○"} %}
 {% set answer_words = {"yes": "on", "no": "out", "maybe": "maybe", "waiting": "no answer yet"} %}
 <article class="run run--{{ run.status }}" id="run-{{ run.short_id }}" style="animation-delay: {{ (index|default(0)) * 24 }}ms">
+  {% if run.entry_art %}
+  {# The bosses' own entry screens, laid behind the card as a veil rather than
+     above it as a band: they cost the card no height, which is the one thing
+     the board cannot spend. First children so they are behind everything in
+     source order too, and inside the article on purpose -- every action here
+     swaps `closest .run` whole, so anything outside would be dropped on the
+     first button pressed. Decorative: both bosses are named, in full, on top.
+
+     One boss gets the side vignette, which is what the bare class draws. Two
+     get a corner each -- the lead from the top right, the second from the
+     bottom right, meeting on the right edge -- and *which* is a fact about how
+     many there are, so the server says it in the class rather than leaving the
+     stylesheet to count. #}
+  {% set split = run.entry_art|length > 1 %}
+  {% for art in run.entry_art %}
+  <img class="run__art{% if split %} run__art--{{ 'lead' if loop.first else 'second' }}{% endif %}"
+       src="{{ art }}" alt="" loading="lazy" decoding="async">
+  {% endfor %}
+  {% endif %}
   <div class="run__time">
     {% if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif %}
     <small>{{ run.local_day }}</small>
   </div>
 
   <div>
-    <p class="run__bosses">{{ boss_list(run.boss_detail) }}</p>
+    {# A list rather than a line when there is more than one boss, so the
+       second one keeps its pill and its level beside its own name. #}
+    <div class="run__bosses">{{ boss_list(run.boss_detail, stacked=True) }}</div>
     <div class="run__meta">
-      <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
+      {# The state, drawn and then said. `status_label` carries Discord's emoji
+         in front of the same word, which is right on a card in Discord and was
+         the one glyph here no colourway could touch. #}
+      <span class="status status--{{ run.status }}">{{ icon(status_icons[run.status]) }}
+        {{ status_words[run.status] }}</span>
       <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
       {% if run.no %}<span class="status status--at_risk mono">{{ run.no }} out</span>{% endif %}
       {% if run.maybe %}<span class="status status--otot mono">{{ run.maybe }} maybe</span>{% endif %}
@@ -23,7 +49,9 @@
       {% if run.channel_name %}
       <span class="chanmark">{{ run.channel_name }}
         <button class="chanmark__btn" type="submit" form="reread-{{ run.channel_id }}"
-                title="Re-read {{ run.channel_name }} from Discord and propose any changes">⟳</button>
+                title="Re-read {{ run.channel_name }} from Discord and propose any changes">
+          {{ icon("refresh-cw", "re-read " ~ run.channel_name) }}
+        </button>
       </span>
       {% endif %}
       <span class="id">#{{ run.short_id }}</span>
@@ -66,7 +94,7 @@
       {% if card.state == "posted" %}
       <a class="cardlink cardlink--posted" href="{{ card.url }}" target="_blank" rel="noopener"
          title="Open the {{ card.label }} card in Discord (posted {{ card.local_sent_at }})">
-        {{ card.label }} <span class="cardlink__at">{{ card.local_sent_at }}</span><span class="cardlink__out" aria-hidden="true">↗</span>
+        {{ card.label }} <span class="cardlink__at">{{ card.local_sent_at }}</span><span class="cardlink__out">{{ icon("external-link") }}</span>
       </a>
       {% elif card.state == "skipped" %}
       <span class="cardlink cardlink--skipped"
@@ -104,7 +132,13 @@
           hx-post="/runs/{{ run.id }}/ping" hx-target="closest .run" hx-swap="outerHTML">
       <input type="hidden" name="next" value="{{ back }}">
       <input type="hidden" name="kind" value="day_of">
-      <button class="btn btn--ghost" type="submit"
+      {# Faced, not ghosted. This corner is where the entry-art veil is at its
+         most opaque, and a transparent button reads as a word lying on a
+         picture rather than as a control -- worst over the bright splashes.
+         Giving it the same surface and border the Move button beside it has is
+         contrast by construction: it follows every colourway and both faces,
+         and needs no scrim and no rule of its own. #}
+      <button class="btn" type="submit"
               title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
     </form>
   </div>
@@ -134,7 +168,11 @@
      through the swap by the hidden field below, so recording two answers in a
      row does not close the panel between them. #}
   <details class="answers" {% if answers_open %}open{% endif %}>
-    <summary class="btn btn--ghost answers__summary">Answers</summary>
+    {# The word alone said nothing about being a disclosure. The chevron comes
+       from the same icon sheet as everything else and is turned by portal.css
+       when the panel opens; the rest of the line says what opening it is for. #}
+    <summary class="btn answers__summary">{{ icon("chevron-right") }}
+      Answers — set who’s in or out</summary>
     <div class="answers__body">
       <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
       {% for person in run.participants %}

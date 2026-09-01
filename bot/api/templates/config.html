@@ -1,16 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Config — Boss scheduler{% endblock %}
+{% block title %}Config — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Runtime</p>
-    <h1>Config</h1>
-    <p>These four take effect immediately and survive a restart. Everything below them is set in
-      <code>.env</code> and needs a redeploy.</p>
-  </div>
-</div>
+{# The whole page is one window: a table of contents down the left, one section
+   at a time on the right. Switching is `:target` and nothing else -- the tabs
+   are real fragment links, `portal.css` shows the panel whose id matches, and
+   with no fragment the first panel shows. No JavaScript is involved in getting
+   from one section to another.
 
+   Each form carries the section it belongs to in a hidden field, so a save
+   redirects back to `/config?msg=…#chatbot` rather than to the top of the
+   window (`routes_web.back_to`).
+
+   There is no page head above this: the window's own title bar is the head,
+   which is the whole point of a settings app. #}
 {% if config.missing_manage_messages %}
+{# Above the window, like a flash: it is true whichever section is open. #}
 <div class="empty" role="status">
   <strong>Missing “Manage Messages” in {{ config.missing_manage_messages|join(", ") }}.</strong>
   The bot needs it to take somebody's old reaction off, so ✅ and ❌ stay one-or-the-other. Until
@@ -20,205 +25,325 @@
 </div>
 {% endif %}
 
-<div class="grid-2">
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Pings</h2></div>
-    <form method="post" action="/config" class="filters">
-      <label class="field"><span>Morning ping</span>
-        <input name="day_of_ping_time" value="{{ config.day_of_ping_time }}" size="6" class="mono">
-      </label>
-      <label class="field"><span>Countdowns (minutes)</span>
-        <input name="countdown_minutes" value="{{ config.countdown_minutes }}" size="10" class="mono">
-      </label>
-      <button class="btn btn--primary" type="submit">Save</button>
-    </form>
-    <p class="run__meta">Changing either re-places every ping that has not fired yet.</p>
-  </section>
-
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Chat watching</h2></div>
-    <div class="run__actions" style="justify-content: flex-start">
-      <form method="post" action="/config">
-        <input type="hidden" name="paused" value="{{ '0' if config.paused else '1' }}">
-        <button class="btn" type="submit">{{ "Resume watching" if config.paused else "Pause watching" }}</button>
-      </form>
-      <form method="post" action="/config">
-        <input type="hidden" name="extract_enabled" value="{{ '0' if config.extract_enabled else '1' }}">
-        <button class="btn" type="submit">{{ "Turn the extractor on" if not config.extract_enabled else "Turn the extractor off" }}</button>
-      </form>
-    </div>
-    <p class="run__meta">
-      Watching is <strong>{{ "paused" if config.paused else "on" }}</strong> ·
-      extractor <strong>{{ "on" if config.extract_enabled else "off" }}</strong>.
-      Messages are stored either way, so a rescan can catch up later.
-    </p>
-  </section>
-
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Chatbot</h2></div>
-    <div class="run__actions" style="justify-content: flex-start">
-      <form method="post" action="/config">
-        <input type="hidden" name="chat_mode" value="{{ '0' if config.chat_mode else '1' }}">
-        <button class="btn" type="submit" {{ "disabled" if not config.chat_configured }}>{{ "Turn the chatbot off" if config.chat_mode else "Turn the chatbot on" }}</button>
-      </form>
-    </div>
-    {# The four capacity numbers. `.env` seeds them; from here on the stored
-       value wins, so tuning them at 9pm needs neither an edit nor a restart. #}
-    <form method="post" action="/config" class="filters">
-      <label class="field"><span>Answers per person</span>
-        <input name="chat_pilot_rate_count" value="{{ config.chat_pilot_rate_count }}"
-               type="number" min="1" step="1" size="4" class="mono">
-      </label>
-      <label class="field"><span>Their window (s)</span>
-        <input name="chat_pilot_rate_window_s"
-               value="{{ "%g"|format(config.chat_pilot_rate_window_s) }}"
-               type="number" min="1" step="any" size="6" class="mono">
-      </label>
-      <label class="field"><span>Answers per guild</span>
-        <input name="chat_pilot_global_rate_count" value="{{ config.chat_pilot_global_rate_count }}"
-               type="number" min="1" step="1" size="4" class="mono">
-      </label>
-      <label class="field"><span>Its window (s)</span>
-        <input name="chat_pilot_global_rate_window_s"
-               value="{{ "%g"|format(config.chat_pilot_global_rate_window_s) }}"
-               type="number" min="1" step="any" size="6" class="mono">
-      </label>
-      <button class="btn btn--primary" type="submit">Save</button>
-    </form>
-    <p class="run__meta">
-      {% if config.chat_configured %}
-        The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,
-        answering in {{ config.chat_channels | length }} channel(s) with
-        <strong>{{ config.chat_model }}</strong>. It replies only when mentioned by
-        somebody holding the chat role, and every change it drafts is a card
-        somebody still has to ✅. Individual members can be given their own
-        allowance on the <a href="/limits">Limits</a> page.
-      {% else %}
-        Not configured — set <span class="mono">CHAT_PILOT_ROLE_ID</span> and
-        <span class="mono">CHAT_PILOT_CHANNEL_IDS</span> in <span class="mono">.env</span>
-        and restart. Until both are set the bot answers nobody.
-      {% endif %}
-    </p>
-  </section>
-
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Notifications</h2></div>
-    <div class="run__actions" style="justify-content: flex-start">
-      <form method="post" action="/config">
-        <input type="hidden" name="quiet_mode" value="{{ '0' if config.quiet_mode else '1' }}">
-        <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
-      </form>
-    </div>
-    <p class="run__meta">
-      Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
-      While it is on the bot posts everything as usual but notifies nobody —
-      names still show, no pings go out, and each message is marked 🔕.
-    </p>
-  </section>
-
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Weekly digest</h2></div>
-    <form method="post" action="/digest" class="filters">
-      <label class="field"><span>Week</span>
-        <select name="week"><option value="this">This week</option><option value="next">Next week</option></select>
-      </label>
-      <label class="field"><span>Channel</span>
-        <select name="channel_id">
-          <option value="">POST_CHANNEL_ID</option>
-          {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
-        </select>
-      </label>
-      <button class="btn btn--primary" type="submit">Post it now</button>
-    </form>
-    <p class="run__meta">Posts the whole guild's week. It names people rather than pinging them.</p>
-  </section>
-
-  <section class="card">
-    <div class="card__head"><h2 class="card__title">Re-read the party channels</h2></div>
-    <form method="post" action="/rescan" hx-post="/rescan" hx-target="#rescan-job"
-          hx-swap="outerHTML">
-      <div class="filters">
-        <label class="field"><span>How far back</span>
-          <select name="window">
-            <option value="week">This boss week</option>
-            <option value="2weeks">Last 2 weeks</option>
-            <option value="48h">48h</option>
-            <option value="24h">24h</option>
-          </select>
-        </label>
-        <button class="btn btn--primary" type="submit">Rescan</button>
-      </div>
-      <fieldset class="field">
-        <span class="label">Channels — leave all unticked for every one</span>
-        <div class="run__people">
-          {% for target in rescan_targets %}
-          <label class="chip">
-            <input type="checkbox" name="channels" value="{{ target.id }}"> {{ target.name }}
-            {% if not target.has_runs %}<span class="id">general</span>{% endif %}
-          </label>
-          {% endfor %}
-        </div>
-      </fieldset>
-    </form>
-    <div id="rescan-job">
-      {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
-    </div>
-    <p class="run__meta">Pulls each channel's history from Discord, splits it back into
-      conversations, and posts one card per channel at the end. One channel at a time, so a full
-      sweep takes a few minutes — it runs in the background, and the bot keeps working while it
-      does, so you can leave the page.</p>
-    {% if recent_rescans %}
-    <details>
-      <summary class="btn">Recent rescans</summary>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>When</th><th>Channels</th><th>Window</th><th>Cards</th><th></th></tr></thead>
-          <tbody>
-            {% for past in recent_rescans %}
-            <tr>
-              <td class="mono">{{ "%.0f"|format(past.elapsed_ms / 1000) }}s</td>
-              <td>{{ past.channel_names|join(", ") }}</td>
-              <td class="mono">{{ past.window }}</td>
-              <td class="mono">{{ past.results|sum(attribute="proposals") }}</td>
-              <td><a href="/config?job={{ past.job_id }}">{{ past.status }}</a></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </details>
-    {% endif %}
-  </section>
-</div>
-
-<hr class="rule">
-
-<section class="card">
+<section class="card pane settings">
   <div class="card__head">
-    <h2 class="card__title">Channel access</h2>
-    <form method="post" action="/access" hx-get="/access" hx-target="#access" hx-swap="innerHTML"
-          style="margin-left:auto">
-      <button class="btn" type="submit">Check again</button>
-    </form>
+    <h1 class="card__title">Config</h1>
+    <span class="id">runtime settings take effect at once and survive a restart</span>
   </div>
-  <div id="access">{% include "partials/access.html" %}</div>
-</section>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Set in <code>.env</code></h2></div>
-  <div class="table-wrap">
-    <table>
-      <tbody>
-        <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
-        <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
-        <tr><th>Model</th><td class="mono">{{ config.model }}</td></tr>
-        <tr><th>Ollama</th><td class="mono">{{ config.ollama_host }}</td></tr>
-        <tr><th>Minimum confidence</th><td class="mono">{{ config.min_confidence }}</td></tr>
-        <tr><th>Digest channel</th><td class="mono">{{ config.post_channel_id or "not set" }}</td></tr>
-        <tr><th>Watched channels</th><td class="mono">{{ config.watched_channels|join(", ") or "none" }}</td></tr>
-        <tr><th>Watched categories</th><td class="mono">{{ config.watched_categories|join(", ") or "none" }}</td></tr>
-      </tbody>
-    </table>
+  <div class="settings__body">
+    <nav class="settings__toc" aria-label="Settings sections">
+      {% for key, label in config_sections %}
+      <a class="settings__tab" href="#{{ key }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+
+    <div class="settings__detail">
+      <section class="settings__panel" id="pings" aria-labelledby="pings-h">
+        <h2 class="settings__title" id="pings-h">Pings</h2>
+        <form method="post" action="/config" class="filters">
+          <input type="hidden" name="section" value="pings">
+          <label class="field"><span>Morning ping</span>
+            <input name="day_of_ping_time" value="{{ config.day_of_ping_time }}" size="6" class="mono">
+          </label>
+          <label class="field"><span>Countdowns (minutes)</span>
+            <input name="countdown_minutes" value="{{ config.countdown_minutes }}" size="10" class="mono">
+          </label>
+          <button class="btn btn--primary" type="submit">Save</button>
+        </form>
+        <p class="note">Changing either re-places every ping that has not fired yet.</p>
+      </section>
+
+      <section class="settings__panel" id="watching" aria-labelledby="watching-h">
+        <h2 class="settings__title" id="watching-h">Chat watching</h2>
+        <div class="settings__actions">
+          <form method="post" action="/config">
+            <input type="hidden" name="section" value="watching">
+            <input type="hidden" name="paused" value="{{ '0' if config.paused else '1' }}">
+            <button class="btn" type="submit">{{ "Resume watching" if config.paused else "Pause watching" }}</button>
+          </form>
+          <form method="post" action="/config">
+            <input type="hidden" name="section" value="watching">
+            <input type="hidden" name="extract_enabled" value="{{ '0' if config.extract_enabled else '1' }}">
+            <button class="btn" type="submit">{{ "Turn the extractor on" if not config.extract_enabled else "Turn the extractor off" }}</button>
+          </form>
+        </div>
+        <p class="note">
+          Watching is <strong>{{ "paused" if config.paused else "on" }}</strong> ·
+          extractor <strong>{{ "on" if config.extract_enabled else "off" }}</strong>.
+          Messages are stored either way, so a rescan can catch up later.
+        </p>
+      </section>
+
+      <section class="settings__panel" id="chatbot" aria-labelledby="chatbot-h">
+        <h2 class="settings__title" id="chatbot-h">Chatbot</h2>
+        <div class="settings__actions">
+          <form method="post" action="/config">
+            <input type="hidden" name="section" value="chatbot">
+            <input type="hidden" name="chat_mode" value="{{ '0' if config.chat_mode else '1' }}">
+            <button class="btn" type="submit" {{ "disabled" if not config.chat_configured }}>{{ "Turn the chatbot off" if config.chat_mode else "Turn the chatbot on" }}</button>
+          </form>
+        </div>
+        {# The four capacity numbers. `.env` seeds them; from here on the stored
+           value wins, so tuning them at 9pm needs neither an edit nor a restart. #}
+        <form method="post" action="/config" class="filters">
+          <input type="hidden" name="section" value="chatbot">
+          <label class="field"><span>Answers per person</span>
+            <input name="chat_pilot_rate_count" value="{{ config.chat_pilot_rate_count }}"
+                   type="number" min="1" step="1" size="4" class="mono">
+          </label>
+          <label class="field"><span>Their window (s)</span>
+            <input name="chat_pilot_rate_window_s"
+                   value="{{ "%g"|format(config.chat_pilot_rate_window_s) }}"
+                   type="number" min="1" step="any" size="6" class="mono">
+          </label>
+          <label class="field"><span>Answers per guild</span>
+            <input name="chat_pilot_global_rate_count" value="{{ config.chat_pilot_global_rate_count }}"
+                   type="number" min="1" step="1" size="4" class="mono">
+          </label>
+          <label class="field"><span>Its window (s)</span>
+            <input name="chat_pilot_global_rate_window_s"
+                   value="{{ "%g"|format(config.chat_pilot_global_rate_window_s) }}"
+                   type="number" min="1" step="any" size="6" class="mono">
+          </label>
+          <button class="btn btn--primary" type="submit">Save</button>
+        </form>
+        {# The voice, as a choice. Every `*.md` in the personas directory except
+           its README, read off the bind mount on each render -- a file dropped
+           in is in this list on the next page load, and the value that comes
+           back is checked against that same listing rather than parsed. #}
+        <form method="post" action="/config" class="filters">
+          <input type="hidden" name="section" value="chatbot">
+          <label class="field"><span>Persona</span>
+            <select name="persona">
+              {% for name in config.persona_choices %}
+              <option value="{{ name }}"{% if name == config.persona %} selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="btn btn--primary" type="submit"
+                  {{ "disabled" if not config.persona_choices }}>Use this voice</button>
+        </form>
+        {# What it is *actually* wearing, which is the same thing until the
+           chosen file goes missing. A deploy answering in the template's
+           placeholder voice is a misconfiguration, and it used to be visible
+           only in a startup WARNING. #}
+        {% if config.persona_fallback %}
+        <p class="note">
+          <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
+          {% if config.persona %}
+          <span class="mono">{{ config.persona }}</span> is chosen but is not in
+          <span class="mono">personas/</span> any more, so it is answering in the template's
+          placeholder voice.
+          {% else %}
+          No persona of its own, so it is answering in the template's placeholder voice.
+          {% endif %}
+          Drop one in <span class="mono">personas/</span> — see that directory's README — and
+          pick it here. No restart.
+        </p>
+        {% endif %}
+        <p class="note">
+          {% if config.chat_configured %}
+            The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,
+            answering in {{ config.chat_channels | length }} channel(s) with
+            <strong>{{ config.chat_model }}</strong>. It replies only when mentioned by
+            somebody holding the chat role, and every change it drafts is a card
+            somebody still has to ✅. Individual members can be given their own
+            allowance on the <a href="/limits">Limits</a> page.
+          {% else %}
+            Not configured — set <span class="mono">CHAT_PILOT_ROLE_ID</span> and
+            <span class="mono">CHAT_PILOT_CHANNEL_IDS</span> in <span class="mono">.env</span>
+            and restart. Until both are set the bot answers nobody.
+          {% endif %}
+        </p>
+      </section>
+
+      <section class="settings__panel" id="notifications" aria-labelledby="notifications-h">
+        <h2 class="settings__title" id="notifications-h">Notifications</h2>
+        <div class="settings__actions">
+          <form method="post" action="/config">
+            <input type="hidden" name="section" value="notifications">
+            <input type="hidden" name="quiet_mode" value="{{ '0' if config.quiet_mode else '1' }}">
+            <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
+          </form>
+        </div>
+        {# The 🔕 stays an emoji: it is not this page's mark but the character
+           the bot actually puts on the message (`formatting.QUIET_MARKER`), and
+           naming it with anything else would describe something the reader will
+           never find in Discord. #}
+        <p class="note">
+          Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
+          While it is on the bot posts everything as usual but notifies nobody —
+          names still show, no pings go out, and each message is marked 🔕 in Discord.
+        </p>
+      </section>
+
+      <section class="settings__panel" id="theme" aria-labelledby="theme-h">
+        <h2 class="settings__title" id="theme-h">Theme</h2>
+        {# The two controls on the portal that are not real forms, deliberately:
+           both are kept in this browser's localStorage and applied by
+           `static/portal.js`, so there is no server state for a POST to write
+           and nothing to redirect back to. The reasoning is written out at the
+           top of portal.js. What is ticked here is the *default*; portal.js
+           re-ticks whatever is stored as soon as it runs. #}
+        <fieldset class="field">
+          <span class="label">Colourway</span>
+          <div class="swatches">
+            {% for way in colorways %}
+            <label class="swatch">
+              <input type="radio" name="colorway" value="{{ way.key }}"{% if way.key == default_colorway %} checked{% endif %}>
+              <span class="swatch__dots" aria-hidden="true"
+                    style="--sw-ground: {{ way.ground }}; --sw-accent: {{ way.accent }}"></span>
+              <span class="swatch__name">{{ way.name }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        {# "System" is stored as nothing at all -- see portal.js -- so it is the
+           one ticked here, which is also what a browser with no script gets. #}
+        <fieldset class="field">
+          <span class="label">Mode</span>
+          <div class="swatches">
+            <label class="swatch swatch--plain">
+              <input type="radio" name="thememode" value="system" checked>
+              <span class="swatch__name">System</span>
+            </label>
+            <label class="swatch swatch--plain">
+              <input type="radio" name="thememode" value="light">
+              <span class="swatch__name">Light</span>
+            </label>
+            <label class="swatch swatch--plain">
+              <input type="radio" name="thememode" value="dark">
+              <span class="swatch__name">Dark</span>
+            </label>
+          </div>
+        </fieldset>
+        <noscript>
+          <p class="note">Both of these need JavaScript — they are kept in this browser rather than
+            on the server, so there is nothing here to submit. Without it the portal stays on
+            {{ colorways[0].name }} and follows whatever this device says about light and dark.</p>
+        </noscript>
+        <p class="note">Takes effect as you pick it, and only on this device — neither choice ever
+          reaches the bot. <strong>System</strong> follows what the device already knows; pick
+          Light or Dark when you want the portal to disagree with it.</p>
+      </section>
+
+      <section class="settings__panel" id="digest" aria-labelledby="digest-h">
+        <h2 class="settings__title" id="digest-h">Weekly digest</h2>
+        <form method="post" action="/digest" class="filters">
+          <label class="field"><span>Week</span>
+            <select name="week"><option value="this">This week</option><option value="next">Next week</option></select>
+          </label>
+          <label class="field"><span>Channel</span>
+            <select name="channel_id">
+              <option value="">POST_CHANNEL_ID</option>
+              {% for channel in channels %}<option value="{{ channel.id }}">{{ channel.name }}</option>{% endfor %}
+            </select>
+          </label>
+          <button class="btn btn--primary" type="submit">Post it now</button>
+        </form>
+        <p class="note">Posts the whole guild's week. It names people rather than pinging them.</p>
+      </section>
+
+      <section class="settings__panel" id="rescan" aria-labelledby="rescan-h">
+        <h2 class="settings__title" id="rescan-h">Re-read the party channels</h2>
+        <form method="post" action="/rescan" hx-post="/rescan" hx-target="#rescan-job"
+              hx-swap="outerHTML">
+          <div class="filters">
+            <label class="field"><span>How far back</span>
+              <select name="window">
+                <option value="week">This boss week</option>
+                <option value="2weeks">Last 2 weeks</option>
+                <option value="48h">48h</option>
+                <option value="24h">24h</option>
+              </select>
+            </label>
+            <button class="btn btn--primary" type="submit">Rescan</button>
+          </div>
+          <fieldset class="field">
+            <span class="label">Channels — leave all unticked for every one</span>
+            <div class="run__people">
+              {% for target in rescan_targets %}
+              <label class="chip">
+                <input type="checkbox" name="channels" value="{{ target.id }}"> {{ target.name }}
+                {% if not target.has_runs %}<span class="id">general</span>{% endif %}
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        </form>
+        {# The swap target, inside its own section: a job's progress replaces
+           this element and nothing around it. #}
+        <div id="rescan-job">
+          {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
+        </div>
+        <p class="note">Pulls each channel's history from Discord, splits it back into
+          conversations, and posts one card per channel at the end. One channel at a time, so a
+          full sweep takes a few minutes — it runs in the background, so you can leave the
+          page.</p>
+        {% if recent_rescans %}
+        <details>
+          <summary class="btn">Recent rescans</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Channels</th><th>Window</th><th>Cards</th><th></th></tr></thead>
+              <tbody>
+                {% for past in recent_rescans %}
+                <tr>
+                  <td class="mono">{{ "%.0f"|format(past.elapsed_ms / 1000) }}s</td>
+                  <td>{{ past.channel_names|join(", ") }}</td>
+                  <td class="mono">{{ past.window }}</td>
+                  <td class="mono">{{ past.results|sum(attribute="proposals") }}</td>
+                  <td><a href="/config?job={{ past.job_id }}#rescan">{{ past.status }}</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        {% endif %}
+      </section>
+
+      <section class="settings__panel" id="access" aria-labelledby="access-h">
+        <h2 class="settings__title" id="access-h">Channel access</h2>
+        <div class="settings__actions">
+          <form method="post" action="/access" hx-get="/access" hx-target="#access-table"
+                hx-swap="innerHTML">
+            <button class="btn" type="submit">Check again</button>
+          </form>
+        </div>
+        {# The swap target. Named apart from the section's own id, which the
+           sidebar link uses. #}
+        <div id="access-table">{% include "partials/access.html" %}</div>
+      </section>
+
+      <section class="settings__panel" id="env" aria-labelledby="env-h">
+        <h2 class="settings__title" id="env-h">Set in <code>.env</code></h2>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
+              <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
+              {# Two rows, because they are two models and here they differ: a
+                 local one reads the channels, a bigger one does the talking.
+                 One row called "Model" said the wrong thing about whichever of
+                 them the reader had in mind. #}
+              <tr><th title="Reads the party channels and drafts the cards in the Inbox — the extractor, and every rescan">Data model</th>
+                <td class="mono">{{ config.model }}</td></tr>
+              <tr><th title="Answers when somebody with the chat role mentions the bot">Speech model</th>
+                <td class="mono">{{ config.chat_model or "not set" }}</td></tr>
+              <tr><th>Ollama</th><td class="mono">{{ config.ollama_host }}</td></tr>
+              <tr><th>Minimum confidence</th><td class="mono">{{ config.min_confidence }}</td></tr>
+              <tr><th>Digest channel</th><td class="mono">{{ config.post_channel_id or "not set" }}</td></tr>
+              <tr><th>Watched channels</th><td class="mono">{{ config.watched_channels|join(", ") or "none" }}</td></tr>
+              <tr><th>Watched categories</th><td class="mono">{{ config.watched_categories|join(", ") or "none" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">These need an edit and a redeploy. Everything above this survives a
+          restart on its own.</p>
+      </section>
+    </div>
   </div>
 </section>
 {% endblock %}
