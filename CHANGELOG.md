@@ -2,7 +2,7 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## 2.2.0
+## 3.0.0
 
 **Added**
 
@@ -34,6 +34,27 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - **The portal draws its own icons** — inline Feather strokes in
   `currentColor`, so every colourway and dark face tints every icon. Discord
   keeps its emoji vocabulary untouched: over there a reaction *is* an emoji.
+- **The morning ping carries the boss's entry splash**: the day-of message
+  wears the lead boss's entry art as its embed image, on top of the portrait
+  thumbnail it already had. Countdowns stay text-lean.
+- **Limits, a chat's detail and an extraction's detail became tabbed browser
+  windows** — fragment-switched tabs on the window chrome, the same no-script
+  `:target` machinery as Settings, with live counts on the Limits tabs and the
+  allowance form kept outside the polled region so a refresh never eats what
+  you were typing.
+- **Personas moved into `personas/`**, bind-mounted read-only into the
+  container — tracked README and template, everything a deployment actually
+  writes git-ignored — and the Config page's Chatbot panel says which file the
+  voice is coming from, marked when it fell back to the template.
+- **Voices swap live**: every `.md` in `personas/` (bar the README) is a
+  dropdown on the Chatbot panel, the choice is runtime config seeded from
+  `PERSONA_PATH`'s basename, and the next answer is in the new voice — no
+  restart. Submissions are validated by membership in the real directory
+  listing, audits carry filenames only, and a chosen file that goes missing
+  falls back to the template and says so on the panel.
+- **The README shows the portal**: six screenshots in `docs/images/`, with the
+  week board in a `<picture>` tag so GitHub serves the light face to light
+  readers and the Twilight one after dark.
 - **A caddy front door** (`caddy/` service in compose): the portal is served
   over HTTPS at a personal domain with a real Let's Encrypt certificate,
   reachable only from the tailnet. The public A record points at the host's
@@ -70,6 +91,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   column or orphaned on a line away from its boss.
 - `pytest -q` no longer doubles into silence: the verbosity flag is out of
   `addopts`, which keeps only the marker filter.
+- The Settings sidebar's raised ground meets the window's title bar instead of
+  leaving a strip of card surface between the two.
 
 ## 2.1.0
 
