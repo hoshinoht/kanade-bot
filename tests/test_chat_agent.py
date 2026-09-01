@@ -161,7 +161,7 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     # model answer from real data rather than from memory.
     second_prompt = agent._client.conversation(1)
     assert second_prompt[-1]["role"] == "tool"
-    assert "HStar+HFA" in second_prompt[-1]["content"]
+    assert "Hard Star + Hard FA" in second_prompt[-1]["content"]
 
 
 async def test_tools_are_offered_on_every_round_but_the_last(chat_bot, chat_seeded):

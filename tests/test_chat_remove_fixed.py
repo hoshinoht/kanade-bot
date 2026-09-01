@@ -131,7 +131,7 @@ async def test_the_card_says_it_is_the_recurring_one(chat_bot, chat_seeded):
     name, value = formatting.proposal_line(row, None, TZ)
 
     assert "remove weekly" in name
-    assert "HStar" in name
+    assert "Hard Star" in name
     assert "stop scheduling this every week" in value
     assert "future weeks will not be scheduled" in value
     assert "Mon 21:30" in value

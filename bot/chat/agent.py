@@ -20,6 +20,7 @@ import contextlib
 import logging
 import time
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,7 +64,7 @@ REFERENCE_CACHE = 256
 #: in-persona apology written here would be a second, worse persona.
 FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
 
-__all__ = ["MAX_TOOL_ROUNDS", "ChatPilot", "ChatTurn", "Generation", "Handling"]
+__all__ = ["MAX_TOOL_ROUNDS", "ChatPilot", "ChatTurn", "Generation", "Handling", "tool_trace"]
 
 
 @dataclass
@@ -114,11 +115,36 @@ class Generation:
     created: list[str] = field(default_factory=list)
     error: str | None = None
     latency_ms: int = 0
+    #: The two named parts of ``latency_ms``: time waiting on the model, summed
+    #: over rounds, and time inside the tools. They do not add up to it -- the
+    #: assembly either side is neither -- and that is the point of naming them.
+    model_ms: int = 0
+    tools_ms: int = 0
+    #: Summed across rounds, and ``None`` when the model reported no usage at
+    #: all. Zero and "did not say" are different facts about a bill.
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
     @property
     def trace(self) -> str:
         """``get_schedule:ok, propose_move:refused`` -- the interaction in one field."""
         return ", ".join(f"{o.name or '?'}:{o.outcome}" for o in self.outcomes)
+
+    @property
+    def outcome(self) -> str:
+        """``answered`` or ``failed`` -- what the member actually got.
+
+        A generation that errored *and* a generation that came back empty are
+        both failures: the member saw :data:`FAILURE_REPLY` either way.
+        """
+        return "failed" if self.error or not self.reply else "answered"
+
+    def add_usage(self, prompt: int | None, completion: int | None) -> None:
+        """Fold one round's token counts in, leaving ``None`` if none ever came."""
+        if prompt is not None:
+            self.prompt_tokens = (self.prompt_tokens or 0) + prompt
+        if completion is not None:
+            self.completion_tokens = (self.completion_tokens or 0) + completion
 
 
 def _client(settings: Any, host: str | None = None):
@@ -142,6 +168,26 @@ def _message_text(response: Any) -> tuple[str, list]:
     return (content or "").strip(), list(calls or [])
 
 
+def _usage(response: Any) -> tuple[int | None, int | None]:
+    """``(prompt_tokens, completion_tokens)`` from a chat response.
+
+    Ollama reports these as ``prompt_eval_count`` and ``eval_count`` on the
+    response itself. Every part of this is optional: a scripted stand-in has
+    neither, an older server may send one, and a future one may rename them --
+    so an absent or unparseable count is ``None`` ("nobody said") rather than
+    zero ("it was free").
+    """
+
+    def count(key: str) -> int | None:
+        value = response.get(key) if isinstance(response, dict) else getattr(response, key, None)
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
+
+    return count("prompt_eval_count"), count("eval_count")
+
+
 def _brief(arguments: dict, limit: int = 200) -> str:
     """Tool arguments, short enough for one log line.
 
@@ -151,6 +197,26 @@ def _brief(arguments: dict, limit: int = 200) -> str:
     """
     rendered = ", ".join(f"{key}={value!r}" for key, value in (arguments or {}).items())
     return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
+
+
+def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
+    """The tool calls of one interaction, as the stored trace.
+
+    Deliberately the *same* rendering the DEBUG log uses -- ``_brief`` for the
+    arguments, ``outcome.outcome`` for how it went -- so a row in the portal and
+    a line in the log describe one call the same way, and reading one teaches
+    you to read the other.
+    """
+    return [
+        {
+            "name": outcome.name or "?",
+            "arguments": _brief(outcome.arguments),
+            "ms": outcome.duration_ms,
+            "outcome": outcome.outcome,
+            "created": list(outcome.created),
+        }
+        for outcome in outcomes
+    ]
 
 
 def _call_parts(call: Any) -> tuple[str, Any]:
@@ -396,7 +462,49 @@ class ChatPilot:
             f" -> proposal {', '.join(result.created)}" if result.created else "",
             f" [{result.error}]" if result.error else "",
         )
+        self._record(message, channel_id, author_id, text, reply, result)
         return result
+
+    def _record(
+        self,
+        message: Any,
+        channel_id: str,
+        author_id: str,
+        question: str,
+        reply: str,
+        result: Generation,
+    ) -> None:
+        """Write the interaction to the database. Never raises.
+
+        The same rule the whole module runs on, and the same one
+        :attr:`bot.db.Repo.on_run_changed` follows: the member's answer has
+        already been posted by the time this runs, and a bookkeeping row that
+        cannot be written is a line in the log, not a failed conversation.
+
+        Only *handled generations* land here -- ⏳ and 💬 never reach
+        :meth:`_answer` -- so every row is a question that actually cost model
+        time.
+        """
+        try:
+            self.bot.repo.log_chat_interaction(
+                model=self.settings.chat_pilot_model,
+                question=question,
+                reply=reply,
+                outcome=result.outcome,
+                error=result.error,
+                rounds=result.rounds,
+                channel_id=channel_id,
+                message_id=getattr(message, "id", None),
+                author_id=author_id,
+                latency_ms=result.latency_ms,
+                model_ms=result.model_ms,
+                tools_ms=result.tools_ms,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                tool_calls=tool_trace(result.outcomes),
+            )
+        except Exception:  # noqa: BLE001 - analytics must never cost an answer
+            log.exception("chat: could not record the interaction")
 
     # -- context assembly --------------------------------------------------
     def _speaker(self, user_id: str, text: str) -> str:
@@ -524,6 +632,8 @@ class ChatPilot:
             response = await self._chat(messages, with_tools=not last)
             content, calls = _message_text(response)
             model_ms = int((time.monotonic() - asked_at) * 1000)
+            result.model_ms += model_ms
+            result.add_usage(*_usage(response))
             log.debug(
                 "chat: round %d/%d model answered in %d ms (%s%s)",
                 round_number,
@@ -541,6 +651,7 @@ class ChatPilot:
                 result.tool_calls.append(name)
                 outcome = await tools.run(context, name, arguments)
                 result.outcomes.append(outcome)
+                result.tools_ms += outcome.duration_ms
                 # The line that answers "why did it propose that": the arguments
                 # the model actually passed, and whether the tool obeyed.
                 log.debug(

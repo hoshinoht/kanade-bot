@@ -172,6 +172,29 @@ def test_a_fresh_database_starts_at_the_latest_version(tmp_path):
     repo.close()
 
 
+def test_a_live_database_gains_the_chat_log_without_losing_anything(tmp_path):
+    """v5 -> v6 adds a table and touches nothing else.
+
+    Written against a *real* v5 file rather than a hand-rolled one: the step
+    that matters is the one a running deployment will take, and the running
+    deployment's v5 is whatever `SCHEMA_SQL` built.
+    """
+    path = tmp_path / "v5.sqlite"
+    repo = Repo(path)
+    repo.upsert_member(7, "harbour4417", "MY", True)
+    fixed = repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
+    repo._conn.execute("DROP TABLE chat_interactions")
+    repo._conn.execute("UPDATE schema_version SET version = 5")
+    repo.close()
+
+    migrated = Repo(path)
+    assert migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"] == 6
+    assert migrated.recent_chat_interactions() == []
+    assert migrated.get_member("7")["display_name"] == "harbour4417"
+    assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
+    migrated.close()
+
+
 def test_a_database_from_a_newer_bot_is_refused(tmp_path):
     path = tmp_path / "future.sqlite"
     repo = Repo(path)

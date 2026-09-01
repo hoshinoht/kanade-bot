@@ -92,8 +92,39 @@ async def test_the_bot_is_dropped_from_a_list_that_also_names_people(chat_bot, c
     assert str(BOT_USER_ID) not in party(chat_bot)
 
 
-async def test_the_bots_name_inside_a_sentence_is_removed(chat_bot, chat_seeded):
-    await add(chat_bot, "YuukiSakuna and Priya")
+async def test_the_bots_name_inside_a_sentence_becomes_the_asker(chat_bot, chat_seeded):
+    """The bot is removed, and the person who asked takes its place.
+
+    "@bot and Priya" is somebody saying "Priya and me": the model puts the
+    trigger mention where the member wrote "me". Dropping it and stopping there
+    is how a card went up for Priya alone -- see
+    `test_a_stripped_bot_reference_puts_the_asker_on_the_run`.
+    """
+    await add(chat_bot, "YuukiSakuna and Priya", author_id=1002)
+    assert party(chat_bot) == ["1002", "1003"]
+    assert str(BOT_USER_ID) not in party(chat_bot)
+
+
+async def test_a_stripped_bot_reference_puts_the_asker_on_the_run(chat_bot, chat_seeded):
+    """The live failure: "schedule it for me and @Priya".
+
+    The model sent the two mentions the message contained -- the trigger mention
+    it was addressed by, and Priya. The bot came out, Priya survived, and
+    because the field was not empty the asker was never defaulted in: the card
+    went up for Priya alone, and the model then told the channel the run was for
+    the bot and Priya. Neither half of that sentence was true.
+    """
+    await add(chat_bot, f"<@{BOT_USER_ID}> and <@1003>", author_id=1002)
+    assert party(chat_bot) == ["1002", "1003"]
+
+
+async def test_a_named_member_alone_does_not_drag_the_asker_in(chat_bot, chat_seeded):
+    """No bot reference and no "me": the field means exactly who it names.
+
+    Somebody scheduling a run for other people is an ordinary thing to ask for,
+    and the asker must not be added to it.
+    """
+    await add(chat_bot, "<@1003>", author_id=1002)
     assert party(chat_bot) == ["1003"]
 
 
@@ -158,6 +189,67 @@ async def test_an_invented_snowflake_is_still_refused(chat_bot, chat_seeded):
     answer = await add(chat_bot, "424242424242424242")
     assert "not in the bossing role" in answer
     assert chat_bot.repo.list_amendments(status="proposed") == []
+
+
+# ---------------------------------------------------------------------------
+# what the model is told it just did
+# ---------------------------------------------------------------------------
+
+
+async def test_the_tool_result_names_the_resolved_party(chat_bot, chat_seeded):
+    """The card's own party, by display name, so a reply can only echo it."""
+    answer = await add(chat_bot, f"<@{BOT_USER_ID}> and <@1003>", author_id=1002)
+
+    assert "kanon" in answer and "Priya" in answer
+    assert "Hard Bellona" in answer
+    assert str(BOT_USER_ID) not in answer
+    assert "YuukiSakuna" not in answer
+
+
+async def test_the_result_names_the_asker_even_when_the_model_named_nobody(chat_bot, chat_seeded):
+    answer = await add(chat_bot, "", author_id=1003)
+    assert "Priya" in answer
+
+
+async def test_a_reply_can_be_built_from_the_tool_result_alone(chat_bot, chat_seeded):
+    """End to end over a scripted model: what comes back is what can be said.
+
+    The model is given the same tool call that failed live -- both mentions from
+    the message, the bot's included -- and the `tool` message it then reads is
+    asserted on directly. It names the two real people and neither names nor
+    mentions the bot, so a reply composed from it cannot put the bot on the run
+    or leave the asker off it.
+    """
+    from bot.chat.agent import ChatPilot
+
+    from .chat_support import FakeOllama, message, says, wants
+
+    agent = ChatPilot(
+        chat_bot,
+        client=FakeOllama(
+            wants(
+                "propose_add",
+                boss="HBellona",
+                when=tomorrow_at(),
+                participants=f"<@{BOT_USER_ID}> <@1003>",
+            ),
+            says("Card up for Hard Bellona -- kanon and Priya. React ✅ to confirm."),
+        ),
+    )
+    result = (
+        await agent.offer(
+            message(chat_bot, f"{BOT_USER_ID} schedule hbellona tomorrow for me and <@1003>")
+        )
+    ).answered
+
+    tool_message = agent._client.conversation(1)[-1]
+    assert tool_message["role"] == "tool"
+    assert "kanon" in tool_message["content"] and "Priya" in tool_message["content"]
+    assert str(BOT_USER_ID) not in tool_message["content"]
+    assert "YuukiSakuna" not in tool_message["content"]
+    # And the card really is for those two.
+    assert party(chat_bot) == ["1002", "1003"]
+    assert result.reply
 
 
 async def test_the_refusal_never_speaks_about_the_bot_in_the_first_person(chat_bot, chat_seeded):

@@ -131,6 +131,16 @@ def wants(name: str, **arguments: Any) -> dict:
     }
 
 
+def costed(response: dict, prompt: int, completion: int) -> dict:
+    """A scripted response that also reports Ollama's token counts.
+
+    Separate from :func:`says` and :func:`wants` because the counts are
+    *optional* in the wire format -- a response without them is the normal case
+    for a stand-in and has to keep working.
+    """
+    return {**response, "prompt_eval_count": prompt, "eval_count": completion}
+
+
 class FakeOllama:
     """Hands back scripted responses and records what it was asked."""
 
@@ -306,6 +316,7 @@ __all__ = [
     "FakeRole",
     "build_bot",
     "chat_settings",
+    "costed",
     "message",
     "says",
     "seed",

@@ -504,6 +504,110 @@ def extraction_view(bot: BossBot, extraction: dict, detail: bool = False) -> dic
     return view
 
 
+def created_cards(bot: BossBot, amendment_ids: Sequence[str]) -> list[dict]:
+    """The proposal cards one tool call raised, named and linked.
+
+    Only what a reader needs to click through: the short id the rest of the
+    portal identifies a card by, what it proposes, whether anyone has answered
+    it, and the deep link into Discord. An id whose amendment has since been
+    deleted still appears -- the interaction really did create it, and silently
+    dropping it would make a trace disagree with the log line beside it.
+    """
+    cards = []
+    for amendment_id in amendment_ids:
+        amendment = bot.repo.get_amendment(amendment_id)
+        if amendment is None:
+            cards.append({"id": str(amendment_id), "short_id": short_id(str(amendment_id))})
+            continue
+        cards.append(
+            {
+                "id": amendment["id"],
+                "short_id": short_id(amendment["id"]),
+                "kind": amendment["kind"],
+                "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+                "status": amendment["status"],
+                "card_url": message_url(
+                    bot, amendment["channel_id"], amendment["proposal_message_id"]
+                ),
+            }
+        )
+    return cards
+
+
+def chat_interaction_view(bot: BossBot, interaction: dict, detail: bool = False) -> dict:
+    """One handled chat interaction, as a row (or, with ``detail``, in full)."""
+    tool_calls = interaction["tool_calls"]
+    view = {
+        "id": interaction["id"],
+        "short_id": short_id(interaction["id"]),
+        "at": to_iso(interaction["at"]),
+        "local_time": interaction["at"].astimezone(bot.tz).strftime("%a %d %b %H:%M:%S"),
+        "author_id": interaction["author_id"],
+        "author_name": member_name(bot, interaction["author_id"]),
+        "channel_id": interaction["channel_id"],
+        "channel_name": channel_name(bot, interaction["channel_id"]),
+        "model": interaction["model"],
+        "outcome": interaction["outcome"],
+        "rounds": interaction["rounds"],
+        "latency_ms": interaction["latency_ms"],
+        "tool_names": [call.get("name") or "?" for call in tool_calls],
+        "tool_count": len(tool_calls),
+        "prompt_tokens": interaction["prompt_tokens"],
+        "completion_tokens": interaction["completion_tokens"],
+        "url": message_url(bot, interaction["channel_id"], interaction["message_id"]),
+    }
+    if detail:
+        view["question"] = render_mentions(bot, interaction["question"])
+        view["reply"] = interaction["reply"]
+        view["error"] = interaction["error"]
+        view["model_ms"] = interaction["model_ms"]
+        view["tools_ms"] = interaction["tools_ms"]
+        view["message_id"] = interaction["message_id"]
+        view["tool_calls"] = [
+            {
+                "name": call.get("name") or "?",
+                "arguments": call.get("arguments") or "",
+                "ms": call.get("ms"),
+                "outcome": call.get("outcome") or "",
+                "ok": call.get("outcome") == "ok",
+                "created": created_cards(bot, call.get("created") or []),
+            }
+            for call in tool_calls
+        ]
+    return view
+
+
+def chat_interactions(bot: BossBot, limit: int = 50) -> list[dict]:
+    """The most recent interactions, newest first -- what the Chat tab lists."""
+    return [chat_interaction_view(bot, row) for row in bot.repo.recent_chat_interactions(limit)]
+
+
+def load_chat_interaction(bot: BossBot, interaction_id: str) -> dict:
+    resolved = _resolve(interaction_id, bot.repo.list_chat_interaction_ids(), "chat interaction")
+    interaction = bot.repo.get_chat_interaction(resolved)
+    if interaction is None:  # pragma: no cover
+        raise NotFound(f"no chat interaction `{interaction_id}`")
+    return interaction
+
+
+def chat_summary(bot: BossBot) -> dict:
+    """What the chatbot has cost and how well it has gone, per model.
+
+    Over everything stored rather than a window: the log is capped at 500 rows,
+    so "all of it" is already a recent period, and a window would put a second
+    number on the page that has to be explained before it can be read.
+    """
+    stats = bot.repo.chat_interaction_stats()
+    return {
+        "models": stats,
+        "count": sum(s["count"] for s in stats),
+        "answered": sum(s["answered"] for s in stats),
+        "failed": sum(s["failed"] for s in stats),
+        "prompt_tokens": sum(s["prompt_tokens"] for s in stats),
+        "completion_tokens": sum(s["completion_tokens"] for s in stats),
+    }
+
+
 def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
     return {
         "user_id": member["user_id"],
@@ -1742,6 +1846,10 @@ __all__ = [
     "approve",
     "cancel_run",
     "channel_is_watched",
+    "chat_interaction_view",
+    "chat_interactions",
+    "chat_summary",
+    "created_cards",
     "create_fixed",
     "debug_ping",
     "delete_fixed",
@@ -1750,6 +1858,7 @@ __all__ = [
     "fixed_view",
     "get_config",
     "load_amendment",
+    "load_chat_interaction",
     "load_extraction",
     "load_fixed",
     "load_run",

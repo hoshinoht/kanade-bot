@@ -94,7 +94,7 @@ def test_a_move_shows_the_old_time_struck_through():
         RUN,
         TZ,
     )
-    assert "HStar + HFA" in name and short_id(RUN["id"]) in name
+    assert "Hard Star + Hard FA" in name and short_id(RUN["id"]) in name
     assert "~~Mon 31 Aug 21:30~~" in value and "Wed 02 Sep 21:30" in value
 
 
@@ -115,7 +115,7 @@ def test_a_sub_names_the_person_dropping_out():
 
 def test_a_new_run_falls_back_to_the_runs_bosses_when_none_were_named():
     name, _value = proposal_line(amendment("add", run_id=RUN["id"]), RUN, TZ)
-    assert "HStar + HFA" in name
+    assert "Hard Star + Hard FA" in name
 
 
 def test_the_model_summary_is_shown_when_there_is_one():

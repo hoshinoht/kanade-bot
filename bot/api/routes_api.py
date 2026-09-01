@@ -23,6 +23,9 @@ from .models import (
     AmendmentOut,
     ApproveIn,
     ApproveOut,
+    ChatInteractionDetailOut,
+    ChatInteractionOut,
+    ChatSummaryOut,
     ConfigIn,
     ConfigOut,
     DeletedOut,
@@ -231,6 +234,30 @@ async def get_extractions(
 @router.get("/extractions/{extraction_id}", response_model=ExtractionDetailOut)
 async def get_extraction(bot: Bot, caller: Caller, extraction_id: str) -> dict:
     return service.extraction_view(bot, service.load_extraction(bot, extraction_id), detail=True)
+
+
+# ---------------------------------------------------------------------------
+# the chat log -- what the speech pilot was asked, and what it cost
+# ---------------------------------------------------------------------------
+
+
+@router.get("/chat", response_model=list[ChatInteractionOut])
+async def get_chat_interactions(
+    bot: Bot, caller: Caller, limit: int = Query(default=50, ge=1, le=500)
+) -> list:
+    return service.chat_interactions(bot, limit)
+
+
+@router.get("/chat/summary", response_model=ChatSummaryOut, summary="Per-model totals")
+async def get_chat_summary(bot: Bot, caller: Caller) -> dict:
+    return service.chat_summary(bot)
+
+
+@router.get("/chat/{interaction_id}", response_model=ChatInteractionDetailOut)
+async def get_chat_interaction(bot: Bot, caller: Caller, interaction_id: str) -> dict:
+    return service.chat_interaction_view(
+        bot, service.load_chat_interaction(bot, interaction_id), detail=True
+    )
 
 
 # ---------------------------------------------------------------------------

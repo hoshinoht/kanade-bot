@@ -648,6 +648,77 @@ def test_extractions_and_one_extraction(api):
     result = run("extraction", "dddd")
     assert "THE PROMPT" in result.output
     assert "move HStar" in result.output
+
+
+def test_chat_and_one_interaction(api):
+    api.get("/api/chat").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "short_id": "eeeeeeee",
+                    "local_time": "Sun 30 Aug 12:00:00",
+                    "author_name": "kanon",
+                    "model": "qwen3:32b",
+                    "rounds": 2,
+                    "tool_names": ["get_schedule"],
+                    "latency_ms": 8400,
+                    "outcome": "answered",
+                }
+            ],
+        )
+    )
+    api.get("/api/chat/summary").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "model": "qwen3:32b",
+                        "count": 1,
+                        "failed": 0,
+                        "prompt_tokens": 3120,
+                        "completion_tokens": 64,
+                    }
+                ]
+            },
+        )
+    )
+    listing = run("chat").output
+    assert "eeeeeeee" in listing
+    assert "get_schedule" in listing
+    assert "3,120" in listing
+
+    api.get("/api/chat/eeee").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "short_id": "eeeeeeee",
+                "local_time": "Sun 30 Aug 12:00:00",
+                "model": "qwen3:32b",
+                "latency_ms": 8400,
+                "rounds": 2,
+                "outcome": "answered",
+                "author_name": "kanon",
+                "question": "what's on tonight?",
+                "reply": "Star at 21:30.",
+                "tool_calls": [
+                    {
+                        "name": "get_schedule",
+                        "arguments": "week='this'",
+                        "ms": 120,
+                        "outcome": "ok",
+                        "created": [{"short_id": "ffffffff"}],
+                    }
+                ],
+            },
+        )
+    )
+    result = run("interaction", "eeee")
+    assert "what's on tonight?" in result.output
+    assert "Star at 21:30." in result.output
+    assert "get_schedule(week='this')" in result.output
+    assert "card ffffffff" in result.output
     assert "THE PROMPT" not in run("extraction", "dddd", "--no-prompt").output
 
 

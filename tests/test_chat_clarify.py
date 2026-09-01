@@ -122,7 +122,7 @@ async def test_an_ambiguous_run_is_refused_with_the_candidates(chat_bot, chat_se
     )
     answer = await tools.dispatch(context(chat_bot), "propose_cancel", {"run_query": "kalos"})
     assert "Ask which one" in answer
-    assert answer.count("XKalos") == 2  # both nights are named so it can ask
+    assert answer.count("Extreme Kalos") == 2  # both nights are named so it can ask
 
 
 async def test_an_ambiguous_participant_is_refused_with_the_candidates(chat_bot, chat_seeded):
