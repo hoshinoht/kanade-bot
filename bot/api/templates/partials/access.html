@@ -1,5 +1,6 @@
+{% from "partials/icons.html" import icon %}
 {% if not access %}
-<p class="run__meta">The bot isn't connected to the guild right now, so its permissions can't be
+<p class="note">The bot isn't connected to the guild right now, so its permissions can't be
   checked. Try again once <code>docker compose logs bot</code> shows it logged in.</p>
 {% else %}
 <div class="table-wrap">
@@ -15,9 +16,13 @@
           {% if row.is_digest_channel %}<span class="chip">digest</span>{% endif %}
           {% if not row.watched %}<span class="chip chip--waiting">not watched</span>{% endif %}
         </td>
+        {# The cell is nothing but its mark, so the mark says itself out loud:
+           a tick and a cross are a picture of "granted" and "missing", not the
+           words. Green and red come from the `.status--*` class, which is what
+           the icon takes its own colour from. #}
         {% for ok in (row.view, row.send, row.history, row.embed, row.react, row.manage_messages) %}
         <td class="{{ 'status status--confirmed' if ok else 'status status--at_risk' }}">
-          {{ "✅" if ok else "❌" }}
+          {{ icon("check", "granted") if ok else icon("x", "missing") }}
         </td>
         {% endfor %}
       </tr>
@@ -25,9 +30,13 @@
     </tbody>
   </table>
 </div>
-<p class="run__meta">A ❌ means the bot's role is missing that permission in that channel — the
-  reminders for its runs will not go out. Fix it in <strong>Edit Channel → Permissions</strong>.
-  <strong>Manage messages</strong> is the one exception: without it the reminders still go out, but
-  the bot cannot take somebody's old reaction off, so a person who switches ❌ to ✅ is counted as
-  both.</p>
+{# Two vocabularies in one paragraph, deliberately: the cross this sentence
+   opens with is the one in the table above it, so it is drawn like the table's;
+   the ❌ and ✅ at the end are reactions on a Discord message, where an emoji is
+   not decoration but the thing itself. #}
+<p class="note">A {{ icon("x", "cross") }} means the bot's role is missing that permission in that
+  channel — the reminders for its runs will not go out. Fix it in <strong>Edit Channel →
+  Permissions</strong>. <strong>Manage messages</strong> is the one exception: without it the
+  reminders still go out, but the bot cannot take somebody's old reaction off, so a person who
+  switches ❌ to ✅ in Discord is counted as both.</p>
 {% endif %}

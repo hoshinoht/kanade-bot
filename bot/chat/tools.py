@@ -220,9 +220,11 @@ TOOLS: list[dict] = [
             "boss": {
                 "type": "string",
                 "description": (
-                    "The boss, with its difficulty, e.g. 'HBellona', 'XKalos' or "
-                    "'Hard Bellona'. A bare name without a difficulty is refused -- ask "
-                    "which one they mean."
+                    "One complete difficulty-qualified boss. Use EITHER a canonical token such as "
+                    "'XBM', 'HBellona', or 'XKalos', OR words with the difficulty first, such as "
+                    "'Extreme Black Mage' or 'Hard Bellona'. Do not combine forms or add a second "
+                    "difficulty: 'XBM Hard' is invalid; 'extreme bm' means 'XBM'. A bare boss name "
+                    "without a difficulty is refused -- ask which one they mean."
                 ),
             },
             "when": {

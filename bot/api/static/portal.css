@@ -1,39 +1,78 @@
-/* Boss scheduler portal.
+/* Boss scheduler portal — "Kanade's desktop".
  *
  * Read on a phone, at night, to answer one question: what is on, and has
  * everyone answered? So the week keeps its own shape -- seven columns starting
  * on the reset day, not a Monday-first calendar -- and the clock time is the
  * loudest thing on every row.
  *
- * Type: Archivo for everything spoken, IBM Plex Mono for everything counted
- * (times, ids, latencies). The contrast between tracked caps and tabular
- * figures is the whole personality; nothing else needs decorating.
+ * The frame around that is a small retro operating system: a saturated
+ * coloured ground, and every piece of content in a cream window with a
+ * chrome-coloured title bar and three dots on it. The dots are drawn from
+ * `.card__head` with one ::before and two box-shadows, so the markup a window
+ * needs is exactly the markup a card already had.
+ *
+ * Because the ground is saturated, *nothing legible sits directly on it*: the
+ * masthead, the page head, the filter bar, each day's label and the footnote
+ * are all panels. That is the rule to keep when adding to this file.
+ *
+ * Type: Solway for what the thing is called (brand, page and card titles),
+ * Zilla Slab for everything spoken, Sometype Mono for everything counted --
+ * times, ids, latencies, table numbers. Slab against slab against slab: the
+ * contrast is weight and width rather than serif against sans.
+ *
+ * Colour is five user-chosen colourways, each with a daytime and an after-hours
+ * face. Both choices are the browser's own: `templates/partials/theme_boot.html`
+ * stamps `data-colorway` and `data-theme` on <html> from localStorage before the
+ * first paint, and a page with neither attribute -- nothing stored, or no
+ * JavaScript -- wears marigold and lets `prefers-color-scheme` decide the hour.
+ * Which is why marigold lives on `:root` rather than in a block of its own.
+ *
+ * Light values live on `:root` and on the `[data-colorway]` blocks; the dark
+ * ones only override inside the one media query, so no component's colour is
+ * ever *defined* in there -- a token missing from a dark block falls back to
+ * something real rather than to nothing.
  */
 
 :root {
   color-scheme: light dark;
 
-  --ground: #f1f0f5;
-  --surface: #ffffff;
-  --raise: #f8f7fb;
-  --ink: #17161f;
-  --dim: #6b6879;
-  --faint: #9794a5;
-  --line: #e1dfe8;
-  --line-soft: #ecebf1;
-  --accent: #4b3bd1;
-  --accent-ink: #ffffff;
-  --accent-wash: #ece9fb;
+  /* ── marigold, the default: gold ground, ink-blue accent ─────────────── */
+  --ground: #eec75f;
+  --surface: #fbf6e8;
+  --ink: #4a4a58;
+  --dim: #6e6b62;
+  --line: #e3d8b8;
+  --win: #5f6579;
+  --win-ink: #fbf6e8;
+  --accent: #4d5c9e;
+  --accent-ink: #f2f4fc;
+  --ok: #35906c;
+  --risk: #c4444a;
 
-  --ok: #16794f;
-  --warn: #8f6205;
-  --risk: #b8323d;
-  --own: #34648f;
-  --off: #8b8898;
+  /* ── the two signal colours no colourway names ────────────────────────
+   *
+   * "Waiting on an answer" and "own time" are states of a run, not notes in
+   * the palette: amber and blue mean the same thing on every ground, the way
+   * the green of `ok` and the red of `risk` do. */
+  --warn: #8a6207;
+  --own: #3a6a95;
+
+  /* ── derived, once, from whichever colourway is on ────────────────────
+   *
+   * Declared here and nowhere else: custom properties are substituted on the
+   * element that has them, and every anchor above is also set on <html>, so
+   * these follow a colourway (and its dark face) without being restated. */
+  --raise: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  --line-soft: color-mix(in srgb, var(--line) 55%, var(--surface));
+  --faint: color-mix(in srgb, var(--dim) 85%, var(--surface));
+  --off: color-mix(in srgb, var(--dim) 70%, var(--line));
+  --accent-wash: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
 
   /* Difficulty pills, keyed to the in-game boss list rather than to this
      page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
-     black-and-ember Extreme. They are the one saturated thing here. */
+     black-and-ember Extreme. They are the one thing on the page a colourway
+     does not touch, because they are the game's, not ours. */
   --pill-e-bg: #d7d9dd;
   --pill-e-fg: #23252b;
   --pill-n-bg: #2f93b3;
@@ -45,36 +84,166 @@
   --pill-x-bg: #17161c;
   --pill-x-fg: #ff5a3c;
 
-  --sans: "Archivo", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-    sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
+  /* The boss monogram's tint, as numbers rather than colours: the hue is set
+     per boss on the element (`--mono-hue`), and only the saturation and
+     lightness change between the two faces. */
+  --mono-s: 42%;
+  --mono-l: 88%;
+  --mono-ink-s: 55%;
+  --mono-ink-l: 26%;
+  --mono-line-s: 35%;
+  --mono-line-l: 78%;
+
+  /* ── the entry-art veil: the numbers screenshots move ─────────────────────
+   *
+   * How much of a boss's entry artwork comes through behind its run card, and
+   * where in the picture each surface's crop window starts. Numbers rather than
+   * colours, like the monogram's above, and here rather than typed into the
+   * rules that use them, because tuning this is "try 0.3, try 0.45" against a
+   * screenshot. The mask shapes are the other knob and live with their rules,
+   * one gradient each.
+   *
+   * The crops are a dodge, not a taste: most of these splashes bake the boss's
+   * name plate into the top of the frame, so a window opening at the top of the
+   * picture shows a caption. Two of them because the two surfaces show windows
+   * of very different proportions -- the compact card's is the taller slice, so
+   * it has to start further down to clear the same band. */
+  --art-veil: 0.38;
+  --art-crop-sheet: 30%;
+  --art-crop-card: 60%;
+
+  --display: "Solway", "Palatino Linotype", Palatino, Georgia, serif;
+  --body: "Zilla Slab", Georgia, "Times New Roman", serif;
+  --mono: "Sometype Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
     monospace;
 
-  --r: 10px;
-  --r-sm: 6px;
-  --shadow: 0 1px 2px rgb(23 22 31 / 6%), 0 8px 24px -18px rgb(23 22 31 / 40%);
+  /* ── the type scale ───────────────────────────────────────────────────────
+   *
+   * Seven steps. Every size on the page is one of them, or a display size
+   * named where it is used (a run's clock, a stat's count, h1, a monogram
+   * fitted to its box) -- there is no eighth value hiding in a component.
+   *
+   * The whole ladder sits a step above where the numbers suggest, because
+   * warm cream and a slab serif read smaller than they measure: the portal
+   * was called hard to read at sizes that were metrically fine. `rem` here is
+   * the *root* size (16px), not `body`'s, so these do not follow the body
+   * rule below -- which is why raising the scale means raising the ladder.
+   */
+  --fs-micro: 0.7rem; /* eyebrows, table headings, difficulty pills */
+  --fs-mini: 0.76rem; /* ids, levels, timestamps -- small counted things */
+  --fs-small: 0.83rem; /* chips, statuses, buttons, segmented controls */
+  --fs-body-sm: 0.9rem; /* notes, table bodies, secondary prose */
+  --fs-body: 1rem; /* body text, and the nav */
+  --fs-lg: 1.1rem; /* the name of a window: card, modal and dialog titles */
+  --fs-brand: 1.3rem; /* the masthead's own name */
+
+  --r: 12px;
+  --r-in: 10px; /* inside a 2px border, so a title bar's corners match */
+  --r-sm: 8px;
+  --shadow: 0 2px 0 color-mix(in srgb, var(--win) 20%, transparent),
+    0 14px 28px -22px rgb(0 0 0 / 45%);
   --gutter: clamp(0.9rem, 3vw, 2rem);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #131219;
-    --surface: #1b1a24;
-    --raise: #22212d;
-    --ink: #ecebf3;
-    --dim: #9a95a9;
-    --faint: #746f83;
-    --line: #2e2c3b;
-    --line-soft: #262533;
-    --accent: #a691ff;
-    --accent-ink: #191428;
-    --accent-wash: #241f3d;
+[data-colorway="blossom"] {
+  --ground: #f2a8b8;
+  --surface: #faf2ec;
+  --ink: #57474c;
+  --dim: #75626a;
+  --line: #e8d5d5;
+  --win: #91707a;
+  --win-ink: #faf2ec;
+  --accent: #d5537a;
+  --accent-ink: #fff2f5;
+  --ok: #35906c;
+  --risk: #a83c30;
+}
 
-    --ok: #4fd39c;
-    --warn: #e5b656;
-    --risk: #ff8b93;
-    --own: #83b6e8;
-    --off: #77738a;
+[data-colorway="periwinkle"] {
+  --ground: #9fb0e4;
+  --surface: #f5f2ea;
+  --ink: #474e5e;
+  --dim: #656b7a;
+  --line: #d8d8d4;
+  --win: #6d7692;
+  --win-ink: #f5f2ea;
+  --accent: #4a5fae;
+  --accent-ink: #f0f4fd;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="coral"] {
+  --ground: #e87d85;
+  --surface: #f7f0e1;
+  --ink: #57504a;
+  --dim: #6b6459;
+  --line: #ddcfb8;
+  --win: #8d857c;
+  --win-ink: #f7f0e1;
+  --accent: #d95965;
+  --accent-ink: #fff6ee;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="twilight"] {
+  --ground: #8b7ad2;
+  --surface: #f5f1ec;
+  --ink: #4b4658;
+  --dim: #696274;
+  --line: #ded6db;
+  --win: #5f5474;
+  --win-ink: #f5f1ec;
+  --accent: #6446ab;
+  --accent-ink: #f4effc;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+/* ── after hours ────────────────────────────────────────────────────────────
+ *
+ * Three states, not two: follow the device (the default), or say light, or say
+ * dark. The device is right nearly always, so it stays the default and the
+ * override is a preference like the colourway -- stored in this browser, read
+ * by `templates/partials/theme_boot.html` into `data-theme` before first paint.
+ *
+ * That takes two rules for one night face, and they are written out twice
+ * below. The alternative is resolving the media query in JavaScript and
+ * stamping `data-theme` always, which would mean a browser with the script off
+ * had no way to be dark at all -- exactly the degradation this portal refuses
+ * everywhere else. So: this block, guarded with `:not([data-theme="light"])`
+ * so an explicit light beats a dark device, and its twin below for an explicit
+ * dark on a light device.
+ *
+ *      >>> THE TWO DARK BLOCKS ARE COPIES. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Specificity, which is what makes the three states resolve in the right
+ * order: light `:root` and `[data-colorway]` are (0,1,0); a dark default,
+ * either spelling, is (0,2,0); a dark colourway, either spelling, is (0,3,0).
+ * The two dark spellings tie with each other and carry the same values, so the
+ * tie never shows.
+ *
+ * Only overrides live in here. `:root` carries marigold's night face and the
+ * two shared signal colours; each colourway then restates its own eleven, so
+ * every one of them is fully described in both faces. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #232735;
+    --surface: #303648;
+    --ink: #ece4cd;
+    --dim: #b0ab97;
+    --line: #454b60;
+    --win: #4f5871;
+    --win-ink: #ece4cd;
+    /* Gold takes over at night: the ground it had to stand out from is gone. */
+    --accent: #e9c25e;
+    --accent-ink: #2a2410;
+    --ok: #7cc79f;
+    --risk: #ef8b8b;
+
+    --warn: #e2a44f;
+    --own: #8ab8e6;
 
     --pill-e-bg: #3a3d45;
     --pill-e-fg: #e6e8ee;
@@ -87,14 +256,184 @@
     --pill-x-bg: #0e0d12;
     --pill-x-fg: #ff7050;
 
-    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px -20px rgb(0 0 0 / 80%);
+    --mono-s: 32%;
+    --mono-l: 24%;
+    --mono-ink-s: 65%;
+    --mono-ink-l: 78%;
+    --mono-line-s: 28%;
+    --mono-line-l: 34%;
+
+    --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
   }
 
-  .portrait--mono {
-    background: hsl(var(--mono-hue) 32% 24%);
-    color: hsl(var(--mono-hue) 65% 78%);
-    border-color: hsl(var(--mono-hue) 28% 34%);
+  :root:not([data-theme="light"])[data-colorway="blossom"] {
+    --ground: #322629;
+    --surface: #423236;
+    --ink: #f0e3e2;
+    --dim: #b09aa0;
+    --line: #5a464c;
+    --win: #7d5f66;
+    --win-ink: #f0e3e2;
+    --accent: #f29db4;
+    --accent-ink: #401f2a;
+    --ok: #8cccab;
+    --risk: #ee8f85;
   }
+
+  :root:not([data-theme="light"])[data-colorway="periwinkle"] {
+    --ground: #262c3a;
+    --surface: #343d4e;
+    --ink: #e7ebf2;
+    --dim: #9aa3b5;
+    --line: #465063;
+    --win: #5d6981;
+    --win-ink: #e7ebf2;
+    --accent: #a8bcf0;
+    --accent-ink: #1c2438;
+    --ok: #83c8a8;
+    --risk: #ef8f93;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="coral"] {
+    --ground: #322a2e;
+    --surface: #453d39;
+    --ink: #ece1cf;
+    --dim: #ab9f90;
+    --line: #5c5249;
+    --win: #6e655c;
+    --win-ink: #ece1cf;
+    --accent: #ef939b;
+    --accent-ink: #402226;
+    --ok: #8cccab;
+    --risk: #e2828a;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="twilight"] {
+    --ground: #2a2436;
+    --surface: #383045;
+    --ink: #eae4f0;
+    --dim: #a49bb3;
+    --line: #4c4260;
+    --win: #5b4f73;
+    --win-ink: #eae4f0;
+    --accent: #b9a4ec;
+    --accent-ink: #241a3a;
+    --ok: #86c9a8;
+    --risk: #ef8b95;
+  }
+}
+
+/* ── the same night, asked for rather than inherited ─────────────────────────
+ *
+ *      >>> COPIES OF THE BLOCK ABOVE. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Everything below this line is the same eleven-plus tokens as the media query
+ * carries, under the selector that means "this reader said dark" rather than
+ * "this device says dark". Nothing new is introduced here; if a token needs a
+ * different value at night, it needs it in both places. */
+
+/* Said light: nothing to override -- the light values are already on `:root`
+   and the media query above has excluded itself. Only the browser's own
+   furniture still has to be told. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  /* Scrollbars, form controls and the canvas behind the page, which otherwise
+     stay light on a light device and give the window a white halo. */
+  color-scheme: dark;
+
+  --ground: #232735;
+  --surface: #303648;
+  --ink: #ece4cd;
+  --dim: #b0ab97;
+  --line: #454b60;
+  --win: #4f5871;
+  --win-ink: #ece4cd;
+  --accent: #e9c25e;
+  --accent-ink: #2a2410;
+  --ok: #7cc79f;
+  --risk: #ef8b8b;
+
+  --warn: #e2a44f;
+  --own: #8ab8e6;
+
+  --pill-e-bg: #3a3d45;
+  --pill-e-fg: #e6e8ee;
+  --pill-n-bg: #3aa7c9;
+  --pill-n-fg: #06222b;
+  --pill-h-bg: #e8579a;
+  --pill-h-fg: #2b0716;
+  --pill-c-bg: #0e0d12;
+  --pill-c-fg: #f5b452;
+  --pill-x-bg: #0e0d12;
+  --pill-x-fg: #ff7050;
+
+  --mono-s: 32%;
+  --mono-l: 24%;
+  --mono-ink-s: 65%;
+  --mono-ink-l: 78%;
+  --mono-line-s: 28%;
+  --mono-line-l: 34%;
+
+  --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+}
+
+:root[data-theme="dark"][data-colorway="blossom"] {
+  --ground: #322629;
+  --surface: #423236;
+  --ink: #f0e3e2;
+  --dim: #b09aa0;
+  --line: #5a464c;
+  --win: #7d5f66;
+  --win-ink: #f0e3e2;
+  --accent: #f29db4;
+  --accent-ink: #401f2a;
+  --ok: #8cccab;
+  --risk: #ee8f85;
+}
+
+:root[data-theme="dark"][data-colorway="periwinkle"] {
+  --ground: #262c3a;
+  --surface: #343d4e;
+  --ink: #e7ebf2;
+  --dim: #9aa3b5;
+  --line: #465063;
+  --win: #5d6981;
+  --win-ink: #e7ebf2;
+  --accent: #a8bcf0;
+  --accent-ink: #1c2438;
+  --ok: #83c8a8;
+  --risk: #ef8f93;
+}
+
+:root[data-theme="dark"][data-colorway="coral"] {
+  --ground: #322a2e;
+  --surface: #453d39;
+  --ink: #ece1cf;
+  --dim: #ab9f90;
+  --line: #5c5249;
+  --win: #6e655c;
+  --win-ink: #ece1cf;
+  --accent: #ef939b;
+  --accent-ink: #402226;
+  --ok: #8cccab;
+  --risk: #e2828a;
+}
+
+:root[data-theme="dark"][data-colorway="twilight"] {
+  --ground: #2a2436;
+  --surface: #383045;
+  --ink: #eae4f0;
+  --dim: #a49bb3;
+  --line: #4c4260;
+  --win: #5b4f73;
+  --win-ink: #eae4f0;
+  --accent: #b9a4ec;
+  --accent-ink: #241a3a;
+  --ok: #86c9a8;
+  --risk: #ef8b95;
 }
 
 *,
@@ -113,10 +452,11 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  line-height: 1.55;
   -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
 }
 
 a {
@@ -135,26 +475,59 @@ a:hover {
   border-radius: var(--r-sm);
 }
 
+/* The three dots every window wears. One circle in the ::before and two more
+   as its box-shadows, so a title bar needs no markup of its own -- and they
+   inherit the bar's ink, so a colourway never has to say anything about them. */
+.card__head::before,
+.modal__head::before,
+.gate__bar::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 1.75rem;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.55;
+  box-shadow:
+    13px 0 0 currentcolor,
+    26px 0 0 currentcolor;
+}
+
 /* ── shell ──────────────────────────────────────────────────────────────── */
 
+/* A window does not dock to the menu bar. The gap under the masthead is here,
+   on the shell, and nowhere else: every page has a different first element -- a
+   page head on most, a flash after a save, and on Config the window itself --
+   so a gap owned by any one of them is a gap the other pages do not get. Config
+   sat flush against the bar for exactly that reason.
+
+   On a framed page this is padding on a flex *container*, so it comes out of
+   the height the window then flexes into rather than adding to the page: the
+   frame still ends at 100dvh. */
 .shell {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 var(--gutter) 5rem;
+  padding: 0.8rem var(--gutter) 5rem;
   min-width: 0;
 }
 
-body {
-  overflow-x: clip;
+/* ...and nothing may bring a second one. The page heads below have given up
+   their top margins for this; this catches everything else that has one of its
+   own, a flash being the one that turns up in practice. */
+.shell > :first-child {
+  margin-top: 0;
 }
 
+/* The menu bar of the desktop: a cream strip, not a tint of the ground -- the
+   grounds are saturated enough that a translucent bar over one would take the
+   timezone and the nav down with it. */
 .masthead {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--ground) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  border-bottom: 2px solid var(--win);
 }
 
 .masthead__inner {
@@ -163,7 +536,7 @@ body {
   padding: 0.7rem var(--gutter) 0;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0.35rem 1rem;
   min-width: 0;
 }
@@ -172,75 +545,170 @@ body {
   min-width: 0;
 }
 
+/* Stays clearly above the nav links, which are now nearly body size -- a brand
+   only a hair larger than the row under it reads as one more link. */
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--display);
   font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: -0.01em;
+  font-size: var(--fs-brand);
   color: var(--ink);
   text-decoration: none;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
 }
 
-.brand__mark {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
+/* The bot's own avatar, cached to disk at start-up and served from
+   `/identity/avatar`. It is an overlay rather than an <img> so a deployment
+   that has never reached Discord shows the monogram underneath instead of a
+   broken-image glyph -- and needs no script to tidy one away. */
+.brand__avatar,
+.gate__avatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.brand__avatar::after,
+.gate__avatar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+/* Fitted to its box rather than to the ladder: it is one letter standing in
+   for a picture, so it scales with the square and not with the prose. */
+.brand__avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 0.82rem;
+}
+
+.brand__avatar::after {
+  background-image: url("/identity/avatar");
+}
+
+.brand__by {
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, var(--dim) 70%, transparent);
+  color: var(--dim);
+}
+
+.brand__by:hover {
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 3px;
-  padding: 0.1rem 0.32rem;
+  border-bottom-color: var(--accent);
 }
 
 .masthead__meta {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
   letter-spacing: 0.02em;
   display: flex;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
   align-items: baseline;
 }
 
+/* ── nav ─────────────────────────────────────────────────────────────────
+ *
+ * Three labelled groups on a desktop; on a phone, Week and Inbox stay in reach
+ * and the rest fold into a <details>. The two layouts are separate markup and
+ * exactly one is ever displayed, which is what lets the disclosure be a real
+ * <details> -- forcing one open at a width is a fight with the user agent that
+ * some of them now win. */
+
 .nav {
-  display: flex;
-  gap: 0.15rem;
-  overflow-x: auto;
-  scrollbar-width: none;
   flex: 1 0 100%;
   min-width: 0;
-  margin-top: 0.35rem;
+  margin-top: 0.4rem;
 }
 
-.nav::-webkit-scrollbar {
+.nav__desk {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.2rem 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav__desk::-webkit-scrollbar {
   display: none;
 }
 
-.nav a {
-  flex: none;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+.nav__phone {
+  display: none;
+}
+
+.nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+/* The group labels stay small -- they are labels, not destinations -- but not
+   so small that they read as noise beside links this size. */
+.nav__eyebrow {
+  padding-left: 0.7rem;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--dim);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
+  color: var(--faint);
   white-space: nowrap;
 }
 
-.nav a:hover {
-  color: var(--ink);
+.nav__links {
+  display: flex;
+  gap: 0.1rem;
 }
 
-.nav a[aria-current="page"] {
+/* Nearly body size. These are the eleven things the portal can show you, read
+   at arm's length on a phone at night; at 0.8rem they were the smallest type in
+   the masthead, which is the wrong end of the scale for the only navigation
+   there is. */
+.nav__link {
+  flex: none;
+  padding: 0.42rem 0.7rem 0.5rem;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  white-space: nowrap;
+}
+
+.nav__link:hover {
   color: var(--ink);
+  background: var(--raise);
+}
+
+/* Where you are, said three ways -- ink, weight and the accent underline -- so
+   it does not rest on telling two greys apart in a row of eleven. */
+.nav__link[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--raise);
   border-bottom-color: var(--accent);
 }
 
-.nav .pip {
+.pip {
   display: inline-block;
   min-width: 1.15em;
   margin-left: 0.35em;
@@ -249,36 +717,48 @@ body {
   background: var(--accent);
   color: var(--accent-ink);
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   text-align: center;
 }
 
 /* ── page furniture ─────────────────────────────────────────────────────── */
 
+/* A panel, not bare text: `--dim` on a saturated ground is unreadable, and the
+   page head is where every screen says what it is looking at. */
 .page-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.6rem 1rem;
-  margin: 1.8rem 0 1rem;
+  /* No top margin: the gap under the masthead belongs to `.shell`, so that the
+     pages whose first element is not a page head get it too. */
+  margin: 0 0 1rem;
+  padding: 0.85rem 1.05rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
 }
 
+/* Fluid, and its floor is deliberately above the loudest thing on a run row:
+   whatever the width, the page says what it is louder than any one line on it. */
 h1 {
-  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.8rem);
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 1.25rem + 1.1vw, 2rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.005em;
   margin: 0;
 }
 
 .page-head p {
   margin: 0;
   color: var(--dim);
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
 }
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-micro);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);
@@ -287,7 +767,7 @@ h1 {
 
 .rule {
   border: 0;
-  border-top: 1px solid var(--line);
+  border-top: 2px solid var(--win-soft);
   margin: 1.5rem 0;
 }
 
@@ -297,7 +777,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -324,7 +804,7 @@ h1 {
 
 .rail__dow {
   display: block;
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -334,7 +814,7 @@ h1 {
 .rail__num {
   display: block;
   font-family: var(--mono);
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -346,7 +826,7 @@ h1 {
 
 .rail__day--today .rail__num {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rail__day--today::after {
@@ -365,7 +845,8 @@ h1 {
   top: 0.3rem;
   left: 0.35rem;
   font-family: var(--mono);
-  font-size: 0.55rem;
+  /* Below the ladder on purpose: a corner marker, not a label anybody reads. */
+  font-size: 0.62rem;
   letter-spacing: 0.08em;
   color: var(--accent);
   opacity: 0.75;
@@ -415,10 +896,23 @@ h1 {
   margin: 1.1rem 0 0.4rem;
 }
 
+/* A filter bar that is a page's own control sits on the ground, so it gets a
+   panel; the ones nested inside a card already have one. */
+.shell > .filters {
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* Tall enough for body-size text plus its padding and border, which 2.2rem no
+   longer was once the scale came up -- a fixed height shorter than its content
+   clips the descenders rather than growing. */
 .filters input,
 .filters select,
 .filters .btn {
-  height: 2.1rem;
+  height: 2.5rem;
 }
 
 .field {
@@ -430,8 +924,8 @@ h1 {
 .field > span,
 .label {
   display: block;
-  font-size: 0.66rem;
-  font-weight: 700;
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -444,9 +938,9 @@ textarea {
   max-width: 100%;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 0.42rem 0.6rem;
+  padding: 0.36rem 0.6rem;
   min-width: 0;
 }
 
@@ -460,24 +954,24 @@ textarea:focus {
 
 textarea {
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: var(--fs-body-sm);
 }
 
 .seg {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--surface);
 }
 
 .seg a {
-  padding: 0.42rem 0.75rem;
-  font-size: 0.78rem;
+  padding: 0.4rem 0.75rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--dim);
   text-decoration: none;
-  border-right: 1px solid var(--line);
+  border-right: 2px solid var(--line);
 }
 
 .seg a:last-child {
@@ -493,11 +987,11 @@ textarea {
 
 .btn {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
-  padding: 0.38rem 0.7rem;
+  padding: 0.32rem 0.7rem;
   border-radius: var(--r-sm);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -513,15 +1007,18 @@ textarea {
   color: var(--accent);
 }
 
+/* The chunky one, in the window chrome's own colour rather than the accent:
+   a title bar and the button that commits its form are the same object. */
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--win);
+  border-color: var(--win);
+  color: var(--win-ink);
 }
 
 .btn--primary:hover {
-  color: var(--accent-ink);
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--win) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--win) 88%, var(--ink));
+  color: var(--win-ink);
 }
 
 .btn--danger:hover {
@@ -573,31 +1070,37 @@ details[open] > summary.btn {
   scroll-margin-top: 7rem;
 }
 
+/* Its own small plaque: the day name and its count sit on the ground, and
+   `--faint` on a saturated ground is not a colour anybody can read. */
 .day__head {
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.55rem;
+  padding: 0.3rem 0.8rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
 }
 
 .day__name {
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: var(--fs-small);
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .day__count {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
 .day__head::after {
   content: "";
   flex: 1;
-  height: 1px;
-  background: var(--line);
+  height: 2px;
+  background: var(--line-soft);
 }
 
 .runs {
@@ -611,11 +1114,16 @@ details[open] > summary.btn {
   gap: 0.4rem 1rem;
   align-items: start;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--off);
+  border: 2px solid var(--line);
+  border-left: 5px solid var(--off);
   border-radius: var(--r);
   padding: 0.8rem 0.9rem;
   box-shadow: var(--shadow);
+  /* Both for the entry-art veil below: something for it to be absolute
+     against, and a stacking context of the card's own, without which its
+     negative layer would sink behind this background and vanish. */
+  position: relative;
+  isolation: isolate;
 }
 
 .run--planned {
@@ -636,9 +1144,93 @@ details[open] > summary.btn {
   opacity: 0.62;
 }
 
+/* ── the entry art, as a veil behind a run ──────────────────────────────────
+ *
+ * The splash MapleStory shows behind a boss's entry prompt, laid inside the
+ * card *behind its text*: cropped to the right of the frame, faded to a wash,
+ * and masked away before it reaches anything anybody has to read. Not a banner
+ * -- a banner is height, and a run card's height is the one thing the board
+ * cannot spend. Like the difficulty pills it is the game's picture rather than
+ * ours, so no colourway tints it.
+ *
+ * One base rule for both surfaces, because they are the same treatment at two
+ * sizes: the board's compact `.runcard` and the run card itself, which is also
+ * the run sheet's body and the whole of the phone list. `border-radius:
+ * inherit` is what lets one rule serve all three -- each card tells the veil
+ * its own corners, including the square top the sheet's title bar gives the
+ * card underneath it, and the rounded one a phone gives it back. What the
+ * variants below change is the crop window and the shape of the mask.
+ *
+ * `z-index: -1` inside a card that isolates: above the card's own surface,
+ * below every word on it. Both cards say `isolation: isolate` for exactly that
+ * reason; without a stacking context of their own the layer would sink behind
+ * the cream instead.
+ *
+ * Absent means absent: a run with no artwork leaves `run.entry_art` empty and
+ * no element is written, so the card is the card it was before this existed.
+ * Which is every card on a fresh clone, the artwork being git-ignored. */
+.run__art,
+.runcard__art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* An absolutely positioned <img> takes its own intrinsic size unless it is
+     told otherwise, so `inset` alone would leave it 778px wide. */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  opacity: var(--art-veil);
+  /* TUNING KNOB -- one boss, so nothing to share the edge with: the full-height
+     side vignette, opaque down the right and gone before the clock and the
+     party. Also the fallback shape, declared here rather than on a `--solo`
+     class so the property is never unset: `mask-image: var(--art-mask)` with
+     nothing behind it computes to no mask at all, which would lay the wash flat
+     across every word on the card -- the one thing this must never do.
+     The colour in a mask gradient is not paint, only its alpha is read, which
+     is why these are the one place on the page that names black without
+     meaning it. And the prefixed line is not politeness, for the same reason
+     the fallback is not: an older engine gets the shape rather than none. */
+  --art-mask: linear-gradient(to left, #000 12%, transparent 68%);
+  -webkit-mask-image: var(--art-mask);
+  mask-image: var(--art-mask);
+  /* It is scenery. The card behind it is a link on the board and a form
+     everywhere else. */
+  pointer-events: none;
+}
+
+/* Where each surface's crop window opens. Apart because the two windows are
+   very different slices of the same picture -- see `--art-crop-*` on `:root`,
+   which is also where the reason lives. */
+.run__art {
+  object-position: right var(--art-crop-sheet);
+}
+
+.runcard__art {
+  object-position: right var(--art-crop-card);
+}
+
+/* Two bosses, a corner each, meeting in a soft seam down the right edge. The
+   lead takes the top corner and the second the bottom, which is the order they
+   are named in and the order they are written in.
+
+   TUNING KNOB -- the lead's wedge, and the compact card's whole backdrop, which
+   is the same shape at a smaller size. Its fade is the longer of the two
+   because on the sheet the chrome title bar sits over most of the corner it
+   starts in. */
+.runcard__art,
+.run__art--lead {
+  --art-mask: linear-gradient(205deg, #000 12%, transparent 46%);
+}
+
+/* TUNING KNOB -- the second boss's wedge. Shorter, because nothing covers it. */
+.run__art--second {
+  --art-mask: linear-gradient(335deg, #000 5%, transparent 32%);
+}
+
 .run__time {
   font-family: var(--mono);
-  font-size: 1.42rem;
+  font-size: 1.55rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -648,7 +1240,7 @@ details[open] > summary.btn {
 /* "own time" is words, not a clock reading, so it drops out of the big
    tabular-figure treatment rather than wrapping inside it. */
 .run--otot .run__time {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0;
   padding-top: 0.35rem;
@@ -656,9 +1248,9 @@ details[open] > summary.btn {
 
 .run__time small {
   display: block;
-  font-family: var(--sans);
-  font-size: 0.62rem;
-  font-weight: 700;
+  font-family: var(--body);
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -670,9 +1262,9 @@ details[open] > summary.btn {
 }
 
 .run__bosses {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
   margin: 0 0 0.3rem;
 }
 
@@ -681,10 +1273,21 @@ details[open] > summary.btn {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-body-sm);
   color: var(--dim);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Prose in the same quiet voice. Never a flex container: flex splits a
+   paragraph's text nodes around any inline element, so a sentence continuing
+   after a <strong> starts a new item and its punctuation ends up orphaned --
+   which is exactly what `.run__meta` on a <p> used to do. */
+.note {
+  font-size: var(--fs-body-sm);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+  max-width: 68ch;
 }
 
 .run__actions {
@@ -716,19 +1319,19 @@ details[open] > summary.btn {
   gap: 0.4rem 0.6rem;
   margin-top: 0.6rem;
   padding-top: 0.6rem;
-  border-top: 1px solid var(--line-soft);
+  border-top: 2px solid var(--line-soft);
 }
 
 .statusbar__label {
-  font-size: 0.62rem;
-  font-weight: 700;
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
 }
 
 .statusbar__note {
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   color: var(--risk);
 }
 
@@ -751,13 +1354,13 @@ details[open] > summary.btn {
   gap: 0.3rem 0.55rem;
   margin-top: 0.45rem;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
 }
 
 .run__cards-label {
-  font-family: var(--sans);
-  font-size: 0.62rem;
-  font-weight: 700;
+  font-family: var(--body);
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -787,7 +1390,7 @@ details[open] > summary.btn {
 }
 
 .cardlink__out {
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   opacity: 0.75;
 }
 
@@ -816,9 +1419,25 @@ details[open] > summary.btn {
 }
 
 .answers__summary {
-  font-size: 0.68rem;
-  padding: 0.2rem 0.5rem;
+  font-size: var(--fs-mini);
+  padding: 0.18rem 0.5rem;
   min-height: 0;
+}
+
+/* What says it opens. `summary.btn` has already taken the user agent's own
+   marker away, so the chevron is one of the drawings from
+   `partials/icons.html`, and it turns a quarter clockwise when the panel is
+   open; the reduced-motion block at the foot of this file takes that turn's
+   duration to nothing along with every other transition. A summary that read as
+   one stray word is now a control with a disclosure on it. */
+.answers__summary .icon {
+  color: var(--faint);
+  transition: transform 0.14s ease;
+}
+
+.answers[open] > .answers__summary .icon {
+  color: var(--accent);
+  transform: rotate(90deg);
 }
 
 .answers__body {
@@ -828,7 +1447,7 @@ details[open] > summary.btn {
 }
 
 .answers__hint {
-  font-size: 0.7rem;
+  font-size: var(--fs-small);
   color: var(--dim);
   margin: 0;
 }
@@ -842,24 +1461,24 @@ details[open] > summary.btn {
 
 .answers__who {
   flex: 1 1 8rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .seg--answer .seg__btn {
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   padding: 0.22rem 0.55rem;
   min-height: 30px;
 }
 
 .seg__btn {
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   padding: 0.34rem 0.7rem;
   min-height: 34px;
   border: 0;
-  border-right: 1px solid var(--line);
+  border-right: 2px solid var(--line);
   background: transparent;
   color: var(--dim);
   cursor: pointer;
@@ -893,7 +1512,7 @@ details[open] > summary.btn {
 
 .chanmark__btn {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
   padding: 0.1rem 0.25rem;
   border: 0;
@@ -921,11 +1540,11 @@ details[open] > summary.btn {
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   color: var(--dim);
   background: var(--raise);
   white-space: nowrap;
@@ -939,7 +1558,7 @@ details[open] > summary.btn {
 
 .chip__x {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
   padding: 0 0.1rem;
   margin-left: 0.1rem;
@@ -954,10 +1573,10 @@ details[open] > summary.btn {
 }
 
 .chip__add {
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   padding: 0.1rem 0.35rem;
   border-radius: 999px;
-  border: 1px dashed var(--line);
+  border: 2px dashed var(--line);
   background: transparent;
   color: var(--dim);
 }
@@ -965,19 +1584,19 @@ details[open] > summary.btn {
 .chip--yes {
   color: var(--ok);
   border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
 }
 
 .chip--no {
   color: var(--risk);
   border-color: color-mix(in srgb, var(--risk) 35%, transparent);
-  background: color-mix(in srgb, var(--risk) 10%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
 }
 
 .chip--maybe {
   color: var(--own);
   border-color: color-mix(in srgb, var(--own) 35%, transparent);
-  background: color-mix(in srgb, var(--own) 10%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, var(--surface));
 }
 
 .chip--waiting {
@@ -991,7 +1610,7 @@ details[open] > summary.btn {
    from the red one, and a filled dot beside a hollow one is legible at arm's
    length in a way two similar words are not. */
 .chip__mark {
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   line-height: 1;
   opacity: 0.9;
 }
@@ -1015,8 +1634,8 @@ details[open] > summary.btn {
 }
 
 .status {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: var(--fs-small);
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1058,6 +1677,18 @@ details[open] > summary.btn {
   margin-left: 0.55rem;
 }
 
+/* Two bosses on one run, stacked. Inline they wrapped mid-boss at a card's
+   width -- the name on one line and its difficulty pill orphaned on the next --
+   so anywhere with room for the full in-game name gets one boss per line
+   instead. The inline form above is still what the board's compact cards use. */
+.bosslist {
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
 /* A portrait and its monogram stand-in occupy the same box, so adding an image
    never reflows the row. */
 .portrait {
@@ -1068,28 +1699,32 @@ details[open] > summary.btn {
   border-radius: 7px;
   object-fit: cover;
   background: var(--raise);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   font-weight: 700;
   letter-spacing: 0.01em;
   overflow: hidden;
 }
 
+/* Both monograms are fitted to their square, not to the ladder. */
 .portrait--sm {
   width: 26px;
   height: 26px;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
 }
 
 .portrait--md {
   width: 38px;
   height: 38px;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 
+/* The hue is the boss's, set on the element; only how light it is belongs to
+   the face -- which is why those two are tokens rather than a second rule
+   inside the dark media query. */
 .portrait--mono {
-  background: hsl(var(--mono-hue) 42% 88%);
-  color: hsl(var(--mono-hue) 55% 26%);
-  border-color: hsl(var(--mono-hue) 35% 78%);
+  background: hsl(var(--mono-hue) var(--mono-s) var(--mono-l));
+  color: hsl(var(--mono-hue) var(--mono-ink-s) var(--mono-ink-l));
+  border-color: hsl(var(--mono-hue) var(--mono-line-s) var(--mono-line-l));
 }
 
 .boss__name {
@@ -1099,7 +1734,7 @@ details[open] > summary.btn {
 
 .boss__lv {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1108,7 +1743,7 @@ details[open] > summary.btn {
   display: inline-block;
   padding: 0.05rem 0.42rem 0.09rem;
   border-radius: 999px;
-  font-size: 0.6rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.09em;
   line-height: 1.5;
@@ -1142,9 +1777,9 @@ details[open] > summary.btn {
 
 .grid-bosses {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   background: var(--line);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
 }
@@ -1159,7 +1794,7 @@ details[open] > summary.btn {
 }
 
 .bossrow--on {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
 }
 
 .bossrow__id {
@@ -1177,7 +1812,7 @@ details[open] > summary.btn {
 .bossrow__lv {
   display: block;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1196,10 +1831,10 @@ details[open] > summary.btn {
   min-height: 36px;
   padding: 0 0.7rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: transparent;
   color: var(--dim);
-  font-size: 0.64rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.09em;
   cursor: pointer;
@@ -1270,17 +1905,22 @@ details[open] > summary.btn {
 
 .id {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
-/* ── cards, tables, empties ─────────────────────────────────────────────── */
+/* ── windows: cards, tables, empties ────────────────────────────────────────
+ *
+ * A card is a window. `.card__head` is its title bar: it bleeds out through
+ * the card's own padding with a negative margin, so the bar spans the frame
+ * without any card having to be re-marked-up for it. A card with no head keeps
+ * its padding and simply has no bar. */
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
-  padding: 1rem 1.1rem;
+  padding: 1.05rem 1.1rem;
   box-shadow: var(--shadow);
 }
 
@@ -1291,22 +1931,1177 @@ details[open] > summary.btn {
 .card__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem 0.8rem;
-  margin-bottom: 0.6rem;
+  align-items: center;
+  gap: 0.35rem 0.7rem;
+  margin: -1.05rem -1.1rem 0.85rem;
+  padding: 0.42rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border-radius: var(--r-in) var(--r-in) 0 0;
 }
 
 .card__title {
-  font-size: 0.98rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
   font-weight: 700;
-  letter-spacing: -0.01em;
   margin: 0;
 }
 
-.grid-2 {
+.card__head a {
+  color: var(--win-ink);
+}
+
+/* A title bar carries more than a title -- the Inbox puts the confidence, the
+   channel and the id up there. They keep their shapes; only the colours that
+   were tuned against the page's surface are re-tuned against the bar. The
+   confidence keeps its own band colour by getting a surface to sit on, because
+   that colour is the whole point of it. */
+.card__head .id,
+.card__head .boss__lv,
+.modal__head .eyebrow {
+  color: color-mix(in srgb, var(--win-ink) 72%, var(--win));
+}
+
+.card__head .conf {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--win-ink) 40%, transparent);
+}
+
+/* ── the settings window ────────────────────────────────────────────────────
+ *
+ * Config is one window: a table of contents down the left, one section at a
+ * time on the right. It replaced a wall of cards -- first a grid whose rows
+ * stretched every card to its tallest sibling, then columns that packed them --
+ * because the real problem was never how the cards were arranged. It was that
+ * nine settings were all on screen at once, so none of them had room.
+ *
+ * Switching is `:target`, and nothing else. The tabs are ordinary fragment
+ * links, the panel whose id matches shows, and with no fragment at all the
+ * first one shows. No JavaScript is anywhere near it. */
+
+.settings__body {
   display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+}
+
+.settings__toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.5rem;
+  border-right: 2px solid var(--line);
+  background: var(--raise);
+}
+
+.settings__tab {
+  padding: 0.38rem 0.6rem;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.settings__tab:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Which tab is open. A stylesheet cannot compare an `href` to an id, so the
+   nine pairs are written out -- and a test holds this list to
+   `CONFIG_SECTIONS` in `bot/api/templating.py`, which is where sections are
+   actually declared. The last selector is the no-fragment case: the first tab,
+   because the first panel is what shows. */
+.settings:has(#pings:target) [href="#pings"],
+.settings:has(#watching:target) [href="#watching"],
+.settings:has(#chatbot:target) [href="#chatbot"],
+.settings:has(#notifications:target) [href="#notifications"],
+.settings:has(#theme:target) [href="#theme"],
+.settings:has(#digest:target) [href="#digest"],
+.settings:has(#rescan:target) [href="#rescan"],
+.settings:has(#access:target) [href="#access"],
+.settings:has(#env:target) [href="#env"],
+.settings:not(:has(.settings__panel:target)) .settings__tab:first-child {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.settings__detail {
+  min-width: 0;
+  padding: 0.9rem 1.05rem 1.1rem;
+}
+
+.settings__panel {
+  display: none;
+}
+
+.settings__panel:target {
+  display: block;
+}
+
+/* Nothing chosen yet: the first section, which is what a settings window opens
+   on. Scoped to direct children so an unrelated `#rescan-job` in the URL
+   cannot leave the window showing nothing at all. */
+.settings__detail:not(:has(> .settings__panel:target)) > .settings__panel:first-child {
+  display: block;
+}
+
+.settings__title {
+  margin: 0 0 0.7rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* A row of buttons that are each their own one-field form. */
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* The fieldsets in here group radios and checkboxes; the user agent's border
+   round them drew a second box inside a window that is already a box. */
+.settings__panel fieldset {
+  border: 0;
+  margin: 0 0 0.7rem;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Inside a panel a form is a row of fields with its Save on the end, and the
+   label sits on its control rather than a line away from it. */
+.settings__panel .filters {
+  margin: 0 0 0.6rem;
+  gap: 0.5rem 0.8rem;
+}
+
+.settings__panel .field {
+  gap: 0.15rem;
+}
+
+.settings__panel .note {
+  margin: 0.5rem 0 0;
+}
+
+.settings__panel .note + .note {
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 899px) {
+  .settings__body {
+    grid-template-columns: 1fr;
+  }
+
+  .settings__toc {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .settings__tab {
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--fs-small);
+  }
+
+  /* Every section at once, and the tabs become jump links. A phone loses a
+     fragment easily -- a back gesture, a reopened tab, a link somebody shared
+     -- and a settings page that answers with a blank pane because of it is
+     worse than one you scroll. */
+  .settings__panel {
+    display: block;
+  }
+
+  .settings__panel + .settings__panel {
+    margin-top: 1.3rem;
+    padding-top: 1.1rem;
+    border-top: 2px solid var(--line-soft);
+  }
+}
+
+/* ── a window with tabs on its chrome ───────────────────────────────────────
+ *
+ * The same machinery the settings window runs on -- `:target` chooses a panel,
+ * `:has()` raises the tab that points at it, the first panel shows when the URL
+ * says nothing -- wearing a browser's clothes instead of a sidebar's. The strip
+ * *is* the window's title bar (it wears `.card__head`, so the three dots come
+ * with it), and the tabs rise out of it: the open one is painted in the body's
+ * own surface and drops the rounding on its bottom edge, so it reads as one
+ * shape with the panel under it.
+ *
+ * Fragment links and nothing else, exactly like the settings tabs. That means
+ * no `role="tablist"` and no `aria-selected`, which would promise arrow-key
+ * behaviour that only script can deliver; what a reader gets instead is a list
+ * of links to sections of this page, which is what these are. Flagged for the
+ * a11y pass rather than half-done here.
+ *
+ * Named for the pattern rather than for either page: two use it today and the
+ * extraction detail is the same shape. */
+
+.tabs__strip {
+  /* The tabs sit *on* the bottom edge, so the bar gives up its own padding
+     there and they close the gap themselves. */
+  padding-bottom: 0;
+  gap: 0.3rem 0.6rem;
+}
+
+.tabs__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--win-ink);
+  text-decoration: none;
+  opacity: 0.72;
+}
+
+.tabs__tab:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--surface) 25%, transparent);
+}
+
+/* The count a tab carries. Reads as a figure rather than as a word, and takes
+   the tab's own ink so it needs nothing from a colourway. */
+.tabs__count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentcolor 22%, transparent);
+}
+
+/* Written out per key, because a stylesheet cannot compare an `href` to an id.
+   `LIMITS_TABS` and `CHAT_TABS` in `bot/api/templating.py` are the list these
+   pairs answer to, and a test holds them to it.
+   The last selector is the no-fragment case. It names a class rather than
+   `:first-child`, which is what the settings window can use: on /limits the
+   panels are siblings across a swap boundary, so the *first* of them is not a
+   first child of anything -- the server marks which one opens by default. */
+.tabs:has(#who-may-ask:target) [href="#who-may-ask"],
+.tabs:has(#in-flight:target) [href="#in-flight"],
+.tabs:has(#windows:target) [href="#windows"],
+.tabs:has(#set-allowance:target) [href="#set-allowance"],
+.tabs:has(#conversation:target) [href="#conversation"],
+.tabs:has(#tool-trace:target) [href="#tool-trace"],
+.tabs:has(#interaction:target) [href="#interaction"],
+.tabs:has(#produced:target) [href="#produced"],
+.tabs:has(#chat-read:target) [href="#chat-read"],
+.tabs:has(#raw:target) [href="#raw"],
+.tabs:has(#extraction:target) [href="#extraction"],
+.tabs:not(:has(.tabs__panel:target)) .tabs__tab:first-child {
+  opacity: 1;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.tabs__panel {
+  display: none;
+}
+
+.tabs__panel:target {
+  display: block;
+}
+
+/* Nothing targeted, or something targeted that is not a panel: the window
+   opens on the panel the server marked. */
+.tabs:not(:has(.tabs__panel:target)) .tabs__panel--first {
+  display: block;
+}
+
+@media (max-width: 899px) {
+  /* Every panel at once, and the tabs become jump pills to them. A phone
+     scrolls anyway, and a window that answers with a blank panel because a
+     fragment went missing is worse than one you scroll -- the settings
+     window's rule, for the same reason. */
+  .tabs__panel {
+    display: block;
+  }
+
+  .tabs__panel + .tabs__panel {
+    margin-top: 1.3rem;
+    padding-top: 1.1rem;
+    border-top: 2px solid var(--line-soft);
+  }
+
+  /* Pills rather than tabs: with every panel already on the page these are
+     jump links, and a tab that rises into a panel it is not attached to would
+     be drawing a join that is not there. The one you last jumped to still
+     lights, which is the settings window's behaviour too. */
+  .tabs__tab {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 25%, transparent);
+    opacity: 1;
+  }
+}
+
+/* ── the table pages: a window that scrolls, on a page that does not ────────
+ *
+ * A list of two thousand audit rows was a page you scrolled until you lost the
+ * headings and the search box with them. So on a desktop the *page* stops
+ * scrolling and the window does: masthead, page head and the pane's title bar
+ * hold still, the table scrolls between them with its headings stuck to the
+ * top, and the pager sits on the bottom edge where it can be reached without
+ * going anywhere.
+ *
+ * All of it is inside the width query below. A phone keeps ordinary vertical
+ * flow -- the no-scroll promise is a desktop one, and a 6cm-tall scrolling box
+ * inside a scrolling page is the worst of both.
+ *
+ * The height arithmetic is flexbox rather than `calc(100dvh - <a number>)`:
+ * the masthead's height is whatever its two rows come to, which changed twice
+ * in this redesign already, and a subtraction would have been wrong both times.
+ */
+
+/* At every width, framed or not: a table wider than its window scrolls
+   sideways rather than pushing the page out. This is what `.table-wrap` did
+   for these pages before they became panes, and a phone still needs it. */
+.pane__body {
+  overflow-x: auto;
+}
+
+.pane__search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* No fixed height: it holds body-size text, and a box shorter than its own
+   line clips the descenders (the lesson `.filters` learned in package one). */
+.pane__search input {
+  width: min(20rem, 42vw);
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+}
+
+/* A sub-heading inside a pane -- the Reminders page puts two tables in one. */
+.pane__section {
+  margin: 0.2rem 0 0.5rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.pane__section:not(:first-child) {
+  margin-top: 1.4rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-top: 2px solid var(--line);
+  background: var(--raise);
+}
+
+.pager__at {
+  font-size: var(--fs-small);
+  color: var(--dim);
+}
+
+/* The pager's own links push the "page N of M" to the middle, so the two
+   directions stay on the outside edges where they are the same shape as the
+   window they page. */
+.pager .btn:last-child {
+  margin-left: auto;
+}
+
+.pager .btn:first-child + .pager__at {
+  margin-left: 0;
+}
+
+@media (min-width: 900px) {
+  body.framed {
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* With JavaScript off, the Fixed page's Edit link is a fragment link and
+     `dialog:target` unfolds the editor in place -- which is taller than the
+     screen and, inside a frame that cannot scroll, unreachable. So a targeted
+     dialog gives the page back to the scrollbar. The frame is a convenience;
+     being able to edit a timing is not. */
+  body.framed:has(dialog:target) {
+    height: auto;
+    overflow: visible;
+    display: block;
+  }
+
+  body.framed .masthead {
+    flex: none;
+  }
+
+  body.framed .shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    /* `.shell` carries `margin: 0 auto` to centre itself. As a flex *item* --
+       which it becomes here -- an auto margin on the cross axis suppresses the
+       stretch that would otherwise give it the full width, so it sized to its
+       own content instead: /audit came out 1180px wide and /audit?q=limits
+       1023.27px, and the whole frame narrowed as you typed. A definite width
+       gives the auto margins something to centre rather than something to
+       decide. */
+    width: 100%;
+  }
+
+  /* Everything above the window keeps its own height; the window takes what is
+     left, however much that is. */
+  body.framed .shell > * {
+    flex: none;
+  }
+
+  body.framed .pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* The title bar is already the card's own negative-margin bleed; the body
+       below it does the padding, so the window can end at the viewport. */
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.framed .pane__swap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Undo the card's side padding so the table and the pager meet the frame. */
+    margin: 0 -1.1rem;
+  }
+
+  body.framed .pane__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 1.1rem;
+  }
+
+  body.framed .pager {
+    flex: none;
+  }
+
+  /* The settings window: the sidebar and the open section each take the
+     leftover height and scroll on their own, so the table of contents is
+     always there and only the section you are reading moves. */
+  body.framed .settings__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 -1.1rem;
+  }
+
+  /* The sidebar's raised ground meets the title bar. The head's bottom margin
+     is breathing room for content, and this body is chrome -- a strip of card
+     surface between the two reads as a gap in the window. */
+  body.framed .settings > .card__head {
+    margin-bottom: 0;
+  }
+
+  body.framed .settings__toc,
+  body.framed .settings__detail {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* The headings stay while the rows go past. A shadow rather than a border,
+     because a sticky element's own border scrolls with its box and leaves a
+     hairline floating a pixel out of place. */
+  body.framed .pane__body thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    border-bottom: 0;
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* ── a tabbed window, inside the frame ─────────────────────────────────
+   *
+   * The window takes the leftover height, the strip and anything pinned under
+   * it keep their own, and the open panel gets the rest and scrolls -- with
+   * its headings held, the way every other window over a table does.
+   *
+   * `display: contents` on /limits' swap wrapper is what lets the panels be
+   * siblings across it: three of the four are re-read on a timer and the
+   * fourth holds the form, which must never be inside what a refresh replaces.
+   * The wrapper keeps its boundary and its polling attributes; its children
+   * take their places in the window as though it were not there. */
+  body.framed .tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.framed .tabs #limits-live {
+    display: contents;
+  }
+
+  body.framed .tabs__strip,
+  body.framed .tabs > .stats,
+  body.framed .tabs #limits-live > .stats {
+    flex: none;
+  }
+
+  body.framed .tabs__panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Out to the window's edges and back in again, so the scrollbar rides the
+       window's edge while the content keeps the card's inset -- the bleed
+       `.pane__swap` does for the table pages. */
+    margin: 0 -1.1rem;
+    padding: 0 1.1rem 1.1rem;
+  }
+
+  body.framed .tabs__panel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    border-bottom: 0;
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* A row of tiles rather than four cards. In a frame this row is a caption
+     over the window under it, and every millimetre it takes is one the content
+     does not get -- the same trade the now-strip already makes above the
+     board. Same figures, less around them. */
+  body.framed .stat {
+    padding: 0.55rem 0.8rem;
+  }
+
+  body.framed .stat__big {
+    font-size: var(--fs-brand);
+  }
+
+  /* ── the pane is the page, the head is its caption ─────────────────────
+   *
+   * A framed page exists to show one thing. When the head above it is a full
+   * hero card -- eyebrow, a heading at clamp(1.6rem, …), and a paragraph -- it
+   * spends the pane's budget on words that are read once: /chat's head and
+   * stat card together took two thirds of a 690px viewport and left the
+   * interactions two rows tall.
+   *
+   * So on framed pages the head is a band: same parts, caption weight. Not
+   * gated on height -- the proportion is wrong at every height, and a
+   * height query is for trimming further, not for getting it right. */
+  body.framed .page-head {
+    align-items: center;
+    gap: 0.3rem 0.9rem;
+    margin: 0 0 0.6rem;
+    padding: 0.55rem 0.95rem;
+  }
+
+  body.framed .page-head h1 {
+    font-size: var(--fs-brand);
+  }
+
+  body.framed .page-head p {
+    font-size: var(--fs-small);
+  }
+
+  /* A status bar, now that it is pinned to the bottom of the viewport rather
+     than sitting at the end of a long page. */
+  body.framed .footnote {
+    margin-top: 0.7rem;
+    margin-bottom: 0.7rem;
+  }
+}
+
+/* ── the now strip ──────────────────────────────────────────────────────────
+ *
+ * Four things read before the week is: what is next, who still owes an answer,
+ * what is waiting to be approved, and whether the model is free. Tiles rather
+ * than a sentence, because three of the four are a number somebody is checking
+ * against zero. */
+
+.now {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 0.8rem;
+}
+
+.now__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.6rem 0.85rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.now__tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.now__tile--next {
+  border-color: var(--win);
+}
+
+/* A number that is not zero when zero is what you wanted. */
+.now__tile--warn {
+  border-color: color-mix(in srgb, var(--warn) 65%, var(--line));
+}
+
+.now__label {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* No family of its own: the numeric tiles carry `.mono`, and setting one here
+   would out-specify it and turn every countdown back into prose. */
+.now__big {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.now__sub {
+  font-size: var(--fs-small);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+/* ── the day board ──────────────────────────────────────────────────────────
+ *
+ * The rail was seven cells of pips above a list you scrolled until the shape of
+ * the week was off the screen. This is the same seven days at full size, so the
+ * shape and the runs are the same object. A phone gets none of it -- seven
+ * columns on a 360px screen is seven columns nobody can read -- and keeps the
+ * rail and the vertical list it always had. */
+
+.board {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  /* The board is the rail, grown up; saying it twice would be saying it twice. */
+  .rail {
+    display: none;
+  }
+
+  /* The list becomes the drawer the sheets live in: headings off, sections
+     collapsed to nothing, and every <dialog> inside them closed. */
+  .days-list .day__head,
+  .days-list .empty--phone {
+    display: none;
+  }
+
+  .days-list .day {
+    margin-top: 0;
+  }
+
+  /* The track list is written by the server, inline on the element: which days
+     hold runs is a fact about this week and a stylesheet cannot count. Seven
+     equal tracks is only the fallback for a board rendered without it.
+     A week busy enough that seven readable minimums do not fit scrolls
+     sideways -- which is better than seven columns too narrow to read. */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.5rem;
+    min-height: 0;
+    overflow-x: auto;
+  }
+
+  /* Inside the frame the board is the thing that takes the leftover height,
+     and each column scrolls on its own when its night is packed. */
+  body.framed .board {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .board__col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--surface);
+    border: 2px solid var(--line);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .board__col--today {
+    border-color: var(--accent);
+  }
+
+  .board__head {
+    display: flex;
+    flex: none;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.4rem 0.55rem;
+    background: var(--raise);
+    border-bottom: 2px solid var(--line);
+  }
+
+  /* ── a day with nothing on it ──────────────────────────────────────────
+   *
+   * The area principle: a week is usually one or two busy nights, and giving
+   * the other five an equal seventh of the page each spends most of the canvas
+   * on nothing. So an empty day keeps its name and its date and gives the rest
+   * of its width back -- quieter than the surface, dashed rather than drawn,
+   * so the eye slides over it on the way to the night that matters. */
+  .board__col--empty {
+    background: color-mix(in srgb, var(--ground) 22%, var(--surface));
+    border-style: dashed;
+    box-shadow: none;
+  }
+
+  .board__col--empty .board__head {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 0.4rem 0.15rem;
+    background: transparent;
+    border-bottom: 0;
+  }
+
+  .board__col--empty .board__date {
+    font-size: var(--fs-small);
+    color: var(--dim);
+  }
+
+  .board__col--empty .board__runs {
+    display: block;
+    padding: 0.3rem 0.2rem;
+    text-align: center;
+  }
+
+  .board__col--empty .board__none {
+    margin: 0.5rem 0 0;
+  }
+
+  /* After the empty rules on purpose: an empty *today* is still today, and
+     "nothing on tonight" is worth the same glance as a night with four runs. */
+  .board__col--today .board__head {
+    background: var(--accent-wash);
+  }
+
+  .board__dow {
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .board__date {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .board__count {
+    margin-left: auto;
+    font-size: var(--fs-mini);
+    color: var(--faint);
+  }
+
+  .board__reset {
+    font-family: var(--mono);
+    font-size: var(--fs-micro);
+    color: var(--accent);
+  }
+
+  /* A busy day packs across as well as down. Four runs on one Wednesday, in a
+     column that took most of the board back from the empty days, should be
+     four cards side by side rather than four stretched to nine hundred pixels
+     -- and the same rule gives a narrow run column exactly one card per row. */
+  .board__runs {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    grid-auto-rows: min-content;
+    align-content: start;
+    gap: 0.35rem;
+    padding: 0.4rem;
+  }
+
+  /* A column that has more below the fold says so, and stops saying it at the
+     end of the list. The two cover gradients scroll *with* the content
+     (`local`), so they sit over the shadows only while there is nothing past
+     that edge; the shadows themselves are fixed to the box (`scroll`). Without
+     this a card sliced by the bottom of a packed column looked like the last
+     card there was -- at 1280x720 the busiest column showed 113px of 631.
+     `scrollbar-gutter` keeps the cards from shifting sideways on the platforms
+     where a scrollbar takes width when it appears. */
+  .board__col:not(.board__col--empty) .board__runs {
+    background:
+      linear-gradient(var(--surface) 30%, transparent) top / 100% 1.4rem local no-repeat,
+      linear-gradient(transparent, var(--surface) 70%) bottom / 100% 1.4rem local no-repeat,
+      radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 22%), transparent) top / 100% 0.45rem
+        scroll no-repeat,
+      radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 22%), transparent) bottom / 100%
+        0.45rem scroll no-repeat;
+    scrollbar-gutter: stable;
+  }
+
+  .board__none {
+    margin: 0;
+    color: var(--faint);
+  }
+
+  /* A run, compact: the clock loudest, the bosses under it, and the tally as
+     one figure. Who the missing person is belongs on the sheet this opens. */
+  .runcard {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    /* The face this card is wearing, named once so the hover lift is a change
+       to one value rather than to every declaration painted from it. */
+    --card-face: var(--surface);
+    background: var(--card-face);
+    border: 2px solid var(--line);
+    border-left: 5px solid var(--off);
+    border-radius: var(--r-sm);
+    color: inherit;
+    text-decoration: none;
+    /* As on `.run`: somewhere for the entry-art veil to be absolute against,
+       and a stacking context so its negative layer lands above this background
+       instead of behind it. */
+    position: relative;
+    isolation: isolate;
+  }
+
+  .runcard:hover {
+    --card-face: var(--raise);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  }
+
+  .runcard--planned {
+    border-left-color: var(--warn);
+  }
+  .runcard--confirmed {
+    border-left-color: var(--ok);
+  }
+  .runcard--at_risk {
+    border-left-color: var(--risk);
+  }
+  .runcard--otot {
+    border-left-color: var(--own);
+  }
+  .runcard--cancelled,
+  .runcard--done {
+    border-left-color: var(--faint);
+    opacity: 0.55;
+  }
+
+  /* The compact card's entry-art veil is the run card's, declared once beside
+     `.run__art` -- same treatment, and `border-radius: inherit` takes care of
+     the one thing that differs. */
+
+  .runcard__time {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  /* A seventh of the width is not room for a portrait as well as a name.
+     And one boss to a line: two of them sharing a row could only ever break in
+     the middle of one, because at 230px "Carling NORMAL" and "Radiant Malefic
+     Star NORMAL" do not fit together. So the row that breaks is the one
+     *between* bosses, which is the same shape the full run card takes. The
+     names are tokens now and two would very often fit, but a column is still
+     the honest shape: two bosses are two facts, and the widest pair should not
+     be the one that decides where they go. */
+  .runcard__bosses {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    min-width: 0;
+    font-size: var(--fs-small);
+  }
+
+  /* A boss is a name and a difficulty, and the difficulty is half of what the
+     name means -- which Carling this is. So the box never breaks inside itself.
+     Twice it did, and each fix bought the next fault: `flex-wrap: wrap` stopped
+     EXTREME being clipped by the scroll container (21px of it, measured at
+     153px columns) by letting the pill drop to a line of its own, under a name
+     it then looked unrelated to; taking that away moved the break into the
+     name, which left "Radiant Malefic" over "Star NORMAL".
+     What settled it was making the name short. The card writes the canonical
+     token -- `NCarling`, `XKalos` -- so a boss is eight characters and a pill,
+     which fits on one line at a column's width with room over. Nothing wraps
+     anywhere in here now: not the row, not the token, and the pill keeps its
+     own width so it can be neither squeezed nor pushed off the card. */
+  .runcard__bosses .boss {
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .runcard__bosses .pill {
+    flex: none;
+  }
+
+  /* Still allowed to shrink -- a narrow column may need the token to give up a
+     few pixels -- but never to break, which `.boss` above now inherits. */
+  .runcard__bosses .boss__name {
+    min-width: 0;
+  }
+
+  .runcard__bosses .boss + .boss {
+    margin-left: 0;
+  }
+
+  .runcard__bosses .portrait {
+    display: none;
+  }
+
+  /* The clock and the state share a line. They used to be three lines: the
+     state was a mark and a word ("unconfirmed"), which at a card's width
+     wrapped, and the tally went under that again. The word is still there for a
+     screen reader and in the tooltip; on the card it is one drawing. */
+  .runcard__top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  .runcard__meta {
+    display: flex;
+    flex: none;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: var(--fs-mini);
+    white-space: nowrap;
+  }
+
+  /* The mark sits on the tally's line, so it takes the tally's size -- and
+     drops the tracking `.status` wears when it is a word. */
+  .runcard__meta .status {
+    font-size: var(--fs-mini);
+    letter-spacing: 0;
+  }
+
+  .runcard__tally {
+    color: var(--dim);
+  }
+}
+
+/* ── short screens ──────────────────────────────────────────────────────────
+ *
+ * A 1280x720 laptop has seven hundred pixels of height, and the framed pages
+ * were spending most of it above the thing they exist to show: a hero card
+ * with a paragraph in it, four tiles with a line of prose each, and a filter
+ * bar. On the Week board that left the busiest column 113px to render 631px of
+ * runs -- one card sliced in half.
+ *
+ * So below this height everything above the board gives back what it can. The
+ * headings, the numbers and every control stay; what goes is the prose that
+ * explains them, which is read once and then known. Wide screens keep it. */
+@media (min-width: 900px) and (max-height: 850px) {
+  body.framed .page-head {
+    margin: 0 0 0.5rem;
+    padding: 0.5rem 0.9rem;
+  }
+
+  /* The explanatory paragraph, not the heading or the eyebrow. */
+  body.framed .page-head p {
+    display: none;
+  }
+
+  body.framed .now {
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+
+  body.framed .now__tile {
+    padding: 0.35rem 0.6rem;
+  }
+
+  /* Except on the tile that is actually a sentence worth reading -- what is
+     next, and when. The other three are a label and a number. */
+  body.framed .now__tile:not(.now__tile--next) .now__sub {
+    display: none;
+  }
+
+  body.framed .shell > .filters {
+    margin: 0.5rem 0 0.4rem;
+    padding: 0.5rem 0.7rem;
+  }
+
+  body.framed .footnote {
+    display: none;
+  }
+}
+
+/* ── a run's sheet ──────────────────────────────────────────────────────────
+ *
+ * The ordinary run card, in a <dialog>, so the board can open one without the
+ * card existing twice on the page. Three states, one element: closed on a
+ * desktop until a card opens it (modal with JavaScript, `dialog:target`
+ * without), and shown in place on a phone, where it *is* the vertical list.
+ *
+ * `partials/run.html` goes inside unchanged, so every htmx action in it still
+ * targets `closest .run` and swaps its own article -- there being only one. */
+
+dialog.runsheet {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  width: min(52rem, calc(100% - 1.6rem));
+  max-width: none;
+  max-height: min(88vh, 52rem);
+  overflow: visible;
+}
+
+dialog.runsheet::backdrop {
+  background: rgb(12 11 18 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+dialog.runsheet:target {
+  display: block;
+  position: static;
+  margin: 0.6rem 0;
+}
+
+dialog.runsheet[open] {
+  animation: lift 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.runsheet__panel {
+  position: relative;
+  max-height: min(88vh, 52rem);
+  overflow-y: auto;
+}
+
+/* The sheet's title bar, which is also where the close control lives. Pinned to
+   the panel's corner it sat on top of the card's own top-right actions -- the
+   Move field and Preview ping -- at every width the sheet renders. A window's
+   chrome gets a strip of its own; then nothing can overlap. It sticks, because
+   the panel below it scrolls and a close button that scrolls away is not one. */
+.runsheet__bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border: 2px solid var(--win);
+  border-radius: var(--r) var(--r) 0 0;
+}
+
+/* Caption, not content: the run's own clock and bosses are full size directly
+   underneath, so the bar only says which run this window is. */
+.runsheet__name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.runsheet__x {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: 1;
+  padding: 0.28rem 0.5rem;
+  border: 2px solid color-mix(in srgb, var(--win-ink) 40%, transparent);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--win-ink);
+  cursor: pointer;
+}
+
+.runsheet__x:hover {
+  background: var(--surface);
+  border-color: var(--surface);
+  color: var(--ink);
+}
+
+/* One window rather than a card inside a frame: under the bar the run gives up
+   its top edge and its top corners. The left stripe stays -- that colour is the
+   run's status, not decoration. The entry-art veil follows without a rule of
+   its own, because it inherits whatever corners the card is currently wearing;
+   and it stays under the bar without one either, the bar being the only thing
+   in this panel with a `z-index`. */
+.runsheet__panel > .run {
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+}
+
+/* On a phone there is no board to open anything, so every sheet is simply the
+   run row it contains -- the list this page has always been. */
+@media (max-width: 899px) {
+  dialog.runsheet {
+    display: block;
+    position: static;
+    width: auto;
+    max-height: none;
+    margin: 0;
+  }
+
+  .runsheet__panel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Nothing to close, so no chrome to close it with -- and with the bar gone
+     the card takes its own top edge back and is a card again. */
+  .runsheet__bar {
+    display: none;
+  }
+
+  .runsheet__panel > .run {
+    border-top: 2px solid var(--line);
+    border-radius: var(--r);
+  }
 }
 
 /* ── stat strip ─────────────────────────────────────────────────────────────
@@ -1316,6 +3111,53 @@ details[open] > summary.btn {
  * that qualifies it is a label-and-figure pair underneath, in tabular mono so
  * two tiles side by side can be read as a column. */
 
+/* ── totals, as a strip rather than a wall ──────────────────────────────────
+ *
+ * The Chat page's per-model figures used to be one tile each, stacked under a
+ * hero card: two cards above the pane, and at 1000x690 the interactions had
+ * two rows left. The same figures read fine as label-and-figure pairs on one
+ * line -- a row per model, so several models still each get their own -- and
+ * they live inside the head band rather than in a card of their own. */
+
+.statline {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+  padding-top: 0.45rem;
+  border-top: 2px solid var(--line-soft);
+  min-width: 0;
+}
+
+.statline__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 1rem;
+  min-width: 0;
+}
+
+.statline__model {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.statline__pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+.statline__k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
 .stats {
   display: grid;
   gap: 0.75rem;
@@ -1323,9 +3165,15 @@ details[open] > summary.btn {
   margin-bottom: 0.75rem;
 }
 
+/* A tile row after something else in a panel: `.card + .card` only sees cards,
+   and these two would otherwise touch. */
+.tabs__panel .stats {
+  margin-top: 0.75rem;
+}
+
 .stat {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   padding: 0.85rem 1rem;
   box-shadow: var(--shadow);
@@ -1333,8 +3181,8 @@ details[open] > summary.btn {
 
 .stat__name {
   margin: 0;
-  font-size: 0.64rem;
-  font-weight: 700;
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--faint);
@@ -1346,14 +3194,14 @@ details[open] > summary.btn {
   text-transform: none;
   letter-spacing: 0;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   color: var(--dim);
 }
 
 .stat__big {
   margin: 0.15rem 0 0.6rem;
   font-family: var(--mono);
-  font-size: 1.6rem;
+  font-size: 1.75rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -1362,8 +3210,8 @@ details[open] > summary.btn {
 
 .stat__unit {
   display: block;
-  font-family: var(--sans);
-  font-size: 0.72rem;
+  font-family: var(--body);
+  font-size: var(--fs-small);
   font-weight: 400;
   letter-spacing: 0;
   color: var(--dim);
@@ -1373,14 +3221,14 @@ details[open] > summary.btn {
   margin: 0;
   display: grid;
   gap: 0.2rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-body-sm);
 }
 
 .stat__rows > div {
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
-  border-top: 1px solid var(--line-soft);
+  border-top: 2px solid var(--line-soft);
   padding-top: 0.2rem;
 }
 
@@ -1395,27 +3243,33 @@ details[open] > summary.btn {
 
 .table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 
+/* Inside a window the table is already framed; a second border around it would
+   read as two panels stacked. */
+.card .table-wrap {
+  box-shadow: none;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
 }
 
 th {
   text-align: left;
-  font-size: 0.64rem;
-  font-weight: 700;
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--faint);
   padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
   white-space: nowrap;
 }
 
@@ -1434,53 +3288,132 @@ tbody tr:hover {
 }
 
 .empty {
-  border: 1px dashed var(--line);
+  border: 2px dashed var(--line);
   border-radius: var(--r);
   padding: 2rem 1.2rem;
   text-align: center;
   color: var(--dim);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  background: var(--surface);
 }
 
 .empty strong {
   display: block;
+  font-family: var(--display);
   color: var(--ink);
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
   margin-bottom: 0.3rem;
 }
 
 .flash {
   border-radius: var(--r-sm);
   padding: 0.55rem 0.8rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   margin: 0.6rem 0;
-  border: 1px solid;
+  border: 2px solid;
 }
 
+/* Opaque, not a tint of whatever is behind: a flash lands on the ground. */
 .flash--ok {
   color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
 }
 
 .flash--error {
   color: var(--risk);
-  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
-  background: color-mix(in srgb, var(--risk) 8%, transparent);
+  border-color: color-mix(in srgb, var(--risk) 45%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
 }
 
 pre {
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--fs-small);
   line-height: 1.55;
   background: var(--raise);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
   padding: 0.75rem 0.85rem;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
+}
+
+/* ── the theme picker ───────────────────────────────────────────────────────
+ *
+ * Five radio buttons wearing their own palette: the ground each one paints the
+ * desktop, and the accent it puts on a link. A real radio inside a real form,
+ * so choosing one is a POST that sets a cookie -- there is nothing here that
+ * needs a script. */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.4rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The mode radios carry a word and no lozenge, so they get their padding back. */
+.swatch--plain {
+  padding: 0.3rem 0.8rem;
+}
+
+.swatch:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.swatch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.swatch:has(input:checked) {
+  color: var(--ink);
+  border-color: var(--win);
+  background: var(--raise);
+}
+
+.swatch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pair: the ground as the lozenge, its accent as the dot on it. */
+.swatch__dots {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--sw-ground);
+  border: 2px solid color-mix(in srgb, var(--sw-accent) 40%, var(--line));
+}
+
+.swatch__dots::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 12px;
+  border-radius: 50%;
+  background: var(--sw-accent);
 }
 
 /* ── inbox evidence: the chat that justifies a change ───────────────────── */
@@ -1502,11 +3435,11 @@ details fieldset {
   gap: 0.4rem;
   margin-top: 0.6rem;
   padding-left: 0.75rem;
-  border-left: 2px solid var(--line);
+  border-left: 3px solid var(--line);
 }
 
 .evidence__line {
-  font-size: 0.82rem;
+  font-size: var(--fs-body-sm);
 }
 
 .evidence__who {
@@ -1515,7 +3448,7 @@ details fieldset {
 
 .evidence__at {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
   margin-left: 0.4rem;
 }
@@ -1526,10 +3459,10 @@ details fieldset {
 
 .conf {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid;
+  border: 2px solid;
 }
 
 .conf--high {
@@ -1546,53 +3479,108 @@ details fieldset {
   border-color: color-mix(in srgb, var(--risk) 35%, transparent);
 }
 
-/* ── login ──────────────────────────────────────────────────────────────── */
+/* ── login: the one window on an empty desktop ──────────────────────────── */
 
 .gate {
-  min-height: 82vh;
+  min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.5rem;
 }
 
-.gate__card {
-  width: min(26rem, 100%);
+.gate__window {
+  width: min(27rem, 100%);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
-  padding: 1.6rem;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.gate__card h1 {
-  margin-bottom: 0.3rem;
+.gate__bar {
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
 }
 
-.gate__card p {
+.gate__bar-title {
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* The bot's profile banner, or -- with nothing cached -- a wash of its accent.
+   A background image rather than an <img> for the same reason as the avatar:
+   a 404 has to be an absence, not a broken glyph. */
+.gate__hero {
+  height: 104px;
+  background-color: color-mix(in srgb, var(--accent) 28%, var(--surface));
+  background-image: url("/identity/banner");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.gate__body {
+  padding: 0 1.4rem 1.5rem;
+}
+
+.gate__avatar {
+  width: 64px;
+  height: 64px;
+  margin-top: -32px;
+  border-radius: 16px;
+  font-size: 1.75rem;
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.gate__avatar::after {
+  background-image: url("/identity/avatar");
+}
+
+.gate__name {
+  margin: 0.55rem 0 0.1rem;
+}
+
+.gate__sub {
+  margin: 0 0 1rem;
+  font-size: var(--fs-body-sm);
   color: var(--dim);
-  font-size: 0.85rem;
+}
+
+.gate__body p {
+  color: var(--dim);
+  font-size: var(--fs-body-sm);
   margin-top: 0;
 }
 
-.gate__card label {
+.gate__body label {
   display: block;
 }
 
-.gate__card input {
+.gate__body input {
   width: 100%;
   font-family: var(--mono);
 }
 
-.gate__card .btn {
+.gate__body .btn {
   width: 100%;
   justify-content: center;
   margin-top: 0.7rem;
 }
 
+/* The footnote is on the ground too, and it is the quietest prose on the page --
+   quiet by size and colour, not so quiet it needs looking for. */
 .footnote {
-  color: var(--faint);
-  font-size: 0.75rem;
+  color: var(--dim);
+  font-size: var(--fs-small);
   margin-top: 2.5rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem 0.9rem;
@@ -1636,28 +3624,85 @@ details fieldset {
 /* ── phone ──────────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  .nav__desk {
+    display: none;
+  }
+
+  /* Week and Inbox stay in reach; everything else is behind the disclosure.
+     Both are real links and it is a real <details>, so this works with the
+     script blocked -- portal.js only closes the menu on an outside tap. */
+  .nav__phone {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
+  .nav__more {
+    margin-left: auto;
+  }
+
+  /* Sized as a link, because that is what it stands in for. */
+  .nav__more-btn {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.42rem 0.7rem 0.5rem;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--dim);
+  }
+
+  .nav__more-btn::-webkit-details-marker {
+    display: none;
+  }
+
+  .nav__more[open] > .nav__more-btn {
+    color: var(--ink);
+  }
+
+  .nav__sheet {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 30;
+    display: grid;
+    gap: 0.7rem;
+    min-width: 13.5rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--surface);
+    border: 2px solid var(--win);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+  }
+
+  .nav__sheet .nav__links {
+    flex-wrap: wrap;
+  }
+
   .run {
     grid-template-columns: 1fr;
     padding: 0.75rem;
   }
 
   .run__time {
-    font-size: 1.15rem;
+    font-size: 1.25rem;
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
   }
 
   /* "own time" is words, not a clock reading, so it drops out of the big
-   tabular-figure treatment rather than wrapping inside it. */
-.run--otot .run__time {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  padding-top: 0.35rem;
-}
+     tabular-figure treatment rather than wrapping inside it. */
+  .run--otot .run__time {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    padding-top: 0.35rem;
+  }
 
-.run__time small {
+  .run__time small {
     margin-top: 0;
   }
 
@@ -1671,7 +3716,7 @@ details fieldset {
   }
 
   .rail__num {
-    font-size: 1.05rem;
+    font-size: 1.15rem;
   }
 
   .rail__reset {
@@ -1718,7 +3763,7 @@ dialog.modal:target {
   flex-direction: column;
   max-height: min(88vh, 48rem);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
   box-shadow: 0 24px 60px -22px rgb(12 11 18 / 55%);
   overflow: hidden;
@@ -1730,16 +3775,18 @@ dialog.modal:target {
   align-items: center;
   gap: 0.6rem;
   flex: none;
-  padding: 0.75rem 1rem;
-  background: var(--raise);
+  padding: 0.55rem 0.85rem;
 }
 
+/* The same title bar a card wears, dots and all. */
 .modal__head {
-  border-bottom: 1px solid var(--line);
+  background: var(--win);
+  color: var(--win-ink);
 }
 
 .modal__foot {
-  border-top: 1px solid var(--line);
+  background: var(--raise);
+  border-top: 2px solid var(--line);
   justify-content: flex-end;
 }
 
@@ -1750,28 +3797,27 @@ dialog.modal:target {
 
 .modal__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
   font-weight: 700;
-  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
 .modal__x {
   flex: none;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid transparent;
+  padding: 0.3rem 0.5rem;
+  border: 2px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--dim);
+  color: var(--win-ink);
   cursor: pointer;
 }
 
 .modal__x:hover {
-  border-color: var(--line);
-  color: var(--ink);
+  border-color: var(--win-ink);
 }
 
 .modal__body {
@@ -1786,14 +3832,16 @@ dialog.modal:target {
 }
 
 /* The boss picker is the tall part, so it gets its own recess and its own
-   scrollbar rather than making the whole dialog a mile of pills. */
+   scrollbar rather than making the whole dialog a mile of pills. A recess in
+   `--raise`, not in the ground: the ground is saturated now, and the pills
+   that are not selected are dim outlines. */
 .modal__well {
   max-height: 40vh;
   overflow-y: auto;
   margin-top: 0.35rem;
   padding: 0.5rem;
-  background: var(--ground);
-  border: 1px solid var(--line-soft);
+  background: var(--raise);
+  border: 2px solid var(--line-soft);
   border-radius: var(--r-sm);
 }
 
@@ -1858,6 +3906,55 @@ dialog.modal[open] {
 .was {
   color: var(--faint);
   text-decoration: line-through;
+}
+
+/* ── icons ──────────────────────────────────────────────────────────────────
+ *
+ * The portal draws its own marks instead of borrowing the reader's emoji font:
+ * `templates/partials/icons.html` writes one inline <svg> per call, and this is
+ * everything the stylesheet has to say about them.
+ *
+ * Sized in `em`, so an icon is as big as whatever text it stands in and follows
+ * the type ladder without being on it -- there is no icon size to choose. The
+ * stroke is `currentColor`, so the colour is always the colour of the words
+ * around it: a `.status--at_risk` cell makes its cross red, a title bar makes
+ * its ✕ the chrome's ink, and both faces of all five colourways are handled
+ * without one being named here.
+ *
+ * The nudge below the baseline is what an inline SVG needs to sit on a line of
+ * text rather than hang under it; a flex or grid parent ignores it, which is
+ * why the icon-only controls opt into flex instead. */
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.135em;
+}
+
+/* Controls whose entire content is one drawing. Centred by flex, because there
+   is no text on the line for a baseline to mean anything. */
+.runsheet__x,
+.modal__x,
+.chanmark__btn,
+.cardlink__out {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link-out mark on a posted card, which is a footnote to the label beside
+   it rather than a thing to read: smaller than the line, and half-lit. */
+.cardlink__out .icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+/* A table cell that is nothing but its mark. Slightly larger than the text
+   would have been, because there is no word beside it to give it scale. */
+td .icon {
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .arrow {

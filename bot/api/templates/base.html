@@ -1,37 +1,82 @@
 <!doctype html>
+{# No colourway is rendered here: it is this browser's own preference and the
+   server never learns it. The snippet below stamps `data-colorway` from
+   localStorage before the stylesheet loads, and with no stored choice (or no
+   JavaScript) the page keeps the palette `:root` already carries. The dark face
+   of each colourway is the system's choice, not a control here. #}
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>{% block title %}Boss scheduler{% endblock %}</title>
+<title>{% block title %}YuukiSakuna{% endblock %}</title>
+{% include "partials/theme_boot.html" %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+      href="https://fonts.googleapis.com/css2?family=Solway:wght@700;800&family=Zilla+Slab:wght@400;500;600&family=Sometype+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/portal.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🗓️</text></svg>">
+{# The bot's own avatar, cached to disk at start-up (`bot.identity`). With
+   nothing cached it is a 404 and the browser falls back to its own mark. #}
+<link rel="icon" href="/identity/avatar">
 {# htmx only makes the actions feel instant. Every control below is also a real
-   form or link, so the page works with the script blocked. #}
+   form or link, so the page works with the script blocked -- the one deliberate
+   exception being the Config page's colourway radios, which have no server
+   state to post to (see the note in static/portal.js). #}
 <script src="{{ htmx_src }}" integrity="{{ htmx_sri }}" crossorigin="anonymous"
         referrerpolicy="no-referrer" defer></script>
 <script src="/static/portal.js" defer></script>
 </head>
-<body>
+{# `framed` is the no-scroll app frame: on a wide viewport the page itself does
+   not scroll, the window inside it does (see portal.css). Opted into per page
+   rather than applied to all, because only the pages that are one long table
+   want it -- and a phone gets ordinary vertical flow either way. #}
+<body class="{% block body_class %}{% endblock %}">
+{# One link, rendered wherever the nav needs it. The phone keeps Week and Inbox
+   in reach and folds the rest into a <details>, which means those two are
+   written twice -- once in each layout -- and exactly one copy is ever
+   displayed, so neither the reader nor a screen reader sees a duplicate. #}
+{% macro nav_link(key, href, label) -%}
+<a class="nav__link" href="{{ href }}"{% if key == active %} aria-current="page"{% endif %}>
+  {{ label }}{% if key == "inbox" and pending_count %}<span class="pip">{{ pending_count }}</span>{% endif %}
+</a>
+{%- endmacro %}
+{% macro nav_groups_row() -%}
+{% for label, items in nav_groups %}
+<div class="nav__group">
+  <span class="nav__eyebrow">{{ label }}</span>
+  <div class="nav__links">
+    {% for key, href, item_label in items %}{{ nav_link(key, href, item_label) }}{% endfor %}
+  </div>
+</div>
+{% endfor %}
+{%- endmacro %}
 <header class="masthead">
   <div class="masthead__inner">
-    <a class="brand" href="/"><span class="brand__mark">BOSS</span> scheduler</a>
+    <a class="brand" href="/">
+      <span class="brand__avatar" aria-hidden="true">Y</span>
+      <span class="brand__name">YuukiSakuna</span>
+    </a>
     <div class="masthead__meta">
       <span title="Guild timezone — every time on this page is in it">{{ tz_name }}</span>
+      <a class="brand__by" href="https://github.com/hoshinoht/kanade-bot" rel="noopener" target="_blank">powered by kanade</a>
       {% if caller %}<span>{{ caller.display }}</span>{% endif %}
       {% if caller %}<a href="/logout">sign out</a>{% endif %}
     </div>
-    <nav class="nav">
-      {% for key, href, label in nav %}
-      <a href="{{ href }}"{% if key == active %} aria-current="page"{% endif %}>
-        {{ label }}{% if key == "inbox" and pending_count %}<span class="pip">{{ pending_count }}</span>{% endif %}
-      </a>
-      {% endfor %}
+    <nav class="nav" aria-label="Sections">
+      <div class="nav__desk">{{ nav_groups_row() }}</div>
+      {# The phone layout. The disclosure is a real <details>, so the menu opens
+         and closes with no JavaScript at all; portal.js only shuts it when you
+         tap somewhere else. #}
+      <div class="nav__phone">
+        {% for key, href, label in nav %}
+        {% if key in nav_pinned %}{{ nav_link(key, href, label) }}{% endif %}
+        {% endfor %}
+        <details class="nav__more">
+          <summary class="nav__more-btn">More</summary>
+          <div class="nav__sheet">{{ nav_groups_row() }}</div>
+        </details>
+      </div>
     </nav>
   </div>
 </header>
@@ -44,7 +89,7 @@
   <p class="footnote">
     <span>All times {{ tz_name }}.</span>
     <span>Boss week starts {{ reset_label }}.</span>
-    <span>Loopback only — tailnet access is <code>tailscale serve</code>.</span>
+    <span>Loopback only — tailnet access through the <code>caddy</code> front door.</span>
   </p>
 </main>
 </body>

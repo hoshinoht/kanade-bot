@@ -32,6 +32,15 @@ STATUS_LABEL: dict[str, str] = {
     "cancelled": "🚫 cancelled",
 }
 
+#: The same six states where there is no room for the words: the portal's
+#: compact run cards, seven to a column. Deliberately the emoji each label
+#: already opens with rather than a second vocabulary -- a reader who has seen
+#: "⚠️ unconfirmed" on a Discord card should not have to learn a new glyph for
+#: it on the board. Keep in step with :data:`STATUS_LABEL` above.
+STATUS_MARK: dict[str, str] = {
+    status: label.split(" ", 1)[0] for status, label in STATUS_LABEL.items()
+}
+
 REACT_HINT = f"React {EMOJI_YES} if you're on, {EMOJI_NO} if not."
 
 COLOUR_DAY_OF = 0x5865F2  # blurple
@@ -57,6 +66,11 @@ class Card:
     #: from ``config/portraits``. ``None`` (the usual case) means no attachment
     #: at all, so a guild that ships no portraits sees exactly what it did before.
     thumbnail_path: Path | None = None
+    #: An image to attach and use as the embed's *image* -- the big slot along
+    #: the bottom, where the portrait's thumbnail is the small one in the corner.
+    #: The boss's entry splash from ``config/artwork/entry``. Absent on almost
+    #: every card: see the note where the day-of builder sets it.
+    image_path: Path | None = None
     #: The user ids this card may actually notify, already resolved against the
     #: mention policy (:mod:`bot.pings`). ``BossBot._post`` turns it into the
     #: message's ``allowed_mentions``, so a card cannot ping anyone its own
@@ -66,7 +80,12 @@ class Card:
     @property
     def has_embed(self) -> bool:
         return bool(
-            self.title or self.description or self.fields or self.footer or self.thumbnail_path
+            self.title
+            or self.description
+            or self.fields
+            or self.footer
+            or self.thumbnail_path
+            or self.image_path
         )
 
 
@@ -185,6 +204,20 @@ def lead_portrait(bosses: list[str], table: Any | None) -> Path | None:
     return getter(bosses[0]) if getter else None
 
 
+def lead_entry_art(bosses: list[str], table: Any | None) -> Path | None:
+    """The entry splash for the first boss on a card, if the guild has one.
+
+    The lead-boss rule :func:`lead_portrait` follows, for the same reason: one
+    picture per message, and the message is named after the run's first boss.
+    Duck-typed on the table for the same reason as well -- a caller with no
+    table passes ``None`` and gets no picture rather than an error.
+    """
+    if table is None or not bosses:
+        return None
+    getter = getattr(table, "entry_art_for", None)
+    return getter(bosses[0]) if getter else None
+
+
 def boss_detail(bosses: list[str], table: Any | None) -> str:
     """One line per boss with its full in-game name and difficulty, if a table is given."""
     if table is None:
@@ -266,6 +299,14 @@ def day_of_card(
         footer=REACT_HINT,
         colour=COLOUR_DAY_OF,
         thumbnail_path=lead_portrait(lead["bosses"], table),
+        # The one card that gets the big picture. This is the morning's single
+        # "here is tonight" message: it is read once, it is the thing somebody
+        # scrolls back to, and a boss's own entry screen on it says which night
+        # this is faster than the text does. Every other card the bot sends is
+        # repeated (two countdowns per run), transient (a proposal awaiting a
+        # ✅) or a list (the digest) -- a 550px painting on each of those buries
+        # the channel it is trying to be useful in.
+        image_path=lead_entry_art(lead["bosses"], table),
         mention_users=list(who.mentioned) if who else [],
     )
 

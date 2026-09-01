@@ -1110,7 +1110,8 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 def config_set(
     key: str = typer.Argument(
         help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
-        "quiet_mode, chat_mode, or one of the chat_pilot_*_rate_* numbers."
+        "quiet_mode, chat_mode, persona (a filename in personas/), or one of "
+        "the chat_pilot_*_rate_* numbers."
     ),
     value: str = typer.Argument(help="The new value."),
 ) -> None:

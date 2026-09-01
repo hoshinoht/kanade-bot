@@ -2,6 +2,107 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.0.1
+**Fixed**
+- The chat model could combine a canonical boss token with a second difficulty, 
+  generating `XBM Hard` for “Extreme BM.” Validation correctly rejected `Hard` 
+  as an unknown second boss, so no proposal card was created. Updated the 
+  `propose_add` tool description to distinguish canonical tokens from spoken 
+  difficulty-first names, prohibit combining both forms, and explicitly map 
+  “Extreme BM” to `XBM`.
+
+## 3.0.0
+
+**Added**
+
+- **The portal redesigned as "Kanade's Desktop"**: cream windows with chrome
+  title bars on a coloured ground, five selectable colourways — marigold (the
+  default), blossom, periwinkle, coral, twilight — each with an after-hours
+  dark face, and a System/Light/Dark control. The choice lives in the browser
+  and is stamped before first paint, so nothing flashes. The bot's own Discord
+  avatar and banner are the portal's identity: the masthead, the favicon and
+  the login window's hero.
+- **The Week page is a day board**: seven columns starting at the boss-week
+  reset, where an empty day collapses to a spine and the days with runs take
+  the room. Compact cards open a run sheet — the full card in a dialog, with
+  a plain fragment link when JavaScript is off — and a now-strip answers the
+  page's four questions (next run, answers owed, inbox, model) before any of
+  it is read.
+- **No page scrolls on desktop**: the table pages became searchable, paginated
+  windows that scroll inside a fixed frame — server-side search and paging on
+  Audit, Extractions, Chat and Reminders, search on Members and Fixed — and
+  Config became one Settings window, a table of contents on the left and one
+  section at a time on the right, switched by fragment alone.
+- **The bosses bring their own artwork**: `config/portraits` now has two sizes
+  (the full art goes out on Discord's embed thumbnails; the portal's small
+  renders keep the crisper 64px icons), and `config/artwork/entry` holds each
+  boss's entry splash, laid behind the week's run cards as a veil that costs
+  no height — one boss takes the side vignette, two take a corner each and
+  meet in a seam. Both directories are git-ignored beside tracked READMEs;
+  everything renders fine without them.
+- **The portal draws its own icons** — inline Feather strokes in
+  `currentColor`, so every colourway and dark face tints every icon. Discord
+  keeps its emoji vocabulary untouched: over there a reaction *is* an emoji.
+- **The morning ping carries the boss's entry splash**: the day-of message
+  wears the lead boss's entry art as its embed image, on top of the portrait
+  thumbnail it already had. Countdowns stay text-lean.
+- **Limits, a chat's detail and an extraction's detail became tabbed browser
+  windows** — fragment-switched tabs on the window chrome, the same no-script
+  `:target` machinery as Settings, with live counts on the Limits tabs and the
+  allowance form kept outside the polled region so a refresh never eats what
+  you were typing.
+- **Personas moved into `personas/`**, bind-mounted read-only into the
+  container — tracked README and template, everything a deployment actually
+  writes git-ignored — and the Config page's Chatbot panel says which file the
+  voice is coming from, marked when it fell back to the template.
+- **Voices swap live**: every `.md` in `personas/` (bar the README) is a
+  dropdown on the Chatbot panel, the choice is runtime config seeded from
+  `PERSONA_PATH`'s basename, and the next answer is in the new voice — no
+  restart. Submissions are validated by membership in the real directory
+  listing, audits carry filenames only, and a chosen file that goes missing
+  falls back to the template and says so on the panel.
+- **The README shows the portal**: six screenshots in `docs/images/`, with the
+  week board in a `<picture>` tag so GitHub serves the light face to light
+  readers and the Twilight one after dark.
+- **A caddy front door** (`caddy/` service in compose): the portal is served
+  over HTTPS at a personal domain with a real Let's Encrypt certificate,
+  reachable only from the tailnet. The public A record points at the host's
+  Tailscale IP — a CGNAT address that resolves everywhere and routes nowhere
+  outside the tailnet — and the DNS-01 challenge means no port ever opens to
+  the internet. Docker publishes 443 on that IP alone (`CADDY_BIND_IP` in
+  `.env`), so the socket never exists on the LAN. Personal pieces follow the
+  `.env.example` pattern: `caddy/Caddyfile.example` is the tracked template;
+  the real Caddyfile and the Cloudflare token (`.env.caddy`) stay untracked.
+
+**Changed**
+
+- **`tailscale serve` is retired** — it only speaks its machine's ts.net name
+  and rejects any other hostname at the TLS handshake, so the old ts.net URL
+  is gone. The loopback `127.0.0.1:8080` mapping stays for host-local CLI and
+  dev use.
+- With the serve proxy gone, the `Tailscale-User-Login` header no longer
+  arrives: the portal asks for `ADMIN_TOKEN` login on every device, and
+  `TRUST_TAILSCALE_HEADERS` / `ALLOWED_TAILSCALE_LOGINS` are effectively
+  idle until some future front door re-authenticates tailnet identity.
+- The board's compact cards speak the party's own shorthand — `NCarling`,
+  `HStar` — so a boss and its difficulty pill always hold one line; the full
+  names stay on the sheet, the tooltips and the screen-reader labels.
+- The Config page's `.env` panel names both models — **Data model** for
+  extraction and rescans, **Speech model** for the chatbot's conversations —
+  where one "Model" row used to stand for two different machines.
+- The compose project follows the repo's name: project and container are
+  `kanade-bot`, and `docker compose up -d --build` is the whole deploy.
+
+**Fixed**
+
+- Type reads at an honest size everywhere — a seven-step ladder with body text
+  at a true 16px — and a difficulty pill can no longer be clipped at a narrow
+  column or orphaned on a line away from its boss.
+- `pytest -q` no longer doubles into silence: the verbosity flag is out of
+  `addopts`, which keeps only the marker filter.
+- The Settings sidebar's raised ground meets the window's title bar instead of
+  leaving a strip of card surface between the two.
+
 ## 2.1.0
 
 **Added**

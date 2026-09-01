@@ -1,39 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Extractions — Boss scheduler{% endblock %}
+{% from "partials/macros.html" import search_form %}
+{% block title %}Extractions — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Prompt tuning</p>
-    <h1>{{ extractions|length }} model call{{ "" if extractions|length == 1 else "s" }}</h1>
-    <p>Every call the extractor made: what it was asked, what came back, how long it took, and
-      which changes it produced.</p>
+    <h1>{{ "{:,}".format(listing.total) }} model call{{ "" if listing.total == 1 else "s" }}</h1>
+    <p class="note">Every call the extractor made: the prompt, the reply, the latency, and what
+      it changed.</p>
   </div>
   <span class="chip chip--mono">{{ config.model }}</span>
 </div>
 
-{% if not extractions %}
-<div class="empty">
-  <strong>No calls logged yet.</strong>
-  The extractor runs when someone talks about scheduling in a watched channel. Force one with
-  <code>bossctl rescan --channel &lt;id&gt;</code>.
-</div>
-{% else %}
-<div class="table-wrap">
-  <table>
-    <thead><tr><th>When</th><th>Model</th><th>Latency</th><th>Messages</th><th>Changes</th><th></th></tr></thead>
-    <tbody>
-      {% for row in extractions %}
-      <tr>
-        <td class="mono">{{ row.local_time }}</td>
-        <td>{{ row.model }}</td>
-        <td class="mono">{% if row.latency_ms is not none %}{{ row.latency_ms }} ms{% else %}—{% endif %}</td>
-        <td class="mono">{{ row.message_ids|length }}</td>
-        <td class="mono">{{ row.amendment_count }}</td>
-        <td><a class="btn" href="/extractions/{{ row.id }}">Open</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+<section class="card pane">
+  <div class="card__head">
+    <h2 class="card__title">Calls</h2>
+    {{ search_form("/extractions", "extraction-rows", "anything in the prompt or the reply…", listing.q) }}
+  </div>
+  <div id="extraction-rows" class="pane__swap">
+    {% include "partials/extraction_rows.html" %}
+  </div>
+</section>
 {% endblock %}

@@ -22,6 +22,7 @@ from .client import (
     CFG_COUNTDOWNS,
     CFG_EXTRACT,
     CFG_PAUSED,
+    CFG_PERSONA,
     CFG_PING_TIME,
     CFG_POOL_COUNT,
     CFG_POOL_WINDOW,
@@ -100,6 +101,10 @@ def build_repo(settings: Settings) -> Repo:
             # editable from the portal afterwards. `seed_config` only inserts
             # what is missing, so a value tuned at 9pm is not undone by the next
             # restart reading `.env` again.
+            # The voice, by filename, seeded from PERSONA_PATH's basename. From
+            # then on the row wins, so a persona chosen from the portal is not
+            # undone by the next restart reading `.env` again.
+            CFG_PERSONA: Path(settings.persona_path).name,
             CFG_RATE_COUNT: str(settings.chat_pilot_rate_count),
             CFG_RATE_WINDOW: str(settings.chat_pilot_rate_window_s),
             CFG_POOL_COUNT: str(settings.chat_pilot_global_rate_count),

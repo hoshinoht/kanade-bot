@@ -18,11 +18,11 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from . import audit, backup, formatting
+from . import audit, backup, formatting, identity
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
-from .chat import ChatPilot
+from .chat import ChatPilot, persona
 from .config import Settings
 from .db import Repo
 from .debug import TEST_PREFIX
@@ -52,6 +52,20 @@ log = logging.getLogger(__name__)
 POST_ATTEMPTS = 3
 POST_BACKOFF_SECONDS = 1.0
 
+#: What the embed's *image* attachment is called on the wire. A card can carry
+#: two pictures of the same boss -- `config/portraits/Star.png` in the corner
+#: and `config/artwork/entry/Star.png` along the bottom -- and on disk those are
+#: both `Star.png`. Two attachments with one name make `attachment://Star.png`
+#: ambiguous, and Discord resolves it to whichever it likes, which is how a
+#: 550px splash ends up in the thumbnail slot.
+#:
+#: Only the newcomer is renamed, deliberately. `edit_card` rewrites an embed
+#: without re-uploading anything, so every card already posted still has an
+#: attachment called `Star.png`; prefixing the thumbnail too would point every
+#: future edit at a filename those messages do not have, and break the portrait
+#: on all of them.
+IMAGE_PREFIX = "image-"
+
 
 @dataclass(frozen=True)
 class ChannelLookup:
@@ -71,6 +85,10 @@ CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
 CFG_CHAT = "chat_mode"
+#: Which file in ``personas/`` the bot is wearing, by name. A runtime row for
+#: the same reason :data:`CFG_QUIET` is one: a voice is the thing an operator
+#: most wants to change without a redeploy, and the environment only seeds it.
+CFG_PERSONA = "persona"
 #: The chatbot's four capacity numbers. Runtime rows rather than environment
 #: variables for the same reason :data:`CFG_QUIET` is one: they are what an
 #: operator reaches for while the guild is busy, and "edit `.env` and restart"
@@ -192,6 +210,27 @@ class BossBot(discord.Client):
         return (self.repo.get_config(CFG_CHAT, default) or default) == "1"
 
     @property
+    def persona_name(self) -> str:
+        """The persona file this deployment has chosen, by name, or ``""``.
+
+        A name and never a path: what it points at is resolved against the real
+        directory listing (:func:`bot.chat.persona.chosen_path`), so a row
+        hand-edited into something with a slash in it selects nothing rather
+        than reaching anywhere.
+        """
+        return self.repo.get_config(CFG_PERSONA, "") or ""
+
+    @staticmethod
+    def persona_choices() -> list[str]:
+        """The personas on offer, read off the bind mount every time it is asked.
+
+        On the client rather than in `bot.api.service` because that module is
+        imported *by* the chat package (`bot.chat.tools` dispatches over it), so
+        reaching the other way would close a circle.
+        """
+        return persona.available()
+
+    @property
     def chat_rate_count(self) -> int:
         """Answers per person per window, seeded from ``CHAT_PILOT_RATE_COUNT``."""
         return positive_int(
@@ -289,8 +328,26 @@ class BossBot(discord.Client):
         )
         await self.sync_roster()
         self.materialise_weeks()
+        await self.cache_identity()
         if self.settings.backfill_on_start:
             await self.backfill_all()
+
+    async def cache_identity(self) -> None:
+        """Keep the portal a copy of the bot's own avatar and banner.
+
+        Purely cosmetic (:mod:`bot.identity`), so it is placed after the roster
+        and the week -- the two things a start actually owes the guild -- and
+        nothing it does is allowed to escape. A failure leaves whatever was
+        cached last time in place, so the sign-in page keeps its artwork through
+        an outage.
+        """
+        try:
+            written = await identity.refresh(self)
+        except Exception:
+            log.debug("could not cache the bot's identity art", exc_info=True)
+            return
+        if written:
+            log.info("cached the bot's %s", " and ".join(name[:-4] for name in written))
 
     # -- history ----------------------------------------------------------
     def watched_text_channels(self) -> list[discord.abc.GuildChannel]:
@@ -912,19 +969,34 @@ class BossBot(discord.Client):
             # The file travels with the message, so the thumbnail keeps working
             # without hosting anything: `attachment://` refers to it by name.
             embed.set_thumbnail(url=f"attachment://{card.thumbnail_path.name}")
+        if card.image_path is not None:
+            embed.set_image(url=f"attachment://{IMAGE_PREFIX}{card.image_path.name}")
         return embed
 
     @staticmethod
-    def _attachment(card: formatting.Card) -> discord.File | None:
-        """The boss portrait to send alongside a card, if there is one."""
-        path = card.thumbnail_path
+    def _file(path: Path | None, prefix: str = "") -> discord.File | None:
+        """One attachment, or nothing when the file is not there to be read."""
         if path is None:
             return None
         try:
-            return discord.File(str(path), filename=path.name)
+            return discord.File(str(path), filename=f"{prefix}{path.name}")
         except OSError:
-            log.warning("could not read the portrait at %s", path)
+            log.warning("could not read the card image at %s", path)
             return None
+
+    @staticmethod
+    def _attachments(card: formatting.Card) -> list[discord.File]:
+        """The pictures that travel with a card: a portrait, a splash, or both.
+
+        A list because a day-of card carries two, and `send(file=...)` takes
+        one. Either can be missing on its own -- a boss with a portrait and no
+        entry art sends exactly the message it did before the splash existed.
+        """
+        files = (
+            BossBot._file(card.thumbnail_path),
+            BossBot._file(card.image_path, IMAGE_PREFIX),
+        )
+        return [item for item in files if item is not None]
 
     def _prepared(
         self, card: formatting.Card | str, mention_users: list[str] | None = None
@@ -966,17 +1038,17 @@ class BossBot(discord.Client):
         their own reminder.
         """
         card, allowed = self._prepared(card, mention_users)
-        attachment = self._attachment(card)
+        attachments = self._attachments(card)
         message: discord.Message | None = None
         for attempt in range(1, POST_ATTEMPTS + 1):
             try:
-                # `file=` is omitted entirely when there is no portrait, so a
+                # `files=` is omitted entirely when there is no artwork, so a
                 # guild that ships none sends exactly the message it did before.
                 message = await channel.send(
                     card.content,
                     embed=self._embed(card),
                     allowed_mentions=allowed,
-                    **({"file": attachment} if attachment is not None else {}),
+                    **({"files": attachments} if attachments else {}),
                 )
                 break
             except discord.HTTPException:

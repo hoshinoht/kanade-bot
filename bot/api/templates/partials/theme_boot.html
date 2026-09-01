@@ -1,0 +1,27 @@
+{# Inline, and above the stylesheet, because it has to run before the first
+   paint: read after it and the page shows the default look and then swaps.
+   Included by base.html and by login.html, which is its own document. #}
+<script>
+  try {
+    const ways = ["marigold", "blossom", "periwinkle", "coral", "twilight"];
+    let c = localStorage.getItem("colorway");
+    // The five were renamed once. A browser holding an old key keeps the look
+    // it chose and is moved onto the new name, here rather than in a migration
+    // nobody could run -- the choice only ever lived in this browser. The new
+    // name is checked against `ways` before it is written, so the only thing
+    // this can ever store is one of the five.
+    const renamed = {
+      otonose: "marigold", nazuna: "blossom", sumire: "periwinkle", hinano: "twilight"
+    }[c];
+    if (ways.indexOf(renamed) > -1) {
+      localStorage.setItem("colorway", (c = renamed));
+    }
+    const t = localStorage.getItem("theme");
+    if (ways.indexOf(c) > -1) {
+      document.documentElement.dataset.colorway = c;
+    }
+    if (["light", "dark"].indexOf(t) > -1) {
+      document.documentElement.dataset.theme = t;
+    }
+  } catch (e) {} // a private window can throw rather than answer
+</script>

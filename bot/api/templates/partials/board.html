@@ -1,0 +1,73 @@
+{% from "partials/macros.html" import boss_list %}
+{% from "partials/icons.html" import icon %}
+{# The boss week as seven columns, reset day first -- the rail grown up.
+
+   The columns are not equal, deliberately. A week is usually one or two busy
+   nights and five quiet ones, and seven equal tracks gave five sevenths of the
+   page to days with nothing on them. So a day with nothing collapses to a
+   spine wide enough for its own name, and the days that hold runs share what
+   the spines gave back. The track list is computed on the server
+   (`service.board_tracks`) because a stylesheet cannot count runs.
+
+   Each card is a real link to its run's sheet: with JavaScript the sheet opens
+   as a modal, without it `dialog:target` unfolds the same sheet in place. The
+   sheet is the ordinary run card every other surface uses -- nothing here is a
+   second rendering of a run. #}
+<div class="board" role="list" aria-label="The boss week, by day"
+     style="grid-template-columns: {{ board_tracks }}">
+  {% for column in board %}
+  <section class="board__col{% if column.empty %} board__col--empty{% endif %}{% if column.is_today %} board__col--today{% endif %}"
+           role="listitem"
+           aria-label="{{ column.weekday }} {{ column.day }} {{ column.month }}, {{ column.runs|length }} run(s)">
+    <header class="board__head">
+      <span class="board__dow">{{ column.weekday }}</span>
+      <span class="board__date mono">{{ "%02d"|format(column.day) }}</span>
+      {% if not column.empty %}
+      <span class="board__count mono">{{ column.runs|length }}</span>
+      {% endif %}
+      {% if column.is_reset %}<span class="board__reset" title="The boss week starts here">reset</span>{% endif %}
+    </header>
+    <div class="board__runs">
+      {% for run in column.runs %}
+      <a class="runcard runcard--{{ run.status }}" href="#sheet-{{ run.short_id }}"
+         data-dialog="sheet-{{ run.short_id }}"
+         title="{{ run.local_day }} {{ run.local_time }} — {{ run.boss_detail|map(attribute='full')|join(' + ') }}">
+        {# The lead boss's artwork behind the card, faded and masked away from
+           everything on it. Only the first: the sheet this opens has room to
+           split its edge between two, a card this size has room for one
+           picture. A run with no artwork gets no element -- and either way the
+           card is exactly as tall as it was. #}
+        {% if run.entry_art %}
+        <img class="runcard__art" src="{{ run.entry_art[0] }}" alt="" loading="lazy" decoding="async">
+        {% endif %}
+        <span class="runcard__top">
+          <span class="runcard__time mono">
+            {%- if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif -%}
+          </span>
+          {# The state as a drawing and nothing else. "unconfirmed" is a word at
+             a card's width, so it wrapped and pushed the tally onto a third
+             line; the words are on the sheet this opens, in the tooltip, and in
+             the label a screen reader reads out. The icon takes its colour from
+             the `.status--*` class around it, which is the same colour the word
+             would have had. #}
+          <span class="runcard__meta">
+            <span class="status status--{{ run.status }}" title="{{ status_words[run.status] }}">
+              {{ icon(status_icons[run.status]) }}
+              <span class="vh">{{ status_words[run.status] }}</span>
+            </span>
+            <span class="runcard__tally mono">{{ run.yes }}/{{ run.participants|length }}</span>
+          </span>
+        </span>
+        {# Short tokens here and only here: `NCarling` and its pill fit on one
+           line at a column's width where "Carling" plus NORMAL did not, and the
+           full names are a hover and a screen-reader label away -- on the card's
+           own title above, and on each boss. #}
+        <span class="runcard__bosses">{{ boss_list(run.boss_detail, level=False, short=True) }}</span>
+      </a>
+      {% else %}
+      <p class="board__none" aria-hidden="true">·</p>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>

@@ -1,0 +1,57 @@
+{% from "partials/macros.html" import boss_list, pager, no_match %}
+<div class="pane__body">
+  {% if not listing.upcoming and not listing.rows %}
+    {% if listing.q %}
+    {{ no_match(listing.q, "The search reads the bosses, the party, the kind of ping and the run's id.") }}
+    {% else %}
+    <div class="empty">
+      <strong>Nothing queued and nothing sent.</strong>
+      Reminders appear as soon as a run is materialised.
+    </div>
+    {% endif %}
+  {% else %}
+
+  <h3 class="pane__section">Queued <span class="id">{{ listing.upcoming|length }}</span></h3>
+  {% if not listing.upcoming %}
+  <p class="note">Nothing pending{{ " that matches" if listing.q else "" }}.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Fires</th><th>Kind</th><th>Run</th><th>Bosses</th><th>Party</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for row in listing.upcoming %}
+      <tr>
+        <td class="mono">{{ row.local_fire_at }}</td>
+        <td class="mono">{{ row.kind }}</td>
+        <td class="id">#{{ row.run_short_id }}</td>
+        <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
+        <td>{% for name in row.party %}<span class="chip">{{ name }}</span> {% else %}—{% endfor %}</td>
+        <td><span class="status status--{{ row.status }}">{{ row.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3 class="pane__section">Sent</h3>
+  {% if not listing.rows %}
+  <p class="note">Nothing posted yet{{ " that matches" if listing.q else "" }}.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Fired</th><th>Kind</th><th>Run</th><th>Bosses</th><th>Party</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for row in listing.rows %}
+      <tr>
+        <td class="mono">{{ row.sent_at|local_dt }}</td>
+        <td class="mono">{{ row.kind }}</td>
+        <td class="id">#{{ row.run_short_id }}</td>
+        <td>{{ boss_list(row.boss_detail, level=False) if row.boss_detail else "—" }}</td>
+        <td>{% for name in row.party %}<span class="chip">{{ name }}</span> {% else %}—{% endfor %}</td>
+        <td>{% if row.url %}<a href="{{ row.url }}">open in Discord</a>{% else %}<span class="id">no message</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</div>
+{{ pager("/reminders", "reminder-rows", listing) }}

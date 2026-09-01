@@ -1,0 +1,57 @@
+{# The portal's icons, drawn inline.
+
+   An emoji is a picture the reader's operating system chooses: ⚠️ is amber and
+   round on one phone, flat and grey on another, and on a desktop browser it is
+   whichever of the two the machine happens to ship. That is fine in Discord,
+   where emoji *are* the vocabulary -- a reaction is an emoji, and the bot's own
+   cards must go on speaking it. It is not fine on a page that has five
+   colourways and a dark face for each: the one glyph on the screen nobody could
+   restyle was the one carrying the meaning.
+
+   So the portal draws its own. Each call emits one <svg>, sized in `em` so an
+   icon is exactly as big as the text it stands in, stroked in `currentColor` so
+   the colour comes from whatever rule already colours that text -- `.status--*`,
+   a chip, a title bar -- and never from a value written down here. A new
+   colourway tints every icon on the page for free, and so does its dark twin.
+
+   Always `aria-hidden`: an icon is a picture of something the page has already
+   said in words. When it is *not* -- a table cell whose whole content is a tick
+   -- pass `label` and the words go beside it in a `.vh` span, which is the same
+   thing the answer chips do with their shapes.
+
+   The paths are Feather (https://github.com/feathericons/feather), MIT
+   licensed, copyright (c) 2013-2023 Cole Bemis, copied verbatim from that
+   repository's `icons/` directory. Only the ones this portal actually draws are
+   here: an icon nobody uses is bytes on every page that loads.
+
+   Imported the way the other partials' macros are, and called with a name and
+   an optional label: icon("check"), or icon("x", "missing"). #}
+
+{% macro icon(name, label="") %}
+<svg class="icon" data-icon="{{ name }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+     focusable="false">
+{% if name == "check" %}
+  <polyline points="20 6 9 17 4 12"/>
+{% elif name == "x" %}
+  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+{% elif name == "alert-triangle" %}
+  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+{% elif name == "alert-circle" %}
+  <circle cx="12" cy="12" r="10"/>
+  <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+{% elif name == "clock" %}
+  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+{% elif name == "chevron-right" %}
+  <polyline points="9 18 15 12 9 6"/>
+{% elif name == "external-link" %}
+  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+{% elif name == "refresh-cw" %}
+  <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+{% endif %}
+</svg>
+{%- if label %}<span class="vh">{{ label }}</span>{% endif %}
+{%- endmacro %}

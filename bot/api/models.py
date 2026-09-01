@@ -45,7 +45,10 @@ class BossOut(BaseModel):
     letter: str
     difficulty: str
     label: str
-    #: ``/static/portraits/<short>`` when `config/portraits/` has a file.
+    #: ``/static/portraits/<short>?size=icon`` when `config/portraits/` has a
+    #: file. The small render, because every portrait either surface draws is a
+    #: badge; drop the query for the full picture, which is what Discord
+    #: attaches to a card.
     portrait: str | None = None
     monogram: MonogramOut | None = None
 
@@ -464,6 +467,16 @@ class ConfigOut(BaseModel):
     chat_channels: list[str] = []
     chat_categories: list[str] = []
     chat_model: str = ""
+    #: The persona file the bot actually loaded, by name, and whether that was
+    #: the tracked template rather than a real one -- which is a misconfigured
+    #: deploy answering in the placeholder voice.
+    persona_file: str = ""
+    persona_fallback: bool = False
+    #: The chosen persona, by filename, and the files there are to choose from.
+    #: `persona` is the setting; `persona_file` above is what was actually read,
+    #: and they differ exactly when the chosen file has since gone missing.
+    persona: str = ""
+    persona_choices: list[str] = []
     timezone: str
     reset: str
     model: str
@@ -487,6 +500,11 @@ class ConfigIn(Strict):
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
     chat_mode: bool | None = None
+    #: A filename in `personas/`, checked against that directory's real listing
+    #: rather than parsed -- see `service._persona_choice`. A free string here
+    #: on purpose: what the valid values are is a fact about a bind mount at
+    #: request time, not something a schema can enumerate ahead of it.
+    persona: str | None = None
     #: The chatbot's capacity, editable at runtime like the flags above.
     chat_pilot_rate_count: int | None = Field(default=None, ge=1)
     chat_pilot_rate_window_s: float | None = Field(default=None, gt=0)

@@ -346,9 +346,11 @@ def test_the_access_fragment_has_a_manage_messages_column(auth, fake_bot):
     fake_bot.channels[WATCHED_CHANNEL].permissions.manage_messages = False
     body = auth.get("/access").text
     assert "Manage messages" in body
+    # The portal draws its own marks; the ✅/❌ below are Discord's own output,
+    # and stay Discord's.
     table = body.split("</table>")[0]
-    assert table.count("❌") == 1  # exactly one cell, in the channel that lacks it
-    assert table.count("✅") == 11  # the other five columns, twice, plus #xkalos
+    assert table.count('data-icon="x"') == 1  # exactly one cell, in the channel that lacks it
+    assert table.count('data-icon="check"') == 11  # the other five columns, twice, plus #xkalos
 
 
 def test_debug_status_lists_manage_messages_per_channel(fake_bot):
