@@ -682,6 +682,13 @@ class LimitsOut(BaseModel):
     jobs: JobsOut
 
 
+class LimitResetOut(BaseModel):
+    """One member's window, cleared. The guild's pool is not resettable."""
+
+    user_id: str
+    name: str
+
+
 class HealthOut(BaseModel):
     status: str
 
@@ -710,6 +717,7 @@ __all__ = [
     "HealthOut",
     "AnsweringOut",
     "JobsOut",
+    "LimitResetOut",
     "LimitsOut",
     "ModelLockOut",
     "PerUserOut",

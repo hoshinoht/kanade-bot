@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -529,6 +530,73 @@ def test_limits_lists_the_channels_currently_answering(auth, fake_bot):
 
 def test_limits_needs_the_token(client):
     assert client.get("/api/limits").status_code == 401
+
+
+def test_resetting_a_window_gives_a_member_their_answers_back(auth, fake_bot, seeded):
+    pilot = fake_bot.chat
+    pilot.limiter.allow(1002)
+    pilot.limiter.allow(1002)
+    assert auth.get("/api/limits").json()["per_user"]["windows"] != []
+
+    body = auth.delete("/api/limits/windows/1002").json()
+
+    assert body == {"user_id": "1002", "name": "kanon"}
+    # Gone from the live view, which is the only place the window ever existed.
+    assert auth.get("/api/limits").json()["per_user"]["windows"] == []
+    assert pilot.limiter.remaining(1002) == fake_bot.settings.chat_pilot_rate_count
+
+
+def test_resetting_a_window_is_written_to_the_audit_trail(auth, fake_bot, seeded):
+    auth.delete("/api/limits/windows/1002")
+
+    row = fake_bot.repo.list_audit(limit=1)[0]
+    assert row["action"] == "limits"
+    assert row["subject"] == "1002"
+    assert "kanon" in row["detail"]
+
+
+def test_resetting_a_window_clears_the_notice_that_went_with_it(auth, fake_bot, seeded):
+    """Otherwise their next refusal would be silently the second of an episode."""
+    fake_bot.chat._told_until["1002"] = time.monotonic() + 300
+
+    auth.delete("/api/limits/windows/1002")
+
+    assert fake_bot.chat._told_until == {}
+
+
+def test_resetting_a_window_nobody_has_is_harmless(auth, fake_bot, seeded):
+    """The roster is not consulted: a chat-role holder need not be a bosser."""
+    body = auth.delete("/api/limits/windows/4242").json()
+    assert body == {"user_id": "4242", "name": "user 4242"}
+
+
+def test_only_one_members_window_is_cleared(auth, fake_bot, seeded):
+    """Individual resets only -- there is no route that empties everybody's."""
+    pilot = fake_bot.chat
+    pilot.limiter.allow(1001)
+    pilot.limiter.allow(1002)
+
+    auth.delete("/api/limits/windows/1002")
+
+    assert pilot.limiter.snapshot() == {"1001": 1}
+
+
+def test_the_guilds_pool_is_not_resettable(auth, fake_bot, seeded):
+    """Scope guard: the pool measures the host, not a person's deserts."""
+    from bot.chat.gate import GLOBAL_KEY
+
+    pilot = fake_bot.chat
+    pilot.global_limiter.allow(GLOBAL_KEY)
+    spent = auth.get("/api/limits").json()["global_pool"]["used"]
+
+    auth.delete("/api/limits/windows/1002")
+
+    assert auth.get("/api/limits").json()["global_pool"]["used"] == spent
+    assert auth.delete("/api/limits/windows").status_code in (404, 405)
+
+
+def test_resetting_a_window_needs_the_token(client, seeded):
+    assert client.delete("/api/limits/windows/1002").status_code == 401
 
 
 # --- members ----------------------------------------------------------------

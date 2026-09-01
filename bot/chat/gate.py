@@ -12,9 +12,13 @@ somebody without the role never costs a rate-limit slot. The two budgets -- the
 asker's own window and the guild's shared pool -- come last and together, so a
 question refused by one of them is never charged to the other.
 
-**Silence is the default.** Every refusal except a rate limit produces no reply
-and no reaction -- a bot that says "you may not use me" in a channel is a bot
-that can be used to spam a channel by anyone who cannot use it.
+**Silence is the default.** Every refusal except a spent budget produces no
+reply and no reaction -- a bot that says "you may not use me" in a channel is a
+bot that can be used to spam a channel by anyone who cannot use it. A spent
+budget is the exception because the person *is* allowed to be here: they get a
+⏳, and once per episode a sentence saying when to come back (see
+:meth:`bot.chat.agent.ChatPilot._say_limited`, which composes it from a constant
+-- a refusal that cost a generation would defeat the limit it is explaining).
 """
 
 from __future__ import annotations
@@ -31,7 +35,8 @@ from ..watch import is_watched
 #: * :data:`SEEN_REACTION` -- heard you, thinking. An answer can take 10-30 s of
 #:   GPU, which is long enough to look like being ignored.
 #: * :data:`RATE_LIMITED_REACTION` -- you have had your answers for now, or the
-#:   guild has had its.
+#:   guild has had its. The first one of an episode is also said in words, with
+#:   the wait in it; the rest are the reaction alone.
 #: * :data:`CHANNEL_BUSY_REACTION` -- the model is in use, here or elsewhere.
 #:
 #: The last two are different emoji on purpose: one clears in minutes and one in
@@ -95,6 +100,10 @@ class ChatDecision:
     #: Rate limited: react :data:`RATE_LIMITED_REACTION` and drop. Never set
     #: together with ``act``.
     busy: bool = False
+    #: With ``busy``, how long until the refusing budget has room again -- so
+    #: the bot can say *when* rather than only *no*. Zero for every other
+    #: outcome, including the refusals that say nothing at all.
+    retry_after_s: float = 0.0
 
     def __bool__(self) -> bool:  # pragma: no cover - clarity at call sites
         return self.act
@@ -221,9 +230,13 @@ def _spend_an_answer(
     between the reads and the writes awaits.
     """
     if limiter is not None and limiter.remaining(author_id) <= 0:
-        return ChatDecision(False, "rate limited", busy=True)
+        return ChatDecision(
+            False, "rate limited", busy=True, retry_after_s=limiter.retry_after(author_id)
+        )
     if global_limiter is not None and global_limiter.remaining(GLOBAL_KEY) <= 0:
-        return ChatDecision(False, POOL_SPENT, busy=True)
+        return ChatDecision(
+            False, POOL_SPENT, busy=True, retry_after_s=global_limiter.retry_after(GLOBAL_KEY)
+        )
     if limiter is not None:
         limiter.allow(author_id)
     if global_limiter is not None:

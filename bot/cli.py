@@ -265,9 +265,14 @@ app = typer.Typer(
 fixed_app = typer.Typer(help="The weekly baseline timings.", no_args_is_help=True)
 config_app = typer.Typer(help="Runtime settings.", no_args_is_help=True)
 member_app = typer.Typer(help="Per-member settings.", no_args_is_help=True)
+#: The one group with a bare form: `bossctl limits` is the reading, and the
+#: subcommand under it is the only thing you can do about what it says. The
+#: others are `no_args_is_help` because "bossctl config" alone means nothing.
+limits_app = typer.Typer(help="Capacity: the shared model and the answer budgets.")
 app.add_typer(fixed_app, name="fixed")
 app.add_typer(config_app, name="config")
 app.add_typer(member_app, name="member")
+app.add_typer(limits_app, name="limits")
 
 
 @app.command()
@@ -501,6 +506,20 @@ def resolve_member(who: str) -> dict:
         names = ", ".join(m["display_name"] for m in matches[:8])
         fail(f"`{who}` could be {names} - use the user id")
     return matches[0]
+
+
+def member_id(who: str) -> str:
+    """A user id from an id, an ``<@id>`` mention, or a roster name.
+
+    A bare id (or a mention, which is an id in punctuation) is taken as given
+    rather than looked up, because :func:`resolve_member` searches the roster
+    and the roster syncs from the *bossing* role: somebody can hold the chat
+    role, be rate limited, and not be in it. Anything that is not digits is a
+    name, and names are what the roster is for.
+    """
+    raw = who.strip()
+    digits = raw.strip("<@!>")
+    return digits if digits.isdigit() else resolve_member(raw)["user_id"]
 
 
 @member_app.command("pings")
@@ -815,6 +834,62 @@ def audit(limit: int = typer.Option(25, "--limit", "-n")) -> None:
             for r in rows
         ],
     )
+
+
+@limits_app.callback(invoke_without_command=True)
+def limits(ctx: typer.Context) -> None:
+    """What the host is busy with, and how much of each budget is left.
+
+    The terminal answer to "why is the bot slow?": one model runs one call at a
+    time, and this says what has it, what is queued behind it, and who has used
+    up their answers.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    data = api().get("/api/limits")
+    model, pool, per_user, jobs = (
+        data["model"],
+        data["global_pool"],
+        data["per_user"],
+        data["jobs"],
+    )
+    if model["busy"]:
+        console.print(
+            f"[bold]Model[/bold] [yellow]busy[/yellow] — {model['holder'] or 'unnamed holder'}, "
+            f"{model['held_for_s']:.0f}s so far"
+        )
+    else:
+        console.print("[bold]Model[/bold] [green]idle[/green]")
+    console.print(
+        f"[bold]Guild budget[/bold] {pool['remaining']} of {pool['count']} left "
+        f"[dim](per {pool['window_s'] / 60:.0f} min)[/dim]"
+    )
+    rescan_note = f", reading {jobs['rescan']['channel']}" if jobs["rescan"]["channel"] else ""
+    console.print(f"[bold]Rescans[/bold] {jobs['rescan']['queued']} queued{rescan_note}")
+    if jobs["answering"]:
+        answering = ", ".join(c["channel_name"] for c in jobs["answering"])
+        console.print(f"[bold]Answering[/bold] {answering}")
+    print_table(
+        f"{len(per_user['windows'])} window(s) open",
+        ["user id", "member", "used", "left"],
+        [
+            [w["user_id"], w["name"], f"{w['used']} of {per_user['count']}", str(w["remaining"])]
+            for w in per_user["windows"]
+        ],
+    )
+
+
+@limits_app.command("reset")
+def limits_reset(
+    who: str = typer.Argument(help="Discord user id, @mention, display name, nickname or alias."),
+) -> None:
+    """Give one member their answers back.
+
+    Their own window only. The guild's shared pool cannot be reset from here on
+    purpose -- it measures what the machine can do, not what somebody deserves.
+    """
+    result = api().delete(f"/api/limits/windows/{member_id(who)}")
+    console.print(f"[green]✓[/green] {result['name']}'s answer window is clear.")
 
 
 @app.command()

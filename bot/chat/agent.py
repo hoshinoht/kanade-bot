@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import re
 import time
 from collections import deque
@@ -67,17 +68,47 @@ REFERENCE_CACHE = 256
 #: in-persona apology written here would be a second, worse persona.
 FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
 
+#: What a refused asker is told, and the only sentences the bot says without the
+#: model. Constants on purpose, and not negotiable: a refusal has to be *free*.
+#: Spending a generation to explain that there is no capacity for generations
+#: would be funny once and would also mean the rate limit does not limit
+#: anything -- anyone could keep the model busy by being refused at speed.
+#: ``{wait}`` is :func:`retry_note`; ``{count}`` is the personal allowance, and
+#: ``{plural}`` exists because a guild may well set that allowance to one.
+RATE_LIMITED_REPLY = "That's your {count} answer{plural} for now — ask me again in about {wait}."
+POOL_SPENT_REPLY = "The guild's used up its answers for the moment — try me again in about {wait}."
+
+#: Where "90s" becomes "2 min". Two minutes of seconds is still a number
+#: somebody can hold in their head; past that, minutes are what they are
+#: actually going to wait, and "in about 400s" is arithmetic homework.
+RETRY_SECONDS_UNTIL = 120
+
 __all__ = [
     "MAX_TOOL_ROUNDS",
+    "POOL_SPENT_REPLY",
+    "RATE_LIMITED_REPLY",
     "SPOOFED_NOTE",
     "ChatPilot",
     "ChatTurn",
     "Generation",
     "Handling",
     "defuse_notes",
+    "retry_note",
     "tool_trace",
     "unglue_first_bullet",
 ]
+
+
+def retry_note(seconds: float) -> str:
+    """``45s`` / ``3 min`` -- how long to wait, in a unit somebody can act on.
+
+    Rounded **up**, always: a member told "10s" who comes back in ten seconds
+    and is refused again learns to ignore the number, and one told "1 min" who
+    gets in at fifty seconds has lost nothing. Never below a second, so a window
+    about to roll still reads as a wait rather than as "0s".
+    """
+    whole = max(math.ceil(seconds), 1)
+    return f"{whole}s" if whole <= RETRY_SECONDS_UNTIL else f"{math.ceil(whole / 60)} min"
 
 
 @dataclass
@@ -331,6 +362,13 @@ class ChatPilot:
         #: Per channel, so two channels can be answered at once but one channel
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
+        #: Per user id, when their rate-limit notice stops being suppressed --
+        #: set to the moment their window is due to free. The ⏳ goes on every
+        #: refused message; the *sentence* is said once per episode, because a
+        #: bot that repeats "you have had your answers" at somebody spamming it
+        #: is spamming back. Pruned as it is read, so what is remembered is the
+        #: people currently being refused rather than everybody who ever was.
+        self._told_until: dict[str, float] = {}
         #: Per channel, when the last rejection follow-up was *started*. The
         #: cheap half of the anti-spam rule: `_busy` stops two at once, this
         #: stops a run of them across different cards. See
@@ -429,6 +467,7 @@ class ChatPilot:
             if decision.busy:
                 log.info("chat: %s from %s", decision.reason, getattr(message.author, "id", "?"))
                 await self._react(message, gate.RATE_LIMITED_REACTION)
+                await self._say_limited(message, decision)
                 # Rate limited, but addressed to the bot: ours, and not the
                 # extractor's to read as ambient chat.
                 return Handling(True, decision.reason)
@@ -487,6 +526,69 @@ class ChatPilot:
             release()
             self._busy.discard(channel_id)
             await self._unreact(message, gate.SEEN_REACTION)
+
+    async def _say_limited(self, message: Any, decision: gate.ChatDecision) -> None:
+        """Tell a refused asker why, and when to come back. Once per episode.
+
+        The reply is :data:`RATE_LIMITED_REPLY` or :data:`POOL_SPENT_REPLY` with
+        the wait filled in -- a constant either way, with **no model call and no
+        possibility of one**. The reason is the limit itself: a refusal that
+        cost a generation would let anybody occupy the host by being turned away
+        repeatedly, which is the opposite of a rate limit.
+
+        Which of the two is chosen by the gate's own reason, because the gate
+        already had to tell the budgets apart to refuse. Silence here is not a
+        failure -- it means this person has already been told for this episode
+        and is now getting the ⏳ alone.
+        """
+        author_id = str(getattr(getattr(message, "author", None), "id", ""))
+        if not self._first_refusal(author_id, decision.retry_after_s):
+            return
+        template = POOL_SPENT_REPLY if decision.reason == gate.POOL_SPENT else RATE_LIMITED_REPLY
+        count = self.limiter.count
+        await self._post(
+            message,
+            template.format(
+                count=count,
+                plural="" if count == 1 else "s",
+                wait=retry_note(decision.retry_after_s),
+            ),
+        )
+
+    def _first_refusal(self, user_id: str, retry_after_s: float) -> bool:
+        """Is this the first refusal of this episode for ``user_id``?
+
+        An episode lasts until their window is due to free, which is exactly how
+        long the answer "come back in 90s" stays true for. Whoever is refused
+        again after that has waited, been answered or not, and been refused
+        afresh -- which is a new thing to say rather than a repetition.
+
+        Expired deadlines are dropped on the way past, so the dict holds the
+        people currently mid-episode rather than growing once per member for the
+        life of the process.
+        """
+        now = time.monotonic()
+        for key in [key for key, until in self._told_until.items() if until <= now]:
+            del self._told_until[key]
+        if self._told_until.get(user_id, 0.0) > now:
+            return False
+        self._told_until[user_id] = now + max(retry_after_s, 0.0)
+        return True
+
+    def forget_limit(self, user_id: int | str) -> None:
+        """Give one member their answers back, notice and all.
+
+        The two pieces of state are cleared together because they are one fact:
+        somebody whose window has been wiped is not mid-episode any more, and
+        leaving the notice behind would silently deny them the sentence next
+        time they *are* refused. Reached from the portal and ``bossctl`` through
+        :func:`bot.api.service.reset_user_limit`.
+
+        Individual windows only. Nothing here resets the guild's pool: that one
+        is a fact about the host rather than about a person.
+        """
+        self.limiter.reset(user_id)
+        self._told_until.pop(str(user_id), None)
 
     def _self_role_id(self, message: Any) -> int | None:
         """The bot's own managed integration role, if the guild has one.

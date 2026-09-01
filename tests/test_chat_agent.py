@@ -8,6 +8,7 @@ and every failure path are exercised for real while the tests stay fast.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -17,6 +18,7 @@ from bot.chat.agent import (
     MAX_TOOL_ROUNDS,
     ChatPilot,
     ChatTurn,
+    retry_note,
     unglue_first_bullet,
 )
 from bot.ids import short_id
@@ -104,7 +106,7 @@ async def test_chat_mode_off_answers_nobody(chat_bot, chat_seeded):
     assert chat_bot.posts == []
 
 
-async def test_the_rate_limit_reacts_and_drops(chat_bot, chat_seeded):
+async def test_the_rate_limit_reacts_drops_and_says_when_to_come_back(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[says("ok")] * 10)
     agent.limiter.count = 1
     assert (await agent.offer(message(chat_bot))).handled is True
@@ -113,7 +115,10 @@ async def test_the_rate_limit_reacts_and_drops(chat_bot, chat_seeded):
     busy = await agent.offer(second)
     assert (busy.handled, busy.answered) == (True, None)
     assert second.reactions == [gate.RATE_LIMITED_REACTION]
-    assert len(replies(chat_bot)) == 1
+    # The answer, then the refusal -- and the refusal cost no model call.
+    assert len(replies(chat_bot)) == 2
+    assert replies(chat_bot)[1].content.startswith("That's your 1 answer for now")
+    assert len(agent._client.calls) == 1
 
 
 async def test_an_admin_is_never_rate_limited(chat_bot, chat_seeded):
@@ -146,6 +151,107 @@ async def test_one_answer_at_a_time_per_channel(chat_bot, chat_seeded):
     assert (await first).answered.reply == "first"
     # ...and the channel is free again afterwards.
     assert (await agent.offer(message(chat_bot))).handled is True
+
+
+# ---------------------------------------------------------------------------
+# saying so, once, when a budget is spent
+# ---------------------------------------------------------------------------
+
+
+async def test_the_refusal_names_the_wait_and_costs_no_model_call(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+
+    await agent.offer(message(chat_bot))
+
+    said = replies(chat_bot)[-1].content
+    assert said.startswith("That's your 1 answer for now")
+    # The wait is in it, in a unit somebody can act on.
+    assert "in about" in said and "min" in said
+    # One scripted response consumed, for the one real answer.
+    assert len(agent._client.calls) == 1
+
+
+async def test_the_guilds_pool_gets_its_own_wording(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"))
+    agent.global_limiter.count = 1
+    await agent.offer(message(chat_bot, author_id=1001))
+
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    assert replies(chat_bot)[-1].content.startswith("The guild's used up its answers")
+
+
+async def test_a_member_is_told_once_per_episode_and_reacted_at_every_time(chat_bot, chat_seeded):
+    """The ⏳ answers "did it see me?"; the sentence answers "why not?" -- once."""
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    before = len(replies(chat_bot))
+
+    first = message(chat_bot)
+    second = message(chat_bot)
+    third = message(chat_bot)
+    for msg in (first, second, third):
+        await agent.offer(msg)
+
+    assert [msg.reactions for msg in (first, second, third)] == [[gate.RATE_LIMITED_REACTION]] * 3
+    assert len(replies(chat_bot)) == before + 1
+
+
+async def test_a_new_episode_is_told_afresh(chat_bot, chat_seeded):
+    """The suppression lasts exactly as long as the answer "come back in 90s" does."""
+    agent = pilot(chat_bot, says("ok"), says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+    told = len(replies(chat_bot))
+
+    # Their window rolled, they were answered, and they have run out again.
+    agent.limiter.reset(1002)
+    agent._told_until.clear()
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+
+    assert len(replies(chat_bot)) == told + 2  # the second answer, and a fresh notice
+
+
+async def test_the_notice_is_dropped_once_its_episode_is_over(chat_bot, chat_seeded):
+    """What is remembered is who is being refused now, not everybody who ever was."""
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+    assert "1002" in agent._told_until
+
+    agent._told_until["1002"] = time.monotonic() - 1  # their wait has elapsed
+    await agent.offer(message(chat_bot))
+
+    assert len(replies(chat_bot)) == 3  # answered, told, told again
+    assert list(agent._told_until) == ["1002"]  # re-armed, not accumulated
+
+
+async def test_resetting_a_window_gives_back_the_answers_and_the_notice(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"), says("ok again"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+
+    agent.forget_limit(1002)
+
+    assert agent._told_until == {}
+    assert (await agent.offer(message(chat_bot))).answered.reply == "ok again"
+
+
+def test_a_wait_is_rounded_up_into_a_unit_somebody_can_act_on():
+    """Never early, never zero, and minutes once seconds stop being holdable."""
+    assert retry_note(0.0) == "1s"
+    assert retry_note(0.2) == "1s"
+    assert retry_note(44.1) == "45s"
+    assert retry_note(120) == "120s"
+    assert retry_note(121) == "3 min"
+    assert retry_note(300) == "5 min"
 
 
 # ---------------------------------------------------------------------------

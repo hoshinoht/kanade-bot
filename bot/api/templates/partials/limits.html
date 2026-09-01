@@ -105,7 +105,7 @@
   {% else %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Member</th><th>Used</th><th>Left</th></tr></thead>
+      <thead><tr><th>Member</th><th>Used</th><th>Left</th><th></th></tr></thead>
       <tbody>
         {% for row in limits.per_user.windows %}
         <tr>
@@ -114,6 +114,15 @@
           <td>
             {% if row.remaining %}<span class="mono">{{ row.remaining }}</span>
             {% else %}<span class="status status--cancelled">spent</span>{% endif %}
+          </td>
+          {# The refreshed panel is the confirmation: clear a window and its row
+             is simply not in what comes back. #}
+          <td>
+            <form method="post" action="/limits/windows/{{ row.user_id }}/reset"
+                  hx-post="/limits/windows/{{ row.user_id }}/reset"
+                  hx-target="#limits" hx-swap="outerHTML">
+              <button class="btn" type="submit">Reset</button>
+            </form>
           </td>
         </tr>
         {% endfor %}

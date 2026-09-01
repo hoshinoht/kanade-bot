@@ -37,6 +37,7 @@ from .models import (
     FixedCreate,
     FixedOut,
     FixedUpdate,
+    LimitResetOut,
     LimitsOut,
     MemberOut,
     MemberUpdate,
@@ -328,6 +329,22 @@ async def get_limits(bot: Bot, caller: Caller) -> dict:
     a page polling this cannot quietly use up the guild's answers.
     """
     return service.limits(bot)
+
+
+@router.delete(
+    "/limits/windows/{user_id}",
+    response_model=LimitResetOut,
+    summary="Give one member their answers back",
+)
+async def delete_limit_window(bot: Bot, caller: Caller, user_id: str) -> dict:
+    """Clear one member's rate-limit window, and the notice that went with it.
+
+    A ``DELETE`` on the window itself rather than a ``POST /reset``, because
+    that is what it is: the window stops existing and the member starts from
+    a full allowance. Individual windows only -- the guild's pool has no such
+    route, by design.
+    """
+    return service.reset_user_limit(bot, user_id)
 
 
 @router.get(
