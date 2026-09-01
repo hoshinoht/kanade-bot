@@ -9,6 +9,7 @@
 
    `partials/run.html` is included unchanged, so every htmx action inside it
    still targets `closest .run` and swaps its own article. #}
+{% from "partials/icons.html" import icon %}
 <dialog class="runsheet" id="sheet-{{ run.short_id }}"
         aria-label="{{ run.local_day }} {{ run.local_time }} — {{ run.bosses|join(' + ') }}">
   <div class="runsheet__panel">
@@ -18,7 +19,9 @@
        given a strip of its own cannot land on the content. #}
     <div class="runsheet__bar">
       <p class="runsheet__name">{{ run.bosses|join(' + ') }}</p>
-      <button class="runsheet__x" type="button" data-dialog-close aria-label="Close">✕</button>
+      <button class="runsheet__x" type="button" data-dialog-close aria-label="Close">
+        {{ icon("x") }}
+      </button>
     </div>
     {% include "partials/run.html" %}
   </div>

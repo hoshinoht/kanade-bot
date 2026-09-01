@@ -41,7 +41,7 @@ from .auth import (
 from .deps import Bot, Caller, get_bot
 from .errors import ApiError, NotConfigured, NotFound
 from .models import Week
-from .templating import read_section
+from .templating import STATUS_WORDS, read_section
 
 log = logging.getLogger(__name__)
 
@@ -766,7 +766,9 @@ async def web_status(
         bot,
         run["id"],
         safe_next(next, _next(request)),
-        f"Now {run['status_label']}.",
+        # The word without the label's emoji: this is a banner on the portal,
+        # not a card in Discord, and everything else here draws its own marks.
+        f"Now {STATUS_WORDS.get(run['status'], run['status'])}.",
     )
 
 

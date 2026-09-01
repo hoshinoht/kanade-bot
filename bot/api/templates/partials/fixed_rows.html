@@ -1,4 +1,5 @@
 {% from "partials/macros.html" import boss_grid, no_match %}
+{% from "partials/icons.html" import icon %}
 {# The per-row editors live in here with their rows, so a search that replaces
    the rows replaces their dialogs too. That is safe: portal.js listens on the
    document rather than on each opener, and `dialog:target` is a selector --
@@ -60,7 +61,7 @@
                     {{ row.weekday_name }} {{ row.time }} — {{ row.bosses|join(" + ") }}
                   </h2>
                 </div>
-                <button class="modal__x" type="button" data-dialog-close aria-label="Close">✕</button>
+                <button class="modal__x" type="button" data-dialog-close aria-label="Close">{{ icon("x") }}</button>
               </header>
 
               <div class="modal__body">

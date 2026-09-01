@@ -1,4 +1,5 @@
 {% from "partials/macros.html" import boss_list %}
+{% from "partials/icons.html" import icon %}
 {# One run. Swapped in place by htmx after an action; re-rendered whole by the
    server so the status, the tally and the buttons can never disagree. #}
 {# An answer, as a shape and as a word. The shape is what makes a row scannable
@@ -17,7 +18,11 @@
        second one keeps its pill and its level beside its own name. #}
     <div class="run__bosses">{{ boss_list(run.boss_detail, stacked=True) }}</div>
     <div class="run__meta">
-      <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
+      {# The state, drawn and then said. `status_label` carries Discord's emoji
+         in front of the same word, which is right on a card in Discord and was
+         the one glyph here no colourway could touch. #}
+      <span class="status status--{{ run.status }}">{{ icon(status_icons[run.status]) }}
+        {{ status_words[run.status] }}</span>
       <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
       {% if run.no %}<span class="status status--at_risk mono">{{ run.no }} out</span>{% endif %}
       {% if run.maybe %}<span class="status status--otot mono">{{ run.maybe }} maybe</span>{% endif %}
@@ -25,7 +30,9 @@
       {% if run.channel_name %}
       <span class="chanmark">{{ run.channel_name }}
         <button class="chanmark__btn" type="submit" form="reread-{{ run.channel_id }}"
-                title="Re-read {{ run.channel_name }} from Discord and propose any changes">⟳</button>
+                title="Re-read {{ run.channel_name }} from Discord and propose any changes">
+          {{ icon("refresh-cw", "re-read " ~ run.channel_name) }}
+        </button>
       </span>
       {% endif %}
       <span class="id">#{{ run.short_id }}</span>
@@ -68,7 +75,7 @@
       {% if card.state == "posted" %}
       <a class="cardlink cardlink--posted" href="{{ card.url }}" target="_blank" rel="noopener"
          title="Open the {{ card.label }} card in Discord (posted {{ card.local_sent_at }})">
-        {{ card.label }} <span class="cardlink__at">{{ card.local_sent_at }}</span><span class="cardlink__out" aria-hidden="true">↗</span>
+        {{ card.label }} <span class="cardlink__at">{{ card.local_sent_at }}</span><span class="cardlink__out">{{ icon("external-link") }}</span>
       </a>
       {% elif card.state == "skipped" %}
       <span class="cardlink cardlink--skipped"
@@ -136,9 +143,11 @@
      through the swap by the hidden field below, so recording two answers in a
      row does not close the panel between them. #}
   <details class="answers" {% if answers_open %}open{% endif %}>
-    {# The word alone said nothing about being a disclosure. The caret is drawn
-       in portal.css, and the rest of the line says what opening it is for. #}
-    <summary class="btn answers__summary">Answers — set who’s in or out</summary>
+    {# The word alone said nothing about being a disclosure. The chevron comes
+       from the same icon sheet as everything else and is turned by portal.css
+       when the panel opens; the rest of the line says what opening it is for. #}
+    <summary class="btn answers__summary">{{ icon("chevron-right") }}
+      Answers — set who’s in or out</summary>
     <div class="answers__body">
       <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
       {% for person in run.participants %}

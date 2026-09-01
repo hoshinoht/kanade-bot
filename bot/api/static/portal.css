@@ -478,11 +478,27 @@ a:hover {
 
 /* ── shell ──────────────────────────────────────────────────────────────── */
 
+/* A window does not dock to the menu bar. The gap under the masthead is here,
+   on the shell, and nowhere else: every page has a different first element -- a
+   page head on most, a flash after a save, and on Config the window itself --
+   so a gap owned by any one of them is a gap the other pages do not get. Config
+   sat flush against the bar for exactly that reason.
+
+   On a framed page this is padding on a flex *container*, so it comes out of
+   the height the window then flexes into rather than adding to the page: the
+   frame still ends at 100dvh. */
 .shell {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 var(--gutter) 5rem;
+  padding: 0.8rem var(--gutter) 5rem;
   min-width: 0;
+}
+
+/* ...and nothing may bring a second one. The page heads below have given up
+   their top margins for this; this catches everything else that has one of its
+   own, a flash being the one that turns up in practice. */
+.shell > :first-child {
+  margin-top: 0;
 }
 
 /* The menu bar of the desktop: a cream strip, not a tint of the ground -- the
@@ -696,7 +712,9 @@ a:hover {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.6rem 1rem;
-  margin: 1.5rem 0 1rem;
+  /* No top margin: the gap under the masthead belongs to `.shell`, so that the
+     pages whose first element is not a page head get it too. */
+  margin: 0 0 1rem;
   padding: 0.85rem 1.05rem;
   background: var(--surface);
   border: 2px solid var(--line);
@@ -1300,18 +1318,17 @@ details[open] > summary.btn {
 }
 
 /* What says it opens. `summary.btn` has already taken the user agent's own
-   marker away, so the caret is drawn here and turns a quarter clockwise when
-   the panel is open; the reduced-motion block at the foot of this file takes
-   that turn's duration to nothing along with every other transition. A summary
-   that read as one stray word is now a control with a disclosure on it. */
-.answers__summary::before {
-  content: "▸";
-  line-height: 1;
+   marker away, so the chevron is one of the drawings from
+   `partials/icons.html`, and it turns a quarter clockwise when the panel is
+   open; the reduced-motion block at the foot of this file takes that turn's
+   duration to nothing along with every other transition. A summary that read as
+   one stray word is now a control with a disclosure on it. */
+.answers__summary .icon {
   color: var(--faint);
   transition: transform 0.14s ease;
 }
 
-.answers[open] > .answers__summary::before {
+.answers[open] > .answers__summary .icon {
   color: var(--accent);
   transform: rotate(90deg);
 }
@@ -2195,7 +2212,7 @@ details[open] > summary.btn {
   body.framed .page-head {
     align-items: center;
     gap: 0.3rem 0.9rem;
-    margin: 0.8rem 0 0.6rem;
+    margin: 0 0 0.6rem;
     padding: 0.55rem 0.95rem;
   }
 
@@ -2509,24 +2526,37 @@ a.now__tile:hover {
     letter-spacing: -0.02em;
   }
 
-  /* A seventh of the width is not room for a portrait as well as a name. */
+  /* A seventh of the width is not room for a portrait as well as a name.
+     And one boss to a line: two of them sharing a row could only ever break in
+     the middle of one, because at 230px "Carling NORMAL" and "Radiant Malefic
+     Star NORMAL" do not fit together. So the row that breaks is the one
+     *between* bosses, which is the same shape the full run card takes. */
   .runcard__bosses {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.15rem 0.3rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
     min-width: 0;
     font-size: var(--fs-small);
   }
 
-  /* A boss is a name and a difficulty pill in one inline-flex box, and that box
-     does not wrap by default -- so at a narrow column the pill was pushed past
-     the card's edge and clipped by the scroll container, with EXTREME losing
-     21px of itself. Here the pill drops under the name instead, and a name too
-     long for the column breaks rather than pushing anything out of the card. */
+  /* A boss is a name and a difficulty, and the difficulty is half of what the
+     name means -- which Carling this is. So the box never breaks inside itself.
+     It used to: `flex-wrap: wrap` here stopped EXTREME being clipped by the
+     scroll container (21px of it, measured at 153px columns) but bought that by
+     letting the pill drop to a line of its own, under a name it then looked
+     unrelated to. Nothing wraps now; the *name* is what gives, breaking across
+     lines with the pill held beside it, and the pill keeps its own width so it
+     can neither be squeezed nor pushed off the card. */
   .runcard__bosses .boss {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     white-space: normal;
     min-width: 0;
+    max-width: 100%;
+  }
+
+  .runcard__bosses .pill {
+    flex: none;
   }
 
   .runcard__bosses .boss__name {
@@ -2543,9 +2573,9 @@ a.now__tile:hover {
   }
 
   /* The clock and the state share a line. They used to be three lines: the
-     status label is a word and an emoji ("⚠️ unconfirmed"), which at a card's
-     width wrapped, and the tally went under that again. The word is still
-     there for a screen reader and in the tooltip; on the card it is one mark. */
+     state was a mark and a word ("unconfirmed"), which at a card's width
+     wrapped, and the tally went under that again. The word is still there for a
+     screen reader and in the tooltip; on the card it is one drawing. */
   .runcard__top {
     display: flex;
     align-items: baseline;
@@ -2588,7 +2618,7 @@ a.now__tile:hover {
  * explains them, which is read once and then known. Wide screens keep it. */
 @media (min-width: 900px) and (max-height: 850px) {
   body.framed .page-head {
-    margin: 0.7rem 0 0.5rem;
+    margin: 0 0 0.5rem;
     padding: 0.5rem 0.9rem;
   }
 
@@ -3545,6 +3575,55 @@ dialog.modal[open] {
 .was {
   color: var(--faint);
   text-decoration: line-through;
+}
+
+/* ── icons ──────────────────────────────────────────────────────────────────
+ *
+ * The portal draws its own marks instead of borrowing the reader's emoji font:
+ * `templates/partials/icons.html` writes one inline <svg> per call, and this is
+ * everything the stylesheet has to say about them.
+ *
+ * Sized in `em`, so an icon is as big as whatever text it stands in and follows
+ * the type ladder without being on it -- there is no icon size to choose. The
+ * stroke is `currentColor`, so the colour is always the colour of the words
+ * around it: a `.status--at_risk` cell makes its cross red, a title bar makes
+ * its ✕ the chrome's ink, and both faces of all five colourways are handled
+ * without one being named here.
+ *
+ * The nudge below the baseline is what an inline SVG needs to sit on a line of
+ * text rather than hang under it; a flex or grid parent ignores it, which is
+ * why the icon-only controls opt into flex instead. */
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.135em;
+}
+
+/* Controls whose entire content is one drawing. Centred by flex, because there
+   is no text on the line for a baseline to mean anything. */
+.runsheet__x,
+.modal__x,
+.chanmark__btn,
+.cardlink__out {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link-out mark on a posted card, which is a footnote to the label beside
+   it rather than a thing to read: smaller than the line, and half-lit. */
+.cardlink__out .icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+/* A table cell that is nothing but its mark. Slightly larger than the text
+   would have been, because there is no word beside it to give it scale. */
+td .icon {
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .arrow {

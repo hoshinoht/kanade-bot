@@ -1,4 +1,5 @@
 {% from "partials/macros.html" import boss_list %}
+{% from "partials/icons.html" import icon %}
 {# The boss week as seven columns, reset day first -- the rail grown up.
 
    The columns are not equal, deliberately. A week is usually one or two busy
@@ -35,14 +36,16 @@
           <span class="runcard__time mono">
             {%- if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif -%}
           </span>
-          {# The state as its own emoji and nothing else. "⚠️ unconfirmed" is a
-             word at a card's width, so it wrapped and pushed the tally onto a
-             third line; the words are on the sheet this opens, in the tooltip,
-             and in the label a screen reader reads out. #}
+          {# The state as a drawing and nothing else. "unconfirmed" is a word at
+             a card's width, so it wrapped and pushed the tally onto a third
+             line; the words are on the sheet this opens, in the tooltip, and in
+             the label a screen reader reads out. The icon takes its colour from
+             the `.status--*` class around it, which is the same colour the word
+             would have had. #}
           <span class="runcard__meta">
-            <span class="status status--{{ run.status }}" title="{{ run.status_label }}">
-              <span aria-hidden="true">{{ run.status_mark }}</span>
-              <span class="vh">{{ run.status_label }}</span>
+            <span class="status status--{{ run.status }}" title="{{ status_words[run.status] }}">
+              {{ icon(status_icons[run.status]) }}
+              <span class="vh">{{ status_words[run.status] }}</span>
             </span>
             <span class="runcard__tally mono">{{ run.yes }}/{{ run.participants|length }}</span>
           </span>

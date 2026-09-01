@@ -225,10 +225,9 @@ def test_the_answers_panel_says_that_it_opens(auth, fake_bot, seeded):
 
     assert 'class="btn answers__summary"' in row
     assert "set who" in row  # "Answers — set who's in or out"
+    assert 'data-icon="chevron-right"' in row  # the caret is one of the drawings
 
-    caret = PAGE_CSS[PAGE_CSS.index(".answers__summary::before {") :]
-    assert 'content: "▸"' in caret[: caret.index("}")]
-    turned = PAGE_CSS[PAGE_CSS.index(".answers[open] > .answers__summary::before {") :]
+    turned = PAGE_CSS[PAGE_CSS.index(".answers[open] > .answers__summary .icon {") :]
     assert "transform: rotate(90deg)" in turned[: turned.index("}")]
 
 
