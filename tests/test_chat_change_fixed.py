@@ -173,6 +173,82 @@ async def test_a_day_that_two_bosses_share_ends_in_a_question(chat_bot, chat_see
 
 
 # ---------------------------------------------------------------------------
+# a boss with no weekly at all -- the day token must not answer for it
+# ---------------------------------------------------------------------------
+
+
+async def test_a_boss_with_no_weekly_is_not_answered_with_other_bosses_nights(
+    chat_bot, chat_seeded
+):
+    """The live failure, whole.
+
+    A member had a one-off Hard Jupiter on Tuesday and asked to move it to 23:00
+    "and make it run for every week". No Jupiter weekly exists, so the boss
+    search found nothing, the token "tue" survived, and the tool answered with
+    three other parties' Tuesday nights -- which the model relayed as "which Hard
+    Jupiter weekly are you tweaking?".
+    """
+    chat_bot.repo.add_fixed_run(1001, ["HCarling"], 1, "23:00", ["1001"], channel_id=CHAT_CHANNEL)
+    answer = await ask(chat_bot, query="hard jupiter tue", time="23:00")
+
+    assert "No weekly timing for Jupiter exists" in answer
+    assert "more than one weekly timing" not in answer
+    assert "Carling" not in answer and "Kalos" not in answer
+    assert proposals(chat_bot) == []
+
+
+async def test_the_refusal_points_at_the_tool_that_would_have_worked(chat_bot, chat_seeded):
+    """ "Make it every week" about a run that exists is `propose_add`, not this."""
+    answer = await ask(chat_bot, query="hjupiter", time="23:00")
+
+    assert "propose_add with weekly = true" in answer
+    assert "folds this week's run into the new weekly" in answer
+    assert "duplicate" in answer
+
+
+@pytest.mark.parametrize("query", ["jupiter", "hjupiter", "hard jupiter", "jup thursday"])
+async def test_every_spelling_of_the_missing_boss_is_recognised(chat_bot, chat_seeded, query):
+    """Short name, prefixed token, difficulty in words, and an alias with a day."""
+    answer = await ask(chat_bot, query=query, time="23:00")
+    assert "No weekly timing for Jupiter exists" in answer
+
+
+async def test_a_boss_that_does_have_a_weekly_never_gets_that_refusal(chat_bot, chat_seeded):
+    """The guard is about absence, and `hlimb` is how the guild says Limbo.
+
+    The boss search below it does not know the table's aliases, so this query
+    finds nothing either -- but "no weekly timing for Limbo exists" would be
+    flatly untrue, and the vaguer refusal is the honest one.
+    """
+    chat_bot.repo.add_fixed_run(1001, ["HLimbo"], 2, "22:00", ["1001"], channel_id=CHAT_CHANNEL)
+    answer = await ask(chat_bot, query="hlimb", time="23:00")
+
+    assert "No weekly timing for Limbo exists" not in answer
+    assert "No weekly timing matches" in answer
+    assert proposals(chat_bot) == []
+
+
+async def test_a_day_only_query_still_disambiguates(chat_bot, chat_seeded):
+    """Nothing above may reach a query that named no boss: it must still list."""
+    chat_bot.repo.add_fixed_run(1002, ["HBellona"], 1, "20:00", ["1002"], channel_id=CHAT_CHANNEL)
+    answer = await ask(chat_bot, query="tuesday", time="23:30")
+
+    assert "more than one weekly timing" in answer
+    assert "Extreme Kalos" in answer and "Hard Bellona" in answer
+    assert proposals(chat_bot) == []
+
+
+async def test_a_boss_and_a_day_together_still_resolve(chat_bot, chat_seeded):
+    chat_bot.repo.add_fixed_run(
+        1001, ["HStar"], 4, "20:00", ["1001", "1002"], channel_id=WATCHED_CHANNEL
+    )
+    answer = await ask(chat_bot, query="hstar friday", time="23:30")
+
+    assert "✅" in answer
+    assert proposals(chat_bot)[0]["payload"]["weekly_when"] == "Fri 20:00"
+
+
+# ---------------------------------------------------------------------------
 # the card -- and nothing else
 # ---------------------------------------------------------------------------
 
@@ -704,4 +780,21 @@ def test_propose_add_reads_this_is_fixed_as_a_weekly():
     assert "make it weekly" in weekly
     assert "a separate sentence" in weekly.lower()
     # Still the safe default: none of the above may soften the one-time rule.
+    assert "One-time is the safe default" in weekly
+
+
+def test_propose_add_says_a_run_that_exists_can_be_made_weekly_here():
+    """The other half of the matcher fix: where the model should have gone.
+
+    Told to make an existing Hard Jupiter run repeat, the model reached for
+    propose_change_fixed -- reasonably, since the sentence is about a run that
+    exists -- and got a list of three unrelated Tuesday weeklies back.
+    """
+    add = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_add")
+    weekly = add["parameters"]["properties"]["weekly"]["description"]
+
+    assert "ALREADY" in weekly
+    assert "make it run every week" in weekly
+    assert "not propose_change_fixed" in weekly
+    assert "folds this week's run into the new weekly" in weekly
     assert "One-time is the safe default" in weekly

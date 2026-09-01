@@ -969,6 +969,15 @@ class Repo:
             (str(channel_id) if channel_id is not None else None, run_id),
         )
 
+    def set_run_fixed(self, run_id: str, fixed_run_id: str | None) -> None:
+        """Link a run to the weekly timing that now produces it, or unlink it.
+
+        The partial unique index on ``(fixed_run_id, week_start)`` is the guard:
+        a week cannot end up with two runs claiming the same timing, whichever
+        route wrote the second one.
+        """
+        self._conn.execute("UPDATE runs SET fixed_run_id = ? WHERE id = ?", (fixed_run_id, run_id))
+
     def set_run_bosses(self, run_id: str, bosses: Sequence[str]) -> None:
         self._conn.execute("UPDATE runs SET bosses = ? WHERE id = ?", (_dump(bosses), run_id))
 

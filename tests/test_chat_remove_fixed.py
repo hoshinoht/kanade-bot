@@ -92,9 +92,10 @@ def test_two_timings_for_one_boss_with_no_day_is_refused(chat_bot, chat_seeded):
 
 
 def test_a_boss_with_no_weekly_timing_is_refused(chat_bot, chat_seeded):
+    """Named, and named as the boss it is: see test_chat_change_fixed.py."""
     with pytest.raises(tools.ToolError) as exc:
         tools.resolve_fixed(chat_bot, "bellona")
-    assert "No weekly timing matches" in str(exc.value)
+    assert "No weekly timing for Bellona exists" in str(exc.value)
 
 
 def test_an_empty_query_asks_rather_than_guessing(chat_bot, chat_seeded):
