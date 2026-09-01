@@ -467,6 +467,11 @@ class ConfigOut(BaseModel):
     chat_channels: list[str] = []
     chat_categories: list[str] = []
     chat_model: str = ""
+    #: The persona file the bot actually loaded, by name, and whether that was
+    #: the tracked template rather than a real one -- which is a misconfigured
+    #: deploy answering in the placeholder voice.
+    persona_file: str = ""
+    persona_fallback: bool = False
     timezone: str
     reset: str
     model: str

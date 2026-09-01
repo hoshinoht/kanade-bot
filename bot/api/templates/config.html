@@ -108,6 +108,29 @@
           </label>
           <button class="btn btn--primary" type="submit">Save</button>
         </form>
+        {# Which file the voice is coming from. A deploy that fell back to the
+           tracked template answers in the placeholder voice, which used to be
+           visible only in a startup WARNING -- so it is a warn-state chip here
+           rather than a line somebody has to go and read the log for. #}
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th>Persona</th>
+                <td>
+                  {% if config.persona_fallback %}
+                  <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
+                  {% else %}
+                  <span class="mono">{{ config.persona_file }}</span>
+                  {% endif %}
+                </td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% if config.persona_fallback %}
+        <p class="note">No persona of its own, so it is answering in the template's
+          placeholder voice. Drop one in <span class="mono">personas/</span> — see
+          that directory's README — and restart.</p>
+        {% endif %}
         <p class="note">
           {% if config.chat_configured %}
             The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,

@@ -15,7 +15,7 @@ import pytest
 
 from bot.api import service
 from bot.api.app import STATIC_DIR
-from bot.api.templating import CHAT_TABS, LIMITS_TABS
+from bot.api.templating import CHAT_TABS, EXTRACTION_TABS, LIMITS_TABS
 from bot.ids import short_id
 
 from .conftest import kl
@@ -310,11 +310,11 @@ def test_a_list_page_asks_for_the_no_scroll_frame(auth, seeded, path):
     assert '<body class="framed">' in auth.get(path).text
 
 
-def test_a_detail_page_asks_for_it_too(auth, seeded):
-    """Not a list, but the same shape: a column of facts beside a column of
-    content that can run long, which is the thing a frame gives its height to."""
-    path = f"/chat/{short_id(seeded['interaction'])}"
-    assert '<body class="framed">' in auth.get(path).text
+@pytest.mark.parametrize("page", ["chat", "extraction"])
+def test_a_detail_page_asks_for_it_too(auth, seeded, page):
+    """Not lists, but the same shape: one window whose panels can each run long,
+    which is the thing a frame gives its leftover height to."""
+    assert '<body class="framed">' in auth.get(tabbed_path(page, seeded)).text
 
 
 @pytest.mark.parametrize("path", ["/inbox"])
@@ -456,17 +456,24 @@ def panel_of(body: str, key: str) -> str:
     return body[start : body.index("</section>", start)]
 
 
+def tabbed_path(page: str, seeded: dict) -> str:
+    """The URL of each window built on the `.tabs` pattern."""
+    return {
+        "limits": "/limits",
+        "chat": f"/chat/{short_id(seeded['interaction'])}",
+        "extraction": f"/extractions/{short_id(seeded['extraction'])}",
+    }[page]
+
+
 @pytest.mark.parametrize(
-    "path,tabs",
-    [("/limits", LIMITS_TABS), (None, CHAT_TABS)],
-    ids=["limits", "chat"],
+    "page,tabs",
+    [("limits", LIMITS_TABS), ("chat", CHAT_TABS), ("extraction", EXTRACTION_TABS)],
 )
-def test_every_tab_has_the_panel_it_opens(auth, seeded, path, tabs):
+def test_every_tab_has_the_panel_it_opens(auth, seeded, page, tabs):
     """One list, three readers -- the same contract `CONFIG_SECTIONS` carries.
     The template builds the strip and the panels from it, the stylesheet
     enumerates the keys to raise the open tab, and this holds both to it."""
-    path = path or f"/chat/{short_id(seeded['interaction'])}"
-    body = auth.get(path).text
+    body = auth.get(tabbed_path(page, seeded)).text
 
     for key, label in tabs:
         assert f'href="#{key}"' in body, key

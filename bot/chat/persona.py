@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from itertools import zip_longest
 from pathlib import Path
@@ -27,9 +28,15 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
 
+#: Where personas live, at the top of the repository and bind-mounted read-only
+#: into the container. Everything in it but the README and the template is
+#: git-ignored, the way ``config/portraits`` is: a real persona names a
+#: character and a guild's in-jokes, and neither belongs in a public repo.
+PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "personas"
+
 #: The tracked template, used when ``PERSONA_PATH`` points at nothing.
 #: Resolved from this file so it is found whatever the working directory is.
-EXAMPLE_PERSONA = Path(__file__).resolve().parent.parent.parent / "persona.example.md"
+EXAMPLE_PERSONA = PERSONA_DIR / "persona.example.md"
 
 #: Appended to the persona, and not negotiable by it. A persona file is written
 #: by a person editing flavour text; these are the lines that keep a bad edit
@@ -287,8 +294,34 @@ def voice_reminder(persona: str) -> str:
     return REMINDER_PREFIX + line + REMINDER_SUFFIX
 
 
-def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:
-    """The persona text, from ``path`` if it is readable and from the template if not."""
+@dataclass(frozen=True)
+class Persona:
+    """A loaded persona, and which file it actually came from.
+
+    The second half is why this is a record rather than a string: "the bot is
+    talking in the placeholder voice" is a misconfigured deploy, and it used to
+    be visible only in a WARNING nobody reads. The portal's Config page says it
+    at a glance instead, which it can only do if the loader remembers.
+
+    Also the shape a runtime persona setting would need: name a different file
+    in ``personas/``, read it, and swap the record. Nothing here is per-process
+    state, so a reload is a second call.
+    """
+
+    text: str
+    #: The file the text came from, or ``None`` when nothing was readable.
+    path: Path | None
+    #: True when ``path`` is the tracked template rather than a real persona.
+    fell_back: bool
+
+    @property
+    def name(self) -> str:
+        """Just the filename, which is what a reader needs to see."""
+        return self.path.name if self.path is not None else ""
+
+
+def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> Persona:
+    """The persona, from ``path`` if it is readable and from the template if not."""
     candidate = Path(path) if path else None
     if candidate is not None:
         try:
@@ -296,7 +329,7 @@ def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> s
         except OSError as exc:
             log.warning(
                 "no persona at %s (%s); falling back to %s - the bot will answer in the "
-                "placeholder voice until the real file is on the data volume",
+                "placeholder voice until the real file is in personas/",
                 candidate,
                 exc,
                 fallback.name,
@@ -304,13 +337,19 @@ def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> s
         else:
             if text:
                 log.info("loaded the persona from %s (%d characters)", candidate, len(text))
-                return text
+                return Persona(text=text, path=candidate, fell_back=False)
             log.warning("the persona at %s is empty; falling back to %s", candidate, fallback.name)
     try:
-        return fallback.read_text(encoding="utf-8").strip()
+        text = fallback.read_text(encoding="utf-8").strip()
     except OSError:  # pragma: no cover - the template is tracked
         log.error("no persona file at all, including the tracked %s", fallback)
-        return ""
+        return Persona(text="", path=None, fell_back=True)
+    return Persona(text=text, path=fallback, fell_back=True)
+
+
+def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:
+    """Just the words, for everything that only wants to build a prompt."""
+    return read_persona(path, fallback).text
 
 
 def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
@@ -442,6 +481,8 @@ __all__ = [
     "HARD_RULES",
     "MAX_EXAMPLES",
     "MAX_EXAMPLE_CHARS",
+    "PERSONA_DIR",
+    "Persona",
     "REMINDER_PREFIX",
     "REMINDER_SUFFIX",
     "RUNTIME_LINE",
@@ -453,6 +494,7 @@ __all__ = [
     "good_examples",
     "good_sections",
     "load_persona",
+    "read_persona",
     "runtime_line",
     "system_prompt",
     "voice_footer",

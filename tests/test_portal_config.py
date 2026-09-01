@@ -228,6 +228,43 @@ def test_a_fieldset_does_not_draw_a_second_box_inside_the_window(auth, seeded):
     assert "border: 0;" in rule_body(".settings__panel fieldset")
 
 
+# --- the persona the bot is actually wearing --------------------------------
+
+
+def chatbot_panel(body: str) -> str:
+    start = body.index('id="chatbot"')
+    return body[start : body.index('id="notifications"')]
+
+
+def test_the_chatbot_panel_names_the_persona_file(auth, fake_bot, tmp_path, seeded):
+    """Which file the voice comes from, on the page rather than in the log."""
+    path = tmp_path / "kanade.md"
+    path.write_text("You are Placeholder, a scheduler bot.\n", encoding="utf-8")
+    fake_bot.settings.persona_path = str(path)
+    fake_bot.chat.reload_persona()
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert ">Persona</th>" in panel
+    assert "kanade.md" in panel
+    assert "fallback" not in panel
+
+
+def test_a_deploy_with_no_persona_of_its_own_says_so(auth, fake_bot, seeded):
+    """Falling back to the template means answering in the placeholder voice --
+    a misconfiguration, and one that used to show up only in a startup WARNING.
+    So it is a warn-state on the panel, not a filename that looks like any
+    other."""
+    fake_bot.settings.persona_path = ""
+    fake_bot.chat.reload_persona()
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert "fallback: persona.example.md" in panel
+    assert "status--at_risk" in panel
+    assert "personas/" in panel  # ...and where to put a real one
+
+
 # --- what .env holds --------------------------------------------------------
 
 

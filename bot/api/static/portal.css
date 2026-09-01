@@ -2201,6 +2201,10 @@ details[open] > summary.btn {
 .tabs:has(#conversation:target) [href="#conversation"],
 .tabs:has(#tool-trace:target) [href="#tool-trace"],
 .tabs:has(#interaction:target) [href="#interaction"],
+.tabs:has(#produced:target) [href="#produced"],
+.tabs:has(#chat-read:target) [href="#chat-read"],
+.tabs:has(#raw:target) [href="#raw"],
+.tabs:has(#extraction:target) [href="#extraction"],
 .tabs:not(:has(.tabs__panel:target)) .tabs__tab:first-child {
   opacity: 1;
   color: var(--ink);

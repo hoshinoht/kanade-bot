@@ -16,11 +16,15 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
-      # On the named volume beside the database, so it survives a rebuild and
-      # stays out of both the image and git. Put it there with:
-      #   docker compose cp your-persona.md bot:/app/data/persona.md
-      # Missing, it falls back to the tracked persona.example.md and warns.
-      PERSONA_PATH: /app/data/persona.md
+      # In `personas/` on the host, bind-mounted below: drop a file in, restart,
+      # done. It used to live on the data volume, which meant a
+      # `docker compose cp` to change one line of flavour text.
+      # The filename is deliberately generic -- nothing identity-specific
+      # belongs in a tracked file. Keep several and point PERSONA_PATH at one
+      # from `.env` if you want to switch between them.
+      # Missing, it falls back to the tracked persona.example.md, warns in the
+      # log, and says so on the Config page's Chatbot panel.
+      PERSONA_PATH: /app/personas/persona.md
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
       # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.
@@ -45,6 +49,9 @@ services:
       # (`bot.backup`), never from copying the WAL file underneath it.
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
+      # Read-only like config/: the bot reads a persona and never writes one,
+      # and editing it on the host is meant to need nothing but a restart.
+      - ./personas:/app/personas:ro
     restart: unless-stopped
     # Defense-in-depth: member input never reaches a shell or a URL, but if a
     # parsing dependency ever gave code execution, it lands in a root-immutable,

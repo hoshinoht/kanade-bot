@@ -28,17 +28,18 @@ config/artwork/*/*
 .claude
 
 # The live persona is deployment flavour text: it names a character and the
-# guild's in-jokes, it is edited far more often than code, and it belongs on the
-# data volume (`data/` above is already ignored). Only the template is tracked.
-persona.md
-persona-*.md
-!persona.example.md
+# guild's in-jokes, it is edited far more often than code, and it lives in a
+# directory of its own that is bind-mounted into the container. Only the README
+# and the template are tracked -- the `config/portraits` pattern.
+personas/*
+!personas/README.md
+!personas/persona.example.md
 
 # The design spec is kept locally rather than published.
 DESIGN.md
 
 # The live Caddyfile names the personal domain; only the template is tracked,
-# same pattern as .env.example and persona.example.md. The token it needs
-# lives in .env.caddy, already covered by `.env.*` above.
+# same pattern as .env.example and personas/persona.example.md. The token it
+# needs lives in .env.caddy, already covered by `.env.*` above.
 caddy/Caddyfile
 !caddy/Caddyfile.example
