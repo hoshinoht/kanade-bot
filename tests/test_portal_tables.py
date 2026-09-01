@@ -281,7 +281,7 @@ def test_the_search_box_is_never_inside_what_it_replaces(auth, seeded, path, tar
 
 
 def test_the_swapped_region_carries_its_own_pager(auth, fake_bot):
-    """"Page 2 of 7" has to change when the page does, so it lives in the swap."""
+    """ "Page 2 of 7" has to change when the page does, so it lives in the swap."""
     seed_audit(fake_bot, 25)
     fragment = auth.get("/audit?page=2", headers={"HX-Request": "true"}).text
     assert "Page 2 of 2" in fragment

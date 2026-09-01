@@ -22,9 +22,7 @@ PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
 
 
 def rule_body(selector: str) -> str:
-    match = re.search(
-        r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE
-    )
+    match = re.search(r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE)
     assert match is not None, f"no rule for {selector}"
     return match.group(1)
 
