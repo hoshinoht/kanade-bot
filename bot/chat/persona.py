@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from itertools import zip_longest
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -124,6 +125,99 @@ def voice_line(persona: str) -> str:
     return DEFAULT_VOICE
 
 
+#: The worked-example section a persona writes for itself: a `**Good**` heading
+#: followed by one-line quoted examples. Bounded so a `> ` quote elsewhere in the
+#: document -- and the matching `**Bad**` block right underneath -- are not read
+#: as things the bot should sound like.
+#: ``**Good**``, and also ``**Good -- chat-pilot replies (...)**``: a persona
+#: worth writing has more than one kind of good line, and the qualified heading
+#: is how an author says which kind. ``\b`` after "good" keeps ``**Goodbye**``
+#: from matching.
+_GOOD_HEADING_RE = re.compile(r"^\s*[*_]{0,2}\s*good\b[^*_]*[*_]{0,2}\s*:?\s*$", re.IGNORECASE)
+_EXAMPLE_RE = re.compile(r"^\s*>\s*`(.+)`\s*$")
+_SECTION_END_RE = re.compile(r"^\s*(?:#{1,6}\s|-{3,}\s*$|\*{3,}\s*$)|^\s*\*\*[^*]+\*\*\s*$")
+
+#: Few-shot lines do more per token than any amount of adjectives, and cost
+#: context that the schedule needs. Both caps are deliberately small.
+MAX_EXAMPLES = 8
+MAX_EXAMPLE_CHARS = 600
+
+EXAMPLES_HEADING = "Replies that sound right:"
+
+
+def good_examples(persona: str) -> list[str]:
+    """The persona's own "Good" lines, as few-shot examples.
+
+    Read from the document rather than invented here: the examples are the part
+    of a persona file that does the most steering per token, and they are the
+    part an author actually rewrites when the voice is wrong.
+
+    Skips fenced code blocks (the template keeps a whole compressed prompt in
+    one), stops at the next heading -- crucially before the ``**Bad**`` block --
+    and drops unfilled ``<placeholder>`` slots, so the tracked template
+    contributes nothing rather than teaching the bot to speak in angle brackets.
+    """
+    sections = good_sections(persona)
+    kept: list[str] = []
+    spent = 0
+    # Round-robin, not first-come. A persona has more than one kind of good line
+    # -- general voice, then "chat-pilot replies (answering questions and
+    # relaying tool results)" -- and taking them in file order let the first
+    # section spend the whole budget, which is how the section written for
+    # exactly this feature ended up contributing nothing.
+    for row in zip_longest(*sections):
+        for example in row:
+            if example is None:
+                continue
+            if len(kept) >= MAX_EXAMPLES or spent + len(example) > MAX_EXAMPLE_CHARS:
+                return kept
+            kept.append(example)
+            spent += len(example)
+    return kept
+
+
+def good_sections(persona: str) -> list[list[str]]:
+    """The quoted lines under each ``Good`` heading, in file order."""
+    sections: list[list[str]] = []
+    current: list[str] | None = None
+    fenced = False
+    for line in (persona or "").splitlines():
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if _GOOD_HEADING_RE.match(line):
+            current = []
+            sections.append(current)
+            continue
+        if current is None:
+            continue
+        if _SECTION_END_RE.match(line):
+            current = None
+            continue
+        match = _EXAMPLE_RE.match(line)
+        if match is None:
+            continue
+        example = match.group(1).strip()
+        if example and not _PLACEHOLDER_RE.match(example):
+            current.append(example)
+    return [section for section in sections if section]
+
+
+def examples_block(persona: str) -> str:
+    """The few-shot block, or ``""`` when the persona offers no examples."""
+    examples = good_examples(persona)
+    if not examples:
+        return ""
+    return "\n".join([EXAMPLES_HEADING, *(f"- {example}" for example in examples)])
+
+
+def voice_reminder(persona: str) -> str:
+    """The one line repeated immediately before the model composes."""
+    return VOICE_PREFIX + voice_line(persona)
+
+
 def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:
     """The persona text, from ``path`` if it is readable and from the template if not."""
     candidate = Path(path) if path else None
@@ -166,19 +260,19 @@ def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
 
 
 def system_prompt(persona: str, header: str) -> str:
-    """Persona, hard rules, the clock, and the voice reminder -- in that order.
+    """Persona, hard rules, clock, few-shot examples, voice reminder -- in that order.
 
     The persona goes first because it is what the model should sound like, the
     rules second because later instructions win when the two disagree, and the
     clock after them because it is short and load-bearing.
 
-    The voice reminder goes **last**, and that placement is the whole point of
-    it. Recency is the one lever that reliably moves a small model, and the
-    persona document is the furthest thing from the composition point: several
-    thousand tokens of character notes, then rules, then a clock, then a
-    transcript, and only then does it write. Repeating one sentence of voice
-    immediately before it composes costs about twenty tokens and is the
-    difference between a correct answer and an answer that sounds like anyone.
+    The examples and the reminder go last, and that placement is the whole point
+    of them: recency is the one lever that reliably moves a small model, and the
+    persona document is the furthest thing from where it composes -- thousands of
+    tokens of character notes, then rules, then a clock, then a transcript, and
+    only then does it write. The reminder is repeated again as the final
+    *message* of every call (:meth:`bot.chat.agent.ChatPilot.voice_reminder`),
+    because by composition time even this is behind a stack of tool results.
     """
     return "\n\n".join(
         part
@@ -186,7 +280,8 @@ def system_prompt(persona: str, header: str) -> str:
             persona.strip(),
             HARD_RULES.strip(),
             header,
-            VOICE_PREFIX + voice_line(persona),
+            examples_block(persona),
+            voice_reminder(persona),
         )
         if part
     )
@@ -194,11 +289,18 @@ def system_prompt(persona: str, header: str) -> str:
 
 __all__ = [
     "DEFAULT_VOICE",
+    "EXAMPLES_HEADING",
     "EXAMPLE_PERSONA",
     "HARD_RULES",
+    "MAX_EXAMPLES",
+    "MAX_EXAMPLE_CHARS",
     "VOICE_PREFIX",
     "clock_header",
+    "examples_block",
+    "good_examples",
+    "good_sections",
     "load_persona",
     "system_prompt",
     "voice_line",
+    "voice_reminder",
 ]

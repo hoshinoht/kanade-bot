@@ -558,10 +558,27 @@ class ChatPilot:
         result.error = "the model kept calling tools"
         log.warning("chat: gave up after %d tool rounds", MAX_TOOL_ROUNDS)
 
+    def voice_reminder(self) -> dict[str, str]:
+        """The one line the model reads immediately before it writes.
+
+        Sent as the **last message of every call**, after the conversation and
+        after any tool results. The system prompt's own copy is thousands of
+        tokens back and, by composition time, behind a stack of run ids and card
+        confirmations -- which is exactly where the recency it was written for
+        goes. Card confirmations and error relays were the flattest replies live,
+        and those are precisely the turns with the most tool output in front of
+        them.
+
+        Appended rather than woven in, so it never accumulates in the remembered
+        conversation, and re-derived from the cached persona each turn so a
+        `reload_persona` takes effect immediately.
+        """
+        return {"role": "system", "content": persona.voice_reminder(self.persona_text())}
+
     async def _chat(self, messages: list[dict[str, Any]], with_tools: bool) -> Any:
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
-            messages=messages,
+            messages=[*messages, self.voice_reminder()],
             # Temperature is set explicitly rather than left to the model's
             # Modelfile: the extractor pins 0 next door, and a reader who sees
             # that one is entitled to know this one is different on purpose.

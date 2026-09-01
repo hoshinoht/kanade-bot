@@ -159,7 +159,7 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     assert result.rounds == 2
     # The tool's output was fed back as a `tool` message, which is what lets the
     # model answer from real data rather than from memory.
-    second_prompt = agent._client.prompts[1]
+    second_prompt = agent._client.conversation(1)
     assert second_prompt[-1]["role"] == "tool"
     assert "HStar+HFA" in second_prompt[-1]["content"]
 
@@ -194,7 +194,7 @@ async def test_an_unknown_tool_does_not_end_the_turn(chat_bot, chat_seeded):
     agent = pilot(chat_bot, wants("approve_everything"), says("I can't do that one."))
     result = (await agent.offer(message(chat_bot))).answered
     assert result.reply == "I can't do that one."
-    assert "There is no tool called" in agent._client.prompts[1][-1]["content"]
+    assert "There is no tool called" in agent._client.conversation(1)[-1]["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ async def test_the_conversation_is_remembered_per_channel(chat_bot, chat_seeded)
     await agent.offer(message(chat_bot, "@bot when is hstar?"))
     await agent.offer(message(chat_bot, "@bot and kalos?"))
 
-    second = agent._client.prompts[1]
+    second = agent._client.conversation(1)
     roles = [m["role"] for m in second]
     assert roles == ["system", "user", "assistant", "user"]
     assert "when is hstar?" in second[1]["content"]
@@ -283,7 +283,7 @@ async def test_channels_do_not_share_a_conversation(chat_bot, chat_seeded):
     await agent.offer(message(chat_bot))
     agent.forget(str(CHAT_CHANNEL))
     await agent.offer(message(chat_bot))
-    assert [m["role"] for m in agent._client.prompts[1]] == ["system", "user"]
+    assert [m["role"] for m in agent._client.conversation(1)] == ["system", "user"]
 
 
 async def test_the_reply_chain_is_included_oldest_first(chat_bot, chat_seeded):

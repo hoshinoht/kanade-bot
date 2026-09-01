@@ -638,6 +638,16 @@ persona file as:
 **Voice:** Dry, fond of the party, allergic to exclamation marks.
 ```
 
+It is repeated as the **last message of every model call** — after the
+conversation and after any tool results — because that is where recency actually
+lands. Card confirmations and error relays have the most tool output in front of
+them and were the flattest replies before this.
+
+The bot also shows the model your `**Good**` worked examples as few-shot lines
+(at most 8, ~600 characters, first ones win). Write them as `> ` followed by the
+line in backticks under a `**Good**` heading; the `**Bad**` block below it is not
+promoted, code fences are skipped, and unfilled `<placeholders>` are ignored.
+
 `Voice:`, `**Voice**:` and `<!-- voice: ... -->` all work; the first one in the
 file wins. Leave the angle-bracket placeholder in and the bot falls back to a
 generic "answer in the voice defined above" reminder. Keep it to one sentence —

@@ -62,7 +62,9 @@ TODAY_WORDS = frozenset({"today", "tonight", "tonite", "tnite", "this evening", 
 #: ...and these mean the same day, but so vaguely that a past clock time should
 #: roll into tomorrow rather than resolve to something that already happened.
 SOON_WORDS = frozenset({"now", "later", "ltr", "l8r", "soon", "in a bit", "just now"})
-TOMORROW_WORDS = frozenset({"tmr", "tmrw", "tmr night", "tomorrow", "tomorow", "tomm", "2mr"})
+TOMORROW_WORDS = frozenset(
+    {"tmr", "tmrw", "tmmr", "tmr night", "tomorrow", "tomorow", "tomm", "2mr"}
+)
 YESTERDAY_WORDS = frozenset({"ytd", "yesterday"})
 
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
