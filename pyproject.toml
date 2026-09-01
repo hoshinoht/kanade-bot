@@ -1,6 +1,6 @@
 [project]
 name = "boss-scheduler-bot"
-version = "2.0.0"
+version = "2.1.0"
 description = "Discord bot that keeps a MapleStory guild's weekly boss schedule and posts tagged reminders."
 readme = "README.md"
 license = "MIT"

@@ -37,6 +37,10 @@ from .models import (
     FixedCreate,
     FixedOut,
     FixedUpdate,
+    LimitOverrideIn,
+    LimitOverrideOut,
+    LimitResetOut,
+    LimitsOut,
     MemberOut,
     MemberUpdate,
     NickIn,
@@ -313,6 +317,60 @@ async def put_config(bot: Bot, caller: Caller, body: ConfigIn) -> dict:
     for key, value in changes.items():
         result = service.set_config(bot, key, value)
     return result
+
+
+@router.get(
+    "/limits",
+    response_model=LimitsOut,
+    summary="What the host is busy with, and how much of it is left",
+)
+async def get_limits(bot: Bot, caller: Caller) -> dict:
+    """Live state: the shared model lock, both answer budgets, and the queue.
+
+    Read-only in the strong sense -- asking never spends a rate-limit slot, so
+    a page polling this cannot quietly use up the guild's answers.
+    """
+    return service.limits(bot)
+
+
+@router.delete(
+    "/limits/windows/{user_id}",
+    response_model=LimitResetOut,
+    summary="Give one member their answers back",
+)
+async def delete_limit_window(bot: Bot, caller: Caller, user_id: str) -> dict:
+    """Clear one member's rate-limit window, and the notice that went with it.
+
+    A ``DELETE`` on the window itself rather than a ``POST /reset``, because
+    that is what it is: the window stops existing and the member starts from
+    a full allowance. Individual windows only -- the guild's pool has no such
+    route, by design.
+    """
+    return service.reset_user_limit(bot, user_id)
+
+
+@router.put(
+    "/limits/overrides/{user_id}",
+    response_model=LimitOverrideOut,
+    summary="Give one member their own allowance",
+)
+async def put_limit_override(bot: Bot, caller: Caller, user_id: str, body: LimitOverrideIn) -> dict:
+    """Replace one member's allowance with ``count`` answers per ``window_s``.
+
+    ``PUT`` rather than ``POST`` because it is idempotent and the id is in the
+    path: sending it twice leaves the same member on the same numbers.
+    """
+    return service.set_user_limit(bot, user_id, body.count, body.window_s)
+
+
+@router.delete(
+    "/limits/overrides/{user_id}",
+    response_model=LimitResetOut,
+    summary="Put one member back on the guild default",
+)
+async def delete_limit_override(bot: Bot, caller: Caller, user_id: str) -> dict:
+    """Idempotent: clearing an allowance nobody had still leaves them on the default."""
+    return service.clear_user_limit(bot, user_id)
 
 
 @router.get(

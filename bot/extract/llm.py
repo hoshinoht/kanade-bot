@@ -1,8 +1,13 @@
 """One guarded call to the local model.
 
-``gpt-oss:20b`` is 13 GB and lives on the host's GPU, so exactly one extraction
-runs at a time (:data:`MODEL_LOCK`) and ``keep_alive=-1`` keeps it resident
-between bursts -- otherwise every call pays to reload the weights.
+``gpt-oss:20b`` is 13 GB and lives on the host's GPU, so exactly one call runs at
+a time (:data:`MODEL_LOCK`) and ``keep_alive=-1`` keeps it resident between
+bursts -- otherwise every call pays to reload the weights.
+
+The lock is re-exported here rather than owned here: it is
+:data:`bot.modellock.MODEL_LOCK`, and the chatbot takes the same one. An
+extraction therefore waits for a chat answer exactly as it waits for another
+extraction, which is the point -- the host has one model, not one per feature.
 
 Nothing in here is allowed to take the bot down.  A model that is offline, slow,
 or returning nonsense produces an :class:`ExtractionCall` with ``error`` set and
@@ -21,12 +26,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..config import Settings
+from ..modellock import EXTRACTOR, MODEL_LOCK, held
 from .schema import Extraction, json_schema
 
 log = logging.getLogger(__name__)
-
-#: Only one extraction at a time: the model is 13 GB and shared with the host.
-MODEL_LOCK = asyncio.Lock()
 
 #: Sent back to the model when its first answer would not validate.
 RETRY_INSTRUCTION = (
@@ -129,7 +132,12 @@ class Extractor:
         )
 
     async def extract(self, messages: list[dict[str, str]]) -> ExtractionCall:
-        """Run one extraction.  Serialised guild-wide by :data:`MODEL_LOCK`."""
+        """Run one extraction.
+
+        Serialised guild-wide by :data:`MODEL_LOCK` -- against the chatbot's
+        answers as well as against other extractions, since they all queue for
+        the same resident model.
+        """
         prompt = "\n\n".join(m["content"] for m in messages)
         started = time.monotonic()
         conversation = list(messages)
@@ -137,7 +145,7 @@ class Extractor:
         error: str | None = None
         attempts = 0
 
-        async with MODEL_LOCK:
+        async with held(EXTRACTOR):
             for attempt in (1, 2):
                 attempts = attempt
                 try:

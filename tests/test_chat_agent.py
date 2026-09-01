@@ -8,6 +8,7 @@ and every failure path are exercised for real while the tests stay fast.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -17,6 +18,7 @@ from bot.chat.agent import (
     MAX_TOOL_ROUNDS,
     ChatPilot,
     ChatTurn,
+    retry_note,
     unglue_first_bullet,
 )
 from bot.ids import short_id
@@ -104,7 +106,7 @@ async def test_chat_mode_off_answers_nobody(chat_bot, chat_seeded):
     assert chat_bot.posts == []
 
 
-async def test_the_rate_limit_reacts_and_drops(chat_bot, chat_seeded):
+async def test_the_rate_limit_reacts_drops_and_says_when_to_come_back(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[says("ok")] * 10)
     agent.limiter.count = 1
     assert (await agent.offer(message(chat_bot))).handled is True
@@ -113,7 +115,10 @@ async def test_the_rate_limit_reacts_and_drops(chat_bot, chat_seeded):
     busy = await agent.offer(second)
     assert (busy.handled, busy.answered) == (True, None)
     assert second.reactions == [gate.RATE_LIMITED_REACTION]
-    assert len(replies(chat_bot)) == 1
+    # The answer, then the refusal -- and the refusal cost no model call.
+    assert len(replies(chat_bot)) == 2
+    assert replies(chat_bot)[1].content.startswith("That's your 1 answer for now")
+    assert len(agent._client.calls) == 1
 
 
 async def test_an_admin_is_never_rate_limited(chat_bot, chat_seeded):
@@ -146,6 +151,279 @@ async def test_one_answer_at_a_time_per_channel(chat_bot, chat_seeded):
     assert (await first).answered.reply == "first"
     # ...and the channel is free again afterwards.
     assert (await agent.offer(message(chat_bot))).handled is True
+
+
+# ---------------------------------------------------------------------------
+# saying so, once, when a budget is spent
+# ---------------------------------------------------------------------------
+
+
+async def test_the_refusal_names_the_wait_and_costs_no_model_call(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+
+    await agent.offer(message(chat_bot))
+
+    said = replies(chat_bot)[-1].content
+    assert said.startswith("That's your 1 answer for now")
+    # The wait is in it, in a unit somebody can act on.
+    assert "in about" in said and "min" in said
+    # One scripted response consumed, for the one real answer.
+    assert len(agent._client.calls) == 1
+
+
+async def test_the_guilds_pool_gets_its_own_wording(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"))
+    agent.global_limiter.count = 1
+    await agent.offer(message(chat_bot, author_id=1001))
+
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    assert replies(chat_bot)[-1].content.startswith("The guild's used up its answers")
+
+
+async def test_a_member_is_told_once_per_episode_and_reacted_at_every_time(chat_bot, chat_seeded):
+    """The ⏳ answers "did it see me?"; the sentence answers "why not?" -- once."""
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    before = len(replies(chat_bot))
+
+    first = message(chat_bot)
+    second = message(chat_bot)
+    third = message(chat_bot)
+    for msg in (first, second, third):
+        await agent.offer(msg)
+
+    assert [msg.reactions for msg in (first, second, third)] == [[gate.RATE_LIMITED_REACTION]] * 3
+    assert len(replies(chat_bot)) == before + 1
+
+
+async def test_a_new_episode_is_told_afresh(chat_bot, chat_seeded):
+    """The suppression lasts exactly as long as the answer "come back in 90s" does."""
+    agent = pilot(chat_bot, says("ok"), says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+    told = len(replies(chat_bot))
+
+    # Their window rolled, they were answered, and they have run out again.
+    agent.limiter.reset(1002)
+    agent._told_until.clear()
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+
+    assert len(replies(chat_bot)) == told + 2  # the second answer, and a fresh notice
+
+
+async def test_the_notice_is_dropped_once_its_episode_is_over(chat_bot, chat_seeded):
+    """What is remembered is who is being refused now, not everybody who ever was."""
+    agent = pilot(chat_bot, says("ok"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+    assert "1002" in agent._told_until
+
+    agent._told_until["1002"] = time.monotonic() - 1  # their wait has elapsed
+    await agent.offer(message(chat_bot))
+
+    assert len(replies(chat_bot)) == 3  # answered, told, told again
+    assert list(agent._told_until) == ["1002"]  # re-armed, not accumulated
+
+
+async def test_resetting_a_window_gives_back_the_answers_and_the_notice(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("ok"), says("ok again"))
+    agent.limiter.count = 1
+    await agent.offer(message(chat_bot))
+    await agent.offer(message(chat_bot))
+
+    agent.forget_limit(1002)
+
+    assert agent._told_until == {}
+    assert (await agent.offer(message(chat_bot))).answered.reply == "ok again"
+
+
+async def test_the_refusal_quotes_the_members_own_allowance(chat_bot, chat_seeded):
+    """Telling somebody with a raised limit the guild's number is confidently wrong."""
+    agent = pilot(chat_bot, *[says("ok")] * 4)
+    agent.limiter.count = 1
+    agent.limiter.set_override(1002, 2, 30)
+
+    # Their own two answers, then the refusal.
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    said = replies(chat_bot)[-1].content
+    assert said.startswith("That's your 2 answers for now")
+    # Their own 30 s window, not the guild's -- so the wait is theirs too.
+    assert "30s" in said
+
+
+async def test_a_member_on_the_default_still_hears_the_default(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, *[says("ok")] * 4)
+    agent.limiter.count = 1
+    agent.limiter.set_override(1001, 5, 30)
+
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    assert replies(chat_bot)[-1].content.startswith("That's your 1 answer for now")
+
+
+async def test_an_override_is_loaded_when_the_pilot_is_built(chat_bot, chat_seeded):
+    """Which is what makes it survive a restart -- the spent windows do not."""
+    chat_bot.repo.set_rate_limit(1002, 9, 45)
+
+    restarted = pilot(chat_bot, says("ok"))
+
+    assert restarted.limiter.limit_for(1002) == (9, 45.0)
+
+
+def test_a_wait_is_rounded_up_into_a_unit_somebody_can_act_on():
+    """Never early, never zero, and minutes once seconds stop being holdable."""
+    assert retry_note(0.0) == "1s"
+    assert retry_note(0.2) == "1s"
+    assert retry_note(44.1) == "45s"
+    assert retry_note(120) == "120s"
+    assert retry_note(121) == "3 min"
+    assert retry_note(300) == "5 min"
+
+
+# ---------------------------------------------------------------------------
+# the one model, shared with the extractor
+# ---------------------------------------------------------------------------
+
+
+class Concurrency:
+    """Counts how many model calls were ever inside the client at once."""
+
+    def __init__(self) -> None:
+        self.inside = 0
+        self.most = 0
+
+    async def enter(self) -> None:
+        self.inside += 1
+        self.most = max(self.most, self.inside)
+        # Long enough for the other caller to get a turn at the loop, so an
+        # overlap would actually happen rather than merely being possible.
+        await asyncio.sleep(0.01)
+
+    def leave(self) -> None:
+        self.inside -= 1
+
+
+class Counted:
+    """A scripted model that reports itself to a shared :class:`Concurrency`."""
+
+    def __init__(self, counter: Concurrency, response):
+        self.counter = counter
+        self.response = response
+
+    async def chat(self, **_kwargs):
+        await self.counter.enter()
+        try:
+            return self.response
+        finally:
+            self.counter.leave()
+
+
+async def test_a_question_is_shed_when_the_model_is_busy(chat_bot, chat_seeded, model_lock):
+    """One 13 GB model on the host: a second caller is turned away, not queued."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("never said"))
+    await model_lock.acquire()
+    try:
+        asked = message(chat_bot)
+        handling = await agent.offer(asked)
+    finally:
+        model_lock.release()
+
+    # Handled -- it was the pilot's message and the pilot dealt with it -- but
+    # the model was never called, and the 👀 came back off.
+    assert (handling.handled, handling.answered) == (True, None)
+    assert asked.reactions == [gate.CHANNEL_BUSY_REACTION]
+    assert agent._client.calls == []
+    assert replies(chat_bot) == []
+
+
+async def test_staff_wait_for_the_model_rather_than_being_shed(chat_bot, chat_seeded, model_lock):
+    """`asyncio.Lock` wakes waiters in order, and that queue is the whole priority scheme."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("Wed 21:30."))
+    await model_lock.acquire()
+
+    async def free_it_shortly():
+        await asyncio.sleep(0.05)
+        model_lock.release()
+
+    freeing = asyncio.create_task(free_it_shortly())
+    asked = message(chat_bot, roles=(CHAT_ROLE, ADMIN_ROLE))
+    handling = await agent.offer(asked)
+    await freeing
+
+    # Waited out a hold far longer than the shedding deadline above.
+    assert handling.answered.reply == "Wed 21:30."
+    assert asked.reactions == []
+
+
+async def test_a_channel_the_pilot_shed_is_free_to_ask_again(chat_bot, chat_seeded, model_lock):
+    """The busy flag comes off with the 👀, so the shed is not a channel-wide stall."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("Wed 21:30."))
+    await model_lock.acquire()
+    try:
+        await agent.offer(message(chat_bot))
+    finally:
+        model_lock.release()
+
+    assert (await agent.offer(message(chat_bot))).answered.reply == "Wed 21:30."
+
+
+async def test_an_extraction_and_an_answer_never_overlap(chat_bot, chat_seeded):
+    """The lock is shared with the extractor, which is the whole reason it moved."""
+    from bot.extract.llm import Extractor
+
+    counter = Concurrency()
+    agent = ChatPilot(chat_bot, client=Counted(counter, says("Wed 21:30.")))
+    extractor = Extractor(
+        chat_bot.settings,
+        client=Counted(counter, {"message": {"content": '{"amendments": []}'}}),
+    )
+
+    answered, extracted = await asyncio.gather(
+        agent.offer(message(chat_bot)),
+        extractor.extract([{"role": "user", "content": "can we move to wednesday?"}]),
+    )
+
+    assert counter.most == 1
+    assert answered.answered.reply == "Wed 21:30."
+    assert extracted.ok is True
+
+
+async def test_the_lock_is_held_across_the_tool_rounds_not_round_each_call(
+    chat_bot, chat_seeded, model_lock
+):
+    """Otherwise an extraction slots in mid-conversation and the answer times out."""
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this"),
+        says("HStar and HFA on Monday."),
+    )
+    held: list[bool] = []
+    real_chat = agent._client.chat
+
+    async def watched(**kwargs):
+        held.append(model_lock.locked())
+        return await real_chat(**kwargs)
+
+    agent._client.chat = watched
+    await agent.offer(message(chat_bot))
+
+    assert held == [True, True]
+    # ...and given back once the answer is posted.
+    assert model_lock.locked() is False
 
 
 # ---------------------------------------------------------------------------

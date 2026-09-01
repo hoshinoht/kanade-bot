@@ -12,13 +12,22 @@ and "redirect with a message" based on the ``HX-Request`` header.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 
+from .. import events
 from ..weeks import WEEKDAY_NAMES
 from . import service
 from .auth import (
@@ -312,6 +321,162 @@ async def chat_interaction_page(
         "chat",
         interaction=service.chat_interaction_view(bot, row, detail=True),
     )
+
+
+def _allowance_prefill(bot, limits: dict, user_id: str | None) -> dict:
+    """What the "set an allowance" form starts with.
+
+    ``?user=`` is how the per-row **Set** buttons prefill it: a plain link back
+    to this page rather than script, so it works with htmx blocked and with
+    JavaScript off entirely. The numbers offered are the ones that member is
+    already on, so saving without touching them is a no-op rather than a
+    silent reset to the guild default.
+    """
+    per_user = limits["per_user"]
+    prefill = {"user_id": "", "count": per_user["count"], "window_s": per_user["window_s"]}
+    if not user_id or not user_id.isdigit():
+        return prefill
+    count, window = bot.chat.limiter.limit_for(user_id)
+    return {"user_id": user_id, "count": count, "window_s": window}
+
+
+@router.get("/limits")
+async def limits_page(
+    request: Request, bot: Bot, caller: Caller, user: str | None = None
+) -> Response:
+    """What the host is busy with, and the one form for doing something about it.
+
+    ``?user=`` fills the allowance form in for one member; everything else on
+    the page is live state that refreshes itself while the tab is open.
+    """
+    request.state.caller = caller
+    limits = service.limits(bot)
+    return render(
+        request,
+        "limits.html",
+        "limits",
+        limits=limits,
+        prefill=_allowance_prefill(bot, limits, user),
+    )
+
+
+@router.get("/limits/live")
+async def limits_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLResponse:
+    """The live panel on its own, as the browser refetches it when something changes."""
+    return fragment(request, "partials/limits.html", limits=service.limits(bot))
+
+
+#: How often a stream that has said nothing sends a comment line. Long enough
+#: to be nearly free, short enough to keep an idle connection open through
+#: whatever sits in front of the bot -- `tailscale serve` will drop a stream
+#: that goes quiet for minutes, and so will most reverse proxies.
+HEARTBEAT_S = 20.0
+
+
+async def limits_event_stream() -> AsyncIterator[str]:
+    """The Limits page's event stream, as the text it sends down the wire.
+
+    The event carries no detail (see :mod:`bot.events`) -- the page answers it by
+    refetching ``/limits/live``, so all it has to say is *that* something moved.
+    Several nudges arriving together are collapsed into one, for the same
+    reason: the fragment is the whole state either way, so two refetches would
+    be one wasted.
+
+    The subscription is a context manager, so it is dropped on a clean end and
+    on the cancellation a disconnected browser produces alike. Without that, a
+    laptop closing its lid would leave a queue nobody ever reads again.
+
+    A module-level generator rather than a closure inside the handler so it can
+    be driven directly in a test: an endless stream over a test client is a
+    hang waiting to happen, and the interesting behaviour is all in here.
+    """
+    with events.subscribe(events.LIMITS) as queue:
+        # Opens the stream immediately, so the browser's `EventSource` reaches
+        # `onopen` rather than sitting on a connection that has sent no bytes.
+        yield ": watching limits\n\n"
+        while True:
+            try:
+                await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_S)
+            except TimeoutError:
+                yield ": keep-alive\n\n"
+                continue
+            while not queue.empty():  # collapse a burst into one refetch
+                queue.get_nowait()
+            yield f"event: {events.LIMITS}\ndata: changed\n\n"
+
+
+@router.get("/limits/events")
+async def limits_events(request: Request, bot: Bot, caller: Caller) -> StreamingResponse:
+    """Server-sent events: one line whenever the Limits page has something new."""
+    return StreamingResponse(
+        limits_event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Ask any proxy in front not to sit on the stream until it fills a
+            # buffer, which would make every event arrive late and in clumps.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/limits/windows/{user_id}/reset")
+async def web_limits_reset(request: Request, bot: Bot, caller: Caller, user_id: str) -> Response:
+    """Clear one member's window from the row it is shown on.
+
+    The refreshed fragment *is* the confirmation: the row the button was on has
+    gone, because the window it described has. Attribution rides on the request
+    like every other mutation's -- :class:`bot.api.app.ActorMiddleware` puts the
+    caller on the audit row, so nothing here has to pass one.
+    """
+    try:
+        cleared = service.reset_user_limit(bot, user_id)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(request, "/limits", f"{cleared['name']} has their answers back.")
+
+
+@router.post("/limits/overrides")
+async def web_limits_override(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    user_id: str = Form(),
+    count: str = Form(),
+    window_s: str = Form(),
+) -> Response:
+    """Give one member their own allowance from the Limits page.
+
+    The numbers arrive as form text and are validated in
+    :func:`bot.api.service.set_user_limit`, the same call the API route makes --
+    so the portal cannot store something ``bossctl`` would have refused.
+    """
+    try:
+        saved = service.set_user_limit(bot, user_id.strip(), count, window_s)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(
+        request,
+        "/limits",
+        f"{saved['name']} now gets {saved['count']} answer(s) per {saved['window_s']:g}s.",
+    )
+
+
+@router.post("/limits/overrides/{user_id}/clear")
+async def web_limits_override_clear(
+    request: Request, bot: Bot, caller: Caller, user_id: str
+) -> Response:
+    try:
+        cleared = service.clear_user_limit(bot, user_id)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(request, "/limits", f"{cleared['name']} is back on the default allowance.")
 
 
 @router.get("/audit")

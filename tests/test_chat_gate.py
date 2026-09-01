@@ -292,6 +292,91 @@ def test_the_limit_is_per_person(chat_bot):
 
 
 # ---------------------------------------------------------------------------
+# the guild's shared budget
+# ---------------------------------------------------------------------------
+
+
+def test_the_guilds_pool_is_spent_by_everybody_together(chat_bot):
+    """The personal window is not the only ceiling: the host is one machine.
+
+    Three different members, each well inside their own allowance, and the third
+    is still refused -- which is the whole point of a second pool.
+    """
+    pool = RateLimiter(count=2, window=900)
+    assert decide(chat_bot, message(chat_bot, author_id=1001), global_limiter=pool).act is True
+    assert decide(chat_bot, message(chat_bot, author_id=1002), global_limiter=pool).act is True
+
+    spent = decide(chat_bot, message(chat_bot, author_id=1003), global_limiter=pool)
+    assert (spent.act, spent.busy) == (False, True)
+    assert spent.reason == gate.POOL_SPENT
+
+
+def test_an_admin_neither_drains_the_pool_nor_is_stopped_by_it(chat_bot):
+    """Staff answers are not the community's to pay for, and not theirs to run out of."""
+    pool = RateLimiter(count=1, window=900)
+    msg = message(chat_bot, roles=(CHAT_ROLE, ADMIN_ROLE))
+    for _ in range(5):
+        assert decide(chat_bot, msg, global_limiter=pool, is_admin=True).act is True
+    assert pool.remaining(gate.GLOBAL_KEY) == 1
+
+
+def test_a_spent_pool_does_not_burn_the_askers_own_slot(chat_bot):
+    """Two budgets, and a refusal by one must never be charged to the other."""
+    limiter = RateLimiter(count=4, window=300)
+    pool = RateLimiter(count=1, window=900)
+    first = message(chat_bot, author_id=1001)
+    assert decide(chat_bot, first, limiter=limiter, global_limiter=pool).act is True
+
+    before = limiter.remaining(1002)
+    refused = decide(chat_bot, message(chat_bot), limiter=limiter, global_limiter=pool)
+
+    assert refused.reason == gate.POOL_SPENT
+    assert limiter.remaining(1002) == before
+
+
+def test_a_personal_refusal_does_not_drain_the_guilds_pool(chat_bot):
+    limiter = RateLimiter(count=1, window=300)
+    pool = RateLimiter(count=10, window=900)
+    assert decide(chat_bot, message(chat_bot), limiter=limiter, global_limiter=pool).act is True
+
+    before = pool.remaining(gate.GLOBAL_KEY)
+    refused = decide(chat_bot, message(chat_bot), limiter=limiter, global_limiter=pool)
+
+    assert refused.reason == "rate limited"
+    assert pool.remaining(gate.GLOBAL_KEY) == before
+
+
+def test_a_refused_decision_says_when_to_come_back(chat_bot):
+    """The wait comes from whichever budget refused, so the bot can say *when*."""
+    limiter = RateLimiter(count=1, window=300)
+    decide(chat_bot, message(chat_bot), limiter=limiter)
+    personal = decide(chat_bot, message(chat_bot), limiter=limiter)
+    assert personal.reason == "rate limited"
+    assert 0 < personal.retry_after_s <= 300
+
+    pool = RateLimiter(count=1, window=900)
+    decide(chat_bot, message(chat_bot, author_id=1001), global_limiter=pool)
+    guild = decide(chat_bot, message(chat_bot, author_id=1003), global_limiter=pool)
+    assert guild.reason == gate.POOL_SPENT
+    assert 300 < guild.retry_after_s <= 900
+
+
+def test_every_other_decision_has_nothing_to_wait_for(chat_bot):
+    limiter = RateLimiter(count=1, window=300)
+    assert decide(chat_bot, message(chat_bot), limiter=limiter).retry_after_s == 0.0
+    assert decide(chat_bot, message(chat_bot, roles=(OTHER_ROLE,))).retry_after_s == 0.0
+
+
+def test_a_refusal_before_the_budgets_spends_neither(chat_bot):
+    """Being ignored is free, in both currencies."""
+    limiter = RateLimiter(count=1, window=300)
+    pool = RateLimiter(count=1, window=900)
+    for msg in (message(chat_bot, roles=(OTHER_ROLE,)), message(chat_bot, mentions=())):
+        decide(chat_bot, msg, limiter=limiter, global_limiter=pool)
+    assert decide(chat_bot, message(chat_bot), limiter=limiter, global_limiter=pool).act is True
+
+
+# ---------------------------------------------------------------------------
 # spoofing
 # ---------------------------------------------------------------------------
 

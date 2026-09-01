@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import audit, formatting
+from .. import audit, events, formatting
 from ..bosses import BossParseError
 from ..export import message_record
 from ..extract import resolve
@@ -42,6 +42,7 @@ from ..materialise import (
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
+from ..util import is_bot_admin
 from ..weeks import (
     WEEKDAY_NAMES,
     current_week_start,
@@ -94,7 +95,18 @@ CONFIG_KEYS = (
     "extract_enabled",
     "quiet_mode",
     "chat_mode",
+    "chat_pilot_rate_count",
+    "chat_pilot_rate_window_s",
+    "chat_pilot_global_rate_count",
+    "chat_pilot_global_rate_window_s",
 )
+
+#: The capacity settings, split by what a valid value looks like: a whole number
+#: of answers, or a number of seconds. Both are checked here rather than trusted
+#: from the request, because ``bossctl config set`` and the portal both arrive
+#: as text and a window of zero would refuse everybody for ever.
+COUNT_KEYS = ("chat_pilot_rate_count", "chat_pilot_global_rate_count")
+WINDOW_KEYS = ("chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s")
 
 
 # ---------------------------------------------------------------------------
@@ -458,20 +470,63 @@ def evidence_view(bot: BossBot, message_ids: Sequence[str]) -> list[dict]:
     return rows
 
 
+def kind_label(amendment: dict) -> str:
+    """What a card is called, everywhere the portal names one.
+
+    Three cards share the ``fix`` kind and are told apart only by the ``op``
+    marker in their payload (:data:`bot.extract.commit.FIX_REMOVE` and
+    ``FIX_EDIT``), so the kind by itself calls a card that retires a weekly
+    timing -- or changes one -- "new weekly", which is its opposite. Exactly the
+    rule :func:`bot.formatting.proposal_line` applies, so one card is called one
+    thing whether it is read in Discord or in the portal.
+    """
+    payload = amendment["payload"] or {}
+    verb = formatting.FIX_VERB.get(str(payload.get("op"))) if amendment["kind"] == "fix" else None
+    return verb or formatting.KIND_VERB.get(amendment["kind"], amendment["kind"])
+
+
+def when_label(bot: BossBot, amendment: dict) -> str:
+    """The one-line "when" the inbox and the extraction table print.
+
+    :func:`bot.formatting.when_text` with the card's bold taken off, except for
+    a `fix`. A recurring night is a weekday and an HH:MM kept in the payload and
+    never reaches ``new_datetime``, so ``when_text`` has nothing to find and all
+    three weekly cards read **TBD** here -- silent about the single fact each one
+    is proposing. Read from the payload for the same reason
+    :func:`bot.formatting.weekly_text` and
+    :func:`bot.formatting.weekly_change_text` read it from there, so a weekly
+    timing is named the same way in the portal as on its card.
+
+    Whichever night the card is *about*: the one being proposed where there is
+    one, and otherwise the one it already has -- a card retiring a timing, or
+    changing only its party, says what that night is rather than nothing. A
+    `fix` with no night anywhere (a day with no time) falls through to the words
+    that were actually written, which is what its card falls back to too.
+    """
+    payload = amendment["payload"] or {}
+    if amendment["kind"] == "fix":
+        weekday, hhmm = payload.get("weekday"), payload.get("time")
+        if weekday is not None and hhmm:
+            return f"every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
+        if payload.get("weekly_when"):
+            return f"every {payload['weekly_when']}"
+    return formatting.when_text(amendment, bot.tz).replace("**", "")
+
+
 def amendment_view(bot: BossBot, amendment: dict, with_evidence: bool = True) -> dict:
     run = bot.repo.get_run(amendment["run_id"]) if amendment["run_id"] else None
     view = {
         "id": amendment["id"],
         "short_id": short_id(amendment["id"]),
         "kind": amendment["kind"],
-        "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+        "kind_label": kind_label(amendment),
         "status": amendment["status"],
         "bosses": amendment["bosses"],
         "boss_detail": [boss_view(bot, b) for b in amendment["bosses"]],
         "run_id": amendment["run_id"],
         "run": run_view(bot, run) if run else None,
         "new_datetime": to_iso(amendment["new_datetime"]) if amendment["new_datetime"] else None,
-        "when": formatting.when_text(amendment, bot.tz).replace("**", ""),
+        "when": when_label(bot, amendment),
         "day_ref": amendment["day_ref"],
         "time_ref": amendment["time_ref"],
         # Only a move has an "old → new": a new run or a correction has no
@@ -546,7 +601,7 @@ def created_cards(bot: BossBot, amendment_ids: Sequence[str]) -> list[dict]:
                 "id": amendment["id"],
                 "short_id": short_id(amendment["id"]),
                 "kind": amendment["kind"],
-                "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+                "kind_label": kind_label(amendment),
                 "status": amendment["status"],
                 "card_url": message_url(
                     bot, amendment["channel_id"], amendment["proposal_message_id"]
@@ -1561,6 +1616,244 @@ def access_report(bot: BossBot) -> list[dict]:
     return bot.access_report()
 
 
+def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
+    """Give one member their answers back, and forget the notice they were sent.
+
+    Individual windows only, deliberately. There is no way here to clear the
+    guild's pool or everybody at once: the pool is a fact about what the host
+    can produce in an hour rather than about a person, and a "reset all" button
+    is the one somebody presses instead of asking why the bot is busy.
+
+    The roster is *not* consulted first, unlike :func:`set_nick` and
+    :func:`update_member`. Holding the chat role does not require holding the
+    bossing role, so somebody can be rate limited while not being on the roster
+    at all -- and the window shown on the Limits page has to be clearable from
+    the button next to it. Clearing a key with no window is harmless and says
+    so; the name falls back to ``user 1002`` exactly as it does on the page.
+    """
+    bot.chat.forget_limit(user_id)
+    events.notify()
+    name = member_name(bot, user_id)
+    _audit(bot, "limits", str(user_id), f"cleared {name}'s answer window")
+    return {"user_id": str(user_id), "name": name}
+
+
+def set_user_limit(bot: BossBot, user_id: int | str, count: int, window_s: float) -> dict:
+    """Give one member their own allowance instead of the guild default.
+
+    Stored, so it survives a restart, and pushed into the live limiter at once
+    (:meth:`bot.chat.agent.ChatPilot.apply_limits`) -- an override that only took
+    effect after a redeploy would be useless at the moment somebody asks for it.
+
+    Not restricted to the roster, for the reason :func:`reset_user_limit` gives:
+    the chat role and the bossing role are different things, and it must be
+    possible to raise the allowance of somebody who has not asked yet today.
+    """
+    count = _whole_number(count, "count", minimum=1)
+    window_s = _seconds(window_s, "window_s")
+    bot.repo.set_rate_limit(user_id, count, window_s)
+    bot.chat.apply_limits()
+    events.notify()
+    name = member_name(bot, user_id)
+    _audit(
+        bot,
+        "limits",
+        str(user_id),
+        f"{name}'s allowance is now {count} answer(s) per {window_s:g}s",
+    )
+    return {"user_id": str(user_id), "name": name, "count": count, "window_s": window_s}
+
+
+def clear_user_limit(bot: BossBot, user_id: int | str) -> dict:
+    """Put one member back on the guild default, keeping their spent window.
+
+    Idempotent: clearing an allowance nobody had is not an error, because the
+    end state the caller asked for -- "this member is on the default" -- is the
+    one they get either way.
+    """
+    had = bot.repo.clear_rate_limit(user_id)
+    bot.chat.apply_limits()
+    events.notify()
+    name = member_name(bot, user_id)
+    if had:
+        _audit(bot, "limits", str(user_id), f"{name} is back on the guild's default allowance")
+    return {"user_id": str(user_id), "name": name}
+
+
+def _is_staff(bot: BossBot, member: Any) -> bool:
+    """The same "who runs this bot" rule the chat gate applies to a message.
+
+    Read from the live member object for the same reason
+    :meth:`bot.chat.agent.ChatPilot._is_admin` does: staff are exempt from every
+    budget, so a page offering to raise their allowance would be offering to
+    change a number nothing reads.
+    """
+    permissions = getattr(member, "guild_permissions", None)
+    guild = getattr(member, "guild", None)
+    return is_bot_admin(
+        bool(getattr(permissions, "administrator", False)),
+        guild is not None and getattr(guild, "owner_id", None) == getattr(member, "id", None),
+        [getattr(role, "id", role) for role in getattr(member, "roles", None) or ()],
+        bot.settings.admin_role_id,
+    )
+
+
+def pilot_roster(bot: BossBot) -> list[dict]:
+    """Everybody holding ``CHAT_PILOT_ROLE_ID``, and where each of them stands.
+
+    A **live read** of Discord's role member cache -- the same source
+    :func:`bot.util.roster_rows` uses for the bossing role, available because
+    the members intent is already on. Nothing is stored: the answer to "who may
+    talk to the bot" is the role, and a copy of it in SQLite would be a second
+    answer that goes stale the moment somebody is given the role.
+
+    Empty whenever it cannot be known -- no role configured, no guild (the bot
+    is not connected, or a test never built one), or a role id that resolves to
+    nothing. The page says so rather than showing an empty table as though the
+    role had no holders.
+
+    Bot accounts are dropped, exactly as ``roster_rows`` drops them: another bot
+    holding the role is not somebody whose allowance anybody needs to tune.
+    """
+    role_id = bot.settings.chat_pilot_role_id
+    guild = bot.get_guild(bot.settings.guild_id) if role_id is not None else None
+    role = guild.get_role(int(role_id)) if guild is not None else None
+    if role is None:
+        return []
+
+    limiter = bot.chat.limiter
+    spent = limiter.snapshot()
+    rows = []
+    for member in getattr(role, "members", None) or ():
+        if getattr(member, "bot", False):
+            continue
+        user_id = str(member.id)
+        count, window = limiter.limit_for(user_id)
+        used = spent.get(user_id, 0)
+        rows.append(
+            {
+                "user_id": user_id,
+                # The roster's name when it knows them, so one person reads the
+                # same on this table and the one above it; the live display name
+                # otherwise, since holding the chat role does not put anybody on
+                # the bossing roster.
+                "name": member_name(bot, user_id)
+                if bot.repo.get_member(user_id)
+                else getattr(member, "display_name", user_id),
+                "staff": _is_staff(bot, member),
+                "count": count,
+                "window_s": window,
+                "overridden": user_id in limiter.overrides(),
+                "used": used,
+                "remaining": max(count - used, 0),
+                "has_window": used > 0,
+            }
+        )
+    rows.sort(key=lambda row: (row["staff"], row["name"].casefold()))
+    return rows
+
+
+def _window_view(bot: BossBot, limiter: Any, user_id: str, used: int) -> dict:
+    """One open window, against the allowance that member is actually on."""
+    count, window = limiter.limit_for(user_id)
+    return {
+        "user_id": str(user_id),
+        "name": member_name(bot, user_id),
+        "used": used,
+        "remaining": max(count - used, 0),
+        "count": count,
+        "window_s": window,
+        #: So the page can mark the row rather than leaving a reader to spot
+        #: that this one number differs from the heading.
+        "overridden": str(user_id) in limiter.overrides(),
+    }
+
+
+def _pool_view(limiter: Any, key: str) -> dict:
+    """One :class:`bot.chat.ratelimit.RateLimiter` window as used-of-total."""
+    remaining = limiter.remaining(key)
+    return {
+        "count": limiter.count,
+        "window_s": limiter.window,
+        "used": max(limiter.count - remaining, 0),
+        "remaining": remaining,
+    }
+
+
+def limits(bot: BossBot) -> dict:
+    """What the host is doing right now, and how much of it is left.
+
+    The one page that answers "why is the bot slow?" without reading the log.
+    Everything here is *live* state rather than anything stored -- the lock, two
+    sliding windows and a queue -- so it is read fresh on every request and there
+    is nothing to keep in step with the database.
+
+    Read-only by construction: the limiter is asked with
+    :meth:`bot.chat.ratelimit.RateLimiter.remaining` and
+    :meth:`~bot.chat.ratelimit.RateLimiter.snapshot`, never ``allow``, so opening
+    the page cannot spend anybody's allowance -- including the pool it is
+    reporting on.
+    """
+    from ..chat.gate import GLOBAL_KEY
+    from ..modellock import EXTRACTOR, holder
+
+    pilot = bot.chat
+    model = holder()
+    rescans = bot.rescans
+    current = rescans.current
+    per_user = pilot.limiter
+    return {
+        "model": model,
+        "global_pool": _pool_view(pilot.global_limiter, GLOBAL_KEY),
+        "per_user": {
+            # The guild default. Each row below carries the allowance that
+            # member is actually on, which is not always this one.
+            "count": per_user.count,
+            "window_s": per_user.window,
+            # Only members mid-window, so the list is what is happening rather
+            # than everybody who has ever asked.
+            "windows": [
+                _window_view(bot, per_user, user_id, used)
+                for user_id, used in sorted(
+                    per_user.snapshot().items(), key=lambda pair: (-pair[1], pair[0])
+                )
+            ],
+            # Every member with their own allowance, whether or not they have
+            # asked anything: the page has to be able to show -- and clear -- an
+            # override belonging to somebody who is not mid-window.
+            "overrides": [
+                {
+                    "user_id": str(user_id),
+                    "name": member_name(bot, user_id),
+                    "count": count,
+                    "window_s": window,
+                }
+                for user_id, (count, window) in sorted(per_user.overrides().items())
+            ],
+        },
+        # Who may talk to the bot at all, read live from the role. The page's
+        # reason to exist is tuning these people's limits, and hunting for a
+        # snowflake to paste into a form is what it replaces.
+        "pilots": pilot_roster(bot),
+        "jobs": {
+            "answering": [
+                {"channel_id": cid, "channel_name": channel_name(bot, cid) or f"channel {cid}"}
+                for cid in pilot.answering()
+            ],
+            # Falls out of the holder label: an extraction is simply what has the
+            # model, and a rescan's extractions are the same thing seen from the
+            # other end -- which is why the queue below is next to it.
+            "extracting": model["holder"] == EXTRACTOR,
+            "rescan": {
+                "worker_running": rescans.running,
+                "queued": rescans.queued,
+                "job": current.short_id if current is not None else None,
+                "channel": current.current if current is not None else None,
+            },
+        },
+    }
+
+
 def get_config(bot: BossBot) -> dict:
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
@@ -1573,6 +1866,13 @@ def get_config(bot: BossBot) -> dict:
         # one chat channel. `chat_mode` on top of an unconfigured pilot answers
         # nobody, and the page needs to be able to say so.
         "chat_configured": bot.settings.chat_pilot_configured,
+        # The four capacity numbers, live from the config table. Editable here
+        # rather than only in `.env` because they are what an operator reaches
+        # for while the guild is busy.
+        "chat_pilot_rate_count": bot.chat_rate_count,
+        "chat_pilot_rate_window_s": bot.chat_rate_window_s,
+        "chat_pilot_global_rate_count": bot.chat_pool_count,
+        "chat_pilot_global_rate_window_s": bot.chat_pool_window_s,
         "chat_channels": [str(c) for c in bot.settings.chat_pilot_channel_id_list],
         "chat_categories": [str(c) for c in bot.settings.chat_pilot_category_id_list],
         "chat_model": bot.settings.chat_pilot_model,
@@ -1632,11 +1932,43 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         bot.repo.set_config(key, stored)
         for run in bot.repo.list_runs():
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
+    elif key in COUNT_KEYS:
+        stored = str(_whole_number(value, key, minimum=1))
+        bot.repo.set_config(key, stored)
+        # The limiters live for the whole process, so a new number means nothing
+        # until they are told. Windows already open are reinterpreted under it.
+        bot.chat.apply_limits()
+        events.notify()
+    elif key in WINDOW_KEYS:
+        stored = str(_seconds(value, key))
+        bot.repo.set_config(key, stored)
+        bot.chat.apply_limits()
+        events.notify()
     else:
         stored = _as_flag(value)
         bot.repo.set_config(key, stored)
     _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
     return get_config(bot)
+
+
+def _whole_number(value: Any, label: str, minimum: int = 1) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise BadRequest(f"{label} must be a whole number, e.g. `4`") from None
+    if parsed < minimum:
+        raise BadRequest(f"{label} must be at least {minimum}")
+    return parsed
+
+
+def _seconds(value: Any, label: str) -> float:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError):
+        raise BadRequest(f"{label} must be a number of seconds, e.g. `300`") from None
+    if parsed <= 0:
+        raise BadRequest(f"{label} must be more than zero seconds")
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -2007,6 +2339,11 @@ __all__ = [
     "extraction_view",
     "fixed_view",
     "get_config",
+    "limits",
+    "pilot_roster",
+    "clear_user_limit",
+    "reset_user_limit",
+    "set_user_limit",
     "load_amendment",
     "load_chat_interaction",
     "load_extraction",

@@ -17,7 +17,12 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from ..db import Repo
-from ..materialise import ensure_reminders, refresh_run_reminders, retire_fixed_run
+from ..materialise import (
+    apply_fixed_to_runs,
+    ensure_reminders,
+    refresh_run_reminders,
+    retire_fixed_run,
+)
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..weeks import current_week_start, next_week_start, week_start
 
@@ -168,8 +173,10 @@ def commit(
 ) -> CommitResult:
     """Apply one amendment and mark it ``confirmed``.
 
-    ``on_fixed_created`` is called after a ``fix`` creates a fixed run, so the
-    caller can re-materialise the weeks (that needs the live client's config).
+    ``on_fixed_created`` is called after a ``fix`` creates *or changes* a fixed
+    run, so the caller can re-materialise the weeks (that needs the live client's
+    config). Its name predates the edit case and is kept because the live client
+    and the portal both pass it by keyword.
     """
     result = CommitResult(amendment_id=amendment["id"], kind=amendment["kind"])
     run = repo.get_run(amendment["run_id"]) if amendment["run_id"] else None
@@ -408,12 +415,21 @@ def _rsvp(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, c
 #: `fix` row (which has no ``op``) keeps meaning exactly what it meant.
 FIX_REMOVE = "remove"
 
+#: A ``fix`` whose payload carries this *changes* the weekly timing it names --
+#: its night, its party, or both -- instead of creating or retiring one. A third
+#: payload marker rather than a ninth kind, for the reasons above and one more:
+#: "change the weekly to 23:30" was answered by a second `fix` beside the first,
+#: which is precisely the duplicate this exists to stop.
+FIX_EDIT = "edit"
+
 
 def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
-    """Create -- or remove -- a fixed weekly timing, as ``/fixed add``/``remove`` do."""
+    """Create, change or remove a fixed weekly timing, as ``/fixed`` does."""
     payload = amendment.get("payload") or {}
     if payload.get("op") == FIX_REMOVE:
         return _unfix(repo, payload, result, ctx)
+    if payload.get("op") == FIX_EDIT:
+        return _refix(repo, payload, result, ctx)
     weekday, hhmm = payload.get("weekday"), payload.get("time")
     if weekday is None or not hhmm:
         return "no recurring day and time were agreed - use `/fixed add`"
@@ -432,7 +448,36 @@ def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
     result.fixed_run_id = fixed_id
     if ctx.on_fixed_created is not None:
         ctx.on_fixed_created(fixed_id)
+        _note_adoption(repo, fixed_id, result, ctx)
     return None
+
+
+def _note_adoption(repo: Repo, fixed_id: str, result: CommitResult, ctx: Context):
+    """Say on the card when the new timing took over a run the week already had.
+
+    ``make this run weekly`` reaches the tools as a `fix`, and
+    :func:`bot.materialise.materialise_week` folds the matching one-off into the
+    new timing rather than leaving a duplicate beside it -- which is what the
+    member meant, and worth saying, because the run they were looking at has just
+    moved to the weekly's slot.
+
+    Told apart by the run's ``source``: materialisation stamps ``fixed`` on
+    everything it creates, so a run sitting under a timing that did not exist a
+    moment ago and carrying any other source was adopted rather than made. Only
+    the creation path asks -- an edit may well find a run adopted weeks ago, and
+    reporting that as news of this ✅ would be a lie.
+
+    Both weeks, because ``materialise_weeks`` fills both and a run for "tomorrow"
+    lands in next week whenever the reset falls in between; saying "this week's"
+    about that one would be the same lie in a smaller way.
+    """
+    for label, week in (
+        ("this week", current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
+        ("next week", next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
+    ):
+        run = repo.run_for_fixed(fixed_id, week)
+        if run is not None and run["source"] != "fixed":
+            result.notes.append(f"adopted {label}'s run")
 
 
 def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
@@ -456,6 +501,59 @@ def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
     cancelled = retire_fixed_run(repo, str(fixed_id), weeks, ctx.tz, ctx.ping_time, ctx.countdowns)
     result.fixed_run_id = str(fixed_id)
     result.notes.append(f"cancelled {cancelled} scheduled run(s)")
+    return None
+
+
+def _refix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
+    """Change a weekly timing in place: same row, same id, new night or party.
+
+    In place is the whole point. The runs already materialised from this timing
+    keep their ids, their answers and their reminders' history, and next week's
+    run comes from the same baseline -- which is what a second `fix` beside the
+    first could never do, and what made the live failure this handles cost a
+    party two of its three members.
+
+    The push onto those runs is :func:`bot.materialise.apply_fixed_to_runs`, the
+    same helper shape `/fixed edit` and the portal's ``PATCH`` follow: only the
+    fields the edit touched, and never a night that has already happened.
+    Re-materialising afterwards is left to ``on_fixed_created``, exactly as a
+    creation leaves it -- an edited timing whose run was never materialised (the
+    old slot had passed when the week was filled) gets one for the new slot.
+    """
+    fixed_id = payload.get("fixed_run_id")
+    if not fixed_id:  # pragma: no cover - the tool always records one
+        return "no weekly timing was named"
+    fixed = repo.get_fixed_run(str(fixed_id))
+    if fixed is None:
+        return "that weekly timing has gone"
+    fields: dict[str, object] = {}
+    weekday, hhmm = payload.get("weekday"), payload.get("time")
+    if weekday is not None and hhmm:
+        fields["weekday"] = int(weekday)
+        fields["time"] = str(hhmm)
+    people = [str(uid) for uid in payload.get("participants") or []]
+    if people:
+        fields["participants"] = people
+    if not fields:
+        return "nothing was left to change on that weekly timing"
+
+    repo.update_fixed_run(str(fixed_id), **fields)
+    moved = apply_fixed_to_runs(
+        repo,
+        str(fixed_id),
+        set(fields),
+        [
+            current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+            next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+        ],
+        ctx.tz,
+        ctx.ping_time,
+        ctx.countdowns,
+    )
+    result.fixed_run_id = str(fixed_id)
+    result.notes.append(f"updated {moved} scheduled run(s)")
+    if ctx.on_fixed_created is not None:
+        ctx.on_fixed_created(str(fixed_id))
     return None
 
 
@@ -486,6 +584,7 @@ def expire_stale(repo: Repo, now) -> list[dict]:
 
 
 __all__ = [
+    "FIX_EDIT",
     "FIX_REMOVE",
     "PROPOSAL_TTL",
     "CommitResult",
