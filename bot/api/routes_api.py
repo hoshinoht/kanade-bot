@@ -37,6 +37,7 @@ from .models import (
     FixedCreate,
     FixedOut,
     FixedUpdate,
+    LimitsOut,
     MemberOut,
     MemberUpdate,
     NickIn,
@@ -313,6 +314,20 @@ async def put_config(bot: Bot, caller: Caller, body: ConfigIn) -> dict:
     for key, value in changes.items():
         result = service.set_config(bot, key, value)
     return result
+
+
+@router.get(
+    "/limits",
+    response_model=LimitsOut,
+    summary="What the host is busy with, and how much of it is left",
+)
+async def get_limits(bot: Bot, caller: Caller) -> dict:
+    """Live state: the shared model lock, both answer budgets, and the queue.
+
+    Read-only in the strong sense -- asking never spends a rate-limit slot, so
+    a page polling this cannot quietly use up the guild's answers.
+    """
+    return service.limits(bot)
 
 
 @router.get(

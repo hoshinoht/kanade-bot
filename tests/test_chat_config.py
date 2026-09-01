@@ -72,9 +72,24 @@ def test_the_defaults_are_the_documented_ones():
     settings = chat_settings()
     assert settings.chat_pilot_rate_count == 4
     assert settings.chat_pilot_rate_window_s == 300.0
+    assert settings.chat_pilot_global_rate_count == 12
+    assert settings.chat_pilot_global_rate_window_s == 900.0
+    assert settings.chat_pilot_lock_wait_s == 2.0
     assert settings.chat_pilot_model == "gpt-oss:20b"
     assert settings.chat_pilot_timeout == 60.0
     assert settings.persona_path == "data/persona.md"
+
+
+def test_the_capacity_settings_are_read_from_the_environment():
+    """The two knobs an operator reaches for when the host is struggling."""
+    settings = chat_settings(
+        chat_pilot_global_rate_count="30",
+        chat_pilot_global_rate_window_s="3600",
+        chat_pilot_lock_wait_s="0.5",
+    )
+    assert settings.chat_pilot_global_rate_count == 30
+    assert settings.chat_pilot_global_rate_window_s == 3600.0
+    assert settings.chat_pilot_lock_wait_s == 0.5
 
 
 def test_the_env_example_documents_every_new_setting():
@@ -87,6 +102,9 @@ def test_the_env_example_documents_every_new_setting():
         "CHAT_PILOT_CATEGORY_IDS",
         "CHAT_PILOT_RATE_COUNT",
         "CHAT_PILOT_RATE_WINDOW_S",
+        "CHAT_PILOT_GLOBAL_RATE_COUNT",
+        "CHAT_PILOT_GLOBAL_RATE_WINDOW_S",
+        "CHAT_PILOT_LOCK_WAIT_S",
         "CHAT_PILOT_MODEL",
         "CHAT_PILOT_TIMEOUT",
         "PERSONA_PATH",

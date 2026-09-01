@@ -153,6 +153,14 @@ class FakeBot:
         from bot.rescan import RescanWorker
 
         self.rescans = RescanWorker(self)
+        # Likewise real, and for the same reason: `/api/limits` reports this
+        # pilot's two limiters and its busy set, so a stand-in would be the
+        # thing under test. Constructing one touches neither Ollama nor
+        # Discord -- the chat tests still build their own with a scripted
+        # client rather than using this.
+        from bot.chat.agent import ChatPilot
+
+        self.chat = ChatPilot(self)
 
         self.channels = {
             WATCHED_CHANNEL: FakeChannel(WATCHED_CHANNEL, "hstar-party"),

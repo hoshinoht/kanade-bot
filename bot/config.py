@@ -119,6 +119,20 @@ class Settings(BaseSettings):
     #: ``ADMIN_ROLE_ID`` holders are exempt (see :func:`bot.util.is_bot_admin`).
     chat_pilot_rate_count: int = Field(default=4, ge=1)
     chat_pilot_rate_window_s: float = Field(default=300.0, gt=0)
+    #: Answers per window across *everybody*, on top of the per-person limit
+    #: above. The host runs one 13 GB model and can only produce so many answers
+    #: an hour, so this is what keeps handing the pilot role to more people from
+    #: turning the bot into a queue: twelve answers a quarter of an hour is
+    #: roughly what the machine has to give. ``ADMIN_ROLE_ID`` holders neither
+    #: spend from this pool nor are refused by it.
+    chat_pilot_global_rate_count: int = Field(default=12, ge=1)
+    chat_pilot_global_rate_window_s: float = Field(default=900.0, gt=0)
+    #: How long a question waits for the shared model (:data:`bot.modellock`)
+    #: before it is shed with 💬 rather than queued. Two seconds covers "the
+    #: model was between calls"; past that the asker has moved on and a late
+    #: reply is worse than a visible refusal. Staff instead wait
+    #: ``CHAT_PILOT_TIMEOUT``, which is what puts them at the front of the queue.
+    chat_pilot_lock_wait_s: float = Field(default=2.0, ge=0)
     #: The model that answers. Separate from ``OLLAMA_MODEL`` so the extractor's
     #: model can be changed without silently changing the bot's voice.
     chat_pilot_model: str = "gpt-oss:20b"

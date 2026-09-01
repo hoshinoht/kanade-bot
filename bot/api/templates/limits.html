@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Limits — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Capacity</p>
+    <h1>{% if limits.model.busy %}The model is busy{% else %}The model is free{% endif %}</h1>
+    <p>The host runs one 13&nbsp;GB model and one call at a time, so an answer, an extraction
+      and a rescan all queue for the same thing. This is what has it now, what each budget has
+      left, and what is waiting — the page to open when somebody says the bot is slow.</p>
+  </div>
+  <span class="chip chip--mono">{{ limits.model.holder or "idle" }}</span>
+</div>
+
+{% include "partials/limits.html" %}
+{% endblock %}

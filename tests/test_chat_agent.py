@@ -149,6 +149,141 @@ async def test_one_answer_at_a_time_per_channel(chat_bot, chat_seeded):
 
 
 # ---------------------------------------------------------------------------
+# the one model, shared with the extractor
+# ---------------------------------------------------------------------------
+
+
+class Concurrency:
+    """Counts how many model calls were ever inside the client at once."""
+
+    def __init__(self) -> None:
+        self.inside = 0
+        self.most = 0
+
+    async def enter(self) -> None:
+        self.inside += 1
+        self.most = max(self.most, self.inside)
+        # Long enough for the other caller to get a turn at the loop, so an
+        # overlap would actually happen rather than merely being possible.
+        await asyncio.sleep(0.01)
+
+    def leave(self) -> None:
+        self.inside -= 1
+
+
+class Counted:
+    """A scripted model that reports itself to a shared :class:`Concurrency`."""
+
+    def __init__(self, counter: Concurrency, response):
+        self.counter = counter
+        self.response = response
+
+    async def chat(self, **_kwargs):
+        await self.counter.enter()
+        try:
+            return self.response
+        finally:
+            self.counter.leave()
+
+
+async def test_a_question_is_shed_when_the_model_is_busy(chat_bot, chat_seeded, model_lock):
+    """One 13 GB model on the host: a second caller is turned away, not queued."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("never said"))
+    await model_lock.acquire()
+    try:
+        asked = message(chat_bot)
+        handling = await agent.offer(asked)
+    finally:
+        model_lock.release()
+
+    # Handled -- it was the pilot's message and the pilot dealt with it -- but
+    # the model was never called, and the 👀 came back off.
+    assert (handling.handled, handling.answered) == (True, None)
+    assert asked.reactions == [gate.CHANNEL_BUSY_REACTION]
+    assert agent._client.calls == []
+    assert replies(chat_bot) == []
+
+
+async def test_staff_wait_for_the_model_rather_than_being_shed(chat_bot, chat_seeded, model_lock):
+    """`asyncio.Lock` wakes waiters in order, and that queue is the whole priority scheme."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("Wed 21:30."))
+    await model_lock.acquire()
+
+    async def free_it_shortly():
+        await asyncio.sleep(0.05)
+        model_lock.release()
+
+    freeing = asyncio.create_task(free_it_shortly())
+    asked = message(chat_bot, roles=(CHAT_ROLE, ADMIN_ROLE))
+    handling = await agent.offer(asked)
+    await freeing
+
+    # Waited out a hold far longer than the shedding deadline above.
+    assert handling.answered.reply == "Wed 21:30."
+    assert asked.reactions == []
+
+
+async def test_a_channel_the_pilot_shed_is_free_to_ask_again(chat_bot, chat_seeded, model_lock):
+    """The busy flag comes off with the 👀, so the shed is not a channel-wide stall."""
+    chat_bot.settings.chat_pilot_lock_wait_s = 0.01
+    agent = pilot(chat_bot, says("Wed 21:30."))
+    await model_lock.acquire()
+    try:
+        await agent.offer(message(chat_bot))
+    finally:
+        model_lock.release()
+
+    assert (await agent.offer(message(chat_bot))).answered.reply == "Wed 21:30."
+
+
+async def test_an_extraction_and_an_answer_never_overlap(chat_bot, chat_seeded):
+    """The lock is shared with the extractor, which is the whole reason it moved."""
+    from bot.extract.llm import Extractor
+
+    counter = Concurrency()
+    agent = ChatPilot(chat_bot, client=Counted(counter, says("Wed 21:30.")))
+    extractor = Extractor(
+        chat_bot.settings,
+        client=Counted(counter, {"message": {"content": '{"amendments": []}'}}),
+    )
+
+    answered, extracted = await asyncio.gather(
+        agent.offer(message(chat_bot)),
+        extractor.extract([{"role": "user", "content": "can we move to wednesday?"}]),
+    )
+
+    assert counter.most == 1
+    assert answered.answered.reply == "Wed 21:30."
+    assert extracted.ok is True
+
+
+async def test_the_lock_is_held_across_the_tool_rounds_not_round_each_call(
+    chat_bot, chat_seeded, model_lock
+):
+    """Otherwise an extraction slots in mid-conversation and the answer times out."""
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this"),
+        says("HStar and HFA on Monday."),
+    )
+    held: list[bool] = []
+    real_chat = agent._client.chat
+
+    async def watched(**kwargs):
+        held.append(model_lock.locked())
+        return await real_chat(**kwargs)
+
+    agent._client.chat = watched
+    await agent.offer(message(chat_bot))
+
+    assert held == [True, True]
+    # ...and given back once the answer is posted.
+    assert model_lock.locked() is False
+
+
+# ---------------------------------------------------------------------------
 # the tool loop
 # ---------------------------------------------------------------------------
 

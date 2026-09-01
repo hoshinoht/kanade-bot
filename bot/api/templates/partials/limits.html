@@ -1,0 +1,126 @@
+{# Everything on this page is live state, so the panel replaces itself every few
+   seconds -- the same self-polling fragment the rescan progress block uses. Five
+   seconds rather than the rescan's two: nothing here has a finish line to watch
+   for, and the request is free (it reads the limiters, it never spends them).
+   With htmx blocked the Refresh link does the same job by hand. #}
+<div id="limits" hx-get="/limits/live" hx-trigger="load delay:5s"
+     hx-target="this" hx-swap="outerHTML">
+
+<div class="stats">
+  <section class="stat">
+    <p class="stat__name">The model</p>
+    {% if limits.model.busy %}
+    <p class="stat__big">Busy<span class="stat__unit">{{ limits.model.holder or "holder unnamed" }}</span></p>
+    {% else %}
+    <p class="stat__big">Idle<span class="stat__unit">nothing is using it</span></p>
+    {% endif %}
+    <dl class="stat__rows">
+      <div><dt>Held for</dt>
+        <dd class="mono">{% if limits.model.busy %}{{ "%.1f"|format(limits.model.held_for_s) }}s{% else %}—{% endif %}</dd></div>
+      <div><dt>Extracting</dt>
+        <dd class="mono">{{ "yes" if limits.jobs.extracting else "no" }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="stat">
+    <p class="stat__name">Guild budget</p>
+    <p class="stat__big">{{ limits.global_pool.remaining }}<span class="stat__unit">of {{ limits.global_pool.count }} left</span></p>
+    <dl class="stat__rows">
+      <div><dt>Window</dt><dd class="mono">{{ "%.0f"|format(limits.global_pool.window_s / 60) }} min</dd></div>
+      <div><dt>Spent</dt><dd class="mono">{{ limits.global_pool.used }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="stat">
+    <p class="stat__name">Per person</p>
+    <p class="stat__big">{{ limits.per_user.windows|length }}<span class="stat__unit">window{{ "" if limits.per_user.windows|length == 1 else "s" }} open</span></p>
+    <dl class="stat__rows">
+      <div><dt>Allowance</dt><dd class="mono">{{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min</dd></div>
+      <div><dt>Answering</dt><dd class="mono">{{ limits.jobs.answering|length }} channel(s)</dd></div>
+    </dl>
+  </section>
+
+  <section class="stat">
+    <p class="stat__name">Rescans</p>
+    <p class="stat__big">{{ limits.jobs.rescan.queued }}<span class="stat__unit">queued</span></p>
+    <dl class="stat__rows">
+      <div><dt>Worker</dt>
+        <dd class="mono">{{ "running" if limits.jobs.rescan.worker_running else "stopped" }}</dd></div>
+      <div><dt>Reading</dt>
+        <dd class="mono">{{ limits.jobs.rescan.channel or "—" }}</dd></div>
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card__head">
+    <h2 class="card__title">In flight</h2>
+    <a class="btn btn--ghost" href="/limits">Refresh</a>
+  </div>
+  {% if not limits.jobs.answering and not limits.model.busy and not limits.jobs.rescan.job %}
+  <div class="empty">
+    <strong>Nothing running.</strong>
+    The model is free, so the next question is answered immediately rather than shed.
+  </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What</th><th>Where</th><th>State</th></tr></thead>
+      <tbody>
+        {% for row in limits.jobs.answering %}
+        <tr>
+          <td>Chat answer</td>
+          <td class="mono">{{ row.channel_name }}</td>
+          <td><span class="status status--planned">answering</span></td>
+        </tr>
+        {% endfor %}
+        {% if limits.model.busy and not limits.jobs.answering %}
+        <tr>
+          <td>{{ limits.model.holder or "unnamed holder" }}</td>
+          <td class="mono">{{ limits.jobs.rescan.channel or "—" }}</td>
+          <td><span class="status status--planned">holding the model</span></td>
+        </tr>
+        {% endif %}
+        {% if limits.jobs.rescan.job %}
+        <tr>
+          <td>Rescan {{ limits.jobs.rescan.job }}</td>
+          <td class="mono">{{ limits.jobs.rescan.channel or "—" }}</td>
+          <td><span class="status status--planned">re-reading</span></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Windows in use</h2></div>
+  {% if not limits.per_user.windows %}
+  <div class="empty">
+    <strong>Nobody is mid-window.</strong>
+    A member appears here once they have been answered, and drops off again when their
+    window rolls. Staff are exempt and never appear.
+  </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Member</th><th>Used</th><th>Left</th></tr></thead>
+      <tbody>
+        {% for row in limits.per_user.windows %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="mono">{{ row.used }} of {{ limits.per_user.count }}</td>
+          <td>
+            {% if row.remaining %}<span class="mono">{{ row.remaining }}</span>
+            {% else %}<span class="status status--cancelled">spent</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+</div>

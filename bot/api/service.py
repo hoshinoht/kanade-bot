@@ -1561,6 +1561,78 @@ def access_report(bot: BossBot) -> list[dict]:
     return bot.access_report()
 
 
+def _pool_view(limiter: Any, key: str) -> dict:
+    """One :class:`bot.chat.ratelimit.RateLimiter` window as used-of-total."""
+    remaining = limiter.remaining(key)
+    return {
+        "count": limiter.count,
+        "window_s": limiter.window,
+        "used": max(limiter.count - remaining, 0),
+        "remaining": remaining,
+    }
+
+
+def limits(bot: BossBot) -> dict:
+    """What the host is doing right now, and how much of it is left.
+
+    The one page that answers "why is the bot slow?" without reading the log.
+    Everything here is *live* state rather than anything stored -- the lock, two
+    sliding windows and a queue -- so it is read fresh on every request and there
+    is nothing to keep in step with the database.
+
+    Read-only by construction: the limiter is asked with
+    :meth:`bot.chat.ratelimit.RateLimiter.remaining` and
+    :meth:`~bot.chat.ratelimit.RateLimiter.snapshot`, never ``allow``, so opening
+    the page cannot spend anybody's allowance -- including the pool it is
+    reporting on.
+    """
+    from ..chat.gate import GLOBAL_KEY
+    from ..modellock import EXTRACTOR, holder
+
+    pilot = bot.chat
+    model = holder()
+    rescans = bot.rescans
+    current = rescans.current
+    per_user = pilot.limiter
+    return {
+        "model": model,
+        "global_pool": _pool_view(pilot.global_limiter, GLOBAL_KEY),
+        "per_user": {
+            "count": per_user.count,
+            "window_s": per_user.window,
+            # Only members mid-window, so the list is what is happening rather
+            # than everybody who has ever asked.
+            "windows": [
+                {
+                    "user_id": str(user_id),
+                    "name": member_name(bot, user_id),
+                    "used": used,
+                    "remaining": max(per_user.count - used, 0),
+                }
+                for user_id, used in sorted(
+                    per_user.snapshot().items(), key=lambda pair: (-pair[1], pair[0])
+                )
+            ],
+        },
+        "jobs": {
+            "answering": [
+                {"channel_id": cid, "channel_name": channel_name(bot, cid) or f"channel {cid}"}
+                for cid in pilot.answering()
+            ],
+            # Falls out of the holder label: an extraction is simply what has the
+            # model, and a rescan's extractions are the same thing seen from the
+            # other end -- which is why the queue below is next to it.
+            "extracting": model["holder"] == EXTRACTOR,
+            "rescan": {
+                "worker_running": rescans.running,
+                "queued": rescans.queued,
+                "job": current.short_id if current is not None else None,
+                "channel": current.current if current is not None else None,
+            },
+        },
+    }
+
+
 def get_config(bot: BossBot) -> dict:
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
@@ -2007,6 +2079,7 @@ __all__ = [
     "extraction_view",
     "fixed_view",
     "get_config",
+    "limits",
     "load_amendment",
     "load_chat_interaction",
     "load_extraction",

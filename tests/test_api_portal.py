@@ -17,7 +17,17 @@ from bot.ids import short_id
 
 from .fake_bot import ADMIN_TOKEN, OTHER_CHANNEL, UNWATCHED_CHANNEL, WATCHED_CHANNEL
 
-PAGES = ["/", "/fixed", "/inbox", "/extractions", "/chat", "/members", "/reminders", "/config"]
+PAGES = [
+    "/",
+    "/fixed",
+    "/inbox",
+    "/extractions",
+    "/chat",
+    "/limits",
+    "/members",
+    "/reminders",
+    "/config",
+]
 
 
 # --- the invariant that lets the bot share one SQLite connection ------------
@@ -192,6 +202,51 @@ def test_an_unknown_chat_interaction_renders_the_error_page_not_a_traceback(auth
 
 def test_an_empty_chat_log_explains_what_turns_it_on(auth):
     assert "Nothing asked yet." in auth.get("/chat").text
+
+
+def test_the_limits_page_says_the_model_is_free_when_it_is(auth, fake_bot):
+    body = auth.get("/limits").text
+    assert "The model is free" in body
+    assert "Nothing running." in body
+    assert "Nobody is mid-window." in body
+
+
+def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded, model_lock):
+    from bot import modellock
+    from bot.chat.gate import GLOBAL_KEY
+
+    fake_bot.chat.limiter.allow(1002)
+    fake_bot.chat.global_limiter.allow(GLOBAL_KEY)
+    fake_bot.chat._busy.add(str(WATCHED_CHANNEL))
+    assert auth.portal.call(modellock.acquire_within, 5, modellock.EXTRACTOR) is True
+    try:
+        body = auth.get("/limits").text
+    finally:
+        modellock.release()
+
+    assert "The model is busy" in body
+    assert "extractor" in body
+    assert "#hstar-party" in body
+    assert "kanon" in body  # the member mid-window, by roster name
+    assert f"of {fake_bot.settings.chat_pilot_global_rate_count} left" in body
+
+
+def test_the_limits_panel_polls_itself(auth, fake_bot):
+    """The same self-replacing fragment the rescan progress block uses."""
+    fragment = auth.get("/limits/live")
+    assert fragment.status_code == 200
+    assert 'hx-get="/limits/live"' in fragment.text
+    assert 'hx-swap="outerHTML"' in fragment.text
+    # ...and the page embeds that same fragment rather than a second copy of it.
+    assert 'hx-get="/limits/live"' in auth.get("/limits").text
+
+
+def test_the_limits_page_needs_signing_in(client):
+    """A portal page sends you to the sign-in form; the JSON behind it 401s."""
+    for path in ("/limits", "/limits/live"):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/login?next={path}"
 
 
 def test_the_reminders_page_separates_queued_from_sent(auth, fake_bot, seeded):
