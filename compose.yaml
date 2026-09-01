@@ -38,6 +38,16 @@ services:
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
     restart: unless-stopped
+    # Defense-in-depth: member input never reaches a shell or a URL, but if a
+    # parsing dependency ever gave code execution, it lands in a root-immutable,
+    # capability-less, resource-capped container. /app/data stays writable via
+    # the volume; everything else the process needs at runtime is read-only.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 256
     # An extraction call can run 30-120s; the default 10s grace period
     # SIGKILLs a mid-write shutdown, which is how the DB got corrupted.
     stop_grace_period: 60s
