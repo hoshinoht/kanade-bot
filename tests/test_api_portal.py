@@ -254,7 +254,10 @@ def test_the_live_region_is_a_wrapper_the_swap_cannot_replace(auth, fake_bot):
     # The fragment is content only: it must not carry the wrapper, or a swap
     # would nest a second one and leave two of everything running.
     assert 'id="limits-live"' not in fragment.text
-    assert "Windows in use" in fragment.text
+    # ...and it is all three live panels plus the strip that counts them, which
+    # is what the wrapper holds and the whole of what a swap replaces.
+    for key in ("who-may-ask", "in-flight", "windows"):
+        assert f'id="{key}"' in fragment.text, key
 
 
 def test_the_poll_is_only_a_slow_fallback_behind_the_stream(auth, fake_bot):

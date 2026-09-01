@@ -15,9 +15,11 @@ import pytest
 
 from bot.api import service
 from bot.api.app import STATIC_DIR
+from bot.api.templating import CHAT_TABS, LIMITS_TABS
 from bot.ids import short_id
 
 from .conftest import kl
+from .fake_bot import add_pilot
 
 #: Every page that is a list of rows, with the id of the region a search swaps.
 TABLES = [
@@ -299,16 +301,27 @@ def test_the_add_dialog_is_not_swapped_away_by_a_search(auth, seeded):
 # --- the frame --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", [*[p for p, _ in TABLES], "/bosses", "/config"])
+@pytest.mark.parametrize("path", [*[p for p, _ in TABLES], "/bosses", "/config", "/limits"])
 def test_a_list_page_asks_for_the_no_scroll_frame(auth, seeded, path):
-    # /config changed sides when it became the one-window Settings layout:
-    # a sidebar and a scrolling detail pane are exactly what the frame is for.
+    # /config changed sides when it became the one-window Settings layout: a
+    # sidebar and a scrolling detail pane are exactly what the frame is for.
+    # /limits followed, for the same reason one page down -- a roster that grows
+    # under a row of figures that does not.
     assert '<body class="framed">' in auth.get(path).text
 
 
-@pytest.mark.parametrize("path", ["/inbox", "/limits"])
+def test_a_detail_page_asks_for_it_too(auth, seeded):
+    """Not a list, but the same shape: a column of facts beside a column of
+    content that can run long, which is the thing a frame gives its height to."""
+    path = f"/chat/{short_id(seeded['interaction'])}"
+    assert '<body class="framed">' in auth.get(path).text
+
+
+@pytest.mark.parametrize("path", ["/inbox"])
 def test_a_page_that_is_not_a_list_scrolls_as_it_always_did(auth, seeded, path):
-    """Pages that are forms or cards rather than one long list keep the scrollbar."""
+    """The Inbox is a stack of proposals, each of them its own decision, and no
+    one of them is the thing the page is for -- so there is no window to give
+    the leftover height to, and it keeps the scrollbar."""
     assert '<body class="">' in auth.get(path).text
 
 
@@ -425,6 +438,152 @@ def test_a_targeted_dialog_gives_the_scrollbar_back():
     # The bare `dialog:target` is deliberate: it must release the frame for the
     # runsheet dialogs too, not only the Fixed page's .modal editors.
     assert "body.framed:has(dialog:target)" in PAGE_CSS
+
+
+# --- the two windows that grew tabs -----------------------------------------
+
+
+def framed_rule(selector: str) -> str:
+    """One rule out of the frame's media block, which is indented one level."""
+    rule = PAGE_CSS[PAGE_CSS.index(selector) :]
+    return rule[: rule.index("\n  }")]
+
+
+def panel_of(body: str, key: str) -> str:
+    """One panel's whole section, opening tag included -- the classes on it are
+    half of what is worth asserting."""
+    start = body.rindex("<section", 0, body.index(f'id="{key}"'))
+    return body[start : body.index("</section>", start)]
+
+
+@pytest.mark.parametrize(
+    "path,tabs",
+    [("/limits", LIMITS_TABS), (None, CHAT_TABS)],
+    ids=["limits", "chat"],
+)
+def test_every_tab_has_the_panel_it_opens(auth, seeded, path, tabs):
+    """One list, three readers -- the same contract `CONFIG_SECTIONS` carries.
+    The template builds the strip and the panels from it, the stylesheet
+    enumerates the keys to raise the open tab, and this holds both to it."""
+    path = path or f"/chat/{short_id(seeded['interaction'])}"
+    body = auth.get(path).text
+
+    for key, label in tabs:
+        assert f'href="#{key}"' in body, key
+        assert f'id="{key}"' in body, key
+        assert label in body, label
+        # ...and the stylesheet knows how to raise this one.
+        assert f'.tabs:has(#{key}:target) [href="#{key}"]' in PAGE_CSS, key
+
+    # Exactly one panel opens when the URL says nothing, and it is the first.
+    assert body.count("tabs__panel--first") == 1
+    assert f'id="{tabs[0][0]}"' in panel_of(body, tabs[0][0])
+    assert "tabs__panel--first" in panel_of(body, tabs[0][0])
+
+
+def test_the_tab_strip_is_the_windows_own_title_bar(auth, seeded):
+    """Browser-style: the strip is painted as chrome and the tabs rise out of
+    it, so it wears `.card__head` and gets the three dots from it rather than
+    growing a second bar under one."""
+    body = auth.get("/limits").text
+
+    assert '<div class="card__head tabs__strip">' in body
+    strip = PAGE_CSS[PAGE_CSS.index("\n.tabs__strip {") :]
+    assert "padding-bottom: 0" in strip[: strip.index("}")]
+    # The open tab is painted in the body's own surface, which is what fuses it
+    # to the panel below rather than leaving it floating on the bar.
+    raised = PAGE_CSS[PAGE_CSS.index(".tabs:has(#who-may-ask:target)") :]
+    raised = raised[: raised.index("}")]
+    assert "background: var(--surface)" in raised
+
+
+def test_the_tabs_reach_across_the_swap_boundary(auth, seeded):
+    """Three of the four panels are re-read on a timer and the fourth holds the
+    form, which must never be inside what a refresh replaces. `display:
+    contents` is what lets them be siblings anyway: the wrapper keeps its
+    boundary and its polling attributes, and the panels line up in the window."""
+    page = auth.get("/limits").text
+    live = auth.get("/limits/live").text
+
+    for key in ("who-may-ask", "in-flight", "windows"):
+        assert f'id="{key}"' in live, key
+    # The one that holds the form is written outside the region, not in it.
+    assert 'id="set-allowance"' not in live
+    assert 'id="set-allowance"' in page
+
+    assert "display: contents" in framed_rule("body.framed .tabs #limits-live {")
+
+
+def test_the_limits_tiles_are_never_behind_a_tab(auth, seeded):
+    """Four figures read at a glance before anything else is chosen, so they sit
+    between the strip and the panels rather than on one of them."""
+    body = auth.get("/limits").text
+    # From the strip's own nav, not the masthead's, which is further up.
+    strip_end = body.index("</nav>", body.index('class="tabs__tabs"'))
+    first_panel = body.index('class="tabs__panel')
+
+    assert strip_end < body.index('class="stats"') < first_panel
+    # ...and every figure they carried is still on them.
+    for figure in ("The model", "Guild budget", "Per person", "Rescans", "Held for"):
+        assert figure in body, figure
+
+
+def test_the_limits_tabs_count_what_their_panels_hold(auth, fake_bot, seeded):
+    """The counts are the page's glance, so they are rendered with the tables
+    they count -- inside the live region, and re-read with them."""
+    fake_bot.chat.limiter.allow(1002)
+    add_pilot(fake_bot, 1002, "kanon")
+
+    live = auth.get("/limits/live").text
+    strip = live[: live.index("</nav>", live.index('class="tabs__tabs"'))]
+
+    assert 'class="tabs__count">1<' in strip  # one holder of the role
+    # The tab with nothing to count carries no figure at all.
+    allowance = strip[strip.index('href="#set-allowance"') :]
+    assert "tabs__count" not in allowance
+
+
+def test_a_failed_generation_is_never_behind_a_tab(auth, fake_bot):
+    """The first fact about the interaction, and a tab is somewhere a fact can
+    be missed -- so it sits above the window rather than inside it."""
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="what's on?",
+        reply="Sorry — I couldn't get to the schedule just now.",
+        outcome="failed",
+        error="the model kept calling tools",
+    )
+    body = auth.get(f"/chat/{short_id(interaction)}").text
+
+    assert body.index("The generation failed.") < body.index('class="card tabs"')
+
+
+def test_a_panel_scrolls_rather_than_the_window(auth, seeded):
+    """The window takes the frame's leftover height; the open panel takes what
+    the strip and the tiles leave, and its headings stay while its rows go."""
+    window = framed_rule("body.framed .tabs {")
+    assert "overflow: hidden" in window
+    assert "flex-direction: column" in window
+
+    panel = framed_rule("body.framed .tabs__panel {")
+    assert "overflow-y: auto" in panel
+    assert "min-height: 0" in panel
+
+    assert "position: sticky" in framed_rule("body.framed .tabs__panel thead th {")
+
+
+def test_a_phone_gets_every_panel_and_pills_to_jump_by():
+    """A window that answers with a blank panel because a fragment went missing
+    is worse than one you scroll -- the settings window's rule, for its reason."""
+    blocks, pos = [], 0
+    while (start := PAGE_CSS.find("@media (max-width: 899px)", pos)) != -1:
+        blocks.append(PAGE_CSS[start : PAGE_CSS.index("\n}\n", start)])
+        pos = start + 1
+    narrow = [b for b in blocks if ".tabs__panel {" in b]
+
+    assert len(narrow) == 1
+    assert "display: block" in narrow[0]
+    assert "border-radius: 999px" in narrow[0]  # the tabs become jump pills
 
 
 # --- the arithmetic ---------------------------------------------------------

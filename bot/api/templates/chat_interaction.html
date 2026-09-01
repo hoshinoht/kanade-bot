@@ -1,19 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Chat {{ interaction.short_id }} — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
+{# The band every framed page has: which page this is, and how it went. What
+   the interaction *was* -- who, where, on what model -- is a column of its own
+   below, where it can sit beside the conversation rather than above it. #}
 <div class="page-head">
   <div>
     <p class="eyebrow"><a href="/chat">Chat</a> · #{{ interaction.short_id }}</p>
     <h1>{{ interaction.local_time }}</h1>
-    <p>{{ interaction.author_name }}{% if interaction.channel_name %} in {{ interaction.channel_name }}{% endif %} ·
-      {{ interaction.model }} ·
-      {{ interaction.rounds }} round{{ "" if interaction.rounds == 1 else "s" }},
-      {{ interaction.tool_count }} tool call{{ "" if interaction.tool_count == 1 else "s" }}
-      {% if interaction.url %} · <a href="{{ interaction.url }}">open in Discord</a>{% endif %}</p>
   </div>
   <span class="status status--{{ 'confirmed' if interaction.outcome == 'answered' else 'cancelled' }}">{{ interaction.outcome }}</span>
 </div>
 
+{# Above the window rather than on a tab: a failed generation is the first fact
+   about this interaction, and a tab is somewhere a fact can be missed. #}
 {% if interaction.error %}
 <div class="empty" role="status">
   <strong>The generation failed.</strong>
@@ -21,43 +22,28 @@
 </div>
 {% endif %}
 
-<div class="stats">
-  <section class="stat">
-    <p class="stat__name">Latency</p>
-    <p class="stat__big">{{ interaction.latency_ms|duration }}<span class="stat__unit">end to end</span></p>
-    <dl class="stat__rows">
-      <div><dt>Model</dt><dd class="mono">{{ interaction.model_ms|duration }}</dd></div>
-      <div><dt>Tools</dt><dd class="mono">{{ interaction.tools_ms|duration }}</dd></div>
-    </dl>
-  </section>
-  <section class="stat">
-    <p class="stat__name">Tokens</p>
-    <p class="stat__big">
-      {% if interaction.prompt_tokens is none and interaction.completion_tokens is none %}
-      —<span class="stat__unit">the model reported no usage</span>
-      {% else %}
-      {{ "{:,}".format((interaction.prompt_tokens or 0) + (interaction.completion_tokens or 0)) }}<span class="stat__unit">across {{ interaction.rounds }} round(s)</span>
-      {% endif %}
-    </p>
-    <dl class="stat__rows">
-      <div><dt>Prompt</dt><dd class="mono">{% if interaction.prompt_tokens is not none %}{{ "{:,}".format(interaction.prompt_tokens) }}{% else %}—{% endif %}</dd></div>
-      <div><dt>Completion</dt><dd class="mono">{% if interaction.completion_tokens is not none %}{{ "{:,}".format(interaction.completion_tokens) }}{% else %}—{% endif %}</dd></div>
-    </dl>
-  </section>
-</div>
+{# One window, tabbed like a browser. The panels carry no chrome of their own:
+   the tab that opens one has already named it, and a title bar inside a window
+   that has one is a hat on a hat. #}
+<section class="card tabs">
+  <div class="card__head tabs__strip">
+    <nav class="tabs__tabs" aria-label="Sections of this interaction">
+      {% for key, label in chat_tabs %}
+      <a class="tabs__tab" href="#{{ key }}">{{ label }}{% if key == "tool-trace" %}
+        <span class="tabs__count">{{ interaction.tool_count }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+  </div>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">What they asked</h2></div>
+<section class="tabs__panel tabs__panel--first" id="conversation">
+  <h3 class="pane__section">What they asked</h3>
   <div class="evidence">
     <p class="evidence__line">
       <span class="evidence__who">{{ interaction.author_name }}</span><span class="evidence__at">{{ interaction.local_time }}</span>
       <br><span class="evidence__text">{{ interaction.question or "(no text)" }}</span>
     </p>
   </div>
-</section>
-
-<section class="card">
-  <div class="card__head"><h2 class="card__title">What it said</h2></div>
+  <h3 class="pane__section">What it said</h3>
   <div class="evidence">
     <p class="evidence__line">
       <span class="evidence__text">{{ interaction.reply }}</span>
@@ -65,8 +51,7 @@
   </div>
 </section>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Tool trace</h2></div>
+<section class="tabs__panel" id="tool-trace">
   {% if not interaction.tool_calls %}
   <p class="note">It answered from the conversation alone — nothing was looked up.</p>
   {% else %}
@@ -94,5 +79,44 @@
     </table>
   </div>
   {% endif %}
+</section>
+
+<section class="tabs__panel" id="interaction">
+  <dl class="stat__rows">
+    <div><dt>Asked by</dt><dd>{{ interaction.author_name }}</dd></div>
+    <div><dt>Channel</dt><dd>{{ interaction.channel_name or "—" }}</dd></div>
+    <div><dt>Model</dt><dd class="mono">{{ interaction.model }}</dd></div>
+    <div><dt>Rounds</dt><dd class="mono">{{ interaction.rounds }}</dd></div>
+    <div><dt>Tool calls</dt><dd class="mono">{{ interaction.tool_count }}</dd></div>
+  </dl>
+  {% if interaction.url %}
+  <p class="note"><a href="{{ interaction.url }}">Open in Discord</a></p>
+  {% endif %}
+
+  <div class="stats">
+    <section class="stat">
+      <p class="stat__name">Latency</p>
+      <p class="stat__big">{{ interaction.latency_ms|duration }}<span class="stat__unit">end to end</span></p>
+      <dl class="stat__rows">
+        <div><dt>Model</dt><dd class="mono">{{ interaction.model_ms|duration }}</dd></div>
+        <div><dt>Tools</dt><dd class="mono">{{ interaction.tools_ms|duration }}</dd></div>
+      </dl>
+    </section>
+    <section class="stat">
+      <p class="stat__name">Tokens</p>
+      <p class="stat__big">
+        {% if interaction.prompt_tokens is none and interaction.completion_tokens is none %}
+        —<span class="stat__unit">the model reported no usage</span>
+        {% else %}
+        {{ "{:,}".format((interaction.prompt_tokens or 0) + (interaction.completion_tokens or 0)) }}<span class="stat__unit">across {{ interaction.rounds }} round(s)</span>
+        {% endif %}
+      </p>
+      <dl class="stat__rows">
+        <div><dt>Prompt</dt><dd class="mono">{% if interaction.prompt_tokens is not none %}{{ "{:,}".format(interaction.prompt_tokens) }}{% else %}—{% endif %}</dd></div>
+        <div><dt>Completion</dt><dd class="mono">{% if interaction.completion_tokens is not none %}{{ "{:,}".format(interaction.completion_tokens) }}{% else %}—{% endif %}</dd></div>
+      </dl>
+    </section>
+  </div>
+</section>
 </section>
 {% endblock %}
