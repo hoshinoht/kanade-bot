@@ -1,0 +1,14 @@
+# Dependabot: weekly version bumps for the Python lockfile and the CI actions.
+# Security alerts and one-click security fixes are enabled in the repo settings
+# and do not depend on this file; this adds routine freshness PRs on top.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
