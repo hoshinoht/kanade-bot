@@ -99,6 +99,26 @@
   --mono: "Sometype Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
     monospace;
 
+  /* ── the type scale ───────────────────────────────────────────────────────
+   *
+   * Seven steps. Every size on the page is one of them, or a display size
+   * named where it is used (a run's clock, a stat's count, h1, a monogram
+   * fitted to its box) -- there is no eighth value hiding in a component.
+   *
+   * The whole ladder sits a step above where the numbers suggest, because
+   * warm cream and a slab serif read smaller than they measure: the portal
+   * was called hard to read at sizes that were metrically fine. `rem` here is
+   * the *root* size (16px), not `body`'s, so these do not follow the body
+   * rule below -- which is why raising the scale means raising the ladder.
+   */
+  --fs-micro: 0.7rem; /* eyebrows, table headings, difficulty pills */
+  --fs-mini: 0.76rem; /* ids, levels, timestamps -- small counted things */
+  --fs-small: 0.83rem; /* chips, statuses, buttons, segmented controls */
+  --fs-body-sm: 0.9rem; /* notes, table bodies, secondary prose */
+  --fs-body: 1rem; /* body text, and the nav */
+  --fs-lg: 1.1rem; /* the name of a window: card, modal and dialog titles */
+  --fs-brand: 1.3rem; /* the masthead's own name */
+
   --r: 12px;
   --r-in: 10px; /* inside a 2px border, so a title bar's corners match */
   --r-sm: 8px;
@@ -415,8 +435,8 @@ body {
   background: var(--ground);
   color: var(--ink);
   font-family: var(--body);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: 1.55;
   -webkit-text-size-adjust: 100%;
   overflow-x: clip;
 }
@@ -499,7 +519,7 @@ a:hover {
   gap: 0.5rem;
   font-family: var(--display);
   font-weight: 700;
-  font-size: 1.18rem;
+  font-size: var(--fs-brand);
   color: var(--ink);
   text-decoration: none;
 }
@@ -532,11 +552,13 @@ a:hover {
   background-repeat: no-repeat;
 }
 
+/* Fitted to its box rather than to the ladder: it is one letter standing in
+   for a picture, so it scales with the square and not with the prose. */
 .brand__avatar {
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .brand__avatar::after {
@@ -557,7 +579,7 @@ a:hover {
 .masthead__meta {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
   letter-spacing: 0.02em;
   display: flex;
@@ -609,7 +631,7 @@ a:hover {
 .nav__eyebrow {
   padding-left: 0.7rem;
   font-family: var(--mono);
-  font-size: 0.64rem;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -629,7 +651,7 @@ a:hover {
 .nav__link {
   flex: none;
   padding: 0.42rem 0.7rem 0.5rem;
-  font-size: 0.95rem;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--dim);
   text-decoration: none;
@@ -661,7 +683,7 @@ a:hover {
   background: var(--accent);
   color: var(--accent-ink);
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   text-align: center;
 }
 
@@ -682,9 +704,11 @@ a:hover {
   box-shadow: var(--shadow);
 }
 
+/* Fluid, and its floor is deliberately above the loudest thing on a run row:
+   whatever the width, the page says what it is louder than any one line on it. */
 h1 {
   font-family: var(--display);
-  font-size: clamp(1.3rem, 1.05rem + 1vw, 1.7rem);
+  font-size: clamp(1.6rem, 1.25rem + 1.1vw, 2rem);
   font-weight: 700;
   letter-spacing: -0.005em;
   margin: 0;
@@ -693,12 +717,12 @@ h1 {
 .page-head p {
   margin: 0;
   color: var(--dim);
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
 }
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-micro);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);
@@ -744,7 +768,7 @@ h1 {
 
 .rail__dow {
   display: block;
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -754,7 +778,7 @@ h1 {
 .rail__num {
   display: block;
   font-family: var(--mono);
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -785,7 +809,8 @@ h1 {
   top: 0.3rem;
   left: 0.35rem;
   font-family: var(--mono);
-  font-size: 0.55rem;
+  /* Below the ladder on purpose: a corner marker, not a label anybody reads. */
+  font-size: 0.62rem;
   letter-spacing: 0.08em;
   color: var(--accent);
   opacity: 0.75;
@@ -845,10 +870,13 @@ h1 {
   box-shadow: var(--shadow);
 }
 
+/* Tall enough for body-size text plus its padding and border, which 2.2rem no
+   longer was once the scale came up -- a fixed height shorter than its content
+   clips the descenders rather than growing. */
 .filters input,
 .filters select,
 .filters .btn {
-  height: 2.2rem;
+  height: 2.5rem;
 }
 
 .field {
@@ -860,7 +888,7 @@ h1 {
 .field > span,
 .label {
   display: block;
-  font-size: 0.66rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -890,7 +918,7 @@ textarea:focus {
 
 textarea {
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: var(--fs-body-sm);
 }
 
 .seg {
@@ -903,7 +931,7 @@ textarea {
 
 .seg a {
   padding: 0.4rem 0.75rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--dim);
   text-decoration: none;
@@ -923,7 +951,7 @@ textarea {
 
 .btn {
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   padding: 0.32rem 0.7rem;
   border-radius: var(--r-sm);
@@ -1020,7 +1048,7 @@ details[open] > summary.btn {
 }
 
 .day__name {
-  font-size: 0.74rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1028,7 +1056,7 @@ details[open] > summary.btn {
 
 .day__count {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1077,7 +1105,7 @@ details[open] > summary.btn {
 
 .run__time {
   font-family: var(--mono);
-  font-size: 1.42rem;
+  font-size: 1.55rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -1087,7 +1115,7 @@ details[open] > summary.btn {
 /* "own time" is words, not a clock reading, so it drops out of the big
    tabular-figure treatment rather than wrapping inside it. */
 .run--otot .run__time {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0;
   padding-top: 0.35rem;
@@ -1096,7 +1124,7 @@ details[open] > summary.btn {
 .run__time small {
   display: block;
   font-family: var(--body);
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1110,7 +1138,7 @@ details[open] > summary.btn {
 
 .run__bosses {
   font-family: var(--display);
-  font-size: 1rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   margin: 0 0 0.3rem;
 }
@@ -1120,7 +1148,7 @@ details[open] > summary.btn {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-body-sm);
   color: var(--dim);
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1131,7 +1159,7 @@ details[open] > summary.btn {
    after a <strong> starts a new item and its punctuation ends up orphaned --
    which is exactly what `.run__meta` on a <p> used to do. */
 .note {
-  font-size: 0.78rem;
+  font-size: var(--fs-body-sm);
   color: var(--dim);
   overflow-wrap: anywhere;
   max-width: 68ch;
@@ -1170,7 +1198,7 @@ details[open] > summary.btn {
 }
 
 .statusbar__label {
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1178,7 +1206,7 @@ details[open] > summary.btn {
 }
 
 .statusbar__note {
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   color: var(--risk);
 }
 
@@ -1201,12 +1229,12 @@ details[open] > summary.btn {
   gap: 0.3rem 0.55rem;
   margin-top: 0.45rem;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
 }
 
 .run__cards-label {
   font-family: var(--body);
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1237,7 +1265,7 @@ details[open] > summary.btn {
 }
 
 .cardlink__out {
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   opacity: 0.75;
 }
 
@@ -1266,7 +1294,7 @@ details[open] > summary.btn {
 }
 
 .answers__summary {
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   padding: 0.18rem 0.5rem;
   min-height: 0;
 }
@@ -1278,7 +1306,7 @@ details[open] > summary.btn {
 }
 
 .answers__hint {
-  font-size: 0.7rem;
+  font-size: var(--fs-small);
   color: var(--dim);
   margin: 0;
 }
@@ -1292,19 +1320,19 @@ details[open] > summary.btn {
 
 .answers__who {
   flex: 1 1 8rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .seg--answer .seg__btn {
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   padding: 0.22rem 0.55rem;
   min-height: 30px;
 }
 
 .seg__btn {
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   padding: 0.34rem 0.7rem;
   min-height: 34px;
@@ -1343,7 +1371,7 @@ details[open] > summary.btn {
 
 .chanmark__btn {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
   padding: 0.1rem 0.25rem;
   border: 0;
@@ -1371,7 +1399,7 @@ details[open] > summary.btn {
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
@@ -1389,7 +1417,7 @@ details[open] > summary.btn {
 
 .chip__x {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
   padding: 0 0.1rem;
   margin-left: 0.1rem;
@@ -1404,7 +1432,7 @@ details[open] > summary.btn {
 }
 
 .chip__add {
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   padding: 0.1rem 0.35rem;
   border-radius: 999px;
   border: 2px dashed var(--line);
@@ -1441,7 +1469,7 @@ details[open] > summary.btn {
    from the red one, and a filled dot beside a hollow one is legible at arm's
    length in a way two similar words are not. */
 .chip__mark {
-  font-size: 0.62rem;
+  font-size: var(--fs-micro);
   line-height: 1;
   opacity: 0.9;
 }
@@ -1465,7 +1493,7 @@ details[open] > summary.btn {
 }
 
 .status {
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1524,16 +1552,17 @@ details[open] > summary.btn {
   overflow: hidden;
 }
 
+/* Both monograms are fitted to their square, not to the ladder. */
 .portrait--sm {
   width: 26px;
   height: 26px;
-  font-size: 0.6rem;
+  font-size: 0.66rem;
 }
 
 .portrait--md {
   width: 38px;
   height: 38px;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 
 /* The hue is the boss's, set on the element; only how light it is belongs to
@@ -1552,7 +1581,7 @@ details[open] > summary.btn {
 
 .boss__lv {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1561,7 +1590,7 @@ details[open] > summary.btn {
   display: inline-block;
   padding: 0.05rem 0.42rem 0.09rem;
   border-radius: 999px;
-  font-size: 0.6rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.09em;
   line-height: 1.5;
@@ -1630,7 +1659,7 @@ details[open] > summary.btn {
 .bossrow__lv {
   display: block;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1652,7 +1681,7 @@ details[open] > summary.btn {
   border: 2px solid var(--line);
   background: transparent;
   color: var(--dim);
-  font-size: 0.64rem;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.09em;
   cursor: pointer;
@@ -1723,7 +1752,7 @@ details[open] > summary.btn {
 
 .id {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
 }
 
@@ -1760,7 +1789,7 @@ details[open] > summary.btn {
 
 .card__title {
   font-family: var(--display);
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   margin: 0;
 }
@@ -1815,7 +1844,7 @@ details[open] > summary.btn {
 
 .stat__name {
   margin: 0;
-  font-size: 0.64rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -1828,14 +1857,14 @@ details[open] > summary.btn {
   text-transform: none;
   letter-spacing: 0;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   color: var(--dim);
 }
 
 .stat__big {
   margin: 0.15rem 0 0.6rem;
   font-family: var(--mono);
-  font-size: 1.6rem;
+  font-size: 1.75rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -1845,7 +1874,7 @@ details[open] > summary.btn {
 .stat__unit {
   display: block;
   font-family: var(--body);
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   font-weight: 400;
   letter-spacing: 0;
   color: var(--dim);
@@ -1855,7 +1884,7 @@ details[open] > summary.btn {
   margin: 0;
   display: grid;
   gap: 0.2rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-body-sm);
 }
 
 .stat__rows > div {
@@ -1892,12 +1921,12 @@ details[open] > summary.btn {
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
 }
 
 th {
   text-align: left;
-  font-size: 0.64rem;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -1934,14 +1963,14 @@ tbody tr:hover {
   display: block;
   font-family: var(--display);
   color: var(--ink);
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
   margin-bottom: 0.3rem;
 }
 
 .flash {
   border-radius: var(--r-sm);
   padding: 0.55rem 0.8rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   margin: 0.6rem 0;
   border: 2px solid;
 }
@@ -1961,7 +1990,7 @@ tbody tr:hover {
 
 pre {
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--fs-small);
   line-height: 1.55;
   background: var(--raise);
   border: 2px solid var(--line);
@@ -1995,7 +2024,7 @@ pre {
   border: 2px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  font-size: 0.78rem;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--dim);
   cursor: pointer;
@@ -2073,7 +2102,7 @@ details fieldset {
 }
 
 .evidence__line {
-  font-size: 0.82rem;
+  font-size: var(--fs-body-sm);
 }
 
 .evidence__who {
@@ -2082,7 +2111,7 @@ details fieldset {
 
 .evidence__at {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-mini);
   color: var(--faint);
   margin-left: 0.4rem;
 }
@@ -2093,7 +2122,7 @@ details fieldset {
 
 .conf {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-small);
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
   border: 2px solid;
@@ -2141,7 +2170,7 @@ details fieldset {
 
 .gate__bar-title {
   font-family: var(--display);
-  font-size: 0.88rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
 }
 
@@ -2166,7 +2195,7 @@ details fieldset {
   height: 64px;
   margin-top: -32px;
   border-radius: 16px;
-  font-size: 1.6rem;
+  font-size: 1.75rem;
   box-shadow: 0 0 0 3px var(--surface);
 }
 
@@ -2180,13 +2209,13 @@ details fieldset {
 
 .gate__sub {
   margin: 0 0 1rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-body-sm);
   color: var(--dim);
 }
 
 .gate__body p {
   color: var(--dim);
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   margin-top: 0;
 }
 
@@ -2205,10 +2234,11 @@ details fieldset {
   margin-top: 0.7rem;
 }
 
-/* The footnote is on the ground too, and it is the smallest type on the page. */
+/* The footnote is on the ground too, and it is the quietest prose on the page --
+   quiet by size and colour, not so quiet it needs looking for. */
 .footnote {
   color: var(--dim);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   margin-top: 2.5rem;
   padding: 0.6rem 0.9rem;
   background: var(--surface);
@@ -2282,7 +2312,7 @@ details fieldset {
     cursor: pointer;
     user-select: none;
     padding: 0.42rem 0.7rem 0.5rem;
-    font-size: 0.95rem;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--dim);
   }
@@ -2320,7 +2350,7 @@ details fieldset {
   }
 
   .run__time {
-    font-size: 1.15rem;
+    font-size: 1.25rem;
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -2329,7 +2359,7 @@ details fieldset {
   /* "own time" is words, not a clock reading, so it drops out of the big
      tabular-figure treatment rather than wrapping inside it. */
   .run--otot .run__time {
-    font-size: 0.95rem;
+    font-size: 1.05rem;
     font-weight: 600;
     letter-spacing: 0;
     padding-top: 0.35rem;
@@ -2349,7 +2379,7 @@ details fieldset {
   }
 
   .rail__num {
-    font-size: 1.05rem;
+    font-size: 1.15rem;
   }
 
   .rail__reset {
@@ -2431,7 +2461,7 @@ dialog.modal:target {
 .modal__title {
   margin: 0;
   font-family: var(--display);
-  font-size: 0.92rem;
+  font-size: var(--fs-lg);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -2439,7 +2469,7 @@ dialog.modal:target {
 .modal__x {
   flex: none;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-body-sm);
   line-height: 1;
   padding: 0.3rem 0.5rem;
   border: 2px solid transparent;
