@@ -2,6 +2,69 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 2.1.0
+
+**Added**
+
+- **Capacity controls** for the one 13 GB model the host has. A shared model
+  lock (`bot/modellock.py`) serialises the chatbot, the extractor and rescans;
+  staff questions queue for the model while everybody else is turned away with
+  💬 after a short wait (`CHAT_PILOT_LOCK_WAIT_S`). A guild-wide answer budget
+  (`CHAT_PILOT_GLOBAL_RATE_*`) sits on top of the per-person window, so handing
+  out the pilot role more widely cannot monopolise the machine.
+- Rate-limit refusals now say when to come back — ⏳ plus one canned sentence
+  per episode with the wait in it, never a model call. Per-member windows can
+  be cleared from the portal, `DELETE /api/limits/windows/{id}` and
+  `bossctl limits reset`, all audited.
+- **Custom rate limits**: the four capacity numbers are runtime config like
+  `chat_mode` — seeded from `.env`, edited from the portal and `bossctl`
+  without a restart — and members can be granted their own allowance
+  (schema v8), applied live and quoted in their own refusal notice.
+- **A Limits page** in the portal and `GET /api/limits`: who has the model and
+  for how long, both budgets as used-of-total, open per-member windows with
+  reset and override controls, everyone holding the pilot role (staff marked
+  exempt), and the rescan queue — updated by server-sent events
+  (`bot/events.py`, `GET /limits/events`) the moment something changes, with a
+  slow visibility-aware poll and a plain Refresh link as fallbacks.
+  `bossctl limits` prints the same view.
+- **`/limits`** slash command: your own allowance as a progress bar, ephemeral,
+  with when a spent answer comes back; staff get one line and no numbers.
+  Reading it never spends anything.
+- **`propose_change_fixed`**: the chatbot can change an existing weekly timing
+  in place — its night, its party, or both — through the usual ✅/❌ card.
+  Same row, same run ids, RSVPs kept; several matching weeklies refuse with a
+  candidate list rather than guessing, and `propose_move`/`propose_add` steer
+  the recurring case here instead of minting duplicates.
+- **Chat memory**: remembered turns age out per turn
+  (`CHAT_PILOT_HISTORY_TTL_S`, 45 min default) so a stale topic cannot claim
+  "move it to 22:00" an hour later; the prompt names the last card posted in
+  the channel, party included; and replying to an old bot answer re-anchors
+  that exchange into context past the TTL.
+
+**Changed**
+
+- Creating a weekly timing whose week already holds the matching one-off run
+  now **adopts** it — same id, answers and reminders kept, retimed to the
+  weekly slot — instead of materialising a duplicate beside it. Through every
+  door: the card, `/fixed add` and the portal.
+- Tool steering closes three live failures: "this is fixed" on a new run maps
+  to the weekly flag, "for me" puts the asker on the run, and asking to change
+  a weekly that does not exist explains the conversion instead of offering
+  other bosses' timings.
+- Portal cards for all `fix` variants finally read alike — "change weekly ·
+  every Wed 23:30" instead of "new weekly · TBD" — in the inbox and the chat
+  interaction trace.
+
+**Fixed**
+
+- Chat generations in two channels could overlap each other and an extraction
+  inside Ollama, timing everything out at once while the host did all the
+  work; everything now queues for the same lock.
+- `resolve_fixed` no longer matches a query's weekday against other bosses'
+  weeklies when the boss it names has none.
+- The Limits page no longer rebuilds its poll timer on every refresh or wipes
+  a half-typed form; forms live outside the refreshed region.
+
 ## 2.0.0
 
 **Added**
