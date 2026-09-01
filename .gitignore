@@ -29,3 +29,9 @@ persona-*.md
 
 # The design spec is kept locally rather than published.
 DESIGN.md
+
+# The live Caddyfile names the personal domain; only the template is tracked,
+# same pattern as .env.example and persona.example.md. The token it needs
+# lives in .env.caddy, already covered by `.env.*` above.
+caddy/Caddyfile
+!caddy/Caddyfile.example
