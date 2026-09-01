@@ -21,7 +21,26 @@ config/portraits/Jupiter.png    Jupiter
 `.png`, `.webp`, `.jpg` and `.jpeg` all work, tried in that order. One image per
 boss, shared by every difficulty — the difficulty is shown as a pill next to it.
 
-To use a different filename, name it in `bosses.yaml`:
+## Two sizes
+
+`config/portraits/icon/Star.png` is the **small render** — the 64×64 files the
+portal drew before the pictures above became full-size art. Everything the
+portal draws is a badge (26px beside a boss's name, 38px in the boss grid), so
+it asks for these; the full picture is what the bot attaches to a card in
+Discord, and what `/static/portraits/<key>` still serves without `?size=icon`.
+
+```
+config/portraits/Star.png       the full picture — Discord's card thumbnail
+config/portraits/icon/Star.png  the badge the portal draws
+```
+
+A missing icon falls back to the full picture, so a boss added today looks right
+before anybody has cropped one — and an `icon/` directory that does not exist at
+all, which is what a fresh clone has, simply means every badge draws the full
+file. Filename-by-boss-key only in here: the `portrait:` override below names
+the full picture and has no counterpart for the small one.
+
+To use a different filename for the full picture, name it in `bosses.yaml`:
 
 ```yaml
   Star:

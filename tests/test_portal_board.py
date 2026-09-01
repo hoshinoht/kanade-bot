@@ -30,6 +30,17 @@ def card_for(body: str, short_id: str) -> str:
     return body[start : body.index("</article>", start)]
 
 
+def board_card_of(body: str, short_id: str) -> str:
+    """The same run's compact card off the board.
+
+    Cut to the board first: the now strip's "what's next" tile opens the same
+    sheet with the same `data-dialog`, further up the page.
+    """
+    board = board_of(body)
+    start = board.rindex('<a class="runcard', 0, board.index(f'data-dialog="sheet-{short_id}"'))
+    return board[start : board.index("</a>", start)]
+
+
 # --- the shape of the week --------------------------------------------------
 
 
@@ -117,24 +128,29 @@ def test_a_busy_day_packs_its_runs_across_as_well_as_down():
 
 
 def test_a_difficulty_pill_never_falls_off_a_card_or_away_from_its_name():
-    """Two faults on the same card, measured a fortnight apart.
+    """Three faults on the same card, and the third is what settled it.
 
     At 153px columns EXTREME's right edge overflowed by 21px and was clipped,
     because a boss is a name and a pill in one inline-flex box that does not
     wrap. Letting the box wrap fixed that and bought a worse one: at 230px a
     two-boss card read "Carling NORMAL", then "Radiant Malefic Star" with its
     own pill orphaned on the line below, looking like it belonged to neither.
+    Taking the wrap away again moved the break inside the name instead, which
+    left "Radiant Malefic" over "Star NORMAL".
 
     The difficulty is half of what a boss's name means -- which Carling this
-    is -- so the box does not break at all now. What breaks is the row between
-    two bosses, and inside one it is the name that gives.
+    is -- so none of those were survivable. What settled it was writing the
+    canonical token rather than the in-game name: `NCarling` and a pill fit on
+    one line with room over, so nothing in here has to break anywhere.
     """
     rule = PAGE_CSS[PAGE_CSS.index(".runcard__bosses .boss {") :]
     rule = rule[: rule.index("}")]
 
-    assert "flex-wrap: nowrap" in rule
-    assert "min-width: 0" in rule  # the name shrinks and wraps instead
-    assert "max-width: 100%" in rule  # ...and still never past the card's edge
+    assert "flex-wrap: nowrap" in rule  # the pill never drops below the token
+    assert "min-width: 0" in rule  # the box may shrink...
+    assert "max-width: 100%" in rule  # ...and never reach past the card's edge
+    # And nothing re-enables breaking inside the token, which `.boss` forbids.
+    assert "white-space" not in rule
 
     # One boss to a line, so a break can only fall between two of them.
     stack = PAGE_CSS[PAGE_CSS.index("  .runcard__bosses {") :]
@@ -143,6 +159,47 @@ def test_a_difficulty_pill_never_falls_off_a_card_or_away_from_its_name():
     # And the pill keeps its own width, so it is never squeezed instead.
     pill = PAGE_CSS[PAGE_CSS.index(".runcard__bosses .pill {") :]
     assert "flex: none" in pill[: pill.index("}")]
+
+
+def test_a_compact_card_names_a_boss_by_its_token(auth, seeded):
+    """The vocabulary the rail pips and the extractor already speak, on the one
+    surface too narrow for "Radiant Malefic Star" and a difficulty pill.
+
+    The seed's longest name is the one that forced this, so it is the one to
+    check: the card says `HStar`, and the pill beside it still says HARD --
+    redundant with the prefix letter and kept anyway, because the pill is the
+    colour a reader learns the tier by.
+    """
+    card = board_card_of(auth.get("/").text, service.short_id(seeded["run_star"]))
+
+    assert ">HStar<" in card
+    assert ">HFA<" in card
+    assert '<span class="pill pill--h">HARD</span>' in card
+
+
+def test_the_full_name_is_still_there_for_anyone_who_needs_it(auth, seeded):
+    """A token is an abbreviation, so the thing it abbreviates has to be within
+    reach: on the card's own tooltip, on each boss's, and read out in place of
+    the token rather than beside it."""
+    body = auth.get("/").text
+    card = board_card_of(body, service.short_id(seeded["run_star"]))
+
+    # The card's tooltip names the bosses in full, where it used to list tokens.
+    assert "Radiant Malefic Star + The First Adversary" in card
+    assert 'title="Radiant Malefic Star (Hard, Lv280)"' in card
+    # The token is hidden from the reader who is being read to, and the name is
+    # given instead -- not both, which would be "H-Star Radiant Malefic Star".
+    assert '<span class="boss__name" aria-hidden="true">HStar</span>' in card
+    assert '<span class="vh">Radiant Malefic Star</span>' in card
+
+
+def test_only_the_compact_cards_are_abbreviated(auth, seeded):
+    """The sheet, which is also the phone list, has room for the real name --
+    written plainly, not hidden behind an abbreviation of itself."""
+    card = card_for(auth.get("/").text, service.short_id(seeded["run_star"]))
+
+    assert '<span class="boss__name">Radiant Malefic Star</span>' in card
+    assert '<span class="vh">Radiant Malefic Star</span>' not in card
 
 
 def test_a_column_with_more_below_the_fold_says_so():
@@ -174,17 +231,19 @@ def test_today_is_marked(fake_bot, seeded):
 
 
 def test_the_board_carries_the_runs_the_page_is_showing(auth, seeded):
+    """By token, which is what a compact card writes; the full names ride along
+    in the tooltips, so it is the tokens that say what is actually on show."""
     board = board_of(auth.get("/").text)
-    assert "Radiant Malefic Star" in board
-    assert "Gatekeeper Kalos" in board
+    assert ">HStar<" in board
+    assert ">XKalos<" in board
 
 
 def test_the_board_narrows_with_the_filter_bar(auth, seeded):
     """It is built from the same filtered runs as the list, not queried again."""
     board = board_of(auth.get(f"/?channel={OTHER_CHANNEL}").text)
 
-    assert "Gatekeeper Kalos" in board
-    assert "Radiant Malefic Star" not in board
+    assert "XKalos" in board
+    assert "Radiant Malefic Star" not in board  # neither its token nor its name
 
 
 def test_the_rail_still_shows_the_whole_week_when_the_board_is_filtered(auth, seeded):
@@ -335,6 +394,9 @@ def test_the_boards_cards_keep_their_compact_bosses(auth, seeded):
     assert "bosslist" not in board
     assert 'class="runcard__bosses"' in board
     assert board.count('<span class="boss"') == 3  # HStar + HFA, and XKalos
+    # ...and each of the three is written as a token rather than an in-game name.
+    for token in (">HStar<", ">HFA<", ">XKalos<"):
+        assert token in board, token
 
 
 # --- the phone keeps what it had --------------------------------------------
@@ -376,9 +438,9 @@ def test_the_past_toggle_still_works_on_both(auth, fake_bot, seeded):
     shown = auth.get("/?show_past=1").text
 
     assert "1 past or cancelled run hidden" in hidden
-    assert "Radiant Malefic Star" not in board_of(hidden)
+    assert "HStar" not in board_of(hidden)
     # Shown, it is greyed in its column rather than moved somewhere else.
-    assert "Radiant Malefic Star" in board_of(shown)
+    assert "HStar" in board_of(shown)
     assert "runcard--done" in board_of(shown)
 
 

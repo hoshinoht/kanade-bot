@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
@@ -576,21 +576,47 @@ async def audit_page(
 
 
 @router.get("/static/portraits/{short}")
-async def portrait(request: Request, bot: Bot, short: str) -> Response:
+async def portrait(
+    request: Request, bot: Bot, short: str, size: Literal["full", "icon"] = "full"
+) -> Response:
     """A boss portrait, straight off the bind-mounted config directory.
 
     Deliberately unauthenticated, like the stylesheet: it is a picture of a
     game boss, and gating it would mean the browser could not cache it. The
     filename never comes from the URL -- ``short`` is looked up in the boss
-    table -- so this cannot be walked out of ``config/portraits``.
+    table, and ``size`` is one of two words FastAPI has already refused
+    anything else for -- so this cannot be walked out of ``config/portraits``.
+
+    ``?size=icon`` is the small render. A query rather than a second route
+    because it is one picture at two sizes, and rather than a header because a
+    different URL is a different entry in the browser's cache: the 26px badge
+    and the full picture can never end up sharing whichever was fetched first.
     """
-    path = bot.bosses.portrait_path(short)
+    path = bot.bosses.portrait_path(short, size)
     if path is None:
         raise NotFound(f"no portrait for {short}")
     return FileResponse(
         path,
         # Long-lived but revalidated: a replaced file should show up on a
         # reload, not in a week.
+        headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
+    )
+
+
+@router.get("/static/entry/{short}")
+async def entry_art(request: Request, bot: Bot, short: str) -> Response:
+    """A boss's entry artwork -- the banner the Week page's run cards wear.
+
+    Unauthenticated and cached for the same reasons the portrait above is, and
+    unwalkable for the same one: ``short`` is looked up in the boss table, so
+    the name on disk never comes from the URL. Bigger than a portrait, which is
+    exactly why the browser has to be allowed to keep it.
+    """
+    path = bot.bosses.entry_art_path(short)
+    if path is None:
+        raise NotFound(f"no entry artwork for {short}")
+    return FileResponse(
+        path,
         headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
     )
 

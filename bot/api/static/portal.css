@@ -94,6 +94,24 @@
   --mono-line-s: 35%;
   --mono-line-l: 78%;
 
+  /* ── the entry-art veil: the numbers screenshots move ─────────────────────
+   *
+   * How much of a boss's entry artwork comes through behind its run card, and
+   * where in the picture each surface's crop window starts. Numbers rather than
+   * colours, like the monogram's above, and here rather than typed into the
+   * rules that use them, because tuning this is "try 0.3, try 0.45" against a
+   * screenshot. The mask shapes are the other knob and live with their rules,
+   * one gradient each.
+   *
+   * The crops are a dodge, not a taste: most of these splashes bake the boss's
+   * name plate into the top of the frame, so a window opening at the top of the
+   * picture shows a caption. Two of them because the two surfaces show windows
+   * of very different proportions -- the compact card's is the taller slice, so
+   * it has to start further down to clear the same band. */
+  --art-veil: 0.38;
+  --art-crop-sheet: 30%;
+  --art-crop-card: 60%;
+
   --display: "Solway", "Palatino Linotype", Palatino, Georgia, serif;
   --body: "Zilla Slab", Georgia, "Times New Roman", serif;
   --mono: "Sometype Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
@@ -1101,6 +1119,11 @@ details[open] > summary.btn {
   border-radius: var(--r);
   padding: 0.8rem 0.9rem;
   box-shadow: var(--shadow);
+  /* Both for the entry-art veil below: something for it to be absolute
+     against, and a stacking context of the card's own, without which its
+     negative layer would sink behind this background and vanish. */
+  position: relative;
+  isolation: isolate;
 }
 
 .run--planned {
@@ -1119,6 +1142,90 @@ details[open] > summary.btn {
 .run--done {
   border-left-color: var(--faint);
   opacity: 0.62;
+}
+
+/* ── the entry art, as a veil behind a run ──────────────────────────────────
+ *
+ * The splash MapleStory shows behind a boss's entry prompt, laid inside the
+ * card *behind its text*: cropped to the right of the frame, faded to a wash,
+ * and masked away before it reaches anything anybody has to read. Not a banner
+ * -- a banner is height, and a run card's height is the one thing the board
+ * cannot spend. Like the difficulty pills it is the game's picture rather than
+ * ours, so no colourway tints it.
+ *
+ * One base rule for both surfaces, because they are the same treatment at two
+ * sizes: the board's compact `.runcard` and the run card itself, which is also
+ * the run sheet's body and the whole of the phone list. `border-radius:
+ * inherit` is what lets one rule serve all three -- each card tells the veil
+ * its own corners, including the square top the sheet's title bar gives the
+ * card underneath it, and the rounded one a phone gives it back. What the
+ * variants below change is the crop window and the shape of the mask.
+ *
+ * `z-index: -1` inside a card that isolates: above the card's own surface,
+ * below every word on it. Both cards say `isolation: isolate` for exactly that
+ * reason; without a stacking context of their own the layer would sink behind
+ * the cream instead.
+ *
+ * Absent means absent: a run with no artwork leaves `run.entry_art` empty and
+ * no element is written, so the card is the card it was before this existed.
+ * Which is every card on a fresh clone, the artwork being git-ignored. */
+.run__art,
+.runcard__art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* An absolutely positioned <img> takes its own intrinsic size unless it is
+     told otherwise, so `inset` alone would leave it 778px wide. */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  opacity: var(--art-veil);
+  /* TUNING KNOB -- one boss, so nothing to share the edge with: the full-height
+     side vignette, opaque down the right and gone before the clock and the
+     party. Also the fallback shape, declared here rather than on a `--solo`
+     class so the property is never unset: `mask-image: var(--art-mask)` with
+     nothing behind it computes to no mask at all, which would lay the wash flat
+     across every word on the card -- the one thing this must never do.
+     The colour in a mask gradient is not paint, only its alpha is read, which
+     is why these are the one place on the page that names black without
+     meaning it. And the prefixed line is not politeness, for the same reason
+     the fallback is not: an older engine gets the shape rather than none. */
+  --art-mask: linear-gradient(to left, #000 12%, transparent 68%);
+  -webkit-mask-image: var(--art-mask);
+  mask-image: var(--art-mask);
+  /* It is scenery. The card behind it is a link on the board and a form
+     everywhere else. */
+  pointer-events: none;
+}
+
+/* Where each surface's crop window opens. Apart because the two windows are
+   very different slices of the same picture -- see `--art-crop-*` on `:root`,
+   which is also where the reason lives. */
+.run__art {
+  object-position: right var(--art-crop-sheet);
+}
+
+.runcard__art {
+  object-position: right var(--art-crop-card);
+}
+
+/* Two bosses, a corner each, meeting in a soft seam down the right edge. The
+   lead takes the top corner and the second the bottom, which is the order they
+   are named in and the order they are written in.
+
+   TUNING KNOB -- the lead's wedge, and the compact card's whole backdrop, which
+   is the same shape at a smaller size. Its fade is the longer of the two
+   because on the sheet the chrome title bar sits over most of the corner it
+   starts in. */
+.runcard__art,
+.run__art--lead {
+  --art-mask: linear-gradient(205deg, #000 12%, transparent 46%);
+}
+
+/* TUNING KNOB -- the second boss's wedge. Shorter, because nothing covers it. */
+.run__art--second {
+  --art-mask: linear-gradient(335deg, #000 5%, transparent 32%);
 }
 
 .run__time {
@@ -2487,16 +2594,24 @@ a.now__tile:hover {
     gap: 0.15rem;
     min-width: 0;
     padding: 0.4rem 0.5rem;
-    background: var(--surface);
+    /* The face this card is wearing, named once so the hover lift is a change
+       to one value rather than to every declaration painted from it. */
+    --card-face: var(--surface);
+    background: var(--card-face);
     border: 2px solid var(--line);
     border-left: 5px solid var(--off);
     border-radius: var(--r-sm);
     color: inherit;
     text-decoration: none;
+    /* As on `.run`: somewhere for the entry-art veil to be absolute against,
+       and a stacking context so its negative layer lands above this background
+       instead of behind it. */
+    position: relative;
+    isolation: isolate;
   }
 
   .runcard:hover {
-    background: var(--raise);
+    --card-face: var(--raise);
     border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   }
 
@@ -2518,6 +2633,10 @@ a.now__tile:hover {
     opacity: 0.55;
   }
 
+  /* The compact card's entry-art veil is the run card's, declared once beside
+     `.run__art` -- same treatment, and `border-radius: inherit` takes care of
+     the one thing that differs. */
+
   .runcard__time {
     font-size: var(--fs-lg);
     font-weight: 600;
@@ -2530,7 +2649,10 @@ a.now__tile:hover {
      And one boss to a line: two of them sharing a row could only ever break in
      the middle of one, because at 230px "Carling NORMAL" and "Radiant Malefic
      Star NORMAL" do not fit together. So the row that breaks is the one
-     *between* bosses, which is the same shape the full run card takes. */
+     *between* bosses, which is the same shape the full run card takes. The
+     names are tokens now and two would very often fit, but a column is still
+     the honest shape: two bosses are two facts, and the widest pair should not
+     be the one that decides where they go. */
   .runcard__bosses {
     display: flex;
     flex-direction: column;
@@ -2542,15 +2664,18 @@ a.now__tile:hover {
 
   /* A boss is a name and a difficulty, and the difficulty is half of what the
      name means -- which Carling this is. So the box never breaks inside itself.
-     It used to: `flex-wrap: wrap` here stopped EXTREME being clipped by the
-     scroll container (21px of it, measured at 153px columns) but bought that by
-     letting the pill drop to a line of its own, under a name it then looked
-     unrelated to. Nothing wraps now; the *name* is what gives, breaking across
-     lines with the pill held beside it, and the pill keeps its own width so it
-     can neither be squeezed nor pushed off the card. */
+     Twice it did, and each fix bought the next fault: `flex-wrap: wrap` stopped
+     EXTREME being clipped by the scroll container (21px of it, measured at
+     153px columns) by letting the pill drop to a line of its own, under a name
+     it then looked unrelated to; taking that away moved the break into the
+     name, which left "Radiant Malefic" over "Star NORMAL".
+     What settled it was making the name short. The card writes the canonical
+     token -- `NCarling`, `XKalos` -- so a boss is eight characters and a pill,
+     which fits on one line at a column's width with room over. Nothing wraps
+     anywhere in here now: not the row, not the token, and the pill keeps its
+     own width so it can be neither squeezed nor pushed off the card. */
   .runcard__bosses .boss {
     flex-wrap: nowrap;
-    white-space: normal;
     min-width: 0;
     max-width: 100%;
   }
@@ -2559,9 +2684,10 @@ a.now__tile:hover {
     flex: none;
   }
 
+  /* Still allowed to shrink -- a narrow column may need the token to give up a
+     few pixels -- but never to break, which `.boss` above now inherits. */
   .runcard__bosses .boss__name {
     min-width: 0;
-    overflow-wrap: anywhere;
   }
 
   .runcard__bosses .boss + .boss {
@@ -2745,7 +2871,10 @@ dialog.runsheet[open] {
 
 /* One window rather than a card inside a frame: under the bar the run gives up
    its top edge and its top corners. The left stripe stays -- that colour is the
-   run's status, not decoration. */
+   run's status, not decoration. The entry-art veil follows without a rule of
+   its own, because it inherits whatever corners the card is currently wearing;
+   and it stays under the bar without one either, the bar being the only thing
+   in this panel with a `z-index`. */
 .runsheet__panel > .run {
   border-top: 0;
   border-radius: 0 0 var(--r) var(--r);

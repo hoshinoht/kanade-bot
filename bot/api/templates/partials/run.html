@@ -8,6 +8,25 @@
 {% set answer_marks = {"yes": "●", "no": "✕", "maybe": "?", "waiting": "○"} %}
 {% set answer_words = {"yes": "on", "no": "out", "maybe": "maybe", "waiting": "no answer yet"} %}
 <article class="run run--{{ run.status }}" id="run-{{ run.short_id }}" style="animation-delay: {{ (index|default(0)) * 24 }}ms">
+  {% if run.entry_art %}
+  {# The bosses' own entry screens, laid behind the card as a veil rather than
+     above it as a band: they cost the card no height, which is the one thing
+     the board cannot spend. First children so they are behind everything in
+     source order too, and inside the article on purpose -- every action here
+     swaps `closest .run` whole, so anything outside would be dropped on the
+     first button pressed. Decorative: both bosses are named, in full, on top.
+
+     One boss gets the side vignette, which is what the bare class draws. Two
+     get a corner each -- the lead from the top right, the second from the
+     bottom right, meeting on the right edge -- and *which* is a fact about how
+     many there are, so the server says it in the class rather than leaving the
+     stylesheet to count. #}
+  {% set split = run.entry_art|length > 1 %}
+  {% for art in run.entry_art %}
+  <img class="run__art{% if split %} run__art--{{ 'lead' if loop.first else 'second' }}{% endif %}"
+       src="{{ art }}" alt="" loading="lazy" decoding="async">
+  {% endfor %}
+  {% endif %}
   <div class="run__time">
     {% if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif %}
     <small>{{ run.local_day }}</small>

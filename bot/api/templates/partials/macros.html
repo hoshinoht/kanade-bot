@@ -15,17 +15,29 @@
 <span class="pill pill--{{ (letter or '')|lower }}">{{ label }}</span>
 {%- endmacro %}
 
-{% macro boss_line(boss, level=True) %}
-{#- One boss the way the in-game list reads it: name, difficulty, level. -#}
+{% macro boss_line(boss, level=True, short=False) %}
+{#- One boss the way the in-game list reads it: name, difficulty, level.
+
+    `short` writes the canonical token instead -- `NCarling`, `HFA`, `XKalos`,
+    the difficulty letter and the boss key, which is the vocabulary the rail
+    pips and the extractor already speak. For the board's compact cards, where
+    "Radiant Malefic Star" and its pill do not fit on one line at a column's
+    width. It is an abbreviation of the name beside it, so the name is still
+    what a screen reader is given and still what the tooltip says. -#}
 <span class="boss" title="{{ boss.label }}">
   {{ portrait(boss) }}
+  {%- if short %}
+  <span class="boss__name" aria-hidden="true">{{ boss.token }}</span>
+  <span class="vh">{{ boss.full }}</span>
+  {%- else %}
   <span class="boss__name">{{ boss.full }}</span>
+  {%- endif %}
   {{ difficulty_pill(boss.letter, boss.difficulty) }}
   {%- if level and boss.level %} <span class="boss__lv">Lv. {{ boss.level }}</span>{% endif %}
 </span>
 {%- endmacro %}
 
-{% macro boss_list(detail, level=True, stacked=False) %}
+{% macro boss_list(detail, level=True, stacked=False, short=False) %}
 {#- Several bosses, two ways. Inline is the default, and what a compact card
     wants -- the board's columns have no room for anything else. Stacked is one
     boss per line, for the surfaces wide enough to read a whole in-game name:
@@ -35,11 +47,11 @@
 {% if stacked and detail|length > 1 %}
 <ul class="bosslist">
 {% for boss in detail %}
-  <li>{{ boss_line(boss, level) }}</li>
+  <li>{{ boss_line(boss, level, short) }}</li>
 {% endfor %}
 </ul>
 {% else %}
-{% for boss in detail %}{{ boss_line(boss, level) }}{% endfor %}
+{% for boss in detail %}{{ boss_line(boss, level, short) }}{% endfor %}
 {% endif %}
 {%- endmacro %}
 
