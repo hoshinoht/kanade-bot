@@ -24,8 +24,8 @@
  * face. Both choices are the browser's own: `templates/partials/theme_boot.html`
  * stamps `data-colorway` and `data-theme` on <html> from localStorage before the
  * first paint, and a page with neither attribute -- nothing stored, or no
- * JavaScript -- wears otonose and lets `prefers-color-scheme` decide the hour.
- * Which is why otonose lives on `:root` rather than in a block of its own.
+ * JavaScript -- wears marigold and lets `prefers-color-scheme` decide the hour.
+ * Which is why marigold lives on `:root` rather than in a block of its own.
  *
  * Light values live on `:root` and on the `[data-colorway]` blocks; the dark
  * ones only override inside the one media query, so no component's colour is
@@ -36,7 +36,7 @@
 :root {
   color-scheme: light dark;
 
-  /* ── otonose, the default: gold ground, ink-blue accent ──────────────── */
+  /* ── marigold, the default: gold ground, ink-blue accent ─────────────── */
   --ground: #eec75f;
   --surface: #fbf6e8;
   --ink: #4a4a58;
@@ -145,7 +145,7 @@
   --gutter: clamp(0.9rem, 3vw, 2rem);
 }
 
-[data-colorway="nazuna"] {
+[data-colorway="blossom"] {
   --ground: #f2a8b8;
   --surface: #faf2ec;
   --ink: #57474c;
@@ -159,7 +159,7 @@
   --risk: #a83c30;
 }
 
-[data-colorway="sumire"] {
+[data-colorway="periwinkle"] {
   --ground: #9fb0e4;
   --surface: #f5f2ea;
   --ink: #474e5e;
@@ -187,7 +187,7 @@
   --risk: #c04a55;
 }
 
-[data-colorway="hinano"] {
+[data-colorway="twilight"] {
   --ground: #8b7ad2;
   --surface: #f5f1ec;
   --ink: #4b4658;
@@ -224,7 +224,7 @@
  * The two dark spellings tie with each other and carry the same values, so the
  * tie never shows.
  *
- * Only overrides live in here. `:root` carries otonose's night face and the
+ * Only overrides live in here. `:root` carries marigold's night face and the
  * two shared signal colours; each colourway then restates its own eleven, so
  * every one of them is fully described in both faces. */
 @media (prefers-color-scheme: dark) {
@@ -266,7 +266,7 @@
     --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
   }
 
-  :root:not([data-theme="light"])[data-colorway="nazuna"] {
+  :root:not([data-theme="light"])[data-colorway="blossom"] {
     --ground: #322629;
     --surface: #423236;
     --ink: #f0e3e2;
@@ -280,7 +280,7 @@
     --risk: #ee8f85;
   }
 
-  :root:not([data-theme="light"])[data-colorway="sumire"] {
+  :root:not([data-theme="light"])[data-colorway="periwinkle"] {
     --ground: #262c3a;
     --surface: #343d4e;
     --ink: #e7ebf2;
@@ -308,7 +308,7 @@
     --risk: #e2828a;
   }
 
-  :root:not([data-theme="light"])[data-colorway="hinano"] {
+  :root:not([data-theme="light"])[data-colorway="twilight"] {
     --ground: #2a2436;
     --surface: #383045;
     --ink: #eae4f0;
@@ -380,7 +380,7 @@
   --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
 }
 
-:root[data-theme="dark"][data-colorway="nazuna"] {
+:root[data-theme="dark"][data-colorway="blossom"] {
   --ground: #322629;
   --surface: #423236;
   --ink: #f0e3e2;
@@ -394,7 +394,7 @@
   --risk: #ee8f85;
 }
 
-:root[data-theme="dark"][data-colorway="sumire"] {
+:root[data-theme="dark"][data-colorway="periwinkle"] {
   --ground: #262c3a;
   --surface: #343d4e;
   --ink: #e7ebf2;
@@ -422,7 +422,7 @@
   --risk: #e2828a;
 }
 
-:root[data-theme="dark"][data-colorway="hinano"] {
+:root[data-theme="dark"][data-colorway="twilight"] {
   --ground: #2a2436;
   --surface: #383045;
   --ink: #eae4f0;

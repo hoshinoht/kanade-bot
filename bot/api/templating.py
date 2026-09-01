@@ -82,17 +82,22 @@ NAV = [item for _group, items in NAV_GROUPS for item in items]
 #: Config page can offer them; the same five keys are repeated in that snippet
 #: and in ``static/portal.js``, which is what stops a cookie, a route and a
 #: redirect existing for something no other browser will ever need to know.
+#:
+#: Named for the colour each one actually is, so the list reads as a palette
+#: rather than as a set of references. A browser that stored one of the older
+#: names is moved onto its new one by the bootstrap, which is the only reason
+#: those names still exist anywhere.
 COLORWAYS = [
-    {"key": "otonose", "name": "Otonose", "ground": "#eec75f", "accent": "#4d5c9e"},
-    {"key": "nazuna", "name": "Nazuna", "ground": "#f2a8b8", "accent": "#d5537a"},
-    {"key": "sumire", "name": "Sumire", "ground": "#9fb0e4", "accent": "#4a5fae"},
+    {"key": "marigold", "name": "Marigold", "ground": "#eec75f", "accent": "#4d5c9e"},
+    {"key": "blossom", "name": "Blossom", "ground": "#f2a8b8", "accent": "#d5537a"},
+    {"key": "periwinkle", "name": "Periwinkle", "ground": "#9fb0e4", "accent": "#4a5fae"},
     {"key": "coral", "name": "Coral", "ground": "#e87d85", "accent": "#d95965"},
-    {"key": "hinano", "name": "Hinano", "ground": "#8b7ad2", "accent": "#6446ab"},
+    {"key": "twilight", "name": "Twilight", "ground": "#8b7ad2", "accent": "#6446ab"},
 ]
 
 #: What a browser with nothing stored gets: the palette on `:root`, so a page
 #: with no ``data-colorway`` at all is already wearing it.
-DEFAULT_COLORWAY = "otonose"
+DEFAULT_COLORWAY = "marigold"
 
 #: The six run states as drawings rather than as emoji.
 #:

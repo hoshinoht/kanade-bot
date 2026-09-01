@@ -132,7 +132,13 @@
           hx-post="/runs/{{ run.id }}/ping" hx-target="closest .run" hx-swap="outerHTML">
       <input type="hidden" name="next" value="{{ back }}">
       <input type="hidden" name="kind" value="day_of">
-      <button class="btn btn--ghost" type="submit"
+      {# Faced, not ghosted. This corner is where the entry-art veil is at its
+         most opaque, and a transparent button reads as a word lying on a
+         picture rather than as a control -- worst over the bright splashes.
+         Giving it the same surface and border the Move button beside it has is
+         contrast by construction: it follows every colourway and both faces,
+         and needs no scrim and no rule of its own. #}
+      <button class="btn" type="submit"
               title="Post this run's morning ping now, as a 🧪 TEST message">Preview ping</button>
     </form>
   </div>

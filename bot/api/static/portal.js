@@ -83,7 +83,7 @@
   // The same five keys as the bootstrap in `templates/partials/theme_boot.html`
   // and as `COLORWAYS` in `bot/api/templating.py`: the snippet has to be
   // inline and tiny, so it repeats them rather than importing them.
-  var COLORWAYS = ["otonose", "nazuna", "sumire", "coral", "hinano"];
+  var COLORWAYS = ["marigold", "blossom", "periwinkle", "coral", "twilight"];
   var COLORWAY_KEY = "colorway";
 
   function storedColorway() {

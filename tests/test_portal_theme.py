@@ -57,7 +57,7 @@ def dark_twins() -> list[tuple[str, str]]:
     pairs = [(':root:not([data-theme="light"])', ':root[data-theme="dark"]')]
     for way in COLORWAYS:
         if way["key"] == DEFAULT_COLORWAY:
-            continue  # otonose is the unqualified one, already above
+            continue  # the default is the unqualified one, already above
         key = way["key"]
         pairs.append(
             (
@@ -136,6 +136,28 @@ def test_the_bootstrap_only_ever_stamps_one_of_the_five(auth):
     assert "try {" in snippet and "catch" in snippet
 
 
+def test_a_browser_holding_an_old_colourway_name_keeps_its_look(auth):
+    """The five were renamed and the choice only ever lived in the browser, so
+    there is nowhere to run a migration but here. Each old key maps to the
+    palette it always was, and the result is checked against the same list that
+    gates the attribute -- so this can only ever store one of the five."""
+    body = auth.get("/").text
+    snippet = body[body.index("<script>") : body.index("</script>")]
+
+    for old, new in (
+        ("otonose", "marigold"),
+        ("nazuna", "blossom"),
+        ("sumire", "periwinkle"),
+        ("hinano", "twilight"),
+    ):
+        assert f'{old}: "{new}"' in snippet, old
+
+    assert "ways.indexOf(renamed) > -1" in snippet
+    assert 'localStorage.setItem("colorway"' in snippet
+    # Coral was not renamed, so it must not appear as something to rename *from*.
+    assert "coral:" not in snippet
+
+
 def test_the_bootstrap_stamps_the_mode_and_only_the_two(auth):
     """Same rule as the colourway: validated before it becomes an attribute."""
     body = auth.get("/").text
@@ -159,17 +181,17 @@ def test_the_snippet_and_the_script_agree_on_the_five(auth):
     """Three places name them; the two that cannot import each other are checked here."""
     body = auth.get("/").text
     snippet = body[body.index("<script>") : body.index("</script>")]
-    listed = 'var COLORWAYS = ["otonose", "nazuna", "sumire", "coral", "hinano"];'
+    listed = 'var COLORWAYS = ["marigold", "blossom", "periwinkle", "coral", "twilight"];'
 
     assert listed in PAGE_JS
     for way in COLORWAYS:
         assert f'"{way["key"]}"' in snippet
     assert [way["key"] for way in COLORWAYS] == [
-        "otonose",
-        "nazuna",
-        "sumire",
+        "marigold",
+        "blossom",
+        "periwinkle",
         "coral",
-        "hinano",
+        "twilight",
     ]
     assert COLORWAYS[0]["key"] == DEFAULT_COLORWAY
 
