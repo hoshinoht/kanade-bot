@@ -1041,3 +1041,144 @@ def test_the_inbox_draws_the_arrow_only_for_a_move(auth, fake_bot, seeded):
     assert 'class="mono was"' not in new_run and 'class="arrow"' not in new_run
     assert "TBD" in new_run
     assert 'class="mono was"' in moved and 'class="arrow"' in moved
+
+
+# --- the three `fix` cards --------------------------------------------------
+
+
+def weekly_card(fake_bot, seeded, **payload) -> dict:
+    """One `fix` amendment carrying ``payload``, as the chatbot's tools raise it."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar", "HFA"],
+        participants=["1001", "1002"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload=payload or None,
+    )
+    return service.amendment_view(fake_bot, fake_bot.repo.get_amendment(amendment))
+
+
+def test_a_weekly_being_changed_is_not_announced_as_a_new_one(fake_bot, seeded):
+    """Three cards share the `fix` kind, so the kind alone names two of them wrong.
+
+    Read from the payload marker, exactly as the Discord card is
+    (`formatting.proposal_line`) -- the portal calling a change "new weekly" is
+    how somebody approves what they think is a second timing.
+    """
+    view = weekly_card(
+        fake_bot,
+        seeded,
+        op="edit",
+        fixed_run_id=seeded["fixed_star"],
+        weekly_when="Mon 21:30",
+        weekday=2,
+        time="23:30",
+    )
+
+    assert view["kind_label"] == "change weekly"
+    assert view["when"] == "every Wed 23:30"
+
+
+def test_a_weekly_being_retired_is_not_announced_as_a_new_one_either(fake_bot, seeded):
+    """A remove card carries no new night at all -- only the one it is retiring."""
+    view = weekly_card(
+        fake_bot, seeded, op="remove", fixed_run_id=seeded["fixed_star"], weekly_when="Mon 21:30"
+    )
+
+    assert view["kind_label"] == "remove weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_change_to_the_party_alone_says_the_night_is_unchanged(fake_bot, seeded):
+    """Half a change is the common request, and the payload leaves the other half out."""
+    view = weekly_card(
+        fake_bot,
+        seeded,
+        op="edit",
+        fixed_run_id=seeded["fixed_star"],
+        weekly_when="Mon 21:30",
+        participants=["1002", "1003"],
+    )
+
+    assert view["kind_label"] == "change weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_new_weekly_still_reads_as_one(fake_bot, seeded):
+    """Every `fix` written before the two markers existed has no `op` at all.
+
+    Its night is in the payload like the other two, so it is read from there
+    like the other two: this card said "TBD" while the Discord card beside it
+    said "every Mon 21:30" about the same proposal.
+    """
+    view = weekly_card(fake_bot, seeded, weekday=0, time="21:30")
+
+    assert view["kind_label"] == "new weekly"
+    assert view["when"] == "every Mon 21:30"
+
+
+def test_a_weekly_with_no_night_falls_back_to_what_was_written(fake_bot, seeded):
+    """A day with no time never reaches the payload; the card says so, and so does this."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.4,
+        evidence_msg_ids=[],
+        channel_id=None,
+        day_ref="wed",
+    )
+    view = service.amendment_view(fake_bot, fake_bot.repo.get_amendment(amendment))
+
+    assert view["kind_label"] == "new weekly"
+    assert view["when"] == "wed — time TBD"
+
+
+def test_the_inbox_names_a_weekly_change_for_what_it_is(auth, fake_bot, seeded):
+    fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload={
+            "op": "edit",
+            "fixed_run_id": seeded["fixed_star"],
+            "weekly_when": "Mon 21:30",
+            "weekday": 2,
+            "time": "23:30",
+        },
+    )
+
+    body = auth.get("/inbox").text
+    assert "change weekly" in body
+    assert "every Wed 23:30" in body
+
+
+def test_the_cards_one_chat_answer_raised_are_named_the_same_way(fake_bot, seeded):
+    """The interaction trace lists them through its own view; one rule, both places."""
+    from bot.api import service
+
+    amendment = fake_bot.repo.create_amendment(
+        week_start=seeded["week_start"],
+        kind="fix",
+        bosses=["HStar"],
+        participants=["1001"],
+        confidence=0.8,
+        evidence_msg_ids=[],
+        channel_id=None,
+        payload={"op": "remove", "fixed_run_id": seeded["fixed_star"], "weekly_when": "Mon 21:30"},
+    )
+
+    (card,) = service.created_cards(fake_bot, [amendment])
+    assert card["kind_label"] == "remove weekly"

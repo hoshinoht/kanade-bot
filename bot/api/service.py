@@ -470,20 +470,63 @@ def evidence_view(bot: BossBot, message_ids: Sequence[str]) -> list[dict]:
     return rows
 
 
+def kind_label(amendment: dict) -> str:
+    """What a card is called, everywhere the portal names one.
+
+    Three cards share the ``fix`` kind and are told apart only by the ``op``
+    marker in their payload (:data:`bot.extract.commit.FIX_REMOVE` and
+    ``FIX_EDIT``), so the kind by itself calls a card that retires a weekly
+    timing -- or changes one -- "new weekly", which is its opposite. Exactly the
+    rule :func:`bot.formatting.proposal_line` applies, so one card is called one
+    thing whether it is read in Discord or in the portal.
+    """
+    payload = amendment["payload"] or {}
+    verb = formatting.FIX_VERB.get(str(payload.get("op"))) if amendment["kind"] == "fix" else None
+    return verb or formatting.KIND_VERB.get(amendment["kind"], amendment["kind"])
+
+
+def when_label(bot: BossBot, amendment: dict) -> str:
+    """The one-line "when" the inbox and the extraction table print.
+
+    :func:`bot.formatting.when_text` with the card's bold taken off, except for
+    a `fix`. A recurring night is a weekday and an HH:MM kept in the payload and
+    never reaches ``new_datetime``, so ``when_text`` has nothing to find and all
+    three weekly cards read **TBD** here -- silent about the single fact each one
+    is proposing. Read from the payload for the same reason
+    :func:`bot.formatting.weekly_text` and
+    :func:`bot.formatting.weekly_change_text` read it from there, so a weekly
+    timing is named the same way in the portal as on its card.
+
+    Whichever night the card is *about*: the one being proposed where there is
+    one, and otherwise the one it already has -- a card retiring a timing, or
+    changing only its party, says what that night is rather than nothing. A
+    `fix` with no night anywhere (a day with no time) falls through to the words
+    that were actually written, which is what its card falls back to too.
+    """
+    payload = amendment["payload"] or {}
+    if amendment["kind"] == "fix":
+        weekday, hhmm = payload.get("weekday"), payload.get("time")
+        if weekday is not None and hhmm:
+            return f"every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
+        if payload.get("weekly_when"):
+            return f"every {payload['weekly_when']}"
+    return formatting.when_text(amendment, bot.tz).replace("**", "")
+
+
 def amendment_view(bot: BossBot, amendment: dict, with_evidence: bool = True) -> dict:
     run = bot.repo.get_run(amendment["run_id"]) if amendment["run_id"] else None
     view = {
         "id": amendment["id"],
         "short_id": short_id(amendment["id"]),
         "kind": amendment["kind"],
-        "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+        "kind_label": kind_label(amendment),
         "status": amendment["status"],
         "bosses": amendment["bosses"],
         "boss_detail": [boss_view(bot, b) for b in amendment["bosses"]],
         "run_id": amendment["run_id"],
         "run": run_view(bot, run) if run else None,
         "new_datetime": to_iso(amendment["new_datetime"]) if amendment["new_datetime"] else None,
-        "when": formatting.when_text(amendment, bot.tz).replace("**", ""),
+        "when": when_label(bot, amendment),
         "day_ref": amendment["day_ref"],
         "time_ref": amendment["time_ref"],
         # Only a move has an "old → new": a new run or a correction has no
@@ -558,7 +601,7 @@ def created_cards(bot: BossBot, amendment_ids: Sequence[str]) -> list[dict]:
                 "id": amendment["id"],
                 "short_id": short_id(amendment["id"]),
                 "kind": amendment["kind"],
-                "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+                "kind_label": kind_label(amendment),
                 "status": amendment["status"],
                 "card_url": message_url(
                     bot, amendment["channel_id"], amendment["proposal_message_id"]
