@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from . import events
 from .extract.window import DEFAULT_WINDOW, clamp_window
 from .timeutil import utcnow
 
@@ -205,6 +206,7 @@ class RescanWorker:
             at=job.created_at,
         )
         self._queue.put_nowait(job.id)
+        events.notify()
         log.info(
             "rescan %s queued: %d channel(s), %s%s",
             job.short_id,
@@ -232,6 +234,7 @@ class RescanWorker:
             self._jobs.pop(self._order.pop(0), None)
 
     def _finish(self, job: RescanJob, status: str, error: str | None = None) -> None:
+        events.notify()
         job.status = status
         job.error = error
         job.current = None
@@ -267,6 +270,7 @@ class RescanWorker:
 
     async def _run(self, job: RescanJob) -> None:
         self.current = job
+        events.notify()
         job.status = RUNNING
         job.started_at = utcnow()
         self.bot.repo.update_rescan_job(job.id, status=RUNNING, started_at=job.started_at)
@@ -278,6 +282,9 @@ class RescanWorker:
             if job.stop_requested:
                 break
             job.current = job.names.get(channel_id, channel_id)
+            # Which channel is being read is on the Limits page, so each hop
+            # along the queue is worth a nudge.
+            events.notify()
             try:
                 job.results.append(
                     await service.rescan_one(

@@ -10,7 +10,13 @@ import pytest
 from bot.api.service import PORTAL_APPLIED, PORTAL_REJECTED
 from bot.ids import short_id
 
-from .fake_bot import OTHER_CHANNEL, OWNER_ID, UNWATCHED_CHANNEL, WATCHED_CHANNEL
+from .fake_bot import (
+    OTHER_CHANNEL,
+    OWNER_ID,
+    UNWATCHED_CHANNEL,
+    WATCHED_CHANNEL,
+    add_pilot,
+)
 
 
 class _AnyHue:
@@ -701,6 +707,84 @@ def test_the_override_routes_need_the_token(client, seeded):
         == 401
     )
     assert client.delete("/api/limits/overrides/1002").status_code == 401
+
+
+# --- the pilot roster -------------------------------------------------------
+
+
+def test_the_pilots_are_read_live_from_the_role(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    add_pilot(fake_bot, 1003, "Priya")
+
+    pilots = auth.get("/api/limits").json()["pilots"]
+
+    assert [p["user_id"] for p in pilots] == ["1002", "1003"]
+    # The roster's name when it knows them, so one person reads the same in
+    # both tables on the page.
+    assert pilots[0]["name"] == "kanon"
+    assert pilots[1]["name"] == "Priya"
+    default = fake_bot.settings.chat_pilot_rate_count
+    assert (pilots[0]["count"], pilots[0]["overridden"], pilots[0]["staff"]) == (
+        default,
+        False,
+        False,
+    )
+
+
+def test_a_pilot_carries_their_own_allowance_and_open_window(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    auth.put("/api/limits/overrides/1002", json={"count": 10, "window_s": 60})
+    fake_bot.chat.limiter.allow(1002)
+
+    (pilot,) = auth.get("/api/limits").json()["pilots"]
+
+    assert (pilot["count"], pilot["window_s"], pilot["overridden"]) == (10, 60.0, True)
+    assert (pilot["used"], pilot["remaining"], pilot["has_window"]) == (1, 9, True)
+
+
+def test_staff_holding_the_pilot_role_are_marked_exempt(auth, fake_bot, seeded):
+    add_pilot(fake_bot, 1001, "Alvin tan", staff=True)
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+
+    pilots = auth.get("/api/limits").json()["pilots"]
+
+    by_id = {p["user_id"]: p for p in pilots}
+    assert by_id["1001"]["staff"] is True
+    assert by_id["1002"]["staff"] is False
+    # Staff sort last: the rows somebody can act on come first.
+    assert pilots[-1]["user_id"] == "1001"
+
+
+def test_a_bot_holding_the_pilot_role_is_not_listed(auth, fake_bot, seeded):
+    """The same rule the bossing roster applies: another bot is not a member."""
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    add_pilot(fake_bot, 4040, "SomeWebhook", is_bot=True)
+
+    assert [p["user_id"] for p in auth.get("/api/limits").json()["pilots"]] == ["1002"]
+
+
+def test_an_empty_pilot_role_lists_nobody(auth, fake_bot, seeded):
+    from .fake_bot import PILOT_ROLE, FakeGuildRole
+
+    fake_bot.settings.chat_pilot_role_id = PILOT_ROLE
+    fake_bot.guild.roles[PILOT_ROLE] = FakeGuildRole(PILOT_ROLE)
+
+    assert auth.get("/api/limits").json()["pilots"] == []
+
+
+def test_an_unresolvable_role_or_guild_lists_nobody_rather_than_failing(auth, fake_bot, seeded):
+    """A bot that is not connected cannot read the role, and must not 500 saying so."""
+    # No role configured at all.
+    assert auth.get("/api/limits").json()["pilots"] == []
+
+    # Configured, but the guild does not have it.
+    fake_bot.settings.chat_pilot_role_id = 999000000000000009
+    assert auth.get("/api/limits").json()["pilots"] == []
+
+    # Configured, but there is no guild to ask.
+    add_pilot(fake_bot, 1002, "kanon [AZUR]")
+    fake_bot.get_guild = lambda _guild_id: None
+    assert auth.get("/api/limits").json()["pilots"] == []
 
 
 # --- the capacity settings --------------------------------------------------

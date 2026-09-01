@@ -699,6 +699,21 @@ class JobsOut(BaseModel):
     rescan: RescanQueueOut
 
 
+class PilotOut(BaseModel):
+    """One holder of the chat role, and where they stand right now."""
+
+    user_id: str
+    name: str
+    #: Staff are exempt from every budget, so their allowance is decoration.
+    staff: bool = False
+    count: int
+    window_s: float
+    overridden: bool = False
+    used: int = 0
+    remaining: int = 0
+    has_window: bool = False
+
+
 class LimitsOut(BaseModel):
     """Live capacity: nothing here is stored, and nothing here is spent by asking."""
 
@@ -706,6 +721,10 @@ class LimitsOut(BaseModel):
     global_pool: PoolOut
     per_user: PerUserOut
     jobs: JobsOut
+    #: Everybody holding ``CHAT_PILOT_ROLE_ID``, read live from the guild.
+    #: Empty when the role or the guild cannot be resolved -- which is not the
+    #: same fact as "nobody holds it", and the portal says which.
+    pilots: list[PilotOut] = []
 
 
 class LimitResetOut(BaseModel):
@@ -756,6 +775,7 @@ __all__ = [
     "LimitsOut",
     "ModelLockOut",
     "PerUserOut",
+    "PilotOut",
     "PoolOut",
     "RescanQueueOut",
     "UserWindowOut",

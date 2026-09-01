@@ -12,5 +12,57 @@
   <span class="chip chip--mono">{{ limits.model.holder or "idle" }}</span>
 </div>
 
+{# The live region, and the only element that refetches: the swap replaces what
+   is *inside* it, so this element -- and everything attached to it -- lives as
+   long as the page does.
+
+   Updates arrive as server-sent events (`/limits/events`, wired up in
+   `static/portal.js`), because the things worth seeing here are instants: the
+   model being taken, a budget being spent. `data-live-src` is what that script
+   looks for, so the URL is written once, here.
+
+   The `every 60s` trigger is the fallback and nothing more -- for a browser
+   with no `EventSource`, a stream cut by something in the middle, or a proxy
+   that will not pass one through. It is filtered on visibility, so a
+   backgrounded tab stops asking; the syntax is htmx 2's (2.0.10, pinned in
+   `bot/api/templating.py`). With no JavaScript at all, the Refresh link below
+   is the fallback.
+
+   Nothing inside it may contain an input -- see the note in the partial. #}
+<div id="limits-live"
+     data-live-src="/limits/events"
+     hx-get="/limits/live"
+     hx-trigger="every 60s [document.visibilityState === 'visible']"
+     hx-target="this" hx-swap="innerHTML">
 {% include "partials/limits.html" %}
+</div>
+
+{# Outside the polled region, deliberately: this is the one place on the page
+   somebody types, and a refresh landing mid-sentence would eat it. #}
+<section class="card" id="set-allowance">
+  <div class="card__head"><h2 class="card__title">Set an allowance</h2></div>
+  <p class="run__meta">
+    Give one member their own number of answers instead of the guild's
+    {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
+    Works for somebody who has not asked anything yet — the usual reason to raise an
+    allowance is that they are about to need it. Staff are exempt and need none.
+    The <strong>Set</strong> buttons above fill this in for you.
+  </p>
+  <form method="post" action="/limits/overrides" class="filters"
+        hx-post="/limits/overrides" hx-target="#limits-live" hx-swap="innerHTML">
+    <label class="field"><span>Discord user id</span>
+      <input name="user_id" required inputmode="numeric" size="20" class="mono"
+             value="{{ prefill.user_id }}" {{ "autofocus" if prefill.user_id }}>
+    </label>
+    <label class="field"><span>Answers</span>
+      <input name="count" type="number" min="1" step="1" required size="4" class="mono"
+             value="{{ prefill.count }}">
+    </label>
+    <label class="field"><span>Window (s)</span>
+      <input name="window_s" type="number" min="1" step="any" required size="6" class="mono"
+             value="{{ "%g"|format(prefill.window_s) }}">
+    </label>
+    <button class="btn btn--primary" type="submit">Save allowance</button>
+  </form>
+</section>
 {% endblock %}

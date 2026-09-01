@@ -26,6 +26,10 @@ WATCHED_CHANNEL = 222222222222222222
 OTHER_CHANNEL = 333333333333333333
 UNWATCHED_CHANNEL = 444444444444444444
 ADMIN_TOKEN = "test-admin-token-0123456789abcdef"
+#: The chat-pilot role and the staff role `add_pilot` installs when a test does
+#: not already have them configured. Synthetic, like every other id here.
+PILOT_ROLE = 121000000000000001
+ADMIN_ROLE_ID = 121000000000000002
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -75,6 +79,9 @@ class FakeMessage:
 
 class FakePermissions:
     def __init__(self, **flags: bool):
+        #: Guild-wide rather than per-channel, and the one the "who runs this
+        #: bot" rule reads (:func:`bot.util.is_bot_admin`).
+        self.administrator = flags.get("administrator", False)
         self.view_channel = flags.get("view_channel", True)
         self.send_messages = flags.get("send_messages", True)
         self.read_message_history = flags.get("read_message_history", True)
@@ -102,14 +109,49 @@ class FakeMe:
     name = "YuukiSakuna"
 
 
+class FakeGuildRole:
+    """A guild role and who holds it, as ``guild.get_role`` hands one back."""
+
+    def __init__(self, role_id: int):
+        self.id = role_id
+        self.members: list[FakeGuildMember] = []
+
+
+class FakeGuildMember:
+    """A member as the role member cache holds one -- not as a message shows one."""
+
+    def __init__(
+        self,
+        user_id: int,
+        display_name: str,
+        *,
+        administrator: bool = False,
+        bot: bool = False,
+    ):
+        self.id = user_id
+        self.display_name = display_name
+        self.nick = None
+        self.bot = bot
+        self.roles: list[Any] = []
+        self.guild: Any = None
+        self.guild_permissions = FakePermissions(administrator=administrator)
+
+
 class FakeGuild:
     def __init__(self, channels: list[FakeChannel]):
         self.id = GUILD_ID
         self.owner_id = OWNER_ID
         self.text_channels = channels
         self.me = FakeMe()
+        self.roles: dict[int, FakeGuildRole] = {}
         for channel in channels:
             channel.guild = self
+
+    def get_role(self, role_id):
+        try:
+            return self.roles.get(int(role_id))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
 
 
 class FakeExtractor:
@@ -421,9 +463,43 @@ class FakeBot:
         return message
 
 
+def add_pilot(
+    bot: FakeBot,
+    user_id: int,
+    display_name: str,
+    *,
+    staff: bool = False,
+    is_bot: bool = False,
+) -> FakeGuildMember:
+    """Put somebody in the chat-pilot role, as the live guild would hold them.
+
+    Creates the role on first use and points ``CHAT_PILOT_ROLE_ID`` at it, so a
+    test says who holds it rather than assembling three objects to say so.
+    ``staff`` gives them the admin role, which is what makes them exempt.
+    """
+    role_id = bot.settings.chat_pilot_role_id or PILOT_ROLE
+    bot.settings.chat_pilot_role_id = role_id
+    role = bot.guild.roles.setdefault(role_id, FakeGuildRole(role_id))
+
+    member = FakeGuildMember(user_id, display_name, bot=is_bot)
+    member.guild = bot.guild
+    member.roles = [FakeGuildRole(role_id)]
+    if staff:
+        admin_role_id = bot.settings.admin_role_id or ADMIN_ROLE_ID
+        bot.settings.admin_role_id = admin_role_id
+        member.roles.append(FakeGuildRole(admin_role_id))
+    role.members.append(member)
+    return member
+
+
 __all__ = [
+    "ADMIN_ROLE_ID",
     "ADMIN_TOKEN",
     "GUILD_ID",
+    "PILOT_ROLE",
+    "FakeGuildMember",
+    "FakeGuildRole",
+    "add_pilot",
     "OTHER_CHANNEL",
     "OWNER_ID",
     "UNWATCHED_CHANNEL",

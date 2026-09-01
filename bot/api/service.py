@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import audit, formatting
+from .. import audit, events, formatting
 from ..bosses import BossParseError
 from ..export import message_record
 from ..extract import resolve
@@ -42,6 +42,7 @@ from ..materialise import (
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
+from ..util import is_bot_admin
 from ..weeks import (
     WEEKDAY_NAMES,
     current_week_start,
@@ -1588,6 +1589,7 @@ def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
     so; the name falls back to ``user 1002`` exactly as it does on the page.
     """
     bot.chat.forget_limit(user_id)
+    events.notify()
     name = member_name(bot, user_id)
     _audit(bot, "limits", str(user_id), f"cleared {name}'s answer window")
     return {"user_id": str(user_id), "name": name}
@@ -1608,6 +1610,7 @@ def set_user_limit(bot: BossBot, user_id: int | str, count: int, window_s: float
     window_s = _seconds(window_s, "window_s")
     bot.repo.set_rate_limit(user_id, count, window_s)
     bot.chat.apply_limits()
+    events.notify()
     name = member_name(bot, user_id)
     _audit(
         bot,
@@ -1627,10 +1630,84 @@ def clear_user_limit(bot: BossBot, user_id: int | str) -> dict:
     """
     had = bot.repo.clear_rate_limit(user_id)
     bot.chat.apply_limits()
+    events.notify()
     name = member_name(bot, user_id)
     if had:
         _audit(bot, "limits", str(user_id), f"{name} is back on the guild's default allowance")
     return {"user_id": str(user_id), "name": name}
+
+
+def _is_staff(bot: BossBot, member: Any) -> bool:
+    """The same "who runs this bot" rule the chat gate applies to a message.
+
+    Read from the live member object for the same reason
+    :meth:`bot.chat.agent.ChatPilot._is_admin` does: staff are exempt from every
+    budget, so a page offering to raise their allowance would be offering to
+    change a number nothing reads.
+    """
+    permissions = getattr(member, "guild_permissions", None)
+    guild = getattr(member, "guild", None)
+    return is_bot_admin(
+        bool(getattr(permissions, "administrator", False)),
+        guild is not None and getattr(guild, "owner_id", None) == getattr(member, "id", None),
+        [getattr(role, "id", role) for role in getattr(member, "roles", None) or ()],
+        bot.settings.admin_role_id,
+    )
+
+
+def pilot_roster(bot: BossBot) -> list[dict]:
+    """Everybody holding ``CHAT_PILOT_ROLE_ID``, and where each of them stands.
+
+    A **live read** of Discord's role member cache -- the same source
+    :func:`bot.util.roster_rows` uses for the bossing role, available because
+    the members intent is already on. Nothing is stored: the answer to "who may
+    talk to the bot" is the role, and a copy of it in SQLite would be a second
+    answer that goes stale the moment somebody is given the role.
+
+    Empty whenever it cannot be known -- no role configured, no guild (the bot
+    is not connected, or a test never built one), or a role id that resolves to
+    nothing. The page says so rather than showing an empty table as though the
+    role had no holders.
+
+    Bot accounts are dropped, exactly as ``roster_rows`` drops them: another bot
+    holding the role is not somebody whose allowance anybody needs to tune.
+    """
+    role_id = bot.settings.chat_pilot_role_id
+    guild = bot.get_guild(bot.settings.guild_id) if role_id is not None else None
+    role = guild.get_role(int(role_id)) if guild is not None else None
+    if role is None:
+        return []
+
+    limiter = bot.chat.limiter
+    spent = limiter.snapshot()
+    rows = []
+    for member in getattr(role, "members", None) or ():
+        if getattr(member, "bot", False):
+            continue
+        user_id = str(member.id)
+        count, window = limiter.limit_for(user_id)
+        used = spent.get(user_id, 0)
+        rows.append(
+            {
+                "user_id": user_id,
+                # The roster's name when it knows them, so one person reads the
+                # same on this table and the one above it; the live display name
+                # otherwise, since holding the chat role does not put anybody on
+                # the bossing roster.
+                "name": member_name(bot, user_id)
+                if bot.repo.get_member(user_id)
+                else getattr(member, "display_name", user_id),
+                "staff": _is_staff(bot, member),
+                "count": count,
+                "window_s": window,
+                "overridden": user_id in limiter.overrides(),
+                "used": used,
+                "remaining": max(count - used, 0),
+                "has_window": used > 0,
+            }
+        )
+    rows.sort(key=lambda row: (row["staff"], row["name"].casefold()))
+    return rows
 
 
 def _window_view(bot: BossBot, limiter: Any, user_id: str, used: int) -> dict:
@@ -1711,6 +1788,10 @@ def limits(bot: BossBot) -> dict:
                 for user_id, (count, window) in sorted(per_user.overrides().items())
             ],
         },
+        # Who may talk to the bot at all, read live from the role. The page's
+        # reason to exist is tuning these people's limits, and hunting for a
+        # snowflake to paste into a form is what it replaces.
+        "pilots": pilot_roster(bot),
         "jobs": {
             "answering": [
                 {"channel_id": cid, "channel_name": channel_name(bot, cid) or f"channel {cid}"}
@@ -1814,10 +1895,12 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         # The limiters live for the whole process, so a new number means nothing
         # until they are told. Windows already open are reinterpreted under it.
         bot.chat.apply_limits()
+        events.notify()
     elif key in WINDOW_KEYS:
         stored = str(_seconds(value, key))
         bot.repo.set_config(key, stored)
         bot.chat.apply_limits()
+        events.notify()
     else:
         stored = _as_flag(value)
         bot.repo.set_config(key, stored)
@@ -2214,6 +2297,7 @@ __all__ = [
     "fixed_view",
     "get_config",
     "limits",
+    "pilot_roster",
     "clear_user_limit",
     "reset_user_limit",
     "set_user_limit",

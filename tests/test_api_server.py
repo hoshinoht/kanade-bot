@@ -111,3 +111,58 @@ def test_the_bind_address_is_configurable_and_defaults_to_loopback():
 def test_the_server_does_not_trust_forwarded_headers(fake_bot):
     """We decide who is local ourselves; a header must not be able to say so."""
     assert ApiServer(fake_bot)._config().proxy_headers is False
+
+
+def test_the_limits_stream_delivers_an_event_over_a_real_connection(fake_bot):
+    """The Limits page's SSE, end to end over HTTP.
+
+    Worth a real server rather than a test client: both in-process transports
+    buffer a response to completion, which an endless stream never reaches, so
+    this is the only place the wire format and the streaming headers are
+    actually exercised. Everything about *what* the stream says is covered by
+    driving the generator directly in `test_events.py`.
+    """
+    from bot import events, modellock
+
+    port = free_port()
+    fake_bot.settings = make_settings(api_port=port, api_host="127.0.0.1")
+    server = ApiServer(fake_bot)
+    base = f"http://127.0.0.1:{port}"
+
+    async def scenario():
+        await server.start()
+        try:
+            await _wait_until_up(f"{base}/healthz")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                async with client.stream(
+                    "GET",
+                    f"{base}/limits/events",
+                    headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+                ) as response:
+                    assert response.status_code == 200
+                    assert response.headers["content-type"].startswith("text/event-stream")
+                    assert response.headers["cache-control"] == "no-cache"
+                    lines = response.aiter_lines()
+
+                    async def said() -> str:
+                        """The next line that carries something.
+
+                        Every SSE block ends with a blank line, which is what
+                        separates one from the next rather than anything to
+                        read.
+                        """
+                        while True:
+                            line = await anext(lines)
+                            if line:
+                                return line
+
+                    assert (await said()).startswith(":")  # the opening comment
+
+                    # Something the page cares about, caused while connected.
+                    async with modellock.held(modellock.EXTRACTOR):
+                        assert await said() == f"event: {events.LIMITS}"
+                        assert await said() == "data: changed"
+        finally:
+            await server.stop()
+
+    asyncio.run(scenario())

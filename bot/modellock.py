@@ -35,6 +35,8 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
+from . import events
+
 __all__ = [
     "EXTRACTOR",
     "FOLLOWUP",
@@ -73,11 +75,15 @@ def chat_label(channel_id: Any) -> str:
 def _took(label: str) -> None:
     global _HOLDER, _SINCE
     _HOLDER, _SINCE = label, time.monotonic()
+    # The two instants the Limits page exists to show. Free when nobody is
+    # watching, and incapable of blocking whoever is taking the lock.
+    events.notify()
 
 
 def _gave_back() -> None:
     global _HOLDER, _SINCE
     _HOLDER, _SINCE = None, 0.0
+    events.notify()
 
 
 def holder() -> dict[str, Any]:
