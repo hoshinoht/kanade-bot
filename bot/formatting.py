@@ -32,6 +32,15 @@ STATUS_LABEL: dict[str, str] = {
     "cancelled": "🚫 cancelled",
 }
 
+#: The same six states where there is no room for the words: the portal's
+#: compact run cards, seven to a column. Deliberately the emoji each label
+#: already opens with rather than a second vocabulary -- a reader who has seen
+#: "⚠️ unconfirmed" on a Discord card should not have to learn a new glyph for
+#: it on the board. Keep in step with :data:`STATUS_LABEL` above.
+STATUS_MARK: dict[str, str] = {
+    status: label.split(" ", 1)[0] for status, label in STATUS_LABEL.items()
+}
+
 REACT_HINT = f"React {EMOJI_YES} if you're on, {EMOJI_NO} if not."
 
 COLOUR_DAY_OF = 0x5865F2  # blurple

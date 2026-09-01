@@ -324,6 +324,79 @@ def test_the_frame_is_a_desktop_promise_only():
     assert CSS_RULES.count("100dvh") == frame.count("100dvh")
 
 
+def test_the_framed_shell_does_not_resize_with_its_content():
+    """Measured on the live portal: /audit was 1180px wide and /audit?q=limits
+    1023.27px, and the whole frame narrowed as the search was typed.
+
+    `.shell` centres itself with `margin: 0 auto`. As a flex *item* -- which the
+    frame makes it -- an auto margin on the cross axis suppresses the stretch
+    that would give it the container's width, so it sized to its own content
+    instead. A definite width gives those margins something to centre.
+    """
+    shell = PAGE_CSS[PAGE_CSS.index("body.framed .shell {") :]
+    shell = shell[: shell.index("\n  }")]
+
+    assert "width: 100%" in shell
+
+    # ...and the centring still comes from `.shell` itself, unchanged.
+    base = PAGE_CSS[PAGE_CSS.index("\n.shell {") :]
+    assert "margin: 0 auto" in base[: base.index("}")]
+
+
+@pytest.mark.parametrize("path,_target", TABLES)
+def test_a_framed_page_head_is_one_compact_band(auth, seeded, path, _target):
+    """The pane is the page; everything above it is a caption.
+
+    One band between the masthead and the window, carrying at most one line of
+    explanation -- the prose that used to sit there is in docs/portal.md, where
+    it is read once rather than on every visit.
+    """
+    body = auth.get(path).text
+    above = body[body.index('class="page-head"') : body.index('class="card pane"')]
+
+    assert above.count('<p class="note">') <= 1
+    assert '<section class="card">' not in above
+
+
+def test_the_chat_page_has_one_head_band_and_not_two_cards(auth, seeded):
+    """Measured at 1000x690: a hero card over a stat card took two thirds of
+    the viewport and left the interactions two rows tall."""
+    body = auth.get("/chat").text
+    above = body[: body.index('class="card pane"')]
+
+    assert 'class="statline"' in above
+    assert '<section class="stat">' not in above
+    # ...and every figure the tiles carried is still there, per model.
+    for figure in ("qwen3:32b", "calls", "outcome", "latency", "tokens"):
+        assert figure in above, figure
+
+
+def test_a_framed_head_is_caption_weight_at_every_height():
+    """Not gated on a height query: the proportion was wrong at all of them,
+    and a height query is for trimming further rather than getting it right."""
+    head = PAGE_CSS[PAGE_CSS.index("body.framed .page-head {") :]
+    head = head[: head.index("\n  }")]
+    assert "padding: 0.55rem" in head
+
+    title = PAGE_CSS[PAGE_CSS.index("body.framed .page-head h1 {") :]
+    assert "var(--fs-brand)" in title[: title.index("}")]
+
+
+def test_a_short_screen_gives_the_content_its_height_back():
+    """At 1280x720 the chrome above the frame was spending the pane's budget."""
+    query = "@media (min-width: 900px) and (max-height: 850px)"
+    assert query in PAGE_CSS
+
+    short = PAGE_CSS[PAGE_CSS.index(query) :]
+    short = short[: short.index("\n}\n")]
+
+    # Only trimming: the head is already caption weight at every height, so
+    # what goes here is the last of the prose and the status bar.
+    assert "body.framed .page-head p" in short
+    assert "body.framed .footnote" in short
+    assert "display: none" in short
+
+
 def test_a_targeted_dialog_gives_the_scrollbar_back():
     """With no JavaScript the Fixed editor unfolds in place, and it is taller
     than the screen -- inside a frame that cannot scroll it is unreachable."""

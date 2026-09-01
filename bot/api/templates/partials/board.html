@@ -1,17 +1,29 @@
 {% from "partials/macros.html" import boss_list %}
-{# The boss week as seven columns, reset day first -- the rail grown up. Each
-   card is a real link to its run's sheet: with JavaScript the sheet opens as a
-   modal, without it `dialog:target` unfolds the same sheet in place, and the
-   sheet is the ordinary run card every other surface uses. Nothing here is a
-   second rendering of a run; the cards link to the one below. #}
-<div class="board" role="list" aria-label="The boss week, by day">
+{# The boss week as seven columns, reset day first -- the rail grown up.
+
+   The columns are not equal, deliberately. A week is usually one or two busy
+   nights and five quiet ones, and seven equal tracks gave five sevenths of the
+   page to days with nothing on them. So a day with nothing collapses to a
+   spine wide enough for its own name, and the days that hold runs share what
+   the spines gave back. The track list is computed on the server
+   (`service.board_tracks`) because a stylesheet cannot count runs.
+
+   Each card is a real link to its run's sheet: with JavaScript the sheet opens
+   as a modal, without it `dialog:target` unfolds the same sheet in place. The
+   sheet is the ordinary run card every other surface uses -- nothing here is a
+   second rendering of a run. #}
+<div class="board" role="list" aria-label="The boss week, by day"
+     style="grid-template-columns: {{ board_tracks }}">
   {% for column in board %}
-  <section class="board__col{% if column.is_today %} board__col--today{% endif %}" role="listitem"
+  <section class="board__col{% if column.empty %} board__col--empty{% endif %}{% if column.is_today %} board__col--today{% endif %}"
+           role="listitem"
            aria-label="{{ column.weekday }} {{ column.day }} {{ column.month }}, {{ column.runs|length }} run(s)">
     <header class="board__head">
       <span class="board__dow">{{ column.weekday }}</span>
       <span class="board__date mono">{{ "%02d"|format(column.day) }}</span>
-      <span class="board__count mono">{{ column.runs|length or "—" }}</span>
+      {% if not column.empty %}
+      <span class="board__count mono">{{ column.runs|length }}</span>
+      {% endif %}
       {% if column.is_reset %}<span class="board__reset" title="The boss week starts here">reset</span>{% endif %}
     </header>
     <div class="board__runs">
@@ -19,18 +31,23 @@
       <a class="runcard runcard--{{ run.status }}" href="#sheet-{{ run.short_id }}"
          data-dialog="sheet-{{ run.short_id }}"
          title="{{ run.local_day }} {{ run.local_time }} — {{ run.bosses|join(' + ') }}">
-        <span class="runcard__time mono">
-          {%- if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif -%}
+        <span class="runcard__top">
+          <span class="runcard__time mono">
+            {%- if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif -%}
+          </span>
+          {# The state as its own emoji and nothing else. "⚠️ unconfirmed" is a
+             word at a card's width, so it wrapped and pushed the tally onto a
+             third line; the words are on the sheet this opens, in the tooltip,
+             and in the label a screen reader reads out. #}
+          <span class="runcard__meta">
+            <span class="status status--{{ run.status }}" title="{{ run.status_label }}">
+              <span aria-hidden="true">{{ run.status_mark }}</span>
+              <span class="vh">{{ run.status_label }}</span>
+            </span>
+            <span class="runcard__tally mono">{{ run.yes }}/{{ run.participants|length }}</span>
+          </span>
         </span>
         <span class="runcard__bosses">{{ boss_list(run.boss_detail, level=False) }}</span>
-        <span class="runcard__meta">
-          <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
-          {# The tally as one figure: on the board "3/4" is the whole question,
-             and who the fourth is belongs on the sheet. #}
-          <span class="runcard__tally mono">{{ run.yes }}/{{ run.participants|length }}</span>
-          {% if run.no %}<span class="runcard__mark" aria-hidden="true" title="{{ run.no }} out">✕</span>{% endif %}
-          {% if run.unanswered and not run.no %}<span class="runcard__mark runcard__mark--waiting" aria-hidden="true" title="{{ run.unanswered }} yet to answer">○</span>{% endif %}
-        </span>
       </a>
       {% else %}
       <p class="board__none" aria-hidden="true">·</p>

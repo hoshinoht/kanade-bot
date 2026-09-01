@@ -142,9 +142,9 @@ def test_the_chat_page_lists_who_asked_what_it_used_and_how_it_went(auth, seeded
 
 def test_the_chat_page_totals_the_models(auth, seeded):
     body = auth.get("/chat").text
-    strip = body[body.index('class="stats"') : body.index('class="card pane"')]
+    strip = body[body.index('class="statline"') : body.index('class="card pane"')]
     assert "qwen3:32b" in strip
-    assert "answered 1 · failed 0" in strip
+    assert "1 answered · 0 failed" in strip
     assert "3,120 in · 64 out" in strip
 
 
@@ -814,7 +814,10 @@ def test_the_bosses_page_ticks_what_the_guild_runs(auth, seeded):
     assert "pill-toggle--on" in body  # HStar, HFA and XKalos have timings
     assert 'class="grid-bosses"' in body
     assert "10 bosses, 28 difficulties" in body
-    assert "<strong>3</strong> ticked" in body
+    # Guard the count, not the sentence around it -- the blurb is copy, and
+    # copy gets edited.
+    assert "<strong>3</strong>" in body
+    assert "ticked" in body
 
 
 def test_the_bosses_page_is_read_only(auth, seeded):

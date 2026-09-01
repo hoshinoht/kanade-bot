@@ -7,8 +7,8 @@
   <div>
     <p class="eyebrow">Prompt tuning</p>
     <h1>{{ "{:,}".format(listing.total) }} model call{{ "" if listing.total == 1 else "s" }}</h1>
-    <p class="note">Every call the extractor made: what it was asked, what came back, how long it
-      took, and which changes it produced.</p>
+    <p class="note">Every call the extractor made: the prompt, the reply, the latency, and what
+      it changed.</p>
   </div>
   <span class="chip chip--mono">{{ config.model }}</span>
 </div>
