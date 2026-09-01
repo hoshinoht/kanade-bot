@@ -103,7 +103,7 @@ def test_an_empty_day_says_so_in_its_class(auth, seeded):
 
 
 def test_an_empty_today_is_slim_but_still_today(auth, fake_bot):
-    """"Today, nothing on" is worth the same glance as a night with four runs."""
+    """ "Today, nothing on" is worth the same glance as a night with four runs."""
     board = board_of(auth.get("/").text)  # an empty database: every day a spine
 
     assert tracks_of(auth.get("/").text) == [service.BOARD_SPINE] * 7

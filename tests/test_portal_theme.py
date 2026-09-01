@@ -37,9 +37,7 @@ def rule_body(selector: str) -> str:
     which is what keeps `th` from matching the tail of `width` and
     `:root:not([data-theme="light"])` from matching its colourway variants.
     """
-    match = re.search(
-        r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE
-    )
+    match = re.search(r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE)
     assert match is not None, f"no rule for {selector}"
     return match.group(1)
 
@@ -265,8 +263,8 @@ def test_the_card_is_not_a_form_and_says_why(auth):
 
 
 def test_the_script_moves_both_ticks_to_whatever_is_stored(auth):
-    assert 'querySelectorAll(\'input[name="colorway"]\')' in PAGE_JS
-    assert 'querySelectorAll(\'input[name="thememode"]\')' in PAGE_JS
+    assert "querySelectorAll('input[name=\"colorway\"]')" in PAGE_JS
+    assert "querySelectorAll('input[name=\"thememode\"]')" in PAGE_JS
     assert "onReady(markColorway)" in PAGE_JS
     assert "onReady(markTheme)" in PAGE_JS
 

@@ -895,9 +895,7 @@ def chat_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
     return _listing([chat_interaction_view(bot, row) for row in rows], meta, q)
 
 
-def reminders_listing(
-    bot: BossBot, page: int = 1, q: str = "", run_id: str | None = None
-) -> dict:
+def reminders_listing(bot: BossBot, page: int = 1, q: str = "", run_id: str | None = None) -> dict:
     """Queued and sent, both searched; only the sent half is paged.
 
     Queued is bounded by what has been materialised -- two boss weeks, so tens
@@ -1122,9 +1120,7 @@ def board_tracks(columns: Sequence[dict]) -> str:
     count: which of the seven days have runs is a fact about this week, known
     at render time, and the alternative is measuring it in the browser.
     """
-    return " ".join(
-        BOARD_SPINE if not column["runs"] else BOARD_RUN_TRACK for column in columns
-    )
+    return " ".join(BOARD_SPINE if not column["runs"] else BOARD_RUN_TRACK for column in columns)
 
 
 def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
@@ -1192,11 +1188,7 @@ def week_now(bot: BossBot, runs: Sequence[dict]) -> dict:
     """
     now = utcnow()
     ahead = sorted(
-        (
-            run
-            for run in runs
-            if run["status"] in LIVE_STATUSES and from_iso(run["datetime"]) > now
-        ),
+        (run for run in runs if run["status"] in LIVE_STATUSES and from_iso(run["datetime"]) > now),
         key=lambda run: run["datetime"],
     )
     nxt = ahead[0] if ahead else None

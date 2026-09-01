@@ -1,4 +1,4 @@
-# kanade-bot
+# Kanade
 
 A Discord bot that keeps a MapleStory group's weekly boss schedule and posts
 tagged reminders.
@@ -47,17 +47,17 @@ the browser and never sent to the bot.
 
 ## What it does
 
-|                      |                                                                                                                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Membership**       | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role — no `/roster` upkeep.                                                                            |
-| **Baseline**         | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party.                                          |
-| **Weekly runs**      | At each boss-week reset the baseline becomes concrete runs for the current and next week; finished runs drop out on their own.                                                     |
-| **Reminders**        | One grouped day-of message per party channel each morning, plus countdown pings at T-1h and T-15m. Reminder state lives in SQLite, so restarts never lose or replay a ping.        |
-| **RSVPs**            | ✅/❌ reactions on every reminder. All-✅ confirms the run; a ❌ marks it at-risk and tags the rest to reschedule.                                                                    |
-| **Changes**          | `/amend`, `/status`, `/swap`, `/rsvp` and friends; every change made outside Discord is announced in the run's home channel.                                                       |
-| **Chat extraction**  | A local `gpt-oss:20b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                        |
-| **Chatbot**          | Mention-gated, role-gated, rate-limited, in its own channel, with a persona. Read tools answer directly; write tools post the same ✅/❌ cards — it never writes to the schedule.   |
-| **Portal & CLI**     | Week view, fixed-timing editor, proposal inbox, extraction log, chat analytics and config — one API inside the bot process, loopback only, tailnet via the bundled Caddy front door.          |
+|                     |                                                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Membership**      | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role — no `/roster` upkeep.                                                                              |
+| **Baseline**        | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party.                                             |
+| **Weekly runs**     | At each boss-week reset the baseline becomes concrete runs for the current and next week; finished runs drop out on their own.                                                       |
+| **Reminders**       | One grouped day-of message per party channel each morning, plus countdown pings at T-1h and T-15m. Reminder state lives in SQLite, so restarts never lose or replay a ping.          |
+| **RSVPs**           | ✅/❌ reactions on every reminder. All-✅ confirms the run; a ❌ marks it at-risk and tags the rest to reschedule.                                                                       |
+| **Changes**         | `/amend`, `/status`, `/swap`, `/rsvp` and friends; every change made outside Discord is announced in the run's home channel.                                                         |
+| **Chat extraction** | A local `gpt-oss:20b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                            |
+| **Chatbot**         | Mention-gated, role-gated, rate-limited, in its own channel, with a persona. Read tools answer directly; write tools post the same ✅/❌ cards — it never writes to the schedule.      |
+| **Portal & CLI**    | Week view, fixed-timing editor, proposal inbox, extraction log, chat analytics and config — one API inside the bot process, loopback only, tailnet via the bundled Caddy front door. |
 
 ## Quickstart
 
@@ -75,14 +75,14 @@ documented inline in [`.env.example`](.env.example) and has sensible defaults.
 
 ## Documentation
 
-| Guide                                  | What is in it                                                                     |
-| -------------------------------------- | --------------------------------------------------------------------------------- |
-| [Setup](docs/setup.md)                 | Discord developer portal, intents, invite permissions, `.env`, running, troubleshooting |
-| [Commands](docs/commands.md)           | Every slash command, how ids and boss tokens work, testing with `/debug`          |
-| [The chat extractor](docs/extractor.md)| How chat becomes proposal cards, rescans, tuning, exporting history               |
-| [The chatbot](docs/chatbot.md)         | The persona chatbot: gates, tools, setup, voice tuning, tracing its decisions     |
-| [Portal, CLI and API](docs/portal.md)  | The web portal, tailnet access, `bossctl`, the JSON API                           |
-| [Development](docs/development.md)     | Tests, lint, and the module layout                                                |
+| Guide                                   | What is in it                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------------- |
+| [Setup](docs/setup.md)                  | Discord developer portal, intents, invite permissions, `.env`, running, troubleshooting |
+| [Commands](docs/commands.md)            | Every slash command, how ids and boss tokens work, testing with `/debug`                |
+| [The chat extractor](docs/extractor.md) | How chat becomes proposal cards, rescans, tuning, exporting history                     |
+| [The chatbot](docs/chatbot.md)          | The persona chatbot: gates, tools, setup, voice tuning, tracing its decisions           |
+| [Portal, CLI and API](docs/portal.md)   | The web portal, tailnet access, `bossctl`, the JSON API                                 |
+| [Development](docs/development.md)      | Tests, lint, and the module layout                                                      |
 
 Release history is in [CHANGELOG.md](CHANGELOG.md). Licensed under the
 [MIT License](LICENSE).

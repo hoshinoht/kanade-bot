@@ -110,9 +110,7 @@ def back_to(
     """
     query = urlencode({"msg": message, "kind": kind}) if message else ""
     anchor = f"#{fragment}" if fragment else ""
-    return RedirectResponse(
-        f"{path}{'?' if query else ''}{query}{anchor}", status_code=303
-    )
+    return RedirectResponse(f"{path}{'?' if query else ''}{query}{anchor}", status_code=303)
 
 
 def safe_next(candidate: str | None, fallback: str = "/") -> str:
