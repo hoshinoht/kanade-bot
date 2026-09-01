@@ -301,6 +301,82 @@ class ExtractionDetailOut(ExtractionOut):
     amendments: list[AmendmentOut]
 
 
+# --- chat interactions ------------------------------------------------------
+
+
+class ChatInteractionOut(BaseModel):
+    id: str
+    short_id: str
+    at: str
+    local_time: str
+    author_id: str | None
+    author_name: str
+    channel_id: str | None
+    channel_name: str | None
+    model: str
+    #: answered | failed.
+    outcome: str
+    rounds: int
+    latency_ms: int | None
+    tool_names: list[str]
+    tool_count: int
+    #: Null where the model reported no usage, which is not the same as zero.
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    url: str | None
+
+
+class ChatCardOut(BaseModel):
+    """A proposal card one tool call raised."""
+
+    id: str
+    short_id: str
+    kind: str | None = None
+    kind_label: str | None = None
+    status: str | None = None
+    card_url: str | None = None
+
+
+class ChatToolCallOut(BaseModel):
+    name: str
+    #: As the DEBUG log renders them, truncated to ~200 characters.
+    arguments: str
+    ms: int | None
+    outcome: str
+    ok: bool
+    created: list[ChatCardOut]
+
+
+class ChatInteractionDetailOut(ChatInteractionOut):
+    question: str
+    reply: str
+    error: str | None
+    model_ms: int | None
+    tools_ms: int | None
+    message_id: str | None
+    tool_calls: list[ChatToolCallOut]
+
+
+class ChatModelStatsOut(BaseModel):
+    model: str
+    count: int
+    answered: int
+    failed: int
+    prompt_tokens: int
+    completion_tokens: int
+    avg_latency_ms: int | None
+    p95_latency_ms: int | None
+
+
+class ChatSummaryOut(BaseModel):
+    models: list[ChatModelStatsOut]
+    count: int
+    answered: int
+    failed: int
+    prompt_tokens: int
+    completion_tokens: int
+
+
 # --- members, reminders -----------------------------------------------------
 
 

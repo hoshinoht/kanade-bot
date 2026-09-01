@@ -287,6 +287,33 @@ async def extraction_page(
     )
 
 
+@router.get("/chat")
+async def chat_page(request: Request, bot: Bot, caller: Caller, limit: int = 50) -> Response:
+    request.state.caller = caller
+    return render(
+        request,
+        "chat.html",
+        "chat",
+        interactions=service.chat_interactions(bot, limit),
+        summary=service.chat_summary(bot),
+        config=service.get_config(bot),
+    )
+
+
+@router.get("/chat/{interaction_id}")
+async def chat_interaction_page(
+    request: Request, bot: Bot, caller: Caller, interaction_id: str
+) -> Response:
+    request.state.caller = caller
+    row = service.load_chat_interaction(bot, interaction_id)
+    return render(
+        request,
+        "chat_interaction.html",
+        "chat",
+        interaction=service.chat_interaction_view(bot, row, detail=True),
+    )
+
+
 @router.get("/static/portraits/{short}")
 async def portrait(request: Request, bot: Bot, short: str) -> Response:
     """A boss portrait, straight off the bind-mounted config directory.

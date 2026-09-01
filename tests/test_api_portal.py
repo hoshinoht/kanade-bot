@@ -17,7 +17,7 @@ from bot.ids import short_id
 
 from .fake_bot import ADMIN_TOKEN, OTHER_CHANNEL, UNWATCHED_CHANNEL, WATCHED_CHANNEL
 
-PAGES = ["/", "/fixed", "/inbox", "/extractions", "/members", "/reminders", "/config"]
+PAGES = ["/", "/fixed", "/inbox", "/extractions", "/chat", "/members", "/reminders", "/config"]
 
 
 # --- the invariant that lets the bot share one SQLite connection ------------
@@ -114,6 +114,84 @@ def test_an_unknown_extraction_renders_the_error_page_not_a_traceback(auth, seed
     response = auth.get("/extractions/deadbeef")
     assert response.status_code == 404
     assert "That doesn&#39;t exist" in response.text
+
+
+def test_the_chat_page_lists_who_asked_what_it_used_and_how_it_went(auth, seeded):
+    body = auth.get("/chat").text
+    assert "kanon" in body  # the asker, by roster name
+    assert "get_schedule" in body  # what it looked up
+    assert "8.4 s" in body  # latency, in a unit a person reads
+    assert "answered" in body
+
+
+def test_the_chat_page_totals_the_models(auth, seeded):
+    body = auth.get("/chat").text
+    strip = body[body.index('class="stats"') : body.index('class="card"')]
+    assert "qwen3:32b" in strip
+    assert "answered 1 · failed 0" in strip
+    assert "3,120 in · 64 out" in strip
+
+
+def test_the_chat_detail_shows_the_question_the_reply_and_the_trace(auth, seeded):
+    body = auth.get(f"/chat/{short_id(seeded['interaction'])}").text
+    assert "when is star this week?" in body
+    assert "Star is Monday 21:30" in body
+    assert "week=&#39;this&#39;" in body  # the arguments, as the DEBUG log renders them
+    assert "3,120" in body  # prompt tokens
+
+
+def test_a_chat_detail_says_when_the_model_reported_no_tokens(auth, fake_bot):
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b", question="hi", reply="hello", outcome="answered", latency_ms=900
+    )
+    body = auth.get(f"/chat/{short_id(interaction)}").text
+    assert "the model reported no usage" in body
+    assert "900 ms" in body
+
+
+def test_a_failed_interaction_says_so_rather_than_looking_answered(auth, fake_bot):
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="what's on?",
+        reply="Sorry — I couldn't get to the schedule just now.",
+        outcome="failed",
+        error="the model kept calling tools",
+        rounds=4,
+    )
+    body = auth.get(f"/chat/{short_id(interaction)}").text
+    assert "The generation failed." in body
+    assert "the model kept calling tools" in body
+
+
+def test_a_chat_detail_links_the_card_the_interaction_raised(auth, fake_bot, seeded):
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="move star to wed",
+        reply="Posted a card.",
+        outcome="answered",
+        tool_calls=[
+            {
+                "name": "propose_move",
+                "arguments": "run_query='hstar'",
+                "ms": 200,
+                "outcome": "ok",
+                "created": [seeded["amendment"]],
+            }
+        ],
+    )
+    body = auth.get(f"/chat/{short_id(interaction)}").text
+    assert f"#{short_id(seeded['amendment'])}" in body
+    assert "/900000000000000001" in body  # the card, in Discord
+
+
+def test_an_unknown_chat_interaction_renders_the_error_page_not_a_traceback(auth, seeded):
+    response = auth.get("/chat/deadbeef")
+    assert response.status_code == 404
+    assert "That doesn&#39;t exist" in response.text
+
+
+def test_an_empty_chat_log_explains_what_turns_it_on(auth):
+    assert "Nothing asked yet." in auth.get("/chat").text
 
 
 def test_the_reminders_page_separates_queued_from_sent(auth, fake_bot, seeded):

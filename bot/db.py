@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime
@@ -26,7 +27,12 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+
+#: How many chat interactions are kept. The table is a diagnostic, not a
+#: transcript: five hundred is weeks of a guild's questions at the rate the
+#: pilot is actually used, and it bounds a table nothing else ever deletes from.
+CHAT_INTERACTIONS_KEPT = 500
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 RSVP_STATES = ("yes", "no", "maybe")
@@ -217,6 +223,46 @@ CREATE TABLE IF NOT EXISTS rescan_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS rescan_jobs_recent ON rescan_jobs (created_at DESC);
+
+-- v6. One row per interaction the chatbot *handled*: a question that reached
+-- the model and an answer (or a failure) that came back. A message the rate
+-- limiter or the busy channel turned away gets no row -- nothing was asked of
+-- the model, so there is nothing to account for, and counting those as
+-- interactions would make every average here a lie.
+--
+-- The columns exist to answer "what is this costing us and where is it going
+-- wrong": the model is configurable and currently remote, so tokens are money,
+-- and the model/tool split is what says whether a slow answer was the model
+-- thinking or the schedule being read. Pruned to CHAT_INTERACTIONS_KEPT rows.
+CREATE TABLE IF NOT EXISTS chat_interactions (
+    id                TEXT PRIMARY KEY,
+    at                TEXT NOT NULL,
+    channel_id        TEXT,
+    message_id        TEXT,
+    author_id         TEXT,
+    model             TEXT NOT NULL DEFAULT '',
+    question          TEXT NOT NULL DEFAULT '',
+    reply             TEXT NOT NULL DEFAULT '',
+    -- answered | failed. Nothing else is stored: see the table comment.
+    outcome           TEXT NOT NULL DEFAULT 'answered',
+    -- The generation's own words for what went wrong, when it did.
+    error             TEXT,
+    rounds            INTEGER NOT NULL DEFAULT 0,
+    latency_ms        INTEGER,
+    -- The split of `latency_ms`: time inside the model, time inside the tools.
+    -- They do not add up to it (there is assembly either side); they are the
+    -- two parts worth naming.
+    model_ms          INTEGER,
+    tools_ms          INTEGER,
+    -- Summed across rounds, and null when the model did not report them:
+    -- `prompt_eval_count` / `eval_count` are Ollama's, not the API's.
+    prompt_tokens     INTEGER,
+    completion_tokens INTEGER,
+    -- [{name, arguments, ms, outcome, created}], one per call, in order.
+    tool_calls        TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS chat_interactions_recent ON chat_interactions (at DESC);
 """
 
 
@@ -351,11 +397,20 @@ def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
     log.info("schema v4->v5: members gained ping_level (everyone on %s)", DEFAULT_PING_LEVEL)
 
 
+def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
+    """v6 only adds ``chat_interactions``, which ``SCHEMA_SQL`` creates itself.
+
+    A numbered step is still needed so :meth:`Repo.migrate` can walk past v5, as
+    with v3->v4; the work is the ``CREATE TABLE IF NOT EXISTS`` afterwards.
+    """
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
     3: _migrate_3_to_4,
     4: _migrate_4_to_5,
+    5: _migrate_5_to_6,
 }
 
 
@@ -367,6 +422,23 @@ def _json_list(value: str | None) -> list:
 
 def _dump(value: Iterable[Any]) -> str:
     return json.dumps(list(value))
+
+
+def _int_or_none(value: Any) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _percentile(ordered: Sequence[int], fraction: float) -> int | None:
+    """Nearest-rank percentile of an already-sorted list, or ``None`` if empty.
+
+    Nearest-rank rather than interpolated: every value here is a real
+    measurement of a real answer, and "the 95th percentile answer took 31
+    seconds" is a sentence about one of them.
+    """
+    if not ordered:
+        return None
+    rank = max(1, math.ceil(fraction * len(ordered)))
+    return ordered[rank - 1]
 
 
 class Repo:
@@ -1369,4 +1441,147 @@ class Repo:
         data["at"] = from_iso(data["at"])
         data["message_ids"] = _json_list(data["message_ids"])
         data["amendment_ids"] = _json_list(data["amendment_ids"])
+        return data
+
+    # -- chat interactions -------------------------------------------------
+    def log_chat_interaction(
+        self,
+        *,
+        model: str,
+        question: str,
+        reply: str,
+        outcome: str,
+        rounds: int = 0,
+        channel_id: int | str | None = None,
+        message_id: int | str | None = None,
+        author_id: int | str | None = None,
+        error: str | None = None,
+        latency_ms: int | None = None,
+        model_ms: int | None = None,
+        tools_ms: int | None = None,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        tool_calls: Sequence[dict] = (),
+        at: datetime | None = None,
+        keep: int = CHAT_INTERACTIONS_KEPT,
+    ) -> str:
+        """Record one handled interaction, then prune the log back to ``keep``.
+
+        Pruning on insert rather than on a timer for the same reason
+        :mod:`bot.backup` prunes as it writes: the only moment the table is
+        certainly growing is the moment something was added to it, and a
+        separate sweep is one more thing that can quietly stop running.
+        """
+        interaction_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO chat_interactions
+                (id, at, channel_id, message_id, author_id, model, question, reply, outcome,
+                 error, rounds, latency_ms, model_ms, tools_ms, prompt_tokens,
+                 completion_tokens, tool_calls)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                interaction_id,
+                to_iso(at or utcnow()),
+                str(channel_id) if channel_id is not None else None,
+                str(message_id) if message_id is not None else None,
+                str(author_id) if author_id is not None else None,
+                model,
+                question,
+                reply,
+                outcome,
+                error,
+                int(rounds),
+                _int_or_none(latency_ms),
+                _int_or_none(model_ms),
+                _int_or_none(tools_ms),
+                _int_or_none(prompt_tokens),
+                _int_or_none(completion_tokens),
+                json.dumps(list(tool_calls)),
+            ),
+        )
+        self.prune_chat_interactions(keep)
+        return interaction_id
+
+    def prune_chat_interactions(self, keep: int = CHAT_INTERACTIONS_KEPT) -> int:
+        """Delete all but the newest ``keep`` rows; returns how many went."""
+        cursor = self._conn.execute(
+            """
+            DELETE FROM chat_interactions WHERE id NOT IN (
+                SELECT id FROM chat_interactions ORDER BY at DESC, id DESC LIMIT ?
+            )
+            """,
+            (max(int(keep), 0),),
+        )
+        return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+    def recent_chat_interactions(self, limit: int = 50) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM chat_interactions ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        return [self._chat_interaction(row) for row in rows]
+
+    def get_chat_interaction(self, interaction_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM chat_interactions WHERE id = ?", (interaction_id,)
+        ).fetchone()
+        return self._chat_interaction(row) if row else None
+
+    def list_chat_interaction_ids(self) -> list[str]:
+        """Every interaction id, newest first -- what a short-prefix lookup resolves against."""
+        return [
+            r["id"] for r in self._conn.execute("SELECT id FROM chat_interactions ORDER BY at DESC")
+        ]
+
+    def count_chat_interactions(self) -> int:
+        return int(self._conn.execute("SELECT COUNT(*) FROM chat_interactions").fetchone()[0])
+
+    def chat_interaction_stats(self) -> list[dict]:
+        """Per model: how many, how they went, how slow, and what they cost.
+
+        Aggregated in Python rather than SQL because a percentile is not
+        something SQLite computes, and the alternative -- an average alone --
+        hides exactly the answer worth knowing about, the one that took forty
+        seconds. The table is capped at :data:`CHAT_INTERACTIONS_KEPT` rows, so
+        reading all of them costs less than the query planner would.
+        """
+        by_model: dict[str, dict] = {}
+        for row in self._conn.execute(
+            "SELECT model, outcome, latency_ms, prompt_tokens, completion_tokens "
+            "FROM chat_interactions"
+        ):
+            stat = by_model.setdefault(
+                row["model"] or "",
+                {
+                    "model": row["model"] or "",
+                    "count": 0,
+                    "answered": 0,
+                    "failed": 0,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "_latencies": [],
+                },
+            )
+            stat["count"] += 1
+            stat["answered" if row["outcome"] == "answered" else "failed"] += 1
+            stat["prompt_tokens"] += int(row["prompt_tokens"] or 0)
+            stat["completion_tokens"] += int(row["completion_tokens"] or 0)
+            if row["latency_ms"] is not None:
+                stat["_latencies"].append(int(row["latency_ms"]))
+
+        stats = []
+        for stat in by_model.values():
+            latencies = sorted(stat.pop("_latencies"))
+            stat["avg_latency_ms"] = round(sum(latencies) / len(latencies)) if latencies else None
+            stat["p95_latency_ms"] = _percentile(latencies, 0.95)
+            stats.append(stat)
+        stats.sort(key=lambda s: (-s["count"], s["model"]))
+        return stats
+
+    @staticmethod
+    def _chat_interaction(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["at"] = from_iso(data["at"])
+        data["tool_calls"] = json.loads(data["tool_calls"] or "[]")
         return data

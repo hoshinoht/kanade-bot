@@ -86,8 +86,8 @@ def test_no_tool_can_approve_reject_or_configure_anything():
 
 async def test_get_schedule_lists_the_week(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
-    assert "HStar+HFA" in answer
-    assert "XKalos" in answer
+    assert "Hard Star + Hard FA" in answer
+    assert "Extreme Kalos" in answer
     assert short_id(chat_seeded["star"]) in answer
 
 
@@ -105,13 +105,13 @@ async def test_get_run_by_short_id(chat_bot, chat_seeded):
     answer = await tools.dispatch(
         context(chat_bot), "get_run", {"query": short_id(chat_seeded["star"])}
     )
-    assert "HStar+HFA" in answer
+    assert "Hard Star + Hard FA" in answer
     assert "kanon" in answer
 
 
 async def test_get_run_by_boss_name(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_run", {"query": "kalos"})
-    assert "XKalos" in answer
+    assert "Extreme Kalos" in answer
 
 
 async def test_get_run_refuses_a_boss_nobody_runs(chat_bot, chat_seeded):
@@ -125,9 +125,11 @@ async def test_get_run_refuses_an_unknown_id(chat_bot, chat_seeded):
 
 
 async def test_list_bosses_names_the_table(chat_bot):
+    """Both vocabularies: the token to pass back, and the words to say."""
     answer = await tools.dispatch(context(chat_bot), "list_bosses", {})
     assert "Kalos" in answer
     assert "XKalos" in answer
+    assert "Extreme Kalos" in answer
 
 
 async def test_get_pending_is_empty_until_something_is_proposed(chat_bot, chat_seeded):
@@ -139,7 +141,7 @@ async def test_get_pending_lists_a_card_the_chatbot_raised(chat_bot, chat_seeded
         context(chat_bot), "propose_cancel", {"run_query": short_id(chat_seeded["star"])}
     )
     answer = await tools.dispatch(context(chat_bot), "get_pending", {})
-    assert "HStar+HFA" in answer
+    assert "Hard Star + Hard FA" in answer
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +469,7 @@ async def test_an_unknown_tool_is_refused_by_name(chat_bot, chat_seeded, name):
 
 async def test_arguments_may_arrive_as_a_json_string(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", '{"week": "this"}')
-    assert "HStar+HFA" in answer
+    assert "Hard Star + Hard FA" in answer
 
 
 async def test_unreadable_arguments_do_not_raise(chat_bot, chat_seeded):

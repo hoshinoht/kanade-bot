@@ -44,14 +44,14 @@ async def schedule(bot, channel_id=WATCHED_CHANNEL, **args) -> str:
 async def test_channel_scope_excludes_other_channels_runs(chat_bot, chat_seeded):
     """HStar lives in the watched channel, XKalos in the other one."""
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="channel")
-    assert "HStar+HFA" in answer
-    assert "XKalos" not in answer
+    assert "Hard Star + Hard FA" in answer
+    assert "Extreme Kalos" not in answer
     assert short_id(chat_seeded["kalos"]) not in answer
 
 
 async def test_channel_scope_from_the_other_channel_sees_the_other_run(chat_bot, chat_seeded):
     answer = await schedule(chat_bot, OTHER_CHANNEL, scope="channel")
-    assert "XKalos" in answer
+    assert "Extreme Kalos" in answer
     assert "HStar" not in answer
 
 
@@ -70,8 +70,8 @@ async def test_a_thread_asks_on_behalf_of_its_parent_channel(chat_bot, chat_seed
     assert (parent_id, thread_id) == (WATCHED_CHANNEL, thread.id)
 
     answer = await schedule(chat_bot, parent_id, scope="channel")
-    assert "HStar+HFA" in answer
-    assert "XKalos" not in answer
+    assert "Hard Star + Hard FA" in answer
+    assert "Extreme Kalos" not in answer
 
 
 # ---------------------------------------------------------------------------
@@ -100,8 +100,8 @@ async def test_an_empty_channel_in_an_empty_week_does_not_promise_runs(chat_bot,
 
 async def test_all_scope_is_the_default_and_unchanged(chat_bot, chat_seeded):
     answer = await schedule(chat_bot, WATCHED_CHANNEL)
-    assert "HStar+HFA" in answer
-    assert "XKalos" in answer
+    assert "Hard Star + Hard FA" in answer
+    assert "Extreme Kalos" in answer
 
 
 async def test_all_scope_names_the_channel_each_run_lives_in(chat_bot, chat_seeded):
@@ -124,7 +124,7 @@ async def test_a_run_in_a_channel_the_bot_cannot_see_still_lists(chat_bot, chat_
     """`channel_name` returns None off the gateway; "#None" would be worse."""
     chat_bot.channels.clear()
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="all")
-    assert "HStar+HFA" in answer
+    assert "Hard Star + Hard FA" in answer
     assert "#None" not in answer
     assert " in #" not in answer
 

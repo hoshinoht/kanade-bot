@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Chat {{ interaction.short_id }} — Boss scheduler{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><a href="/chat">Chat</a> · #{{ interaction.short_id }}</p>
+    <h1>{{ interaction.local_time }}</h1>
+    <p>{{ interaction.author_name }}{% if interaction.channel_name %} in {{ interaction.channel_name }}{% endif %} ·
+      {{ interaction.model }} ·
+      {{ interaction.rounds }} round{{ "" if interaction.rounds == 1 else "s" }},
+      {{ interaction.tool_count }} tool call{{ "" if interaction.tool_count == 1 else "s" }}
+      {% if interaction.url %} · <a href="{{ interaction.url }}">open in Discord</a>{% endif %}</p>
+  </div>
+  <span class="status status--{{ 'confirmed' if interaction.outcome == 'answered' else 'cancelled' }}">{{ interaction.outcome }}</span>
+</div>
+
+{% if interaction.error %}
+<div class="empty" role="status">
+  <strong>The generation failed.</strong>
+  {{ interaction.error }} — the channel got the standard apology rather than an answer.
+</div>
+{% endif %}
+
+<div class="stats">
+  <section class="stat">
+    <p class="stat__name">Latency</p>
+    <p class="stat__big">{{ interaction.latency_ms|duration }}<span class="stat__unit">end to end</span></p>
+    <dl class="stat__rows">
+      <div><dt>Model</dt><dd class="mono">{{ interaction.model_ms|duration }}</dd></div>
+      <div><dt>Tools</dt><dd class="mono">{{ interaction.tools_ms|duration }}</dd></div>
+    </dl>
+  </section>
+  <section class="stat">
+    <p class="stat__name">Tokens</p>
+    <p class="stat__big">
+      {% if interaction.prompt_tokens is none and interaction.completion_tokens is none %}
+      —<span class="stat__unit">the model reported no usage</span>
+      {% else %}
+      {{ "{:,}".format((interaction.prompt_tokens or 0) + (interaction.completion_tokens or 0)) }}<span class="stat__unit">across {{ interaction.rounds }} round(s)</span>
+      {% endif %}
+    </p>
+    <dl class="stat__rows">
+      <div><dt>Prompt</dt><dd class="mono">{% if interaction.prompt_tokens is not none %}{{ "{:,}".format(interaction.prompt_tokens) }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Completion</dt><dd class="mono">{% if interaction.completion_tokens is not none %}{{ "{:,}".format(interaction.completion_tokens) }}{% else %}—{% endif %}</dd></div>
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">What they asked</h2></div>
+  <div class="evidence">
+    <p class="evidence__line">
+      <span class="evidence__who">{{ interaction.author_name }}</span><span class="evidence__at">{{ interaction.local_time }}</span>
+      <br><span class="evidence__text">{{ interaction.question or "(no text)" }}</span>
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">What it said</h2></div>
+  <div class="evidence">
+    <p class="evidence__line">
+      <span class="evidence__text">{{ interaction.reply }}</span>
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Tool trace</h2></div>
+  {% if not interaction.tool_calls %}
+  <p class="run__meta">It answered from the conversation alone — nothing was looked up.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Arguments</th><th>Took</th><th>Outcome</th><th>Raised</th></tr></thead>
+      <tbody>
+        {% for call in interaction.tool_calls %}
+        <tr>
+          <td class="mono">{{ call.name }}</td>
+          <td class="mono">{{ call.arguments or "—" }}</td>
+          <td class="mono">{{ call.ms|duration }}</td>
+          <td><span class="status status--{{ 'confirmed' if call.ok else 'at_risk' }}">{{ call.outcome }}</span></td>
+          <td>
+            {% for card in call.created %}
+            {% if card.card_url %}<a class="id" href="{{ card.card_url }}">#{{ card.short_id }}</a>{% else %}<span class="id">#{{ card.short_id }}</span>{% endif %}
+            {% if card.status %}<span class="run__meta">{{ card.kind_label }}, {{ card.status }}</span>{% endif %}
+            {% else %}
+            <span class="id">—</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

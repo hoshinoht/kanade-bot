@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from .. import formatting
 from ..api import service
 from ..api.errors import BadRequest, NotFound
 from ..extract.commit import FIX_REMOVE
@@ -182,8 +183,9 @@ TOOLS: list[dict] = [
     ),
     _tool(
         "propose_add",
-        "Post a card proposing a NEW run that is not on the schedule yet. This does NOT "
-        "create it: somebody has to react ✅ on the card first.",
+        "Post a card proposing a NEW run that is not on the schedule yet. By default it is "
+        "a ONE-TIME run that week -- only `weekly` makes it recurring. This does NOT create "
+        "it: somebody has to react ✅ on the card first.",
         {
             "boss": {
                 "type": "string",
@@ -201,6 +203,17 @@ TOOLS: list[dict] = [
                 "description": (
                     "Optional. Who the run is for, by name, comma separated. Leave it out "
                     "for just the person asking -- which is the default."
+                ),
+            },
+            "weekly": {
+                "type": "boolean",
+                "description": (
+                    "Optional, default false, meaning ONE run on that day only. Set it true "
+                    "ONLY when they explicitly say it repeats -- 'weekly', 'every week', "
+                    "'every Tuesday', 'recurring', 'fixed'. 'Schedule a run', 'add a run "
+                    "tonight', 'can we do HStar friday' are all one-time: leave it out. If "
+                    "their wording is unclear, do NOT ask which they mean -- leave it out. "
+                    "One-time is the safe default and the card says which one it is."
                 ),
             },
         },
@@ -378,7 +391,8 @@ def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
     where = service.channel_name(bot, run["channel_id"]) if with_channel else None
     return (
         f"[{short_id(run['id'])}] {local.strftime('%a %d %b %H:%M')} "
-        f"{'+'.join(run['bosses'])} ({run['status']}, {yes}/{len(run['participants'])} yes)"
+        f"{formatting.boss_labels(run['bosses'])} "
+        f"({run['status']}, {yes}/{len(run['participants'])} yes)"
         + (f" in {where}" if where else "")
     )
 
@@ -387,8 +401,8 @@ def _run_detail(bot: Any, run: dict) -> str:
     view = service.run_view(bot, run)
     people = ", ".join(f"{p['name']} ({p['rsvp'] or 'no answer'})" for p in view["participants"])
     return (
-        f"Run {view['short_id']}: {'+'.join(view['bosses'])} on {view['local_day']} "
-        f"{view['local_time']}, status {view['status']}. "
+        f"Run {view['short_id']}: {formatting.boss_labels(view['bosses'])} on "
+        f"{view['local_day']} {view['local_time']}, status {view['status']}. "
         f"On it: {people or 'nobody'}."
     )
 
@@ -453,9 +467,18 @@ def _get_run(ctx: ToolContext, args: dict) -> str:
 
 
 def _list_bosses(ctx: ToolContext, args: dict) -> str:
+    """The table, in both vocabularies.
+
+    Each difficulty is given as the token to pass back to a tool *and* the words
+    to say out loud, because the model has to do both: "XKalos" is what
+    ``propose_add`` accepts, "Extreme Kalos" is what a member reads.
+    """
     rows = [
         f"{boss.short} ({boss.full}, lv {boss.level}): "
-        + ", ".join(boss.canonical(letter) for letter in boss.difficulties)
+        + ", ".join(
+            f"{boss.canonical(letter)} = {formatting.boss_label(boss.canonical(letter))}"
+            for letter in boss.difficulties
+        )
         for boss in ctx.bot.bosses.ordered()
     ]
     return "\n".join(["Bosses this guild runs:", *rows])
@@ -466,7 +489,8 @@ def _get_pending(ctx: ToolContext, args: dict) -> str:
     if not open_cards:
         return "There are no proposal cards waiting."
     lines = [
-        f"[{card['short_id']}] {card['kind_label']} {'+'.join(card['bosses'])} -> {card['when']}"
+        f"[{card['short_id']}] {card['kind_label']} "
+        f"{formatting.boss_labels(card['bosses'])} -> {card['when']}"
         for card in open_cards[:MAX_RUNS]
     ]
     return "\n".join(["Waiting for a ✅:", *lines])
@@ -544,10 +568,50 @@ async def _propose(
             "Tell them to check with an admin."
         )
     return (
-        f"Posted a proposal card ({', '.join(short_id(a) for a in created)}). "
+        f"Card {', '.join(short_id(a) for a in created)} posted: "
+        f"{_card_text(ctx, kind, amendment, at, run, payload)}. "
         "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it. "
-        "Tell them the card is up and needs a ✅."
+        "Tell them the card is up and needs a ✅. The people named above are the whole "
+        "party on it -- name those and nobody else, and never say you are on a run: you "
+        "are a bot and cannot go to one."
     )
+
+
+def _card_when(
+    ctx: ToolContext, kind: str, at: datetime | None, run: dict | None, payload: dict
+) -> str:
+    """The day and time a card shows, in the words the card itself uses."""
+    if kind == "fix":
+        weekly = payload.get("weekly_when")
+        if weekly:
+            return f"every {weekly}"
+        weekday, hhmm = payload.get("weekday"), payload.get("time")
+        if weekday is not None and hhmm:
+            return f"every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
+    when = at if at is not None else (run["datetime"] if run is not None else None)
+    return f"{when.astimezone(ctx.bot.tz):%a %d %b %H:%M}" if when is not None else ""
+
+
+def _card_text(
+    ctx: ToolContext,
+    kind: str,
+    amendment: Amendment,
+    at: datetime | None,
+    run: dict | None,
+    payload: dict | None,
+) -> str:
+    """What the card says, so the model's reply can only repeat it.
+
+    Live, the model told a channel a run was "with @<the bot> and @<a member>":
+    it was narrating the arguments it had *sent*, not the card that came back,
+    so it put itself on the run and left the person who asked off it. The party
+    here is the resolved one -- the ids actually written to the row -- by display
+    name, and the bosses are spelled out the way the card spells them.
+    """
+    people = list(amendment.participants) or (list(run["participants"]) if run else [])
+    party = ", ".join(service.member_name(ctx.bot, uid) for uid in people) or "nobody yet"
+    when = _card_when(ctx, kind, at, run, dict(payload or {}))
+    return f"{formatting.boss_labels(amendment.bosses)}{f' {when}' if when else ''} — {party}"
 
 
 async def _propose_move(ctx: ToolContext, args: dict) -> str:
@@ -568,7 +632,10 @@ async def _propose_move(ctx: ToolContext, args: dict) -> str:
         kind="move",
         run=run,
         at=at,
-        summary=f"move {'+'.join(run['bosses'])} to {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}",
+        summary=(
+            f"move {formatting.boss_labels(run['bosses'])} "
+            f"to {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}"
+        ),
     )
 
 
@@ -587,8 +654,33 @@ def _validate_bosses(ctx: ToolContext, text: str) -> list[str]:
         return service.validate_bosses(ctx.bot, text)
     except BadRequest as exc:
         raise ToolError(
-            f"{exc.message}. Ask them which one they mean -- do not choose a difficulty for them."
+            f"{_spell_out(ctx.bot, exc.message)}. Ask them which one they mean -- do not "
+            "choose a difficulty for them. Ask in words ('Easy, Normal or Hard Bellona?') "
+            "and pass the short form (HBellona) back to the tool."
         ) from None
+
+
+#: Anything shaped like a canonical boss token; the table decides which of them
+#: actually is one.
+_TOKENISH_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9]+\b")
+
+
+def _spell_out(bot: Any, message: str) -> str:
+    """Annotate the boss tokens in a refusal with the words a member would say.
+
+    Both forms, deliberately. The model has to do two things with this sentence
+    -- ask a person which difficulty they meant, and then call the tool again --
+    and it can only do the first from "Hard Bellona" and the second from
+    "HBellona".
+    """
+
+    def annotate(match: re.Match) -> str:
+        token = match.group(0)
+        if bot.bosses.detail(token) is None:
+            return token
+        return f"{token} ({formatting.boss_label(token)})"
+
+    return _TOKENISH_RE.sub(annotate, message)
 
 
 #: "put me on it" -- the one name the model can be certain of, and the one the
@@ -629,8 +721,8 @@ _JOINING_WORDS = frozenset(
 )
 
 
-def _without_the_bot(ctx: ToolContext, text: str) -> str:
-    """Drop every reference to the bot itself from a participants field.
+def _without_the_bot(ctx: ToolContext, text: str) -> tuple[str, bool]:
+    """Drop every reference to the bot from a participants field; say if there was one.
 
     The trigger mention is part of the message the model is reading, and it duly
     passed it straight back as a participant. ``validate_participants`` then
@@ -641,6 +733,10 @@ def _without_the_bot(ctx: ToolContext, text: str) -> str:
     The bot is not a member of anything. It is the thing being spoken to, so its
     id, its mention markup and its name are stripped before anybody tries to
     resolve them to a person.
+
+    The second half of the return value is why the caller cares: a member who
+    writes "@bot schedule it for me and @kanon" is on that run, and the model
+    copies the trigger mention across in place of the word "me".
     """
     user = getattr(ctx.bot, "user", None)
     cleaned = text
@@ -651,7 +747,7 @@ def _without_the_bot(ctx: ToolContext, text: str) -> str:
     for name in {getattr(user, "name", ""), getattr(user, "display_name", "")}:
         if name:
             cleaned = re.sub(rf"\b{re.escape(str(name))}\b", " ", cleaned, flags=re.IGNORECASE)
-    return cleaned
+    return cleaned, cleaned != text
 
 
 def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
@@ -666,9 +762,19 @@ def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
     can never resolve: the bot itself is stripped out entirely
     (:func:`_without_the_bot`), and "me"/"myself"/"I" become the asker's own id,
     taken from the message rather than from the model.
+
+    A stripped bot reference then puts the asker *back*. Live: "schedule it for
+    me and @kanon" reached the tool as the trigger mention plus kanon, the bot
+    was stripped, kanon survived -- so the empty-field default never fired and
+    the card went up for kanon alone, with the bot narrated as the other
+    attendee. Whatever the model meant by naming the bot, it was reading a
+    sentence in which the asker had put themselves on the run. Somebody who
+    genuinely wants out of a run they asked for can ❌ the card, which is a much
+    smaller failure than quietly dropping the person who asked.
     """
     raw = ", ".join(str(t) for t in text) if isinstance(text, (list, tuple)) else str(text or "")
-    raw = _FIRST_PERSON_RE.sub(f"<@{ctx.author_id}>", _without_the_bot(ctx, raw))
+    without_bot, named_the_bot = _without_the_bot(ctx, raw)
+    raw = _FIRST_PERSON_RE.sub(f"<@{ctx.author_id}>", without_bot)
     if not raw.strip():
         # Empty to begin with, or nothing left once the bot was removed -- which
         # is what "@YuukiSakuna schedule a run" looks like by the time the model
@@ -692,9 +798,29 @@ def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
     if not people:
         return [ctx.author_id]
     try:
-        return service.validate_participants(ctx.bot, people)
+        named = service.validate_participants(ctx.bot, people)
     except BadRequest as exc:
         raise ToolError(f"{exc.message}. Ask them who should be on it.") from None
+    if named_the_bot and ctx.author_id not in named:
+        # Added after validation, exactly as the empty-field default is: the
+        # asker is on this run because they asked for it, not because the model
+        # named them, and the same is true whether or not they hold a role.
+        named.insert(0, ctx.author_id)
+    return named
+
+
+#: What a model writes when it means yes. The parameter is declared boolean, but
+#: a small model routinely answers a boolean with the word -- and `bool("false")`
+#: is True, which would silently turn a one-off into a standing commitment.
+_TRUTHY = frozenset({"true", "yes", "y", "1", "weekly", "recurring", "fixed"})
+
+
+def _is_true(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value or "").strip().lower() in _TRUTHY
 
 
 async def _propose_add(ctx: ToolContext, args: dict) -> str:
@@ -704,6 +830,11 @@ async def _propose_add(ctx: ToolContext, args: dict) -> str:
     "wanna do trio ncarling saturday?" read out of chat. Nothing new is written
     here: this only builds the same amendment from a sentence addressed to the
     bot instead of one overheard in a party channel.
+
+    ``weekly`` swaps the kind for `fix`, which is the same card `/fixed add`
+    would produce. It is off unless the member actually said the run repeats:
+    the two are a fortnight apart in consequence, and a one-off proposed as a
+    weekly commits the party to every Tuesday until somebody notices.
     """
     bosses = _validate_bosses(ctx, str(args.get("boss") or ""))
     raw = str(args.get("when") or "").strip()
@@ -716,6 +847,8 @@ async def _propose_add(ctx: ToolContext, args: dict) -> str:
     if at <= utcnow():
         raise ToolError(f"`{raw}` is in the past. Ask them which day they mean.")
     people = _validate_participants(ctx, args.get("participants"))
+    if _is_true(args.get("weekly")):
+        return await _propose_weekly(ctx, bosses, at, people)
     return await _propose(
         ctx,
         kind="add",
@@ -723,14 +856,46 @@ async def _propose_add(ctx: ToolContext, args: dict) -> str:
         at=at,
         bosses=bosses,
         participants=people,
-        summary=f"new run: {'+'.join(bosses)} on {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}",
+        summary=(
+            f"new run: {formatting.boss_labels(bosses)} "
+            f"on {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}"
+        ),
+    )
+
+
+async def _propose_weekly(
+    ctx: ToolContext, bosses: list[str], at: datetime, people: list[str]
+) -> str:
+    """The recurring half of ``propose_add``: a `fix` card, as `/fixed add` posts.
+
+    The day and time the member said are a dated instant by the time
+    :func:`bot.api.service.parse_when` is done with them, and a baseline is a
+    weekday plus an HH:MM -- so they are reduced here exactly as
+    :func:`bot.extract.pipeline._fix_payload` reduces the extractor's, in the
+    guild's timezone, because "every Tuesday 21:30" is a local claim.
+
+    The payload is built from that instant alone. Nothing the model wrote in the
+    arguments reaches it, which is what stops a `weekly` call from carrying, say,
+    an ``op: remove`` that would retire somebody else's baseline on the ✅.
+    """
+    local = at.astimezone(ctx.bot.tz)
+    when = f"{WEEKDAY_NAMES[local.weekday()]} {local:%H:%M}"
+    return await _propose(
+        ctx,
+        kind="fix",
+        run=None,
+        at=at,
+        bosses=bosses,
+        participants=people,
+        payload={"weekday": local.weekday(), "time": local.strftime("%H:%M")},
+        summary=f"new weekly: {formatting.boss_labels(bosses)} every {when}",
     )
 
 
 def _fixed_line(bot: Any, fixed: dict) -> str:
     return (
         f"[{short_id(fixed['id'])}] every {WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']} "
-        f"{'+'.join(fixed['bosses'])}"
+        f"{formatting.boss_labels(fixed['bosses'])}"
     )
 
 
@@ -810,7 +975,9 @@ async def _propose_remove_fixed(ctx: ToolContext, args: dict) -> str:
             # looking the row up again -- by ✅ time it may be gone.
             "weekly_when": _fixed_when(fixed),
         },
-        summary=(f"stop scheduling {'+'.join(fixed['bosses'])} every {_fixed_when(fixed)}"),
+        summary=(
+            f"stop scheduling {formatting.boss_labels(fixed['bosses'])} every {_fixed_when(fixed)}"
+        ),
     )
 
 
@@ -823,7 +990,7 @@ async def _propose_cancel(ctx: ToolContext, args: dict) -> str:
         kind="cancel",
         run=run,
         at=None,
-        summary=f"cancel {'+'.join(run['bosses'])}",
+        summary=f"cancel {formatting.boss_labels(run['bosses'])}",
     )
 
 
