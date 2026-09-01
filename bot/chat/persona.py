@@ -328,12 +328,52 @@ def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
     )
 
 
-def system_prompt(persona: str, header: str) -> str:
-    """Persona, hard rules, clock, few-shot examples, voice reminder -- in that order.
+#: What the bot is actually running on, filled in from ``CHAT_PILOT_MODEL``.
+#: Deliberately *not* in :data:`HARD_RULES`: those are pinned literals shared by
+#: every deployment, and this sentence names one deployment's model.
+#:
+#: Says nothing about *where* the model runs, on purpose: ``CHAT_PILOT_MODEL``
+#: may name a local model or one of Ollama's cloud models proxied through the
+#: same daemon, and "on the machine that hosts the bot" would be a second false
+#: claim in place of the one this exists to remove. It is also scoped to the
+#: runtime alone -- who wrote the bot is the persona document's to answer, and a
+#: line here saying these are the only facts it has would overrule it.
+RUNTIME_LINE = (
+    "You are a Discord bot for this guild's boss schedule. You run on {model}, served "
+    "through Ollama. If somebody asks what you run on or what model you are, that is "
+    "the fact: say it in your own voice. Never invent a model name, a version or a "
+    "training story, and never claim to be anything other than a bot."
+)
+
+#: Used when no model is configured, which is a misconfigured deploy rather than
+#: an invitation to guess: saying nothing here is what let the model make one up.
+#: Substituted for the whole phrase, so the sentence reads either way.
+UNNAMED_MODEL = "an unnamed model"
+
+
+def runtime_line(model: str) -> str:
+    """The one paragraph that says what the bot is running on.
+
+    Live, asked "what model are u deployed on", the bot answered "a fine-tuned
+    LLaMA-2" -- a plausible sentence about a model it has never run. Nothing in
+    the prompt told it otherwise, so it answered from training data like any
+    other question it had no tool for. This is the fact, taken from the setting
+    that actually selects the model, so the true answer is the easy one.
+    """
+    named = (model or "").strip()
+    return RUNTIME_LINE.format(model=f"the `{named}` model" if named else UNNAMED_MODEL)
+
+
+def system_prompt(persona: str, header: str, runtime: str = "") -> str:
+    """Persona, hard rules, clock, runtime, few-shot examples, voice reminder.
 
     The persona goes first because it is what the model should sound like, the
     rules second because later instructions win when the two disagree, and the
-    clock after them because it is short and load-bearing.
+    clock after them because it is short and load-bearing. ``runtime``
+    (:func:`runtime_line`) sits with the clock: both are facts about the here and
+    now that no tool returns, and both exist because a model with no answer
+    invents one. It is optional so a caller that only cares about the voice --
+    every test that pins this ordering -- keeps its two-argument call.
 
     The examples and the reminder go last, and that placement is the whole point
     of them: recency is the one lever that reliably moves a small model, and the
@@ -350,6 +390,7 @@ def system_prompt(persona: str, header: str) -> str:
             persona.strip(),
             HARD_RULES.strip(),
             header,
+            runtime,
             examples_block(persona),
             voice_footer(persona),
         )
@@ -366,12 +407,15 @@ __all__ = [
     "MAX_EXAMPLE_CHARS",
     "REMINDER_PREFIX",
     "REMINDER_SUFFIX",
+    "RUNTIME_LINE",
+    "UNNAMED_MODEL",
     "VOICE_PREFIX",
     "clock_header",
     "examples_block",
     "good_examples",
     "good_sections",
     "load_persona",
+    "runtime_line",
     "system_prompt",
     "voice_footer",
     "voice_line",

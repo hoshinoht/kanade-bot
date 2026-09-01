@@ -173,11 +173,12 @@ def test_a_fresh_database_starts_at_the_latest_version(tmp_path):
 
 
 def test_a_live_database_gains_the_chat_log_without_losing_anything(tmp_path):
-    """v5 -> v6 adds a table and touches nothing else.
+    """v5 onward adds tables and touches nothing else.
 
     Written against a *real* v5 file rather than a hand-rolled one: the step
     that matters is the one a running deployment will take, and the running
-    deployment's v5 is whatever `SCHEMA_SQL` built.
+    deployment's v5 is whatever `SCHEMA_SQL` built. The landing version is the
+    constant, not a literal, so adding a schema version does not stale this.
     """
     path = tmp_path / "v5.sqlite"
     repo = Repo(path)
@@ -188,7 +189,8 @@ def test_a_live_database_gains_the_chat_log_without_losing_anything(tmp_path):
     repo.close()
 
     migrated = Repo(path)
-    assert migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"] == 6
+    version = migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
+    assert version == SCHEMA_VERSION
     assert migrated.recent_chat_interactions() == []
     assert migrated.get_member("7")["display_name"] == "harbour4417"
     assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]

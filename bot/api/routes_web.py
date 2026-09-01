@@ -314,6 +314,13 @@ async def chat_interaction_page(
     )
 
 
+@router.get("/audit")
+async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
+    """Who changed what, newest first. Read-only -- there is nothing to do here."""
+    request.state.caller = caller
+    return render(request, "audit.html", "audit", rows=service.audit_log(bot, limit), limit=limit)
+
+
 @router.get("/static/portraits/{short}")
 async def portrait(request: Request, bot: Bot, short: str) -> Response:
     """A boss portrait, straight off the bind-mounted config directory.

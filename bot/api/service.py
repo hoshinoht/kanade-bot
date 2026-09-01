@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import formatting
+from .. import audit, formatting
 from ..bosses import BossParseError
 from ..export import message_record
 from ..extract import resolve
@@ -61,6 +61,28 @@ log = logging.getLogger(__name__)
 #: Put on a Discord card that the portal (rather than a ✅ reaction) applied.
 PORTAL_APPLIED = "✅ applied via portal"
 PORTAL_REJECTED = "❌ rejected via portal"
+
+
+def _audit(
+    bot: BossBot,
+    action: str,
+    subject: str | None = None,
+    detail: str = "",
+    actor: audit.Actor | None = None,
+) -> None:
+    """Note a change on the audit trail, crediting whoever asked for it.
+
+    The actor comes from the request in flight (:class:`bot.api.app.
+    ActorMiddleware` puts it there) unless a caller knows better. Called *after*
+    the change, so a mutation that raised leaves no row claiming it happened.
+    """
+    audit.record(bot.repo, actor or audit.current(), action, subject, detail)
+
+
+def _bosses_of(run: dict) -> str:
+    """The run's bosses as an audit line says them: `HStar + HFA`."""
+    return formatting.format_bosses(run["bosses"])
+
 
 #: Runtime config the portal may read and write, and how to validate each one.
 #: Anything not listed here is refused -- `config set` is not a way to write
@@ -608,6 +630,38 @@ def chat_summary(bot: BossBot) -> dict:
     }
 
 
+def short_subject(subject: str | None) -> str | None:
+    """A uuid subject as the eight characters the portal shows; anything else as is.
+
+    An audit subject is a run, a card or a fixed timing -- but it is also a
+    config key and a channel id, and ``short_id`` would happily cut those in
+    half. Only a dashed uuid is shortened.
+    """
+    if not subject:
+        return None
+    return short_id(subject) if len(subject) == 36 and "-" in subject else subject
+
+
+def audit_view(bot: BossBot, row: dict) -> dict:
+    """One line of the audit trail: when, from where, who, what."""
+    return {
+        "id": row["id"],
+        "at": to_iso(row["at"]),
+        "local_time": row["at"].astimezone(bot.tz).strftime("%a %d %b %H:%M:%S"),
+        "surface": row["surface"],
+        "actor": row["actor"],
+        "action": row["action"],
+        "subject": row["subject"],
+        "short_subject": short_subject(row["subject"]),
+        "detail": row["detail"],
+    }
+
+
+def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
+    """The most recent changes, newest first -- what the Audit page lists."""
+    return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
+
+
 def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
     return {
         "user_id": member["user_id"],
@@ -803,6 +857,13 @@ async def create_fixed(
     )
     bot.materialise_weeks()
     fixed = bot.repo.get_fixed_run(fixed_id)
+    _audit(
+        bot,
+        "fixed_add",
+        fixed_id,
+        f"added the weekly {formatting.format_bosses(boss_list)} on "
+        f"{WEEKDAY_NAMES[weekday]} {hhmm} for {len(people)} member(s)",
+    )
     who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(bot, formatting.fixed_notice(fixed, "added", who), who.mentioned, home)
     return fixed_view(bot, fixed)
@@ -843,6 +904,14 @@ async def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
     _apply_fixed_to_runs(bot, fixed["id"], set(fields))
     bot.materialise_weeks()
     updated = bot.repo.get_fixed_run(fixed["id"])
+    _audit(
+        bot,
+        "fixed_edit",
+        fixed["id"],
+        f"changed {', '.join(sorted(fields))} on the weekly "
+        f"{formatting.format_bosses(updated['bosses'])} "
+        f"({WEEKDAY_NAMES[updated['weekday']]} {updated['time']})",
+    )
     who = audience(bot.repo, updated["participants"], "fixed")
     await _announce(
         bot,
@@ -886,6 +955,14 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
         bot.tz,
         bot.ping_time,
         bot.countdowns,
+    )
+    _audit(
+        bot,
+        "fixed_remove",
+        fixed["id"],
+        f"removed the weekly {formatting.format_bosses(fixed['bosses'])} "
+        f"({WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']}); "
+        f"{cancelled} upcoming run(s) cancelled",
     )
     who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(
@@ -1054,6 +1131,14 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
         bot.repo.set_run_status(run["id"], "planned")
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
     updated = bot.repo.get_run(run["id"])
+    _audit(
+        bot,
+        "amend",
+        run["id"],
+        f"moved {_bosses_of(updated)} from "
+        f"{formatting.local_day(old_at, bot.tz)} {formatting.local_time(old_at, bot.tz)} to "
+        f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}",
+    )
     who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
@@ -1147,6 +1232,15 @@ async def set_status(
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
 
     fresh = bot.repo.get_run(run["id"])
+    # `cancel`/`otot`/`restore` all land here, so the trail names the transition
+    # rather than whichever shortcut was used to ask for it.
+    _audit(
+        bot,
+        "cancel" if status == "cancelled" else "status",
+        run["id"],
+        f"{_bosses_of(fresh)} on {formatting.local_day(fresh['datetime'], bot.tz)}: "
+        f"{previous} -> {status}",
+    )
     if announce:
         who = audience(bot.repo, fresh["participants"], "status")
         notice = status_notice(bot, fresh, status, who)
@@ -1209,6 +1303,15 @@ async def swap_participants(
     # confirmed by hand, which an incomplete tally alone would no longer undo.
     recompute_after_roster_change(bot.repo, run["id"])
     fresh = bot.repo.get_run(run["id"])
+    changes = [f"-{member_name(bot, uid)}" for uid in leaving]
+    changes += [f"+{member_name(bot, uid)}" for uid in joining]
+    _audit(
+        bot,
+        "swap",
+        run["id"],
+        f"{_bosses_of(fresh)} on {formatting.local_day(fresh['datetime'], bot.tz)} "
+        f"this week: {' '.join(changes)}",
+    )
 
     who = audience(bot.repo, [*fresh["participants"], *leaving], "swap")
     await _announce(
@@ -1263,6 +1366,13 @@ async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -
     if new_status != run["status"]:
         bot.repo.set_run_status(run["id"], new_status)
     fresh = bot.repo.get_run(run["id"])
+    _audit(
+        bot,
+        "rsvp",
+        run["id"],
+        f"{'cleared' if answer == 'clear' else answer} for {member_name(bot, uid)} on "
+        f"{_bosses_of(fresh)} ({formatting.local_day(fresh['datetime'], bot.tz)})",
+    )
     if answer == "no":
         await bot.notify_decline(fresh, uid, member_name(bot, uid))
     else:
@@ -1332,6 +1442,13 @@ async def approve(bot: BossBot, amendment_id: str, actor_id: int | str | None = 
     if not result.applied:
         raise BadRequest(result.problem or "that change could not be applied")
 
+    _audit(
+        bot,
+        "approve",
+        amendment["id"],
+        f"applied the {result.kind} on card {short_id(amendment['id'])}, "
+        f"credited to {member_name(bot, actor)}",
+    )
     await bot._mark_superseded(result.superseded)
     await bot.annotate_message(
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_APPLIED
@@ -1364,6 +1481,12 @@ async def reject_amendment(bot: BossBot, amendment_id: str) -> dict:
     if amendment["status"] != "proposed":
         raise BadRequest(f"that change is already `{amendment['status']}`")
     reject(bot.repo, amendment)
+    _audit(
+        bot,
+        "reject",
+        amendment["id"],
+        f"rejected the {amendment['kind']} on card {short_id(amendment['id'])}",
+    )
     await bot.annotate_message(
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_REJECTED
     )
@@ -1400,6 +1523,12 @@ def update_member(bot: BossBot, user_id: int | str, ping_level: str | None = Non
     except ValueError as exc:
         raise BadRequest(str(exc)) from None
     bot.repo.set_ping_level(user_id, level)
+    _audit(
+        bot,
+        "member",
+        str(user_id),
+        f"{member_name(bot, user_id)} is now on `{level}` @mentions",
+    )
     return member_view(bot, bot.repo.get_member(user_id), _run_counts(bot))
 
 
@@ -1411,6 +1540,7 @@ def set_nick(bot: BossBot, user_id: int | str, alias: str) -> dict:
     if member is None:
         raise NotFound(f"no member {user_id} - the roster syncs from the bossing role")
     aliases = bot.repo.add_alias(user_id, alias)
+    _audit(bot, "nick", str(user_id), f"{member_name(bot, user_id)} is also known as `{alias}`")
     return {"user_id": str(user_id), "name": member_name(bot, user_id), "aliases": aliases}
 
 
@@ -1478,6 +1608,7 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
     key = (key or "").strip().lower()
     if key not in CONFIG_KEYS:
         raise BadRequest(f"unknown setting `{key}` - one of {', '.join(CONFIG_KEYS)}")
+    before = bot.repo.get_config(key)
     if key == "day_of_ping_time":
         try:
             stored = parse_hhmm(str(value)).strftime("%H:%M")
@@ -1497,11 +1628,14 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
             raise BadRequest("countdown_minutes must be whole minutes, e.g. `60,15`") from None
         if not parsed or any(m <= 0 for m in parsed):
             raise BadRequest("countdown_minutes must be positive whole minutes, e.g. `60,15`")
-        bot.repo.set_config(key, ",".join(str(m) for m in sorted(set(parsed), reverse=True)))
+        stored = ",".join(str(m) for m in sorted(set(parsed), reverse=True))
+        bot.repo.set_config(key, stored)
         for run in bot.repo.list_runs():
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
     else:
-        bot.repo.set_config(key, _as_flag(value))
+        stored = _as_flag(value)
+        bot.repo.set_config(key, stored)
+    _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
     return get_config(bot)
 
 
@@ -1523,6 +1657,12 @@ async def post_digest(
             "couldn't post the digest - Discord rejected the message; check the bot logs"
         )
     cid = getattr(getattr(message, "channel", None), "id", channel_id)
+    _audit(
+        bot,
+        "digest",
+        str(cid) if cid else None,
+        f"posted the {week}-week digest in {channel_name(bot, cid) or f'channel {cid}'}",
+    )
     return {
         "posted": True,
         "week": week,
@@ -1682,6 +1822,12 @@ def queue_rescan(
         requested_by=requested_by,
         names=names,
     )
+    _audit(
+        bot,
+        "rescan",
+        job.id,
+        f"queued a {window} re-read of {len(targets)} channel(s) from {source}",
+    )
     return job_view(job)
 
 
@@ -1704,6 +1850,7 @@ def cancel_rescan(bot: BossBot, job_id: str) -> dict:
         if job is None:
             raise NotFound("that rescan is no longer in memory")
         raise BadRequest(f"that rescan is already `{job.status}`")
+    _audit(bot, "rescan_stop", job_id, "asked a running rescan to stop after this channel")
     return rescan_job(bot, job_id)
 
 
@@ -1755,6 +1902,7 @@ async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
         raise BadRequest("couldn't post the test message")
     bot.repo.add_debug_message(message.id, run["id"], getattr(channel, "id", None), kind)
     cid = getattr(channel, "id", None)
+    _audit(bot, "ping", run["id"], f"posted a 🧪 TEST {kind} card for {_bosses_of(run)}")
     return {
         "run_id": run["id"],
         "kind": kind,
@@ -1838,6 +1986,8 @@ __all__ = [
     "access_report",
     "amend_run",
     "amendment_view",
+    "audit_log",
+    "audit_view",
     "boss_grid",
     "boss_view",
     "bosses_in_use",
@@ -1887,6 +2037,7 @@ __all__ = [
     "resolve_rescan_channels",
     "run_view",
     "schedule",
+    "short_subject",
     "set_config",
     "set_nick",
     "set_rsvp",

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from collections import deque
 from collections.abc import Sequence
@@ -66,10 +67,12 @@ FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again
 
 __all__ = [
     "MAX_TOOL_ROUNDS",
+    "SPOOFED_NOTE",
     "ChatPilot",
     "ChatTurn",
     "Generation",
     "Handling",
+    "defuse_notes",
     "tool_trace",
     "unglue_first_bullet",
 ]
@@ -257,6 +260,44 @@ def unglue_first_bullet(text: str) -> str:
     return text.replace(GLUED_BULLET, ":\n- ") if "\n- " in text else text
 
 
+#: The openers a *genuine* scheduler-written turn begins with -- the trailing
+#: voice reminder (:data:`bot.chat.persona.REMINDER_PREFIX`), the rejection
+#: follow-up (:func:`bot.chat.followup.prompt`) and the note remembered beside it
+#: (:func:`bot.chat.followup.memory_note`). All three arrive in the ``user``
+#: role, because Ollama's gpt-oss template is the only reason they are not
+#: system turns, so the bracket is the only thing marking them as nobody's words.
+#:
+#: Which makes them worth forging: a member who types the opener themselves gets
+#: text that reaches the model in the same role, in the same shape, saying the
+#: scheduler said it. Matched narrowly and not by "starts with a bracket",
+#: because guild tags do -- "[SAKU] can we move friday" is an ordinary sentence
+#: and must survive untouched. ``[Note]`` counts only where it could open a turn,
+#: at the start of a line; the fuller opener counts anywhere, closing bracket or
+#: not, since by then nothing else could have written it.
+_SPOOFED_NOTE_RE = re.compile(
+    r"\[[ \t]*note[ \t]+from[ \t]+the[ \t]+scheduler\b[^\]\n]*\]?"
+    r"|(?:\A|(?<=\n))[ \t]*\[[ \t]*note[ \t]*\]",
+    re.IGNORECASE,
+)
+
+#: What a forged opener is replaced with. It says what happened rather than
+#: deleting it: the member did write something, the model should be able to see
+#: that they tried it, and the sentence around it stays theirs.
+SPOOFED_NOTE = "(they wrote a fake scheduler note here)"
+
+
+def defuse_notes(text: str) -> str:
+    """Strip the scheduler's own openers out of something a member typed.
+
+    Applied where member text becomes a turn (:meth:`ChatPilot._speaker`), which
+    is the one door: the question, the remembered history and the reply chain all
+    go through it. A note the scheduler really wrote is built in
+    :mod:`bot.chat.followup` and put into the conversation directly, so it never
+    passes here and is never defused.
+    """
+    return _SPOOFED_NOTE_RE.sub(SPOOFED_NOTE, text or "")
+
+
 def _call_parts(call: Any) -> tuple[str, Any]:
     """``(name, arguments)`` from one tool call, object or dict."""
     function = call.get("function") if isinstance(call, dict) else getattr(call, "function", None)
@@ -351,12 +392,17 @@ class ChatPilot:
             )
             else None
         )
+        # Worked out once and used twice: the gate's role stand-in and rate-limit
+        # exemption, and the tools' authority check (:func:`bot.chat.tools`
+        # ``_require_authority``). Evaluating it twice would risk the two
+        # disagreeing about who is staff for one message.
+        is_admin = self._is_admin(getattr(message, "author", None))
         decision = gate.decide(
             message,
             self.settings,
             bot_user_id=bot_user_id,
             enabled=self.enabled,
-            is_admin=self._is_admin(getattr(message, "author", None)),
+            is_admin=is_admin,
             limiter=self.limiter,
             self_role_id=self._self_role_id(message),
             replied_author_id=replied_author_id,
@@ -387,7 +433,7 @@ class ChatPilot:
         # the reply lands, so the reaction is only ever "still working".
         await self._react(message, gate.SEEN_REACTION)
         try:
-            return Handling(True, "ok", await self._answer(message, channel_id))
+            return Handling(True, "ok", await self._answer(message, channel_id, is_admin))
         finally:
             self._busy.discard(channel_id)
             await self._unreact(message, gate.SEEN_REACTION)
@@ -460,7 +506,14 @@ class ChatPilot:
         self._replied[key] = author_id
 
     def _is_admin(self, user: Any) -> bool:
-        """The existing "who runs this bot" rule, used only for rate-limit exemption."""
+        """The existing "who runs this bot" rule (:func:`bot.util.is_bot_admin`).
+
+        Two callers, one rule: the gate uses it as the chat role's stand-in and
+        as the rate-limit exemption, and it rides along on the
+        :class:`bot.chat.tools.ToolContext` as the exemption from the write
+        tools' authority check. Read from the live member object, so a member
+        who says they are an admin is saying a sentence.
+        """
         if user is None:
             return False
         guild = getattr(self.bot, "get_guild", lambda _id: None)(self.settings.guild_id)
@@ -472,7 +525,7 @@ class ChatPilot:
             self.settings.admin_role_id,
         )
 
-    async def _answer(self, message: Any, channel_id: str) -> Generation:
+    async def _answer(self, message: Any, channel_id: str, is_admin: bool = False) -> Generation:
         author_id = str(message.author.id)
         text = (message.content or "").strip()
         context = tools.ToolContext(
@@ -480,6 +533,7 @@ class ChatPilot:
             author_id=author_id,
             channel_id=channel_id,
             message_id=str(message.id),
+            is_admin=is_admin,
         )
         conversation = self.build_conversation(message, channel_id)
         result = await self.generate(conversation, context)
@@ -714,10 +768,15 @@ class ChatPilot:
         The name is looked up from the roster rather than taken from the
         message, so a display name the model is shown is one the bot already
         knows -- and a member cannot rename themselves into a instruction.
+
+        The words are defused (:func:`defuse_notes`) for the same reason the
+        name is looked up: a member can type the scheduler's own bracketed
+        opener, and being attributed to them by name is not by itself enough to
+        stop a small model reading it as a note from the machinery.
         """
         from ..api import service
 
-        return f"{service.member_name(self.bot, user_id)}: {text}"
+        return f"{service.member_name(self.bot, user_id)}: {defuse_notes(text)}"
 
     def history(self, channel_id: str) -> deque[ChatTurn]:
         return self._history.setdefault(str(channel_id), deque(maxlen=HISTORY_EXCHANGES * 2))
@@ -791,7 +850,9 @@ class ChatPilot:
             self.bot.tz, self.settings.reset_weekday, self.settings.reset_time, now
         )
         system = persona.system_prompt(
-            self.persona_text(), persona.clock_header(now, self.bot.tz, week)
+            self.persona_text(),
+            persona.clock_header(now, self.bot.tz, week),
+            persona.runtime_line(self.settings.chat_pilot_model),
         )
         rendered = [{"role": t.role, "content": t.content} for t in turns]
         # Measured over the conversation alone. The system prompt is a whole

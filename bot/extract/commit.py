@@ -84,6 +84,7 @@ def supersede(
     channel_id: int | str | None = None,
     bosses: Sequence[str] = (),
     keep_id: str | None = None,
+    from_channel: int | str | None = None,
 ) -> list[dict]:
     """Retire the other live proposals about the same thing; returns them.
 
@@ -93,10 +94,23 @@ def supersede(
     re-applies a change the group has already moved past.
 
     Keyed on the target run, or -- for `add`/`fix`, which have no run yet -- on
-    the channel plus the exact boss set they would create.
+    the channel plus the exact boss set they would create. The second key is
+    channel-scoped by construction (:meth:`bot.db.Repo.proposed_for_bosses`);
+    the first is not, and ``from_channel`` is what scopes it.
+
+    ``from_channel`` is where the row doing the retiring lives. A card may be
+    retired by a row posted in its own channel, or by any row in the run's own
+    home channel -- and by nothing else. That closes a retire-across-channels:
+    a proposal raised somewhere else about a party's run would otherwise take
+    the live cards out from under that party, in a channel that never saw
+    either the request or the replacement. Callers that do not name a channel
+    keep the old, unscoped behaviour, so a caller only pays for the guard once
+    it can say where its row is going.
     """
     if run_id:
-        candidates = repo.proposed_for_run(run_id, exclude=keep_id)
+        candidates = _same_channel(
+            repo, run_id, repo.proposed_for_run(run_id, exclude=keep_id), from_channel
+        )
     elif channel_id is not None and bosses:
         candidates = repo.proposed_for_bosses(channel_id, bosses, exclude=keep_id)
     else:
@@ -106,6 +120,27 @@ def supersede(
     if candidates:
         log.info("superseded %d older proposal(s)", len(candidates))
     return candidates
+
+
+def _same_channel(
+    repo: Repo, run_id: str, candidates: list[dict], from_channel: int | str | None
+) -> list[dict]:
+    """The candidates a row in ``from_channel`` is entitled to retire.
+
+    Its own channel's, always. The run's home channel's as well, but only when
+    the row is *in* that home channel -- which is the case the whole guard is
+    about: a card drafted elsewhere (the chatbot posts its card in the channel
+    the question came from, whatever channel the run lives in) must not reach
+    into a party's channel and retire what they were about to press.
+    """
+    if from_channel is None:
+        return candidates
+    mine = str(from_channel)
+    run = repo.get_run(run_id)
+    home = str(run["channel_id"]) if run and run["channel_id"] is not None else None
+    if home is not None and home == mine:
+        return candidates
+    return [a for a in candidates if str(a.get("channel_id")) == mine]
 
 
 def _participants_for(amendment: dict, run: dict | None) -> list[str]:
@@ -173,7 +208,15 @@ def commit(
     # amendment *targeted*, not on any run it just created -- nothing can be
     # proposed against a run that did not exist a moment ago.
     if amendment["run_id"]:
-        result.superseded = supersede(repo, run_id=amendment["run_id"], keep_id=amendment["id"])
+        result.superseded = supersede(
+            repo,
+            run_id=amendment["run_id"],
+            keep_id=amendment["id"],
+            # This row's own channel: what it may retire is scoped to where it
+            # was posted, so confirming a card in one channel cannot clear a
+            # party's cards out of another.
+            from_channel=home,
+        )
     elif amendment["bosses"]:
         result.superseded = supersede(
             repo,

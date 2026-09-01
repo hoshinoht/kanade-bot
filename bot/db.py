@@ -27,12 +27,22 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 #: How many chat interactions are kept. The table is a diagnostic, not a
 #: transcript: five hundred is weeks of a guild's questions at the rate the
 #: pilot is actually used, and it bounds a table nothing else ever deletes from.
 CHAT_INTERACTIONS_KEPT = 500
+
+#: How many audit rows are kept. Deliberately four times the chat log: this is
+#: the answer to "who moved my run", which is asked weeks later about a night
+#: nobody wrote down, and a row is three short strings rather than a prompt.
+AUDIT_KEPT = 2000
+
+#: Where a change came from. Documentation rather than a constraint -- an audit
+#: row must never be the thing that fails a mutation, so nothing validates
+#: against this (see :meth:`Repo.log_audit`).
+AUDIT_SURFACES = ("portal", "cli", "discord", "chat", "card", "system")
 
 #: The `amendments.payload` key that says the chat pilot has already asked what
 #: this card should have said. Set once, by :meth:`Repo.claim_chat_followup`,
@@ -269,6 +279,29 @@ CREATE TABLE IF NOT EXISTS chat_interactions (
 );
 
 CREATE INDEX IF NOT EXISTS chat_interactions_recent ON chat_interactions (at DESC);
+
+-- v7. One row per change to the schedule, and the human behind it. The admin
+-- plane is one shared token, so without this a portal edit is attributable to
+-- "the portal" and nothing more -- which is no answer at all when the party
+-- wants to know who moved Thursday. The actor is whoever the surface could
+-- name: a tailnet login, a Discord user id, the operating-system user behind
+-- `bossctl`, or the literal 'token' when the only credential was the token
+-- itself. Pruned to AUDIT_KEPT rows on insert.
+CREATE TABLE IF NOT EXISTS audit (
+    id      TEXT PRIMARY KEY,
+    at      TEXT NOT NULL,
+    -- portal | cli | discord | chat | card | system (AUDIT_SURFACES).
+    surface TEXT NOT NULL DEFAULT 'system',
+    actor   TEXT NOT NULL DEFAULT 'token',
+    -- A short verb: amend, cancel, rsvp, fixed_add, config, swap, status...
+    action  TEXT NOT NULL,
+    -- What was changed: a run, fixed-run or amendment id, or a config key.
+    subject TEXT,
+    -- One sentence a person can read without looking anything else up.
+    detail  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS audit_recent ON audit (at DESC);
 """
 
 
@@ -411,12 +444,24 @@ def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
     """
 
 
+def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
+    """v7 only adds ``audit``, which ``SCHEMA_SQL`` creates itself.
+
+    A numbered step is still needed so :meth:`Repo.migrate` can walk past v6, as
+    with v3->v4 and v5->v6; the work is the ``CREATE TABLE IF NOT EXISTS``
+    afterwards. Nothing is backfilled: the trail starts the day it is switched
+    on, and inventing rows for changes nobody recorded would be worse than a
+    short history.
+    """
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
     3: _migrate_3_to_4,
     4: _migrate_4_to_5,
     5: _migrate_5_to_6,
+    6: _migrate_6_to_7,
 }
 
 
@@ -1649,4 +1694,74 @@ class Repo:
         data = dict(row)
         data["at"] = from_iso(data["at"])
         data["tool_calls"] = json.loads(data["tool_calls"] or "[]")
+        return data
+
+    # -- audit trail -------------------------------------------------------
+    def log_audit(
+        self,
+        *,
+        surface: str,
+        actor: str,
+        action: str,
+        subject: str | None = None,
+        detail: str = "",
+        at: datetime | None = None,
+        keep: int = AUDIT_KEPT,
+    ) -> str:
+        """Record one change and who made it, then prune back to ``keep``.
+
+        Nothing here validates: an unknown surface is stored as it arrives.
+        This is written on the way *out* of a mutation that has already
+        happened, so raising would turn a bad label into a failed edit -- see
+        :func:`bot.audit.record`, which is how every caller reaches this.
+
+        Pruned on insert for the same reason
+        :meth:`log_chat_interaction` is: the only moment the table is certainly
+        growing is the moment something was added to it.
+        """
+        audit_id = new_id()
+        self._conn.execute(
+            """
+            INSERT INTO audit (id, at, surface, actor, action, subject, detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                audit_id,
+                to_iso(at or utcnow()),
+                str(surface),
+                str(actor),
+                str(action),
+                str(subject) if subject is not None else None,
+                detail or "",
+            ),
+        )
+        self.prune_audit(keep)
+        return audit_id
+
+    def prune_audit(self, keep: int = AUDIT_KEPT) -> int:
+        """Delete all but the newest ``keep`` rows; returns how many went."""
+        cursor = self._conn.execute(
+            """
+            DELETE FROM audit WHERE id NOT IN (
+                SELECT id FROM audit ORDER BY at DESC, id DESC LIMIT ?
+            )
+            """,
+            (max(int(keep), 0),),
+        )
+        return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+    def list_audit(self, limit: int = 200) -> list[dict]:
+        """The most recent changes, newest first -- what the Audit page lists."""
+        rows = self._conn.execute(
+            "SELECT * FROM audit ORDER BY at DESC, id DESC LIMIT ?", (int(limit),)
+        )
+        return [self._audit(row) for row in rows]
+
+    def count_audit(self) -> int:
+        return int(self._conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0])
+
+    @staticmethod
+    def _audit(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["at"] = from_iso(data["at"])
         return data
