@@ -109,8 +109,32 @@ DEFAULT_VOICE = (
     "everything around them is said in character."
 )
 
-#: How the voice line is introduced at the end of the prompt.
+#: How the voice line is introduced at the end of the system prompt
+#: (:func:`voice_footer`). Plain, because everything around it is already
+#: instructions: nothing there needs to say where it came from.
 VOICE_PREFIX = "Before you answer, remember your voice: "
+
+#: How the same line is introduced when it is sent as the last *message* of a
+#: call (:func:`voice_reminder`). It has to open by naming itself, because in
+#: that position it is not instructions any more -- it arrives in the
+#: conversation, in the ``user`` role, looking exactly like something a member
+#: typed. Spelled the same way as :func:`bot.chat.followup.prompt`'s opener,
+#: since the two are the same kind of thing: something the scheduler put in
+#: front of the model, which the model should recognise and not answer.
+REMINDER_PREFIX = (
+    "[Note from the scheduler, not from anybody in the channel -- do not reply to this "
+    "note; answer the conversation above it.] Write your reply in your own voice: "
+)
+
+#: Said after the voice line in the message form only. Card confirmations and
+#: error relays are the turns with the most tool output in front of them and
+#: were the flattest ones live, so they are named rather than left to be
+#: inferred -- and this is the copy that is actually still nearby when the model
+#: composes one.
+REMINDER_SUFFIX = (
+    " Every reply gets one small in-character touch -- card confirmations and error "
+    "relays included. Facts, ids and times stay exact."
+)
 
 
 def voice_line(persona: str) -> str:
@@ -225,9 +249,42 @@ def examples_block(persona: str) -> str:
     return "\n".join([EXAMPLES_HEADING, *(f"- {example}" for example in examples)])
 
 
-def voice_reminder(persona: str) -> str:
-    """The one line repeated immediately before the model composes."""
+def voice_footer(persona: str) -> str:
+    """The voice line as the last thing in the *system prompt*.
+
+    One of two forms, and the difference between them is position rather than
+    taste. This one is read as instructions, among instructions, so it is said
+    plainly: a note explaining that the scheduler wrote it and that it is not to
+    be replied to would be answering a question nobody in that position asks --
+    and its "answer the conversation above it" would point at nothing, because
+    there is no conversation above the system prompt.
+
+    See :func:`voice_reminder` for the form that goes in the conversation.
+    """
     return VOICE_PREFIX + voice_line(persona)
+
+
+def voice_reminder(persona: str) -> str:
+    """The same line as the last *message* of a call, which is a different job.
+
+    Sent by :meth:`bot.chat.agent.ChatPilot.voice_reminder` in the ``user`` role
+    -- the only role Ollama's gpt-oss template renders in place at the end -- so
+    on the page it is indistinguishable from something a member typed. Hence the
+    opener: it has to name its own provenance and say it is not to be answered,
+    which :func:`voice_footer` never needs to.
+
+    It also carries :data:`REMINDER_SUFFIX`, because this is the copy that is
+    still nearby when the model composes, and the flat replies it is aimed at
+    (card confirmations, error relays) are the ones furthest from the footer.
+
+    The full stop is added only when the persona's own sentence does not end in
+    one, so a hand-written ``**Voice:**`` line that trails off does not run into
+    the sentence after it.
+    """
+    line = voice_line(persona).rstrip()
+    if not line.endswith((".", "!", "?")):
+        line += "."
+    return REMINDER_PREFIX + line + REMINDER_SUFFIX
 
 
 def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:
@@ -282,9 +339,10 @@ def system_prompt(persona: str, header: str) -> str:
     of them: recency is the one lever that reliably moves a small model, and the
     persona document is the furthest thing from where it composes -- thousands of
     tokens of character notes, then rules, then a clock, then a transcript, and
-    only then does it write. The reminder is repeated again as the final
-    *message* of every call (:meth:`bot.chat.agent.ChatPilot.voice_reminder`),
-    because by composition time even this is behind a stack of tool results.
+    only then does it write. The voice is repeated a third time as the final
+    *message* of every call (:func:`voice_reminder`), because by composition time
+    even this is behind a stack of tool results -- worded differently there,
+    because a message has to say what it is and a footer does not.
     """
     return "\n\n".join(
         part
@@ -293,7 +351,7 @@ def system_prompt(persona: str, header: str) -> str:
             HARD_RULES.strip(),
             header,
             examples_block(persona),
-            voice_reminder(persona),
+            voice_footer(persona),
         )
         if part
     )
@@ -306,6 +364,8 @@ __all__ = [
     "HARD_RULES",
     "MAX_EXAMPLES",
     "MAX_EXAMPLE_CHARS",
+    "REMINDER_PREFIX",
+    "REMINDER_SUFFIX",
     "VOICE_PREFIX",
     "clock_header",
     "examples_block",
@@ -313,6 +373,7 @@ __all__ = [
     "good_sections",
     "load_persona",
     "system_prompt",
+    "voice_footer",
     "voice_line",
     "voice_reminder",
 ]

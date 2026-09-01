@@ -3,8 +3,12 @@
 A mention-gated, persona-driven chatbot that answers scheduling questions
 and drafts changes as the same ✅/❌ cards everything else uses.
 
-A chatbot with a persona, answering in one channel, on the same local
-`gpt-oss:20b` the extractor uses. Nothing it is told leaves the machine.
+A chatbot with a persona, answering in one channel, through the same Ollama
+daemon as the extractor. `CHAT_PILOT_MODEL` defaults to the extractor's local
+model, and then nothing it is told leaves the machine; point it at one of
+Ollama's hosted `*-cloud` models for a bigger brain, knowing that what members
+say to the bot is then processed by that service instead of staying local. The
+extractor's model is a separate setting and is not affected either way.
 
 It is **three gates deep and silent about all of them**: it answers only when
 mentioned (a reply to one of its own messages counts), only in a channel it was
@@ -60,6 +64,17 @@ boss with no difficulty ("bellona" is three different fights), a name that could
 be two people — the tool refuses with the valid options and the bot asks one
 short question. Answer it as a normal reply; a reply to the bot counts as a
 mention, so you do not need to @ it again.
+
+**A ❌ on its card gets a follow-up.** Reject a card the chatbot posted for you
+and it asks — in character — what you would like instead; reply to that message
+and it puts up the corrected card. The question is deliberately hard to farm: it
+comes only for cards the *chatbot* posted (never the extractor's), only when the
+person the card was drafted for is the one rejecting, and once per card —
+un-reacting and re-reacting asks nothing, and rejecting several cards inside
+half a minute gets one question, not one each. Portal rejections, quiet mode and
+`chat_mode off` produce no follow-up at all. The question itself cannot post a
+card: your reply is what does that, and the reply spends your normal chat
+allowance while the bot's question spends none of it.
 
 ### Set it up
 
@@ -127,10 +142,14 @@ persona file as:
 **Voice:** Dry, fond of the party, allergic to exclamation marks.
 ```
 
-It is repeated as the **last message of every model call** — after the
+It is also repeated as the **last message of every model call** — after the
 conversation and after any tool results — because that is where recency actually
 lands. Card confirmations and error relays have the most tool output in front of
-them and were the flattest replies before this.
+them and were the flattest replies before this. That trailing copy travels as a
+bracketed scheduler note in a `user`-role message, not a `system` one: the
+gpt-oss chat template hoists every system message into the instructions header
+at the top of the prompt, which is exactly the burial the repetition exists to
+escape.
 
 The bot also shows the model your `**Good**` worked examples as few-shot lines
 (at most 8, ~600 characters, first ones win). Write them as `> ` followed by the

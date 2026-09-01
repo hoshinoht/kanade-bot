@@ -159,9 +159,23 @@ async def test_the_model_is_told_what_the_card_said_and_never_a_members_words(
     await reject(agent, chat_bot, [synthetic_card(chat_bot)])
 
     note = agent._client.conversation()[-1]
-    assert note["role"] == "system"
+    # A `user` turn although nobody said it: gpt-oss's template lifts system
+    # messages into the header at the top, and a note about a reaction that just
+    # happened has to arrive *after* the conversation it reacted to. The
+    # bracketed opener carries the provenance the role no longer can.
+    assert note["role"] == "user"
+    assert note["content"].startswith("[Note from the scheduler, not from anybody in the channel.]")
     assert "move Hard Will to Sun 07 Sep 22:00" in note["content"]
     assert "kanon" in note["content"]  # the asker, by roster name
+
+
+async def test_the_follow_up_sends_exactly_one_system_message(chat_bot, chat_seeded):
+    """The same guard the answering path has: system at index 0 and nowhere else."""
+    agent = pilot(chat_bot, says("What should it be?"))
+    await reject(agent, chat_bot, [synthetic_card(chat_bot)])
+
+    for sent in agent._client.prompts:
+        assert [index for index, m in enumerate(sent) if m["role"] == "system"] == [0]
 
 
 async def test_the_question_is_generated_in_persona_with_the_voice_reminder(chat_bot, chat_seeded):
@@ -172,7 +186,7 @@ async def test_the_question_is_generated_in_persona_with_the_voice_reminder(chat
     from bot.chat import persona
 
     assert persona.HARD_RULES.strip() in agent._client.system
-    assert agent._client.reminder()["content"].startswith(persona.VOICE_PREFIX)
+    assert agent._client.reminder()["content"].startswith(persona.REMINDER_PREFIX)
 
 
 async def test_a_model_that_fails_says_nothing_at_all(chat_bot, chat_seeded):
@@ -398,7 +412,10 @@ async def test_the_channel_remembers_the_card_and_the_question(chat_bot, chat_se
     await reject(agent, chat_bot, [synthetic_card(chat_bot)])
 
     remembered = list(agent.history(str(CHAT_CHANNEL)))
-    assert [turn.role for turn in remembered] == ["system", "assistant"]
+    # The note is `user` for the same reason the question was: a system turn
+    # would be hoisted out of the history and stop sitting where it happened.
+    assert [turn.role for turn in remembered] == ["user", "assistant"]
+    assert remembered[0].content.startswith("[Note]")
     assert "move Hard Will to Sun 07 Sep 22:00" in remembered[0].content
     assert remembered[1].content == "What should it be instead?"
 

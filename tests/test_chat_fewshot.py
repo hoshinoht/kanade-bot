@@ -9,6 +9,11 @@ error relays) were exactly the flattest ones live.
 Two fixes here: the reminder becomes the final message of the call, after
 everything; and the persona's own "Good" lines are shown as few-shot examples,
 which steer harder per token than any list of adjectives.
+
+The reminder is sent as a ``user`` message, which is what actually makes "final"
+mean anything: Ollama's gpt-oss template skips system messages in the message
+loop and concatenates them into the instructions header at the top, so a
+trailing *system* message is rendered back where the buried copy already was.
 """
 
 from __future__ import annotations
@@ -68,8 +73,32 @@ async def test_the_final_message_is_the_reminder_on_a_direct_answer(chat_bot, ch
     await agent.offer(message(chat_bot))
 
     last = agent._client.calls[0]["messages"][-1]
-    assert last["role"] == "system"
-    assert last["content"].startswith(persona.VOICE_PREFIX)
+    # `user`, not `system`: gpt-oss's template hoists system messages into the
+    # instructions header, so a trailing system message is not trailing at all.
+    assert last["role"] == "user"
+    assert last["content"].startswith(persona.REMINDER_PREFIX)
+
+
+async def test_the_reminder_says_it_is_not_from_anybody_in_the_channel(chat_bot, chat_seeded):
+    """It arrives as a `user` turn, so it has to say it is not a member talking."""
+    agent = pilot(chat_bot, says("Wed 21:30."))
+    await agent.offer(message(chat_bot))
+
+    assert "not from anybody in the channel" in agent._client.reminder()["content"]
+
+
+async def test_only_the_first_message_is_a_system_one(chat_bot, chat_seeded):
+    """The whole point of the roles above: exactly one system message, at index 0.
+
+    Ollama's gpt-oss template drops every system message from the rendered
+    conversation and concatenates them into one header at the top, so any system
+    message after the first silently loses its position.
+    """
+    agent = pilot(chat_bot, wants("get_schedule", week="this"), says("Two runs."))
+    await agent.offer(message(chat_bot))
+
+    for sent in agent._client.prompts:
+        assert [index for index, m in enumerate(sent) if m["role"] == "system"] == [0]
 
 
 async def test_the_final_message_is_the_reminder_after_tool_results(chat_bot, chat_seeded):
@@ -82,7 +111,7 @@ async def test_the_final_message_is_the_reminder_after_tool_results(chat_bot, ch
     await agent.offer(message(chat_bot, "@bot cancel hstar"))
 
     composition = agent._client.calls[-1]["messages"]
-    assert composition[-1]["content"].startswith(persona.VOICE_PREFIX)
+    assert composition[-1]["content"].startswith(persona.REMINDER_PREFIX)
     # ...and it really is after the tool result, not merely present.
     assert composition[-2]["role"] == "tool"
 
@@ -91,15 +120,16 @@ async def test_every_round_ends_with_it(chat_bot, chat_seeded):
     agent = pilot(chat_bot, wants("get_schedule", week="this"), says("Two runs."))
     await agent.offer(message(chat_bot))
     for call in agent._client.calls:
-        assert call["messages"][-1]["content"].startswith(persona.VOICE_PREFIX)
+        assert call["messages"][-1]["content"].startswith(persona.REMINDER_PREFIX)
 
 
 async def test_the_reminder_carries_the_personas_own_voice(repo, bosses, tmp_path):
     bot = voiced_bot(repo, bosses, tmp_path)
     agent = pilot(bot, says("ok"))
     await agent.offer(message(bot))
-    assert agent._client.reminder()["content"].endswith(
+    assert (
         "Dry, fond of the party, allergic to exclamation marks."
+        in agent._client.reminder()["content"]
     )
 
 
@@ -110,9 +140,12 @@ async def test_the_reminder_is_not_remembered_as_conversation(chat_bot, chat_see
         await agent.offer(message(chat_bot))
 
     third = agent._client.conversation(2)
-    assert sum(1 for m in third if persona.VOICE_PREFIX in m["content"]) == 1  # the system one
+    # Only the system prompt's own footer, which is a different string from the
+    # appended message -- so a leaked copy of the message would be visible here.
+    assert sum(1 for m in third if persona.VOICE_PREFIX in m["content"]) == 1
+    assert not any(persona.REMINDER_PREFIX in m["content"] for m in third)
     remembered = [t.content for t in agent.history(str(chat_bot.channels and 777777777777777777))]
-    assert not any(persona.VOICE_PREFIX in line for line in remembered)
+    assert not any(persona.REMINDER_PREFIX in line for line in remembered)
 
 
 async def test_nothing_else_is_reordered(chat_bot, chat_seeded):
@@ -231,7 +264,7 @@ def test_the_block_is_labelled_and_listed():
     assert "- Wed 21:30, same as always." in block
 
 
-def test_the_block_sits_near_the_end_before_the_reminder():
+def test_the_block_sits_near_the_end_before_the_voice_footer():
     built = persona.system_prompt(VOICED, "CLOCK HERE")
     assert built.index("CLOCK HERE") < built.index(persona.EXAMPLES_HEADING)
     assert built.index(persona.EXAMPLES_HEADING) < built.index(persona.VOICE_PREFIX)

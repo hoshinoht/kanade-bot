@@ -138,7 +138,9 @@ TOOLS: list[dict] = [
     _tool(
         "get_schedule",
         "Runs for a boss week: day, time, bosses, status and how many people have "
-        "answered. Call this for any question about what is on.",
+        "answered. Call this for any question about what is on. Runs marked 'already "
+        "happened' are in the past: never offer one as the next or upcoming run. If "
+        "nothing upcoming is left, say so plainly instead of reaching for a past run.",
         {
             "week": {
                 "type": "string",
@@ -199,8 +201,9 @@ TOOLS: list[dict] = [
             "boss": {
                 "type": "string",
                 "description": (
-                    "The boss, with its difficulty, e.g. 'HBellona' or 'XKalos'. A bare "
-                    "name without a difficulty is refused -- ask which one they mean."
+                    "The boss, with its difficulty, e.g. 'HBellona', 'XKalos' or "
+                    "'Hard Bellona'. A bare name without a difficulty is refused -- ask "
+                    "which one they mean."
                 ),
             },
             "when": {
@@ -390,6 +393,17 @@ def _listing(bot: Any, runs: list[dict], lead: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _is_over(run: dict) -> bool:
+    """Is this run finished or in the past?
+
+    The arithmetic is done here rather than left to the model. Live, asked "when
+    is the next boss run here?", it answered with a run that had finished hours
+    earlier: it had the timestamp and it had the clock in its system prompt, and
+    it still did not compare them.
+    """
+    return run["status"] == "done" or run["datetime"] <= utcnow()
+
+
 def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
     local = run["datetime"].astimezone(bot.tz)
     rsvps = bot.repo.get_rsvps(run["id"])
@@ -403,6 +417,7 @@ def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
         f"{formatting.boss_labels(run['bosses'])} "
         f"({run['status']}, {yes}/{len(run['participants'])} yes)"
         + (f" in {where}" if where else "")
+        + (" -- already happened" if _is_over(run) else "")
     )
 
 
@@ -468,7 +483,16 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
         if scope == "channel"
         else f"{week.capitalize()} boss week, ALL channels (say which channel each run is in):"
     )
-    return "\n".join([heading, *lines]) + (f"\n(and {more} more)" if more > 0 else "")
+    answer = "\n".join([heading, *lines]) + (f"\n(and {more} more)" if more > 0 else "")
+    if all(_is_over(run) for run in runs):
+        # The per-line markers are enough when only some are past; a week with
+        # nothing left at all is what made the model pick a finished run as "the
+        # next one", so that case is stated outright.
+        answer += (
+            "\nEvery run listed has already happened -- nothing upcoming is left in "
+            f"{week} boss week."
+        )
+    return answer
 
 
 def _get_run(ctx: ToolContext, args: dict) -> str:
@@ -665,7 +689,8 @@ def _validate_bosses(ctx: ToolContext, text: str) -> list[str]:
         raise ToolError(
             f"{_spell_out(ctx.bot, exc.message)}. Ask them which one they mean -- do not "
             "choose a difficulty for them. Ask in words ('Easy, Normal or Hard Bellona?') "
-            "and pass the short form (HBellona) back to the tool."
+            "and pass the short form (HBellona) back to the tool. The short forms are "
+            "for the tool only -- never show them to a member."
         ) from None
 
 
