@@ -31,7 +31,13 @@ from ..export import message_record
 from ..extract.commit import commit, reject
 from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
-from ..materialise import DAY_OF, LIVE_STATUSES, countdown_minutes, refresh_run_reminders
+from ..materialise import (
+    DAY_OF,
+    LIVE_STATUSES,
+    countdown_minutes,
+    refresh_run_reminders,
+    retire_fixed_run,
+)
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
@@ -768,14 +774,14 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
 async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
     """Remove a baseline timing and cancel the runs it had already produced."""
     fixed = load_fixed(bot, fixed_id)
-    cancelled = 0
-    for which in ("this", "next"):
-        run = bot.repo.run_for_fixed(fixed["id"], week_for(bot, which))
-        if run is not None and run["status"] not in ("done", "cancelled"):
-            bot.repo.set_run_status(run["id"], "cancelled")
-            refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
-            cancelled += 1
-    bot.repo.delete_fixed_run(fixed["id"])
+    cancelled = retire_fixed_run(
+        bot.repo,
+        fixed["id"],
+        [week_for(bot, which) for which in ("this", "next")],
+        bot.tz,
+        bot.ping_time,
+        bot.countdowns,
+    )
     who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(
         bot, formatting.fixed_notice(fixed, "removed", who), who.mentioned, fixed["channel_id"]

@@ -97,11 +97,18 @@ class FakeIncoming:
         # Discord's *resolved* mention list, which is what the gate reads. A
         # member typing "<@...>" as text does not land here.
         self.mentions = [FakeAuthor(uid, roles=()) for uid in mentions]
+        #: Discord's resolved ROLE mention list. Empty unless a test sets it --
+        #: markup typed into `content` never lands here, which is the point.
+        self.role_mentions: list[FakeRole] = []
         self.reference = reference
         self.reactions: list[str] = []
 
     async def add_reaction(self, emoji: str) -> None:
         self.reactions.append(emoji)
+
+    async def remove_reaction(self, emoji: str, _member: Any = None) -> None:
+        if emoji in self.reactions:
+            self.reactions.remove(emoji)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +289,7 @@ __all__ = [
     "FakeIncoming",
     "FakeOllama",
     "FakeReference",
+    "FakeRole",
     "build_bot",
     "chat_settings",
     "message",

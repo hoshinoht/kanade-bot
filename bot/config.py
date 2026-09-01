@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     chat_pilot_model: str = "gpt-oss:20b"
     #: Seconds for one whole answer, tool rounds included.
     chat_pilot_timeout: float = Field(default=60.0, gt=0)
+    #: Sampling temperature for the chatbot. Deliberately *not* the extractor's
+    #: ``temperature: 0``: that one is reading a schedule out of chat, where the
+    #: only good answer is the literal one, while this is holding a conversation
+    #: and a greedy decode makes it read like a form letter. Warmth is safe here
+    #: because every write it drafts is a card a human still has to ✅.
+    #: ``top_p`` is deliberately left at the model's own default rather than
+    #: pinned here -- two knobs to tune this is one more than anybody will.
+    chat_pilot_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     #: The persona document, loaded verbatim into the system prompt. It is
     #: deployment flavour text rather than code, so it lives on the data volume
     #: beside the database; compose overrides this to ``/app/data/persona.md``.

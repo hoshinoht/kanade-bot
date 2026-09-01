@@ -372,23 +372,37 @@ class BossBot(discord.Client):
 
     # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
-        """Store messages from watched channels, offer them to the extractor, then to chat.
+        """Store watched messages, then offer them to the chatbot and the extractor.
 
-        Storing happens whether or not extraction is enabled, so `/rescan` can
-        always look back over history that was captured while it was paused.
+        Storing happens whether or not extraction is enabled, and whoever ends up
+        acting on the message, so `/rescan` can always look back over history
+        that was captured while it was paused.
 
-        The two offers are independent and gated on different lists. The
-        extractor reads the *watched* channels and stores what it reads; the
-        chatbot answers in the channels named by ``CHAT_PILOT_CHANNEL_IDS``,
-        which are usually not watched at all -- a channel for talking to the bot
-        is not a party's channel, and its chatter should not become proposals.
-        Neither is allowed to break the other, or the bot.
+        **The chatbot goes first, and a message it handles is not offered to the
+        extractor.** The two are gated on different lists, but those lists may
+        overlap -- live, the pilot's channel turned out to sit under a category
+        in ``CHAT_CATEGORY_IDS``, and one "@bot move hstar to wednesday" got both
+        a chat reply *and* an extractor proposal card for the same sentence. A
+        message addressed to the bot is a conversation, not ambient party chat:
+        the pilot acts on it through its tools, and the extractor has no business
+        also reading it over the asker's shoulder.
+
+        "Handled" is the pilot's own verdict (:class:`bot.chat.agent.Handling`),
+        decided once inside :meth:`~bot.chat.agent.ChatPilot.offer`. It must not
+        be recomputed here: the gate consulted the rate limiter to reach it, and
+        asking twice would spend two of somebody's four answers on one message.
+        Every other refusal -- not a chat channel, no mention, no role, chat off
+        -- leaves the extractor's behaviour exactly as it was.
+
+        Neither offer is allowed to break the other, or the bot. A chat pilot
+        that throws is treated as "not handled", so the extractor still runs.
         """
         if message.author.bot or message.guild is None:
             return
         if message.guild.id != self.settings.guild_id:
             return
-        if self.is_watched(message.channel):
+        watched = self.is_watched(message.channel)
+        if watched:
             # Store under the parent channel so a thread's messages group with
             # its channel's -- `python -m bot.export` writes the same id.
             channel_id, _thread_id = origin_ids(message.channel)
@@ -399,14 +413,18 @@ class BossBot(discord.Client):
                 message.created_at,
                 message.content,
             )
+
+        handled = False
+        try:
+            handled = (await self.chat.offer(message)).handled
+        except Exception:  # pragma: no cover - chat must never break the bot
+            log.exception("the chat pilot rejected a message")
+
+        if watched and not handled:
             try:
                 await self.extractor.offer(message)
             except Exception:  # pragma: no cover - chat must never break the bot
                 log.exception("extractor rejected a message")
-        try:
-            await self.chat.offer(message)
-        except Exception:  # pragma: no cover - chat must never break the bot
-            log.exception("the chat pilot rejected a message")
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:

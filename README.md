@@ -523,6 +523,21 @@ told about, and only from a member holding `CHAT_PILOT_ROLE_ID`. Anything else
 gets no reply and no reaction at all — a bot that announces "you may not use me"
 is a bot anyone can make post.
 
+You summon it by @-mentioning it, by mentioning its own bot role (Discord's
+autocomplete offers that one, and it counts), or by replying to something it
+said. Mentions of *other* roles it happens to hold, and `@everyone`/`@here`, are
+ignored — a channel-wide ping must not summon it.
+
+It answers with reactions while it works, because a reply takes 10-30 seconds:
+
+| | meaning |
+|---|---|
+| 👀 | heard you, writing an answer — it comes off when the reply lands |
+| ⏳ | you have had your answers for now (see the rate limit below) |
+| 💬 | still answering somebody else in this channel; ask again in a moment |
+
+Anything else it declines, it declines in silence.
+
 Where it listens is `CHAT_PILOT_CHANNEL_IDS` (explicit channels) and/or
 `CHAT_PILOT_CATEGORY_IDS` (every text channel under a category, including ones
 added later). A thread counts as its parent channel. These resolve exactly as
@@ -530,13 +545,32 @@ the extractor's `CHAT_CHANNEL_IDS`/`CHAT_CATEGORY_IDS` do — same code — but 
 are **separate lists**: a watched party channel does not become a chat channel,
 and a chat channel is not read by the extractor.
 
-**It cannot change the schedule.** Its read tools answer questions; its three
-write tools (`propose_move`, `propose_cancel`, `propose_rsvp`) post the *same*
-✅/❌ proposal card the extractor posts, through the same code, and a
-participant still has to react ✅ before anything happens. It cannot approve,
-reject or edit a card, and it can only ever RSVP for the person talking to it.
-Prompt injection is bounded by that structure rather than by prompt wording: the
-worst a "cancel everything" message achieves is a stack of cancel *cards*.
+Holders of `ADMIN_ROLE_ID` — the existing "who runs this bot" role — pass the
+chat-role check without also holding the pilot role, and stay exempt from the
+rate limit. Everyone else needs the pilot role.
+
+**It cannot change the schedule.** Its read tools answer questions; its four
+write tools (`propose_add`, `propose_move`, `propose_cancel`, `propose_rsvp`)
+post the *same* ✅/❌ proposal card the extractor posts, through the same code,
+and a participant still has to react ✅ before anything happens. It cannot
+approve, reject or edit a card, and it can only ever RSVP for the person talking
+to it. Prompt injection is bounded by that structure rather than by prompt
+wording: the worst a "cancel everything" message achieves is a stack of cancel
+*cards*.
+
+Its write tools are `propose_add` (a new run), `propose_move`, `propose_cancel`
+(one dated night off), `propose_remove_fixed` (the recurring weekly baseline —
+future weeks stop being scheduled) and `propose_rsvp`. The two removals are
+deliberately distinct: cancelling frees an evening, removing a fixed timing
+stops the boss being scheduled at all, and the cards say which is which. Ask it
+"what's on in this channel?" and it filters to that channel; ask without that
+and it names which channel each run lives in.
+
+**It asks rather than guesses.** When a write is missing something — no time, a
+boss with no difficulty ("bellona" is three different fights), a name that could
+be two people — the tool refuses with the valid options and the bot asks one
+short question. Answer it as a normal reply; a reply to the bot counts as a
+mention, so you do not need to @ it again.
 
 ### Set it up
 
@@ -575,6 +609,40 @@ thinking also gets ⏳ rather than being queued behind a minute of GPU.
 
 `/debug status` reports whether it is on, how many channels and categories it
 answers in, and which model it is using — never the ids themselves.
+
+A message the chatbot handles is **not** also read by the extractor. The two
+gate on different lists, but those lists can overlap — if your pilot channel
+sits under a category in `CHAT_CATEGORY_IDS`, one "@bot move hstar to wednesday"
+would otherwise get both a reply and a stray proposal card. A message addressed
+to the bot is a conversation; the pilot acts on it through its tools. Ambient
+chat in the same channel (no mention) still goes to the extractor exactly as
+before.
+
+### Tuning the voice
+
+Two levers sit in code; the persona document itself is yours.
+
+`CHAT_PILOT_TEMPERATURE` (default `0.7`) is the chatbot's own sampling
+temperature. It is deliberately *not* the extractor's `0`: that one reads a
+schedule out of chat, where the only good answer is the literal one, while this
+holds a conversation and a greedy decode reads like a form letter. Warmth is
+safe here because every change it drafts is a card somebody still has to ✅.
+`top_p` is left at the model's default.
+
+The persona document is thousands of tokens long and sits at the very top of the
+prompt — the furthest point from where the model actually composes. So one line
+of it is repeated as the **last** thing in the system prompt. Put it in your
+persona file as:
+
+```markdown
+**Voice:** Dry, fond of the party, allergic to exclamation marks.
+```
+
+`Voice:`, `**Voice**:` and `<!-- voice: ... -->` all work; the first one in the
+file wins. Leave the angle-bracket placeholder in and the bot falls back to a
+generic "answer in the voice defined above" reminder. Keep it to one sentence —
+the sentence you would give a stand-in who had thirty seconds to learn the
+character.
 
 ### Working out why it said that
 

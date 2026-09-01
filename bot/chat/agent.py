@@ -54,11 +54,16 @@ REPLY_CHAIN_DEPTH = 4
 #: is comfortably inside ``OLLAMA_NUM_CTX``.
 CONVERSATION_BUDGET_TOKENS = 2500
 
+#: How many replied-to messages are remembered before the oldest is forgotten.
+#: A reply chain is short-lived; this only exists to stop a busy channel fetching
+#: the same parent message once per reply.
+REFERENCE_CACHE = 256
+
 #: Said in the channel when the model could not answer. Deliberately plain: an
 #: in-persona apology written here would be a second, worse persona.
 FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
 
-__all__ = ["MAX_TOOL_ROUNDS", "ChatPilot", "ChatTurn"]
+__all__ = ["MAX_TOOL_ROUNDS", "ChatPilot", "ChatTurn", "Generation", "Handling"]
 
 
 @dataclass
@@ -70,6 +75,31 @@ class ChatTurn:
     #: The Discord message id, so a reply chain and the history cannot both
     #: contribute the same line.
     message_id: str | None = None
+
+
+@dataclass
+class Handling:
+    """What the pilot did with one message.
+
+    ``handled`` means "this message was addressed to the bot and the bot dealt
+    with it" -- answered, or knowingly declined with a ⏳. It is what stops the
+    extractor also reading the message as ambient party chat and proposing a
+    schedule change from it, which is what happened live when the pilot channel
+    turned out to sit under a watched category.
+
+    It is deliberately *not* "the bot said something": a rate-limited question
+    is still the pilot's business, and a message the gate refused for any other
+    reason was never the pilot's at all.
+    """
+
+    handled: bool
+    #: The gate's own words, for the log. Never shown in Discord.
+    reason: str
+    #: The answer, when there was one.
+    answered: Generation | None = None
+
+    def __bool__(self) -> bool:  # pragma: no cover - clarity at call sites
+        return self.handled
 
 
 @dataclass
@@ -148,6 +178,9 @@ class ChatPilot:
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
         self._history: dict[str, deque[ChatTurn]] = {}
+        #: Referenced message id -> its author id (or None). One API call per
+        #: replied-to message, however many people reply to it.
+        self._replied: dict[str, str | None] = {}
         self._persona: str | None = None
 
     # -- wiring ------------------------------------------------------------
@@ -183,43 +216,139 @@ class ChatPilot:
         return self.persona_text()
 
     # -- intake ------------------------------------------------------------
-    async def offer(self, message: Any) -> Generation | None:
+    async def offer(self, message: Any) -> Handling:
         """Called by ``on_message`` for every guild message. Answers, or does not.
 
-        Returns ``None`` whenever nothing was said, which is the overwhelmingly
-        common case: the gate refuses almost everything, and it refuses in
-        silence.
+        Returns a :class:`Handling` rather than an answer-or-``None`` because
+        the caller needs to know something the answer cannot express: whether
+        this message was *the pilot's*. A message that got a ⏳ was handled --
+        the person was talking to the bot and the bot declined to answer right
+        now -- and the extractor must stay out of it either way.
+
+        The gate is evaluated exactly **once**, here, and the verdict is carried
+        out in this method. It must not be re-run to answer "was that ours?":
+        :meth:`bot.chat.ratelimit.RateLimiter.allow` records an allowance every
+        time it is consulted, so a second call would silently halve everybody's
+        quota.
         """
+        bot_user_id = getattr(getattr(self.bot, "user", None), "id", None)
+        # Only worth resolving a reply once the cheap checks have passed: a
+        # watched party channel that is not a chat channel produces hundreds of
+        # messages a day and none of them deserves an API call.
+        replied_author_id = (
+            await self.replied_author_id(message)
+            if gate.would_check_mention(
+                message, self.settings, bot_user_id=bot_user_id, enabled=self.enabled
+            )
+            else None
+        )
         decision = gate.decide(
             message,
             self.settings,
-            bot_user_id=getattr(getattr(self.bot, "user", None), "id", None),
+            bot_user_id=bot_user_id,
             enabled=self.enabled,
             is_admin=self._is_admin(getattr(message, "author", None)),
             limiter=self.limiter,
+            self_role_id=self._self_role_id(message),
+            replied_author_id=replied_author_id,
         )
         if not decision.act:
             if decision.busy:
                 log.info("chat: %s from %s", decision.reason, getattr(message.author, "id", "?"))
-                await self._react(message, gate.BUSY_REACTION)
-            else:
-                log.debug("chat: ignoring a message (%s)", decision.reason)
-            return None
+                await self._react(message, gate.RATE_LIMITED_REACTION)
+                # Rate limited, but addressed to the bot: ours, and not the
+                # extractor's to read as ambient chat.
+                return Handling(True, decision.reason)
+            log.debug("chat: ignoring a message (%s)", decision.reason)
+            return Handling(False, decision.reason)
 
         channel_id = str(origin_ids(message.channel)[0])
         if channel_id in self._busy:
             # A second question while the first is still being answered. Queuing
             # it would mean a 60-second-old reply arriving after the asker has
-            # given up, so it is dropped and they are told to wait.
+            # given up, so it is dropped and they are told to wait. Its own emoji,
+            # not the rate limiter's: this one clears in seconds.
             log.info("chat: channel %s is already answering; dropping", channel_id)
-            await self._react(message, gate.BUSY_REACTION)
-            return None
+            await self._react(message, gate.CHANNEL_BUSY_REACTION)
+            return Handling(True, "already answering")
 
         self._busy.add(channel_id)
+        # An answer is 10-30 s of GPU, which is long enough to read as being
+        # ignored. The 👀 goes on before any of that starts and comes off when
+        # the reply lands, so the reaction is only ever "still working".
+        await self._react(message, gate.SEEN_REACTION)
         try:
-            return await self._answer(message, channel_id)
+            return Handling(True, "ok", await self._answer(message, channel_id))
         finally:
             self._busy.discard(channel_id)
+            await self._unreact(message, gate.SEEN_REACTION)
+
+    def _self_role_id(self, message: Any) -> int | None:
+        """The bot's own managed integration role, if the guild has one.
+
+        ``guild.self_role`` is the role Discord creates for this bot and that
+        nobody else can hold. Read from the live guild rather than configured,
+        because it is not a choice anybody makes -- and hardcoding an id would
+        break the moment the bot is added to another guild.
+        """
+        guild = getattr(message, "guild", None) or getattr(self.bot, "get_guild", lambda _i: None)(
+            self.settings.guild_id
+        )
+        role = getattr(guild, "self_role", None)
+        role_id = getattr(role, "id", None)
+        try:
+            return int(role_id) if role_id is not None else None
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            return None
+
+    async def replied_author_id(self, message: Any) -> str | None:
+        """Who wrote the message this one is replying to, fetching if need be.
+
+        ``message.reference.resolved`` is filled from discord.py's in-memory
+        message cache, which a restart empties. Live, the bot restarted at 09:22
+        and a 09:24 reply to a message from before it was dropped as "the bot was
+        not mentioned" -- with the reply ping off there was nothing else to go
+        on. Every restart makes that likely, so an unresolved reference is
+        fetched once from the API.
+
+        Best-effort throughout: a deleted, hidden or unreachable parent is simply
+        "not the bot". Nothing here may raise into the answer path.
+        """
+        reference = getattr(message, "reference", None)
+        if reference is None:
+            return None
+        resolved = getattr(reference, "resolved", None)
+        if resolved is not None:
+            # A `DeletedReferencedMessage` resolves but has no author: the reply
+            # is real and its parent is gone, which is not a mention of anybody.
+            author = getattr(resolved, "author", None)
+            return str(author.id) if author is not None else None
+
+        parent_id = getattr(reference, "message_id", None)
+        if parent_id is None:
+            return None
+        key = str(parent_id)
+        if key in self._replied:
+            return self._replied[key]
+
+        author_id: str | None = None
+        fetch = getattr(getattr(message, "channel", None), "fetch_message", None)
+        if fetch is not None:
+            try:
+                parent = await fetch(int(parent_id))
+            except Exception:  # noqa: BLE001 - NotFound/Forbidden/HTTP/anything
+                log.debug("chat: could not fetch replied-to message %s", key, exc_info=True)
+            else:
+                author = getattr(parent, "author", None)
+                author_id = str(author.id) if author is not None else None
+        self._remember_reference(key, author_id)
+        return author_id
+
+    def _remember_reference(self, key: str, author_id: str | None) -> None:
+        """One fetch per referenced message, and a bounded number remembered."""
+        if len(self._replied) >= REFERENCE_CACHE:
+            self._replied.pop(next(iter(self._replied)), None)
+        self._replied[key] = author_id
 
     def _is_admin(self, user: Any) -> bool:
         """The existing "who runs this bot" rule, used only for rate-limit exemption."""
@@ -433,7 +562,13 @@ class ChatPilot:
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
             messages=messages,
-            options={"num_ctx": self.settings.ollama_num_ctx},
+            # Temperature is set explicitly rather than left to the model's
+            # Modelfile: the extractor pins 0 next door, and a reader who sees
+            # that one is entitled to know this one is different on purpose.
+            options={
+                "num_ctx": self.settings.ollama_num_ctx,
+                "temperature": self.settings.chat_pilot_temperature,
+            },
             keep_alive=-1,
             think=self.settings.think,
             **({"tools": tools.TOOLS} if with_tools else {}),
@@ -472,8 +607,26 @@ class ChatPilot:
 
     @staticmethod
     async def _react(message: Any, emoji: str) -> None:
+        """Put one of the bot's reactions on a message. Never raises.
+
+        A missing Add Reactions permission, or a message deleted mid-answer, is
+        a slightly worse experience -- not a reason to lose the answer.
+        """
         add = getattr(message, "add_reaction", None)
         if add is None:
             return
         with contextlib.suppress(Exception):
             await add(emoji)
+
+    async def _unreact(self, message: Any, emoji: str) -> None:
+        """Take the bot's own reaction back off. Never raises.
+
+        Removing your *own* reaction needs no Manage Messages, so this works in
+        channels where `_drop_opposite_reaction` cannot. Best-effort all the
+        same: if it fails the 👀 simply stays, which is untidy rather than wrong.
+        """
+        remove = getattr(message, "remove_reaction", None)
+        if remove is None:
+            return
+        with contextlib.suppress(Exception):
+            await remove(emoji, getattr(self.bot, "user", None))

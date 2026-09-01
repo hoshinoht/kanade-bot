@@ -8,7 +8,7 @@ here against the service layer -- run ids through :func:`bot.api.service.load_ru
 times through :func:`bot.api.service.parse_when` -- exactly as if it had arrived
 over HTTP.  Nothing is passed through on the model's say-so.
 
-**No write reaches the schedule.**  The three ``propose_*`` tools do not change
+**No write reaches the schedule.**  The five ``propose_*`` tools do not change
 anything: they create a ``proposed`` amendment row and post the same ✅/❌ card
 the extractor posts, through the same :meth:`bot.extract.pipeline.Pipeline.apply_plan`
 call, and a human with the right to confirm it has to react. The chatbot cannot
@@ -23,18 +23,21 @@ import json
 import logging
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from ..api import service
 from ..api.errors import BadRequest, NotFound
+from ..extract.commit import FIX_REMOVE
 from ..extract.pipeline import Planned
 from ..extract.resolve import WEEKDAY_ALIASES, Resolved
 from ..extract.schema import Amendment
 from ..ids import short_id
 from ..timeutil import utcnow
-from ..weeks import week_start
+from ..util import resolve_participant_text
+from ..weeks import WEEKDAY_NAMES, week_start
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ __all__ = [
     "ToolError",
     "ToolOutcome",
     "dispatch",
+    "resolve_fixed",
     "resolve_run",
     "run",
     "tool_names",
@@ -123,14 +127,25 @@ _RUN_QUERY = {
 TOOLS: list[dict] = [
     _tool(
         "get_schedule",
-        "The guild's runs for a boss week: day, time, bosses, status and how many "
-        "people have answered. Call this for any question about what is on.",
+        "Runs for a boss week: day, time, bosses, status and how many people have "
+        "answered. Call this for any question about what is on.",
         {
             "week": {
                 "type": "string",
                 "enum": ["this", "next"],
                 "description": "'this' for the current boss week, 'next' for the one after.",
-            }
+            },
+            "scope": {
+                "type": "string",
+                "enum": ["all", "channel"],
+                "description": (
+                    "Use 'channel' when they say 'this channel', 'here', 'our runs' or "
+                    "anything else meaning the channel you are talking in. Use 'all' "
+                    "(the default) for the whole group. When you answer from 'all', "
+                    "never claim the runs are channel-specific -- say which channel "
+                    "each one is in, or say it is the whole group's week."
+                ),
+            },
         },
         ["week"],
     ),
@@ -166,11 +181,57 @@ TOOLS: list[dict] = [
         ["run_query", "to_when"],
     ),
     _tool(
+        "propose_add",
+        "Post a card proposing a NEW run that is not on the schedule yet. This does NOT "
+        "create it: somebody has to react ✅ on the card first.",
+        {
+            "boss": {
+                "type": "string",
+                "description": (
+                    "The boss, with its difficulty, e.g. 'HBellona' or 'XKalos'. A bare "
+                    "name without a difficulty is refused -- ask which one they mean."
+                ),
+            },
+            "when": {
+                "type": "string",
+                "description": "The day and time, e.g. 'today 21:30' or 'sat 9pm'.",
+            },
+            "participants": {
+                "type": "string",
+                "description": (
+                    "Optional. Who the run is for, by name, comma separated. Leave it out "
+                    "for just the person asking -- which is the default."
+                ),
+            },
+        },
+        ["boss", "when"],
+    ),
+    _tool(
         "propose_cancel",
-        "Post a card proposing that a run is cancelled. This does NOT cancel it: "
+        "Post a card proposing that ONE dated run is cancelled -- a single night off. "
+        'For the recurring weekly baseline ("remove the fixed run", "stop doing this '
+        'every week") use propose_remove_fixed instead. This does NOT cancel anything: '
         "somebody has to react ✅ on the card first.",
         {"run_query": _RUN_QUERY},
         ["run_query"],
+    ),
+    _tool(
+        "propose_remove_fixed",
+        "Post a card proposing that a RECURRING weekly timing is removed, so the boss "
+        "stops being scheduled every week. This is not the same as cancelling one night "
+        "-- for a single dated run use propose_cancel. If it is unclear which they mean, "
+        'ask: "just this week\'s run, or the weekly one?" This does NOT remove anything: '
+        "somebody has to react ✅ on the card first.",
+        {
+            "query": {
+                "type": "string",
+                "description": (
+                    "Which weekly timing: its short id, or a boss and (if there are "
+                    "several) a day, like 'weekly hbellona' or 'bellona tuesday'."
+                ),
+            }
+        },
+        ["query"],
     ),
     _tool(
         "propose_rsvp",
@@ -248,7 +309,7 @@ def resolve_run(bot: Any, query: str) -> dict:
     """
     text = (query or "").strip()
     if not text:
-        raise ToolError("Which run? Say a boss and a day, like 'hstar wednesday'.")
+        raise ToolError("Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.")
     try:
         return service.load_run(bot, text)
     except (NotFound, BadRequest):
@@ -271,7 +332,10 @@ def resolve_run(bot: Any, query: str) -> dict:
         # Nothing in the text locates a run. Falling back to "every run" here
         # would resolve gibberish to the only run in a quiet week, and a
         # `propose_cancel` built on that guess cancels the wrong night.
-        raise ToolError(f"No run matches `{text}`. Call get_schedule to see what is on.")
+        raise ToolError(
+            f"No run matches `{text}`. Call get_schedule to see what is on, then ask them "
+            "which one they mean. Do not guess."
+        )
     matches = by_boss or candidates
     if named_day:
         narrowed = [run for run in matches if _day_matches(low, run, bot)]
@@ -284,7 +348,10 @@ def resolve_run(bot: Any, query: str) -> dict:
                 f"No run matches `{text}`. " + _listing(bot, by_boss, "That boss is on")
             )
     if not matches:
-        raise ToolError(f"No run matches `{text}`. Call get_schedule to see what is on.")
+        raise ToolError(
+            f"No run matches `{text}`. Call get_schedule to see what is on, then ask them "
+            "which one they mean. Do not guess."
+        )
     if len(matches) > 1:
         raise ToolError(
             f"`{text}` matches more than one run. " + _listing(bot, matches, "Ask which one:")
@@ -301,13 +368,18 @@ def _listing(bot: Any, runs: list[dict], lead: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _run_line(bot: Any, run: dict) -> str:
+def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
     local = run["datetime"].astimezone(bot.tz)
     rsvps = bot.repo.get_rsvps(run["id"])
     yes = sum(1 for uid in run["participants"] if rsvps.get(uid) == "yes")
+    # Only on a guild-wide listing, and only when the bot can actually see the
+    # channel: `channel_name` returns None off the gateway, and "#None" would be
+    # worse than saying nothing.
+    where = service.channel_name(bot, run["channel_id"]) if with_channel else None
     return (
         f"[{short_id(run['id'])}] {local.strftime('%a %d %b %H:%M')} "
         f"{'+'.join(run['bosses'])} ({run['status']}, {yes}/{len(run['participants'])} yes)"
+        + (f" in {where}" if where else "")
     )
 
 
@@ -327,22 +399,53 @@ def _run_detail(bot: Any, run: dict) -> str:
 
 
 def _get_schedule(ctx: ToolContext, args: dict) -> str:
+    """The week, for the whole guild or for the channel the question came from.
+
+    ``scope="all"`` is the default and what the tool always used to do. It now
+    names each run's channel, because a guild-wide answer that reads like a
+    channel-specific one is exactly the bug this argument exists to fix: asked
+    "what runs are in this channel?", the model got the whole group's week and
+    dutifully relabelled it "in this channel".
+    """
     week = str(args.get("week") or "this").strip().lower()
     if week not in ("this", "next"):
-        raise ToolError("week must be 'this' or 'next'.")
-    runs = [
+        raise ToolError("week must be 'this' or 'next'. Ask them which week they mean.")
+    scope = str(args.get("scope") or "all").strip().lower()
+    if scope not in ("all", "channel"):
+        raise ToolError("scope must be 'all' or 'channel'.")
+
+    everything = [
         run
         for run in ctx.bot.repo.list_runs(week_start=service.week_for(ctx.bot, week))
         if run["status"] != "cancelled"
     ]
-    if not runs:
-        return f"Nothing is scheduled for {week} boss week."
-    runs.sort(key=lambda run: run["datetime"])
-    lines = [_run_line(ctx.bot, run) for run in runs[:MAX_RUNS]]
-    more = len(runs) - len(lines)
-    return "\n".join([f"{week.capitalize()} boss week:", *lines]) + (
-        f"\n(and {more} more)" if more > 0 else ""
+    here = ctx.channel_id
+    runs = (
+        [run for run in everything if str(run["channel_id"]) == str(here)]
+        if scope == "channel"
+        else everything
     )
+    if not runs:
+        if scope == "channel":
+            # Never let "nothing here" be reported as "nothing at all".
+            elsewhere = (
+                f" The group has {len(everything)} run(s) in other channels this week -- "
+                "call get_schedule again with scope='all' if they want those."
+                if everything
+                else ""
+            )
+            return f"No runs are scheduled in this channel for {week} boss week.{elsewhere}"
+        return f"Nothing is scheduled for {week} boss week."
+
+    runs.sort(key=lambda run: run["datetime"])
+    lines = [_run_line(ctx.bot, run, with_channel=scope == "all") for run in runs[:MAX_RUNS]]
+    more = len(runs) - len(lines)
+    heading = (
+        f"{week.capitalize()} boss week, in this channel only:"
+        if scope == "channel"
+        else f"{week.capitalize()} boss week, ALL channels (say which channel each run is in):"
+    )
+    return "\n".join([heading, *lines]) + (f"\n(and {more} more)" if more > 0 else "")
 
 
 def _get_run(ctx: ToolContext, args: dict) -> str:
@@ -378,11 +481,14 @@ async def _propose(
     ctx: ToolContext,
     *,
     kind: str,
-    run: dict,
+    run: dict | None,
     at: datetime | None,
     summary: str,
+    bosses: Sequence[str] | None = None,
     rsvp: str | None = None,
     participants: list[str] | None = None,
+    payload: dict | None = None,
+    week: datetime | None = None,
 ) -> str:
     """Create the proposal row and its card, through the extractor's own path.
 
@@ -391,6 +497,11 @@ async def _propose(
     raised by a rescan: same supersede rules, same wording, same ✅ handler, same
     24 h expiry. The evidence is the message that asked for it, which is what
     makes the card's "why" link back to a real line in the channel.
+
+    ``run`` is ``None`` for an ``add``, which creates a run rather than changing
+    one; ``bosses`` then says what it is for. Everything else -- superseding an
+    older card for the same bosses, the card wording, the ✅ handler -- is the
+    extractor's, unchanged.
     """
     bot = ctx.bot
     local = at.astimezone(bot.tz) if at is not None else None
@@ -401,7 +512,7 @@ async def _propose(
     )
     amendment = Amendment(
         kind=kind,
-        bosses=list(run["bosses"]),
+        bosses=list(bosses if bosses is not None else run["bosses"]),
         participants=list(participants or []),
         rsvp=rsvp,
         # Stated by a person and read back to them before anything happens, so
@@ -409,12 +520,19 @@ async def _propose(
         confidence=1.0,
         evidence_message_ids=[str(ctx.message_id)],
     )
-    week = (
-        week_start(at, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
-        if at is not None
-        else run["week_start"]
+    if at is not None:
+        week = week_start(at, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
+    elif run is not None:
+        week = run["week_start"]
+    elif week is None:  # pragma: no cover - callers with no run pass one
+        raise ToolError("Ask them which day and time they mean.")
+    planned = Planned(
+        amendment=amendment,
+        resolved=resolved,
+        run=run,
+        summary=summary,
+        payload=dict(payload or {}),
     )
-    planned = Planned(amendment=amendment, resolved=resolved, run=run, summary=summary)
     created = await bot.extractor.apply_plan(ctx.channel_id, [], [planned], week, summary)
     ctx.created.extend(created)
     if not created:  # pragma: no cover - apply_plan returns a row per proposal
@@ -427,7 +545,7 @@ async def _propose(
         )
     return (
         f"Posted a proposal card ({', '.join(short_id(a) for a in created)}). "
-        "It changes nothing until somebody on the run reacts ✅ on it. "
+        "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it. "
         "Tell them the card is up and needs a ✅."
     )
 
@@ -436,11 +554,11 @@ async def _propose_move(ctx: ToolContext, args: dict) -> str:
     run = resolve_run(ctx.bot, str(args.get("run_query") or ""))
     raw = str(args.get("to_when") or "").strip()
     if not raw:
-        raise ToolError("Which day and time should it move to?")
+        raise ToolError("Ask them what day and time it should move to.")
     try:
         at = service.parse_when(ctx.bot, raw)
     except BadRequest as exc:
-        raise ToolError(str(exc.message)) from None
+        raise ToolError(f"{exc.message}. Ask them for the day and time again.") from None
     if at <= utcnow():
         raise ToolError(f"`{raw}` is in the past. Ask them which day they mean.")
     if at == run["datetime"]:
@@ -451,6 +569,248 @@ async def _propose_move(ctx: ToolContext, args: dict) -> str:
         run=run,
         at=at,
         summary=f"move {'+'.join(run['bosses'])} to {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}",
+    )
+
+
+def _validate_bosses(ctx: ToolContext, text: str) -> list[str]:
+    """Boss tokens for a new run, or a refusal that says what to ask.
+
+    :meth:`bot.bosses.BossTable.parse` already produces exactly the right
+    sentence for the commonest mistake -- "`bellona` is missing a difficulty
+    prefix (e/n/h) - try NBellona, HBellona" -- because a bare boss name is
+    ambiguous in game, not just here. It is passed through with an instruction
+    wrapped round it, so the model asks rather than picking a difficulty.
+    """
+    if not (text or "").strip():
+        raise ToolError("Ask them which boss they mean.")
+    try:
+        return service.validate_bosses(ctx.bot, text)
+    except BadRequest as exc:
+        raise ToolError(
+            f"{exc.message}. Ask them which one they mean -- do not choose a difficulty for them."
+        ) from None
+
+
+#: "put me on it" -- the one name the model can be certain of, and the one the
+#: roster cannot resolve. Word-bounded so `i` does not eat the `i` in a nickname.
+_FIRST_PERSON_RE = re.compile(r"\b(?:me|myself|i)\b", re.IGNORECASE)
+
+#: Words that join names rather than being one. ``resolve_participant_text`` was
+#: written for a slash-command field where people type only names, so it reads
+#: "me and kanon" as three of them and refuses over "and". These are forgiven
+#: only when they matched *nobody*, so a member actually nicknamed "Us" still
+#: resolves to themselves.
+_JOINING_WORDS = frozenset(
+    {
+        "a",
+        "add",
+        "along",
+        "also",
+        "and",
+        "both",
+        "for",
+        "it",
+        "just",
+        "me",
+        "on",
+        "party",
+        "please",
+        "plus",
+        "run",
+        "team",
+        "the",
+        "then",
+        "too",
+        "us",
+        "with",
+        "&",
+        "+",
+    }
+)
+
+
+def _without_the_bot(ctx: ToolContext, text: str) -> str:
+    """Drop every reference to the bot itself from a participants field.
+
+    The trigger mention is part of the message the model is reading, and it duly
+    passed it straight back as a participant. ``validate_participants`` then
+    refused with "not in the bossing role: user 5555 (…)", and the model relayed
+    that to the channel in the first person -- "I'm not in the bossing role" --
+    which is both untrue and baffling to read.
+
+    The bot is not a member of anything. It is the thing being spoken to, so its
+    id, its mention markup and its name are stripped before anybody tries to
+    resolve them to a person.
+    """
+    user = getattr(ctx.bot, "user", None)
+    cleaned = text
+    bot_id = str(getattr(user, "id", "") or "")
+    if bot_id:
+        cleaned = re.sub(rf"<@!?{re.escape(bot_id)}>", " ", cleaned)
+        cleaned = re.sub(rf"\b{re.escape(bot_id)}\b", " ", cleaned)
+    for name in {getattr(user, "name", ""), getattr(user, "display_name", "")}:
+        if name:
+            cleaned = re.sub(rf"\b{re.escape(str(name))}\b", " ", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
+    """Who the new run is for: the asker by default, never whoever the model names.
+
+    An empty field means the person asking, taken from the message rather than
+    from anything the model said. Names that are supplied are resolved against
+    the roster the same way `/fixed add` resolves them, so the model cannot
+    invent a member or put a bare snowflake on a run.
+
+    Two substitutions happen first, both about the two "people" a roster lookup
+    can never resolve: the bot itself is stripped out entirely
+    (:func:`_without_the_bot`), and "me"/"myself"/"I" become the asker's own id,
+    taken from the message rather than from the model.
+    """
+    raw = ", ".join(str(t) for t in text) if isinstance(text, (list, tuple)) else str(text or "")
+    raw = _FIRST_PERSON_RE.sub(f"<@{ctx.author_id}>", _without_the_bot(ctx, raw))
+    if not raw.strip():
+        # Empty to begin with, or nothing left once the bot was removed -- which
+        # is what "@YuukiSakuna schedule a run" looks like by the time the model
+        # has copied the trigger mention into the participants field.
+        return [ctx.author_id]
+    resolution = resolve_participant_text(raw, ctx.bot.repo.list_members())
+    strangers = [word for word in resolution.unknown if word.lower() not in _JOINING_WORDS]
+    if strangers:
+        raise ToolError(
+            f"Nobody on the roster matches {', '.join(strangers)}. "
+            "Ask them who should be on it, or leave it as just them."
+        )
+    if resolution.ambiguous:
+        options = "; ".join(f"{k}: {', '.join(v)}" for k, v in resolution.ambiguous.items())
+        raise ToolError(f"Ask them which they mean -- {options}.")
+    # Belt and braces: a bare id that survived the strip above is still not a
+    # person, and must never reach `validate_participants` to be reported as a
+    # member who lacks a role.
+    bot_id = str(getattr(getattr(ctx.bot, "user", None), "id", "") or "")
+    people = [uid for uid in resolution.ids if uid != bot_id]
+    if not people:
+        return [ctx.author_id]
+    try:
+        return service.validate_participants(ctx.bot, people)
+    except BadRequest as exc:
+        raise ToolError(f"{exc.message}. Ask them who should be on it.") from None
+
+
+async def _propose_add(ctx: ToolContext, args: dict) -> str:
+    """Post a card proposing a run that does not exist yet.
+
+    The `add` kind and its commit handler are the extractor's, already used for
+    "wanna do trio ncarling saturday?" read out of chat. Nothing new is written
+    here: this only builds the same amendment from a sentence addressed to the
+    bot instead of one overheard in a party channel.
+    """
+    bosses = _validate_bosses(ctx, str(args.get("boss") or ""))
+    raw = str(args.get("when") or "").strip()
+    if not raw:
+        raise ToolError("Ask them what day and time the run should be.")
+    try:
+        at = service.parse_when(ctx.bot, raw)
+    except BadRequest as exc:
+        raise ToolError(f"{exc.message}. Ask them for the day and time again.") from None
+    if at <= utcnow():
+        raise ToolError(f"`{raw}` is in the past. Ask them which day they mean.")
+    people = _validate_participants(ctx, args.get("participants"))
+    return await _propose(
+        ctx,
+        kind="add",
+        run=None,
+        at=at,
+        bosses=bosses,
+        participants=people,
+        summary=f"new run: {'+'.join(bosses)} on {at.astimezone(ctx.bot.tz):%a %d %b %H:%M}",
+    )
+
+
+def _fixed_line(bot: Any, fixed: dict) -> str:
+    return (
+        f"[{short_id(fixed['id'])}] every {WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']} "
+        f"{'+'.join(fixed['bosses'])}"
+    )
+
+
+def _fixed_when(fixed: dict) -> str:
+    return f"{WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']}"
+
+
+def resolve_fixed(bot: Any, query: str) -> dict:
+    """A weekly timing from a short id, or a boss name and (optionally) a day.
+
+    The same shape as :func:`resolve_run` and for the same reason: ids first,
+    through the service layer's prefix resolution, then a boss/day search that
+    refuses rather than guesses. Removing the wrong baseline is worse than
+    cancelling the wrong night -- nothing re-materialises it.
+    """
+    text = (query or "").strip()
+    if not text:
+        raise ToolError("Ask them which weekly timing they mean -- a boss, and a day if needed.")
+    try:
+        return service.load_fixed(bot, text)
+    except (NotFound, BadRequest):
+        pass
+
+    low = text.lower()
+    candidates = bot.repo.list_fixed_runs()
+    by_boss = [
+        fixed
+        for fixed in candidates
+        if any(_says(low, word) for token in fixed["bosses"] for word in _boss_words(bot, token))
+    ]
+    named_day = _names_a_day(low)
+    if not by_boss and not named_day:
+        raise ToolError(
+            f"No weekly timing matches `{text}`. Ask them which boss's weekly run they mean."
+        )
+    matches = by_boss or candidates
+    if named_day:
+        narrowed = [
+            fixed
+            for fixed in matches
+            if any(
+                _says(low, word)
+                for word, index in WEEKDAY_ALIASES.items()
+                if index == fixed["weekday"]
+            )
+        ]
+        if narrowed:
+            matches = narrowed
+    if not matches:
+        raise ToolError(f"No weekly timing matches `{text}`.")
+    if len(matches) > 1:
+        listed = "; ".join(_fixed_line(bot, f) for f in matches[:MAX_RUNS])
+        raise ToolError(f"`{text}` matches more than one weekly timing. Ask which one: {listed}")
+    return matches[0]
+
+
+async def _propose_remove_fixed(ctx: ToolContext, args: dict) -> str:
+    """Post a card proposing that a weekly timing stops existing.
+
+    The opposite of the extractor's `fix`, and the thing that was missing when
+    somebody said "remove the fixed run" live: the pilot cancelled the two runs
+    it had already produced, and the baseline quietly went on producing more.
+    """
+    fixed = resolve_fixed(ctx.bot, str(args.get("query") or ""))
+    return await _propose(
+        ctx,
+        kind="fix",
+        run=None,
+        at=None,
+        bosses=list(fixed["bosses"]),
+        participants=[str(p) for p in fixed["participants"]],
+        week=service.week_for(ctx.bot, "this"),
+        payload={
+            "op": FIX_REMOVE,
+            "fixed_run_id": fixed["id"],
+            # Carried so the card can say which night it is retiring without
+            # looking the row up again -- by ✅ time it may be gone.
+            "weekly_when": _fixed_when(fixed),
+        },
+        summary=(f"stop scheduling {'+'.join(fixed['bosses'])} every {_fixed_when(fixed)}"),
     )
 
 
@@ -478,7 +838,7 @@ async def _propose_rsvp(ctx: ToolContext, args: dict) -> str:
     run = resolve_run(ctx.bot, str(args.get("run_query") or ""))
     answer = str(args.get("answer") or "").strip().lower()
     if answer not in ("yes", "no"):
-        raise ToolError("answer must be 'yes' or 'no'.")
+        raise ToolError("answer must be 'yes' or 'no'. Ask them whether they can make it.")
     if ctx.author_id not in run["participants"]:
         raise ToolError(
             f"They are not on run {short_id(run['id'])}, so they have nothing to answer. "
@@ -507,6 +867,8 @@ _READ = {
 }
 
 _WRITE = {
+    "propose_add": _propose_add,
+    "propose_remove_fixed": _propose_remove_fixed,
     "propose_move": _propose_move,
     "propose_cancel": _propose_cancel,
     "propose_rsvp": _propose_rsvp,
