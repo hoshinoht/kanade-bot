@@ -10,6 +10,10 @@ Four rules shape everything in here, and each has a module:
   layer before anything is written (:mod:`bot.chat.tools`);
 * the voice is a file on the data volume, not code (:mod:`bot.chat.persona`).
 
+It also speaks once without being spoken to: when a card it posted is ❌'d by
+the member who asked for it, it asks what that should have been instead
+(:mod:`bot.chat.followup`). The answer comes back through the ordinary gate.
+
 :mod:`bot.chat.agent` ties them together and is the only module the client
 knows about.
 """
