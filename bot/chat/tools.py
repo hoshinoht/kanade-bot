@@ -418,8 +418,7 @@ def resolve_run(bot: Any, query: str) -> dict:
     """
     text = (query or "").strip()
     if not text:
-        raise ToolError(
-            "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.")
+        raise ToolError("Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.")
     try:
         return service.load_run(bot, text)
     except (NotFound, BadRequest):
@@ -455,8 +454,7 @@ def resolve_run(bot: Any, query: str) -> dict:
             # The boss is real and the day is not one it runs on. Saying so beats
             # silently answering about a different night.
             raise ToolError(
-                f"No run matches `{text}`. " +
-                _listing(bot, by_boss, "That boss is on")
+                f"No run matches `{text}`. " + _listing(bot, by_boss, "That boss is on")
             )
     if not matches:
         raise ToolError(
@@ -465,8 +463,7 @@ def resolve_run(bot: Any, query: str) -> dict:
         )
     if len(matches) > 1:
         raise ToolError(
-            f"`{text}` matches more than one run. " +
-            _listing(bot, matches, "Ask which one:")
+            f"`{text}` matches more than one run. " + _listing(bot, matches, "Ask which one:")
         )
     return matches[0]
 
@@ -498,8 +495,7 @@ def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
     # Only on a guild-wide listing, and only when the bot can actually see the
     # channel: `channel_name` returns None off the gateway, and "#None" would be
     # worse than saying nothing.
-    where = service.channel_name(
-        bot, run["channel_id"]) if with_channel else None
+    where = service.channel_name(bot, run["channel_id"]) if with_channel else None
     return (
         f"[{short_id(run['id'])}] {local.strftime('%a %d %b %H:%M')} "
         f"{formatting.boss_labels(run['bosses'])} "
@@ -511,8 +507,7 @@ def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
 
 def _run_detail(bot: Any, run: dict) -> str:
     view = service.run_view(bot, run)
-    people = ", ".join(
-        f"{p['name']} ({p['rsvp'] or 'no answer'})" for p in view["participants"])
+    people = ", ".join(f"{p['name']} ({p['rsvp'] or 'no answer'})" for p in view["participants"])
     return (
         f"Run {view['short_id']}: {formatting.boss_labels(view['bosses'])} on "
         f"{view['local_day']} {view['local_time']}, status {view['status']}. "
@@ -536,8 +531,7 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
     """
     week = str(args.get("week") or "this").strip().lower()
     if week not in ("this", "next"):
-        raise ToolError(
-            "week must be 'this' or 'next'. Ask them which week they mean.")
+        raise ToolError("week must be 'this' or 'next'. Ask them which week they mean.")
     scope = str(args.get("scope") or "all").strip().lower()
     if scope not in ("all", "channel"):
         raise ToolError("scope must be 'all' or 'channel'.")
@@ -566,16 +560,14 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
         return f"Nothing is scheduled for {week} boss week."
 
     runs.sort(key=lambda run: run["datetime"])
-    lines = [_run_line(ctx.bot, run, with_channel=scope == "all")
-             for run in runs[:MAX_RUNS]]
+    lines = [_run_line(ctx.bot, run, with_channel=scope == "all") for run in runs[:MAX_RUNS]]
     more = len(runs) - len(lines)
     heading = (
         f"{week.capitalize()} boss week, in this channel only:"
         if scope == "channel"
         else f"{week.capitalize()} boss week, ALL channels (say which channel each run is in):"
     )
-    answer = "\n".join([heading, *lines]) + \
-        (f"\n(and {more} more)" if more > 0 else "")
+    answer = "\n".join([heading, *lines]) + (f"\n(and {more} more)" if more > 0 else "")
     if all(_is_over(run) for run in runs):
         # The per-line markers are enough when only some are past; a week with
         # nothing left at all is what made the model pick a finished run as "the
@@ -714,13 +706,11 @@ def _require_authority(
     subject = run if run is not None else fixed
     if subject is None:  # pragma: no cover - every caller names one
         return
-    owner = _fixed_owner(ctx.bot, run) if run is not None else str(
-        fixed["owner_id"])
+    owner = _fixed_owner(ctx.bot, run) if run is not None else str(fixed["owner_id"])
     if ctx.author_id not in [str(p) for p in subject["participants"]] and ctx.author_id != owner:
         sid = short_id(subject["id"])
         raise ToolError(
-            NOT_THEIRS_RUN.format(
-                sid=sid) if run is not None else NOT_THEIRS_FIXED.format(sid=sid)
+            NOT_THEIRS_RUN.format(sid=sid) if run is not None else NOT_THEIRS_FIXED.format(sid=sid)
         )
     home = str(subject["channel_id"] or "")
     if home and home != str(ctx.channel_id) and _pilot_channel(ctx.bot, home):
@@ -785,8 +775,7 @@ async def _propose(
         evidence_message_ids=[str(ctx.message_id)],
     )
     if at is not None:
-        week = week_start(
-            at, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
+        week = week_start(at, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
     elif run is not None:
         week = run["week_start"]
     elif week is None:  # pragma: no cover - callers with no run pass one
@@ -803,10 +792,8 @@ async def _propose(
     )
     ctx.created.extend(created)
     if not created:  # pragma: no cover - apply_plan returns a row per proposal
-        raise ToolError(
-            "The card could not be created. Tell them to try again in a moment.")
-    posted = any((bot.repo.get_amendment(aid) or {}).get(
-        "proposal_message_id") for aid in created)
+        raise ToolError("The card could not be created. Tell them to try again in a moment.")
+    posted = any((bot.repo.get_amendment(aid) or {}).get("proposal_message_id") for aid in created)
     if not posted:
         raise ToolError(
             "The change was recorded but the card could not be posted to the channel. "
@@ -835,8 +822,7 @@ def _card_when(
         weekday, hhmm = payload.get("weekday"), payload.get("time")
         if weekday is not None and hhmm:
             return f"every {WEEKDAY_NAMES[int(weekday)]} {hhmm}"
-    when = at if at is not None else (
-        run["datetime"] if run is not None else None)
+    when = at if at is not None else (run["datetime"] if run is not None else None)
     return f"{when.astimezone(ctx.bot.tz):%a %d %b %H:%M}" if when is not None else ""
 
 
@@ -871,8 +857,7 @@ def _card_text(
     name, and the bosses are spelled out the way the card spells them.
     """
     payload = dict(payload or {})
-    people = list(amendment.participants) or (
-        list(run["participants"]) if run else [])
+    people = list(amendment.participants) or (list(run["participants"]) if run else [])
     party = _names(ctx, people) or "nobody yet"
     # A card that changes the party says both sides of it, for the same reason
     # the night is said both ways: the row's own participants are the party as it
@@ -902,14 +887,11 @@ async def _propose_move(ctx: ToolContext, args: dict) -> str:
     try:
         at = service.parse_when(ctx.bot, raw)
     except BadRequest as exc:
-        raise ToolError(
-            f"{exc.message}. Ask them for the day and time again.") from None
+        raise ToolError(f"{exc.message}. Ask them for the day and time again.") from None
     if at <= utcnow():
-        raise ToolError(
-            f"`{raw}` is in the past. Ask them which day they mean.")
+        raise ToolError(f"`{raw}` is in the past. Ask them which day they mean.")
     if at == run["datetime"]:
-        raise ToolError(
-            "That run is already at that time; nothing to propose.")
+        raise ToolError("That run is already at that time; nothing to propose.")
     return await _propose(
         ctx,
         kind="move",
@@ -1030,8 +1012,7 @@ def _without_the_bot(ctx: ToolContext, text: str) -> tuple[str, bool]:
         cleaned = re.sub(rf"\b{re.escape(bot_id)}\b", " ", cleaned)
     for name in {getattr(user, "name", ""), getattr(user, "display_name", "")}:
         if name:
-            cleaned = re.sub(rf"\b{re.escape(str(name))}\b",
-                             " ", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(rf"\b{re.escape(str(name))}\b", " ", cleaned, flags=re.IGNORECASE)
     return cleaned, cleaned != text
 
 
@@ -1057,8 +1038,7 @@ def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
     genuinely wants out of a run they asked for can ❌ the card, which is a much
     smaller failure than quietly dropping the person who asked.
     """
-    raw = ", ".join(str(t) for t in text) if isinstance(
-        text, (list, tuple)) else str(text or "")
+    raw = ", ".join(str(t) for t in text) if isinstance(text, (list, tuple)) else str(text or "")
     without_bot, named_the_bot = _without_the_bot(ctx, raw)
     raw = _FIRST_PERSON_RE.sub(f"<@{ctx.author_id}>", without_bot)
     if not raw.strip():
@@ -1067,16 +1047,14 @@ def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
         # has copied the trigger mention into the participants field.
         return [ctx.author_id]
     resolution = resolve_participant_text(raw, ctx.bot.repo.list_members())
-    strangers = [word for word in resolution.unknown if word.lower()
-                 not in _JOINING_WORDS]
+    strangers = [word for word in resolution.unknown if word.lower() not in _JOINING_WORDS]
     if strangers:
         raise ToolError(
             f"Nobody on the roster matches {', '.join(strangers)}. "
             "Ask them who should be on it, or leave it as just them."
         )
     if resolution.ambiguous:
-        options = "; ".join(f"{k}: {', '.join(v)}" for k,
-                            v in resolution.ambiguous.items())
+        options = "; ".join(f"{k}: {', '.join(v)}" for k, v in resolution.ambiguous.items())
         raise ToolError(f"Ask them which they mean -- {options}.")
     # Belt and braces: a bare id that survived the strip above is still not a
     # person, and must never reach `validate_participants` to be reported as a
@@ -1088,8 +1066,7 @@ def _validate_participants(ctx: ToolContext, text: Any) -> list[str]:
     try:
         named = service.validate_participants(ctx.bot, people)
     except BadRequest as exc:
-        raise ToolError(
-            f"{exc.message}. Ask them who should be on it.") from None
+        raise ToolError(f"{exc.message}. Ask them who should be on it.") from None
     if named_the_bot and ctx.author_id not in named:
         # Added after validation, exactly as the empty-field default is: the
         # asker is on this run because they asked for it, not because the model
@@ -1132,11 +1109,9 @@ async def _propose_add(ctx: ToolContext, args: dict) -> str:
     try:
         at = service.parse_when(ctx.bot, raw)
     except BadRequest as exc:
-        raise ToolError(
-            f"{exc.message}. Ask them for the day and time again.") from None
+        raise ToolError(f"{exc.message}. Ask them for the day and time again.") from None
     if at <= utcnow():
-        raise ToolError(
-            f"`{raw}` is in the past. Ask them which day they mean.")
+        raise ToolError(f"`{raw}` is in the past. Ask them which day they mean.")
     people = _validate_participants(ctx, args.get("participants"))
     if _is_true(args.get("weekly")):
         return await _propose_weekly(ctx, bosses, at, people)
@@ -1191,12 +1166,10 @@ def _fixed_line(bot: Any, fixed: dict) -> str:
     is not, on its own, a question a member can answer. The short id leads, since
     passing it back is how the model ends the ambiguity for good.
     """
-    party = ", ".join(service.member_name(bot, uid)
-                      for uid in fixed["participants"])
+    party = ", ".join(service.member_name(bot, uid) for uid in fixed["participants"])
     return (
         f"[{short_id(fixed['id'])}] every {WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']} "
-        f"{formatting.boss_labels(fixed['bosses'])}" +
-        (f" with {party}" if party else "")
+        f"{formatting.boss_labels(fixed['bosses'])}" + (f" with {party}" if party else "")
     )
 
 
@@ -1270,8 +1243,7 @@ def resolve_fixed(bot: Any, query: str) -> dict:
     """
     text = (query or "").strip()
     if not text:
-        raise ToolError(
-            "Ask them which weekly timing they mean -- a boss, and a day if needed.")
+        raise ToolError("Ask them which weekly timing they mean -- a boss, and a day if needed.")
     try:
         return service.load_fixed(bot, text)
     except (NotFound, BadRequest):
@@ -1361,14 +1333,11 @@ def _new_slot(args: dict, fixed: dict) -> tuple[int, str]:
     try:
         weekday = parse_weekday(raw_day) if raw_day else int(fixed["weekday"])
     except ValueError as exc:
-        raise ToolError(
-            f"{exc}. Ask them which day of the week it should be.") from None
+        raise ToolError(f"{exc}. Ask them which day of the week it should be.") from None
     try:
-        hhmm = parse_hhmm(raw_time).strftime(
-            "%H:%M") if raw_time else str(fixed["time"])
+        hhmm = parse_hhmm(raw_time).strftime("%H:%M") if raw_time else str(fixed["time"])
     except ValueError as exc:
-        raise ToolError(
-            f"{exc}. Ask them what time it should start.") from None
+        raise ToolError(f"{exc}. Ask them what time it should start.") from None
     return weekday, hhmm
 
 
@@ -1381,8 +1350,7 @@ def _new_party(ctx: ToolContext, value: Any) -> list[str] | None:
     :func:`_without_the_bot` exists to catch -- must not thereby cut a weekly
     timing down to whoever happened to ask about it.
     """
-    raw = ", ".join(str(t) for t in value) if isinstance(
-        value, (list, tuple)) else str(value or "")
+    raw = ", ".join(str(t) for t in value) if isinstance(value, (list, tuple)) else str(value or "")
     without_bot, _ = _without_the_bot(ctx, raw)
     if not without_bot.strip():
         return None
@@ -1448,8 +1416,7 @@ async def _propose_change_fixed(ctx: ToolContext, args: dict) -> str:
         week=service.week_for(ctx.bot, "this"),
         payload=payload,
         summary=(
-            f"change the weekly {formatting.boss_labels(fixed['bosses'])}: " + "; ".join(
-                changes)
+            f"change the weekly {formatting.boss_labels(fixed['bosses'])}: " + "; ".join(changes)
         ),
     )
 
@@ -1484,8 +1451,7 @@ async def _propose_rsvp(ctx: ToolContext, args: dict) -> str:
     _require_authority(ctx, run=run)
     answer = str(args.get("answer") or "").strip().lower()
     if answer not in ("yes", "no"):
-        raise ToolError(
-            "answer must be 'yes' or 'no'. Ask them whether they can make it.")
+        raise ToolError("answer must be 'yes' or 'no'. Ask them whether they can make it.")
     if ctx.author_id not in run["participants"]:
         raise ToolError(
             f"They are not on run {short_id(run['id'])}, so they have nothing to answer. "
