@@ -125,6 +125,24 @@ class RateLimiter:
             return 0.0
         return max(live[0] + window - now, 0.0)
 
+    def resets_in(self, user_id: int | str) -> float:
+        """Seconds until this key's oldest live hit expires, or ``0.0`` if none is.
+
+        The same arithmetic as :meth:`retry_after` on the same oldest hit, and
+        the two differ only in whether a window with room left counts as a wait.
+        It does not, to somebody being refused -- "come back in 200 s" when they
+        may ask right now is simply wrong -- and it does, to somebody being
+        *shown* their window by ``/limits``, who wants to know when the answer
+        they have already spent comes back to them.
+
+        Non-mutating, like every other reader here: reading your own allowance
+        must not cost you any of it.
+        """
+        now = self._clock()
+        window = self.limit_for(user_id)[1]
+        live = [stamp for stamp in self._hits.get(str(user_id), ()) if stamp > now - window]
+        return max(live[0] + window - now, 0.0) if live else 0.0
+
     def snapshot(self) -> dict[str, int]:
         """``{user_id: answers used}`` for every window still open. Never mutates.
 
