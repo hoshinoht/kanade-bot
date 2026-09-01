@@ -262,6 +262,100 @@ async def test_a_one_time_add_creates_no_baseline(chat_bot, chat_seeded):
 
 
 # ---------------------------------------------------------------------------
+# "make this run every week" -- the one-off is folded in, not duplicated
+# ---------------------------------------------------------------------------
+
+
+async def one_off(bot, hhmm: str = "22:00", **overrides):
+    """Approve a plain `add` card, as a member scheduling one night would."""
+    args = {"boss": "HBellona", "when": spoken(hhmm)}
+    args.update(overrides)
+    await tools.dispatch(context(bot), "propose_add", args)
+    return approve(bot, proposals(bot)[0])
+
+
+def bellona_week(hhmm: str = "23:00"):
+    return week_start(tomorrow(hhmm), TZ, RESET_WEEKDAY, RESET_TIME)
+
+
+def adoption_note(hhmm: str = "23:00") -> str:
+    """Which week the fold happened in, which is what the note names.
+
+    Tomorrow is next boss week whenever the reset falls in between, and the suite
+    runs on every day of the week.
+    """
+    this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
+    return f"adopted {'this' if bellona_week(hhmm) == this_week else 'next'} week's run"
+
+
+async def test_a_new_weekly_takes_over_the_run_already_on_the_board(chat_bot, chat_seeded):
+    """The live ask: a one-off tomorrow, then "make it 23:00 and every week".
+
+    Before, the weekly materialised a second night beside the first: the member's
+    answers on one, the pings on the other, and nothing to say they were the same
+    run.
+    """
+    run_id = (await one_off(chat_bot, "22:00")).created_run_ids[0]
+    chat_bot.repo.set_rsvp(run_id, "1002", "yes")
+
+    await ask_weekly(chat_bot, when=spoken("23:00"))
+    result = approve(chat_bot, proposals(chat_bot)[0])
+
+    runs = [
+        r for r in chat_bot.repo.list_runs(week_start=bellona_week()) if "HBellona" in r["bosses"]
+    ]
+    assert [r["id"] for r in runs] == [run_id]  # the same run, not a second one
+    assert runs[0]["datetime"] == tomorrow("23:00")
+    assert runs[0]["fixed_run_id"] == result.fixed_run_id
+    assert chat_bot.repo.get_rsvps(run_id)["1002"] == "yes"
+    assert chat_bot.repo.list_reminders(run_id)
+
+
+async def test_the_card_says_it_adopted_rather_than_created(chat_bot, chat_seeded):
+    await one_off(chat_bot)
+    await ask_weekly(chat_bot, when=spoken("23:00"))
+
+    result = approve(chat_bot, proposals(chat_bot)[0])
+    assert adoption_note() in result.notes
+
+
+async def test_a_weekly_with_nothing_to_adopt_says_nothing(chat_bot, chat_seeded):
+    await ask_weekly(chat_bot, when=spoken("23:00"))
+    result = approve(chat_bot, proposals(chat_bot)[0])
+
+    assert not any("adopted" in note for note in result.notes)
+    run = chat_bot.repo.run_for_fixed(result.fixed_run_id, bellona_week())
+    assert run["source"] == "fixed"
+
+
+async def test_the_adopted_run_takes_the_weeklys_party(chat_bot, chat_seeded):
+    """A member added by the weekly never agreed to the night they just joined."""
+    run_id = (await one_off(chat_bot)).created_run_ids[0]
+    chat_bot.repo.set_rsvp(run_id, "1002", "yes")
+    chat_bot.repo.set_run_status(run_id, "confirmed")
+
+    await ask_weekly(chat_bot, when=spoken("23:00"), participants="kanon, Priya")
+    approve(chat_bot, proposals(chat_bot)[0])
+
+    run = chat_bot.repo.get_run(run_id)
+    assert run["participants"] == ["1002", "1003"]
+    assert chat_bot.repo.get_rsvps(run_id)["1002"] == "yes"
+    assert run["status"] == "planned"  # Priya has not answered
+
+
+async def test_somebody_elses_night_is_not_adopted(chat_bot, chat_seeded):
+    """A one-off for a different boss is nothing to do with this weekly."""
+    run_id = (await one_off(chat_bot, boss="HLimbo")).created_run_ids[0]
+
+    await ask_weekly(chat_bot, when=spoken("23:00"))
+    result = approve(chat_bot, proposals(chat_bot)[0])
+
+    assert chat_bot.repo.get_run(run_id)["fixed_run_id"] is None
+    assert chat_bot.repo.run_for_fixed(result.fixed_run_id, bellona_week())["id"] != run_id
+    assert not any("adopted" in note for note in result.notes)
+
+
+# ---------------------------------------------------------------------------
 # which way the flag falls
 # ---------------------------------------------------------------------------
 

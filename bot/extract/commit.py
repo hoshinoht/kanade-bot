@@ -448,7 +448,36 @@ def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
     result.fixed_run_id = fixed_id
     if ctx.on_fixed_created is not None:
         ctx.on_fixed_created(fixed_id)
+        _note_adoption(repo, fixed_id, result, ctx)
     return None
+
+
+def _note_adoption(repo: Repo, fixed_id: str, result: CommitResult, ctx: Context):
+    """Say on the card when the new timing took over a run the week already had.
+
+    ``make this run weekly`` reaches the tools as a `fix`, and
+    :func:`bot.materialise.materialise_week` folds the matching one-off into the
+    new timing rather than leaving a duplicate beside it -- which is what the
+    member meant, and worth saying, because the run they were looking at has just
+    moved to the weekly's slot.
+
+    Told apart by the run's ``source``: materialisation stamps ``fixed`` on
+    everything it creates, so a run sitting under a timing that did not exist a
+    moment ago and carrying any other source was adopted rather than made. Only
+    the creation path asks -- an edit may well find a run adopted weeks ago, and
+    reporting that as news of this ✅ would be a lie.
+
+    Both weeks, because ``materialise_weeks`` fills both and a run for "tomorrow"
+    lands in next week whenever the reset falls in between; saying "this week's"
+    about that one would be the same lie in a smaller way.
+    """
+    for label, week in (
+        ("this week", current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
+        ("next week", next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
+    ):
+        run = repo.run_for_fixed(fixed_id, week)
+        if run is not None and run["source"] != "fixed":
+            result.notes.append(f"adopted {label}'s run")
 
 
 def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):

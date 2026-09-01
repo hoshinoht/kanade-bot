@@ -215,3 +215,35 @@ def test_table_needs_difficulties_and_bosses():
         BossTable.from_dict({"bosses": {"Foo": {}}})
     with pytest.raises(BossTableError, match="bosses"):
         BossTable.from_dict({"difficulties": {"n": "Normal"}})
+
+
+# -- names_in: "did they say a boss at all" ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("jupiter", ["Jupiter"]),
+        ("hjupiter", ["Jupiter"]),
+        ("hard jupiter tue", ["Jupiter"]),
+        ("jup", ["Jupiter"]),
+        ("hlimb", ["Limbo"]),
+        ("chosen seren", ["Seren"]),
+        ("hstar and xkalos", ["Star", "Kalos"]),
+        ("hstar hstar", ["Star"]),
+    ],
+)
+def test_a_loose_sentence_gives_up_the_bosses_it_names(bosses: BossTable, text, expected):
+    assert bosses.names_in(text) == expected
+
+
+@pytest.mark.parametrize("text", ["", "the weekly run", "monday", "tuesday 23:00", "152fa345"])
+def test_anything_that_is_not_a_boss_names_none(bosses: BossTable, text):
+    assert bosses.names_in(text) == []
+
+
+def test_it_does_not_care_about_difficulty_the_way_parse_does(bosses: BossTable):
+    """`cseren` is refused by `parse`; here it still names the boss they said."""
+    with pytest.raises(BossParseError):
+        bosses.parse("cseren")
+    assert bosses.names_in("cseren") == ["Seren"]

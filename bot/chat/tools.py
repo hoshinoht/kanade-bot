@@ -250,9 +250,14 @@ TOOLS: list[dict] = [
                     "'every Tuesday', 'recurring', 'fixed'. A separate sentence about the "
                     "run they just asked for counts as saying it: 'tonight 1900, this is "
                     "fixed', 'make it fixed', 'make it weekly' are all true, even though "
-                    "the rest of the line reads one-time. 'Schedule a run', 'add a run "
-                    "tonight', 'can we do HStar friday' are all one-time: leave it out. If "
-                    "their wording is unclear, do NOT ask which they mean -- leave it out. "
+                    "the rest of the line reads one-time. Asking for a run that ALREADY "
+                    "exists to repeat -- 'make this weekly', 'make it run every week' -- is "
+                    "this argument too, not propose_change_fixed: pass the run's boss and "
+                    "the day and time it should keep, and the scheduler folds this week's "
+                    "run into the new weekly instead of leaving a duplicate beside it. "
+                    "'Schedule a run', 'add a run tonight', 'can we do HStar friday' are "
+                    "all one-time: leave it out. If their wording is unclear, do NOT ask "
+                    "which they mean -- leave it out. "
                     "One-time is the safe default and the card says which one it is."
                 ),
             },
@@ -1170,6 +1175,50 @@ def _fixed_when(fixed: dict) -> str:
     return f"{WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']}"
 
 
+def _no_weekly_for(bot: Any, text: str, candidates: list[dict]) -> None:
+    """Refuse a query whose boss is on no weekly schedule at all; else say nothing.
+
+    The live failure: a member with a one-off Hard Jupiter run on Tuesday asked
+    to move it to 23:00 "and make it run for every week". No Jupiter weekly
+    exists, so the boss search above found nothing, the day token "tue" survived,
+    and the tool answered with three unrelated Tuesday weeklies -- Seren,
+    Carling, Kalos -- which the model duly relayed as "which Hard Jupiter weekly
+    are you tweaking?". Nonsense to read, and one ✅ away from moving a party's
+    night on the strength of a shared weekday.
+
+    So a query that names a boss is answered about that boss or not at all. The
+    refusal also points at the tool the member actually wanted, because "make
+    this run weekly" is a *creation* with an adoption behind it
+    (:func:`bot.materialise.materialise_week`), not a change to something that
+    exists.
+
+    Silent when the query named no boss -- day-only and vague queries still
+    disambiguate among candidates below -- and silent when the named boss does
+    have a weekly that the search merely failed to spell the same way, where the
+    ordinary refusals say something truer than this one would.
+    """
+    named = bot.bosses.names_in(text)
+    if not named:
+        return
+    scheduled = {
+        short
+        for fixed in candidates
+        for token in fixed["bosses"]
+        for short in bot.bosses.names_in(token)
+    }
+    missing = [short for short in named if short not in scheduled]
+    if len(missing) != len(named):
+        return
+    label = ", ".join(bot.bosses.bosses[short].full for short in missing)
+    raise ToolError(
+        f"No weekly timing for {label} exists, so there is nothing to change. If they are "
+        "asking for an existing one-off run to happen every week, that is propose_add with "
+        "weekly = true -- the scheduler folds this week's run into the new weekly instead of "
+        "leaving a duplicate beside it. If they meant a different boss's weekly, ask them "
+        "which one; do not offer them somebody else's."
+    )
+
+
 def resolve_fixed(bot: Any, query: str) -> dict:
     """A weekly timing from a short id, or a boss name and (optionally) a day.
 
@@ -1184,6 +1233,11 @@ def resolve_fixed(bot: Any, query: str) -> dict:
     first-match fallback and there must not be one: a guild runs several weekly
     timings, sometimes the same boss twice a week, and picking one of those is
     picking somebody's night at random.
+
+    A query that names a boss with no weekly at all ends here too, and earlier:
+    see :func:`_no_weekly_for`. The day-token fallback below is for queries that
+    never named a boss, and letting a named one reach it is how "hard jupiter
+    tue" came back as three other parties' Tuesday nights.
     """
     text = (query or "").strip()
     if not text:
@@ -1200,6 +1254,8 @@ def resolve_fixed(bot: Any, query: str) -> dict:
         for fixed in candidates
         if any(_says(low, word) for token in fixed["bosses"] for word in _boss_words(bot, token))
     ]
+    if not by_boss:
+        _no_weekly_for(bot, text, candidates)
     named_day = _names_a_day(low)
     if not by_boss and not named_day:
         raise ToolError(
