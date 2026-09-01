@@ -1,6 +1,6 @@
-# Boss Scheduler Bot
+# kanade-bot
 
-A Discord bot that keeps a MapleStory guild's weekly boss schedule and posts
+A Discord bot that keeps a MapleStory group's weekly boss schedule and posts
 tagged reminders.
 
 You set baseline timings with `/fixed`, the bot materialises them into concrete
@@ -29,6 +29,7 @@ reachable from your phone over Tailscale.
 | **Changes**          | `/amend`, `/status` (with `/otot`, `/cancel`, `/restore`, `/done` as shortcuts), `/rsvp`, `/nick`, `/pingtime`. Every change made outside Discord is announced in the run's home channel, marked *(via portal)*. |
 | **Chat extraction**  | A local `gpt-oss:20b` reads the party channels and posts a 📋/💡/📌 card for each change it finds. ✅ from a participant applies it; ❌ rejects it; unanswered cards expire after 24 h. |
 | **Portal & CLI**     | A local web portal (week view, fixed editor, proposal inbox, extraction log, config) and `bossctl`, both over one HTTP API inside the bot process. Loopback only; tailnet via `tailscale serve`.  |
+| **Chatbot**          | A mention-gated chatbot in its own channel, on the same local model. It answers scheduling questions from tools and drafts changes as the same ✅/❌ cards — it never writes to the schedule itself. Off until `CHAT_PILOT_ROLE_ID` and `CHAT_PILOT_CHANNEL_IDS` are both set. |
 
 Reminders are rows in SQLite, not in-memory jobs, so restarts and rebuilds never
 lose or replay a ping.
@@ -211,7 +212,7 @@ of which is the LLM, and a human ends every one of them.
 **1. Gate (Python, no model).** Every message is scored for a boss alias, a clock
 time, a weekday or relative day, a scheduling verb, an `@here`, a mention of a
 roster member, or an agreement ("Can", "Ok", "kenot"). Banter is dropped here, so
-a 13 GB model is never woken for "botter again sigh". Boss tokens tolerate the guild's
+a 13 GB model is never woken for "botter again sigh". Boss tokens tolerate the group's
 spelling — `hlimb`, `nbald`, `bladrix`, `hkarling`, `exkalos`, `hstarr` — but
 `start` never becomes `Star` and `cc9`/`ch7` is a map channel, not a time. Bare
 answers ("Can") only trigger a call if the channel was scheduling in the last 6 h.
@@ -221,11 +222,11 @@ after `EXTRACT_DEBOUNCE_SECONDS` of silence — or immediately when a message ha
 mention/@here **and** a boss or a time. One model call per burst, never per
 message. Only messages from people holding the bossing role count.
 
-**3. Model.** One call to Ollama, serialised guild-wide (only ever one at a
+**3. Model.** One call to Ollama, serialised server-wide (only ever one at a
 time), constrained by a JSON schema, at `temperature 0` with `keep_alive=-1`.
 The prompt carries the boss table, **that channel's** runs and fixed timings, the
 roster members who actually appear, and the messages with `[msg_id]` prefixes so
-it can cite evidence. It stays around 2k tokens whatever size the guild grows to.
+it can cite evidence. It stays around 2k tokens whatever size the group grows to.
 The model emits `kind`, `bosses`, the **literal words** it saw for the day and
 time (`"weds"`, `"1030~11+pm"`), who it is about, `is_question`, a confidence and
 its evidence message ids. It never computes a date.
@@ -317,7 +318,7 @@ uv run python -m bot.extract --file data/exports/<name>.jsonl \
 uv run pytest -m ollama -v
 ```
 
-`tests/fixtures/extract/*.json` are the guild's own messages with names reduced
+`tests/fixtures/extract/*.json` are the group's own messages with names reduced
 to single letters and ids replaced by fake snowflakes; each carries the channel's
 runs at the time and the amendments a correct extraction produces. Scoring is
 strict — everything expected must be found and nothing extra invented.
@@ -361,7 +362,7 @@ docker compose run --rm bot python -m bot.export --category <category-id> --sinc
 - `--channel <id>` / `--category <id>` — repeatable. With neither, every watched
   channel is exported. **Only watched channels can be exported**; anything else
   is refused.
-- `--since` / `--until` — `YYYY-MM-DD` (midnight guild time) or an ISO timestamp.
+- `--since` / `--until` — `YYYY-MM-DD` (midnight group time) or an ISO timestamp.
   `--since` defaults to the start of the current boss week.
 - `--out <path>` — a single file; only valid when one channel is selected.
   Otherwise files are named `data/exports/<channel-name>-<since>.jsonl`.
@@ -402,14 +403,14 @@ token signs every browser session out.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Week**         | The default. A seven-column rail for the boss week — starting on the reset day, not Monday — with a pip per run, then the runs grouped by day. Filter by channel, member or boss; move, preview-ping, and a status control (planned · confirmed · own time · done · cancelled) on each row. Past and cancelled runs are hidden until you ask. |
 | **Fixed**        | The baseline timings, with a create/edit form. Bosses are picked from a **boss grid** — the in-game list, one row per boss with its real difficulties as pills — or typed as tokens. The party comes from the synced roster. |
-| **Bosses**       | The same grid, read-only, with the difficulties the guild actually has timings for ticked. A quick "what do we run".                                |
+| **Bosses**       | The same grid, read-only, with the difficulties the group actually has timings for ticked. A quick "what do we run".                                |
 | **Inbox**        | What the extractor proposed and nobody has answered: the change, its confidence, and the exact chat lines it cited. Approve, edit-then-approve, or reject — the same code path a ✅ on the Discord card runs, and the card is edited to say it was applied via the portal. |
 | **Extractions**  | Every model call: the prompt as sent, the raw JSON back, the latency, and the changes it produced. This is the prompt-tuning tool.                  |
 | **Members**      | The roster as synced from the bossing role, plus the chat aliases the extractor matches names against.                                              |
 | **Reminders**    | Queued and sent reminder rows, with a link straight to each posted message in Discord.                                                              |
 | **Config**       | Morning ping time, countdown offsets, pause chat watching, turn the extractor off, post the weekly digest now, **re-read the party channels**, and a **channel access** table showing what the bot may actually do in each one. The `.env`-only values are listed read-only underneath. |
 
-Every time on every page is in the guild timezone, which is named in the header.
+Every time on every page is in the group's timezone, which is named in the header.
 The pages are server-rendered; [htmx](https://htmx.org) (pinned, from cdnjs, with
 an integrity hash) only upgrades the actions to in-place swaps. Every control is
 a real form, so with the CDN blocked or JavaScript off the portal still works.
@@ -511,7 +512,97 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/schedule
 `GET /healthz` is the one unauthenticated route and returns nothing but `ok`; the
 compose healthcheck uses it alongside the SQLite heartbeat.
 
-## 7. Development
+## 7. The chatbot
+
+A chatbot with a persona, answering in one channel, on the same local
+`gpt-oss:20b` the extractor uses. Nothing it is told leaves the machine.
+
+It is **three gates deep and silent about all of them**: it answers only when
+mentioned (a reply to one of its own messages counts), only in a channel it was
+told about, and only from a member holding `CHAT_PILOT_ROLE_ID`. Anything else
+gets no reply and no reaction at all — a bot that announces "you may not use me"
+is a bot anyone can make post.
+
+Where it listens is `CHAT_PILOT_CHANNEL_IDS` (explicit channels) and/or
+`CHAT_PILOT_CATEGORY_IDS` (every text channel under a category, including ones
+added later). A thread counts as its parent channel. These resolve exactly as
+the extractor's `CHAT_CHANNEL_IDS`/`CHAT_CATEGORY_IDS` do — same code — but they
+are **separate lists**: a watched party channel does not become a chat channel,
+and a chat channel is not read by the extractor.
+
+**It cannot change the schedule.** Its read tools answer questions; its three
+write tools (`propose_move`, `propose_cancel`, `propose_rsvp`) post the *same*
+✅/❌ proposal card the extractor posts, through the same code, and a
+participant still has to react ✅ before anything happens. It cannot approve,
+reject or edit a card, and it can only ever RSVP for the person talking to it.
+Prompt injection is bounded by that structure rather than by prompt wording: the
+worst a "cancel everything" message achieves is a stack of cancel *cards*.
+
+### Set it up
+
+```sh
+# 1. In .env -- note the CHAT_PILOT_ prefix. CHAT_CHANNEL_IDS / CHAT_CATEGORY_IDS
+#    are different lists (what the *extractor* reads) and must not be touched.
+CHAT_PILOT_ROLE_ID=...          # the role that may talk to the bot
+CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
+CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
+
+# 2. Put the persona on the data volume. It is NOT in git: it is per-deployment
+#    flavour text, edited by hand, and may name a character you would rather not
+#    publish. `persona.example.md` in the repo is a template to write yours from.
+docker compose cp your-persona.md bot:/app/data/persona.md
+
+# 3. Rebuild, then mention it in the channel.
+docker compose up -d --build
+```
+
+A missing persona file falls back to the tracked template and logs a WARNING, so
+a wrong `PERSONA_PATH` is obvious in the logs rather than being an outage.
+
+### Controlling it
+
+`chat_mode` is the runtime kill switch, in the same place `quiet_mode` and
+`extract_enabled` live — the Config page, `bossctl config set chat_mode off`, or
+`PUT /api/config`. It survives restarts, and turning it off is instant. Quiet
+mode covers the chatbot like everything else: it keeps answering, and notifies
+nobody.
+
+Each member gets `CHAT_PILOT_RATE_COUNT` answers per `CHAT_PILOT_RATE_WINDOW_S`
+seconds (4 per 5 minutes by default); past that the bot reacts ⏳ and stays
+quiet. `ADMIN_ROLE_ID` holders are exempt, so testing it does not use up your
+own. One answer at a time per channel — a question asked while it is still
+thinking also gets ⏳ rather than being queued behind a minute of GPU.
+
+`/debug status` reports whether it is on, how many channels and categories it
+answers in, and which model it is using — never the ids themselves.
+
+### Working out why it said that
+
+Every answer leaves one INFO line naming the person, the channel, how long it
+took, how many rounds it used, and each tool it called with how that call went:
+
+```
+chat: answered 1234 in channel 5678 in 8431 ms (2 round(s), 1 tool call(s):
+  get_schedule:ok) -> proposal 9f2c1a4e
+```
+
+That is usually enough to tell a slow model from a looping one from a refused
+tool. When it is not, `LOG_LEVEL=DEBUG` adds a line per model round (its own
+latency) and a line per tool call with **the arguments the model actually
+passed**, the duration, the outcome (`ok` / `refused` / `unknown tool` /
+`failed`), and the id of any card it produced:
+
+```
+chat: round 1/4 model answered in 7902 ms (1 tool call(s))
+chat: round 1/4 tool propose_move(run_query='9f2c', to_when='sunday 22:00')
+  -> ok in 12 ms card 9f2c1a4e
+```
+
+Those arguments are the answer to "why did it propose *that*" — usually the
+model resolved a run differently than the asker meant. Everything stays in the
+container logs; nothing is stored and there is no UI for it.
+
+## 8. Development
 
 ```sh
 uv sync                 # includes dev deps
@@ -565,6 +656,12 @@ bot/
     pipeline.py  per-channel buffering and the whole flow
     commit.py    ✅ on a card -> the schedule change (pure repo work)
     __main__.py  `python -m bot.extract` -- offline dry run over an export
+  chat/          the chatbot (§7)
+    gate.py      answer or ignore: channel, mention, role, rate limit (pure)
+    ratelimit.py per-person sliding window (pure)
+    persona.py   PERSONA_PATH + the hard rules -> the system prompt
+    tools.py     the tool schemas and the dispatcher over api/service.py
+    agent.py     context assembly and the Ollama tool loop
   api/           the portal + CLI API, served on the bot's own loop
     server.py    uvicorn as a task next to discord.py; start/stop
     app.py       the FastAPI app, built around the live client

@@ -96,6 +96,27 @@ def auth(client):
     return client
 
 
+# ---------------------------------------------------------------------------
+# phase 4: the speech pilot
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def chat_bot(repo: Repo, bosses: BossTable):
+    """A stand-in client configured for the chatbot; see `tests/chat_support.py`."""
+    from .chat_support import build_bot
+
+    return build_bot(repo, bosses)
+
+
+@pytest.fixture
+def chat_seeded(chat_bot):
+    """`chat_bot` with two parties and a materialised week; returns their ids."""
+    from .chat_support import seed
+
+    return seed(chat_bot)
+
+
 @pytest.fixture
 def seeded(fake_bot):
     """A guild with two parties, a week materialised, and one open proposal.

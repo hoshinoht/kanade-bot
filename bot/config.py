@@ -99,6 +99,37 @@ class Settings(BaseSettings):
     #: card's evidence links) still works after the database has been reset.
     backfill_on_start: bool = True
 
+    # --- phase 4: the speech pilot ---------------------------------------
+    #: The role that may talk to the chatbot. Unset means nobody, which is one
+    #: of the two ways the feature stays off. Deliberately *not* named
+    #: ``CHAT_ROLE_ID``: ``CHAT_CHANNEL_IDS`` above already means "the channels
+    #: the extractor reads", and a second, unrelated ``CHAT_*`` gate reading
+    #: from a neighbouring line would be read as its companion.
+    chat_pilot_role_id: int | None = None
+    #: Channels the chatbot answers in, comma separated. Independent of the
+    #: watched-channel list: the pilot runs in its own channel, and a watched
+    #: party channel must not start answering chat.
+    chat_pilot_channel_ids: str = ""
+    #: Categories whose text channels the chatbot answers in, comma separated.
+    #: Resolved per message, exactly as ``CHAT_CATEGORY_IDS`` is for the
+    #: extractor, so a channel added to the category later is picked up without
+    #: a restart. Both lists empty = feature off.
+    chat_pilot_category_ids: str = ""
+    #: Replies per person per window before the bot goes quiet at them.
+    #: ``ADMIN_ROLE_ID`` holders are exempt (see :func:`bot.util.is_bot_admin`).
+    chat_pilot_rate_count: int = Field(default=4, ge=1)
+    chat_pilot_rate_window_s: float = Field(default=300.0, gt=0)
+    #: The model that answers. Separate from ``OLLAMA_MODEL`` so the extractor's
+    #: model can be changed without silently changing the bot's voice.
+    chat_pilot_model: str = "gpt-oss:20b"
+    #: Seconds for one whole answer, tool rounds included.
+    chat_pilot_timeout: float = Field(default=60.0, gt=0)
+    #: The persona document, loaded verbatim into the system prompt. It is
+    #: deployment flavour text rather than code, so it lives on the data volume
+    #: beside the database; compose overrides this to ``/app/data/persona.md``.
+    #: A missing file falls back to the tracked ``persona.example.md``.
+    persona_path: str = "data/persona.md"
+
     # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Bearer token for the HTTP API. Empty means the API starts but refuses
     #: every non-health request, so a half-configured deployment fails loudly
@@ -213,6 +244,25 @@ class Settings(BaseSettings):
     @property
     def chat_category_id_list(self) -> list[int]:
         return _int_list(self.chat_category_ids)
+
+    @property
+    def chat_pilot_channel_id_list(self) -> list[int]:
+        return _int_list(self.chat_pilot_channel_ids)
+
+    @property
+    def chat_pilot_category_id_list(self) -> list[int]:
+        return _int_list(self.chat_pilot_category_ids)
+
+    @property
+    def chat_pilot_configured(self) -> bool:
+        """Both gates are set, so the chatbot could answer somebody.
+
+        Either half missing leaves it off: with no role nobody may speak to it,
+        and with neither a channel nor a category there is nowhere it listens.
+        """
+        return self.chat_pilot_role_id is not None and bool(
+            self.chat_pilot_channel_id_list or self.chat_pilot_category_id_list
+        )
 
     @property
     def debug_user_id_list(self) -> list[int]:

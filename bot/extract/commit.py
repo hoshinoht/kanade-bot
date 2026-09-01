@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from ..db import Repo
 from ..materialise import ensure_reminders, refresh_run_reminders
-from ..rsvp import recompute_after_roster_change
+from ..rsvp import compute_status, recompute_after_roster_change
 from ..weeks import week_start
 
 log = logging.getLogger(__name__)
@@ -325,6 +325,40 @@ def _split(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, 
     return None
 
 
+def _rsvp(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
+    """Record an answer that was proposed rather than applied.
+
+    The extractor never gets here: it applies a chat answer immediately through
+    :func:`bot.rsvp.apply_reaction`, because reading "can" off a message is
+    recording an opinion its author already stated in public. The chatbot does
+    card its answers -- it is acting on a sentence addressed to *it*, so the
+    person it is answering for gets to see the card first.
+
+    The tally, and the status derived from it, are updated exactly as
+    :func:`bot.api.service.set_rsvp` does, so an answer means the same thing
+    however it arrived.
+    """
+    if run is None:
+        return "that run has gone"
+    answer = amendment.get("rsvp")
+    if answer not in ("yes", "no", "maybe"):
+        return "no answer was given"
+    people = [str(p) for p in amendment["participants"]]
+    if not people:
+        return "nobody was named"
+    outsiders = [uid for uid in people if uid not in run["participants"]]
+    if outsiders:
+        # Between the card going up and the ✅, a `/swap` can take somebody off.
+        return "that answer is for somebody who is no longer on the run"
+    result.run_id = run["id"]
+    for uid in people:
+        repo.set_rsvp(run["id"], uid, answer, source="chat")
+    status = compute_status(run["status"], run["participants"], repo.get_rsvps(run["id"]))
+    if status != run["status"]:
+        repo.set_run_status(run["id"], status)
+    return None
+
+
 def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
     """Create the fixed weekly timing exactly as ``/fixed add`` would."""
     payload = amendment.get("payload") or {}
@@ -357,6 +391,7 @@ _HANDLERS: dict[str, Callable] = {
     "sub": _sub,
     "split": _split,
     "fix": _fix,
+    "rsvp": _rsvp,
 }
 
 

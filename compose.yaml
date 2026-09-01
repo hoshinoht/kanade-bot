@@ -9,6 +9,11 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
+      # On the named volume beside the database, so it survives a rebuild and
+      # stays out of both the image and git. Put it there with:
+      #   docker compose cp your-persona.md bot:/app/data/persona.md
+      # Missing, it falls back to the tracked persona.example.md and warns.
+      PERSONA_PATH: /app/data/persona.md
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
       # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.

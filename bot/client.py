@@ -22,6 +22,7 @@ from . import backup, formatting
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
+from .chat import ChatPilot
 from .config import Settings
 from .db import Repo
 from .debug import TEST_PREFIX
@@ -69,6 +70,7 @@ CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
+CFG_CHAT = "chat_mode"
 CFG_LAST_WEEK = "last_materialised_week"
 #: The boss week whose reset digest has already gone out, and the local day the
 #: database was last snapshotted. Both are "have I done this yet?" markers rather
@@ -115,6 +117,11 @@ class BossBot(discord.Client):
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
         self.extractor = Pipeline(self)
+        # The speech pilot: answers when mentioned by somebody holding the chat
+        # role, in a channel listed in CHAT_PILOT_CHANNEL_IDS. Gated entirely at
+        # its own door (`bot.chat.gate`), so it sees every message and answers
+        # almost none. Constructing it reads no persona file and opens no client.
+        self.chat = ChatPilot(self)
         # The portal/CLI HTTP API, served on this same loop (DESIGN.md §5) so it
         # reads live state and drives Discord without a second process fighting
         # over SQLite. Constructing the bot does not bind the port.
@@ -161,6 +168,19 @@ class BossBot(discord.Client):
         builds a non-empty one.
         """
         return (self.repo.get_config(CFG_QUIET, "0") or "0") == "1"
+
+    @property
+    def chat_mode(self) -> bool:
+        """Runtime kill switch for the chatbot, seeded from whether it is configured.
+
+        Turning it off stops the bot answering without touching ``.env`` -- the
+        same reason :attr:`extract_enabled` is a config row rather than an
+        environment variable. It is the *third* gate: with no chat role or no
+        chat channel the pilot is off whatever this says, so a deployment that
+        never configured it cannot be switched on by accident.
+        """
+        default = "1" if self.settings.chat_pilot_configured else "0"
+        return (self.repo.get_config(CFG_CHAT, default) or default) == "1"
 
     @property
     def portal_actor_id(self) -> str:
@@ -217,6 +237,7 @@ class BossBot(discord.Client):
         await self.api.stop()
         await self.rescans.stop()
         await self.extractor.shutdown()
+        await self.chat.close()
         await super().close()
 
     async def on_ready(self) -> None:
@@ -351,31 +372,41 @@ class BossBot(discord.Client):
 
     # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
-        """Store messages from watched channels, then offer them to the extractor.
+        """Store messages from watched channels, offer them to the extractor, then to chat.
 
         Storing happens whether or not extraction is enabled, so `/rescan` can
         always look back over history that was captured while it was paused.
+
+        The two offers are independent and gated on different lists. The
+        extractor reads the *watched* channels and stores what it reads; the
+        chatbot answers in the channels named by ``CHAT_PILOT_CHANNEL_IDS``,
+        which are usually not watched at all -- a channel for talking to the bot
+        is not a party's channel, and its chatter should not become proposals.
+        Neither is allowed to break the other, or the bot.
         """
         if message.author.bot or message.guild is None:
             return
         if message.guild.id != self.settings.guild_id:
             return
-        if not self.is_watched(message.channel):
-            return
-        # Store under the parent channel so a thread's messages group with its
-        # channel's -- `python -m bot.export` writes the same id.
-        channel_id, _thread_id = origin_ids(message.channel)
-        self.repo.record_message(
-            message.id,
-            channel_id,
-            message.author.id,
-            message.created_at,
-            message.content,
-        )
+        if self.is_watched(message.channel):
+            # Store under the parent channel so a thread's messages group with
+            # its channel's -- `python -m bot.export` writes the same id.
+            channel_id, _thread_id = origin_ids(message.channel)
+            self.repo.record_message(
+                message.id,
+                channel_id,
+                message.author.id,
+                message.created_at,
+                message.content,
+            )
+            try:
+                await self.extractor.offer(message)
+            except Exception:  # pragma: no cover - chat must never break the bot
+                log.exception("extractor rejected a message")
         try:
-            await self.extractor.offer(message)
+            await self.chat.offer(message)
         except Exception:  # pragma: no cover - chat must never break the bot
-            log.exception("extractor rejected a message")
+            log.exception("the chat pilot rejected a message")
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
