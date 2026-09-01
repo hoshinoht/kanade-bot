@@ -2414,6 +2414,13 @@ details[open] > summary.btn {
     margin: 0 -1.1rem;
   }
 
+  /* The sidebar's raised ground meets the title bar. The head's bottom margin
+     is breathing room for content, and this body is chrome -- a strip of card
+     surface between the two reads as a gap in the window. */
+  body.framed .settings > .card__head {
+    margin-bottom: 0;
+  }
+
   body.framed .settings__toc,
   body.framed .settings__detail {
     min-height: 0;
