@@ -41,6 +41,7 @@ from .auth import (
 from .deps import Bot, Caller, get_bot
 from .errors import ApiError, NotConfigured, NotFound
 from .models import Week
+from .templating import read_section
 
 log = logging.getLogger(__name__)
 
@@ -93,9 +94,25 @@ def table_page(
     return render(request, name, active, **context)
 
 
-def back_to(request: Request, path: str, message: str | None = None, kind: str = "ok") -> Response:
+def back_to(
+    request: Request,
+    path: str,
+    message: str | None = None,
+    kind: str = "ok",
+    fragment: str = "",
+) -> Response:
+    """Where a plain form post lands, with what it has to say.
+
+    ``fragment`` is how the Config window puts you back on the section you were
+    editing: it is one page with nine panels chosen by ``:target``, so a save
+    made under Chatbot has to redirect to ``/config?msg=…#chatbot`` -- query
+    first, fragment last, which is the one order a URL allows.
+    """
     query = urlencode({"msg": message, "kind": kind}) if message else ""
-    return RedirectResponse(f"{path}{'?' if query else ''}{query}", status_code=303)
+    anchor = f"#{fragment}" if fragment else ""
+    return RedirectResponse(
+        f"{path}{'?' if query else ''}{query}{anchor}", status_code=303
+    )
 
 
 def safe_next(candidate: str | None, fallback: str = "/") -> str:
@@ -587,7 +604,7 @@ async def access_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLRes
 @router.post("/access")
 async def access_recheck(request: Request, bot: Bot, caller: Caller) -> Response:
     """The no-JavaScript path: re-render Config, which rebuilds the table."""
-    return back_to(request, "/config", "Checked.")
+    return back_to(request, "/config", "Checked.", fragment="access")
 
 
 @router.get("/bosses")
@@ -963,15 +980,18 @@ async def web_nick(
 @router.post("/config")
 async def web_config(request: Request, bot: Bot, caller: Caller) -> Response:
     form = await request.form()
+    # Which panel of the settings window this was submitted from, so the
+    # redirect puts the reader back on it instead of on the first one.
+    section = read_section(str(form.get("section") or ""))
     changes = {k: v for k, v in form.items() if k in service.CONFIG_KEYS}
     if not changes:
-        return back_to(request, "/config", "Nothing to change.", "error")
+        return back_to(request, "/config", "Nothing to change.", "error", fragment=section)
     try:
         for key, value in changes.items():
             service.set_config(bot, key, value)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
-    return back_to(request, "/config", "Saved.")
+        return back_to(request, "/config", exc.message, "error", fragment=section)
+    return back_to(request, "/config", "Saved.", fragment=section)
 
 
 @router.post("/digest")
@@ -985,8 +1005,10 @@ async def web_digest(
     try:
         result = await service.post_digest(bot, channel_id or None, week=week)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
-    return back_to(request, "/config", f"Posted the {result['week']}-week digest.")
+        return back_to(request, "/config", exc.message, "error", fragment="digest")
+    return back_to(
+        request, "/config", f"Posted the {result['week']}-week digest.", fragment="digest"
+    )
 
 
 def rescan_channels_from(form) -> list[str]:
@@ -1014,10 +1036,10 @@ async def web_rescan(request: Request, bot: Bot, caller: Caller) -> Response:
             requested_by=bot.portal_actor_id,
         )
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
+        return back_to(request, "/config", exc.message, "error", fragment="rescan")
     if request.headers.get("HX-Request"):
         return _job_fragment(request, bot, job["job_id"])
-    return RedirectResponse(f"/config?job={job['job_id']}", status_code=303)
+    return RedirectResponse(f"/config?job={job['job_id']}#rescan", status_code=303)
 
 
 @router.get("/rescan/{job_id}")
@@ -1033,10 +1055,10 @@ async def web_rescan_cancel(request: Request, bot: Bot, caller: Caller, job_id: 
     try:
         service.cancel_rescan(bot, job_id)
     except ApiError as exc:
-        return back_to(request, "/config", exc.message, "error")
+        return back_to(request, "/config", exc.message, "error", fragment="rescan")
     if request.headers.get("HX-Request"):
         return _job_fragment(request, bot, job_id)
-    return RedirectResponse(f"/config?job={job_id}", status_code=303)
+    return RedirectResponse(f"/config?job={job_id}#rescan", status_code=303)
 
 
 def _job_fragment(request: Request, bot, job_id: str) -> HTMLResponse:

@@ -299,12 +299,14 @@ def test_the_add_dialog_is_not_swapped_away_by_a_search(auth, seeded):
 # --- the frame --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", [*[p for p, _ in TABLES], "/bosses"])
+@pytest.mark.parametrize("path", [*[p for p, _ in TABLES], "/bosses", "/config"])
 def test_a_list_page_asks_for_the_no_scroll_frame(auth, seeded, path):
+    # /config changed sides when it became the one-window Settings layout:
+    # a sidebar and a scrolling detail pane are exactly what the frame is for.
     assert '<body class="framed">' in auth.get(path).text
 
 
-@pytest.mark.parametrize("path", ["/config", "/inbox", "/limits"])
+@pytest.mark.parametrize("path", ["/inbox", "/limits"])
 def test_a_page_that_is_not_a_list_scrolls_as_it_always_did(auth, seeded, path):
     """Pages that are forms or cards rather than one long list keep the scrollbar."""
     assert '<body class="">' in auth.get(path).text

@@ -93,6 +93,39 @@ COLORWAYS = [
 #: with no ``data-colorway`` at all is already wearing it.
 DEFAULT_COLORWAY = "otonose"
 
+#: The Config window's sections, in the order the sidebar lists them: the four
+#: things changed often, then how it looks, then the two actions, then the two
+#: read-only tables.
+#:
+#: One list, three readers. The template builds the sidebar and the panels from
+#: it; ``portal.css`` enumerates the same keys to mark the open tab (a
+#: stylesheet cannot compare an ``href`` to an id, so the pairs are written out
+#: and a test holds them to this list); and :func:`read_section` validates the
+#: hidden field each form carries so a save lands back where it was made.
+CONFIG_SECTIONS = [
+    ("pings", "Pings"),
+    ("watching", "Chat watching"),
+    ("chatbot", "Chatbot"),
+    ("notifications", "Notifications"),
+    ("theme", "Theme"),
+    ("digest", "Weekly digest"),
+    ("rescan", "Rescan"),
+    ("access", "Channel access"),
+    ("env", "Set in .env"),
+]
+
+_SECTION_KEYS = frozenset(key for key, _label in CONFIG_SECTIONS)
+
+
+def read_section(value: str | None) -> str:
+    """The section a config form says it came from, or ``""`` for none.
+
+    Goes into a redirect's fragment, so it is checked against the list above
+    rather than trusted -- and an unknown one is simply dropped, which lands on
+    the first section, which is where a reader with no fragment starts anyway.
+    """
+    return value if value in _SECTION_KEYS else ""
+
 
 def local_dt(value: Any, bot: BossBot, fmt: str = "%a %d %b %H:%M") -> str:
     """Render an ISO string or datetime in the guild timezone."""
@@ -146,6 +179,7 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
             "nav_pinned": NAV_PINNED,
             "colorways": COLORWAYS,
             "default_colorway": DEFAULT_COLORWAY,
+            "config_sections": CONFIG_SECTIONS,
             "weekday_names": WEEKDAY_NAMES,
             "htmx_src": HTMX_SRC,
             "htmx_sri": HTMX_SRI,
@@ -157,6 +191,7 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
 
 __all__ = [
     "COLORWAYS",
+    "CONFIG_SECTIONS",
     "DEFAULT_COLORWAY",
     "HTMX_SRC",
     "HTMX_SRI",
@@ -167,4 +202,5 @@ __all__ = [
     "confidence_band",
     "duration",
     "local_dt",
+    "read_section",
 ]

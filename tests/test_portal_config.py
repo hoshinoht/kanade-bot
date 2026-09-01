@@ -1,12 +1,11 @@
-"""How the Config page is laid out, and the twelve pixels that started it.
+"""Config as a settings window: a table of contents, and one section at a time.
 
-The settings cards used to sit in a grid whose rows stretched every card to its
-tallest sibling. Two things came out of that: half-empty cards, and -- because
-`.card + .card` drew a stacking gap that the grid then stretched back out of
-sight -- a first card whose top edge floated above its neighbours' while their
-bottoms stayed level. Both are layout, so both are tested here as the rules
-that cause them rather than as pixels, which is all that can be checked without
-a browser; the pixels are for the screenshot pass.
+Nine settings used to be nine cards on screen at once -- first in a grid whose
+rows stretched each card to its tallest sibling, then in columns that packed
+them. Both were arrangements of the same problem: none of the nine had room.
+Now the page is one window with a sidebar, and what is worth testing is the
+contract under it -- that switching needs no JavaScript, that a save comes back
+to the section it was made in, and that the htmx regions kept their boundaries.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import re
 import pytest
 
 from bot.api.app import STATIC_DIR
+from bot.api.templating import CONFIG_SECTIONS, read_section
 
 PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
 
@@ -28,106 +28,208 @@ def rule_body(selector: str) -> str:
     return match.group(1)
 
 
-# --- the bug ----------------------------------------------------------------
+# --- one window -------------------------------------------------------------
 
 
-def test_a_stacking_gap_is_not_drawn_where_a_container_already_draws_one():
-    """The twelve pixels.
-
-    `.card + .card` is how cards stacked in normal flow get their gap, and it
-    still is -- but in a container with its own gap it lands on every card but
-    the first and offsets them all. Under `align-items: stretch` the offset was
-    invisible on the bottom edge and plain on the top, which is why it read as
-    "the first card is too high" rather than "the rest are too low".
-    """
-    assert "margin-top: 0.75rem;" in rule_body(".card + .card")
-    assert "margin-top: 0;" in rule_body(".cardcols > .card + .card")
-
-
-def test_cards_stacked_in_normal_flow_still_get_their_gap(auth, seeded):
-    """The two full-width cards under the wall are stacked, not packed."""
+def test_the_page_is_one_window(auth, seeded):
+    """Not nine cards, however they were arranged."""
     body = auth.get("/config").text
-    wall = body[body.index('class="cardcols"') : body.index('class="rule"')]
+    content = body[body.index('class="shell"') :]
 
-    assert body.count('<section class="card">') > wall.count('<section class="card">')
-    assert "Channel access" not in wall
-    assert "Set in <code>.env</code>" not in wall
-
-
-# --- hollow cards, and the space they left -----------------------------------
-
-
-def test_a_card_is_its_own_height_rather_than_its_tallest_sibling(auth, seeded):
-    """Nothing stretches any more: the container packs instead of ruling rows."""
-    packed = rule_body(".cardcols")
-
-    assert "columns:" in packed
-    assert "display: grid" not in packed
-    assert "align-items: stretch" not in packed
+    assert content.count('<section class="card') == 1
+    assert 'class="card pane settings"' in content
+    # The window's own title bar is the head; there is no hero card above it.
+    assert 'class="page-head"' not in content
+    assert '<h1 class="card__title">Config</h1>' in content
 
 
-def test_a_card_is_never_cut_in_half_by_a_column_break():
-    """Both halves would draw a border and neither would look like a window."""
-    assert "break-inside: avoid;" in rule_body(".cardcols > .card")
-
-
-def test_the_stretching_grid_is_gone_rather_than_left_behind(auth, seeded):
-    """A rule nothing uses is a rule somebody re-uses by accident later."""
-    assert "grid-2" not in PAGE_CSS
-    assert "grid-2" not in auth.get("/config").text
-
-
-def test_the_wall_keeps_the_width_it_had(auth, seeded):
-    """Three columns at the width this was reported at, as before -- the
-    complaint was the space inside the cards, not how many there were."""
-    packed = rule_body(".cardcols")
-    width = re.search(r"columns:\s*([\d.]+)rem", packed)
-
-    assert width is not None
-    assert float(width.group(1)) * 16 == pytest.approx(280, abs=1)
-
-
-# --- the frame, and why not ---------------------------------------------------
-
-
-def test_config_keeps_its_scrollbar(auth, seeded):
-    """Judged, not overlooked.
-
-    Config is forms whose height changes in place -- the rescan disclosure, the
-    access table redrawing itself, a <noscript> that appears only for some
-    readers. A fixed frame that clipped an expanding disclosure would be worse
-    than a scrollbar, and packing the cards already took most of the height the
-    page was wasting.
-    """
-    assert '<body class="">' in auth.get("/config").text
-
-
-# --- and it still says everything it said ------------------------------------
-
-
-def test_every_setting_is_still_on_the_page(auth, seeded):
+def test_the_sidebar_lists_every_section_as_a_real_link(auth, seeded):
     body = auth.get("/config").text
 
-    for title in (
-        "Pings",
-        "Chat watching",
-        "Chatbot",
-        "Notifications",
-        "Theme",
-        "Weekly digest",
-        "Re-read the party channels",
-        "Channel access",
-    ):
-        assert title in body, title
+    for key, label in CONFIG_SECTIONS:
+        assert f'class="settings__tab" href="#{key}"' in body, key
+        assert f">{label}</a>" in body, label
+        assert f'class="settings__panel" id="{key}"' in body, key
 
 
-def test_the_order_the_cards_are_read_in_is_unchanged(auth, seeded):
-    """Packing is a container's job. Reordering would have been churn -- and
-    would have broken every test that slices this page between two headings."""
-    body = auth.get("/config").text
-    seen = [
-        body.index(title)
-        for title in ("Pings", "Chat watching", "Chatbot", "Notifications", "Theme")
+def test_the_sections_are_the_ones_the_page_used_to_have(auth, seeded):
+    """Same nine things, one window."""
+    assert [key for key, _ in CONFIG_SECTIONS] == [
+        "pings",
+        "watching",
+        "chatbot",
+        "notifications",
+        "theme",
+        "digest",
+        "rescan",
+        "access",
+        "env",
     ]
+    body = auth.get("/config").text
+    for heading in ("Pings", "Chat watching", "Chatbot", "Notifications", "Theme"):
+        assert heading in body
+    for heading in ("Weekly digest", "Re-read the party channels", "Channel access"):
+        assert heading in body
 
-    assert seen == sorted(seen)
+
+# --- switching, with no script ----------------------------------------------
+
+
+def test_one_section_shows_and_the_fragment_chooses_it():
+    """`:target` and nothing else -- the tabs are ordinary fragment links."""
+    assert "display: none;" in rule_body(".settings__panel")
+    assert "display: block;" in rule_body(".settings__panel:target")
+
+
+def test_a_page_with_no_fragment_opens_on_the_first_section():
+    rule = rule_body(
+        ".settings__detail:not(:has(> .settings__panel:target)) > .settings__panel:first-child"
+    )
+    assert "display: block;" in rule
+
+
+def test_an_unrelated_fragment_does_not_blank_the_window():
+    """`#rescan-job` is an htmx target that can end up in the URL. Scoped to
+    direct children, it cannot count as "some section is open"."""
+    selector = ".settings__detail:not(:has(> .settings__panel:target))"
+    assert selector in PAGE_CSS
+
+
+def test_the_open_tab_is_marked_for_every_section_the_page_declares():
+    """A stylesheet cannot compare an href to an id, so the pairs are written
+    out. This is what keeps that list honest when a section is added."""
+    marked = set(re.findall(r'\.settings:has\(#([\w-]+):target\) \[href="#([\w-]+)"\]', PAGE_CSS))
+
+    assert {key for key, _ in CONFIG_SECTIONS} == {section for section, _ in marked}
+    for section, href in marked:
+        assert section == href, section
+    # ...and the no-fragment case marks the first tab, to match the first panel.
+    assert ".settings:not(:has(.settings__panel:target)) .settings__tab:first-child" in PAGE_CSS
+
+
+def test_a_phone_shows_every_section_rather_than_hiding_eight():
+    """A fragment is easy to lose on a phone -- a back gesture, a reopened tab,
+    a shared link -- and a settings page that answers with a blank pane because
+    of it is worse than one you scroll. So the tabs become jump links."""
+    block = PAGE_CSS[PAGE_CSS.index("  .settings__body {\n    grid-template-columns: 1fr;") :]
+    block = block[: block.index("\n}\n")]
+
+    assert ".settings__panel {\n    display: block;\n  }" in block
+    assert ".settings__tab {" in block
+
+
+# --- a save comes back where it was made ------------------------------------
+
+
+def test_a_section_says_which_one_it_is_on_every_form(auth, seeded):
+    body = auth.get("/config").text
+
+    for key in ("pings", "watching", "chatbot", "notifications"):
+        assert f'name="section" value="{key}"' in body, key
+
+
+@pytest.mark.parametrize(
+    "data,expected",
+    [
+        ({"section": "chatbot", "chat_pilot_rate_count": "9"}, "#chatbot"),
+        ({"section": "pings", "day_of_ping_time": "08:15"}, "#pings"),
+    ],
+)
+def test_saving_lands_back_on_the_section_it_was_made_in(auth, fake_bot, data, expected):
+    response = auth.post("/config", data=data, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(expected)
+
+
+def test_the_query_comes_before_the_fragment(auth, fake_bot):
+    """The one order a URL allows, and the reason `back_to` grew a parameter."""
+    location = auth.post(
+        "/config", data={"section": "pings", "day_of_ping_time": "08:15"}, follow_redirects=False
+    ).headers["location"]
+
+    assert re.fullmatch(r"/config\?msg=[^#]+&kind=ok#pings", location), location
+
+
+def test_a_section_nobody_declared_is_dropped_rather_than_redirected_to(auth, fake_bot):
+    response = auth.post(
+        "/config",
+        data={"section": "../../etc/passwd", "day_of_ping_time": "08:15"},
+        follow_redirects=False,
+    )
+
+    assert "#" not in response.headers["location"]
+    assert read_section("../../etc/passwd") == ""
+    assert read_section("chatbot") == "chatbot"
+
+
+@pytest.mark.parametrize(
+    "path,data,fragment",
+    [
+        ("/digest", {"week": "this", "channel_id": ""}, "#digest"),
+        ("/access", {}, "#access"),
+        ("/rescan", {"window": "week"}, "#rescan"),
+    ],
+)
+def test_the_other_actions_come_back_to_their_own_sections(auth, seeded, path, data, fragment):
+    response = auth.post(path, data=data, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(fragment), response.headers["location"]
+
+
+# --- the htmx regions kept their boundaries ---------------------------------
+
+
+def test_the_rescan_job_still_swaps_only_itself(auth, seeded):
+    body = auth.get("/config").text
+
+    assert 'hx-target="#rescan-job"' in body
+    assert '<div id="rescan-job">' in body
+    # ...inside its own section, so a swap cannot reach another one.
+    rescan = body[body.index('id="rescan"') : body.index('id="access"')]
+    assert 'id="rescan-job"' in rescan
+
+
+def test_the_access_matrix_swaps_a_target_named_apart_from_its_section(auth, seeded):
+    """The section owns `#access` for the sidebar link, so the table is
+    `#access-table` -- two ids, two jobs, neither standing on the other."""
+    body = auth.get("/config").text
+
+    assert 'hx-target="#access-table"' in body
+    assert '<div id="access-table">' in body
+    assert 'class="settings__panel" id="access"' in body
+
+
+# --- the layout the sections replaced ---------------------------------------
+
+
+def test_the_card_wall_is_gone_rather_than_left_behind(auth, seeded):
+    """A rule nothing uses is a rule somebody re-uses by accident later."""
+    for dead in ("cardcols", "grid-2"):
+        assert dead not in PAGE_CSS, dead
+        assert dead not in auth.get("/config").text, dead
+
+
+def test_cards_stacked_in_normal_flow_still_get_their_gap():
+    """`.card + .card` is still how cards stack elsewhere -- the limits page
+    has four in a row."""
+    assert "margin-top: 0.75rem;" in rule_body(".card + .card")
+
+
+def test_config_joins_the_no_scroll_pages(auth, seeded):
+    """One section at a time is what dissolved the objection to framing it: the
+    window no longer has to be as tall as nine settings."""
+    assert '<body class="framed">' in auth.get("/config").text
+
+
+def test_a_fieldset_does_not_draw_a_second_box_inside_the_window(auth, seeded):
+    """The Theme section's swatches are chip rows, not a bordered inner panel."""
+    assert "border: 0;" in rule_body(".settings__panel fieldset")
+
+
+def test_everything_still_renders_with_an_empty_database(auth):
+    response = auth.get("/config")
+
+    assert response.status_code == 200
+    assert 'class="settings__tab"' in response.text
