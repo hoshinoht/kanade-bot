@@ -52,6 +52,25 @@ class RateLimiter:
         live = sum(1 for stamp in hits if stamp > now - self.window)
         return max(self.count - live, 0)
 
+    def retry_after(self, user_id: int | str) -> float:
+        """Seconds until the next slot frees, or ``0.0`` when one is free now.
+
+        The oldest live hit is the one that expires first, so its age is what the
+        wait is measured from. Non-mutating, like :meth:`remaining` and
+        :meth:`snapshot`: telling somebody when to come back must not itself cost
+        them the answer they came back for.
+
+        An unknown key, or one with room left, is ``0.0`` -- "no wait" rather
+        than "a whole window", so a caller can use it without first asking
+        whether there was anything to wait for.
+        """
+        now = self._clock()
+        cutoff = now - self.window
+        live = [stamp for stamp in self._hits.get(str(user_id), ()) if stamp > cutoff]
+        if len(live) < self.count:
+            return 0.0
+        return max(live[0] + self.window - now, 0.0)
+
     def snapshot(self) -> dict[str, int]:
         """``{user_id: answers used}`` for every window still open. Never mutates.
 

@@ -346,6 +346,27 @@ def test_a_personal_refusal_does_not_drain_the_guilds_pool(chat_bot):
     assert pool.remaining(gate.GLOBAL_KEY) == before
 
 
+def test_a_refused_decision_says_when_to_come_back(chat_bot):
+    """The wait comes from whichever budget refused, so the bot can say *when*."""
+    limiter = RateLimiter(count=1, window=300)
+    decide(chat_bot, message(chat_bot), limiter=limiter)
+    personal = decide(chat_bot, message(chat_bot), limiter=limiter)
+    assert personal.reason == "rate limited"
+    assert 0 < personal.retry_after_s <= 300
+
+    pool = RateLimiter(count=1, window=900)
+    decide(chat_bot, message(chat_bot, author_id=1001), global_limiter=pool)
+    guild = decide(chat_bot, message(chat_bot, author_id=1003), global_limiter=pool)
+    assert guild.reason == gate.POOL_SPENT
+    assert 300 < guild.retry_after_s <= 900
+
+
+def test_every_other_decision_has_nothing_to_wait_for(chat_bot):
+    limiter = RateLimiter(count=1, window=300)
+    assert decide(chat_bot, message(chat_bot), limiter=limiter).retry_after_s == 0.0
+    assert decide(chat_bot, message(chat_bot, roles=(OTHER_ROLE,))).retry_after_s == 0.0
+
+
 def test_a_refusal_before_the_budgets_spends_neither(chat_bot):
     """Being ignored is free, in both currencies."""
     limiter = RateLimiter(count=1, window=300)

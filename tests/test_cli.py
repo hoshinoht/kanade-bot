@@ -886,3 +886,107 @@ def test_access_when_the_bot_is_offline_exits_non_zero(api):
     result = run("access")
     assert result.exit_code == 1
     assert "isn't connected" in result.output
+
+
+# --- limits -----------------------------------------------------------------
+
+IDLE_LIMITS = {
+    "model": {"busy": False, "holder": None, "held_for_s": 0.0},
+    "global_pool": {"count": 12, "window_s": 900.0, "used": 0, "remaining": 12},
+    "per_user": {"count": 4, "window_s": 300.0, "windows": []},
+    "jobs": {
+        "answering": [],
+        "extracting": False,
+        "rescan": {"worker_running": True, "queued": 0, "job": None, "channel": None},
+    },
+}
+
+
+def busy_limits() -> dict:
+    """The same payload with something happening in every part of it."""
+    return {
+        "model": {"busy": True, "holder": "extractor", "held_for_s": 12.5},
+        "global_pool": {"count": 12, "window_s": 900.0, "used": 5, "remaining": 7},
+        "per_user": {
+            "count": 4,
+            "window_s": 300.0,
+            "windows": [{"user_id": "1002", "name": "kanon", "used": 4, "remaining": 0}],
+        },
+        "jobs": {
+            "answering": [{"channel_id": "5", "channel_name": "#ask-the-bot"}],
+            "extracting": True,
+            "rescan": {
+                "worker_running": True,
+                "queued": 2,
+                "job": "abcd1234",
+                "channel": "#hstar-party",
+            },
+        },
+    }
+
+
+def test_limits_says_the_model_is_idle(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=IDLE_LIMITS))
+    output = run("limits").output
+    assert "idle" in output
+    assert "12 of 12 left" in output
+
+
+def test_limits_reports_the_holder_the_budgets_and_the_queue(api):
+    api.get("/api/limits").mock(return_value=httpx.Response(200, json=busy_limits()))
+    output = run("limits").output
+    assert "busy" in output and "extractor" in output
+    assert "7 of 12 left" in output
+    assert "2 queued" in output and "#hstar-party" in output
+    assert "#ask-the-bot" in output
+    # The window table names the member and what they have spent.
+    assert "kanon" in output and "4 of 4" in output
+
+
+def test_limits_reset_takes_a_bare_user_id_without_the_roster(api):
+    """Holding the chat role does not require being on the bossing roster."""
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    output = run("limits", "reset", "1002").output
+    assert route.called
+    assert "kanon's answer window is clear" in output
+
+
+def test_limits_reset_accepts_a_mention(api):
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    assert run("limits", "reset", "<@1002>").exit_code == 0
+    assert route.called
+
+
+def test_limits_reset_resolves_a_name_through_the_roster(api):
+    api.get("/api/members").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "user_id": "1002",
+                    "display_name": "kanon [AZUR]",
+                    "nickname": "kanon",
+                    "aliases": [],
+                    "has_role": True,
+                    "ping_level": "essential",
+                    "runs_this_week": 1,
+                }
+            ],
+        )
+    )
+    route = api.delete("/api/limits/windows/1002").mock(
+        return_value=httpx.Response(200, json={"user_id": "1002", "name": "kanon"})
+    )
+    assert run("limits", "reset", "kanon").exit_code == 0
+    assert route.called
+
+
+def test_limits_reset_says_so_when_the_name_matches_nobody(api):
+    api.get("/api/members").mock(return_value=httpx.Response(200, json=[]))
+    result = run("limits", "reset", "nobody")
+    assert result.exit_code == 1
+    assert "no member matches" in result.output

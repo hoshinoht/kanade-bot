@@ -88,6 +88,44 @@ def test_remaining_counts_down_and_recovers():
     assert limiter.remaining(1002) == 2
 
 
+def test_retry_after_is_zero_while_there_is_room():
+    """Including for somebody the limiter has never heard of."""
+    limiter = RateLimiter(2, 300, Clock())
+    assert limiter.retry_after(1002) == 0.0
+    limiter.allow(1002)
+    assert limiter.retry_after(1002) == 0.0
+
+
+def test_retry_after_counts_from_the_oldest_live_hit():
+    """The oldest is the one that expires first, so it is the one to wait for."""
+    clock = Clock()
+    limiter = RateLimiter(2, 300, clock)
+    limiter.allow(1002)
+    clock.advance(100)
+    limiter.allow(1002)
+
+    # Full: the first hit is 100 s old, so its slot frees in 200 s.
+    assert limiter.retry_after(1002) == 200
+    clock.advance(150)
+    assert limiter.retry_after(1002) == 50
+
+
+def test_retry_after_goes_back_to_zero_once_the_window_rolls():
+    clock = Clock()
+    limiter = RateLimiter(1, 300, clock)
+    limiter.allow(1002)
+    assert limiter.retry_after(1002) == 300
+    clock.advance(301)
+    assert limiter.retry_after(1002) == 0.0
+
+
+def test_asking_when_to_come_back_does_not_cost_an_answer():
+    limiter = RateLimiter(1, 300, Clock())
+    for _ in range(5):
+        limiter.retry_after(1002)
+    assert limiter.remaining(1002) == 1
+
+
 def test_reset_forgets_one_person_or_everybody():
     limiter = RateLimiter(1, 300, Clock())
     limiter.allow(1001)

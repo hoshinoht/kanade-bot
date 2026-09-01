@@ -1561,6 +1561,27 @@ def access_report(bot: BossBot) -> list[dict]:
     return bot.access_report()
 
 
+def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
+    """Give one member their answers back, and forget the notice they were sent.
+
+    Individual windows only, deliberately. There is no way here to clear the
+    guild's pool or everybody at once: the pool is a fact about what the host
+    can produce in an hour rather than about a person, and a "reset all" button
+    is the one somebody presses instead of asking why the bot is busy.
+
+    The roster is *not* consulted first, unlike :func:`set_nick` and
+    :func:`update_member`. Holding the chat role does not require holding the
+    bossing role, so somebody can be rate limited while not being on the roster
+    at all -- and the window shown on the Limits page has to be clearable from
+    the button next to it. Clearing a key with no window is harmless and says
+    so; the name falls back to ``user 1002`` exactly as it does on the page.
+    """
+    bot.chat.forget_limit(user_id)
+    name = member_name(bot, user_id)
+    _audit(bot, "limits", str(user_id), f"cleared {name}'s answer window")
+    return {"user_id": str(user_id), "name": name}
+
+
 def _pool_view(limiter: Any, key: str) -> dict:
     """One :class:`bot.chat.ratelimit.RateLimiter` window as used-of-total."""
     remaining = limiter.remaining(key)
@@ -2080,6 +2101,7 @@ __all__ = [
     "fixed_view",
     "get_config",
     "limits",
+    "reset_user_limit",
     "load_amendment",
     "load_chat_interaction",
     "load_extraction",

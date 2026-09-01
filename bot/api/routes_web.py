@@ -327,6 +327,24 @@ async def limits_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLRes
     return fragment(request, "partials/limits.html", limits=service.limits(bot))
 
 
+@router.post("/limits/windows/{user_id}/reset")
+async def web_limits_reset(request: Request, bot: Bot, caller: Caller, user_id: str) -> Response:
+    """Clear one member's window from the row it is shown on.
+
+    The refreshed fragment *is* the confirmation: the row the button was on has
+    gone, because the window it described has. Attribution rides on the request
+    like every other mutation's -- :class:`bot.api.app.ActorMiddleware` puts the
+    caller on the audit row, so nothing here has to pass one.
+    """
+    try:
+        cleared = service.reset_user_limit(bot, user_id)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(request, "/limits", f"{cleared['name']} has their answers back.")
+
+
 @router.get("/audit")
 async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
     """Who changed what, newest first. Read-only -- there is nothing to do here."""

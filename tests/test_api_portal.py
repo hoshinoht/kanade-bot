@@ -241,6 +241,31 @@ def test_the_limits_panel_polls_itself(auth, fake_bot):
     assert 'hx-get="/limits/live"' in auth.get("/limits").text
 
 
+def test_resetting_a_window_from_the_page_removes_its_row(auth, fake_bot, seeded):
+    """The refreshed panel is the confirmation: the row is simply not in it."""
+    fake_bot.chat.limiter.allow(1002)
+    assert "kanon" in auth.get("/limits").text
+
+    response = auth.post("/limits/windows/1002/reset", headers={"HX-Request": "true"})
+
+    assert response.status_code == 200
+    assert 'id="limits"' in response.text  # the whole panel came back
+    assert "Nobody is mid-window." in response.text
+    assert fake_bot.chat.limiter.remaining(1002) == fake_bot.settings.chat_pilot_rate_count
+
+
+def test_the_reset_button_is_a_real_form_too(auth, fake_bot, seeded):
+    """htmx blocked: the same POST still lands and the page says what happened."""
+    fake_bot.chat.limiter.allow(1002)
+    assert 'action="/limits/windows/1002/reset"' in auth.get("/limits").text
+
+    response = auth.post("/limits/windows/1002/reset", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/limits?")
+    assert "kanon" in response.headers["location"]
+
+
 def test_the_limits_page_needs_signing_in(client):
     """A portal page sends you to the sign-in form; the JSON behind it 401s."""
     for path in ("/limits", "/limits/live"):
