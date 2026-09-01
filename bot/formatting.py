@@ -530,14 +530,28 @@ def proposal_line(
     id next to another's bosses is how a reader ✅s the wrong night.
     """
     bosses = format_bosses(run["bosses"] if run is not None else amendment["bosses"])
-    verb = KIND_VERB.get(amendment["kind"], amendment["kind"])
+    payload = amendment.get("payload") or {}
+    #: A `fix` that removes rather than creates. Given its own verb and its own
+    #: line because the two are opposites, and because "remove the fixed run"
+    #: and "cancel tonight" are a fortnight apart in consequence: one stops the
+    #: guild scheduling this boss at all, the other frees up one evening.
+    removes_baseline = amendment["kind"] == "fix" and payload.get("op") == "remove"
+    verb = (
+        "remove weekly" if removes_baseline else KIND_VERB.get(amendment["kind"], amendment["kind"])
+    )
     name = f"{verb} · {bosses}"
     if run is not None:
         name += f" · `#{short_id(run['id'])}`"
 
     lines: list[str] = []
     kind = amendment["kind"]
-    if kind in ("move", "add", "split", "fix"):
+    if removes_baseline:
+        when = payload.get("weekly_when")
+        lines.append(
+            f"**stop scheduling this every week**{f' ({when})' if when else ''} — "
+            "future weeks will not be scheduled, and this week's run is cancelled"
+        )
+    elif kind in ("move", "add", "split", "fix"):
         old = (
             f"~~{local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}~~ → "
             if run is not None and kind == "move"

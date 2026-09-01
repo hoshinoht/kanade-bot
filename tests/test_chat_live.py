@@ -35,7 +35,7 @@ def live(chat_bot):
 
 
 async def test_it_answers_a_schedule_question_from_the_tools(chat_bot, chat_seeded, live):
-    result = await live.offer(message(chat_bot, "@bot what runs do we have this week?"))
+    result = (await live.offer(message(chat_bot, "@bot what runs do we have this week?"))).answered
 
     assert result is not None, "the gate refused a message it should have answered"
     assert result.error is None, result.error
@@ -48,12 +48,14 @@ async def test_it_answers_a_schedule_question_from_the_tools(chat_bot, chat_seed
 
 async def test_it_drafts_a_move_as_a_card_and_moves_nothing(chat_bot, chat_seeded, live):
     before = chat_bot.repo.get_run(chat_seeded["star"])["datetime"]
-    result = await live.offer(
-        message(
-            chat_bot,
-            f"@bot can we move run {short_id(chat_seeded['star'])} to Sunday 10pm?",
+    result = (
+        await live.offer(
+            message(
+                chat_bot,
+                f"@bot can we move run {short_id(chat_seeded['star'])} to Sunday 10pm?",
+            )
         )
-    )
+    ).answered
 
     assert result is not None and result.error is None
     assert chat_bot.repo.get_run(chat_seeded["star"])["datetime"] == before

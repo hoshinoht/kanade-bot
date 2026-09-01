@@ -118,7 +118,7 @@ async def test_a_write_names_the_card_it_created(chat_bot, chat_seeded, caplog):
         says("Card's up."),
     )
     with caplog.at_level(logging.DEBUG, logger=AGENT):
-        result = await agent.offer(message(chat_bot, "@bot move hstar"))
+        result = (await agent.offer(message(chat_bot, "@bot move hstar"))).answered
 
     traced = [line for line in lines(caplog, logging.DEBUG) if "tool propose_move" in line]
     assert "to_when='sunday 22:00'" in traced[0]
@@ -198,7 +198,7 @@ async def test_the_summary_names_each_tool_and_how_it_went(chat_bot, chat_seeded
         says("Couldn't."),
     )
     with caplog.at_level(logging.INFO, logger=AGENT):
-        result = await agent.offer(message(chat_bot))
+        result = (await agent.offer(message(chat_bot))).answered
 
     assert result.trace == f"get_schedule:ok, propose_cancel:{tools.REFUSED}"
     summary = next(line for line in lines(caplog, logging.INFO) if "answered" in line)
@@ -212,7 +212,7 @@ async def test_the_summary_names_the_cards_that_came_out(chat_bot, chat_seeded, 
         says("Card's up."),
     )
     with caplog.at_level(logging.INFO, logger=AGENT):
-        result = await agent.offer(message(chat_bot))
+        result = (await agent.offer(message(chat_bot))).answered
 
     summary = next(line for line in lines(caplog, logging.INFO) if "answered" in line)
     assert f"proposal {result.created[0]}" in summary

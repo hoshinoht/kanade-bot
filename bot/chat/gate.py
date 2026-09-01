@@ -23,12 +23,29 @@ from typing import Any
 from ..config import Settings
 from ..watch import is_watched
 
-#: Put on a message the bot is deliberately not answering *this time* -- the
-#: only refusal anybody is told about, because the person is allowed to be here
-#: and would otherwise be left waiting for an answer that is never coming.
-BUSY_REACTION = "⏳"
+#: The three things the bot ever says with a reaction, and only ever to somebody
+#: whose message it accepted or would have. Every other refusal stays silent.
+#:
+#: * :data:`SEEN_REACTION` -- heard you, thinking. An answer can take 10-30 s of
+#:   GPU, which is long enough to look like being ignored.
+#: * :data:`RATE_LIMITED_REACTION` -- you have had your answers for now.
+#: * :data:`CHANNEL_BUSY_REACTION` -- I am still answering somebody else here.
+#:
+#: The last two are different emoji on purpose: one clears in minutes and one in
+#: seconds, and "wait" is useless advice if you cannot tell which wait it is.
+SEEN_REACTION = "👀"
+RATE_LIMITED_REACTION = "⏳"
+CHANNEL_BUSY_REACTION = "💬"
 
-__all__ = ["BUSY_REACTION", "ChatDecision", "decide", "mentions_bot"]
+__all__ = [
+    "CHANNEL_BUSY_REACTION",
+    "RATE_LIMITED_REACTION",
+    "SEEN_REACTION",
+    "ChatDecision",
+    "decide",
+    "mentions_bot",
+    "would_check_mention",
+]
 
 
 @dataclass(frozen=True)
@@ -37,7 +54,8 @@ class ChatDecision:
 
     act: bool
     reason: str
-    #: React :data:`BUSY_REACTION` and drop. Never set together with ``act``.
+    #: Rate limited: react :data:`RATE_LIMITED_REACTION` and drop. Never set
+    #: together with ``act``.
     busy: bool = False
 
     def __bool__(self) -> bool:  # pragma: no cover - clarity at call sites
@@ -59,18 +77,34 @@ def _role_ids(user: Any) -> list[int]:
     return out
 
 
-def mentions_bot(message: Any, bot_user_id: int | str | None) -> bool:
+def mentions_bot(
+    message: Any,
+    bot_user_id: int | str | None,
+    self_role_id: int | str | None = None,
+    replied_author_id: int | str | None = None,
+) -> bool:
     """Was the bot actually mentioned, or replied to?
 
-    Read from ``message.mentions`` -- Discord's own resolved list -- rather than
-    from the message text, so writing ``<@000000000000000000>`` or the bot's
-    name into a message is text and nothing more. A reply to one of the bot's
-    own messages counts, because that is how a conversation continues and
-    Discord attaches the mention for it anyway; it is checked separately so a
-    reply still works when the replier turned the ping off.
+    Three ways, all read from Discord's own **resolved** lists rather than from
+    the message text, so typing ``<@000000000000000000>`` or the bot's name into
+    a message is text and nothing more:
 
-    ``@everyone``, ``@here`` and role mentions deliberately do not count. The bot
-    holds roles, and a channel-wide ping must not summon it.
+    1. ``message.mentions`` contains the bot.
+    2. ``message.role_mentions`` contains the bot's own **managed** role --
+       ``guild.self_role``, the integration role Discord creates for this bot and
+       nobody else can hold. Discord's autocomplete offers that role to anybody
+       typing the bot's name, so "@YuukiSakuna what's on?" routinely arrives as
+       a role mention. Ignoring it dropped real questions on the floor.
+    3. ``replied_author_id`` is the bot: a reply continues a conversation, and
+       it is checked separately so a reply still works with the ping turned off.
+       It is passed in as data rather than read off ``message.reference``,
+       because resolving a reply may need an API call -- see
+       :meth:`bot.chat.agent.ChatPilot.replied_author_id`.
+
+    Every **other** role mention still does not count, and neither does
+    ``@everyone``/``@here``. The bot holds ordinary guild roles like anybody
+    else, and a channel-wide ping -- or a ping of a role it happens to be in --
+    must not summon it. Only the role that *is* the bot does.
     """
     if bot_user_id is None:
         return False
@@ -78,27 +112,22 @@ def mentions_bot(message: Any, bot_user_id: int | str | None) -> bool:
     for user in getattr(message, "mentions", None) or ():
         if str(getattr(user, "id", user)) == wanted:
             return True
-    reference = getattr(message, "reference", None)
-    replied = getattr(reference, "resolved", None) if reference is not None else None
-    author = getattr(replied, "author", None)
-    return author is not None and str(getattr(author, "id", "")) == wanted
+    if self_role_id is not None:
+        managed = str(self_role_id)
+        for role in getattr(message, "role_mentions", None) or ():
+            if str(getattr(role, "id", role)) == managed:
+                return True
+    return replied_author_id is not None and str(replied_author_id) == wanted
 
 
-def decide(
-    message: Any,
-    settings: Settings,
-    *,
-    bot_user_id: int | str | None,
-    enabled: bool = True,
-    is_admin: bool = False,
-    limiter: Any | None = None,
-) -> ChatDecision:
-    """Whether to answer ``message``.
+def _before_the_mention_check(
+    message: Any, settings: Settings, bot_user_id: int | str | None, enabled: bool
+) -> ChatDecision | None:
+    """The cheap checks that run before the mention test; ``None`` to carry on.
 
-    ``enabled`` is the runtime kill switch (``chat_mode``), passed in rather than
-    read from the bot so this stays a function of its arguments. ``limiter`` is
-    consulted last and only when everything else passed, so it records an
-    allowance exactly when one is about to be spent.
+    Split out so :func:`would_check_mention` can ask "would this message even
+    reach the mention test?" without duplicating the order, and without the
+    caller paying for a reference lookup on every message in a busy channel.
     """
     author = getattr(message, "author", None)
     if author is None or getattr(author, "bot", False):
@@ -134,16 +163,67 @@ def decide(
         settings.chat_pilot_category_id_list,
     ):
         return ChatDecision(False, "not a chat channel")
+    return None
 
-    if not mentions_bot(message, bot_user_id):
+
+def would_check_mention(
+    message: Any, settings: Settings, *, bot_user_id: int | str | None, enabled: bool = True
+) -> bool:
+    """Would this message get as far as the mention test?
+
+    Asked before spending an API call resolving a reply: a watched party channel
+    that is not a chat channel produces hundreds of messages a day, and none of
+    them is worth a ``fetch_message`` to find out who was replied to.
+    """
+    return _before_the_mention_check(message, settings, bot_user_id, enabled) is None
+
+
+def decide(
+    message: Any,
+    settings: Settings,
+    *,
+    bot_user_id: int | str | None,
+    enabled: bool = True,
+    is_admin: bool = False,
+    limiter: Any | None = None,
+    self_role_id: int | str | None = None,
+    replied_author_id: int | str | None = None,
+) -> ChatDecision:
+    """Whether to answer ``message``.
+
+    ``enabled`` is the runtime kill switch (``chat_mode``), passed in rather than
+    read from the bot so this stays a function of its arguments. ``limiter`` is
+    consulted last and only when everything else passed, so it records an
+    allowance exactly when one is about to be spent.
+
+    ``is_admin`` is the existing "who runs this bot" rule
+    (:func:`bot.util.is_bot_admin`) and does two things here: it stands in for
+    the chat role, and it exempts the holder from the rate limit. Staff being
+    silently ignored by their own bot is a support ticket nobody can debug from
+    inside Discord -- and anyone who can already `/say`, `/debug` and approve
+    every card gains nothing by also being made to hold the pilot role. The
+    pilot role stays the knob for everybody else.
+
+    ``self_role_id`` and ``replied_author_id`` are the two facts about a mention
+    that this function cannot work out for itself -- one needs the live guild,
+    the other may need an API call -- so they arrive as data, exactly as
+    ``bot_user_id`` does. See :func:`mentions_bot`.
+    """
+    early = _before_the_mention_check(message, settings, bot_user_id, enabled)
+    if early is not None:
+        return early
+
+    if not mentions_bot(message, bot_user_id, self_role_id, replied_author_id):
         return ChatDecision(False, "the bot was not mentioned")
 
     role_id = settings.chat_pilot_role_id
-    if role_id is None or int(role_id) not in _role_ids(author):
+    holds_role = role_id is not None and int(role_id) in _role_ids(getattr(message, "author", None))
+    if not holds_role and not is_admin:
         # Silent on purpose: the person may not even know the bot is here, and
         # telling them would make the bot a way to get a reply out of it.
         return ChatDecision(False, "the author does not hold the chat role")
 
+    author = getattr(message, "author", None)
     if limiter is not None and not limiter.allow(getattr(author, "id", author), exempt=is_admin):
         return ChatDecision(False, "rate limited", busy=True)
 

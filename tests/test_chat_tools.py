@@ -47,14 +47,16 @@ def proposals(bot):
 # ---------------------------------------------------------------------------
 
 
-def test_the_tool_list_is_exactly_the_documented_seven():
+def test_the_tool_list_is_exactly_the_documented_nine():
     assert tools.tool_names() == [
         "get_schedule",
         "get_run",
         "list_bosses",
         "get_pending",
         "propose_move",
+        "propose_add",
         "propose_cancel",
+        "propose_remove_fixed",
         "propose_rsvp",
     ]
 

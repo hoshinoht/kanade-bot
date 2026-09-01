@@ -22,6 +22,16 @@
 > Voice profile for the LLM banter layer. Everything here is flavour on top of a scheduler.
 > If any line in this file would make the bot less accurate, delete that line.
 
+**Voice:** <one sentence: archetype, register, and the habit that makes it recognisable>
+
+The `**Voice:**` line above is special: the bot copies it to the very END of its system
+prompt, immediately before it composes each reply. Everything else in this file sits
+thousands of tokens earlier and a small model has largely stopped attending to it by the
+time it writes. This one line is the last thing it reads, so make it the sentence you would
+give a stand-in who had thirty seconds to learn the character. Keep it under ~200
+characters, and leave the placeholder in angle brackets if you have not written one — the
+bot detects an unfilled placeholder and falls back to a generic reminder.
+
 ---
 
 ## 1. Identity framing

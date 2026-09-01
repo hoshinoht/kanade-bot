@@ -52,7 +52,7 @@ def replies(bot):
 
 async def test_it_answers_and_replies_in_the_channel(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("Wed 21:30, HStar and HFA."))
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
 
     assert result is not None
     assert result.reply == "Wed 21:30, HStar and HFA."
@@ -86,7 +86,7 @@ async def test_a_refused_message_says_and_reacts_nothing(chat_bot, chat_seeded):
         message(chat_bot, roles=(OTHER_ROLE,)),
         message(chat_bot, is_bot=True),
     ):
-        assert await agent.offer(msg) is None
+        assert (await agent.offer(msg)).handled is False
         assert msg.reactions == []
     assert chat_bot.posts == []
 
@@ -94,17 +94,19 @@ async def test_a_refused_message_says_and_reacts_nothing(chat_bot, chat_seeded):
 async def test_chat_mode_off_answers_nobody(chat_bot, chat_seeded):
     chat_bot.repo.set_config("chat_mode", "0")
     agent = pilot(chat_bot, says("hello"))
-    assert await agent.offer(message(chat_bot)) is None
+    assert (await agent.offer(message(chat_bot))).handled is False
     assert chat_bot.posts == []
 
 
 async def test_the_rate_limit_reacts_and_drops(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[says("ok")] * 10)
     agent.limiter.count = 1
-    assert await agent.offer(message(chat_bot)) is not None
+    assert (await agent.offer(message(chat_bot))).handled is True
     second = message(chat_bot)
-    assert await agent.offer(second) is None
-    assert second.reactions == [gate.BUSY_REACTION]
+    # Rate limited, but still the pilot's message: handled, just not answered.
+    busy = await agent.offer(second)
+    assert (busy.handled, busy.answered) == (True, None)
+    assert second.reactions == [gate.RATE_LIMITED_REACTION]
     assert len(replies(chat_bot)) == 1
 
 
@@ -113,7 +115,7 @@ async def test_an_admin_is_never_rate_limited(chat_bot, chat_seeded):
     agent.limiter.count = 1
     for _ in range(3):
         msg = message(chat_bot, roles=(CHAT_ROLE, ADMIN_ROLE))
-        assert await agent.offer(msg) is not None
+        assert (await agent.offer(msg)).handled is True
     assert len(replies(chat_bot)) == 3
 
 
@@ -131,13 +133,13 @@ async def test_one_answer_at_a_time_per_channel(chat_bot, chat_seeded):
     await asyncio.sleep(0)  # let it take the lock
 
     busy = message(chat_bot, author_id=1001)
-    assert await agent.offer(busy) is None
-    assert busy.reactions == [gate.BUSY_REACTION]
+    assert (await agent.offer(busy)).handled is True
+    assert busy.reactions == [gate.CHANNEL_BUSY_REACTION]
 
     released.set()
-    assert (await first).reply == "first"
+    assert (await first).answered.reply == "first"
     # ...and the channel is free again afterwards.
-    assert await agent.offer(message(chat_bot)) is not None
+    assert (await agent.offer(message(chat_bot))).handled is True
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +153,7 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
         wants("get_schedule", week="this"),
         says("HStar and HFA on Monday, Kalos on Tuesday."),
     )
-    result = await agent.offer(message(chat_bot, "@bot what's on this week?"))
+    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
 
     assert result.tool_calls == ["get_schedule"]
     assert result.rounds == 2
@@ -171,7 +173,7 @@ async def test_tools_are_offered_on_every_round_but_the_last(chat_bot, chat_seed
 
 async def test_a_model_that_only_calls_tools_gives_up_and_apologises(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[wants("get_schedule", week="this")] * (MAX_TOOL_ROUNDS + 2))
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
     assert result.rounds == MAX_TOOL_ROUNDS
     assert "kept calling tools" in result.error
     assert replies(chat_bot)[0].content == FAILURE_REPLY
@@ -183,14 +185,14 @@ async def test_a_write_tool_is_reported_back_with_its_card(chat_bot, chat_seeded
         wants("propose_move", run_query=short_id(chat_seeded["star"]), to_when="sunday 22:00"),
         says("Card's up — someone ✅ it."),
     )
-    result = await agent.offer(message(chat_bot, "@bot move hstar to sunday 10pm"))
+    result = (await agent.offer(message(chat_bot, "@bot move hstar to sunday 10pm"))).answered
     assert len(result.created) == 1
     assert chat_bot.repo.get_amendment(result.created[0])["status"] == "proposed"
 
 
 async def test_an_unknown_tool_does_not_end_the_turn(chat_bot, chat_seeded):
     agent = pilot(chat_bot, wants("approve_everything"), says("I can't do that one."))
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
     assert result.reply == "I can't do that one."
     assert "There is no tool called" in agent._client.prompts[1][-1]["content"]
 
@@ -202,7 +204,7 @@ async def test_an_unknown_tool_does_not_end_the_turn(chat_bot, chat_seeded):
 
 async def test_a_model_that_is_down_produces_an_apology_not_silence(chat_bot, chat_seeded):
     agent = pilot(chat_bot, ConnectionError("ollama is not running"))
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
     assert "ConnectionError" in result.error
     assert replies(chat_bot)[0].content == FAILURE_REPLY
 
@@ -215,7 +217,7 @@ async def test_a_model_that_never_answers_is_given_up_on(chat_bot, chat_seeded):
         await asyncio.sleep(10)
 
     agent._client.chat = never
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
     assert "no answer within" in result.error
     assert replies(chat_bot)[0].content == FAILURE_REPLY
 
@@ -232,12 +234,12 @@ async def test_a_failed_reply_does_not_raise(chat_bot, chat_seeded):
 
     chat_bot.post_plain = boom
     agent = pilot(chat_bot, says("hello"))
-    assert (await agent.offer(message(chat_bot))).reply == "hello"
+    assert (await agent.offer(message(chat_bot))).answered.reply == "hello"
 
 
 async def test_an_essay_is_trimmed(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("word " * 1000))
-    result = await agent.offer(message(chat_bot))
+    result = (await agent.offer(message(chat_bot))).answered
     assert len(result.reply) <= 1200
 
 
@@ -353,6 +355,7 @@ async def test_the_model_and_options_come_from_settings(chat_bot, chat_seeded):
     assert call["model"] == chat_bot.settings.chat_pilot_model
     assert call["keep_alive"] == -1
     assert call["options"]["num_ctx"] == chat_bot.settings.ollama_num_ctx
+    assert call["options"]["temperature"] == chat_bot.settings.chat_pilot_temperature
 
 
 async def test_closing_releases_a_client_it_built_and_not_one_it_was_given(chat_bot):

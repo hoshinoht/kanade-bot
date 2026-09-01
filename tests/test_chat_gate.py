@@ -21,7 +21,6 @@ from .chat_support import (
     OFF_LIMITS_CHANNEL,
     OTHER_ROLE,
     FakeAuthor,
-    FakeReference,
     build_bot,
     message,
 )
@@ -66,6 +65,41 @@ def test_without_the_chat_role_it_is_ignored(chat_bot):
     result = decide(chat_bot, message(chat_bot, roles=(OTHER_ROLE,)))
     assert result.act is False
     assert "chat role" in result.reason
+
+
+def test_an_admin_without_the_pilot_role_is_answered(chat_bot):
+    """Live incident: staff held the admin role, not the pilot role, and got silence.
+
+    Anyone who can already `/say`, `/debug` and approve every card gains nothing
+    by also holding the pilot role, and being ignored by your own bot is a
+    support ticket nobody can debug from inside Discord.
+    """
+    msg = message(chat_bot, roles=(ADMIN_ROLE,))
+    assert decide(chat_bot, msg, is_admin=True).act is True
+
+
+def test_the_admin_bypass_is_the_flag_not_the_role_id(chat_bot):
+    """`is_admin` comes from `bot.util.is_bot_admin`, which also covers the owner."""
+    assert decide(chat_bot, message(chat_bot, roles=()), is_admin=True).act is True
+
+
+def test_without_the_admin_flag_the_pilot_role_is_still_required(chat_bot):
+    result = decide(chat_bot, message(chat_bot, roles=(ADMIN_ROLE,)), is_admin=False)
+    assert result.act is False
+    assert "chat role" in result.reason
+
+
+def test_the_admin_bypass_does_not_skip_any_other_gate(chat_bot):
+    """It stands in for the chat role and nothing else."""
+    from .chat_support import ORPHAN_CHANNEL
+
+    for msg in (
+        message(chat_bot, channel_id=ORPHAN_CHANNEL, roles=()),
+        message(chat_bot, mentions=(), roles=()),
+        message(chat_bot, is_bot=True, roles=()),
+    ):
+        assert decide(chat_bot, msg, is_admin=True).act is False
+    assert decide(chat_bot, message(chat_bot, roles=()), is_admin=True, enabled=False).act is False
 
 
 def test_no_roles_at_all_is_ignored(chat_bot):
@@ -117,16 +151,23 @@ def test_a_half_configured_pilot_answers_nobody(repo, bosses, overrides):
 
 
 def test_a_reply_to_the_bot_counts_as_a_mention(chat_bot):
-    """Continuing a conversation works even with the reply ping switched off."""
-    earlier = message(chat_bot, "Wed 21:30.", author_id=BOT_USER_ID, mentions=())
-    msg = message(chat_bot, "and next week?", mentions=(), reference=FakeReference(earlier))
-    assert decide(chat_bot, msg).act is True
+    """Continuing a conversation works even with the reply ping switched off.
+
+    Who was replied to arrives as data: resolving it may need an API call, and
+    the gate stays pure. `ChatPilot.replied_author_id` is what supplies it.
+    """
+    msg = message(chat_bot, "and next week?", mentions=())
+    assert decide(chat_bot, msg, replied_author_id=BOT_USER_ID).act is True
 
 
 def test_a_reply_to_somebody_else_is_not_a_mention(chat_bot):
-    earlier = message(chat_bot, "can wed?", author_id=1001, mentions=())
-    msg = message(chat_bot, "sure", mentions=(), reference=FakeReference(earlier))
-    assert decide(chat_bot, msg).act is False
+    msg = message(chat_bot, "sure", mentions=())
+    assert decide(chat_bot, msg, replied_author_id=1001).act is False
+
+
+def test_an_unresolvable_reply_is_not_a_mention(chat_bot):
+    msg = message(chat_bot, "sure", mentions=())
+    assert decide(chat_bot, msg, replied_author_id=None).act is False
 
 
 def test_a_thread_counts_as_its_parent_channel(chat_bot):

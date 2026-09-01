@@ -17,9 +17,9 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from ..db import Repo
-from ..materialise import ensure_reminders, refresh_run_reminders
+from ..materialise import ensure_reminders, refresh_run_reminders, retire_fixed_run
 from ..rsvp import compute_status, recompute_after_roster_change
-from ..weeks import week_start
+from ..weeks import current_week_start, next_week_start, week_start
 
 log = logging.getLogger(__name__)
 
@@ -359,9 +359,18 @@ def _rsvp(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, c
     return None
 
 
+#: A ``fix`` amendment whose payload carries this removes the weekly timing
+#: instead of creating one. A payload marker rather than a ninth kind: the two
+#: are the same noun, the schema needs no migration for it, and every existing
+#: `fix` row (which has no ``op``) keeps meaning exactly what it meant.
+FIX_REMOVE = "remove"
+
+
 def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
-    """Create the fixed weekly timing exactly as ``/fixed add`` would."""
+    """Create -- or remove -- a fixed weekly timing, as ``/fixed add``/``remove`` do."""
     payload = amendment.get("payload") or {}
+    if payload.get("op") == FIX_REMOVE:
+        return _unfix(repo, payload, result, ctx)
     weekday, hhmm = payload.get("weekday"), payload.get("time")
     if weekday is None or not hhmm:
         return "no recurring day and time were agreed - use `/fixed add`"
@@ -380,6 +389,30 @@ def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
     result.fixed_run_id = fixed_id
     if ctx.on_fixed_created is not None:
         ctx.on_fixed_created(fixed_id)
+    return None
+
+
+def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
+    """Retire a weekly timing: no more runs from it, and this week's is cancelled.
+
+    Deliberately the same :func:`bot.materialise.retire_fixed_run` that
+    `/fixed remove` and the portal call, so a baseline removed from chat leaves
+    the database in exactly the state the other two routes leave it in --
+    including what it does about runs that have already happened.
+    """
+    fixed_id = payload.get("fixed_run_id")
+    if not fixed_id:  # pragma: no cover - the tool always records one
+        return "no weekly timing was named"
+    fixed = repo.get_fixed_run(str(fixed_id))
+    if fixed is None:
+        return "that weekly timing has already gone"
+    weeks = [
+        current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+        next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+    ]
+    cancelled = retire_fixed_run(repo, str(fixed_id), weeks, ctx.tz, ctx.ping_time, ctx.countdowns)
+    result.fixed_run_id = str(fixed_id)
+    result.notes.append(f"cancelled {cancelled} scheduled run(s)")
     return None
 
 
@@ -410,6 +443,7 @@ def expire_stale(repo: Repo, now) -> list[dict]:
 
 
 __all__ = [
+    "FIX_REMOVE",
     "PROPOSAL_TTL",
     "CommitResult",
     "commit",
