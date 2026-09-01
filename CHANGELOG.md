@@ -2,6 +2,15 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.0.1
+**Fixed**
+- The chat model could combine a canonical boss token with a second difficulty, 
+  generating `XBM Hard` for “Extreme BM.” Validation correctly rejected `Hard` 
+  as an unknown second boss, so no proposal card was created. Updated the 
+  `propose_add` tool description to distinguish canonical tokens from spoken 
+  difficulty-first names, prohibit combining both forms, and explicitly map 
+  “Extreme BM” to `XBM`.
+
 ## 3.0.0
 
 **Added**
