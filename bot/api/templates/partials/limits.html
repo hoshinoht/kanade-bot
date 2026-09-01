@@ -1,4 +1,31 @@
 {% from "partials/macros.html" import clear_override, reset_window %}
+{# How many things are actually running, which is the count on the In flight
+   tab. The three terms are the three row conditions in that panel below, in the
+   same order; they are written twice because a table built of `{% if %}`s has
+   no list to count, and a figure that disagreed with the rows under it would be
+   worse than the repetition. #}
+{% set in_flight = limits.jobs.answering|length
+     + (1 if limits.model.busy and not limits.jobs.answering else 0)
+     + (1 if limits.jobs.rescan.job else 0) %}
+{% set tab_counts = {
+     "who-may-ask": limits.pilots|length,
+     "in-flight": in_flight,
+     "windows": limits.per_user.windows|length,
+   } %}
+{# The strip is the window's own title bar, so it wears `.card__head` and gets
+   the three dots from it. It lives in here rather than in `limits.html`
+   because the counts on it are live figures: they have to be re-read with the
+   tables they count. Which tab is *open* is not in here at all -- that is the
+   URL's fragment, so it survives every swap without anything carrying it. #}
+<div class="card__head tabs__strip">
+  <nav class="tabs__tabs" aria-label="Sections of this page">
+    {% for key, label in limits_tabs %}
+    <a class="tabs__tab" href="#{{ key }}">{{ label }}{% if key in tab_counts %}
+      <span class="tabs__count">{{ tab_counts[key] }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+</div>
+
 {# The live half of the page: everything here is re-read on a timer, so it must
    hold nothing a person can be part-way through. NO INPUTS BELOW THIS LINE --
    the one form on this page lives outside the polled region in `limits.html`,
@@ -58,11 +85,65 @@
   </section>
 </div>
 
-<section class="card">
-  <div class="card__head">
-    <h2 class="card__title">In flight</h2>
-    <a class="btn btn--ghost" href="/limits">Refresh</a>
+{# The panels the live region owns. They have no title bars of their own: the
+   tab that opens one has already named it, and a chrome bar inside a window
+   that has one is a hat on a hat. The fourth panel -- the one with the form in
+   it -- is in `limits.html`, outside this region, and is a sibling of these
+   three once the wrapper stands down. #}
+<section class="tabs__panel tabs__panel--first" id="who-may-ask">
+  {% if not limits.pilots %}
+  <div class="empty">
+    <strong>No holders to show.</strong>
+    Either nobody holds the chat-pilot role yet, or the bot is not connected to read it —
+    the role is the only record of who may talk to the bot, so there is nothing stored
+    here to fall back on.
   </div>
+  {% else %}
+  <p class="note">
+    Everybody holding the chat-pilot role, read live from Discord. Staff are exempt from
+    every budget, so their allowance is not a number anything reads.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Member</th><th>User id</th><th>Allowance</th><th>This window</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in limits.pilots %}
+      <tr>
+        <td>
+          {{ row.name }}
+          {% if row.staff %}<span class="chip">staff</span>
+          {% elif row.overridden %}<span class="chip">own allowance</span>{% endif %}
+        </td>
+        <td class="mono">{{ row.user_id }}</td>
+        <td class="mono">
+          {% if row.staff %}<span class="id">exempt</span>
+          {% else %}{{ row.count }} per {{ "%g"|format(row.window_s) }}s{% endif %}
+        </td>
+        <td class="mono">
+          {% if row.staff %}—
+          {% elif row.has_window %}{{ row.used }} used, {{ row.remaining }} left
+          {% else %}<span class="id">idle</span>{% endif %}
+        </td>
+        <td class="rowbtns">
+          {# Staff get no controls: every one of them would change a number
+             that nothing consults for them. #}
+          {% if not row.staff %}
+          {# A link, not script: it opens the Allowance tab with the form
+             filled in, so prefilling works with htmx and JavaScript both off. #}
+          <a class="btn" href="/limits?user={{ row.user_id }}#set-allowance">Set</a>
+          {% if row.overridden %}{{ clear_override(row.user_id) }}{% endif %}
+          {% if row.has_window %}{{ reset_window(row.user_id) }}{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="tabs__panel" id="in-flight">
   {% if not limits.jobs.answering and not limits.model.busy and not limits.jobs.rescan.job %}
   <div class="empty">
     <strong>Nothing running.</strong>
@@ -98,10 +179,13 @@
     </table>
   </div>
   {% endif %}
+  {# Outside the branch, because it is the fallback whether anything is running
+     or not: the stream and the timer both need script, and this needs none. #}
+  <p class="note">Updates arrive on their own.
+    <a class="btn btn--ghost" href="/limits">Refresh</a></p>
 </section>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Windows in use</h2></div>
+<section class="tabs__panel" id="windows">
   {% if not limits.per_user.windows %}
   <div class="empty">
     <strong>Nobody is mid-window.</strong>
@@ -134,67 +218,12 @@
     </table>
   </div>
   {% endif %}
-</section>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Who may ask</h2></div>
-  {% if not limits.pilots %}
-  <div class="empty">
-    <strong>No holders to show.</strong>
-    Either nobody holds the chat-pilot role yet, or the bot is not connected to read it —
-    the role is the only record of who may talk to the bot, so there is nothing stored
-    here to fall back on.
-  </div>
-  {% else %}
-  <p class="note">
-    Everybody holding the chat-pilot role, read live from Discord. Staff are exempt from
-    every budget, so their allowance is not a number anything reads.
-  </p>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Member</th><th>User id</th><th>Allowance</th><th>This window</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for row in limits.pilots %}
-        <tr>
-          <td>
-            {{ row.name }}
-            {% if row.staff %}<span class="chip">staff</span>
-            {% elif row.overridden %}<span class="chip">own allowance</span>{% endif %}
-          </td>
-          <td class="mono">{{ row.user_id }}</td>
-          <td class="mono">
-            {% if row.staff %}<span class="id">exempt</span>
-            {% else %}{{ row.count }} per {{ "%g"|format(row.window_s) }}s{% endif %}
-          </td>
-          <td class="mono">
-            {% if row.staff %}—
-            {% elif row.has_window %}{{ row.used }} used, {{ row.remaining }} left
-            {% else %}<span class="id">idle</span>{% endif %}
-          </td>
-          <td class="rowbtns">
-            {# Staff get no controls: every one of them would change a number
-               that nothing consults for them. #}
-            {% if not row.staff %}
-            {# A link, not script: it re-renders the page with the form below
-               filled in, so prefilling works with htmx and JavaScript both off. #}
-            <a class="btn" href="/limits?user={{ row.user_id }}#set-allowance">Set</a>
-            {% if row.overridden %}{{ clear_override(row.user_id) }}{% endif %}
-            {% if row.has_window %}{{ reset_window(row.user_id) }}{% endif %}
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-</section>
-
-{% if limits.per_user.overrides %}
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Own allowances</h2></div>
+  {# The stored half of the same subject, under the live half rather than on a
+     tab of its own: a window that is open now, and an allowance that will be
+     there after a restart, are two things a reader compares. #}
+  {% if limits.per_user.overrides %}
+  <h3 class="pane__section">Own allowances</h3>
   <p class="note">
     These members get their own number of answers instead of the guild's
     {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
@@ -215,5 +244,6 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
 </section>
-{% endif %}
+

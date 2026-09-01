@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Limits — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -29,24 +30,34 @@
    is the fallback.
 
    Nothing inside it may contain an input -- see the note in the partial. #}
-<div id="limits-live"
-     data-live-src="/limits/events"
-     hx-get="/limits/live"
-     hx-trigger="every 60s [document.visibilityState === 'visible']"
-     hx-target="this" hx-swap="innerHTML">
-{% include "partials/limits.html" %}
-</div>
+
+{# One window, tabbed like a browser, so the frame has a single thing to give
+   its leftover height to. Its strip, its four figures and three of its four
+   panels come out of the live region; the fourth panel is written here,
+   outside it. The boundary weaves between sibling panels, which is what
+   `display: contents` on the wrapper buys: the wrapper keeps its polling
+   attributes and its swap boundary, and its children take their places in the
+   window as though it were not there. #}
+<section class="card tabs">
+  <div id="limits-live"
+       data-live-src="/limits/events"
+       hx-get="/limits/live"
+       hx-trigger="every 60s [document.visibilityState === 'visible']"
+       hx-target="this" hx-swap="innerHTML">
+  {% include "partials/limits.html" %}
+  </div>
 
 {# Outside the polled region, deliberately: this is the one place on the page
-   somebody types, and a refresh landing mid-sentence would eat it. #}
-<section class="card" id="set-allowance">
-  <div class="card__head"><h2 class="card__title">Set an allowance</h2></div>
+   somebody types, and a refresh landing mid-sentence would eat it. Which is
+   also why it is the one panel written here rather than in the partial. #}
+<section class="tabs__panel" id="set-allowance">
   <p class="note">
     Give one member their own number of answers instead of the guild's
     {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
     Works for somebody who has not asked anything yet — the usual reason to raise an
     allowance is that they are about to need it. Staff are exempt and need none.
-    The <strong>Set</strong> buttons above fill this in for you.
+    The <strong>Set</strong> buttons on <a href="#who-may-ask">Who may ask</a> open this
+    tab with the member already filled in.
   </p>
   <form method="post" action="/limits/overrides" class="filters"
         hx-post="/limits/overrides" hx-target="#limits-live" hx-swap="innerHTML">
@@ -64,5 +75,6 @@
     </label>
     <button class="btn btn--primary" type="submit">Save allowance</button>
   </form>
+</section>
 </section>
 {% endblock %}

@@ -151,6 +151,31 @@ CONFIG_SECTIONS = [
 
 _SECTION_KEYS = frozenset(key for key, _label in CONFIG_SECTIONS)
 
+#: The tabs on the Limits window, in the order the strip lists them: who may
+#: ask at all, then what is happening right now, then who is mid-window, then
+#: the one thing this page is for changing.
+#:
+#: Read the same three ways :data:`CONFIG_SECTIONS` is -- the template builds
+#: the strip and the panels from it, ``portal.css`` enumerates the same keys to
+#: raise the open tab, and a test holds those two to this list. The first key is
+#: the panel a reader with no fragment lands on.
+LIMITS_TABS = [
+    ("who-may-ask", "Who may ask"),
+    ("in-flight", "In flight"),
+    ("windows", "Windows"),
+    # `set-allowance` rather than `allowance`: the Set button on every roster
+    # row is a deep link to this panel, and that fragment is in the wild.
+    ("set-allowance", "Allowance"),
+]
+
+#: The tabs on one chat interaction: what was said, what it looked up, and the
+#: facts about the exchange. Same three readers as above.
+CHAT_TABS = [
+    ("conversation", "Conversation"),
+    ("tool-trace", "Tool trace"),
+    ("interaction", "This interaction"),
+]
+
 
 def read_section(value: str | None) -> str:
     """The section a config form says it came from, or ``""`` for none.
@@ -215,6 +240,8 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
             "colorways": COLORWAYS,
             "default_colorway": DEFAULT_COLORWAY,
             "config_sections": CONFIG_SECTIONS,
+            "limits_tabs": LIMITS_TABS,
+            "chat_tabs": CHAT_TABS,
             "status_icons": STATUS_ICONS,
             "status_words": STATUS_WORDS,
             "weekday_names": WEEKDAY_NAMES,
@@ -227,9 +254,11 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
 
 
 __all__ = [
+    "CHAT_TABS",
     "COLORWAYS",
     "CONFIG_SECTIONS",
     "DEFAULT_COLORWAY",
+    "LIMITS_TABS",
     "HTMX_SRC",
     "HTMX_SRI",
     "NAV",

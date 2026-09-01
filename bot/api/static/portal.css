@@ -2124,6 +2124,129 @@ details[open] > summary.btn {
   }
 }
 
+/* ── a window with tabs on its chrome ───────────────────────────────────────
+ *
+ * The same machinery the settings window runs on -- `:target` chooses a panel,
+ * `:has()` raises the tab that points at it, the first panel shows when the URL
+ * says nothing -- wearing a browser's clothes instead of a sidebar's. The strip
+ * *is* the window's title bar (it wears `.card__head`, so the three dots come
+ * with it), and the tabs rise out of it: the open one is painted in the body's
+ * own surface and drops the rounding on its bottom edge, so it reads as one
+ * shape with the panel under it.
+ *
+ * Fragment links and nothing else, exactly like the settings tabs. That means
+ * no `role="tablist"` and no `aria-selected`, which would promise arrow-key
+ * behaviour that only script can deliver; what a reader gets instead is a list
+ * of links to sections of this page, which is what these are. Flagged for the
+ * a11y pass rather than half-done here.
+ *
+ * Named for the pattern rather than for either page: two use it today and the
+ * extraction detail is the same shape. */
+
+.tabs__strip {
+  /* The tabs sit *on* the bottom edge, so the bar gives up its own padding
+     there and they close the gap themselves. */
+  padding-bottom: 0;
+  gap: 0.3rem 0.6rem;
+}
+
+.tabs__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--win-ink);
+  text-decoration: none;
+  opacity: 0.72;
+}
+
+.tabs__tab:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--surface) 25%, transparent);
+}
+
+/* The count a tab carries. Reads as a figure rather than as a word, and takes
+   the tab's own ink so it needs nothing from a colourway. */
+.tabs__count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentcolor 22%, transparent);
+}
+
+/* Written out per key, because a stylesheet cannot compare an `href` to an id.
+   `LIMITS_TABS` and `CHAT_TABS` in `bot/api/templating.py` are the list these
+   pairs answer to, and a test holds them to it.
+   The last selector is the no-fragment case. It names a class rather than
+   `:first-child`, which is what the settings window can use: on /limits the
+   panels are siblings across a swap boundary, so the *first* of them is not a
+   first child of anything -- the server marks which one opens by default. */
+.tabs:has(#who-may-ask:target) [href="#who-may-ask"],
+.tabs:has(#in-flight:target) [href="#in-flight"],
+.tabs:has(#windows:target) [href="#windows"],
+.tabs:has(#set-allowance:target) [href="#set-allowance"],
+.tabs:has(#conversation:target) [href="#conversation"],
+.tabs:has(#tool-trace:target) [href="#tool-trace"],
+.tabs:has(#interaction:target) [href="#interaction"],
+.tabs:not(:has(.tabs__panel:target)) .tabs__tab:first-child {
+  opacity: 1;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.tabs__panel {
+  display: none;
+}
+
+.tabs__panel:target {
+  display: block;
+}
+
+/* Nothing targeted, or something targeted that is not a panel: the window
+   opens on the panel the server marked. */
+.tabs:not(:has(.tabs__panel:target)) .tabs__panel--first {
+  display: block;
+}
+
+@media (max-width: 899px) {
+  /* Every panel at once, and the tabs become jump pills to them. A phone
+     scrolls anyway, and a window that answers with a blank panel because a
+     fragment went missing is worse than one you scroll -- the settings
+     window's rule, for the same reason. */
+  .tabs__panel {
+    display: block;
+  }
+
+  .tabs__panel + .tabs__panel {
+    margin-top: 1.3rem;
+    padding-top: 1.1rem;
+    border-top: 2px solid var(--line-soft);
+  }
+
+  /* Pills rather than tabs: with every panel already on the page these are
+     jump links, and a tab that rises into a panel it is not attached to would
+     be drawing a join that is not there. The one you last jumped to still
+     lights, which is the settings window's behaviour too. */
+  .tabs__tab {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 25%, transparent);
+    opacity: 1;
+  }
+}
+
 /* ── the table pages: a window that scrolls, on a page that does not ────────
  *
  * A list of two thousand audit rows was a page you scrolled until you lost the
@@ -2303,6 +2426,68 @@ details[open] > summary.btn {
     background: var(--surface);
     border-bottom: 0;
     box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* ── a tabbed window, inside the frame ─────────────────────────────────
+   *
+   * The window takes the leftover height, the strip and anything pinned under
+   * it keep their own, and the open panel gets the rest and scrolls -- with
+   * its headings held, the way every other window over a table does.
+   *
+   * `display: contents` on /limits' swap wrapper is what lets the panels be
+   * siblings across it: three of the four are re-read on a timer and the
+   * fourth holds the form, which must never be inside what a refresh replaces.
+   * The wrapper keeps its boundary and its polling attributes; its children
+   * take their places in the window as though it were not there. */
+  body.framed .tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.framed .tabs #limits-live {
+    display: contents;
+  }
+
+  body.framed .tabs__strip,
+  body.framed .tabs > .stats,
+  body.framed .tabs #limits-live > .stats {
+    flex: none;
+  }
+
+  body.framed .tabs__panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Out to the window's edges and back in again, so the scrollbar rides the
+       window's edge while the content keeps the card's inset -- the bleed
+       `.pane__swap` does for the table pages. */
+    margin: 0 -1.1rem;
+    padding: 0 1.1rem 1.1rem;
+  }
+
+  body.framed .tabs__panel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    border-bottom: 0;
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* A row of tiles rather than four cards. In a frame this row is a caption
+     over the window under it, and every millimetre it takes is one the content
+     does not get -- the same trade the now-strip already makes above the
+     board. Same figures, less around them. */
+  body.framed .stat {
+    padding: 0.55rem 0.8rem;
+  }
+
+  body.framed .stat__big {
+    font-size: var(--fs-brand);
   }
 
   /* ── the pane is the page, the head is its caption ─────────────────────
@@ -2967,6 +3152,12 @@ dialog.runsheet[open] {
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   margin-bottom: 0.75rem;
+}
+
+/* A tile row after something else in a panel: `.card + .card` only sees cards,
+   and these two would otherwise touch. */
+.tabs__panel .stats {
+  margin-top: 0.75rem;
 }
 
 .stat {
