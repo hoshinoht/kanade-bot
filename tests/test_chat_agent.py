@@ -244,6 +244,43 @@ async def test_resetting_a_window_gives_back_the_answers_and_the_notice(chat_bot
     assert (await agent.offer(message(chat_bot))).answered.reply == "ok again"
 
 
+async def test_the_refusal_quotes_the_members_own_allowance(chat_bot, chat_seeded):
+    """Telling somebody with a raised limit the guild's number is confidently wrong."""
+    agent = pilot(chat_bot, *[says("ok")] * 4)
+    agent.limiter.count = 1
+    agent.limiter.set_override(1002, 2, 30)
+
+    # Their own two answers, then the refusal.
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    said = replies(chat_bot)[-1].content
+    assert said.startswith("That's your 2 answers for now")
+    # Their own 30 s window, not the guild's -- so the wait is theirs too.
+    assert "30s" in said
+
+
+async def test_a_member_on_the_default_still_hears_the_default(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, *[says("ok")] * 4)
+    agent.limiter.count = 1
+    agent.limiter.set_override(1001, 5, 30)
+
+    await agent.offer(message(chat_bot, author_id=1002))
+    await agent.offer(message(chat_bot, author_id=1002))
+
+    assert replies(chat_bot)[-1].content.startswith("That's your 1 answer for now")
+
+
+async def test_an_override_is_loaded_when_the_pilot_is_built(chat_bot, chat_seeded):
+    """Which is what makes it survive a restart -- the spent windows do not."""
+    chat_bot.repo.set_rate_limit(1002, 9, 45)
+
+    restarted = pilot(chat_bot, says("ok"))
+
+    assert restarted.limiter.limit_for(1002) == (9, 45.0)
+
+
 def test_a_wait_is_rounded_up_into_a_unit_somebody_can_act_on():
     """Never early, never zero, and minutes once seconds stop being holdable."""
     assert retry_note(0.0) == "1s"

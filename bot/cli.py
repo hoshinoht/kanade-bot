@@ -871,12 +871,28 @@ def limits(ctx: typer.Context) -> None:
         console.print(f"[bold]Answering[/bold] {answering}")
     print_table(
         f"{len(per_user['windows'])} window(s) open",
-        ["user id", "member", "used", "left"],
+        ["user id", "member", "used", "left", "allowance"],
         [
-            [w["user_id"], w["name"], f"{w['used']} of {per_user['count']}", str(w["remaining"])]
+            [
+                w["user_id"],
+                w["name"],
+                f"{w['used']} of {w['count']}",
+                str(w["remaining"]),
+                "own" if w["overridden"] else "default",
+            ]
             for w in per_user["windows"]
         ],
     )
+    if per_user["overrides"]:
+        console.print()
+        print_table(
+            f"{len(per_user['overrides'])} member(s) on their own allowance",
+            ["user id", "member", "answers", "window"],
+            [
+                [o["user_id"], o["name"], str(o["count"]), f"{o['window_s']:g}s"]
+                for o in per_user["overrides"]
+            ],
+        )
 
 
 @limits_app.command("reset")
@@ -890,6 +906,37 @@ def limits_reset(
     """
     result = api().delete(f"/api/limits/windows/{member_id(who)}")
     console.print(f"[green]✓[/green] {result['name']}'s answer window is clear.")
+
+
+@limits_app.command("set")
+def limits_set(
+    who: str = typer.Argument(help="Discord user id, @mention, display name, nickname or alias."),
+    count: int = typer.Argument(help="Answers they may have per window."),
+    window: float = typer.Argument(help="The window, in seconds."),
+) -> None:
+    """Give one member their own allowance instead of the guild's.
+
+    Survives a restart, and takes effect at once -- including for somebody who
+    is already mid-window, who simply has more room in the one they are in.
+    """
+    result = api().request(
+        "PUT",
+        f"/api/limits/overrides/{member_id(who)}",
+        json={"count": count, "window_s": window},
+    )
+    console.print(
+        f"[green]✓[/green] {result['name']} now gets [bold]{result['count']}[/bold] "
+        f"answer(s) per {result['window_s']:g}s."
+    )
+
+
+@limits_app.command("unset")
+def limits_unset(
+    who: str = typer.Argument(help="Discord user id, @mention, display name, nickname or alias."),
+) -> None:
+    """Put one member back on the guild's default allowance."""
+    result = api().delete(f"/api/limits/overrides/{member_id(who)}")
+    console.print(f"[green]✓[/green] {result['name']} is back on the default allowance.")
 
 
 @app.command()
@@ -1035,14 +1082,23 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 def config_set(
     key: str = typer.Argument(
         help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
-        "quiet_mode or chat_mode."
+        "quiet_mode, chat_mode, or one of the chat_pilot_*_rate_* numbers."
     ),
     value: str = typer.Argument(help="The new value."),
 ) -> None:
     """Change one runtime setting. Takes effect at once and survives a restart."""
     flags = {"paused", "extract_enabled", "quiet_mode", "chat_mode"}
+    counts = {"chat_pilot_rate_count", "chat_pilot_global_rate_count"}
+    windows = {"chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s"}
     if key in flags:
         parsed: Any = value.strip().lower() in ("1", "true", "yes", "on")
+    elif key in counts or key in windows:
+        # Sent as a number so the API's own validation is what rejects a typo,
+        # with its message, rather than a coercion failure deep in pydantic.
+        try:
+            parsed = int(value) if key in counts else float(value)
+        except ValueError:
+            fail(f"{key} must be a number, not `{value}`")
     else:
         parsed = value
     values = api().request("PUT", "/api/config", json={key: parsed})

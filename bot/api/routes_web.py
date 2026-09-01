@@ -345,6 +345,47 @@ async def web_limits_reset(request: Request, bot: Bot, caller: Caller, user_id: 
     return back_to(request, "/limits", f"{cleared['name']} has their answers back.")
 
 
+@router.post("/limits/overrides")
+async def web_limits_override(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    user_id: str = Form(),
+    count: str = Form(),
+    window_s: str = Form(),
+) -> Response:
+    """Give one member their own allowance from the Limits page.
+
+    The numbers arrive as form text and are validated in
+    :func:`bot.api.service.set_user_limit`, the same call the API route makes --
+    so the portal cannot store something ``bossctl`` would have refused.
+    """
+    try:
+        saved = service.set_user_limit(bot, user_id.strip(), count, window_s)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(
+        request,
+        "/limits",
+        f"{saved['name']} now gets {saved['count']} answer(s) per {saved['window_s']:g}s.",
+    )
+
+
+@router.post("/limits/overrides/{user_id}/clear")
+async def web_limits_override_clear(
+    request: Request, bot: Bot, caller: Caller, user_id: str
+) -> Response:
+    try:
+        cleared = service.clear_user_limit(bot, user_id)
+    except ApiError as exc:
+        return back_to(request, "/limits", exc.message, "error")
+    if request.headers.get("HX-Request"):
+        return fragment(request, "partials/limits.html", limits=service.limits(bot))
+    return back_to(request, "/limits", f"{cleared['name']} is back on the default allowance.")
+
+
 @router.get("/audit")
 async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
     """Who changed what, newest first. Read-only -- there is nothing to do here."""

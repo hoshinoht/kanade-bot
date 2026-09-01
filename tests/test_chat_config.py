@@ -123,6 +123,84 @@ def test_the_env_example_carries_no_real_ids():
 
 
 # ---------------------------------------------------------------------------
+# the capacity numbers, as runtime settings
+# ---------------------------------------------------------------------------
+
+
+def test_the_capacity_numbers_seed_from_the_environment(chat_bot):
+    """No stored row yet, so `.env` is what the bot is running on."""
+    assert chat_bot.chat_rate_count == chat_bot.settings.chat_pilot_rate_count
+    assert chat_bot.chat_rate_window_s == chat_bot.settings.chat_pilot_rate_window_s
+    assert chat_bot.chat_pool_count == chat_bot.settings.chat_pilot_global_rate_count
+    assert chat_bot.chat_pool_window_s == chat_bot.settings.chat_pilot_global_rate_window_s
+
+
+def test_the_numbers_are_seeded_on_first_run_and_not_re_seeded_after(tmp_path):
+    """`.env` fills the rows once; a value tuned at 9pm survives the next restart."""
+    from bot import __main__ as entrypoint
+
+    settings = chat_settings(db_path=str(tmp_path / "seed.sqlite"))
+    repo = entrypoint.build_repo(settings)
+    assert repo.get_config("chat_pilot_rate_count") == str(settings.chat_pilot_rate_count)
+    assert repo.get_config("chat_pilot_global_rate_window_s") == str(
+        settings.chat_pilot_global_rate_window_s
+    )
+
+    repo.set_config("chat_pilot_rate_count", "9")
+    repo.close()
+    restarted = entrypoint.build_repo(settings)
+
+    assert restarted.get_config("chat_pilot_rate_count") == "9"
+    restarted.close()
+
+
+def test_a_stored_number_wins_over_the_environment(chat_bot):
+    chat_bot.repo.set_config("chat_pilot_rate_count", "9")
+    chat_bot.repo.set_config("chat_pilot_global_rate_window_s", "1800")
+    assert chat_bot.chat_rate_count == 9
+    assert chat_bot.chat_pool_window_s == 1800.0
+
+
+def test_a_nonsense_row_falls_back_rather_than_taking_the_bot_down(chat_bot):
+    """Read on the hot path of every message; a hand-edited row must not raise."""
+    for stored in ("", "lots", "0", "-3"):
+        chat_bot.repo.set_config("chat_pilot_rate_count", stored)
+        assert chat_bot.chat_rate_count == chat_bot.settings.chat_pilot_rate_count
+
+
+def test_saving_a_number_moves_the_live_limiters_at_once(chat_bot):
+    """The limiters outlive the request, so a new value means nothing until told."""
+    pilot = chat_bot.chat
+    assert pilot.limiter.count == 4
+
+    service.set_config(chat_bot, "chat_pilot_rate_count", 7)
+    service.set_config(chat_bot, "chat_pilot_global_rate_window_s", 60)
+
+    assert pilot.limiter.count == 7
+    assert pilot.global_limiter.window == 60.0
+
+
+def test_the_capacity_numbers_are_validated_like_every_other_setting(chat_bot):
+    from bot.api.errors import BadRequest
+
+    for key, bad in (
+        ("chat_pilot_rate_count", "none"),
+        ("chat_pilot_rate_count", 0),
+        ("chat_pilot_global_rate_window_s", "soon"),
+        ("chat_pilot_global_rate_window_s", 0),
+    ):
+        with pytest.raises(BadRequest):
+            service.set_config(chat_bot, key, bad)
+
+
+def test_the_numbers_are_reported_by_get_config(chat_bot):
+    chat_bot.repo.set_config("chat_pilot_rate_count", "6")
+    values = service.get_config(chat_bot)
+    assert values["chat_pilot_rate_count"] == 6
+    assert values["chat_pilot_global_rate_count"] == 12
+
+
+# ---------------------------------------------------------------------------
 # the runtime flag
 # ---------------------------------------------------------------------------
 

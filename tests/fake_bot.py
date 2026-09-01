@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from bot.bosses import BossTable
 from bot.config import Settings
 from bot.db import Repo
+from bot.util import positive_float, positive_int
 from bot.weeks import parse_hhmm
 
 GUILD_ID = 111111111111111111
@@ -210,6 +211,36 @@ class FakeBot:
     def chat_mode(self) -> bool:
         default = "1" if self.settings.chat_pilot_configured else "0"
         return (self.repo.get_config("chat_mode", default) or default) == "1"
+
+    # The chatbot's four capacity numbers, read the way the real client reads
+    # them -- through the same parsers, so the fake cannot disagree with it
+    # about what a hand-edited row means.
+    @property
+    def chat_rate_count(self) -> int:
+        return positive_int(
+            self.repo.get_config("chat_pilot_rate_count"), self.settings.chat_pilot_rate_count
+        )
+
+    @property
+    def chat_rate_window_s(self) -> float:
+        return positive_float(
+            self.repo.get_config("chat_pilot_rate_window_s"),
+            self.settings.chat_pilot_rate_window_s,
+        )
+
+    @property
+    def chat_pool_count(self) -> int:
+        return positive_int(
+            self.repo.get_config("chat_pilot_global_rate_count"),
+            self.settings.chat_pilot_global_rate_count,
+        )
+
+    @property
+    def chat_pool_window_s(self) -> float:
+        return positive_float(
+            self.repo.get_config("chat_pilot_global_rate_window_s"),
+            self.settings.chat_pilot_global_rate_window_s,
+        )
 
     @property
     def portal_actor_id(self) -> str:

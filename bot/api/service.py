@@ -94,7 +94,18 @@ CONFIG_KEYS = (
     "extract_enabled",
     "quiet_mode",
     "chat_mode",
+    "chat_pilot_rate_count",
+    "chat_pilot_rate_window_s",
+    "chat_pilot_global_rate_count",
+    "chat_pilot_global_rate_window_s",
 )
+
+#: The capacity settings, split by what a valid value looks like: a whole number
+#: of answers, or a number of seconds. Both are checked here rather than trusted
+#: from the request, because ``bossctl config set`` and the portal both arrive
+#: as text and a window of zero would refuse everybody for ever.
+COUNT_KEYS = ("chat_pilot_rate_count", "chat_pilot_global_rate_count")
+WINDOW_KEYS = ("chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s")
 
 
 # ---------------------------------------------------------------------------
@@ -1582,6 +1593,62 @@ def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
     return {"user_id": str(user_id), "name": name}
 
 
+def set_user_limit(bot: BossBot, user_id: int | str, count: int, window_s: float) -> dict:
+    """Give one member their own allowance instead of the guild default.
+
+    Stored, so it survives a restart, and pushed into the live limiter at once
+    (:meth:`bot.chat.agent.ChatPilot.apply_limits`) -- an override that only took
+    effect after a redeploy would be useless at the moment somebody asks for it.
+
+    Not restricted to the roster, for the reason :func:`reset_user_limit` gives:
+    the chat role and the bossing role are different things, and it must be
+    possible to raise the allowance of somebody who has not asked yet today.
+    """
+    count = _whole_number(count, "count", minimum=1)
+    window_s = _seconds(window_s, "window_s")
+    bot.repo.set_rate_limit(user_id, count, window_s)
+    bot.chat.apply_limits()
+    name = member_name(bot, user_id)
+    _audit(
+        bot,
+        "limits",
+        str(user_id),
+        f"{name}'s allowance is now {count} answer(s) per {window_s:g}s",
+    )
+    return {"user_id": str(user_id), "name": name, "count": count, "window_s": window_s}
+
+
+def clear_user_limit(bot: BossBot, user_id: int | str) -> dict:
+    """Put one member back on the guild default, keeping their spent window.
+
+    Idempotent: clearing an allowance nobody had is not an error, because the
+    end state the caller asked for -- "this member is on the default" -- is the
+    one they get either way.
+    """
+    had = bot.repo.clear_rate_limit(user_id)
+    bot.chat.apply_limits()
+    name = member_name(bot, user_id)
+    if had:
+        _audit(bot, "limits", str(user_id), f"{name} is back on the guild's default allowance")
+    return {"user_id": str(user_id), "name": name}
+
+
+def _window_view(bot: BossBot, limiter: Any, user_id: str, used: int) -> dict:
+    """One open window, against the allowance that member is actually on."""
+    count, window = limiter.limit_for(user_id)
+    return {
+        "user_id": str(user_id),
+        "name": member_name(bot, user_id),
+        "used": used,
+        "remaining": max(count - used, 0),
+        "count": count,
+        "window_s": window,
+        #: So the page can mark the row rather than leaving a reader to spot
+        #: that this one number differs from the heading.
+        "overridden": str(user_id) in limiter.overrides(),
+    }
+
+
 def _pool_view(limiter: Any, key: str) -> dict:
     """One :class:`bot.chat.ratelimit.RateLimiter` window as used-of-total."""
     remaining = limiter.remaining(key)
@@ -1619,20 +1686,29 @@ def limits(bot: BossBot) -> dict:
         "model": model,
         "global_pool": _pool_view(pilot.global_limiter, GLOBAL_KEY),
         "per_user": {
+            # The guild default. Each row below carries the allowance that
+            # member is actually on, which is not always this one.
             "count": per_user.count,
             "window_s": per_user.window,
             # Only members mid-window, so the list is what is happening rather
             # than everybody who has ever asked.
             "windows": [
-                {
-                    "user_id": str(user_id),
-                    "name": member_name(bot, user_id),
-                    "used": used,
-                    "remaining": max(per_user.count - used, 0),
-                }
+                _window_view(bot, per_user, user_id, used)
                 for user_id, used in sorted(
                     per_user.snapshot().items(), key=lambda pair: (-pair[1], pair[0])
                 )
+            ],
+            # Every member with their own allowance, whether or not they have
+            # asked anything: the page has to be able to show -- and clear -- an
+            # override belonging to somebody who is not mid-window.
+            "overrides": [
+                {
+                    "user_id": str(user_id),
+                    "name": member_name(bot, user_id),
+                    "count": count,
+                    "window_s": window,
+                }
+                for user_id, (count, window) in sorted(per_user.overrides().items())
             ],
         },
         "jobs": {
@@ -1666,6 +1742,13 @@ def get_config(bot: BossBot) -> dict:
         # one chat channel. `chat_mode` on top of an unconfigured pilot answers
         # nobody, and the page needs to be able to say so.
         "chat_configured": bot.settings.chat_pilot_configured,
+        # The four capacity numbers, live from the config table. Editable here
+        # rather than only in `.env` because they are what an operator reaches
+        # for while the guild is busy.
+        "chat_pilot_rate_count": bot.chat_rate_count,
+        "chat_pilot_rate_window_s": bot.chat_rate_window_s,
+        "chat_pilot_global_rate_count": bot.chat_pool_count,
+        "chat_pilot_global_rate_window_s": bot.chat_pool_window_s,
         "chat_channels": [str(c) for c in bot.settings.chat_pilot_channel_id_list],
         "chat_categories": [str(c) for c in bot.settings.chat_pilot_category_id_list],
         "chat_model": bot.settings.chat_pilot_model,
@@ -1725,11 +1808,41 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         bot.repo.set_config(key, stored)
         for run in bot.repo.list_runs():
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
+    elif key in COUNT_KEYS:
+        stored = str(_whole_number(value, key, minimum=1))
+        bot.repo.set_config(key, stored)
+        # The limiters live for the whole process, so a new number means nothing
+        # until they are told. Windows already open are reinterpreted under it.
+        bot.chat.apply_limits()
+    elif key in WINDOW_KEYS:
+        stored = str(_seconds(value, key))
+        bot.repo.set_config(key, stored)
+        bot.chat.apply_limits()
     else:
         stored = _as_flag(value)
         bot.repo.set_config(key, stored)
     _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
     return get_config(bot)
+
+
+def _whole_number(value: Any, label: str, minimum: int = 1) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise BadRequest(f"{label} must be a whole number, e.g. `4`") from None
+    if parsed < minimum:
+        raise BadRequest(f"{label} must be at least {minimum}")
+    return parsed
+
+
+def _seconds(value: Any, label: str) -> float:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError):
+        raise BadRequest(f"{label} must be a number of seconds, e.g. `300`") from None
+    if parsed <= 0:
+        raise BadRequest(f"{label} must be more than zero seconds")
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -2101,7 +2214,9 @@ __all__ = [
     "fixed_view",
     "get_config",
     "limits",
+    "clear_user_limit",
     "reset_user_limit",
+    "set_user_limit",
     "load_amendment",
     "load_chat_interaction",
     "load_extraction",

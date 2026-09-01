@@ -455,6 +455,10 @@ class ConfigOut(BaseModel):
     extract_enabled: bool
     quiet_mode: bool
     chat_mode: bool
+    chat_pilot_rate_count: int = 4
+    chat_pilot_rate_window_s: float = 300.0
+    chat_pilot_global_rate_count: int = 12
+    chat_pilot_global_rate_window_s: float = 900.0
     #: The chatbot needs a role and a channel before `chat_mode` means anything.
     chat_configured: bool = False
     chat_channels: list[str] = []
@@ -483,6 +487,11 @@ class ConfigIn(Strict):
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
     chat_mode: bool | None = None
+    #: The chatbot's capacity, editable at runtime like the flags above.
+    chat_pilot_rate_count: int | None = Field(default=None, ge=1)
+    chat_pilot_rate_window_s: float | None = Field(default=None, gt=0)
+    chat_pilot_global_rate_count: int | None = Field(default=None, ge=1)
+    chat_pilot_global_rate_window_s: float | None = Field(default=None, gt=0)
 
 
 class DigestIn(Strict):
@@ -645,13 +654,30 @@ class UserWindowOut(BaseModel):
     name: str
     used: int
     remaining: int
+    #: The allowance this member is on, which is the guild default unless they
+    #: have an override -- so a row can be read without cross-referencing.
+    count: int
+    window_s: float
+    overridden: bool = False
+
+
+class LimitOverrideOut(BaseModel):
+    """One member's own allowance, instead of the guild's."""
+
+    user_id: str
+    name: str
+    count: int
+    window_s: float
 
 
 class PerUserOut(BaseModel):
+    #: The guild default; a row above may be on something else.
     count: int
     window_s: float
     #: Only members mid-window; an empty list means nobody has asked recently.
     windows: list[UserWindowOut] = []
+    #: Every member with an override, mid-window or not.
+    overrides: list[LimitOverrideOut] = []
 
 
 class AnsweringOut(BaseModel):
@@ -683,10 +709,17 @@ class LimitsOut(BaseModel):
 
 
 class LimitResetOut(BaseModel):
-    """One member's window, cleared. The guild's pool is not resettable."""
+    """One member's window or override, cleared. The guild's pool is neither."""
 
     user_id: str
     name: str
+
+
+class LimitOverrideIn(Strict):
+    """The allowance to put one member on, instead of the guild's."""
+
+    count: int = Field(ge=1, description="answers per window")
+    window_s: float = Field(gt=0, description="the window, in seconds")
 
 
 class HealthOut(BaseModel):
@@ -717,6 +750,8 @@ __all__ = [
     "HealthOut",
     "AnsweringOut",
     "JobsOut",
+    "LimitOverrideIn",
+    "LimitOverrideOut",
     "LimitResetOut",
     "LimitsOut",
     "ModelLockOut",

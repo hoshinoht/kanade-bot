@@ -27,7 +27,7 @@ from .timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 #: How many chat interactions are kept. The table is a diagnostic, not a
 #: transcript: five hundred is weeks of a guild's questions at the rate the
@@ -302,6 +302,25 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 
 CREATE INDEX IF NOT EXISTS audit_recent ON audit (at DESC);
+
+-- v8. Members whose chatbot allowance is not the guild default. Sparse on
+-- purpose: a row exists only where somebody was given their own numbers, and
+-- deleting it is what "back to the default" means.
+--
+-- Its own table rather than two columns on `members`, because `members` syncs
+-- from the bossing role and this is a fact about the *chat* role -- somebody
+-- can hold one without the other, and a roster row invented to hold an
+-- allowance would then look like a bosser to everything that reads it.
+--
+-- The spent windows themselves stay in memory (bot/chat/ratelimit.py): a
+-- restart forgetting who has asked what is the right trade, but forgetting that
+-- somebody was granted a bigger allowance is not.
+CREATE TABLE IF NOT EXISTS chat_rate_limits (
+    user_id    TEXT PRIMARY KEY,
+    count      INTEGER NOT NULL,
+    window_s   REAL NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -455,6 +474,16 @@ def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
     """
 
 
+def _migrate_7_to_8(conn: sqlite3.Connection) -> None:
+    """v8 only adds ``chat_rate_limits``, which ``SCHEMA_SQL`` creates itself.
+
+    A numbered step is still needed so :meth:`Repo.migrate` can walk past v7, as
+    with v3->v4, v5->v6 and v6->v7; the work is the ``CREATE TABLE IF NOT
+    EXISTS`` afterwards. Nothing is backfilled, and nothing needs to be: no rows
+    means everybody is on the guild default, which is what they were on before.
+    """
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
@@ -462,6 +491,7 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     4: _migrate_4_to_5,
     5: _migrate_5_to_6,
     6: _migrate_6_to_7,
+    7: _migrate_7_to_8,
 }
 
 
@@ -699,6 +729,39 @@ class Repo:
         data["has_role"] = bool(data["has_role"])
         data["ping_level"] = data.get("ping_level") or DEFAULT_PING_LEVEL
         return data
+
+    # -- chatbot allowances ------------------------------------------------
+    def set_rate_limit(self, user_id: int | str, count: int, window_s: float) -> None:
+        """Give one member their own chatbot allowance, replacing any it had."""
+        self._conn.execute(
+            "INSERT INTO chat_rate_limits (user_id, count, window_s, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET "
+            "count = excluded.count, window_s = excluded.window_s, "
+            "updated_at = excluded.updated_at",
+            (str(user_id), int(count), float(window_s), to_iso(utcnow())),
+        )
+
+    def clear_rate_limit(self, user_id: int | str) -> bool:
+        """Put one member back on the guild default. False if they were already."""
+        cursor = self._conn.execute(
+            "DELETE FROM chat_rate_limits WHERE user_id = ?", (str(user_id),)
+        )
+        return cursor.rowcount > 0
+
+    def list_rate_limits(self) -> list[dict]:
+        """Every member with their own allowance, for loading into the limiter."""
+        rows = self._conn.execute(
+            "SELECT * FROM chat_rate_limits ORDER BY updated_at DESC, user_id"
+        )
+        return [
+            {
+                "user_id": row["user_id"],
+                "count": int(row["count"]),
+                "window_s": float(row["window_s"]),
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
 
     # -- fixed runs -------------------------------------------------------
     def add_fixed_run(
