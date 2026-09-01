@@ -417,7 +417,7 @@ def test_the_heading_uses_the_matched_runs_bosses_not_the_amendments():
     }
     run = run_row("17d1e8be", ["HStar"], NOW)
     name, _value = formatting.proposal_line(amendment, run, TZ)
-    assert "HStar" in name
+    assert "Hard Star" in name
     assert "NBaldrix" not in name
     assert "#17d1e8be" in name
 
@@ -433,7 +433,7 @@ def test_with_no_run_the_heading_uses_the_amendments_bosses():
         "time_ref": None,
     }
     name, _value = formatting.proposal_line(amendment, None, TZ)
-    assert "NCarling" in name
+    assert "Normal Carling" in name
     assert "#" not in name
 
 

@@ -9,6 +9,11 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
+      # On the named volume beside the database, so it survives a rebuild and
+      # stays out of both the image and git. Put it there with:
+      #   docker compose cp your-persona.md bot:/app/data/persona.md
+      # Missing, it falls back to the tracked persona.example.md and warns.
+      PERSONA_PATH: /app/data/persona.md
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
       # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.
@@ -33,6 +38,16 @@ services:
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
     restart: unless-stopped
+    # Defense-in-depth: member input never reaches a shell or a URL, but if a
+    # parsing dependency ever gave code execution, it lands in a root-immutable,
+    # capability-less, resource-capped container. /app/data stays writable via
+    # the volume; everything else the process needs at runtime is read-only.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 256
     # An extraction call can run 30-120s; the default 10s grace period
     # SIGKILLs a mid-write shutdown, which is how the DB got corrupted.
     stop_grace_period: 60s

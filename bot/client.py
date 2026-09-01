@@ -18,10 +18,11 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from . import backup, formatting
+from . import audit, backup, formatting
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
+from .chat import ChatPilot
 from .config import Settings
 from .db import Repo
 from .debug import TEST_PREFIX
@@ -69,6 +70,7 @@ CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
+CFG_CHAT = "chat_mode"
 CFG_LAST_WEEK = "last_materialised_week"
 #: The boss week whose reset digest has already gone out, and the local day the
 #: database was last snapshotted. Both are "have I done this yet?" markers rather
@@ -115,6 +117,11 @@ class BossBot(discord.Client):
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
         self.extractor = Pipeline(self)
+        # The speech pilot: answers when mentioned by somebody holding the chat
+        # role, in a channel listed in CHAT_PILOT_CHANNEL_IDS. Gated entirely at
+        # its own door (`bot.chat.gate`), so it sees every message and answers
+        # almost none. Constructing it reads no persona file and opens no client.
+        self.chat = ChatPilot(self)
         # The portal/CLI HTTP API, served on this same loop (DESIGN.md §5) so it
         # reads live state and drives Discord without a second process fighting
         # over SQLite. Constructing the bot does not bind the port.
@@ -161,6 +168,19 @@ class BossBot(discord.Client):
         builds a non-empty one.
         """
         return (self.repo.get_config(CFG_QUIET, "0") or "0") == "1"
+
+    @property
+    def chat_mode(self) -> bool:
+        """Runtime kill switch for the chatbot, seeded from whether it is configured.
+
+        Turning it off stops the bot answering without touching ``.env`` -- the
+        same reason :attr:`extract_enabled` is a config row rather than an
+        environment variable. It is the *third* gate: with no chat role or no
+        chat channel the pilot is off whatever this says, so a deployment that
+        never configured it cannot be switched on by accident.
+        """
+        default = "1" if self.settings.chat_pilot_configured else "0"
+        return (self.repo.get_config(CFG_CHAT, default) or default) == "1"
 
     @property
     def portal_actor_id(self) -> str:
@@ -217,6 +237,7 @@ class BossBot(discord.Client):
         await self.api.stop()
         await self.rescans.stop()
         await self.extractor.shutdown()
+        await self.chat.close()
         await super().close()
 
     async def on_ready(self) -> None:
@@ -351,31 +372,59 @@ class BossBot(discord.Client):
 
     # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
-        """Store messages from watched channels, then offer them to the extractor.
+        """Store watched messages, then offer them to the chatbot and the extractor.
 
-        Storing happens whether or not extraction is enabled, so `/rescan` can
-        always look back over history that was captured while it was paused.
+        Storing happens whether or not extraction is enabled, and whoever ends up
+        acting on the message, so `/rescan` can always look back over history
+        that was captured while it was paused.
+
+        **The chatbot goes first, and a message it handles is not offered to the
+        extractor.** The two are gated on different lists, but those lists may
+        overlap -- live, the pilot's channel turned out to sit under a category
+        in ``CHAT_CATEGORY_IDS``, and one "@bot move hstar to wednesday" got both
+        a chat reply *and* an extractor proposal card for the same sentence. A
+        message addressed to the bot is a conversation, not ambient party chat:
+        the pilot acts on it through its tools, and the extractor has no business
+        also reading it over the asker's shoulder.
+
+        "Handled" is the pilot's own verdict (:class:`bot.chat.agent.Handling`),
+        decided once inside :meth:`~bot.chat.agent.ChatPilot.offer`. It must not
+        be recomputed here: the gate consulted the rate limiter to reach it, and
+        asking twice would spend two of somebody's four answers on one message.
+        Every other refusal -- not a chat channel, no mention, no role, chat off
+        -- leaves the extractor's behaviour exactly as it was.
+
+        Neither offer is allowed to break the other, or the bot. A chat pilot
+        that throws is treated as "not handled", so the extractor still runs.
         """
         if message.author.bot or message.guild is None:
             return
         if message.guild.id != self.settings.guild_id:
             return
-        if not self.is_watched(message.channel):
-            return
-        # Store under the parent channel so a thread's messages group with its
-        # channel's -- `python -m bot.export` writes the same id.
-        channel_id, _thread_id = origin_ids(message.channel)
-        self.repo.record_message(
-            message.id,
-            channel_id,
-            message.author.id,
-            message.created_at,
-            message.content,
-        )
+        watched = self.is_watched(message.channel)
+        if watched:
+            # Store under the parent channel so a thread's messages group with
+            # its channel's -- `python -m bot.export` writes the same id.
+            channel_id, _thread_id = origin_ids(message.channel)
+            self.repo.record_message(
+                message.id,
+                channel_id,
+                message.author.id,
+                message.created_at,
+                message.content,
+            )
+
+        handled = False
         try:
-            await self.extractor.offer(message)
+            handled = (await self.chat.offer(message)).handled
         except Exception:  # pragma: no cover - chat must never break the bot
-            log.exception("extractor rejected a message")
+            log.exception("the chat pilot rejected a message")
+
+        if watched and not handled:
+            try:
+                await self.extractor.offer(message)
+            except Exception:  # pragma: no cover - chat must never break the bot
+                log.exception("extractor rejected a message")
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
@@ -1047,6 +1096,7 @@ class BossBot(discord.Client):
             for amendment in allowed:
                 reject(self.repo, amendment)
             await self._annotate_card(payload, formatting.rejected_notice(name))
+            await self._followup_on_rejection(payload, allowed)
             return
 
         results = [await self._commit_one(amendment, actor, payload) for amendment in allowed]
@@ -1063,6 +1113,30 @@ class BossBot(discord.Client):
                     [],
                     reference_id=payload.message_id,
                 )
+
+    async def _followup_on_rejection(
+        self, payload: discord.RawReactionActionEvent, rejected: list[dict]
+    ) -> None:
+        """Let the chat pilot ask what the card should have said.
+
+        Only its own cards, only to the member who asked for one, and at most
+        once per card -- all of which :meth:`bot.chat.agent.ChatPilot.on_rejection`
+        decides. Everything here does is hand it the rejection and refuse to let
+        a chatbot fault break a reaction: a ❌ has already been applied and
+        annotated by this point, and losing the card's rejection because the
+        model was down would be the worse bug by far.
+
+        Reached only from the ❌ path above, so a rejection made in the portal
+        does nothing new: nobody is standing in the channel to answer.
+        """
+        try:
+            await self.chat.on_rejection(
+                rejected,
+                reactor_id=payload.user_id,
+                card_message_id=payload.message_id,
+            )
+        except Exception:  # noqa: BLE001 - chat must never break a reaction
+            log.exception("the chat pilot could not follow up on a rejected card")
 
     async def _commit_one(
         self, amendment: dict, actor: int | str, payload: discord.RawReactionActionEvent
@@ -1086,6 +1160,15 @@ class BossBot(discord.Client):
         )
         if not result.applied:
             return result
+        # The reacting member, by id: a ✅ on a card is the one change to the
+        # schedule that already knows exactly whose decision it was.
+        audit.record(
+            self.repo,
+            audit.Actor("card", str(actor)),
+            result.kind or amendment["kind"],
+            result.run_id or amendment["id"],
+            f"{self._display_name(payload)} confirmed the {result.kind} on its card",
+        )
         await self._mark_superseded(result.superseded)
         # A move is the one change the party needs to see spelled out, and the
         # phase-1 notice already says it exactly right.

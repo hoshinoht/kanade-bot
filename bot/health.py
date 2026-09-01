@@ -59,7 +59,9 @@ def check_api(port: int | None = None, timeout: float = API_TIMEOUT) -> tuple[bo
     :mod:`bot.api.server`), so its own loopback reaches it without depending on
     the published port mapping.
     """
-    port = port or int(os.environ.get("API_PORT", "8080"))
+    # `or "8080"` and not a get() default: an empty `API_PORT=` line in .env
+    # arrives as "", which the default would not catch and int() rejects.
+    port = port or int(os.environ.get("API_PORT") or "8080")
     url = f"http://127.0.0.1:{port}/healthz"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310

@@ -199,6 +199,11 @@ class FakeBot:
         return (self.repo.get_config("quiet_mode", "0") or "0") == "1"
 
     @property
+    def chat_mode(self) -> bool:
+        default = "1" if self.settings.chat_pilot_configured else "0"
+        return (self.repo.get_config("chat_mode", default) or default) == "1"
+
+    @property
     def portal_actor_id(self) -> str:
         if self.settings.portal_actor_id is not None:
             return str(self.settings.portal_actor_id)
@@ -311,6 +316,14 @@ class FakeBot:
     async def post_plain(
         self, channel, content, mention_users, reference_id=None, mention_roles=None
     ):
+        # The same quiet-mode gate the real `post_plain` applies. Without it the
+        # fake would record an allow-list the real bot would have emptied, and a
+        # test asserting "quiet mode notifies nobody" would pass against a fake
+        # that notifies everybody.
+        if self.quiet_mode:
+            from bot import formatting
+
+            content, mention_users, mention_roles = formatting.quiet_line(content), [], []
         self.posts.append(
             Posted(
                 getattr(channel, "id", None),
@@ -323,10 +336,17 @@ class FakeBot:
         return self._message(channel)
 
     async def _post(self, channel, card, mention_users=None, react=True):
+        wanted = mention_users if mention_users is not None else getattr(card, "mention_users", [])
+        if self.quiet_mode:
+            # Mirrors `BossBot._prepared`: the card says so, and the allow-list
+            # is empty however many names the card spells out.
+            from bot import formatting
+
+            card = (
+                formatting.quiet_line(card) if isinstance(card, str) else formatting.quieted(card)
+            )
+            wanted = []
         content = card if isinstance(card, str) else card.content
-        wanted = mention_users
-        if wanted is None:
-            wanted = getattr(card, "mention_users", [])
         self.posts.append(Posted(getattr(channel, "id", None), content, list(wanted), "card"))
         return self._message(channel)
 

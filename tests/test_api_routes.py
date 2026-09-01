@@ -391,6 +391,46 @@ def test_the_extraction_list_summarises_and_the_detail_shows_its_work(auth, seed
     assert detail["amendments"][0]["kind"] == "move"
 
 
+# --- chat log ---------------------------------------------------------------
+
+
+def test_the_chat_list_summarises_and_the_detail_shows_its_work(auth, seeded):
+    rows = auth.get("/api/chat").json()
+    assert rows[0]["author_name"] == "kanon"
+    assert rows[0]["model"] == "qwen3:32b"
+    assert rows[0]["tool_names"] == ["get_schedule"]
+    assert rows[0]["outcome"] == "answered"
+    assert "question" not in rows[0]
+
+    detail = auth.get(f"/api/chat/{short_id(seeded['interaction'])}").json()
+    assert detail["question"] == "when is star this week?"
+    assert detail["reply"].startswith("Star is Monday 21:30")
+    assert detail["model_ms"] == 8100
+    assert detail["tool_calls"][0]["arguments"] == "week='this'"
+    assert detail["tool_calls"][0]["ok"] is True
+
+
+def test_the_chat_summary_totals_per_model(auth, seeded):
+    body = auth.get("/api/chat/summary").json()
+    assert body["count"] == 1
+    assert body["prompt_tokens"] == 3120
+    assert body["models"][0]["model"] == "qwen3:32b"
+    assert body["models"][0]["p95_latency_ms"] == 8400
+
+
+def test_the_chat_summary_is_not_read_as_an_interaction_id(auth, seeded):
+    """`/summary` is declared first, so the id route never swallows it."""
+    assert auth.get("/api/chat/summary").json()["count"] == 1
+
+
+def test_an_unknown_chat_interaction_is_a_404(auth, seeded):
+    assert auth.get("/api/chat/deadbeef").status_code == 404
+
+
+def test_the_chat_log_needs_the_token(client, seeded):
+    assert client.get("/api/chat").status_code == 401
+
+
 # --- members ----------------------------------------------------------------
 
 

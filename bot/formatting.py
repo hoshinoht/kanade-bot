@@ -101,6 +101,39 @@ def format_bosses(bosses: list[str]) -> str:
     return " + ".join(bosses) if bosses else "(no bosses)"
 
 
+#: The difficulty prefix spelled out, mirroring ``difficulties:`` in
+#: ``config/bosses.yaml``. Kept here rather than read from the table because
+#: every caller of :func:`boss_label` renders a stored token and has no
+#: :class:`bot.bosses.BossTable` to hand; ``tests/test_boss_labels.py`` fails if
+#: the two ever drift apart.
+DIFFICULTY_WORDS: dict[str, str] = {
+    "e": "Easy",
+    "n": "Normal",
+    "h": "Hard",
+    "c": "Chaos",
+    "x": "Extreme",
+}
+
+
+def boss_label(token: str) -> str:
+    """``"XKalos"`` -> ``"Extreme Kalos"``, for anything a member reads.
+
+    A stored token is a difficulty letter followed by the boss's short name, so
+    the words are recoverable from the token alone. Anything that does not look
+    like one -- a boss whose short name is a single letter, a token from a table
+    that has been re-lettered -- comes back unchanged rather than mangled.
+    """
+    letter, short = token[:1].lower(), token[1:]
+    word = DIFFICULTY_WORDS.get(letter)
+    return f"{word} {short}" if word and short else token
+
+
+def boss_labels(bosses: Iterable[str]) -> str:
+    """Every boss on a run, spelled out: ``"Extreme Kalos + Hard Bellona"``."""
+    labelled = [boss_label(token) for token in bosses]
+    return " + ".join(labelled) if labelled else "(no bosses)"
+
+
 def format_participants(participants: list[str], who: Audience | None = None) -> str:
     """The people on a run: mentions for whoever ``who`` says may be notified.
 
@@ -487,8 +520,18 @@ KIND_VERB: dict[str, str] = {
     "split": "split",
     "otot": "own time",
     "sub": "stand-in",
-    "fix": "fixed timing",
+    # Deliberately the mirror of the "remove weekly" verb below: the two `fix`
+    # cards are opposites, and a reader glancing at a card should not have to
+    # work out which one they are looking at.
+    "fix": "new weekly",
     "rsvp": "answer",
+}
+
+#: How an `rsvp` amendment reads on a proposal card.
+RSVP_ANSWER: dict[str | None, str] = {
+    "yes": "**can make it**",
+    "no": "**can't make it**",
+    "maybe": "**not sure yet**",
 }
 
 TBD = "**TBD**"
@@ -513,6 +556,29 @@ def when_text(amendment: dict, tz: ZoneInfo) -> str:
     return TBD
 
 
+def weekly_text(amendment: dict, tz: ZoneInfo) -> str:
+    """How a `fix` that *creates* a baseline reads: the night, and that it recurs.
+
+    A recurring timing rendered as a date -- "**Tue 02 Sep 21:30**", which is all
+    a `fix` used to say -- is indistinguishable from the one-night `add` beside
+    it, and the two are a fortnight apart in what a ✅ commits the party to. The
+    weekday and HH:MM come from the payload, which is what ``fixed_runs``
+    actually stores; a row that never got one (a day with no time) falls back to
+    the words that were written, still labelled as recurring.
+    """
+    payload = amendment.get("payload") or {}
+    weekday, hhmm = payload.get("weekday"), payload.get("time")
+    when = (
+        f"**every {WEEKDAY_NAMES[int(weekday)]} {hhmm}**"
+        if weekday is not None and hhmm
+        else f"{when_text(amendment, tz)} — **and every week after**"
+    )
+    return (
+        f"{when} — recurring from now on, not a one-off; "
+        "this week's run is added if that night is still ahead"
+    )
+
+
 def proposal_line(
     amendment: dict, run: dict | None, tz: ZoneInfo, who: Audience | None = None
 ) -> tuple[str, str]:
@@ -522,15 +588,34 @@ def proposal_line(
     amendment's: the `#id` beside them points at the run, and showing one run's
     id next to another's bosses is how a reader ✅s the wrong night.
     """
-    bosses = format_bosses(run["bosses"] if run is not None else amendment["bosses"])
-    verb = KIND_VERB.get(amendment["kind"], amendment["kind"])
+    # Spelled out, not the stored token: a card is the last thing anyone reads
+    # before committing to a night, and "XKalos" is a name only the regulars can
+    # decode. Tokens stay the input vocabulary everywhere else.
+    bosses = boss_labels(run["bosses"] if run is not None else amendment["bosses"])
+    payload = amendment.get("payload") or {}
+    #: A `fix` that removes rather than creates. Given its own verb and its own
+    #: line because the two are opposites, and because "remove the fixed run"
+    #: and "cancel tonight" are a fortnight apart in consequence: one stops the
+    #: guild scheduling this boss at all, the other frees up one evening.
+    removes_baseline = amendment["kind"] == "fix" and payload.get("op") == "remove"
+    verb = (
+        "remove weekly" if removes_baseline else KIND_VERB.get(amendment["kind"], amendment["kind"])
+    )
     name = f"{verb} · {bosses}"
     if run is not None:
         name += f" · `#{short_id(run['id'])}`"
 
     lines: list[str] = []
     kind = amendment["kind"]
-    if kind in ("move", "add", "split", "fix"):
+    if removes_baseline:
+        when = payload.get("weekly_when")
+        lines.append(
+            f"**stop scheduling this every week**{f' ({when})' if when else ''} — "
+            "future weeks will not be scheduled, and this week's run is cancelled"
+        )
+    elif kind == "fix":
+        lines.append(weekly_text(amendment, tz))
+    elif kind in ("move", "add", "split"):
         old = (
             f"~~{local_day(run['datetime'], tz)} {local_time(run['datetime'], tz)}~~ → "
             if run is not None and kind == "move"
@@ -555,7 +640,12 @@ def proposal_line(
             # to find a temp is a job nothing here does, and a card that says
             # "temp needed" is a to-do item rather than something to ✅.
             lines.append(f"{format_participants(out, who)} **out this week**")
-    else:  # pragma: no cover - rsvp never reaches a card
+    elif kind == "rsvp":
+        # The extractor applies a chat answer straight away and never cards one.
+        # The chatbot does card it: it is answering on somebody's behalf from a
+        # sentence it was told, so the person gets to see it before it counts.
+        lines.append(RSVP_ANSWER.get(amendment.get("rsvp"), "**answered**"))
+    else:  # pragma: no cover - every kind above is handled
         lines.append(when_text(amendment, tz))
 
     people = amendment["participants"] or (run["participants"] if run else [])

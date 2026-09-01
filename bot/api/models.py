@@ -301,6 +301,102 @@ class ExtractionDetailOut(ExtractionOut):
     amendments: list[AmendmentOut]
 
 
+# --- chat interactions ------------------------------------------------------
+
+
+class ChatInteractionOut(BaseModel):
+    id: str
+    short_id: str
+    at: str
+    local_time: str
+    author_id: str | None
+    author_name: str
+    channel_id: str | None
+    channel_name: str | None
+    model: str
+    #: answered | failed.
+    outcome: str
+    rounds: int
+    latency_ms: int | None
+    tool_names: list[str]
+    tool_count: int
+    #: Null where the model reported no usage, which is not the same as zero.
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    url: str | None
+
+
+class ChatCardOut(BaseModel):
+    """A proposal card one tool call raised."""
+
+    id: str
+    short_id: str
+    kind: str | None = None
+    kind_label: str | None = None
+    status: str | None = None
+    card_url: str | None = None
+
+
+class ChatToolCallOut(BaseModel):
+    name: str
+    #: As the DEBUG log renders them, truncated to ~200 characters.
+    arguments: str
+    ms: int | None
+    outcome: str
+    ok: bool
+    created: list[ChatCardOut]
+
+
+class ChatInteractionDetailOut(ChatInteractionOut):
+    question: str
+    reply: str
+    error: str | None
+    model_ms: int | None
+    tools_ms: int | None
+    message_id: str | None
+    tool_calls: list[ChatToolCallOut]
+
+
+class ChatModelStatsOut(BaseModel):
+    model: str
+    count: int
+    answered: int
+    failed: int
+    prompt_tokens: int
+    completion_tokens: int
+    avg_latency_ms: int | None
+    p95_latency_ms: int | None
+
+
+class ChatSummaryOut(BaseModel):
+    models: list[ChatModelStatsOut]
+    count: int
+    answered: int
+    failed: int
+    prompt_tokens: int
+    completion_tokens: int
+
+
+# --- the audit trail --------------------------------------------------------
+
+
+class AuditOut(BaseModel):
+    """One recorded change: when, from where, who, and what."""
+
+    id: str
+    at: str
+    local_time: str
+    #: portal | cli | discord | chat | card | system.
+    surface: str
+    #: A tailnet login, a Discord user id, an OS username, or `token`.
+    actor: str
+    action: str
+    #: The run, card, fixed timing or config key that changed.
+    subject: str | None
+    short_subject: str | None
+    detail: str
+
+
 # --- members, reminders -----------------------------------------------------
 
 
@@ -358,6 +454,12 @@ class ConfigOut(BaseModel):
     paused: bool
     extract_enabled: bool
     quiet_mode: bool
+    chat_mode: bool
+    #: The chatbot needs a role and a channel before `chat_mode` means anything.
+    chat_configured: bool = False
+    chat_channels: list[str] = []
+    chat_categories: list[str] = []
+    chat_model: str = ""
     timezone: str
     reset: str
     model: str
@@ -380,6 +482,7 @@ class ConfigIn(Strict):
     paused: bool | None = None
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
+    chat_mode: bool | None = None
 
 
 class DigestIn(Strict):
@@ -523,6 +626,7 @@ __all__ = [
     "AmendmentOut",
     "ApproveIn",
     "ApproveOut",
+    "AuditOut",
     "BossOut",
     "ConfigIn",
     "ConfigOut",

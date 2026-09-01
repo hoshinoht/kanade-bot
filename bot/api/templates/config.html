@@ -55,6 +55,29 @@
   </section>
 
   <section class="card">
+    <div class="card__head"><h2 class="card__title">Chatbot</h2></div>
+    <div class="run__actions" style="justify-content: flex-start">
+      <form method="post" action="/config">
+        <input type="hidden" name="chat_mode" value="{{ '0' if config.chat_mode else '1' }}">
+        <button class="btn" type="submit" {{ "disabled" if not config.chat_configured }}>{{ "Turn the chatbot off" if config.chat_mode else "Turn the chatbot on" }}</button>
+      </form>
+    </div>
+    <p class="run__meta">
+      {% if config.chat_configured %}
+        The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,
+        answering in {{ config.chat_channels | length }} channel(s) with
+        <strong>{{ config.chat_model }}</strong>. It replies only when mentioned by
+        somebody holding the chat role, and every change it drafts is a card
+        somebody still has to ✅.
+      {% else %}
+        Not configured — set <span class="mono">CHAT_PILOT_ROLE_ID</span> and
+        <span class="mono">CHAT_PILOT_CHANNEL_IDS</span> in <span class="mono">.env</span>
+        and restart. Until both are set the bot answers nobody.
+      {% endif %}
+    </p>
+  </section>
+
+  <section class="card">
     <div class="card__head"><h2 class="card__title">Notifications</h2></div>
     <div class="run__actions" style="justify-content: flex-start">
       <form method="post" action="/config">

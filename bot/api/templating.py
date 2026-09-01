@@ -37,6 +37,8 @@ NAV = [
     ("fixed", "/fixed", "Fixed"),
     ("inbox", "/inbox", "Inbox"),
     ("extractions", "/extractions", "Extractions"),
+    ("chat", "/chat", "Chat"),
+    ("audit", "/audit", "Audit"),
     ("members", "/members", "Members"),
     ("bosses", "/bosses", "Bosses"),
     ("reminders", "/reminders", "Reminders"),
@@ -52,6 +54,19 @@ def local_dt(value: Any, bot: BossBot, fmt: str = "%a %d %b %H:%M") -> str:
     if not isinstance(moment, datetime):  # pragma: no cover - defensive
         return str(value)
     return moment.astimezone(bot.tz).strftime(fmt)
+
+
+def duration(ms: int | None) -> str:
+    """Milliseconds as something readable at a glance.
+
+    Under a second stays in milliseconds, which is the unit a tool call is
+    argued about in. Above it, seconds: a chat answer is tens of thousands of
+    milliseconds and ``31240 ms`` has to be counted digit by digit before it
+    means "half a minute".
+    """
+    if ms is None:
+        return "—"
+    return f"{ms} ms" if ms < 1000 else f"{ms / 1000:.1f} s"
 
 
 def confidence_band(value: float | None) -> str:
@@ -73,6 +88,7 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
     env.filters["local_dt"] = lambda v, fmt="%a %d %b %H:%M": local_dt(v, bot, fmt)
     env.filters["short_id"] = short_id
     env.filters["confidence_band"] = confidence_band
+    env.filters["duration"] = duration
     env.globals.update(
         {
             "tz_name": bot.settings.tz,
@@ -87,4 +103,12 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
     return templates
 
 
-__all__ = ["HTMX_SRC", "HTMX_SRI", "NAV", "build_templates", "confidence_band", "local_dt"]
+__all__ = [
+    "HTMX_SRC",
+    "HTMX_SRI",
+    "NAV",
+    "build_templates",
+    "confidence_band",
+    "duration",
+    "local_dt",
+]

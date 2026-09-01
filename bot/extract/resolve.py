@@ -62,7 +62,9 @@ TODAY_WORDS = frozenset({"today", "tonight", "tonite", "tnite", "this evening", 
 #: ...and these mean the same day, but so vaguely that a past clock time should
 #: roll into tomorrow rather than resolve to something that already happened.
 SOON_WORDS = frozenset({"now", "later", "ltr", "l8r", "soon", "in a bit", "just now"})
-TOMORROW_WORDS = frozenset({"tmr", "tmrw", "tmr night", "tomorrow", "tomorow", "tomm", "2mr"})
+TOMORROW_WORDS = frozenset(
+    {"tmr", "tmrw", "tmmr", "tmr night", "tomorrow", "tomorow", "tomm", "2mr"}
+)
 YESTERDAY_WORDS = frozenset({"ytd", "yesterday"})
 
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
@@ -281,4 +283,9 @@ def _parse_weekday_only(day_ref: str | None) -> bool:
     return any(w in _WEEKDAY_ALIASES for w in re.split(r"[^a-z0-9]+", cleaned) if w)
 
 
-__all__ = ["PM_CUTOFF", "Resolved", "parse_clock", "resolve"]
+#: Every spelling of a weekday this guild actually uses, mapped to its index.
+#: Public because it is not only the extractor's: :mod:`bot.chat.tools` reads
+#: "hstar weds" the same way, and two tables would drift.
+WEEKDAY_ALIASES = _WEEKDAY_ALIASES
+
+__all__ = ["PM_CUTOFF", "WEEKDAY_ALIASES", "Resolved", "parse_clock", "resolve"]
