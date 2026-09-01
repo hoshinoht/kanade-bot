@@ -71,6 +71,24 @@ async def test_it_posts_a_card_and_creates_no_run(chat_bot, chat_seeded):
     assert row["proposal_message_id"]
 
 
+@pytest.mark.parametrize(
+    "spoken", ["tonight 23:00", "tonight at 2300", "tmr 2300", "ltr 10pm", "2300"]
+)
+async def test_the_shorthand_people_actually_type_produces_a_card(chat_bot, chat_seeded, spoken):
+    """The live failure: "schedule Extreme Kalos tonight at 2300" could not parse.
+
+    `parse_when` is what fixed it (see `tests/test_parse_when.py`); this is the
+    end of that wire -- a card, not an apology.
+    """
+    answer = await tools.dispatch(
+        context(chat_bot), "propose_add", {"boss": "XKalos", "when": spoken}
+    )
+    assert "✅" in answer
+    row = proposals(chat_bot)[0]
+    assert (row["kind"], row["bosses"]) == ("add", ["XKalos"])
+    assert row["new_datetime"].astimezone(TZ).year < 2100
+
+
 async def test_the_asker_is_the_default_party(chat_bot, chat_seeded):
     await tools.dispatch(
         context(chat_bot, author_id=1002),

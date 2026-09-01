@@ -160,6 +160,20 @@ class FakeOllama:
         """The system prompt of the first call."""
         return self.calls[0]["messages"][0]["content"]
 
+    def conversation(self, index: int = 0) -> list[dict]:
+        """One call's messages without the trailing voice reminder.
+
+        Every call ends with that reminder by design (it is the last thing the
+        model reads before composing), so tests about the *conversation* -- what
+        was remembered, what came back from a tool -- drop it rather than
+        counting round it.
+        """
+        return self.prompts[index][:-1]
+
+    def reminder(self, index: int = -1) -> dict:
+        """The trailing voice reminder of one call."""
+        return self.calls[index]["messages"][-1]
+
 
 # ---------------------------------------------------------------------------
 # the guild

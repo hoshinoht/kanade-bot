@@ -156,6 +156,19 @@ unprompted. If a line needs a foreign phrase to work, it's the wrong line.
 Give the model 5-8 good lines and 3-5 bad ones with a note on *why* each fails. This section
 does more steering per token than any amount of adjectives above it.
 
+**The bot reads the `Good` lines below and shows them to the model** as few-shot examples, near
+the end of the prompt. The convention it looks for is exactly what you see here: a `**Good**`
+heading, then one line per example written as `> ` followed by the line in backticks. It stops
+at the `**Bad**` heading, ignores anything inside a code fence, and skips unfilled
+`<placeholder>` slots — so replace the placeholders below with real lines or nothing is sent.
+
+You may have **several `Good` sections**, and it is worth having them: a heading may be
+qualified, e.g. `**Good — chat-pilot replies (answering questions and relaying tool results)**`,
+which is the section that steers the bot's *answers* rather than its announcements. The budget
+(at most 8 examples, ~600 characters) is shared **round-robin across sections**, one from each
+in turn, so every section is represented no matter how long the first one is. Put the strongest
+line of each section first.
+
 **Good**
 
 > `<a scheduling announcement with a light persona touch>`

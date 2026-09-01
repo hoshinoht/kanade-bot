@@ -28,6 +28,7 @@ import dateparser
 from .. import formatting
 from ..bosses import BossParseError
 from ..export import message_record
+from ..extract import resolve
 from ..extract.commit import commit, reject
 from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
@@ -794,12 +795,132 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: How far ahead a parsed date may land before it is treated as a misreading.
+#: ``dateparser`` reads a bare ``2300`` as the *year* 2300, which reached a
+#: proposal card three centuries out; nothing this guild schedules is more than
+#: a boss week or two away, so anything past this is a parse that went wrong
+#: rather than a plan.
+MAX_HORIZON = timedelta(days=400)
+
+
+def _day_words() -> list[tuple[str, str]]:
+    """``[(what people type, what dateparser understands)]``, longest first.
+
+    Built from the extractor's own day vocabulary
+    (:mod:`bot.extract.resolve`) rather than a second table, so "tmr" means
+    tomorrow in `/amend` and in chat for the same reason and at the same time.
+    Deliberately *only* the day words: this is a parser for text somebody typed
+    into a command, not the extractor's fuzzy keyword gate.
+    """
+    pairs = [
+        *((word, "today") for word in resolve.TODAY_WORDS | resolve.SOON_WORDS),
+        *((word, "tomorrow") for word in resolve.TOMORROW_WORDS),
+        *((word, "yesterday") for word in resolve.YESTERDAY_WORDS),
+    ]
+    # Longest first so "tmr night" is replaced before "tmr" can be.
+    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+
+_DAY_WORDS = _day_words()
+_DAY_WORD_RE = re.compile(
+    r"\b(" + "|".join(re.escape(word) for word, _ in _DAY_WORDS) + r")\b", re.IGNORECASE
+)
+_REPLACEMENTS = {word.lower(): standard for word, standard in _DAY_WORDS}
+
+#: "tomorrow night 9pm" -- the night is already in the 9pm, and dateparser
+#: returns nothing at all for the pair.
+_NIGHT_AFTER_DAY_RE = re.compile(
+    r"\b(today|tomorrow|yesterday)\s+(?:night|nite|evening)\b", re.IGNORECASE
+)
+
+#: A clock time and nothing else: ``2300``, ``930pm``, ``9:30 pm``, ``9+pm``,
+#: ``1030~11+pm``. Tight on purpose -- ``2026-09-02 21:30`` must not match, or a
+#: real date would be read as a time.
+_CLOCK_ONLY_RE = re.compile(
+    r"^\s*\d{1,2}[:.]?(?:\d{2})?\s*\+?\s*"
+    r"(?:[~\-]|to|till|until)?\s*(?:\d{1,2}[:.]?(?:\d{2})?\s*\+?\s*)?"
+    r"(?:a\.?m\.?|p\.?m\.?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+#: A day is already named, so a loose 3-4 digit number beside it is a clock time.
+_HAS_DAY_RE = re.compile(
+    r"\b(?:today|tomorrow|yesterday|"
+    + "|".join(re.escape(word) for word in resolve.WEEKDAY_ALIASES)
+    + r")\b",
+    re.IGNORECASE,
+)
+#: ``2300`` / ``930``, not the ``2026`` of an ISO date and not a ``21:30`` half.
+_COMPACT_TIME_RE = re.compile(r"(?<![\d:./-])(\d{3,4})(?![\d:./-])")
+
+
+def _spell_out_compact_times(text: str) -> str:
+    """``"tomorrow 2300"`` -> ``"tomorrow 23:00"``.
+
+    dateparser reads ``tomorrow 2300`` as tomorrow at *the current time* -- it
+    takes the day and quietly drops the digits -- which is worse than failing,
+    because it produces a plausible wrong answer. Only done when a day is
+    already named, so ``sep 2026`` is still a year.
+    """
+    if not _HAS_DAY_RE.search(text):
+        return text
+
+    def spell(match: re.Match[str]) -> str:
+        clock = resolve.parse_clock(match.group(1))
+        return match.group(1) if clock is None else clock[0].strftime("%H:%M")
+
+    return _COMPACT_TIME_RE.sub(spell, text)
+
+
+def normalise_when(text: str) -> str:
+    """Rewrite the guild's day words into ones ``dateparser`` actually knows.
+
+    Measured, not guessed: ``tonight 23:00``, ``tonight at 11pm``, ``tmr 2300``,
+    ``tmr 9pm``, ``tomorrow night 9pm`` and ``ltr 9pm`` all return ``None`` from
+    dateparser, while ``today 23:00`` parses fine. The words are the whole
+    problem, so they are replaced before it ever sees them.
+    """
+    swapped = _DAY_WORD_RE.sub(
+        lambda match: _REPLACEMENTS[match.group(1).lower()],
+        text or "",
+    )
+    return _spell_out_compact_times(_NIGHT_AFTER_DAY_RE.sub(r"\1", swapped)).strip()
+
+
+def _bare_clock(bot: BossBot, text: str, now: datetime) -> datetime | None:
+    """``"2300"`` said in the evening -> 23:00 tonight, or tomorrow if it has gone.
+
+    dateparser reads a bare ``2300`` as a year and ``930pm`` as nothing at all.
+    :func:`bot.extract.resolve.parse_clock` already reads every form of these
+    that this guild writes, so it is reused rather than re-taught here.
+    """
+    if not _CLOCK_ONLY_RE.match(text):
+        return None
+    clock = resolve.parse_clock(text)
+    if clock is None:
+        return None
+    local = now.astimezone(bot.tz)
+    at = datetime.combine(local.date(), clock[0], tzinfo=bot.tz)
+    # "2300" at 23:30 means tomorrow: nobody schedules a run half an hour ago.
+    return at + timedelta(days=1) if at <= local else at
+
+
 def parse_when(bot: BossBot, text: str) -> datetime:
-    """``"wed 21:30"`` / ``"tomorrow 9:45pm"`` -> an instant, exactly as ``/amend``."""
+    """``"wed 21:30"`` / ``"tomorrow 9:45pm"`` -> an instant, exactly as ``/amend``.
+
+    Shared by `/amend`, the portal, `bossctl` and the chatbot, so the guild's own
+    shorthand has to work here or it works nowhere.
+    """
+    now = utcnow()
+    cleaned = normalise_when(text)
+    bare = _bare_clock(bot, cleaned, now)
+    if bare is not None:
+        return bare
     parsed = dateparser.parse(
-        text,
+        cleaned,
         settings={
-            "RELATIVE_BASE": local_naive(utcnow(), bot.tz),
+            "RELATIVE_BASE": local_naive(now, bot.tz),
             "PREFER_DATES_FROM": "future",
             "TIMEZONE": bot.settings.tz,
             "RETURN_AS_TIMEZONE_AWARE": True,
@@ -808,6 +929,12 @@ def parse_when(bot: BossBot, text: str) -> datetime:
     if parsed is None:
         raise BadRequest(
             f"couldn't read `{text}` as a date - try `wed 21:30` or `2026-09-02 21:30`"
+        )
+    if parsed > now + MAX_HORIZON:
+        # A misreading, not a plan: this is how a bare `2300` became the year 2300.
+        raise BadRequest(
+            f"couldn't read `{text}` as a date - that lands in "
+            f"{parsed.astimezone(bot.tz):%Y}. Try `wed 21:30` or `2026-09-02 21:30`"
         )
     return parsed
 
