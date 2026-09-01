@@ -14,6 +14,37 @@ and drafts changes through the same cards. And it serves a **web portal and a
 
 ![Ask the chatbot for a run and ratify the card it drafts](docs/images/chatbot-card.png)
 
+## The portal
+
+The boss week as seven day columns, each boss wearing its own entry artwork,
+with the night that matters marked and the quiet days folded down to a spine.
+The board below follows this page: light readers get the daytime face,
+dark-mode readers the Twilight colourway.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/portal-week-dark.png">
+  <img src="docs/images/portal-week.png" alt="The boss week as a seven-column day board">
+</picture>
+
+Clicking a card opens that run's sheet over the board — who is on it, who has
+answered, and every change you can make to it — and everything the bot can be
+told without a redeploy lives in one Settings window.
+
+<p align="center">
+  <img src="docs/images/portal-run-sheet.png" width="49.5%" alt="A run's sheet open over the board">
+  <img src="docs/images/portal-settings.png" width="49.5%" alt="The Settings window, on its Theme panel">
+</p>
+
+Limits answers "why is the bot slow?" — what has the model right now, what each
+budget has left, and who is waiting for it. Sign in with `ADMIN_TOKEN` once per
+device; five colourways with a light and an after-hours face each, picked in
+the browser and never sent to the bot.
+
+<p align="center">
+  <img src="docs/images/portal-limits.png" width="49.5%" alt="Capacity: the model, the budgets, and what is in flight">
+  <img src="docs/images/portal-login.png" width="49.5%" alt="The sign-in window">
+</p>
+
 ## What it does
 
 |                      |                                                                                                                                                                                   |
