@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Week — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Boss week of {{ schedule.week_label }}</p>
     <h1>{{ schedule.count }} run{{ "" if schedule.count == 1 else "s" }}{% if filtered %}, filtered{% endif %}</h1>
     {% if schedule.hidden %}
-    <p>{{ schedule.hidden }} past or cancelled run{{ "" if schedule.hidden == 1 else "s" }} hidden.
+    <p class="note">{{ schedule.hidden }} past or cancelled run{{ "" if schedule.hidden == 1 else "s" }} hidden.
       <a href="{{ url_toggle_past() }}">Show {{ "them" if schedule.hidden > 1 else "it" }}</a>.</p>
     {% elif show_past %}
-    <p>Showing everything, past runs included. <a href="{{ url_toggle_past() }}">Hide the past</a>.</p>
+    <p class="note">Showing everything, past runs included. <a href="{{ url_toggle_past() }}">Hide the past</a>.</p>
     {% endif %}
   </div>
   <div class="seg" role="group" aria-label="Which week">
@@ -18,6 +19,11 @@
   </div>
 </div>
 
+{% include "partials/now.html" %}
+
+{# The rail is the phone's shape-of-the-week; on a desktop the board below is
+   the same seven days at full size, so the rail stands down rather than saying
+   it twice. #}
 {% include "partials/rail.html" %}
 
 <form class="filters" method="get" action="/">
@@ -45,7 +51,11 @@
   {% if filtered %}<a class="btn btn--ghost" href="/?week={{ week }}">Clear</a>{% endif %}
 </form>
 
-<div id="days">
+{% include "partials/board.html" %}
+
+{# On a phone this is the list. On a desktop it is where every run's sheet
+   lives, closed, waiting for a card on the board to open it. #}
+<div id="days" class="days-list">
 {% include "partials/days.html" %}
 </div>
 {% endblock %}

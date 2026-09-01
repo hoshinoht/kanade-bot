@@ -95,7 +95,7 @@ def test_the_rail_starts_on_the_reset_day(auth, seeded):
 def test_the_week_page_filters(auth, seeded):
     """The listing narrows; the rail still shows the whole week's shape."""
     body = auth.get(f"/?channel={OTHER_CHANNEL}").text
-    listing = body[body.index('<div id="days">') :]
+    listing = body[body.index('<div id="days"') :]
     assert "XKalos" in listing
     assert "HStar" not in listing
     assert "HStar" in body  # still a pip on Monday
@@ -142,7 +142,7 @@ def test_the_chat_page_lists_who_asked_what_it_used_and_how_it_went(auth, seeded
 
 def test_the_chat_page_totals_the_models(auth, seeded):
     body = auth.get("/chat").text
-    strip = body[body.index('class="stats"') : body.index('class="card"')]
+    strip = body[body.index('class="stats"') : body.index('class="card pane"')]
     assert "qwen3:32b" in strip
     assert "answered 1 · failed 0" in strip
     assert "3,120 in · 64 out" in strip

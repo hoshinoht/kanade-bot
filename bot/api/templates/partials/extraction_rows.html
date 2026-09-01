@@ -1,0 +1,31 @@
+{% from "partials/macros.html" import pager, no_match %}
+<div class="pane__body">
+  {% if not listing.rows %}
+    {% if listing.q %}
+    {{ no_match(listing.q, "The search reads the model name, the prompt as sent and the raw reply.") }}
+    {% else %}
+    <div class="empty">
+      <strong>No calls logged yet.</strong>
+      The extractor runs when someone talks about scheduling in a watched channel. Force one with
+      <code>bossctl rescan --channel &lt;id&gt;</code>.
+    </div>
+    {% endif %}
+  {% else %}
+  <table>
+    <thead><tr><th>When</th><th>Model</th><th>Latency</th><th>Messages</th><th>Changes</th><th></th></tr></thead>
+    <tbody>
+      {% for row in listing.rows %}
+      <tr>
+        <td class="mono">{{ row.local_time }}</td>
+        <td>{{ row.model }}</td>
+        <td class="mono">{% if row.latency_ms is not none %}{{ row.latency_ms }} ms{% else %}—{% endif %}</td>
+        <td class="mono">{{ row.message_ids|length }}</td>
+        <td class="mono">{{ row.amendment_count }}</td>
+        <td><a class="btn" href="/extractions/{{ row.id }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{{ pager("/extractions", "extraction-rows", listing) }}

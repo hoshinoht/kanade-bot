@@ -8,11 +8,16 @@
 {% endfor %}
 
 {% if not schedule.days %}
-<div class="empty">
+<div class="empty empty--phone">
   <strong>Nothing scheduled for this week.</strong>
   Set a baseline timing on the Fixed page, or run <code>/fixed add</code> in a party channel.
 </div>
 {% else %}
+{# Every run is rendered exactly once, here, inside a <dialog>. On a phone the
+   dialogs are shown in place (portal.css) and this is the vertical list it has
+   always been; on a desktop they stay closed and the board above opens them.
+   One rendering means one set of ids, one htmx swap target per run, and no
+   copy that can go stale behind the other. #}
 {% for day in schedule.days %}
 <section class="day" id="day-{{ day.runs[0].local_date }}">
   <h2 class="day__head">
@@ -21,7 +26,7 @@
   </h2>
   <div class="runs">
     {% for run in day.runs %}
-      {% with index = loop.index0 %}{% include "partials/run.html" %}{% endwith %}
+    {% with index = loop.index0 %}{% include "partials/run_sheet.html" %}{% endwith %}
     {% endfor %}
   </div>
 </section>

@@ -1,0 +1,18 @@
+{# One run's sheet: the ordinary run card, in a <dialog> so the board can open
+   it without the card being written twice.
+
+   Three states, one element. On a desktop it is closed and the board's card
+   opens it -- as a modal with JavaScript, and through `dialog:target` without,
+   exactly as the Fixed page's editor does. On a phone the board is not
+   displayed at all and portal.css shows this in place, which is the vertical
+   list the page has always had.
+
+   `partials/run.html` is included unchanged, so every htmx action inside it
+   still targets `closest .run` and swaps its own article. #}
+<dialog class="runsheet" id="sheet-{{ run.short_id }}"
+        aria-label="{{ run.local_day }} {{ run.local_time }} — {{ run.bosses|join(' + ') }}">
+  <div class="runsheet__panel">
+    <button class="runsheet__x" type="button" data-dialog-close aria-label="Close">✕</button>
+    {% include "partials/run.html" %}
+  </div>
+</dialog>

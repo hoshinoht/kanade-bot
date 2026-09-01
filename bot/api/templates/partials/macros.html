@@ -63,6 +63,59 @@
 </div>
 {%- endmacro %}
 
+{% macro search_form(action, target, placeholder, q) %}
+{#- The search box for a table page. A real GET form: with htmx blocked it
+    submits, the page reloads filtered, and `?q=` is in the address bar either
+    way. With htmx it re-fetches the same URL and swaps only the rows.
+
+    The box is deliberately *outside* the region it swaps -- the same rule the
+    Limits page's live panel follows. A debounced keystroke that replaced the
+    element being typed into would eat the rest of the word. -#}
+<form class="pane__search" method="get" action="{{ action }}" role="search">
+  <label class="vh" for="{{ target }}-q">Search</label>
+  <input id="{{ target }}-q" type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}"
+         autocomplete="off" spellcheck="false"
+         hx-get="{{ action }}" hx-target="#{{ target }}" hx-swap="innerHTML"
+         hx-trigger="keyup changed delay:250ms, search" hx-push-url="true">
+  {# Submitting drops any `page`, which is right: a new search starts at one. #}
+  <button class="btn" type="submit">Search</button>
+</form>
+{%- endmacro %}
+
+{% macro pager(action, target, listing) %}
+{#- Prev/next as real links, so they work with the CDN blocked and can be
+    opened in a new tab; htmx upgrades them to a swap of the same region the
+    search box targets. Lives inside that region, because "page 3 of 7" is the
+    one piece of chrome a swap has to be able to change. -#}
+{% if listing.pages > 1 %}
+<nav class="pager" aria-label="Pages">
+  {% if listing.prev %}
+  <a class="btn" href="{{ action }}?{{ {'q': listing.q, 'page': listing.prev}|urlencode }}"
+     hx-get="{{ action }}?{{ {'q': listing.q, 'page': listing.prev}|urlencode }}"
+     hx-target="#{{ target }}" hx-swap="innerHTML" hx-push-url="true"
+     rel="prev">← Newer</a>
+  {% endif %}
+  <span class="pager__at mono">Page {{ listing.page }} of {{ listing.pages }}
+    · {{ "{:,}".format(listing.total) }} row{{ "" if listing.total == 1 else "s" }}</span>
+  {% if listing.next %}
+  <a class="btn" href="{{ action }}?{{ {'q': listing.q, 'page': listing.next}|urlencode }}"
+     hx-get="{{ action }}?{{ {'q': listing.q, 'page': listing.next}|urlencode }}"
+     hx-target="#{{ target }}" hx-swap="innerHTML" hx-push-url="true"
+     rel="next">Older →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}
+
+{% macro no_match(q, what) %}
+{#- What a search that found nothing says. Distinct from a page that has no
+    rows at all, which every one of these templates says in its own words. -#}
+<div class="empty">
+  <strong>Nothing matches “{{ q }}”.</strong>
+  {{ what }}
+</div>
+{%- endmacro %}
+
 {% macro limit_action(action, label) %}
 {#- One button on the Limits page. A real form with a real action, so it works
     with htmx blocked; with htmx it swaps the live panel in place. Every one of
