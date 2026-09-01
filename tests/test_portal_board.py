@@ -116,16 +116,33 @@ def test_a_busy_day_packs_its_runs_across_as_well_as_down():
     assert "align-content: start" in runs
 
 
-def test_a_difficulty_pill_never_falls_off_a_card():
-    """Measured at 153px columns: EXTREME's right edge overflowed the card by
-    21px and was clipped, because a boss is a name and a pill in one
-    inline-flex box and that box does not wrap. Now the pill drops under the
-    name, and a name too long for the column breaks instead of pushing out."""
+def test_a_difficulty_pill_never_falls_off_a_card_or_away_from_its_name():
+    """Two faults on the same card, measured a fortnight apart.
+
+    At 153px columns EXTREME's right edge overflowed by 21px and was clipped,
+    because a boss is a name and a pill in one inline-flex box that does not
+    wrap. Letting the box wrap fixed that and bought a worse one: at 230px a
+    two-boss card read "Carling NORMAL", then "Radiant Malefic Star" with its
+    own pill orphaned on the line below, looking like it belonged to neither.
+
+    The difficulty is half of what a boss's name means -- which Carling this
+    is -- so the box does not break at all now. What breaks is the row between
+    two bosses, and inside one it is the name that gives.
+    """
     rule = PAGE_CSS[PAGE_CSS.index(".runcard__bosses .boss {") :]
     rule = rule[: rule.index("}")]
 
-    assert "flex-wrap: wrap" in rule
-    assert "min-width: 0" in rule
+    assert "flex-wrap: nowrap" in rule
+    assert "min-width: 0" in rule  # the name shrinks and wraps instead
+    assert "max-width: 100%" in rule  # ...and still never past the card's edge
+
+    # One boss to a line, so a break can only fall between two of them.
+    stack = PAGE_CSS[PAGE_CSS.index("  .runcard__bosses {") :]
+    assert "flex-direction: column" in stack[: stack.index("}")]
+
+    # And the pill keeps its own width, so it is never squeezed instead.
+    pill = PAGE_CSS[PAGE_CSS.index(".runcard__bosses .pill {") :]
+    assert "flex: none" in pill[: pill.index("}")]
 
 
 def test_a_column_with_more_below_the_fold_says_so():
@@ -193,14 +210,14 @@ def test_an_own_time_run_says_so_rather_than_showing_a_clock(auth, fake_bot, see
 
 
 def test_the_state_and_the_tally_share_one_line(auth, seeded):
-    """"⚠️ unconfirmed" is an emoji and a word; at a card's width the word
-    wrapped and pushed the tally onto a third line -- three lines, two facts."""
+    """The state is a mark and a word; at a card's width the word wrapped and
+    pushed the tally onto a third line -- three lines, two facts."""
     board = board_of(auth.get("/").text)
     card = board[board.index('class="runcard') :]
     card = card[: card.index("</a>")]
 
     assert "runcard__top" in card
-    assert "⚠️" in card
+    assert 'data-icon="alert-triangle"' in card
     assert "runcard__tally" in card
     # The word is not laid out, but it is still read out and still in the tooltip.
     assert "unconfirmed" in card
@@ -208,9 +225,11 @@ def test_the_state_and_the_tally_share_one_line(auth, seeded):
     assert 'aria-hidden="true"' in card
 
 
-def test_the_mark_on_a_card_is_the_labels_own_emoji():
-    """One vocabulary. Somebody who has read "⚠️ unconfirmed" on a Discord card
-    should not have to learn a second glyph for it on the board."""
+def test_the_mark_on_a_discord_card_is_the_labels_own_emoji():
+    """One vocabulary over there. A reader who has seen "⚠️ unconfirmed" on a
+    card in Discord should not meet a second glyph on the next one -- which is a
+    fact about the bot's own messages and the API that quotes them. The portal
+    draws these six states instead; see `test_portal_icons.py`."""
     from bot import formatting
 
     assert set(formatting.STATUS_MARK) == set(formatting.STATUS_LABEL)

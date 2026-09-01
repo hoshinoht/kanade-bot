@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import boss_grid, search_form %}
+{% from "partials/icons.html" import icon %}
 {% block title %}Fixed timings — YuukiSakuna{% endblock %}
 {% block body_class %}framed{% endblock %}
 {% block content %}
@@ -31,7 +32,7 @@
         <p class="eyebrow">Baseline</p>
         <h2 class="modal__title" id="add-fixed-title">Add a weekly timing</h2>
       </div>
-      <button class="modal__x" type="button" data-dialog-close aria-label="Close">✕</button>
+      <button class="modal__x" type="button" data-dialog-close aria-label="Close">{{ icon("x") }}</button>
     </header>
 
     <div class="modal__body">

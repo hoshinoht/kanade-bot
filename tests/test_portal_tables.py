@@ -345,6 +345,26 @@ def test_the_framed_shell_does_not_resize_with_its_content():
     assert "margin: 0 auto" in base[: base.index("}")]
 
 
+def test_the_gap_under_the_menu_bar_lives_in_exactly_one_place():
+    """Config's window sat flush against the masthead. The gap every other page
+    had was `.page-head`'s own top margin -- and Config, being one window with a
+    title bar of its own, has no page head to carry it.
+
+    So the gap belongs to the shell, which every page has. Which means no page
+    head may keep one as well, at any width: the two would add up on the pages
+    that do have one, and those are most of them.
+    """
+    shell = CSS_RULES[CSS_RULES.index("\n.shell {") :]
+    padding = re.search(r"padding: ([^;]+);", shell[: shell.index("}")])
+    assert padding is not None
+    top = padding.group(1).split()[0]
+    assert float(top.removesuffix("rem")) > 0, top
+
+    for rule in re.findall(r"\.page-head \{[^}]*\}", CSS_RULES):
+        margin = re.search(r"margin: ([^;]+);", rule)
+        assert margin is None or margin.group(1).split()[0] == "0", rule
+
+
 @pytest.mark.parametrize("path,_target", TABLES)
 def test_a_framed_page_head_is_one_compact_band(auth, seeded, path, _target):
     """The pane is the page; everything above it is a caption.

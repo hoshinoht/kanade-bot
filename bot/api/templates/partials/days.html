@@ -1,5 +1,5 @@
-{# One re-read form per channel, referenced by the ⟳ buttons in the rows via
-   `form=`; a form per row would post the same thing several times over. #}
+{# One re-read form per channel, referenced by the re-read buttons in the rows
+   via `form=`; a form per row would post the same thing several times over. #}
 {% for target in rescan_targets %}
 <form id="reread-{{ target.id }}" method="post" action="/rescan" hidden>
   <input type="hidden" name="channels" value="{{ target.id }}">

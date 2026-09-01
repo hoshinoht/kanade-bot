@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi.templating import Jinja2Templates
 
+from ..formatting import STATUS_LABEL
 from ..ids import short_id
 from ..timeutil import from_iso, utcnow
 from ..weeks import WEEKDAY_NAMES
@@ -92,6 +93,35 @@ COLORWAYS = [
 #: What a browser with nothing stored gets: the palette on `:root`, so a page
 #: with no ``data-colorway`` at all is already wearing it.
 DEFAULT_COLORWAY = "otonose"
+
+#: The six run states as drawings rather than as emoji.
+#:
+#: :data:`bot.formatting.STATUS_MARK` is Discord's vocabulary and stays Discord's:
+#: over there a reaction *is* an emoji, and a reader who has seen "⚠️ unconfirmed"
+#: on a card should find the same glyph on the next one. The portal is not a chat
+#: client. Its emoji were the one thing on the page a colourway could not tint and
+#: the reader's operating system drew for us, so here each state is a name in
+#: ``partials/icons.html``, coloured by the ``.status--*`` rule it sits inside:
+#: amber for unconfirmed, green for confirmed, red for at risk, blue for own time,
+#: and the two finished states in the same grey the row itself fades to.
+#:
+#: A test holds these keys equal to ``STATUS_LABEL``'s, so a seventh state cannot
+#: reach the board with nothing to draw.
+STATUS_ICONS: dict[str, str] = {
+    "planned": "alert-triangle",
+    "confirmed": "check",
+    "at_risk": "alert-circle",
+    "otot": "clock",
+    "done": "check",
+    "cancelled": "x",
+}
+
+#: The same six labels with the emoji taken off the front, for the places the
+#: portal writes the state out in words beside its icon. Derived rather than
+#: retyped: the words are Discord's too, and only the picture differs.
+STATUS_WORDS: dict[str, str] = {
+    status: label.split(" ", 1)[-1] for status, label in STATUS_LABEL.items()
+}
 
 #: The Config window's sections, in the order the sidebar lists them: the four
 #: things changed often, then how it looks, then the two actions, then the two
@@ -180,6 +210,8 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
             "colorways": COLORWAYS,
             "default_colorway": DEFAULT_COLORWAY,
             "config_sections": CONFIG_SECTIONS,
+            "status_icons": STATUS_ICONS,
+            "status_words": STATUS_WORDS,
             "weekday_names": WEEKDAY_NAMES,
             "htmx_src": HTMX_SRC,
             "htmx_sri": HTMX_SRI,
@@ -198,6 +230,8 @@ __all__ = [
     "NAV",
     "NAV_GROUPS",
     "NAV_PINNED",
+    "STATUS_ICONS",
+    "STATUS_WORDS",
     "build_templates",
     "confidence_band",
     "duration",

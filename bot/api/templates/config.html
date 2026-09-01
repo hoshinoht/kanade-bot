@@ -133,10 +133,14 @@
             <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
           </form>
         </div>
+        {# The 🔕 stays an emoji: it is not this page's mark but the character
+           the bot actually puts on the message (`formatting.QUIET_MARKER`), and
+           naming it with anything else would describe something the reader will
+           never find in Discord. #}
         <p class="note">
           Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
           While it is on the bot posts everything as usual but notifies nobody —
-          names still show, no pings go out, and each message is marked 🔕.
+          names still show, no pings go out, and each message is marked 🔕 in Discord.
         </p>
       </section>
 

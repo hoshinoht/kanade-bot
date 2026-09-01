@@ -79,7 +79,11 @@ def test_the_week_page_shows_the_rail_the_runs_and_the_tally(auth, seeded):
     assert 'class="rail"' in body
     assert "HStar" in body and "XKalos" in body
     assert "1/2 on" in body
-    assert "⚠️ unconfirmed" in body
+    # The state as the portal writes it: its own drawing, then the word. The
+    # emoji in front of it is Discord's and stays on Discord's cards.
+    assert 'data-icon="alert-triangle"' in body
+    assert "unconfirmed" in body
+    assert "⚠️" not in body
 
 
 def test_the_rail_starts_on_the_reset_day(auth, seeded):
@@ -785,7 +789,7 @@ def test_showing_the_past_offers_the_way_back(auth, fake_bot, seeded):
     fake_bot.repo.set_run_status(seeded["run_star"], "done")
     body = auth.get("/?show_past=1").text
     assert "Hide the past" in body
-    assert "🏁 done" in body
+    assert "status status--done" in body
 
 
 # --- difficulty pills and the boss grid (item 4) ----------------------------
@@ -910,19 +914,29 @@ def test_the_pill_toggle_is_big_enough_to_tap(client):
 # --- channel access (item 10) -----------------------------------------------
 
 
+def access_table(body: str) -> str:
+    """The matrix itself, without the legend under it that explains it.
+
+    The boundary matters: the legend opens with its own drawn cross ("A ✕
+    means..."), so a slice that reaches into it finds an x under every table,
+    including one that is all ticks."""
+    start = body.index('id="access"')
+    return body[start : body.index("</table>", start)]
+
+
 def test_the_config_page_shows_what_the_bot_may_do(auth, fake_bot, seeded):
     body = auth.get("/config").text
     assert "Channel access" in body
     assert "#hstar-party" in body
-    table = body[body.index('id="access"') : body.index("A ❌ means")]
-    assert "❌" not in table
+    assert 'data-icon="x"' not in access_table(body)
 
 
 def test_a_missing_permission_is_visible_at_a_glance(auth, fake_bot, seeded):
     fake_bot.channels[WATCHED_CHANNEL].permissions.send_messages = False
     body = auth.get("/config").text
-    table = body[body.index('id="access"') : body.index("A ❌ means")]
-    assert "❌" in table
+    table = access_table(body)
+    assert 'data-icon="x"' in table
+    assert "missing" in table  # what a reader who cannot see the cross is told
     assert "Edit Channel" in body
 
 
