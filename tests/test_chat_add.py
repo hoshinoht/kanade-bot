@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import pytest
 
+from bot.api import service
 from bot.chat import tools
 from bot.extract.commit import commit, may_commit
 
 from .chat_support import CHAT_CHANNEL
-from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
+from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 
 pytestmark = pytest.mark.anyio
 
@@ -85,12 +86,17 @@ async def test_a_spelled_out_difficulty_is_accepted(chat_bot, chat_seeded):
 @pytest.mark.parametrize(
     "spoken", ["tonight 23:00", "tonight at 2300", "tmr 2300", "ltr 10pm", "2300"]
 )
-async def test_the_shorthand_people_actually_type_produces_a_card(chat_bot, chat_seeded, spoken):
+async def test_the_shorthand_people_actually_type_produces_a_card(
+    chat_bot, chat_seeded, spoken, monkeypatch
+):
     """The live failure: "schedule Extreme Kalos tonight at 2300" could not parse.
 
     `parse_when` is what fixed it (see `tests/test_parse_when.py`); this is the
     end of that wire -- a card, not an apology.
     """
+    now = kl(2026, 9, 1, 20, 0)
+    monkeypatch.setattr(service, "utcnow", lambda: now)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
     answer = await tools.dispatch(
         context(chat_bot), "propose_add", {"boss": "XKalos", "when": spoken}
     )
