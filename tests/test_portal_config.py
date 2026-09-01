@@ -228,6 +228,35 @@ def test_a_fieldset_does_not_draw_a_second_box_inside_the_window(auth, seeded):
     assert "border: 0;" in rule_body(".settings__panel fieldset")
 
 
+# --- what .env holds --------------------------------------------------------
+
+
+def test_the_two_models_are_two_rows(auth, fake_bot, seeded):
+    """They are two settings and they really do differ -- a small local model
+    reads the party channels, a bigger one does the talking -- so one row called
+    "Model" said the wrong thing about whichever the reader had in mind."""
+    fake_bot.settings.ollama_model = "reader:20b"
+    fake_bot.settings.chat_pilot_model = "talker:120b"
+    env = auth.get("/config").text
+    env = env[env.index('id="env"') :]
+
+    assert ">Data model</th>" in env
+    assert ">Speech model</th>" in env
+    assert "reader:20b" in env
+    assert "talker:120b" in env
+    assert ">Model</th>" not in env
+
+
+def test_a_host_with_no_speech_model_says_so_rather_than_showing_a_gap(auth, fake_bot, seeded):
+    """The same way the digest channel's row does, two rows below."""
+    fake_bot.settings.chat_pilot_model = ""
+    env = auth.get("/config").text
+    env = env[env.index('id="env"') :]
+
+    assert ">Speech model</th>" in env
+    assert "not set" in env
+
+
 def test_everything_still_renders_with_an_empty_database(auth):
     response = auth.get("/config")
 

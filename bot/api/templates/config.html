@@ -290,7 +290,14 @@
             <tbody>
               <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
               <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
-              <tr><th>Model</th><td class="mono">{{ config.model }}</td></tr>
+              {# Two rows, because they are two models and here they differ: a
+                 local one reads the channels, a bigger one does the talking.
+                 One row called "Model" said the wrong thing about whichever of
+                 them the reader had in mind. #}
+              <tr><th title="Reads the party channels and drafts the cards in the Inbox — the extractor, and every rescan">Data model</th>
+                <td class="mono">{{ config.model }}</td></tr>
+              <tr><th title="Answers when somebody with the chat role mentions the bot">Speech model</th>
+                <td class="mono">{{ config.chat_model or "not set" }}</td></tr>
               <tr><th>Ollama</th><td class="mono">{{ config.ollama_host }}</td></tr>
               <tr><th>Minimum confidence</th><td class="mono">{{ config.min_confidence }}</td></tr>
               <tr><th>Digest channel</th><td class="mono">{{ config.post_channel_id or "not set" }}</td></tr>

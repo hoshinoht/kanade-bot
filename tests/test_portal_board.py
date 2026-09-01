@@ -367,6 +367,19 @@ def test_the_sheets_close_control_is_not_on_top_of_the_cards_own_actions(auth, s
     assert "position: absolute" not in unpinned
 
 
+def test_every_control_in_that_corner_has_a_face(auth, seeded):
+    """The corner the card keeps for itself is also where the entry-art veil is
+    at its most opaque, and a transparent control there reads as a word lying on
+    a picture. Both of them wear `.btn`'s own surface and border, which follows
+    every colourway and both faces without a rule about artwork anywhere."""
+    card = card_for(auth.get("/").text, service.short_id(seeded["run_star"]))
+    start = card.index('class="run__actions"')
+    actions = card[start : card.index("</div>", start)]
+
+    assert actions.count('class="btn"') == 2  # Move, and Preview ping
+    assert "btn--ghost" not in actions
+
+
 # --- more than one boss on a run --------------------------------------------
 
 
