@@ -31,7 +31,15 @@
       {% for run in column.runs %}
       <a class="runcard runcard--{{ run.status }}" href="#sheet-{{ run.short_id }}"
          data-dialog="sheet-{{ run.short_id }}"
-         title="{{ run.local_day }} {{ run.local_time }} — {{ run.bosses|join(' + ') }}">
+         title="{{ run.local_day }} {{ run.local_time }} — {{ run.boss_detail|map(attribute='full')|join(' + ') }}">
+        {# The lead boss's artwork behind the card, faded and masked away from
+           everything on it. Only the first: the sheet this opens has room to
+           split its edge between two, a card this size has room for one
+           picture. A run with no artwork gets no element -- and either way the
+           card is exactly as tall as it was. #}
+        {% if run.entry_art %}
+        <img class="runcard__art" src="{{ run.entry_art[0] }}" alt="" loading="lazy" decoding="async">
+        {% endif %}
         <span class="runcard__top">
           <span class="runcard__time mono">
             {%- if run.status == "otot" %}own time{% else %}{{ run.local_time }}{% endif -%}
@@ -50,7 +58,11 @@
             <span class="runcard__tally mono">{{ run.yes }}/{{ run.participants|length }}</span>
           </span>
         </span>
-        <span class="runcard__bosses">{{ boss_list(run.boss_detail, level=False) }}</span>
+        {# Short tokens here and only here: `NCarling` and its pill fit on one
+           line at a column's width where "Carling" plus NORMAL did not, and the
+           full names are a hover and a screen-reader label away -- on the card's
+           own title above, and on each boss. #}
+        <span class="runcard__bosses">{{ boss_list(run.boss_detail, level=False, short=True) }}</span>
       </a>
       {% else %}
       <p class="board__none" aria-hidden="true">·</p>

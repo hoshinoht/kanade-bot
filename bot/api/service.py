@@ -332,14 +332,65 @@ def boss_view(bot: BossBot, token: str) -> dict:
         "letter": detail["letter"].upper(),
         "difficulty": detail["difficulty"].upper(),
         "label": bot.bosses.describe(token),
-        "portrait": portrait_url(bot, detail["short"]),
+        "portrait": portrait_url(bot, detail["short"], PORTAL_PORTRAIT_SIZE),
         "monogram": monogram(detail["full"]),
     }
 
 
-def portrait_url(bot: BossBot, short: str) -> str | None:
-    """The portal URL for a boss portrait, or ``None`` when there is no file."""
-    return f"/static/portraits/{short}" if bot.bosses.portrait_path(short) else None
+#: Every portrait the portal draws is a badge -- 26px beside a boss's name,
+#: 38px in the boss grid, and nothing anywhere bigger -- so all of them ask for
+#: the small render. The full file is artwork now: it is what Discord attaches
+#: as a card's thumbnail (:func:`bot.formatting.lead_portrait`), and what
+#: ``?size=full`` still serves to anything that wants it.
+PORTAL_PORTRAIT_SIZE = "icon"
+
+
+def portrait_url(bot: BossBot, short: str, size: str = "full") -> str | None:
+    """The portal URL for a boss portrait, or ``None`` when there is no file.
+
+    The size rides in the query rather than in the path so the two renders are
+    two cache entries under one route -- and so a boss with no small file, which
+    falls back to the big one, is still asked for under the URL the page wrote.
+    """
+    if bot.bosses.portrait_path(short, size) is None:
+        return None
+    return f"/static/portraits/{short}" + (f"?size={size}" if size != "full" else "")
+
+
+def entry_art_url(bot: BossBot, short: str) -> str | None:
+    """The portal URL for a boss's entry artwork, or ``None`` when there is none."""
+    return f"/static/entry/{short}" if bot.bosses.entry_art_path(short) else None
+
+
+#: How many pieces of entry artwork one card can wear. Two, because the sheet
+#: splits its right edge diagonally between them and a third would have nowhere
+#: to be -- and because a run here has never named more than two bosses anyway.
+MAX_ENTRY_ART = 2
+
+
+def run_entry_art(bot: BossBot, bosses: Sequence[str]) -> list[str]:
+    """The artwork a run's cards wear, in the order the run names its bosses.
+
+    The lead boss is first for the reason it always was: a run is named after
+    the boss it leads with, which is the same choice
+    :func:`bot.formatting.lead_portrait` makes for a card in Discord. The
+    compact card on the board has room for one picture and uses that one; the
+    sheet has room for the second and splits its right edge between them.
+
+    A boss with no file is absent rather than a gap, so two bosses of which one
+    has artwork make a one-layer card and not a half-empty two-layer one. An
+    empty list is the ordinary case on a fresh clone, the artwork being
+    git-ignored -- every surface that reads this has to render without it.
+    """
+    urls: list[str] = []
+    for token in bosses:
+        parts = bot.bosses.split(token)
+        url = entry_art_url(bot, parts[1].short) if parts else None
+        if url is not None:
+            urls.append(url)
+        if len(urls) == MAX_ENTRY_ART:
+            break
+    return urls
 
 
 def boss_grid(bot: BossBot, selected: Sequence[str] = ()) -> list[dict]:
@@ -368,7 +419,7 @@ def boss_grid(bot: BossBot, selected: Sequence[str] = ()) -> list[dict]:
                 "level": boss.level,
                 "difficulties": options,
                 "any_selected": any(o["selected"] for o in options),
-                "portrait": portrait_url(bot, boss.short),
+                "portrait": portrait_url(bot, boss.short, PORTAL_PORTRAIT_SIZE),
                 "monogram": monogram(boss.full),
             }
         )
@@ -397,6 +448,11 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
         "short_id": short_id(run["id"]),
         "bosses": run["bosses"],
         "boss_detail": [boss_view(bot, b) for b in run["bosses"]],
+        # Up to two, lead boss first -- see `run_entry_art`. Read by the board's
+        # compact cards, which take the first, and by the run card itself, which
+        # takes both: the same run view rendered twice rather than two sets of
+        # facts.
+        "entry_art": run_entry_art(bot, run["bosses"]),
         "datetime": to_iso(run["datetime"]),
         "local_date": local.strftime("%Y-%m-%d"),
         "local_day": formatting.local_day(run["datetime"], bot.tz),
@@ -2655,6 +2711,8 @@ __all__ = [
     "bosses_in_use",
     "monogram",
     "portrait_url",
+    "entry_art_url",
+    "run_entry_art",
     "approve",
     "cancel_run",
     "channel_is_watched",

@@ -133,8 +133,9 @@ def create_app(bot: BossBot) -> FastAPI:
     app.add_middleware(ActorMiddleware)
 
     # Routes before the mount: Starlette matches in registration order, and a
-    # Mount at /static would otherwise swallow /static/portraits/<boss>, which
-    # is served from the bind-mounted config directory rather than from here.
+    # Mount at /static would otherwise swallow /static/portraits/<boss> and
+    # /static/entry/<boss>, which are served from the bind-mounted config
+    # directory rather than from here.
     app.include_router(api_router)
     app.include_router(web_router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

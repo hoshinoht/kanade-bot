@@ -45,7 +45,10 @@ class BossOut(BaseModel):
     letter: str
     difficulty: str
     label: str
-    #: ``/static/portraits/<short>`` when `config/portraits/` has a file.
+    #: ``/static/portraits/<short>?size=icon`` when `config/portraits/` has a
+    #: file. The small render, because every portrait either surface draws is a
+    #: badge; drop the query for the full picture, which is what Discord
+    #: attaches to a card.
     portrait: str | None = None
     monogram: MonogramOut | None = None
 
