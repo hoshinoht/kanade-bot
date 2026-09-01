@@ -431,6 +431,106 @@ def test_the_chat_log_needs_the_token(client, seeded):
     assert client.get("/api/chat").status_code == 401
 
 
+# --- capacity ---------------------------------------------------------------
+
+
+def test_limits_reports_an_idle_host(auth, fake_bot):
+    body = auth.get("/api/limits").json()
+    assert body["model"] == {"busy": False, "holder": None, "held_for_s": 0.0}
+    assert body["global_pool"] == {
+        "count": fake_bot.settings.chat_pilot_global_rate_count,
+        "window_s": fake_bot.settings.chat_pilot_global_rate_window_s,
+        "used": 0,
+        "remaining": fake_bot.settings.chat_pilot_global_rate_count,
+    }
+    assert body["per_user"]["windows"] == []
+    assert body["jobs"] == {
+        "answering": [],
+        "extracting": False,
+        "rescan": {"worker_running": True, "queued": 0, "job": None, "channel": None},
+    }
+
+
+def test_limits_names_who_is_holding_the_model(auth, fake_bot, model_lock):
+    """The point of the label: "busy" is half an answer and "busy with what" is the rest."""
+    from bot import modellock
+
+    assert auth.portal.call(modellock.acquire_within, 5, modellock.EXTRACTOR) is True
+    try:
+        body = auth.get("/api/limits").json()
+    finally:
+        modellock.release()
+
+    assert body["model"]["busy"] is True
+    assert body["model"]["holder"] == "extractor"
+    assert body["model"]["held_for_s"] >= 0
+    # An extraction is simply whatever has the model, so the jobs view agrees.
+    assert body["jobs"]["extracting"] is True
+    assert auth.get("/api/limits").json()["model"]["busy"] is False
+
+
+def test_limits_reports_a_lock_taken_without_a_label_as_busy(auth, fake_bot, model_lock):
+    """Reporting "idle" for a lock that is plainly held is the one wrong answer."""
+    auth.portal.call(model_lock.acquire)
+    try:
+        body = auth.get("/api/limits").json()
+    finally:
+        model_lock.release()
+
+    assert body["model"]["busy"] is True
+    assert body["model"]["holder"] is None
+    assert body["jobs"]["extracting"] is False
+
+
+def test_limits_counts_down_both_budgets(auth, fake_bot, seeded):
+    from bot.chat.gate import GLOBAL_KEY
+
+    pilot = fake_bot.chat
+    pilot.global_limiter.allow(GLOBAL_KEY)
+    pilot.global_limiter.allow(GLOBAL_KEY)
+    pilot.limiter.allow(1002)
+
+    body = auth.get("/api/limits").json()
+
+    assert body["global_pool"]["used"] == 2
+    assert body["global_pool"]["remaining"] == body["global_pool"]["count"] - 2
+    # Named from the roster, exactly as the chat log names an asker.
+    assert body["per_user"]["windows"] == [
+        {
+            "user_id": "1002",
+            "name": "kanon",
+            "used": 1,
+            "remaining": fake_bot.settings.chat_pilot_rate_count - 1,
+        }
+    ]
+
+
+def test_asking_for_the_limits_never_spends_one(auth, fake_bot):
+    """A page that polls this must not quietly drink the pool it is reporting on."""
+    from bot.chat.gate import GLOBAL_KEY
+
+    for _ in range(5):
+        auth.get("/api/limits")
+    assert fake_bot.chat.global_limiter.remaining(GLOBAL_KEY) == (
+        fake_bot.settings.chat_pilot_global_rate_count
+    )
+    assert fake_bot.chat.limiter.snapshot() == {}
+
+
+def test_limits_lists_the_channels_currently_answering(auth, fake_bot):
+    fake_bot.chat._busy.add(str(WATCHED_CHANNEL))
+
+    body = auth.get("/api/limits").json()
+
+    assert body["jobs"]["answering"] == [
+        {"channel_id": str(WATCHED_CHANNEL), "channel_name": "#hstar-party"}
+    ]
+
+
+def test_limits_needs_the_token(client):
+    assert client.get("/api/limits").status_code == 401
+
+
 # --- members ----------------------------------------------------------------
 
 

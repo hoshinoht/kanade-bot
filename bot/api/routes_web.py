@@ -314,6 +314,19 @@ async def chat_interaction_page(
     )
 
 
+@router.get("/limits")
+async def limits_page(request: Request, bot: Bot, caller: Caller) -> Response:
+    """What the host is busy with. Read-only, and refreshes itself while open."""
+    request.state.caller = caller
+    return render(request, "limits.html", "limits", limits=service.limits(bot))
+
+
+@router.get("/limits/live")
+async def limits_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLResponse:
+    """The same panel, as the fragment it replaces itself with every few seconds."""
+    return fragment(request, "partials/limits.html", limits=service.limits(bot))
+
+
 @router.get("/audit")
 async def audit_page(request: Request, bot: Bot, caller: Caller, limit: int = 200) -> Response:
     """Who changed what, newest first. Read-only -- there is nothing to do here."""

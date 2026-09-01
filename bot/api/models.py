@@ -616,6 +616,72 @@ class AccessOut(BaseModel):
     unknown: bool
 
 
+# --- capacity: the one model, the two windows, and what is queued -----------
+
+
+class ModelLockOut(BaseModel):
+    """Who has the host's one model, and for how long."""
+
+    busy: bool
+    #: ``extractor``, ``followup``, or ``chat #<channel id>``. ``None`` while
+    #: idle -- or, with ``busy`` set, for a holder that never said who it was.
+    holder: str | None = None
+    held_for_s: float
+
+
+class PoolOut(BaseModel):
+    """One sliding window as used-of-total."""
+
+    count: int
+    window_s: float
+    used: int
+    remaining: int
+
+
+class UserWindowOut(BaseModel):
+    """One member who is currently inside their own window."""
+
+    user_id: str
+    name: str
+    used: int
+    remaining: int
+
+
+class PerUserOut(BaseModel):
+    count: int
+    window_s: float
+    #: Only members mid-window; an empty list means nobody has asked recently.
+    windows: list[UserWindowOut] = []
+
+
+class AnsweringOut(BaseModel):
+    channel_id: str
+    channel_name: str
+
+
+class RescanQueueOut(BaseModel):
+    worker_running: bool
+    #: Jobs still waiting. The one being drained has already left the queue.
+    queued: int
+    job: str | None = None
+    channel: str | None = None
+
+
+class JobsOut(BaseModel):
+    answering: list[AnsweringOut] = []
+    extracting: bool
+    rescan: RescanQueueOut
+
+
+class LimitsOut(BaseModel):
+    """Live capacity: nothing here is stored, and nothing here is spent by asking."""
+
+    model: ModelLockOut
+    global_pool: PoolOut
+    per_user: PerUserOut
+    jobs: JobsOut
+
+
 class HealthOut(BaseModel):
     status: str
 
@@ -642,6 +708,14 @@ __all__ = [
     "FixedOut",
     "FixedUpdate",
     "HealthOut",
+    "AnsweringOut",
+    "JobsOut",
+    "LimitsOut",
+    "ModelLockOut",
+    "PerUserOut",
+    "PoolOut",
+    "RescanQueueOut",
+    "UserWindowOut",
     "MemberOut",
     "MemberUpdate",
     "MonogramOut",

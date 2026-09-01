@@ -129,6 +129,16 @@ class RescanWorker:
     def running(self) -> bool:
         return self._task is not None and not self._task.done()
 
+    @property
+    def queued(self) -> int:
+        """How many jobs are waiting to be reached, for the portal's Limits page.
+
+        The job currently being drained is not one of them -- it has already left
+        the queue -- so this is "how much is still to come", which is the number
+        somebody deciding whether to queue another one wants.
+        """
+        return self._queue.qsize()
+
     # -- the queue ---------------------------------------------------------
     def get(self, job_id: str) -> RescanJob | None:
         return self._jobs.get(job_id)

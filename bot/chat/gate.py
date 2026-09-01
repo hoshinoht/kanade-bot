@@ -8,7 +8,9 @@ what it says.
 
 The order matters and is the order below: the cheapest, least revealing checks
 come first, so a message from another guild never reaches the roster lookup, and
-somebody without the role never costs a rate-limit slot.
+somebody without the role never costs a rate-limit slot. The two budgets -- the
+asker's own window and the guild's shared pool -- come last and together, so a
+question refused by one of them is never charged to the other.
 
 **Silence is the default.** Every refusal except a rate limit produces no reply
 and no reaction -- a bot that says "you may not use me" in a channel is a bot
@@ -28,8 +30,9 @@ from ..watch import is_watched
 #:
 #: * :data:`SEEN_REACTION` -- heard you, thinking. An answer can take 10-30 s of
 #:   GPU, which is long enough to look like being ignored.
-#: * :data:`RATE_LIMITED_REACTION` -- you have had your answers for now.
-#: * :data:`CHANNEL_BUSY_REACTION` -- I am still answering somebody else here.
+#: * :data:`RATE_LIMITED_REACTION` -- you have had your answers for now, or the
+#:   guild has had its.
+#: * :data:`CHANNEL_BUSY_REACTION` -- the model is in use, here or elsewhere.
 #:
 #: The last two are different emoji on purpose: one clears in minutes and one in
 #: seconds, and "wait" is useless advice if you cannot tell which wait it is.
@@ -37,8 +40,21 @@ SEEN_REACTION = "👀"
 RATE_LIMITED_REACTION = "⏳"
 CHANNEL_BUSY_REACTION = "💬"
 
+#: The guild-wide answer pool is a :class:`bot.chat.ratelimit.RateLimiter` like
+#: the per-person one, so it still needs a key -- everybody shares this one. It
+#: lives here rather than beside the limiter that holds it because this is the
+#: only place the pool is ever read or spent.
+GLOBAL_KEY = "guild"
+
+#: Why the guild-wide pool refused, kept distinct from "rate limited" so a log
+#: line says which of the two ran out. Both wear ⏳: the difference matters to
+#: whoever reads the logs, not to somebody waiting for the window to roll.
+POOL_SPENT = "the guild's answer budget is spent"
+
 __all__ = [
     "CHANNEL_BUSY_REACTION",
+    "GLOBAL_KEY",
+    "POOL_SPENT",
     "RATE_LIMITED_REACTION",
     "SEEN_REACTION",
     "ChatDecision",
@@ -190,6 +206,31 @@ def would_check_mention(
     return _before_the_mention_check(message, settings, bot_user_id, enabled) is None
 
 
+def _spend_an_answer(
+    limiter: Any | None, global_limiter: Any | None, author_id: Any
+) -> ChatDecision | None:
+    """Take one answer from each pool, or say which pool is empty.
+
+    Both pools are *read* before either is spent, because
+    :meth:`bot.chat.ratelimit.RateLimiter.allow` records an allowance as it
+    answers: spending the personal slot and only then discovering the guild's
+    pool is dry would charge somebody for an answer they never got.
+
+    Check-then-act is safe here for the same reason it is safe in
+    :meth:`bot.chat.agent.ChatPilot.on_rejection`: one event loop, and nothing
+    between the reads and the writes awaits.
+    """
+    if limiter is not None and limiter.remaining(author_id) <= 0:
+        return ChatDecision(False, "rate limited", busy=True)
+    if global_limiter is not None and global_limiter.remaining(GLOBAL_KEY) <= 0:
+        return ChatDecision(False, POOL_SPENT, busy=True)
+    if limiter is not None:
+        limiter.allow(author_id)
+    if global_limiter is not None:
+        global_limiter.allow(GLOBAL_KEY)
+    return None
+
+
 def decide(
     message: Any,
     settings: Settings,
@@ -198,22 +239,29 @@ def decide(
     enabled: bool = True,
     is_admin: bool = False,
     limiter: Any | None = None,
+    global_limiter: Any | None = None,
     self_role_id: int | str | None = None,
     replied_author_id: int | str | None = None,
 ) -> ChatDecision:
     """Whether to answer ``message``.
 
     ``enabled`` is the runtime kill switch (``chat_mode``), passed in rather than
-    read from the bot so this stays a function of its arguments. ``limiter`` is
-    consulted last and only when everything else passed, so it records an
-    allowance exactly when one is about to be spent.
+    read from the bot so this stays a function of its arguments. The two
+    limiters are consulted last and only when everything else passed, so they
+    record an allowance exactly when one is about to be spent.
+
+    ``global_limiter`` is the guild's shared budget: the per-person window stops
+    one member monopolising the model, and this stops *twenty* members doing it
+    between them. The host has one model, so widening who holds the pilot role
+    must not widen how much of the machine the guild can consume in an hour.
 
     ``is_admin`` is the existing "who runs this bot" rule
     (:func:`bot.util.is_bot_admin`) and does two things here: it stands in for
-    the chat role, and it exempts the holder from the rate limit. Staff being
+    the chat role, and it exempts the holder from both budgets. Staff being
     silently ignored by their own bot is a support ticket nobody can debug from
     inside Discord -- and anyone who can already `/say`, `/debug` and approve
-    every card gains nothing by also being made to hold the pilot role. The
+    every card gains nothing by also being made to hold the pilot role. Their
+    answers do not drain the community's pool either, for the same reason. The
     pilot role stays the knob for everybody else.
 
     ``self_role_id`` and ``replied_author_id`` are the two facts about a mention
@@ -235,8 +283,10 @@ def decide(
         # telling them would make the bot a way to get a reply out of it.
         return ChatDecision(False, "the author does not hold the chat role")
 
-    author = getattr(message, "author", None)
-    if limiter is not None and not limiter.allow(getattr(author, "id", author), exempt=is_admin):
-        return ChatDecision(False, "rate limited", busy=True)
+    if not is_admin:
+        author = getattr(message, "author", None)
+        refused = _spend_an_answer(limiter, global_limiter, getattr(author, "id", author))
+        if refused is not None:
+            return refused
 
     return ChatDecision(True, "ok")

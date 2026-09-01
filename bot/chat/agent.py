@@ -3,9 +3,10 @@
 Structured so that the interesting parts are testable without a gateway or a
 model. :meth:`ChatPilot.offer` is the only entry point and does no reasoning of
 its own -- it asks :mod:`bot.chat.gate` whether to answer, holds a per-channel
-lock so one channel cannot have two answers in flight, and hands the assembled
-conversation to :meth:`ChatPilot.generate`, which is the part with the model in
-it.
+lock so one channel cannot have two answers in flight, takes the host's one
+model lock (:mod:`bot.modellock`) so the whole machine cannot, and hands the
+assembled conversation to :meth:`ChatPilot.generate`, which is the part with the
+model in it.
 
 Nothing here is allowed to take the bot down, and nothing here is allowed to be
 slow forever: the whole answer, tool rounds included, lives inside one
@@ -26,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..extract.prompt import estimate_messages
+from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
 from ..timeutil import utcnow
 from ..util import is_bot_admin
 from ..watch import origin_ids
@@ -319,6 +321,13 @@ class ChatPilot:
         self.limiter = RateLimiter(
             self.settings.chat_pilot_rate_count, self.settings.chat_pilot_rate_window_s
         )
+        #: The same limiter over one shared key (:data:`bot.chat.gate.GLOBAL_KEY`):
+        #: everybody's answers come out of one pool, so a guild that hands the
+        #: pilot role around cannot spend more of the host than it has to give.
+        self.global_limiter = RateLimiter(
+            self.settings.chat_pilot_global_rate_count,
+            self.settings.chat_pilot_global_rate_window_s,
+        )
         #: Per channel, so two channels can be answered at once but one channel
         #: cannot queue up a backlog of 60-second generations.
         self._busy: set[str] = set()
@@ -365,6 +374,14 @@ class ChatPilot:
         self._persona = None
         return self.persona_text()
 
+    def answering(self) -> list[str]:
+        """The channels with an answer in flight, for the portal's Limits page.
+
+        A copy, sorted: the page must not be able to hold a reference to the set
+        the answer path is adding to and removing from.
+        """
+        return sorted(self._busy)
+
     # -- intake ------------------------------------------------------------
     async def offer(self, message: Any) -> Handling:
         """Called by ``on_message`` for every guild message. Answers, or does not.
@@ -404,6 +421,7 @@ class ChatPilot:
             enabled=self.enabled,
             is_admin=is_admin,
             limiter=self.limiter,
+            global_limiter=self.global_limiter,
             self_role_id=self._self_role_id(message),
             replied_author_id=replied_author_id,
         )
@@ -432,9 +450,41 @@ class ChatPilot:
         # ignored. The 👀 goes on before any of that starts and comes off when
         # the reply lands, so the reaction is only ever "still working".
         await self._react(message, gate.SEEN_REACTION)
+        # The channel lock above says nobody else in *this* channel is being
+        # answered; this one says nothing else on the host is using the model
+        # at all -- another channel's answer, an extraction, a rescan. Staff
+        # wait a whole answer's worth, because `asyncio.Lock` wakes its waiters
+        # in order and being next in that queue is the only priority the feature
+        # has. Everybody else waits a couple of seconds and is then turned away:
+        # a reply that lands two minutes after the question is worse than a
+        # visible "not now".
+        wait_s = (
+            self.settings.chat_pilot_timeout if is_admin else self.settings.chat_pilot_lock_wait_s
+        )
+        if not await acquire_within(wait_s, chat_label(channel_id)):
+            # This costs the asker a rate-limit slot, because the gate spent one
+            # on the way in. The alternative -- gating after the model instead of
+            # before it -- would leave a queue of already-admitted questions
+            # piled up on the lock, which is the pile-up the wait exists to
+            # prevent. Its own emoji again: this one clears in seconds.
+            log.info(
+                "chat: the model was busy for %.1fs; shedding %s in channel %s",
+                wait_s,
+                getattr(message.author, "id", "?"),
+                channel_id,
+            )
+            self._busy.discard(channel_id)
+            await self._unreact(message, gate.SEEN_REACTION)
+            await self._react(message, gate.CHANNEL_BUSY_REACTION)
+            return Handling(True, "the model is busy")
         try:
+            # Held across the *whole* answer -- every tool round and the Discord
+            # send -- rather than round each model call. Releasing between rounds
+            # would let an extraction take the model in the middle of a
+            # conversation and stretch one answer past its own timeout.
             return Handling(True, "ok", await self._answer(message, channel_id, is_admin))
         finally:
+            release()
             self._busy.discard(channel_id)
             await self._unreact(message, gate.SEEN_REACTION)
 
@@ -629,6 +679,14 @@ class ChatPilot:
         statement as well, so the promise survives a future edit that puts an
         ``await`` in the middle of this.
 
+        That stretch is also what lets the model be checked with a plain
+        ``MODEL_LOCK.locked()`` and taken further down: nothing can have claimed
+        it in between. The check sits *before* the claim on purpose -- a claim is
+        permanent, and burning a card's one follow-up on a generation that then
+        never runs would silence it for good. A busy model simply means no
+        question: this one is the bot's own idea, and unlike an answer nobody is
+        waiting for it.
+
         The answer is not built here. It arrives as an ordinary reply to the
         bot's message, which :meth:`offer` already treats as a mention -- so
         what this has to leave behind is the *context* for it, which is why the
@@ -663,6 +721,14 @@ class ChatPilot:
             # about a dead card after the answer to a live one.
             log.info("chat: channel %s is already answering; dropping the follow-up", channel_id)
             return Handling(False, "already answering")
+        if MODEL_LOCK.locked():
+            # Somebody else on the host has the model -- another channel, an
+            # extraction, a rescan. A question nobody asked for is the first
+            # thing to drop: it is worth a generation only while the ❌ is still
+            # fresh, and nobody is waiting on it. Read rather than acquired
+            # because this stretch may not await; see the docstring.
+            log.debug("chat: the model is busy; no follow-up on the rejected card")
+            return Handling(False, "the model is busy")
 
         # Every amendment on the card, so a card carrying two of them cannot be
         # followed up once per amendment. Anything already claimed means this
@@ -676,7 +742,14 @@ class ChatPilot:
         self._busy.add(channel_id)
         self._followed_up_at[channel_id] = now
         try:
-            result = await self._ask_instead(claimed, allowed.author_id, channel, card_message_id)
+            # Free by construction: the ``locked()`` check above said so and
+            # nothing since it has awaited, so nobody can have taken it in the
+            # meantime. Held for the whole generation all the same, so an
+            # extraction cannot start underneath the question.
+            async with held(FOLLOWUP):
+                result = await self._ask_instead(
+                    claimed, allowed.author_id, channel, card_message_id
+                )
         finally:
             self._busy.discard(channel_id)
         return Handling(True, "ok", result)

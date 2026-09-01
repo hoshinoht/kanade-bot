@@ -105,3 +105,5 @@ def test_settings_drive_the_defaults(chat_bot):
     pilot = ChatPilot(chat_bot, client=object())
     assert pilot.limiter.count == chat_bot.settings.chat_pilot_rate_count
     assert pilot.limiter.window == chat_bot.settings.chat_pilot_rate_window_s
+    assert pilot.global_limiter.count == chat_bot.settings.chat_pilot_global_rate_count
+    assert pilot.global_limiter.window == chat_bot.settings.chat_pilot_global_rate_window_s

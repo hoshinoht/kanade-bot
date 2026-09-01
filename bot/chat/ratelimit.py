@@ -52,6 +52,21 @@ class RateLimiter:
         live = sum(1 for stamp in hits if stamp > now - self.window)
         return max(self.count - live, 0)
 
+    def snapshot(self) -> dict[str, int]:
+        """``{user_id: answers used}`` for every window still open. Never mutates.
+
+        For the portal's Limits page, which wants to show who is currently inside
+        a window. A public reader because the two alternatives are both wrong:
+        reading ``_hits`` from outside is one rename away from breaking, and
+        asking :meth:`allow` would charge somebody for the question.
+
+        Keys with nothing live are left out, so the size of the result is "how
+        many people are mid-window" rather than "how many have ever asked".
+        """
+        cutoff = self._clock() - self.window
+        live = {key: sum(1 for stamp in hits if stamp > cutoff) for key, hits in self._hits.items()}
+        return {key: used for key, used in live.items() if used}
+
     def reset(self, user_id: int | str | None = None) -> None:
         if user_id is None:
             self._hits.clear()
