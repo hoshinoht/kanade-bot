@@ -15,6 +15,7 @@ when a prefix is ambiguous.
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import sys
@@ -28,6 +29,8 @@ from dotenv import dotenv_values
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+
+from .audit import HEADER_BOSSCTL
 
 DEFAULT_URL = "http://127.0.0.1:8080"
 #: Ordinary calls are local and instant; the read budget covers a `digest` or a
@@ -54,6 +57,22 @@ STATUS_STYLE = {
 
 class ApiFailed(Exception):
     """The API said no; the message is meant to be printed as-is."""
+
+
+def os_user() -> str:
+    """The operating-system user, for the audit trail's benefit.
+
+    Sent as :data:`bot.audit.HEADER_BOSSCTL` so a change made from a terminal
+    is attributable to a person rather than to "the token". It is a label, not
+    a credential -- the request still carries ADMIN_TOKEN, and the bot ignores
+    the header from anywhere but the machine it is running on.
+    ``getpass.getuser`` consults the environment before the password database,
+    and raises when neither can answer (a container with no passwd entry).
+    """
+    try:
+        return getpass.getuser()[:64]
+    except Exception:  # noqa: BLE001 - never fail a command over a log label
+        return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +133,10 @@ class Api:
     def _client(self) -> httpx.Client:
         return httpx.Client(
             base_url=self.url,
-            headers={"Authorization": f"Bearer {self.token}"},
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                HEADER_BOSSCTL: os_user(),
+            },
             timeout=self.timeout,
         )
 
@@ -716,6 +738,86 @@ def extraction(
 
 
 @app.command()
+def chat(limit: int = typer.Option(25, "--limit", "-n")) -> None:
+    """What the chatbot was asked, and what each answer cost."""
+    rows = api().get("/api/chat", limit=limit)
+    summary = api().get("/api/chat/summary")
+    # Six columns, like `extractions`: an eighth squeezes the table to nothing
+    # in an 80-column terminal. The model is named per model by the totals
+    # underneath, and the round count is on the interaction itself.
+    print_table(
+        f"{len(rows)} interaction(s)",
+        ["id", "when", "who", "tools", "latency", "outcome"],
+        [
+            [
+                r["short_id"],
+                r["local_time"],
+                r["author_name"],
+                ", ".join(r["tool_names"]) or "—",
+                f"{r['latency_ms']} ms" if r["latency_ms"] is not None else "—",
+                r["outcome"],
+            ]
+            for r in rows
+        ],
+    )
+    for stat in summary["models"]:
+        console.print(
+            f"[dim]{stat['model']}: {stat['count']} interaction(s), {stat['failed']} failed, "
+            f"{stat['prompt_tokens']:,} + {stat['completion_tokens']:,} tokens[/dim]"
+        )
+
+
+@app.command()
+def interaction(
+    interaction_id: str = typer.Argument(help="Interaction id, or any unique prefix."),
+) -> None:
+    """One chat interaction in full: the question, the answer, the tool trace."""
+    row = api().get(f"/api/chat/{interaction_id}")
+    console.print(
+        f"[bold]{row['short_id']}[/bold]  {row['local_time']}  {row['model']}  "
+        f"[dim]{row['latency_ms']} ms, {row['rounds']} round(s), {row['outcome']}[/dim]"
+    )
+    for call in row["tool_calls"]:
+        created = "".join(f" → card {c['short_id']}" for c in call["created"])
+        # No rich markup: the arguments are the model's own text and can contain
+        # square brackets, which would be parsed as tags and swallowed.
+        console.print(
+            f"  • {call['name']}({call['arguments']}) → {call['outcome']}, "
+            f"{call['ms']} ms{created}",
+            markup=False,
+            highlight=False,
+        )
+    console.print(f"\n[bold]{row['author_name']} asked[/bold]")
+    console.print(row["question"], highlight=False, markup=False)
+    console.print("\n[bold]It said[/bold]")
+    console.print(row["reply"], highlight=False, markup=False)
+
+
+@app.command()
+def audit(limit: int = typer.Option(25, "--limit", "-n")) -> None:
+    """Who changed the schedule, and from where. Newest first."""
+    rows = api().get("/api/audit", limit=limit)
+    if not rows:
+        console.print("[dim]Nothing recorded yet.[/dim]")
+        return
+    print_table(
+        f"{len(rows)} change(s)",
+        ["when", "from", "who", "did", "to", "what happened"],
+        [
+            [
+                r["local_time"],
+                r["surface"],
+                r["actor"],
+                r["action"],
+                r["short_subject"] or "—",
+                r["detail"],
+            ]
+            for r in rows
+        ],
+    )
+
+
+@app.command()
 def export(
     channel: str = typer.Option(..., "--channel", "-c", help="Channel id; must be watched."),
     since: str = typer.Option(..., "--since", help="YYYY-MM-DD or an ISO timestamp."),
@@ -857,12 +959,13 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(
-        help="day_of_ping_time, countdown_minutes, paused, extract_enabled or quiet_mode."
+        help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
+        "quiet_mode or chat_mode."
     ),
     value: str = typer.Argument(help="The new value."),
 ) -> None:
     """Change one runtime setting. Takes effect at once and survives a restart."""
-    flags = {"paused", "extract_enabled", "quiet_mode"}
+    flags = {"paused", "extract_enabled", "quiet_mode", "chat_mode"}
     if key in flags:
         parsed: Any = value.strip().lower() in ("1", "true", "yes", "on")
     else:

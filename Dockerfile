@@ -27,6 +27,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY bot ./bot
 COPY config ./config
+# The chatbot's fallback persona. The *real* one is not in the image or in git --
+# it goes on the data volume (`docker compose cp ... bot:/app/data/persona.md`) --
+# so without this a deployment that has not copied one yet has no voice at all
+# rather than the placeholder one the loader promises.
+COPY persona.example.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 

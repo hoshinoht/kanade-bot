@@ -454,6 +454,67 @@ def test_supersede_matches_a_new_run_on_its_exact_boss_set(repo: Repo):
     assert repo.get_amendment(elsewhere["id"])["status"] == "proposed"
 
 
+def test_a_card_in_another_channel_cannot_retire_a_partys_own_cards(repo: Repo, run):
+    """The retire-across-channels a chat card would otherwise perform.
+
+    The run lives in ``CHANNEL`` and so does the party's live card. A row raised
+    somewhere else -- the chatbot posts its card in the channel the question came
+    from, whichever channel the run lives in -- must not take that card out from
+    under them, in a channel that never saw either the request or the card.
+    """
+    theirs = make(repo, "cancel", run_id=run["id"], channel_id=CHANNEL)
+    intruder = make(
+        repo, "move", run_id=run["id"], channel_id="901", new_datetime=kl(2026, 9, 2, 21, 30)
+    )
+
+    result = commit(
+        repo,
+        intruder,
+        tz=TZ,
+        reset_weekday=RESET_WEEKDAY,
+        reset_time=RESET_TIME,
+        ping_time=PING_TIME,
+        countdowns=COUNTDOWNS,
+        actor_id=MY,
+        channel_id="901",
+    )
+
+    assert result.applied
+    assert result.superseded == []
+    assert repo.get_amendment(theirs["id"])["status"] == "proposed"
+
+
+def test_a_card_may_still_retire_the_ones_beside_it_in_its_own_channel(repo: Repo, run):
+    """Scoped, not disabled: the deduplication this exists for is same-channel."""
+    stale = make(repo, "cancel", run_id=run["id"], channel_id="901")
+    winner = make(
+        repo, "move", run_id=run["id"], channel_id="901", new_datetime=kl(2026, 9, 2, 21, 30)
+    )
+
+    result = commit(
+        repo,
+        winner,
+        tz=TZ,
+        reset_weekday=RESET_WEEKDAY,
+        reset_time=RESET_TIME,
+        ping_time=PING_TIME,
+        countdowns=COUNTDOWNS,
+        actor_id=MY,
+        channel_id="901",
+    )
+
+    assert [a["id"] for a in result.superseded] == [stale["id"]]
+
+
+def test_supersede_names_no_channel_and_retires_everything_for_the_run(repo: Repo, run):
+    """The old, unscoped behaviour is what a caller with no channel still gets."""
+    first = make(repo, "cancel", run_id=run["id"], channel_id="901")
+    second = make(repo, "cancel", run_id=run["id"], channel_id=CHANNEL)
+
+    retired = supersede(repo, run_id=run["id"])
+    assert {a["id"] for a in retired} == {first["id"], second["id"]}
+
+
 def test_supersede_with_nothing_to_key_on_does_nothing(repo: Repo):
     make(repo, "add", bosses=["NStar"], channel_id=CHANNEL)
     assert supersede(repo) == []

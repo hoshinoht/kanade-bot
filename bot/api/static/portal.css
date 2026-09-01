@@ -1309,6 +1309,90 @@ details[open] > summary.btn {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
+/* ── stat strip ─────────────────────────────────────────────────────────────
+ *
+ * One tile per model on the Chat tab, and per measurement on an interaction.
+ * The count is the loud thing, as the clock time is on a run row; everything
+ * that qualifies it is a label-and-figure pair underneath, in tabular mono so
+ * two tiles side by side can be read as a column. */
+
+.stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 0.75rem;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow);
+}
+
+.stat__name {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* The model's own name is content, not a label: it is case-sensitive and it is
+   what somebody would paste into `.env`, so it keeps its own casing. */
+.stat__name--id {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+
+.stat__big {
+  margin: 0.15rem 0 0.6rem;
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.stat__unit {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+
+.stat__rows {
+  margin: 0;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.stat__rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.2rem;
+}
+
+.stat__rows dt {
+  color: var(--dim);
+}
+
+.stat__rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);

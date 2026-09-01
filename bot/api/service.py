@@ -25,13 +25,20 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import formatting
+from .. import audit, formatting
 from ..bosses import BossParseError
 from ..export import message_record
+from ..extract import resolve
 from ..extract.commit import commit, reject
 from ..extract.window import DEFAULT_WINDOW, WINDOWS
 from ..ids import IdAmbiguous, IdError, resolve_id, short_id
-from ..materialise import DAY_OF, LIVE_STATUSES, countdown_minutes, refresh_run_reminders
+from ..materialise import (
+    DAY_OF,
+    LIVE_STATUSES,
+    countdown_minutes,
+    refresh_run_reminders,
+    retire_fixed_run,
+)
 from ..pings import audience, normalise_level
 from ..rsvp import compute_status, recompute_after_roster_change
 from ..timeutil import local_naive, to_iso, utcnow
@@ -55,10 +62,39 @@ log = logging.getLogger(__name__)
 PORTAL_APPLIED = "✅ applied via portal"
 PORTAL_REJECTED = "❌ rejected via portal"
 
+
+def _audit(
+    bot: BossBot,
+    action: str,
+    subject: str | None = None,
+    detail: str = "",
+    actor: audit.Actor | None = None,
+) -> None:
+    """Note a change on the audit trail, crediting whoever asked for it.
+
+    The actor comes from the request in flight (:class:`bot.api.app.
+    ActorMiddleware` puts it there) unless a caller knows better. Called *after*
+    the change, so a mutation that raised leaves no row claiming it happened.
+    """
+    audit.record(bot.repo, actor or audit.current(), action, subject, detail)
+
+
+def _bosses_of(run: dict) -> str:
+    """The run's bosses as an audit line says them: `HStar + HFA`."""
+    return formatting.format_bosses(run["bosses"])
+
+
 #: Runtime config the portal may read and write, and how to validate each one.
 #: Anything not listed here is refused -- `config set` is not a way to write
 #: arbitrary rows into the `config` table.
-CONFIG_KEYS = ("day_of_ping_time", "countdown_minutes", "paused", "extract_enabled", "quiet_mode")
+CONFIG_KEYS = (
+    "day_of_ping_time",
+    "countdown_minutes",
+    "paused",
+    "extract_enabled",
+    "quiet_mode",
+    "chat_mode",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +526,142 @@ def extraction_view(bot: BossBot, extraction: dict, detail: bool = False) -> dic
     return view
 
 
+def created_cards(bot: BossBot, amendment_ids: Sequence[str]) -> list[dict]:
+    """The proposal cards one tool call raised, named and linked.
+
+    Only what a reader needs to click through: the short id the rest of the
+    portal identifies a card by, what it proposes, whether anyone has answered
+    it, and the deep link into Discord. An id whose amendment has since been
+    deleted still appears -- the interaction really did create it, and silently
+    dropping it would make a trace disagree with the log line beside it.
+    """
+    cards = []
+    for amendment_id in amendment_ids:
+        amendment = bot.repo.get_amendment(amendment_id)
+        if amendment is None:
+            cards.append({"id": str(amendment_id), "short_id": short_id(str(amendment_id))})
+            continue
+        cards.append(
+            {
+                "id": amendment["id"],
+                "short_id": short_id(amendment["id"]),
+                "kind": amendment["kind"],
+                "kind_label": formatting.KIND_VERB.get(amendment["kind"], amendment["kind"]),
+                "status": amendment["status"],
+                "card_url": message_url(
+                    bot, amendment["channel_id"], amendment["proposal_message_id"]
+                ),
+            }
+        )
+    return cards
+
+
+def chat_interaction_view(bot: BossBot, interaction: dict, detail: bool = False) -> dict:
+    """One handled chat interaction, as a row (or, with ``detail``, in full)."""
+    tool_calls = interaction["tool_calls"]
+    view = {
+        "id": interaction["id"],
+        "short_id": short_id(interaction["id"]),
+        "at": to_iso(interaction["at"]),
+        "local_time": interaction["at"].astimezone(bot.tz).strftime("%a %d %b %H:%M:%S"),
+        "author_id": interaction["author_id"],
+        "author_name": member_name(bot, interaction["author_id"]),
+        "channel_id": interaction["channel_id"],
+        "channel_name": channel_name(bot, interaction["channel_id"]),
+        "model": interaction["model"],
+        "outcome": interaction["outcome"],
+        "rounds": interaction["rounds"],
+        "latency_ms": interaction["latency_ms"],
+        "tool_names": [call.get("name") or "?" for call in tool_calls],
+        "tool_count": len(tool_calls),
+        "prompt_tokens": interaction["prompt_tokens"],
+        "completion_tokens": interaction["completion_tokens"],
+        "url": message_url(bot, interaction["channel_id"], interaction["message_id"]),
+    }
+    if detail:
+        view["question"] = render_mentions(bot, interaction["question"])
+        view["reply"] = interaction["reply"]
+        view["error"] = interaction["error"]
+        view["model_ms"] = interaction["model_ms"]
+        view["tools_ms"] = interaction["tools_ms"]
+        view["message_id"] = interaction["message_id"]
+        view["tool_calls"] = [
+            {
+                "name": call.get("name") or "?",
+                "arguments": call.get("arguments") or "",
+                "ms": call.get("ms"),
+                "outcome": call.get("outcome") or "",
+                "ok": call.get("outcome") == "ok",
+                "created": created_cards(bot, call.get("created") or []),
+            }
+            for call in tool_calls
+        ]
+    return view
+
+
+def chat_interactions(bot: BossBot, limit: int = 50) -> list[dict]:
+    """The most recent interactions, newest first -- what the Chat tab lists."""
+    return [chat_interaction_view(bot, row) for row in bot.repo.recent_chat_interactions(limit)]
+
+
+def load_chat_interaction(bot: BossBot, interaction_id: str) -> dict:
+    resolved = _resolve(interaction_id, bot.repo.list_chat_interaction_ids(), "chat interaction")
+    interaction = bot.repo.get_chat_interaction(resolved)
+    if interaction is None:  # pragma: no cover
+        raise NotFound(f"no chat interaction `{interaction_id}`")
+    return interaction
+
+
+def chat_summary(bot: BossBot) -> dict:
+    """What the chatbot has cost and how well it has gone, per model.
+
+    Over everything stored rather than a window: the log is capped at 500 rows,
+    so "all of it" is already a recent period, and a window would put a second
+    number on the page that has to be explained before it can be read.
+    """
+    stats = bot.repo.chat_interaction_stats()
+    return {
+        "models": stats,
+        "count": sum(s["count"] for s in stats),
+        "answered": sum(s["answered"] for s in stats),
+        "failed": sum(s["failed"] for s in stats),
+        "prompt_tokens": sum(s["prompt_tokens"] for s in stats),
+        "completion_tokens": sum(s["completion_tokens"] for s in stats),
+    }
+
+
+def short_subject(subject: str | None) -> str | None:
+    """A uuid subject as the eight characters the portal shows; anything else as is.
+
+    An audit subject is a run, a card or a fixed timing -- but it is also a
+    config key and a channel id, and ``short_id`` would happily cut those in
+    half. Only a dashed uuid is shortened.
+    """
+    if not subject:
+        return None
+    return short_id(subject) if len(subject) == 36 and "-" in subject else subject
+
+
+def audit_view(bot: BossBot, row: dict) -> dict:
+    """One line of the audit trail: when, from where, who, what."""
+    return {
+        "id": row["id"],
+        "at": to_iso(row["at"]),
+        "local_time": row["at"].astimezone(bot.tz).strftime("%a %d %b %H:%M:%S"),
+        "surface": row["surface"],
+        "actor": row["actor"],
+        "action": row["action"],
+        "subject": row["subject"],
+        "short_subject": short_subject(row["subject"]),
+        "detail": row["detail"],
+    }
+
+
+def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
+    """The most recent changes, newest first -- what the Audit page lists."""
+    return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
+
+
 def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
     return {
         "user_id": member["user_id"],
@@ -685,6 +857,13 @@ async def create_fixed(
     )
     bot.materialise_weeks()
     fixed = bot.repo.get_fixed_run(fixed_id)
+    _audit(
+        bot,
+        "fixed_add",
+        fixed_id,
+        f"added the weekly {formatting.format_bosses(boss_list)} on "
+        f"{WEEKDAY_NAMES[weekday]} {hhmm} for {len(people)} member(s)",
+    )
     who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(bot, formatting.fixed_notice(fixed, "added", who), who.mentioned, home)
     return fixed_view(bot, fixed)
@@ -725,6 +904,14 @@ async def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
     _apply_fixed_to_runs(bot, fixed["id"], set(fields))
     bot.materialise_weeks()
     updated = bot.repo.get_fixed_run(fixed["id"])
+    _audit(
+        bot,
+        "fixed_edit",
+        fixed["id"],
+        f"changed {', '.join(sorted(fields))} on the weekly "
+        f"{formatting.format_bosses(updated['bosses'])} "
+        f"({WEEKDAY_NAMES[updated['weekday']]} {updated['time']})",
+    )
     who = audience(bot.repo, updated["participants"], "fixed")
     await _announce(
         bot,
@@ -761,14 +948,22 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
 async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
     """Remove a baseline timing and cancel the runs it had already produced."""
     fixed = load_fixed(bot, fixed_id)
-    cancelled = 0
-    for which in ("this", "next"):
-        run = bot.repo.run_for_fixed(fixed["id"], week_for(bot, which))
-        if run is not None and run["status"] not in ("done", "cancelled"):
-            bot.repo.set_run_status(run["id"], "cancelled")
-            refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
-            cancelled += 1
-    bot.repo.delete_fixed_run(fixed["id"])
+    cancelled = retire_fixed_run(
+        bot.repo,
+        fixed["id"],
+        [week_for(bot, which) for which in ("this", "next")],
+        bot.tz,
+        bot.ping_time,
+        bot.countdowns,
+    )
+    _audit(
+        bot,
+        "fixed_remove",
+        fixed["id"],
+        f"removed the weekly {formatting.format_bosses(fixed['bosses'])} "
+        f"({WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']}); "
+        f"{cancelled} upcoming run(s) cancelled",
+    )
     who = audience(bot.repo, fixed["participants"], "fixed")
     await _announce(
         bot, formatting.fixed_notice(fixed, "removed", who), who.mentioned, fixed["channel_id"]
@@ -781,12 +976,132 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: How far ahead a parsed date may land before it is treated as a misreading.
+#: ``dateparser`` reads a bare ``2300`` as the *year* 2300, which reached a
+#: proposal card three centuries out; nothing this guild schedules is more than
+#: a boss week or two away, so anything past this is a parse that went wrong
+#: rather than a plan.
+MAX_HORIZON = timedelta(days=400)
+
+
+def _day_words() -> list[tuple[str, str]]:
+    """``[(what people type, what dateparser understands)]``, longest first.
+
+    Built from the extractor's own day vocabulary
+    (:mod:`bot.extract.resolve`) rather than a second table, so "tmr" means
+    tomorrow in `/amend` and in chat for the same reason and at the same time.
+    Deliberately *only* the day words: this is a parser for text somebody typed
+    into a command, not the extractor's fuzzy keyword gate.
+    """
+    pairs = [
+        *((word, "today") for word in resolve.TODAY_WORDS | resolve.SOON_WORDS),
+        *((word, "tomorrow") for word in resolve.TOMORROW_WORDS),
+        *((word, "yesterday") for word in resolve.YESTERDAY_WORDS),
+    ]
+    # Longest first so "tmr night" is replaced before "tmr" can be.
+    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+
+_DAY_WORDS = _day_words()
+_DAY_WORD_RE = re.compile(
+    r"\b(" + "|".join(re.escape(word) for word, _ in _DAY_WORDS) + r")\b", re.IGNORECASE
+)
+_REPLACEMENTS = {word.lower(): standard for word, standard in _DAY_WORDS}
+
+#: "tomorrow night 9pm" -- the night is already in the 9pm, and dateparser
+#: returns nothing at all for the pair.
+_NIGHT_AFTER_DAY_RE = re.compile(
+    r"\b(today|tomorrow|yesterday)\s+(?:night|nite|evening)\b", re.IGNORECASE
+)
+
+#: A clock time and nothing else: ``2300``, ``930pm``, ``9:30 pm``, ``9+pm``,
+#: ``1030~11+pm``. Tight on purpose -- ``2026-09-02 21:30`` must not match, or a
+#: real date would be read as a time.
+_CLOCK_ONLY_RE = re.compile(
+    r"^\s*\d{1,2}[:.]?(?:\d{2})?\s*\+?\s*"
+    r"(?:[~\-]|to|till|until)?\s*(?:\d{1,2}[:.]?(?:\d{2})?\s*\+?\s*)?"
+    r"(?:a\.?m\.?|p\.?m\.?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+#: A day is already named, so a loose 3-4 digit number beside it is a clock time.
+_HAS_DAY_RE = re.compile(
+    r"\b(?:today|tomorrow|yesterday|"
+    + "|".join(re.escape(word) for word in resolve.WEEKDAY_ALIASES)
+    + r")\b",
+    re.IGNORECASE,
+)
+#: ``2300`` / ``930``, not the ``2026`` of an ISO date and not a ``21:30`` half.
+_COMPACT_TIME_RE = re.compile(r"(?<![\d:./-])(\d{3,4})(?![\d:./-])")
+
+
+def _spell_out_compact_times(text: str) -> str:
+    """``"tomorrow 2300"`` -> ``"tomorrow 23:00"``.
+
+    dateparser reads ``tomorrow 2300`` as tomorrow at *the current time* -- it
+    takes the day and quietly drops the digits -- which is worse than failing,
+    because it produces a plausible wrong answer. Only done when a day is
+    already named, so ``sep 2026`` is still a year.
+    """
+    if not _HAS_DAY_RE.search(text):
+        return text
+
+    def spell(match: re.Match[str]) -> str:
+        clock = resolve.parse_clock(match.group(1))
+        return match.group(1) if clock is None else clock[0].strftime("%H:%M")
+
+    return _COMPACT_TIME_RE.sub(spell, text)
+
+
+def normalise_when(text: str) -> str:
+    """Rewrite the guild's day words into ones ``dateparser`` actually knows.
+
+    Measured, not guessed: ``tonight 23:00``, ``tonight at 11pm``, ``tmr 2300``,
+    ``tmr 9pm``, ``tomorrow night 9pm`` and ``ltr 9pm`` all return ``None`` from
+    dateparser, while ``today 23:00`` parses fine. The words are the whole
+    problem, so they are replaced before it ever sees them.
+    """
+    swapped = _DAY_WORD_RE.sub(
+        lambda match: _REPLACEMENTS[match.group(1).lower()],
+        text or "",
+    )
+    return _spell_out_compact_times(_NIGHT_AFTER_DAY_RE.sub(r"\1", swapped)).strip()
+
+
+def _bare_clock(bot: BossBot, text: str, now: datetime) -> datetime | None:
+    """``"2300"`` said in the evening -> 23:00 tonight, or tomorrow if it has gone.
+
+    dateparser reads a bare ``2300`` as a year and ``930pm`` as nothing at all.
+    :func:`bot.extract.resolve.parse_clock` already reads every form of these
+    that this guild writes, so it is reused rather than re-taught here.
+    """
+    if not _CLOCK_ONLY_RE.match(text):
+        return None
+    clock = resolve.parse_clock(text)
+    if clock is None:
+        return None
+    local = now.astimezone(bot.tz)
+    at = datetime.combine(local.date(), clock[0], tzinfo=bot.tz)
+    # "2300" at 23:30 means tomorrow: nobody schedules a run half an hour ago.
+    return at + timedelta(days=1) if at <= local else at
+
+
 def parse_when(bot: BossBot, text: str) -> datetime:
-    """``"wed 21:30"`` / ``"tomorrow 9:45pm"`` -> an instant, exactly as ``/amend``."""
+    """``"wed 21:30"`` / ``"tomorrow 9:45pm"`` -> an instant, exactly as ``/amend``.
+
+    Shared by `/amend`, the portal, `bossctl` and the chatbot, so the guild's own
+    shorthand has to work here or it works nowhere.
+    """
+    now = utcnow()
+    cleaned = normalise_when(text)
+    bare = _bare_clock(bot, cleaned, now)
+    if bare is not None:
+        return bare
     parsed = dateparser.parse(
-        text,
+        cleaned,
         settings={
-            "RELATIVE_BASE": local_naive(utcnow(), bot.tz),
+            "RELATIVE_BASE": local_naive(now, bot.tz),
             "PREFER_DATES_FROM": "future",
             "TIMEZONE": bot.settings.tz,
             "RETURN_AS_TIMEZONE_AWARE": True,
@@ -795,6 +1110,12 @@ def parse_when(bot: BossBot, text: str) -> datetime:
     if parsed is None:
         raise BadRequest(
             f"couldn't read `{text}` as a date - try `wed 21:30` or `2026-09-02 21:30`"
+        )
+    if parsed > now + MAX_HORIZON:
+        # A misreading, not a plan: this is how a bare `2300` became the year 2300.
+        raise BadRequest(
+            f"couldn't read `{text}` as a date - that lands in "
+            f"{parsed.astimezone(bot.tz):%Y}. Try `wed 21:30` or `2026-09-02 21:30`"
         )
     return parsed
 
@@ -810,6 +1131,14 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
         bot.repo.set_run_status(run["id"], "planned")
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
     updated = bot.repo.get_run(run["id"])
+    _audit(
+        bot,
+        "amend",
+        run["id"],
+        f"moved {_bosses_of(updated)} from "
+        f"{formatting.local_day(old_at, bot.tz)} {formatting.local_time(old_at, bot.tz)} to "
+        f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}",
+    )
     who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
@@ -903,6 +1232,15 @@ async def set_status(
     refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
 
     fresh = bot.repo.get_run(run["id"])
+    # `cancel`/`otot`/`restore` all land here, so the trail names the transition
+    # rather than whichever shortcut was used to ask for it.
+    _audit(
+        bot,
+        "cancel" if status == "cancelled" else "status",
+        run["id"],
+        f"{_bosses_of(fresh)} on {formatting.local_day(fresh['datetime'], bot.tz)}: "
+        f"{previous} -> {status}",
+    )
     if announce:
         who = audience(bot.repo, fresh["participants"], "status")
         notice = status_notice(bot, fresh, status, who)
@@ -965,6 +1303,15 @@ async def swap_participants(
     # confirmed by hand, which an incomplete tally alone would no longer undo.
     recompute_after_roster_change(bot.repo, run["id"])
     fresh = bot.repo.get_run(run["id"])
+    changes = [f"-{member_name(bot, uid)}" for uid in leaving]
+    changes += [f"+{member_name(bot, uid)}" for uid in joining]
+    _audit(
+        bot,
+        "swap",
+        run["id"],
+        f"{_bosses_of(fresh)} on {formatting.local_day(fresh['datetime'], bot.tz)} "
+        f"this week: {' '.join(changes)}",
+    )
 
     who = audience(bot.repo, [*fresh["participants"], *leaving], "swap")
     await _announce(
@@ -1019,6 +1366,13 @@ async def set_rsvp(bot: BossBot, run_id: str, user_id: int | str, answer: str) -
     if new_status != run["status"]:
         bot.repo.set_run_status(run["id"], new_status)
     fresh = bot.repo.get_run(run["id"])
+    _audit(
+        bot,
+        "rsvp",
+        run["id"],
+        f"{'cleared' if answer == 'clear' else answer} for {member_name(bot, uid)} on "
+        f"{_bosses_of(fresh)} ({formatting.local_day(fresh['datetime'], bot.tz)})",
+    )
     if answer == "no":
         await bot.notify_decline(fresh, uid, member_name(bot, uid))
     else:
@@ -1088,6 +1442,13 @@ async def approve(bot: BossBot, amendment_id: str, actor_id: int | str | None = 
     if not result.applied:
         raise BadRequest(result.problem or "that change could not be applied")
 
+    _audit(
+        bot,
+        "approve",
+        amendment["id"],
+        f"applied the {result.kind} on card {short_id(amendment['id'])}, "
+        f"credited to {member_name(bot, actor)}",
+    )
     await bot._mark_superseded(result.superseded)
     await bot.annotate_message(
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_APPLIED
@@ -1120,6 +1481,12 @@ async def reject_amendment(bot: BossBot, amendment_id: str) -> dict:
     if amendment["status"] != "proposed":
         raise BadRequest(f"that change is already `{amendment['status']}`")
     reject(bot.repo, amendment)
+    _audit(
+        bot,
+        "reject",
+        amendment["id"],
+        f"rejected the {amendment['kind']} on card {short_id(amendment['id'])}",
+    )
     await bot.annotate_message(
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_REJECTED
     )
@@ -1156,6 +1523,12 @@ def update_member(bot: BossBot, user_id: int | str, ping_level: str | None = Non
     except ValueError as exc:
         raise BadRequest(str(exc)) from None
     bot.repo.set_ping_level(user_id, level)
+    _audit(
+        bot,
+        "member",
+        str(user_id),
+        f"{member_name(bot, user_id)} is now on `{level}` @mentions",
+    )
     return member_view(bot, bot.repo.get_member(user_id), _run_counts(bot))
 
 
@@ -1167,6 +1540,7 @@ def set_nick(bot: BossBot, user_id: int | str, alias: str) -> dict:
     if member is None:
         raise NotFound(f"no member {user_id} - the roster syncs from the bossing role")
     aliases = bot.repo.add_alias(user_id, alias)
+    _audit(bot, "nick", str(user_id), f"{member_name(bot, user_id)} is also known as `{alias}`")
     return {"user_id": str(user_id), "name": member_name(bot, user_id), "aliases": aliases}
 
 
@@ -1194,6 +1568,14 @@ def get_config(bot: BossBot) -> dict:
         "paused": bot.paused,
         "extract_enabled": bot.extract_enabled,
         "quiet_mode": bot.quiet_mode,
+        "chat_mode": bot.chat_mode,
+        # Whether the chatbot *could* answer at all: a chat role and at least
+        # one chat channel. `chat_mode` on top of an unconfigured pilot answers
+        # nobody, and the page needs to be able to say so.
+        "chat_configured": bot.settings.chat_pilot_configured,
+        "chat_channels": [str(c) for c in bot.settings.chat_pilot_channel_id_list],
+        "chat_categories": [str(c) for c in bot.settings.chat_pilot_category_id_list],
+        "chat_model": bot.settings.chat_pilot_model,
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",
@@ -1226,6 +1608,7 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
     key = (key or "").strip().lower()
     if key not in CONFIG_KEYS:
         raise BadRequest(f"unknown setting `{key}` - one of {', '.join(CONFIG_KEYS)}")
+    before = bot.repo.get_config(key)
     if key == "day_of_ping_time":
         try:
             stored = parse_hhmm(str(value)).strftime("%H:%M")
@@ -1245,11 +1628,14 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
             raise BadRequest("countdown_minutes must be whole minutes, e.g. `60,15`") from None
         if not parsed or any(m <= 0 for m in parsed):
             raise BadRequest("countdown_minutes must be positive whole minutes, e.g. `60,15`")
-        bot.repo.set_config(key, ",".join(str(m) for m in sorted(set(parsed), reverse=True)))
+        stored = ",".join(str(m) for m in sorted(set(parsed), reverse=True))
+        bot.repo.set_config(key, stored)
         for run in bot.repo.list_runs():
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
     else:
-        bot.repo.set_config(key, _as_flag(value))
+        stored = _as_flag(value)
+        bot.repo.set_config(key, stored)
+    _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
     return get_config(bot)
 
 
@@ -1271,6 +1657,12 @@ async def post_digest(
             "couldn't post the digest - Discord rejected the message; check the bot logs"
         )
     cid = getattr(getattr(message, "channel", None), "id", channel_id)
+    _audit(
+        bot,
+        "digest",
+        str(cid) if cid else None,
+        f"posted the {week}-week digest in {channel_name(bot, cid) or f'channel {cid}'}",
+    )
     return {
         "posted": True,
         "week": week,
@@ -1430,6 +1822,12 @@ def queue_rescan(
         requested_by=requested_by,
         names=names,
     )
+    _audit(
+        bot,
+        "rescan",
+        job.id,
+        f"queued a {window} re-read of {len(targets)} channel(s) from {source}",
+    )
     return job_view(job)
 
 
@@ -1452,6 +1850,7 @@ def cancel_rescan(bot: BossBot, job_id: str) -> dict:
         if job is None:
             raise NotFound("that rescan is no longer in memory")
         raise BadRequest(f"that rescan is already `{job.status}`")
+    _audit(bot, "rescan_stop", job_id, "asked a running rescan to stop after this channel")
     return rescan_job(bot, job_id)
 
 
@@ -1503,6 +1902,7 @@ async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
         raise BadRequest("couldn't post the test message")
     bot.repo.add_debug_message(message.id, run["id"], getattr(channel, "id", None), kind)
     cid = getattr(channel, "id", None)
+    _audit(bot, "ping", run["id"], f"posted a 🧪 TEST {kind} card for {_bosses_of(run)}")
     return {
         "run_id": run["id"],
         "kind": kind,
@@ -1586,6 +1986,8 @@ __all__ = [
     "access_report",
     "amend_run",
     "amendment_view",
+    "audit_log",
+    "audit_view",
     "boss_grid",
     "boss_view",
     "bosses_in_use",
@@ -1594,6 +1996,10 @@ __all__ = [
     "approve",
     "cancel_run",
     "channel_is_watched",
+    "chat_interaction_view",
+    "chat_interactions",
+    "chat_summary",
+    "created_cards",
     "create_fixed",
     "debug_ping",
     "delete_fixed",
@@ -1602,6 +2008,7 @@ __all__ = [
     "fixed_view",
     "get_config",
     "load_amendment",
+    "load_chat_interaction",
     "load_extraction",
     "load_fixed",
     "load_run",
@@ -1630,6 +2037,7 @@ __all__ = [
     "resolve_rescan_channels",
     "run_view",
     "schedule",
+    "short_subject",
     "set_config",
     "set_nick",
     "set_rsvp",

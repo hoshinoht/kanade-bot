@@ -16,7 +16,7 @@ import dateparser
 import discord
 from discord import app_commands
 
-from . import formatting
+from . import audit, formatting
 from .bosses import BossParseError
 from .debug import DebugGroup, DebugNotAllowed
 from .extract.window import DEFAULT_WINDOW, WINDOWS
@@ -99,6 +99,42 @@ class NotAnAdmin(app_commands.CheckFailure):
 
 def _bot(interaction: discord.Interaction) -> BossBot:
     return interaction.client  # type: ignore[return-value]
+
+
+def _actor(interaction: discord.Interaction) -> audit.Actor:
+    """Who the audit trail credits for a slash command: the member who ran it.
+
+    The service functions these commands share with the portal record who made
+    each change (:mod:`bot.audit`), and they read the actor from the context
+    rather than an argument. Nothing sets it out here, so a `/status` would be
+    filed as `system` -- the one surface that always knows exactly whose
+    decision it was, recorded as nobody's.
+    """
+    return audit.Actor("discord", str(interaction.user.id))
+
+
+def _record(
+    interaction: discord.Interaction, action: str, subject: str | None, detail: str
+) -> None:
+    """Note a change a command made on its own, without the service layer.
+
+    Most commands here write through the repository directly rather than
+    through :mod:`bot.api.service`, so there is nothing between them and SQLite
+    to record what happened. The action verbs and the wording of ``detail``
+    deliberately match the service's, so one trail reads the same whether a run
+    was moved from Discord or from the portal.
+
+    Always called *after* the change: a command that refused writes no row.
+    """
+    audit.record(_bot(interaction).repo, _actor(interaction), action, subject, detail)
+
+
+def _record_config(
+    interaction: discord.Interaction, key: str, before: str | None, now: str
+) -> None:
+    """A settings change, worded exactly as :func:`bot.api.service.set_config` words it."""
+    was = before if before is not None else "unset"
+    _record(interaction, "config", key, f"{key}: {was} -> {now}")
 
 
 async def _require_role(interaction: discord.Interaction) -> bool:
@@ -505,6 +541,14 @@ class FixedGroup(app_commands.Group):
             channel_id=interaction.channel_id,
         )
         bot.materialise_weeks()
+        _record(
+            interaction,
+            "fixed_add",
+            fixed_id,
+            f"added the weekly {formatting.format_bosses(boss_list)} on "
+            f"{WEEKDAY_NAMES[parse_weekday(day.value)]} {hhmm.strftime('%H:%M')} "
+            f"for {len(ids)} member(s)",
+        )
         # The invoker is not added automatically, so say plainly when they have
         # set up a run that will never ping them.
         not_on_it = (
@@ -637,6 +681,15 @@ class FixedGroup(app_commands.Group):
         bot.repo.update_fixed_run(id, **fields)
         _apply_fixed_to_runs(bot, id, set(fields))
         bot.materialise_weeks()
+        updated = bot.repo.get_fixed_run(id)
+        _record(
+            interaction,
+            "fixed_edit",
+            id,
+            f"changed {', '.join(sorted(fields))} on the weekly "
+            f"{formatting.format_bosses(updated['bosses'])} "
+            f"({WEEKDAY_NAMES[updated['weekday']]} {updated['time']})",
+        )
         await interaction.response.send_message(
             f"✅ Updated.\n{formatting.fixed_run_line(bot.repo.get_fixed_run(id), bot.bosses)}",
             ephemeral=True,
@@ -666,6 +719,14 @@ class FixedGroup(app_commands.Group):
                 _sync_run_reminders(bot, run["id"])
                 cancelled += 1
         bot.repo.delete_fixed_run(id)
+        _record(
+            interaction,
+            "fixed_remove",
+            id,
+            f"removed the weekly {formatting.format_bosses(fixed['bosses'])} "
+            f"({WEEKDAY_NAMES[fixed['weekday']]} {fixed['time']}); "
+            f"{cancelled} upcoming run(s) cancelled",
+        )
         await interaction.response.send_message(
             f"🗑️ Fixed run `#{short_id(id)}` removed ({cancelled} upcoming run(s) cancelled).",
             ephemeral=True,
@@ -688,14 +749,20 @@ class BotGroup(app_commands.Group):
 
     @app_commands.command(name="pause", description="Stop watching chat (reminders keep running)")
     async def pause(self, interaction: discord.Interaction) -> None:
-        _bot(interaction).repo.set_config("paused", "1")
+        repo = _bot(interaction).repo
+        before = repo.get_config("paused")
+        repo.set_config("paused", "1")
+        _record_config(interaction, "paused", before, "1")
         await interaction.response.send_message(
             "⏸️ Chat watching paused. Reminders and slash commands still work.", ephemeral=True
         )
 
     @app_commands.command(name="resume", description="Resume watching chat")
     async def resume(self, interaction: discord.Interaction) -> None:
-        _bot(interaction).repo.set_config("paused", "0")
+        repo = _bot(interaction).repo
+        before = repo.get_config("paused")
+        repo.set_config("paused", "0")
+        _record_config(interaction, "paused", before, "0")
         await interaction.response.send_message("▶️ Chat watching resumed.", ephemeral=True)
 
 
@@ -843,6 +910,14 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
     _sync_run_reminders(bot, run["id"])
 
     updated = bot.repo.get_run(run["id"])
+    _record(
+        interaction,
+        "amend",
+        run["id"],
+        f"moved {formatting.format_bosses(updated['bosses'])} from "
+        f"{formatting.local_day(old_at, bot.tz)} {formatting.local_time(old_at, bot.tz)} to "
+        f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}",
+    )
     await interaction.response.send_message(
         f"✅ Run `#{short_id(run['id'])}` moved to "
         f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}.",
@@ -930,7 +1005,8 @@ async def _set_status(interaction: discord.Interaction, run_id: str, state: str)
     try:
         # The reply is ephemeral, so the channel still needs telling -- but
         # without the "(via portal)" marker, because this *was* a chat decision.
-        updated = await service.set_status(bot, run["id"], state, mark=False)
+        with audit.acting(_actor(interaction)):
+            updated = await service.set_status(bot, run["id"], state, mark=False)
     except ApiError as exc:
         await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
         return
@@ -986,9 +1062,10 @@ async def swap(
     await interaction.response.defer(ephemeral=True)
     try:
         # `mark=False`: this is a chat decision, not a portal one.
-        updated = await service.swap_participants(
-            bot, run["id"], remove=leaving, add=joining, mark=False
-        )
+        with audit.acting(_actor(interaction)):
+            updated = await service.swap_participants(
+                bot, run["id"], remove=leaving, add=joining, mark=False
+            )
     except ApiError as exc:
         await interaction.followup.send(f"❌ {exc.message}", ephemeral=True)
         return
@@ -1031,6 +1108,14 @@ async def rsvp(
     new_status = compute_status(run["status"], run["participants"], bot.repo.get_rsvps(resolved))
     if new_status != run["status"]:
         bot.repo.set_run_status(resolved, new_status)
+    _record(
+        interaction,
+        "rsvp",
+        resolved,
+        f"{answer.value} for {interaction.user.display_name} on "
+        f"{formatting.format_bosses(run['bosses'])} "
+        f"({formatting.local_day(run['datetime'], bot.tz)})",
+    )
     await interaction.response.send_message(
         f"Noted: **{answer.value}** for run `#{short_id(resolved)}` "
         f"({formatting.STATUS_LABEL.get(new_status, new_status)}).",
@@ -1087,13 +1172,14 @@ async def rescan(
         channel_id, _thread = origin_ids(interaction.channel)
         channels = [str(channel_id)]
     try:
-        job = service.queue_rescan(
-            bot,
-            channels,
-            window=which,
-            source="slash",
-            requested_by=interaction.user.id,
-        )
+        with audit.acting(_actor(interaction)):
+            job = service.queue_rescan(
+                bot,
+                channels,
+                window=which,
+                source="slash",
+                requested_by=interaction.user.id,
+            )
     except ApiError as exc:
         await interaction.response.send_message(f"❌ {exc.message}", ephemeral=True)
         return
@@ -1115,7 +1201,17 @@ async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None
     if running is None:
         await interaction.response.send_message("Nothing is being re-read.", ephemeral=True)
         return
-    bot.rescans.cancel(running.id)
+    # Not routed through `service.cancel_rescan`, which the portal uses: that
+    # raises on a job that has already finished and builds a whole job view to
+    # return, neither of which this reply wants. The row it writes is the same
+    # one, so both surfaces read alike on the Audit page.
+    if bot.rescans.cancel(running.id):
+        _record(
+            interaction,
+            "rescan_stop",
+            running.id,
+            "asked a running rescan to stop after this channel",
+        )
     await interaction.response.send_message(
         f"🛑 `{running.short_id}` will stop after the channel it is on "
         f"({running.done} of {running.total} done).",
@@ -1210,6 +1306,12 @@ async def pings(
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
     bot.repo.set_ping_level(user.id, chosen)
+    _record(
+        interaction,
+        "member",
+        str(user.id),
+        f"{user.display_name} is now on `{chosen}` @mentions",
+    )
     await interaction.response.send_message(
         f"🔔 Pings set to **{chosen}** — {PING_LEVEL_HELP[chosen]}.", ephemeral=True
     )
@@ -1226,6 +1328,7 @@ async def nick(interaction: discord.Interaction, user: discord.Member, alias: st
         return
     bot.repo.upsert_member(user.id, user.display_name, user.nick, bot.has_bossing_role(user))
     aliases = bot.repo.add_alias(user.id, alias)
+    _record(interaction, "nick", str(user.id), f"{user.display_name} is also known as `{alias}`")
     await interaction.response.send_message(
         f"✅ {mention(user.id)} is now also known as: {', '.join(f'`{a}`' for a in aliases)}",
         ephemeral=True,
@@ -1242,12 +1345,14 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
     except ValueError as exc:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
+    before = bot.repo.get_config("day_of_ping_time")
     bot.repo.set_config("day_of_ping_time", parsed.strftime("%H:%M"))
     # Re-place every day-of reminder that has not fired yet.
     moved = 0
     for reminder in bot.repo.unsent_reminders(kind="day_of"):
         _sync_run_reminders(bot, reminder["run_id"])
         moved += 1
+    _record_config(interaction, "day_of_ping_time", before, parsed.strftime("%H:%M"))
     await interaction.response.send_message(
         f"✅ Day-of pings now go out at **{parsed.strftime('%H:%M')}** "
         f"{bot.settings.tz} ({moved} pending reminder(s) rescheduled).",

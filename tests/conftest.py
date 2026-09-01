@@ -96,6 +96,27 @@ def auth(client):
     return client
 
 
+# ---------------------------------------------------------------------------
+# phase 4: the speech pilot
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def chat_bot(repo: Repo, bosses: BossTable):
+    """A stand-in client configured for the chatbot; see `tests/chat_support.py`."""
+    from .chat_support import build_bot
+
+    return build_bot(repo, bosses)
+
+
+@pytest.fixture
+def chat_seeded(chat_bot):
+    """`chat_bot` with two parties and a materialised week; returns their ids."""
+    from .chat_support import seed
+
+    return seed(chat_bot)
+
+
 @pytest.fixture
 def seeded(fake_bot):
     """A guild with two parties, a week materialised, and one open proposal.
@@ -155,6 +176,30 @@ def seeded(fake_bot):
         message_ids=["800000000000000001"],
         amendment_ids=[amendment],
     )
+    interaction = repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="when is star this week?",
+        reply="Star is Monday 21:30 — you and Alvin are on it.",
+        outcome="answered",
+        rounds=2,
+        channel_id=WATCHED_CHANNEL,
+        message_id=800000000000000002,
+        author_id=1002,
+        latency_ms=8400,
+        model_ms=8100,
+        tools_ms=120,
+        prompt_tokens=3120,
+        completion_tokens=64,
+        tool_calls=[
+            {
+                "name": "get_schedule",
+                "arguments": "week='this'",
+                "ms": 120,
+                "outcome": "ok",
+                "created": [],
+            }
+        ],
+    )
     return {
         "week_start": ws,
         "fixed_star": star,
@@ -163,4 +208,5 @@ def seeded(fake_bot):
         "run_kalos": kalos_run["id"],
         "amendment": amendment,
         "extraction": extraction,
+        "interaction": interaction,
     }

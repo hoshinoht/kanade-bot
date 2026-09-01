@@ -2,6 +2,61 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 2.0.0
+
+**Added**
+
+- **The chatbot** (`bot/chat/`): mention-gated, role-gated, rate-limited, with a
+  persona loaded from the data volume. Read tools answer scheduling questions
+  directly; write tools draft the same ✅/❌ proposal cards everything else
+  uses — the model can never touch the schedule itself. Understands the group's
+  own language: "tonight 23:00", "tmr 2300", bare clock times, "Hard Baldrix"
+  and "Extreme Kalos" spelled out, weekly versus one-time runs.
+- Rejection follow-up: ❌ a card the chatbot drafted for you and it asks — in
+  voice, once per card, cooldown-guarded — what you would like instead.
+- Chat analytics: every interaction logged with its tool trace, rounds, latency
+  and token counts; a Chat page in the portal, `GET /api/chat`, `bossctl chat`.
+- The chat model is its own setting (`CHAT_PILOT_MODEL`), so conversation can
+  run on a larger model — Ollama's hosted ones included — while extraction
+  stays local.
+- **Audit trail** (schema v7): every schedule mutation records surface, actor,
+  action, subject and detail. Portal actions name the tailnet login when
+  `TRUST_TAILSCALE_HEADERS` vouches for it, `bossctl` names the OS user, cards
+  name the reacting member, chat-drafted cards name the asker, slash commands
+  name the invoker. An Audit page in the portal, `GET /api/audit`,
+  `bossctl audit`.
+- Container hardening: read-only root filesystem, all capabilities dropped,
+  no-new-privileges, memory and pid caps. Dependabot version bumps, security
+  alerts and secret-scanning push protection on the repository.
+
+**Changed**
+
+- Chat write tools are scoped server-side: proposing a change to an existing
+  run requires being on it (or owning the weekly timing behind it) and asking
+  from its home channel; admins are exempt. Retiring superseded cards is
+  channel-scoped the same way, so a draft raised elsewhere can no longer bury
+  a party's pending card.
+- Schedule answers mark finished runs as already happened and say plainly when
+  nothing upcoming is left, instead of leaving the arithmetic to the model.
+- The system prompt states the configured chat model and the developer
+  attribution, so "what model are you on" and "who made you" get facts, not
+  inventions.
+- Documentation split: setup, commands, extractor, chatbot, portal and
+  development each have their own guide under `docs/`; the README is a pitch
+  and an index. Licensed under MIT.
+
+**Fixed**
+
+- Member text can no longer impersonate the scheduler's own bracketed notes to
+  the model; the note shapes are defused where member text enters the prompt,
+  and guild tags like `[SAKU]` pass untouched.
+- The persona voice reminder now actually arrives last: gpt-oss's template
+  hoists trailing system messages into the top instructions header, so it is
+  sent as a user-role scheduler note instead — which is also why card
+  confirmations kept coming out flat.
+- A blank `API_PORT=` line in `.env` no longer silently fails the container
+  healthcheck.
+
 ## 1.9.0
 
 **Added**

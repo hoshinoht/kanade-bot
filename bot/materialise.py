@@ -248,3 +248,34 @@ def refresh_run_reminders(
     if run is None:
         return
     ensure_reminders(repo, run, tz, ping_time, countdowns, now=now, rebuild=True)
+
+
+def retire_fixed_run(
+    repo: Repo,
+    fixed_id: str,
+    week_starts: Sequence[datetime],
+    tz: ZoneInfo,
+    ping_time: time,
+    countdowns: Sequence[int],
+) -> int:
+    """Delete a weekly timing and cancel the runs it has already produced.
+
+    Returns how many live runs were cancelled. The pure half of `/fixed remove`:
+    :func:`bot.api.service.delete_fixed` wraps this with the channel notice, and
+    the chatbot's ratified ``fix``/``remove`` card commits through it too, so a
+    baseline removed from Discord, from the portal and from chat all leave the
+    database in exactly the same state.
+
+    A run that is already ``done`` or ``cancelled`` is left alone: retiring a
+    timing is about the weeks to come, and rewriting a night that has already
+    happened would falsify the record of it.
+    """
+    cancelled = 0
+    for week_start in week_starts:
+        run = repo.run_for_fixed(fixed_id, week_start)
+        if run is not None and run["status"] not in ("done", "cancelled"):
+            repo.set_run_status(run["id"], "cancelled")
+            refresh_run_reminders(repo, run["id"], tz, ping_time, countdowns)
+            cancelled += 1
+    repo.delete_fixed_run(fixed_id)
+    return cancelled

@@ -29,7 +29,7 @@ from datetime import time as clock_time
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from .. import formatting, pings
+from .. import audit, formatting, pings
 from ..materialise import RUN_DONE_AFTER
 from ..rsvp import apply_reaction
 from ..timeutil import utcnow
@@ -87,6 +87,11 @@ ACT_ON_AMBIGUOUS = frozenset({"sub", "rsvp"})
 #: Kinds that become an `add` when the channel has no run with those bosses and
 #: the thread did settle on a day and time.
 CONVERTS_TO_ADD = frozenset({"move", "split"})
+
+#: Who the audit trail credits for a card nobody asked for by name: the model
+#: read a channel and wrote a proposal down. A caller that *does* know a person
+#: passes their id to :meth:`Pipeline.apply_plan` instead.
+EXTRACTOR_ACTOR = "extractor"
 
 #: How far into the past a proposed time may point before the card is pointless.
 #: A rescan reads a whole boss week, so without this it would cheerfully post
@@ -1121,11 +1126,18 @@ class Pipeline:
         week: datetime,
         summary: str,
         report: RescanReport | None = None,
+        actor: str = EXTRACTOR_ACTOR,
     ) -> list[str]:
         """Turn planned entries into answers, rows and one card. Returns the row ids.
 
         Shared by the live path (one burst) and a rescan (a whole window,
         consolidated), so a card looks the same whichever produced it.
+
+        ``actor`` is the name the audit trail credits for the cards this raises.
+        Chat is the surface either way -- a proposal here always comes from
+        something somebody said in a channel -- but the *name* is
+        :data:`EXTRACTOR_ACTOR` unless a caller knows a person and says so, as
+        :mod:`bot.chat.tools` could for the member whose question raised a card.
         """
         await self._repost_stranded(channel_id, report)
         for entry in rsvps:
@@ -1134,8 +1146,21 @@ class Pipeline:
             return []
         amendment_ids, retired = self._record(proposals, channel_id, week, summary)
         await self._mark_superseded(retired)
-        if not await self._post_card(channel_id, amendment_ids):
+        posted = await self._post_card(channel_id, amendment_ids)
+        if not posted:
             self._note_unposted(channel_id, amendment_ids, report)
+        # One row for the card, not one per amendment: a card is what a person
+        # sees and answers, and a burst that proposes three changes is still one
+        # thing that happened.
+        audit.record(
+            self.bot.repo,
+            audit.Actor("chat", actor),
+            "propose",
+            amendment_ids[0],
+            f"raised a card in {self._channel_name(channel_id) or channel_id} proposing "
+            f"{', '.join(sorted({e.kind for e in proposals}))}"
+            + ("" if posted else " (it could not be posted)"),
+        )
         return amendment_ids
 
     async def _repost_stranded(self, channel_id: str, report: RescanReport | None) -> None:
@@ -1185,6 +1210,16 @@ class Pipeline:
             self.bot.repo.set_rsvp(run["id"], user_id, entry.amendment.rsvp, source="chat")
             fresh = self.bot.repo.get_run(run["id"]) or run
             name = self._name_for(str(user_id))
+            # The person themselves, not the extractor: this is their answer,
+            # read off their own message.
+            audit.record(
+                self.bot.repo,
+                audit.Actor("chat", str(user_id)),
+                "rsvp",
+                run["id"],
+                f"{name} said {entry.amendment.rsvp} to "
+                f"{formatting.format_bosses(fresh['bosses'])} in chat",
+            )
             if result.state == "no":
                 await self.bot.notify_decline(fresh, user_id, name, channel_id=channel_id)
             else:
@@ -1211,7 +1246,13 @@ class Pipeline:
         retired: list[dict] = []
         for entry in entries:
             if entry.run is not None:
-                retired.extend(supersede(self.bot.repo, run_id=entry.run["id"]))
+                # `from_channel` is where these rows are about to be written,
+                # which is the only channel they are entitled to retire cards in
+                # (unless it is the run's own home). A burst read in the general
+                # channel must not take a party's live card off them.
+                retired.extend(
+                    supersede(self.bot.repo, run_id=entry.run["id"], from_channel=channel_id)
+                )
             elif entry.amendment.bosses:
                 retired.extend(
                     supersede(self.bot.repo, channel_id=channel_id, bosses=entry.amendment.bosses)
@@ -1329,4 +1370,12 @@ class Pipeline:
         return waiting
 
 
-__all__ = ["Burst", "Pipeline", "Plan", "Planned", "plan_burst", "urgent"]
+__all__ = [
+    "EXTRACTOR_ACTOR",
+    "Burst",
+    "Pipeline",
+    "Plan",
+    "Planned",
+    "plan_burst",
+    "urgent",
+]

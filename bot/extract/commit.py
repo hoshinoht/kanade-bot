@@ -17,9 +17,9 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from ..db import Repo
-from ..materialise import ensure_reminders, refresh_run_reminders
-from ..rsvp import recompute_after_roster_change
-from ..weeks import week_start
+from ..materialise import ensure_reminders, refresh_run_reminders, retire_fixed_run
+from ..rsvp import compute_status, recompute_after_roster_change
+from ..weeks import current_week_start, next_week_start, week_start
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ def supersede(
     channel_id: int | str | None = None,
     bosses: Sequence[str] = (),
     keep_id: str | None = None,
+    from_channel: int | str | None = None,
 ) -> list[dict]:
     """Retire the other live proposals about the same thing; returns them.
 
@@ -93,10 +94,23 @@ def supersede(
     re-applies a change the group has already moved past.
 
     Keyed on the target run, or -- for `add`/`fix`, which have no run yet -- on
-    the channel plus the exact boss set they would create.
+    the channel plus the exact boss set they would create. The second key is
+    channel-scoped by construction (:meth:`bot.db.Repo.proposed_for_bosses`);
+    the first is not, and ``from_channel`` is what scopes it.
+
+    ``from_channel`` is where the row doing the retiring lives. A card may be
+    retired by a row posted in its own channel, or by any row in the run's own
+    home channel -- and by nothing else. That closes a retire-across-channels:
+    a proposal raised somewhere else about a party's run would otherwise take
+    the live cards out from under that party, in a channel that never saw
+    either the request or the replacement. Callers that do not name a channel
+    keep the old, unscoped behaviour, so a caller only pays for the guard once
+    it can say where its row is going.
     """
     if run_id:
-        candidates = repo.proposed_for_run(run_id, exclude=keep_id)
+        candidates = _same_channel(
+            repo, run_id, repo.proposed_for_run(run_id, exclude=keep_id), from_channel
+        )
     elif channel_id is not None and bosses:
         candidates = repo.proposed_for_bosses(channel_id, bosses, exclude=keep_id)
     else:
@@ -106,6 +120,27 @@ def supersede(
     if candidates:
         log.info("superseded %d older proposal(s)", len(candidates))
     return candidates
+
+
+def _same_channel(
+    repo: Repo, run_id: str, candidates: list[dict], from_channel: int | str | None
+) -> list[dict]:
+    """The candidates a row in ``from_channel`` is entitled to retire.
+
+    Its own channel's, always. The run's home channel's as well, but only when
+    the row is *in* that home channel -- which is the case the whole guard is
+    about: a card drafted elsewhere (the chatbot posts its card in the channel
+    the question came from, whatever channel the run lives in) must not reach
+    into a party's channel and retire what they were about to press.
+    """
+    if from_channel is None:
+        return candidates
+    mine = str(from_channel)
+    run = repo.get_run(run_id)
+    home = str(run["channel_id"]) if run and run["channel_id"] is not None else None
+    if home is not None and home == mine:
+        return candidates
+    return [a for a in candidates if str(a.get("channel_id")) == mine]
 
 
 def _participants_for(amendment: dict, run: dict | None) -> list[str]:
@@ -173,7 +208,15 @@ def commit(
     # amendment *targeted*, not on any run it just created -- nothing can be
     # proposed against a run that did not exist a moment ago.
     if amendment["run_id"]:
-        result.superseded = supersede(repo, run_id=amendment["run_id"], keep_id=amendment["id"])
+        result.superseded = supersede(
+            repo,
+            run_id=amendment["run_id"],
+            keep_id=amendment["id"],
+            # This row's own channel: what it may retire is scoped to where it
+            # was posted, so confirming a card in one channel cannot clear a
+            # party's cards out of another.
+            from_channel=home,
+        )
     elif amendment["bosses"]:
         result.superseded = supersede(
             repo,
@@ -325,9 +368,52 @@ def _split(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, 
     return None
 
 
+def _rsvp(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
+    """Record an answer that was proposed rather than applied.
+
+    The extractor never gets here: it applies a chat answer immediately through
+    :func:`bot.rsvp.apply_reaction`, because reading "can" off a message is
+    recording an opinion its author already stated in public. The chatbot does
+    card its answers -- it is acting on a sentence addressed to *it*, so the
+    person it is answering for gets to see the card first.
+
+    The tally, and the status derived from it, are updated exactly as
+    :func:`bot.api.service.set_rsvp` does, so an answer means the same thing
+    however it arrived.
+    """
+    if run is None:
+        return "that run has gone"
+    answer = amendment.get("rsvp")
+    if answer not in ("yes", "no", "maybe"):
+        return "no answer was given"
+    people = [str(p) for p in amendment["participants"]]
+    if not people:
+        return "nobody was named"
+    outsiders = [uid for uid in people if uid not in run["participants"]]
+    if outsiders:
+        # Between the card going up and the ✅, a `/swap` can take somebody off.
+        return "that answer is for somebody who is no longer on the run"
+    result.run_id = run["id"]
+    for uid in people:
+        repo.set_rsvp(run["id"], uid, answer, source="chat")
+    status = compute_status(run["status"], run["participants"], repo.get_rsvps(run["id"]))
+    if status != run["status"]:
+        repo.set_run_status(run["id"], status)
+    return None
+
+
+#: A ``fix`` amendment whose payload carries this removes the weekly timing
+#: instead of creating one. A payload marker rather than a ninth kind: the two
+#: are the same noun, the schema needs no migration for it, and every existing
+#: `fix` row (which has no ``op``) keeps meaning exactly what it meant.
+FIX_REMOVE = "remove"
+
+
 def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
-    """Create the fixed weekly timing exactly as ``/fixed add`` would."""
+    """Create -- or remove -- a fixed weekly timing, as ``/fixed add``/``remove`` do."""
     payload = amendment.get("payload") or {}
+    if payload.get("op") == FIX_REMOVE:
+        return _unfix(repo, payload, result, ctx)
     weekday, hhmm = payload.get("weekday"), payload.get("time")
     if weekday is None or not hhmm:
         return "no recurring day and time were agreed - use `/fixed add`"
@@ -349,6 +435,30 @@ def _fix(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ct
     return None
 
 
+def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
+    """Retire a weekly timing: no more runs from it, and this week's is cancelled.
+
+    Deliberately the same :func:`bot.materialise.retire_fixed_run` that
+    `/fixed remove` and the portal call, so a baseline removed from chat leaves
+    the database in exactly the state the other two routes leave it in --
+    including what it does about runs that have already happened.
+    """
+    fixed_id = payload.get("fixed_run_id")
+    if not fixed_id:  # pragma: no cover - the tool always records one
+        return "no weekly timing was named"
+    fixed = repo.get_fixed_run(str(fixed_id))
+    if fixed is None:
+        return "that weekly timing has already gone"
+    weeks = [
+        current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+        next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
+    ]
+    cancelled = retire_fixed_run(repo, str(fixed_id), weeks, ctx.tz, ctx.ping_time, ctx.countdowns)
+    result.fixed_run_id = str(fixed_id)
+    result.notes.append(f"cancelled {cancelled} scheduled run(s)")
+    return None
+
+
 _HANDLERS: dict[str, Callable] = {
     "move": _move,
     "add": _add,
@@ -357,6 +467,7 @@ _HANDLERS: dict[str, Callable] = {
     "sub": _sub,
     "split": _split,
     "fix": _fix,
+    "rsvp": _rsvp,
 }
 
 
@@ -375,6 +486,7 @@ def expire_stale(repo: Repo, now) -> list[dict]:
 
 
 __all__ = [
+    "FIX_REMOVE",
     "PROPOSAL_TTL",
     "CommitResult",
     "commit",
