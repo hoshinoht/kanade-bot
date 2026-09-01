@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Config — Boss scheduler{% endblock %}
+{% block title %}Config — YuukiSakuna{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -32,7 +32,7 @@
       </label>
       <button class="btn btn--primary" type="submit">Save</button>
     </form>
-    <p class="run__meta">Changing either re-places every ping that has not fired yet.</p>
+    <p class="note">Changing either re-places every ping that has not fired yet.</p>
   </section>
 
   <section class="card">
@@ -47,7 +47,7 @@
         <button class="btn" type="submit">{{ "Turn the extractor on" if not config.extract_enabled else "Turn the extractor off" }}</button>
       </form>
     </div>
-    <p class="run__meta">
+    <p class="note">
       Watching is <strong>{{ "paused" if config.paused else "on" }}</strong> ·
       extractor <strong>{{ "on" if config.extract_enabled else "off" }}</strong>.
       Messages are stored either way, so a rescan can catch up later.
@@ -85,7 +85,7 @@
       </label>
       <button class="btn btn--primary" type="submit">Save</button>
     </form>
-    <p class="run__meta">
+    <p class="note">
       {% if config.chat_configured %}
         The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,
         answering in {{ config.chat_channels | length }} channel(s) with
@@ -109,11 +109,42 @@
         <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
       </form>
     </div>
-    <p class="run__meta">
+    <p class="note">
       Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
       While it is on the bot posts everything as usual but notifies nobody —
       names still show, no pings go out, and each message is marked 🔕.
     </p>
+  </section>
+
+  <section class="card">
+    <div class="card__head"><h2 class="card__title">Theme</h2></div>
+    {# The one control on the portal that is not a real form, deliberately: the
+       colourway is kept in this browser's localStorage and applied by
+       `static/portal.js`, so there is no server state for a POST to write and
+       nothing to redirect back to. The reasoning is written out at the top of
+       portal.js. Which one is ticked here is the *default*; portal.js re-ticks
+       the stored one as soon as it runs. #}
+    <fieldset class="field">
+      <span class="label">Colourway</span>
+      <div class="swatches">
+        {% for way in colorways %}
+        <label class="swatch">
+          <input type="radio" name="colorway" value="{{ way.key }}"{% if way.key == default_colorway %} checked{% endif %}>
+          <span class="swatch__dots" aria-hidden="true"
+                style="--sw-ground: {{ way.ground }}; --sw-accent: {{ way.accent }}"></span>
+          <span class="swatch__name">{{ way.name }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <noscript>
+      <p class="note">Choosing a colourway needs JavaScript — it is kept in this browser
+        rather than on the server, so there is nothing here to submit. Without it the portal
+        stays on {{ colorways[0].name }}.</p>
+    </noscript>
+    <p class="note">Takes effect as you pick it, and only on this device — the choice never
+      reaches the bot. Each colourway has an after-hours face your system's dark mode picks on
+      its own; there is no switch for that here, because the answer is already on the device.</p>
   </section>
 
   <section class="card">
@@ -130,7 +161,7 @@
       </label>
       <button class="btn btn--primary" type="submit">Post it now</button>
     </form>
-    <p class="run__meta">Posts the whole guild's week. It names people rather than pinging them.</p>
+    <p class="note">Posts the whole guild's week. It names people rather than pinging them.</p>
   </section>
 
   <section class="card">
@@ -163,7 +194,7 @@
     <div id="rescan-job">
       {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
     </div>
-    <p class="run__meta">Pulls each channel's history from Discord, splits it back into
+    <p class="note">Pulls each channel's history from Discord, splits it back into
       conversations, and posts one card per channel at the end. One channel at a time, so a full
       sweep takes a few minutes — it runs in the background, and the bot keeps working while it
       does, so you can leave the page.</p>

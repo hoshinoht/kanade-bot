@@ -27,7 +27,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from .. import events
+from .. import events, identity
 from ..weeks import WEEKDAY_NAMES
 from . import service
 from .auth import (
@@ -197,6 +197,44 @@ async def logout() -> Response:
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
+
+
+# ---------------------------------------------------------------------------
+# the bot's own artwork
+# ---------------------------------------------------------------------------
+
+
+def _identity_image(bot, name: str) -> Response:
+    path = identity.cached(bot.settings.db_path, name)
+    if path is None:
+        raise NotFound(f"no {name.removesuffix('.png')} has been cached yet")
+    return FileResponse(
+        path,
+        # The bytes are whatever Discord served, under a fixed name; the format
+        # is read back off them rather than guessed from the suffix.
+        media_type=identity.media_type(path),
+        headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
+    )
+
+
+@router.get("/identity/avatar")
+async def identity_avatar(request: Request, bot: Bot) -> Response:
+    """The bot's own avatar, from the disk cache.
+
+    Deliberately unauthenticated, exactly like ``/static/portraits/<boss>`` and
+    the stylesheet: it is the sign-in page's own artwork, so gating it would
+    mean the one page nobody is signed in on could never show it -- and it is a
+    picture the browser has to be allowed to cache. Two static images and no
+    state; ``/healthz`` is still the only route that says anything about the
+    guild without credentials.
+    """
+    return _identity_image(bot, identity.AVATAR_NAME)
+
+
+@router.get("/identity/banner")
+async def identity_banner(request: Request, bot: Bot) -> Response:
+    """The bot's profile banner -- the login window's hero strip. See above."""
+    return _identity_image(bot, identity.BANNER_NAME)
 
 
 # ---------------------------------------------------------------------------

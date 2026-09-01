@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from . import audit, backup, formatting
+from . import audit, backup, formatting, identity
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
@@ -289,8 +289,26 @@ class BossBot(discord.Client):
         )
         await self.sync_roster()
         self.materialise_weeks()
+        await self.cache_identity()
         if self.settings.backfill_on_start:
             await self.backfill_all()
+
+    async def cache_identity(self) -> None:
+        """Keep the portal a copy of the bot's own avatar and banner.
+
+        Purely cosmetic (:mod:`bot.identity`), so it is placed after the roster
+        and the week -- the two things a start actually owes the guild -- and
+        nothing it does is allowed to escape. A failure leaves whatever was
+        cached last time in place, so the sign-in page keeps its artwork through
+        an outage.
+        """
+        try:
+            written = await identity.refresh(self)
+        except Exception:
+            log.debug("could not cache the bot's identity art", exc_info=True)
+            return
+        if written:
+            log.info("cached the bot's %s", " and ".join(name[:-4] for name in written))
 
     # -- history ----------------------------------------------------------
     def watched_text_channels(self) -> list[discord.abc.GuildChannel]:

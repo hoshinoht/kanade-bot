@@ -146,7 +146,7 @@
     here to fall back on.
   </div>
   {% else %}
-  <p class="run__meta">
+  <p class="note">
     Everybody holding the chat-pilot role, read live from Discord. Staff are exempt from
     every budget, so their allowance is not a number anything reads.
   </p>
@@ -195,7 +195,7 @@
 {% if limits.per_user.overrides %}
 <section class="card">
   <div class="card__head"><h2 class="card__title">Own allowances</h2></div>
-  <p class="run__meta">
+  <p class="note">
     These members get their own number of answers instead of the guild's
     {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
     Overrides are stored, so they survive a restart; the spent windows above are not.

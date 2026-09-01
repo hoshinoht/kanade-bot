@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import boss_list %}
-{% block title %}Reminders — Boss scheduler{% endblock %}
+{% block title %}Reminders — YuukiSakuna{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -14,7 +14,7 @@
 <section class="card">
   <div class="card__head"><h2 class="card__title">Queued</h2></div>
   {% if not upcoming %}
-  <p class="run__meta">Nothing pending. Reminders appear as soon as a run is materialised.</p>
+  <p class="note">Nothing pending. Reminders appear as soon as a run is materialised.</p>
   {% else %}
   <div class="table-wrap">
     <table>
@@ -38,7 +38,7 @@
 <section class="card">
   <div class="card__head"><h2 class="card__title">Sent</h2></div>
   {% if not sent %}
-  <p class="run__meta">Nothing posted yet.</p>
+  <p class="note">Nothing posted yet.</p>
   {% else %}
   <div class="table-wrap">
     <table>

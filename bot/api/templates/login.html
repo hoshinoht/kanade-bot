@@ -1,30 +1,48 @@
 <!doctype html>
+{# Its own document rather than an extension of base.html, so it needs its own
+   copy of the chrome -- including the colourway bootstrap, which is why that
+   one lives in a partial. #}
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Sign in — Boss scheduler</title>
+<title>Sign in — YuukiSakuna</title>
+{% include "partials/theme_boot.html" %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+      href="https://fonts.googleapis.com/css2?family=Solway:wght@700;800&family=Zilla+Slab:wght@400;500;600&family=Sometype+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/portal.css">
+<link rel="icon" href="/identity/avatar">
 </head>
 <body>
 <div class="gate">
-  <form class="gate__card" method="post" action="/login">
-    <p class="eyebrow">Boss scheduler</p>
-    <h1>Sign in</h1>
-    <p>Paste <code>ADMIN_TOKEN</code> from <code>.env</code>. The session lasts seven days on this
-      device; rotating the token ends every session.</p>
-    {% if error %}<p class="flash flash--error">{{ error }}</p>{% endif %}
-    <input type="hidden" name="next" value="{{ next }}">
-    <label><span class="label">Admin token</span>
-      <input type="password" name="token" autocomplete="current-password" required autofocus>
-    </label>
-    <button class="btn btn--primary" type="submit">Sign in</button>
-  </form>
+  {# The banner and the avatar are background images, not <img>: with nothing
+     cached (a fresh deployment, or a bot with no banner) a 404 simply does not
+     paint, where an <img> would leave a broken-image glyph on the one page that
+     has no script to tidy it away. The strip keeps its own colour underneath,
+     and the avatar keeps its initial. #}
+  <section class="gate__window">
+    <div class="gate__bar"><span class="gate__bar-title">Sign in</span></div>
+    <div class="gate__hero" role="presentation"></div>
+    <div class="gate__body">
+      <span class="gate__avatar" aria-hidden="true">Y</span>
+      <h1 class="gate__name">YuukiSakuna</h1>
+      <p class="gate__sub">boss scheduler ·
+        <a href="https://github.com/hoshinoht/kanade-bot" rel="noopener">powered by kanade</a></p>
+      <form method="post" action="/login">
+        <p>Paste <code>ADMIN_TOKEN</code> from <code>.env</code>. The session lasts seven days on this
+          device; rotating the token ends every session.</p>
+        {% if error %}<p class="flash flash--error">{{ error }}</p>{% endif %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <label><span class="label">Admin token</span>
+          <input type="password" name="token" autocomplete="current-password" required autofocus>
+        </label>
+        <button class="btn btn--primary" type="submit">Sign in</button>
+      </form>
+    </div>
+  </section>
 </div>
 </body>
 </html>

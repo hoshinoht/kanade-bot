@@ -1,39 +1,78 @@
-/* Boss scheduler portal.
+/* Boss scheduler portal — "Kanade's desktop".
  *
  * Read on a phone, at night, to answer one question: what is on, and has
  * everyone answered? So the week keeps its own shape -- seven columns starting
  * on the reset day, not a Monday-first calendar -- and the clock time is the
  * loudest thing on every row.
  *
- * Type: Archivo for everything spoken, IBM Plex Mono for everything counted
- * (times, ids, latencies). The contrast between tracked caps and tabular
- * figures is the whole personality; nothing else needs decorating.
+ * The frame around that is a small retro operating system: a saturated
+ * coloured ground, and every piece of content in a cream window with a
+ * chrome-coloured title bar and three dots on it. The dots are drawn from
+ * `.card__head` with one ::before and two box-shadows, so the markup a window
+ * needs is exactly the markup a card already had.
+ *
+ * Because the ground is saturated, *nothing legible sits directly on it*: the
+ * masthead, the page head, the filter bar, each day's label and the footnote
+ * are all panels. That is the rule to keep when adding to this file.
+ *
+ * Type: Solway for what the thing is called (brand, page and card titles),
+ * Zilla Slab for everything spoken, Sometype Mono for everything counted --
+ * times, ids, latencies, table numbers. Slab against slab against slab: the
+ * contrast is weight and width rather than serif against sans.
+ *
+ * Colour is five user-chosen colourways, each with an after-hours dark face the
+ * system picks. The choice is the browser's own: `templates/partials/
+ * theme_boot.html` stamps `data-colorway` on <html> from localStorage before
+ * the first paint, and a page with no attribute at all -- no stored choice, or
+ * no JavaScript -- is already wearing the one on `:root`. Which is why otonose
+ * lives there rather than in a block of its own.
+ *
+ * Light values live on `:root` and on the `[data-colorway]` blocks; the dark
+ * ones only override inside the one media query, so no component's colour is
+ * ever *defined* in there -- a token missing from a dark block falls back to
+ * something real rather than to nothing.
  */
 
 :root {
   color-scheme: light dark;
 
-  --ground: #f1f0f5;
-  --surface: #ffffff;
-  --raise: #f8f7fb;
-  --ink: #17161f;
-  --dim: #6b6879;
-  --faint: #9794a5;
-  --line: #e1dfe8;
-  --line-soft: #ecebf1;
-  --accent: #4b3bd1;
-  --accent-ink: #ffffff;
-  --accent-wash: #ece9fb;
+  /* ── otonose, the default: gold ground, ink-blue accent ──────────────── */
+  --ground: #eec75f;
+  --surface: #fbf6e8;
+  --ink: #4a4a58;
+  --dim: #6e6b62;
+  --line: #e3d8b8;
+  --win: #5f6579;
+  --win-ink: #fbf6e8;
+  --accent: #4d5c9e;
+  --accent-ink: #f2f4fc;
+  --ok: #35906c;
+  --risk: #c4444a;
 
-  --ok: #16794f;
-  --warn: #8f6205;
-  --risk: #b8323d;
-  --own: #34648f;
-  --off: #8b8898;
+  /* ── the two signal colours no colourway names ────────────────────────
+   *
+   * "Waiting on an answer" and "own time" are states of a run, not notes in
+   * the palette: amber and blue mean the same thing on every ground, the way
+   * the green of `ok` and the red of `risk` do. */
+  --warn: #8a6207;
+  --own: #3a6a95;
+
+  /* ── derived, once, from whichever colourway is on ────────────────────
+   *
+   * Declared here and nowhere else: custom properties are substituted on the
+   * element that has them, and every anchor above is also set on <html>, so
+   * these follow a colourway (and its dark face) without being restated. */
+  --raise: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  --line-soft: color-mix(in srgb, var(--line) 55%, var(--surface));
+  --faint: color-mix(in srgb, var(--dim) 85%, var(--surface));
+  --off: color-mix(in srgb, var(--dim) 70%, var(--line));
+  --accent-wash: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
 
   /* Difficulty pills, keyed to the in-game boss list rather than to this
      page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
-     black-and-ember Extreme. They are the one saturated thing here. */
+     black-and-ember Extreme. They are the one thing on the page a colourway
+     does not touch, because they are the game's, not ours. */
   --pill-e-bg: #d7d9dd;
   --pill-e-fg: #23252b;
   --pill-n-bg: #2f93b3;
@@ -45,36 +84,111 @@
   --pill-x-bg: #17161c;
   --pill-x-fg: #ff5a3c;
 
-  --sans: "Archivo", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-    sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
+  /* The boss monogram's tint, as numbers rather than colours: the hue is set
+     per boss on the element (`--mono-hue`), and only the saturation and
+     lightness change between the two faces. */
+  --mono-s: 42%;
+  --mono-l: 88%;
+  --mono-ink-s: 55%;
+  --mono-ink-l: 26%;
+  --mono-line-s: 35%;
+  --mono-line-l: 78%;
+
+  --display: "Solway", "Palatino Linotype", Palatino, Georgia, serif;
+  --body: "Zilla Slab", Georgia, "Times New Roman", serif;
+  --mono: "Sometype Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
     monospace;
 
-  --r: 10px;
-  --r-sm: 6px;
-  --shadow: 0 1px 2px rgb(23 22 31 / 6%), 0 8px 24px -18px rgb(23 22 31 / 40%);
+  --r: 12px;
+  --r-in: 10px; /* inside a 2px border, so a title bar's corners match */
+  --r-sm: 8px;
+  --shadow: 0 2px 0 color-mix(in srgb, var(--win) 20%, transparent),
+    0 14px 28px -22px rgb(0 0 0 / 45%);
   --gutter: clamp(0.9rem, 3vw, 2rem);
 }
 
+[data-colorway="nazuna"] {
+  --ground: #f2a8b8;
+  --surface: #faf2ec;
+  --ink: #57474c;
+  --dim: #75626a;
+  --line: #e8d5d5;
+  --win: #91707a;
+  --win-ink: #faf2ec;
+  --accent: #d5537a;
+  --accent-ink: #fff2f5;
+  --ok: #35906c;
+  --risk: #a83c30;
+}
+
+[data-colorway="sumire"] {
+  --ground: #9fb0e4;
+  --surface: #f5f2ea;
+  --ink: #474e5e;
+  --dim: #656b7a;
+  --line: #d8d8d4;
+  --win: #6d7692;
+  --win-ink: #f5f2ea;
+  --accent: #4a5fae;
+  --accent-ink: #f0f4fd;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="coral"] {
+  --ground: #e87d85;
+  --surface: #f7f0e1;
+  --ink: #57504a;
+  --dim: #6b6459;
+  --line: #ddcfb8;
+  --win: #8d857c;
+  --win-ink: #f7f0e1;
+  --accent: #d95965;
+  --accent-ink: #fff6ee;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="hinano"] {
+  --ground: #8b7ad2;
+  --surface: #f5f1ec;
+  --ink: #4b4658;
+  --dim: #696274;
+  --line: #ded6db;
+  --win: #5f5474;
+  --win-ink: #f5f1ec;
+  --accent: #6446ab;
+  --accent-ink: #f4effc;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+/* ── after hours ────────────────────────────────────────────────────────────
+ *
+ * Chosen by the system, never by a control here: the device already knows
+ * whether it is night, and a second switch in the portal would only be a way
+ * for the two to disagree.
+ *
+ * Only overrides live in here. `:root` carries otonose's night face and the
+ * two shared signal colours; each colourway then restates its own eleven, so
+ * every one of them is fully described in both faces. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #131219;
-    --surface: #1b1a24;
-    --raise: #22212d;
-    --ink: #ecebf3;
-    --dim: #9a95a9;
-    --faint: #746f83;
-    --line: #2e2c3b;
-    --line-soft: #262533;
-    --accent: #a691ff;
-    --accent-ink: #191428;
-    --accent-wash: #241f3d;
+    --ground: #232735;
+    --surface: #303648;
+    --ink: #ece4cd;
+    --dim: #b0ab97;
+    --line: #454b60;
+    --win: #4f5871;
+    --win-ink: #ece4cd;
+    /* Gold takes over at night: the ground it had to stand out from is gone. */
+    --accent: #e9c25e;
+    --accent-ink: #2a2410;
+    --ok: #7cc79f;
+    --risk: #ef8b8b;
 
-    --ok: #4fd39c;
-    --warn: #e5b656;
-    --risk: #ff8b93;
-    --own: #83b6e8;
-    --off: #77738a;
+    --warn: #e2a44f;
+    --own: #8ab8e6;
 
     --pill-e-bg: #3a3d45;
     --pill-e-fg: #e6e8ee;
@@ -87,13 +201,70 @@
     --pill-x-bg: #0e0d12;
     --pill-x-fg: #ff7050;
 
-    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 10px 30px -20px rgb(0 0 0 / 80%);
+    --mono-s: 32%;
+    --mono-l: 24%;
+    --mono-ink-s: 65%;
+    --mono-ink-l: 78%;
+    --mono-line-s: 28%;
+    --mono-line-l: 34%;
+
+    --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
   }
 
-  .portrait--mono {
-    background: hsl(var(--mono-hue) 32% 24%);
-    color: hsl(var(--mono-hue) 65% 78%);
-    border-color: hsl(var(--mono-hue) 28% 34%);
+  [data-colorway="nazuna"] {
+    --ground: #322629;
+    --surface: #423236;
+    --ink: #f0e3e2;
+    --dim: #b09aa0;
+    --line: #5a464c;
+    --win: #7d5f66;
+    --win-ink: #f0e3e2;
+    --accent: #f29db4;
+    --accent-ink: #401f2a;
+    --ok: #8cccab;
+    --risk: #ee8f85;
+  }
+
+  [data-colorway="sumire"] {
+    --ground: #262c3a;
+    --surface: #343d4e;
+    --ink: #e7ebf2;
+    --dim: #9aa3b5;
+    --line: #465063;
+    --win: #5d6981;
+    --win-ink: #e7ebf2;
+    --accent: #a8bcf0;
+    --accent-ink: #1c2438;
+    --ok: #83c8a8;
+    --risk: #ef8f93;
+  }
+
+  [data-colorway="coral"] {
+    --ground: #322a2e;
+    --surface: #453d39;
+    --ink: #ece1cf;
+    --dim: #ab9f90;
+    --line: #5c5249;
+    --win: #6e655c;
+    --win-ink: #ece1cf;
+    --accent: #ef939b;
+    --accent-ink: #402226;
+    --ok: #8cccab;
+    --risk: #e2828a;
+  }
+
+  [data-colorway="hinano"] {
+    --ground: #2a2436;
+    --surface: #383045;
+    --ink: #eae4f0;
+    --dim: #a49bb3;
+    --line: #4c4260;
+    --win: #5b4f73;
+    --win-ink: #eae4f0;
+    --accent: #b9a4ec;
+    --accent-ink: #241a3a;
+    --ok: #86c9a8;
+    --risk: #ef8b95;
   }
 }
 
@@ -113,10 +284,11 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  font-family: var(--sans);
+  font-family: var(--body);
   font-size: 15px;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
 }
 
 a {
@@ -135,6 +307,25 @@ a:hover {
   border-radius: var(--r-sm);
 }
 
+/* The three dots every window wears. One circle in the ::before and two more
+   as its box-shadows, so a title bar needs no markup of its own -- and they
+   inherit the bar's ink, so a colourway never has to say anything about them. */
+.card__head::before,
+.modal__head::before,
+.gate__bar::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 1.75rem;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.55;
+  box-shadow:
+    13px 0 0 currentcolor,
+    26px 0 0 currentcolor;
+}
+
 /* ── shell ──────────────────────────────────────────────────────────────── */
 
 .shell {
@@ -144,26 +335,24 @@ a:hover {
   min-width: 0;
 }
 
-body {
-  overflow-x: clip;
-}
-
+/* The menu bar of the desktop: a cream strip, not a tint of the ground -- the
+   grounds are saturated enough that a translucent bar over one would take the
+   timezone and the nav down with it. */
 .masthead {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--ground) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  border-bottom: 2px solid var(--win);
 }
 
 .masthead__inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0.7rem var(--gutter) 0;
+  padding: 0.55rem var(--gutter) 0;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0.35rem 1rem;
   min-width: 0;
 }
@@ -173,24 +362,64 @@ body {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--display);
   font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: -0.01em;
+  font-size: 1.05rem;
   color: var(--ink);
   text-decoration: none;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
 }
 
-.brand__mark {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
+/* The bot's own avatar, cached to disk at start-up and served from
+   `/identity/avatar`. It is an overlay rather than an <img> so a deployment
+   that has never reached Discord shows the monogram underneath instead of a
+   broken-image glyph -- and needs no script to tidy one away. */
+.brand__avatar,
+.gate__avatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.brand__avatar::after,
+.gate__avatar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.brand__avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+}
+
+.brand__avatar::after {
+  background-image: url("/identity/avatar");
+}
+
+.brand__by {
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, var(--dim) 70%, transparent);
+  color: var(--dim);
+}
+
+.brand__by:hover {
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 3px;
-  padding: 0.1rem 0.32rem;
+  border-bottom-color: var(--accent);
 }
 
 .masthead__meta {
@@ -200,47 +429,88 @@ body {
   color: var(--faint);
   letter-spacing: 0.02em;
   display: flex;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
   align-items: baseline;
 }
 
+/* ── nav ─────────────────────────────────────────────────────────────────
+ *
+ * Three labelled groups on a desktop; on a phone, Week and Inbox stay in reach
+ * and the rest fold into a <details>. The two layouts are separate markup and
+ * exactly one is ever displayed, which is what lets the disclosure be a real
+ * <details> -- forcing one open at a width is a fight with the user agent that
+ * some of them now win. */
+
 .nav {
-  display: flex;
-  gap: 0.15rem;
-  overflow-x: auto;
-  scrollbar-width: none;
   flex: 1 0 100%;
   min-width: 0;
-  margin-top: 0.35rem;
+  margin-top: 0.3rem;
 }
 
-.nav::-webkit-scrollbar {
+.nav__desk {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.2rem 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav__desk::-webkit-scrollbar {
   display: none;
 }
 
-.nav a {
-  flex: none;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+.nav__phone {
+  display: none;
+}
+
+.nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.nav__eyebrow {
+  padding-left: 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--dim);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
+  color: var(--faint);
   white-space: nowrap;
 }
 
-.nav a:hover {
-  color: var(--ink);
+.nav__links {
+  display: flex;
+  gap: 0.1rem;
 }
 
-.nav a[aria-current="page"] {
+.nav__link {
+  flex: none;
+  padding: 0.28rem 0.55rem 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  white-space: nowrap;
+}
+
+.nav__link:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+.nav__link[aria-current="page"] {
   color: var(--ink);
   border-bottom-color: var(--accent);
 }
 
-.nav .pip {
+.pip {
   display: inline-block;
   min-width: 1.15em;
   margin-left: 0.35em;
@@ -255,18 +525,26 @@ body {
 
 /* ── page furniture ─────────────────────────────────────────────────────── */
 
+/* A panel, not bare text: `--dim` on a saturated ground is unreadable, and the
+   page head is where every screen says what it is looking at. */
 .page-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.6rem 1rem;
-  margin: 1.8rem 0 1rem;
+  margin: 1.5rem 0 1rem;
+  padding: 0.85rem 1.05rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
 }
 
 h1 {
-  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.8rem);
+  font-family: var(--display);
+  font-size: clamp(1.3rem, 1.05rem + 1vw, 1.7rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.005em;
   margin: 0;
 }
 
@@ -278,7 +556,7 @@ h1 {
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--faint);
@@ -287,7 +565,7 @@ h1 {
 
 .rule {
   border: 0;
-  border-top: 1px solid var(--line);
+  border-top: 2px solid var(--win-soft);
   margin: 1.5rem 0;
 }
 
@@ -297,7 +575,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -346,7 +624,7 @@ h1 {
 
 .rail__day--today .rail__num {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rail__day--today::after {
@@ -415,10 +693,20 @@ h1 {
   margin: 1.1rem 0 0.4rem;
 }
 
+/* A filter bar that is a page's own control sits on the ground, so it gets a
+   panel; the ones nested inside a card already have one. */
+.shell > .filters {
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
 .filters input,
 .filters select,
 .filters .btn {
-  height: 2.1rem;
+  height: 2.2rem;
 }
 
 .field {
@@ -431,7 +719,7 @@ h1 {
 .label {
   display: block;
   font-size: 0.66rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -444,9 +732,9 @@ textarea {
   max-width: 100%;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 0.42rem 0.6rem;
+  padding: 0.36rem 0.6rem;
   min-width: 0;
 }
 
@@ -465,19 +753,19 @@ textarea {
 
 .seg {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--surface);
 }
 
 .seg a {
-  padding: 0.42rem 0.75rem;
+  padding: 0.4rem 0.75rem;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--dim);
   text-decoration: none;
-  border-right: 1px solid var(--line);
+  border-right: 2px solid var(--line);
 }
 
 .seg a:last-child {
@@ -495,9 +783,9 @@ textarea {
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.38rem 0.7rem;
+  padding: 0.32rem 0.7rem;
   border-radius: var(--r-sm);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -513,15 +801,18 @@ textarea {
   color: var(--accent);
 }
 
+/* The chunky one, in the window chrome's own colour rather than the accent:
+   a title bar and the button that commits its form are the same object. */
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--win);
+  border-color: var(--win);
+  color: var(--win-ink);
 }
 
 .btn--primary:hover {
-  color: var(--accent-ink);
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--win) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--win) 88%, var(--ink));
+  color: var(--win-ink);
 }
 
 .btn--danger:hover {
@@ -573,16 +864,22 @@ details[open] > summary.btn {
   scroll-margin-top: 7rem;
 }
 
+/* Its own small plaque: the day name and its count sit on the ground, and
+   `--faint` on a saturated ground is not a colour anybody can read. */
 .day__head {
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.55rem;
+  padding: 0.3rem 0.8rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
 }
 
 .day__name {
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -596,8 +893,8 @@ details[open] > summary.btn {
 .day__head::after {
   content: "";
   flex: 1;
-  height: 1px;
-  background: var(--line);
+  height: 2px;
+  background: var(--line-soft);
 }
 
 .runs {
@@ -611,8 +908,8 @@ details[open] > summary.btn {
   gap: 0.4rem 1rem;
   align-items: start;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--off);
+  border: 2px solid var(--line);
+  border-left: 5px solid var(--off);
   border-radius: var(--r);
   padding: 0.8rem 0.9rem;
   box-shadow: var(--shadow);
@@ -656,9 +953,9 @@ details[open] > summary.btn {
 
 .run__time small {
   display: block;
-  font-family: var(--sans);
+  font-family: var(--body);
   font-size: 0.62rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -670,9 +967,9 @@ details[open] > summary.btn {
 }
 
 .run__bosses {
+  font-family: var(--display);
   font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 700;
   margin: 0 0 0.3rem;
 }
 
@@ -685,6 +982,17 @@ details[open] > summary.btn {
   color: var(--dim);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Prose in the same quiet voice. Never a flex container: flex splits a
+   paragraph's text nodes around any inline element, so a sentence continuing
+   after a <strong> starts a new item and its punctuation ends up orphaned --
+   which is exactly what `.run__meta` on a <p> used to do. */
+.note {
+  font-size: 0.78rem;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+  max-width: 68ch;
 }
 
 .run__actions {
@@ -716,12 +1024,12 @@ details[open] > summary.btn {
   gap: 0.4rem 0.6rem;
   margin-top: 0.6rem;
   padding-top: 0.6rem;
-  border-top: 1px solid var(--line-soft);
+  border-top: 2px solid var(--line-soft);
 }
 
 .statusbar__label {
   font-size: 0.62rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -755,9 +1063,9 @@ details[open] > summary.btn {
 }
 
 .run__cards-label {
-  font-family: var(--sans);
+  font-family: var(--body);
   font-size: 0.62rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
@@ -817,7 +1125,7 @@ details[open] > summary.btn {
 
 .answers__summary {
   font-size: 0.68rem;
-  padding: 0.2rem 0.5rem;
+  padding: 0.18rem 0.5rem;
   min-height: 0;
 }
 
@@ -859,7 +1167,7 @@ details[open] > summary.btn {
   padding: 0.34rem 0.7rem;
   min-height: 34px;
   border: 0;
-  border-right: 1px solid var(--line);
+  border-right: 2px solid var(--line);
   background: transparent;
   color: var(--dim);
   cursor: pointer;
@@ -925,7 +1233,7 @@ details[open] > summary.btn {
   font-weight: 600;
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   color: var(--dim);
   background: var(--raise);
   white-space: nowrap;
@@ -957,7 +1265,7 @@ details[open] > summary.btn {
   font-size: 0.72rem;
   padding: 0.1rem 0.35rem;
   border-radius: 999px;
-  border: 1px dashed var(--line);
+  border: 2px dashed var(--line);
   background: transparent;
   color: var(--dim);
 }
@@ -965,19 +1273,19 @@ details[open] > summary.btn {
 .chip--yes {
   color: var(--ok);
   border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
 }
 
 .chip--no {
   color: var(--risk);
   border-color: color-mix(in srgb, var(--risk) 35%, transparent);
-  background: color-mix(in srgb, var(--risk) 10%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
 }
 
 .chip--maybe {
   color: var(--own);
   border-color: color-mix(in srgb, var(--own) 35%, transparent);
-  background: color-mix(in srgb, var(--own) 10%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, var(--surface));
 }
 
 .chip--waiting {
@@ -1016,7 +1324,7 @@ details[open] > summary.btn {
 
 .status {
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1068,7 +1376,7 @@ details[open] > summary.btn {
   border-radius: 7px;
   object-fit: cover;
   background: var(--raise);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   font-weight: 700;
   letter-spacing: 0.01em;
   overflow: hidden;
@@ -1086,10 +1394,13 @@ details[open] > summary.btn {
   font-size: 0.78rem;
 }
 
+/* The hue is the boss's, set on the element; only how light it is belongs to
+   the face -- which is why those two are tokens rather than a second rule
+   inside the dark media query. */
 .portrait--mono {
-  background: hsl(var(--mono-hue) 42% 88%);
-  color: hsl(var(--mono-hue) 55% 26%);
-  border-color: hsl(var(--mono-hue) 35% 78%);
+  background: hsl(var(--mono-hue) var(--mono-s) var(--mono-l));
+  color: hsl(var(--mono-hue) var(--mono-ink-s) var(--mono-ink-l));
+  border-color: hsl(var(--mono-hue) var(--mono-line-s) var(--mono-line-l));
 }
 
 .boss__name {
@@ -1142,9 +1453,9 @@ details[open] > summary.btn {
 
 .grid-bosses {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   background: var(--line);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
 }
@@ -1159,7 +1470,7 @@ details[open] > summary.btn {
 }
 
 .bossrow--on {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
 }
 
 .bossrow__id {
@@ -1196,7 +1507,7 @@ details[open] > summary.btn {
   min-height: 36px;
   padding: 0 0.7rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   background: transparent;
   color: var(--dim);
   font-size: 0.64rem;
@@ -1274,13 +1585,18 @@ details[open] > summary.btn {
   color: var(--faint);
 }
 
-/* ── cards, tables, empties ─────────────────────────────────────────────── */
+/* ── windows: cards, tables, empties ────────────────────────────────────────
+ *
+ * A card is a window. `.card__head` is its title bar: it bleeds out through
+ * the card's own padding with a negative margin, so the bar spans the frame
+ * without any card having to be re-marked-up for it. A card with no head keeps
+ * its padding and simply has no bar. */
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
-  padding: 1rem 1.1rem;
+  padding: 1.05rem 1.1rem;
   box-shadow: var(--shadow);
 }
 
@@ -1291,16 +1607,40 @@ details[open] > summary.btn {
 .card__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem 0.8rem;
-  margin-bottom: 0.6rem;
+  align-items: center;
+  gap: 0.35rem 0.7rem;
+  margin: -1.05rem -1.1rem 0.85rem;
+  padding: 0.42rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border-radius: var(--r-in) var(--r-in) 0 0;
 }
 
 .card__title {
-  font-size: 0.98rem;
+  font-family: var(--display);
+  font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
   margin: 0;
+}
+
+.card__head a {
+  color: var(--win-ink);
+}
+
+/* A title bar carries more than a title -- the Inbox puts the confidence, the
+   channel and the id up there. They keep their shapes; only the colours that
+   were tuned against the page's surface are re-tuned against the bar. The
+   confidence keeps its own band colour by getting a surface to sit on, because
+   that colour is the whole point of it. */
+.card__head .id,
+.card__head .boss__lv,
+.modal__head .eyebrow {
+  color: color-mix(in srgb, var(--win-ink) 72%, var(--win));
+}
+
+.card__head .conf {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--win-ink) 40%, transparent);
 }
 
 .grid-2 {
@@ -1325,7 +1665,7 @@ details[open] > summary.btn {
 
 .stat {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   padding: 0.85rem 1rem;
   box-shadow: var(--shadow);
@@ -1334,7 +1674,7 @@ details[open] > summary.btn {
 .stat__name {
   margin: 0;
   font-size: 0.64rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--faint);
@@ -1362,7 +1702,7 @@ details[open] > summary.btn {
 
 .stat__unit {
   display: block;
-  font-family: var(--sans);
+  font-family: var(--body);
   font-size: 0.72rem;
   font-weight: 400;
   letter-spacing: 0;
@@ -1380,7 +1720,7 @@ details[open] > summary.btn {
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
-  border-top: 1px solid var(--line-soft);
+  border-top: 2px solid var(--line-soft);
   padding-top: 0.2rem;
 }
 
@@ -1395,10 +1735,16 @@ details[open] > summary.btn {
 
 .table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+/* Inside a window the table is already framed; a second border around it would
+   read as two panels stacked. */
+.card .table-wrap {
+  box-shadow: none;
 }
 
 table {
@@ -1410,12 +1756,12 @@ table {
 th {
   text-align: left;
   font-size: 0.64rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--faint);
   padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
   white-space: nowrap;
 }
 
@@ -1434,16 +1780,17 @@ tbody tr:hover {
 }
 
 .empty {
-  border: 1px dashed var(--line);
+  border: 2px dashed var(--line);
   border-radius: var(--r);
   padding: 2rem 1.2rem;
   text-align: center;
   color: var(--dim);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  background: var(--surface);
 }
 
 .empty strong {
   display: block;
+  font-family: var(--display);
   color: var(--ink);
   font-size: 0.95rem;
   margin-bottom: 0.3rem;
@@ -1454,19 +1801,20 @@ tbody tr:hover {
   padding: 0.55rem 0.8rem;
   font-size: 0.85rem;
   margin: 0.6rem 0;
-  border: 1px solid;
+  border: 2px solid;
 }
 
+/* Opaque, not a tint of whatever is behind: a flash lands on the ground. */
 .flash--ok {
   color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
 }
 
 .flash--error {
   color: var(--risk);
-  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
-  background: color-mix(in srgb, var(--risk) 8%, transparent);
+  border-color: color-mix(in srgb, var(--risk) 45%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
 }
 
 pre {
@@ -1474,13 +1822,85 @@ pre {
   font-size: 0.76rem;
   line-height: 1.55;
   background: var(--raise);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--r-sm);
   padding: 0.75rem 0.85rem;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
+}
+
+/* ── the theme picker ───────────────────────────────────────────────────────
+ *
+ * Five radio buttons wearing their own palette: the ground each one paints the
+ * desktop, and the accent it puts on a link. A real radio inside a real form,
+ * so choosing one is a POST that sets a cookie -- there is nothing here that
+ * needs a script. */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.4rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.swatch:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.swatch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.swatch:has(input:checked) {
+  color: var(--ink);
+  border-color: var(--win);
+  background: var(--raise);
+}
+
+.swatch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pair: the ground as the lozenge, its accent as the dot on it. */
+.swatch__dots {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--sw-ground);
+  border: 2px solid color-mix(in srgb, var(--sw-accent) 40%, var(--line));
+}
+
+.swatch__dots::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 12px;
+  border-radius: 50%;
+  background: var(--sw-accent);
 }
 
 /* ── inbox evidence: the chat that justifies a change ───────────────────── */
@@ -1502,7 +1922,7 @@ details fieldset {
   gap: 0.4rem;
   margin-top: 0.6rem;
   padding-left: 0.75rem;
-  border-left: 2px solid var(--line);
+  border-left: 3px solid var(--line);
 }
 
 .evidence__line {
@@ -1529,7 +1949,7 @@ details fieldset {
   font-size: 0.72rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid;
+  border: 2px solid;
 }
 
 .conf--high {
@@ -1546,53 +1966,107 @@ details fieldset {
   border-color: color-mix(in srgb, var(--risk) 35%, transparent);
 }
 
-/* ── login ──────────────────────────────────────────────────────────────── */
+/* ── login: the one window on an empty desktop ──────────────────────────── */
 
 .gate {
-  min-height: 82vh;
+  min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.5rem;
 }
 
-.gate__card {
-  width: min(26rem, 100%);
+.gate__window {
+  width: min(27rem, 100%);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
-  padding: 1.6rem;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.gate__card h1 {
-  margin-bottom: 0.3rem;
+.gate__bar {
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
 }
 
-.gate__card p {
+.gate__bar-title {
+  font-family: var(--display);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+/* The bot's profile banner, or -- with nothing cached -- a wash of its accent.
+   A background image rather than an <img> for the same reason as the avatar:
+   a 404 has to be an absence, not a broken glyph. */
+.gate__hero {
+  height: 104px;
+  background-color: color-mix(in srgb, var(--accent) 28%, var(--surface));
+  background-image: url("/identity/banner");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.gate__body {
+  padding: 0 1.4rem 1.5rem;
+}
+
+.gate__avatar {
+  width: 64px;
+  height: 64px;
+  margin-top: -32px;
+  border-radius: 16px;
+  font-size: 1.6rem;
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.gate__avatar::after {
+  background-image: url("/identity/avatar");
+}
+
+.gate__name {
+  margin: 0.55rem 0 0.1rem;
+}
+
+.gate__sub {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--dim);
+}
+
+.gate__body p {
   color: var(--dim);
   font-size: 0.85rem;
   margin-top: 0;
 }
 
-.gate__card label {
+.gate__body label {
   display: block;
 }
 
-.gate__card input {
+.gate__body input {
   width: 100%;
   font-family: var(--mono);
 }
 
-.gate__card .btn {
+.gate__body .btn {
   width: 100%;
   justify-content: center;
   margin-top: 0.7rem;
 }
 
+/* The footnote is on the ground too, and it is the smallest type on the page. */
 .footnote {
-  color: var(--faint);
+  color: var(--dim);
   font-size: 0.75rem;
   margin-top: 2.5rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem 0.9rem;
@@ -1636,6 +2110,62 @@ details fieldset {
 /* ── phone ──────────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  .nav__desk {
+    display: none;
+  }
+
+  /* Week and Inbox stay in reach; everything else is behind the disclosure.
+     Both are real links and it is a real <details>, so this works with the
+     script blocked -- portal.js only closes the menu on an outside tap. */
+  .nav__phone {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
+  .nav__more {
+    margin-left: auto;
+  }
+
+  .nav__more-btn {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.28rem 0.6rem 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--dim);
+  }
+
+  .nav__more-btn::-webkit-details-marker {
+    display: none;
+  }
+
+  .nav__more[open] > .nav__more-btn {
+    color: var(--ink);
+  }
+
+  .nav__sheet {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 30;
+    display: grid;
+    gap: 0.65rem;
+    min-width: 12rem;
+    padding: 0.7rem 0.8rem;
+    background: var(--surface);
+    border: 2px solid var(--win);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+  }
+
+  .nav__sheet .nav__links {
+    flex-wrap: wrap;
+  }
+
   .run {
     grid-template-columns: 1fr;
     padding: 0.75rem;
@@ -1649,15 +2179,15 @@ details fieldset {
   }
 
   /* "own time" is words, not a clock reading, so it drops out of the big
-   tabular-figure treatment rather than wrapping inside it. */
-.run--otot .run__time {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  padding-top: 0.35rem;
-}
+     tabular-figure treatment rather than wrapping inside it. */
+  .run--otot .run__time {
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    padding-top: 0.35rem;
+  }
 
-.run__time small {
+  .run__time small {
     margin-top: 0;
   }
 
@@ -1718,7 +2248,7 @@ dialog.modal:target {
   flex-direction: column;
   max-height: min(88vh, 48rem);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--win);
   border-radius: var(--r);
   box-shadow: 0 24px 60px -22px rgb(12 11 18 / 55%);
   overflow: hidden;
@@ -1730,16 +2260,18 @@ dialog.modal:target {
   align-items: center;
   gap: 0.6rem;
   flex: none;
-  padding: 0.75rem 1rem;
-  background: var(--raise);
+  padding: 0.55rem 0.85rem;
 }
 
+/* The same title bar a card wears, dots and all. */
 .modal__head {
-  border-bottom: 1px solid var(--line);
+  background: var(--win);
+  color: var(--win-ink);
 }
 
 .modal__foot {
-  border-top: 1px solid var(--line);
+  background: var(--raise);
+  border-top: 2px solid var(--line);
   justify-content: flex-end;
 }
 
@@ -1750,9 +2282,9 @@ dialog.modal:target {
 
 .modal__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-family: var(--display);
+  font-size: 0.92rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
@@ -1761,17 +2293,16 @@ dialog.modal:target {
   font: inherit;
   font-size: 0.85rem;
   line-height: 1;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid transparent;
+  padding: 0.3rem 0.5rem;
+  border: 2px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--dim);
+  color: var(--win-ink);
   cursor: pointer;
 }
 
 .modal__x:hover {
-  border-color: var(--line);
-  color: var(--ink);
+  border-color: var(--win-ink);
 }
 
 .modal__body {
@@ -1786,14 +2317,16 @@ dialog.modal:target {
 }
 
 /* The boss picker is the tall part, so it gets its own recess and its own
-   scrollbar rather than making the whole dialog a mile of pills. */
+   scrollbar rather than making the whole dialog a mile of pills. A recess in
+   `--raise`, not in the ground: the ground is saturated now, and the pills
+   that are not selected are dim outlines. */
 .modal__well {
   max-height: 40vh;
   overflow-y: auto;
   margin-top: 0.35rem;
   padding: 0.5rem;
-  background: var(--ground);
-  border: 1px solid var(--line-soft);
+  background: var(--raise);
+  border: 2px solid var(--line-soft);
   border-radius: var(--r-sm);
 }
 

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/macros.html" import boss_list %}
-{% block title %}Inbox — Boss scheduler{% endblock %}
+{% block title %}Inbox — YuukiSakuna{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -45,7 +45,7 @@
       — {% for person in item.participants %}<span class="chip">{{ person.name }}</span> {% endfor %}
     {% endif %}
   </p>
-  {% if item.summary %}<p class="run__meta"><em>{{ item.summary }}</em></p>{% endif %}
+  {% if item.summary %}<p class="note"><em>{{ item.summary }}</em></p>{% endif %}
 
   {% if item.evidence %}
   <div class="evidence">
