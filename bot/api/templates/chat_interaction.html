@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Chat {{ interaction.short_id }} — Boss scheduler{% endblock %}
+{% block title %}Chat {{ interaction.short_id }} — YuukiSakuna{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -68,7 +68,7 @@
 <section class="card">
   <div class="card__head"><h2 class="card__title">Tool trace</h2></div>
   {% if not interaction.tool_calls %}
-  <p class="run__meta">It answered from the conversation alone — nothing was looked up.</p>
+  <p class="note">It answered from the conversation alone — nothing was looked up.</p>
   {% else %}
   <div class="table-wrap">
     <table>

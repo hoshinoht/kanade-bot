@@ -30,21 +30,68 @@ HTMX_SRI = (
     "ZtjrzU8wzSBykpRDhqnMwlKISCrxQTURFULsXdpQ=="
 )
 
-#: The nav, in the order the work actually happens: look at the week, fix the
-#: baseline, answer what the extractor found, then the diagnostics.
-NAV = [
-    ("week", "/", "Week"),
-    ("fixed", "/fixed", "Fixed"),
-    ("inbox", "/inbox", "Inbox"),
-    ("extractions", "/extractions", "Extractions"),
-    ("chat", "/chat", "Chat"),
-    ("limits", "/limits", "Limits"),
-    ("audit", "/audit", "Audit"),
-    ("members", "/members", "Members"),
-    ("bosses", "/bosses", "Bosses"),
-    ("reminders", "/reminders", "Reminders"),
-    ("config", "/config", "Config"),
+#: The nav, in three groups: the schedule itself, then what the model did with
+#: it, then the levers. Grouped rather than flat because eleven equal-weight
+#: links read as a list to search rather than as a place with rooms in it -- and
+#: because the phone menu needs somewhere to fold the ones that are not Week.
+NAV_GROUPS = [
+    (
+        "Schedule",
+        [
+            ("week", "/", "Week"),
+            ("fixed", "/fixed", "Fixed"),
+            ("bosses", "/bosses", "Bosses"),
+        ],
+    ),
+    (
+        "Kanade",
+        [
+            ("inbox", "/inbox", "Inbox"),
+            ("extractions", "/extractions", "Extractions"),
+            ("chat", "/chat", "Chat"),
+            ("limits", "/limits", "Limits"),
+        ],
+    ),
+    (
+        "Operate",
+        [
+            ("members", "/members", "Members"),
+            ("reminders", "/reminders", "Reminders"),
+            ("config", "/config", "Config"),
+            ("audit", "/audit", "Audit"),
+        ],
+    ),
 ]
+
+#: The two the phone keeps in reach: tonight's runs, and anything waiting on an
+#: answer. Everything else folds into the disclosure menu beside them.
+NAV_PINNED = ("week", "inbox")
+
+#: The same links, flat, for anything that wants "every page there is".
+NAV = [item for _group, items in NAV_GROUPS for item in items]
+
+#: The five colourways, each a light face and (in `portal.css`) an after-hours
+#: dark one the system picks on its own. ``ground`` and ``accent`` are the two
+#: swatch dots on the Config page -- the light face, because that is the one a
+#: person is choosing between.
+#:
+#: The *choice* is not here and never reaches the server: it lives in the
+#: browser's ``localStorage`` and is applied by the inline bootstrap in
+#: ``partials/theme_boot.html``. This list only says which five exist, so the
+#: Config page can offer them; the same five keys are repeated in that snippet
+#: and in ``static/portal.js``, which is what stops a cookie, a route and a
+#: redirect existing for something no other browser will ever need to know.
+COLORWAYS = [
+    {"key": "otonose", "name": "Otonose", "ground": "#eec75f", "accent": "#4d5c9e"},
+    {"key": "nazuna", "name": "Nazuna", "ground": "#f2a8b8", "accent": "#d5537a"},
+    {"key": "sumire", "name": "Sumire", "ground": "#9fb0e4", "accent": "#4a5fae"},
+    {"key": "coral", "name": "Coral", "ground": "#e87d85", "accent": "#d95965"},
+    {"key": "hinano", "name": "Hinano", "ground": "#8b7ad2", "accent": "#6446ab"},
+]
+
+#: What a browser with nothing stored gets: the palette on `:root`, so a page
+#: with no ``data-colorway`` at all is already wearing it.
+DEFAULT_COLORWAY = "otonose"
 
 
 def local_dt(value: Any, bot: BossBot, fmt: str = "%a %d %b %H:%M") -> str:
@@ -95,6 +142,10 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
             "tz_name": bot.settings.tz,
             "guild_id": bot.settings.guild_id,
             "nav": NAV,
+            "nav_groups": NAV_GROUPS,
+            "nav_pinned": NAV_PINNED,
+            "colorways": COLORWAYS,
+            "default_colorway": DEFAULT_COLORWAY,
             "weekday_names": WEEKDAY_NAMES,
             "htmx_src": HTMX_SRC,
             "htmx_sri": HTMX_SRI,
@@ -105,9 +156,13 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
 
 
 __all__ = [
+    "COLORWAYS",
+    "DEFAULT_COLORWAY",
     "HTMX_SRC",
     "HTMX_SRI",
     "NAV",
+    "NAV_GROUPS",
+    "NAV_PINNED",
     "build_templates",
     "confidence_band",
     "duration",

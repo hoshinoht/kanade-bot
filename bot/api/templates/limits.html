@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Limits — Boss scheduler{% endblock %}
+{% block title %}Limits — YuukiSakuna{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -41,7 +41,7 @@
    somebody types, and a refresh landing mid-sentence would eat it. #}
 <section class="card" id="set-allowance">
   <div class="card__head"><h2 class="card__title">Set an allowance</h2></div>
-  <p class="run__meta">
+  <p class="note">
     Give one member their own number of answers instead of the guild's
     {{ limits.per_user.count }} per {{ "%.0f"|format(limits.per_user.window_s / 60) }} min.
     Works for somebody who has not asked anything yet — the usual reason to raise an
