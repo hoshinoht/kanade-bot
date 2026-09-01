@@ -33,10 +33,13 @@ def rule_body(selector: str) -> str:
     """What one rule declares, by exact selector.
 
     Token blocks contain no nested braces, so "up to the next `}`" is the whole
-    rule. The selector is matched with the brace attached, which is what keeps
-    `:root:not([data-theme="light"])` from also matching its colourway variants.
+    rule. Anchored to the start of a line and matched with its brace attached,
+    which is what keeps `th` from matching the tail of `width` and
+    `:root:not([data-theme="light"])` from matching its colourway variants.
     """
-    match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS)
+    match = re.search(
+        r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE
+    )
     assert match is not None, f"no rule for {selector}"
     return match.group(1)
 
@@ -68,6 +71,28 @@ def dark_twins() -> list[tuple[str, str]]:
 def media_block() -> str:
     start = PAGE_CSS.index(DARK_MEDIA)
     return PAGE_CSS[start : PAGE_CSS.index("\n}\n", start)]
+
+
+#: The type scale, smallest first. Every size on the page is one of these or a
+#: display size named where it is used.
+LADDER = ["micro", "mini", "small", "body-sm", "body", "lg", "brand"]
+
+
+def rem(value: str) -> float:
+    """A `1.1rem` or `var(--fs-lg)` value as a number, following the token once."""
+    token = re.fullmatch(r"var\((--[\w-]+)\)", value.strip())
+    if token:
+        value = tokens_of(":root")[token.group(1)]
+    match = re.fullmatch(r"([\d.]+)rem", value.strip())
+    assert match is not None, f"not a rem size: {value}"
+    return float(match.group(1))
+
+
+def font_size_of(selector: str) -> float:
+    """What one rule sets its text to, in rem."""
+    declared = re.search(r"font-size:\s*([^;]+);", rule_body(selector))
+    assert declared is not None, f"{selector} sets no font-size"
+    return rem(declared.group(1))
 
 
 # --- the look never reaches the server --------------------------------------
@@ -274,10 +299,75 @@ def test_the_nav_links_are_big_enough_to_read():
     the masthead, which is the wrong end of the scale for the only navigation
     there is. A floor rather than a fixed size -- the point is that it never
     goes back to being fine print."""
-    size = re.search(r"font-size:\s*([\d.]+)rem", rule_body(".nav__link"))
+    assert font_size_of(".nav__link") >= 0.9
 
-    assert size is not None
-    assert float(size.group(1)) >= 0.9
+
+# --- the type scale ---------------------------------------------------------
+
+
+def test_the_ladder_is_a_ladder():
+    """Seven steps, each bigger than the last and none of them a duplicate.
+
+    Written as one scale rather than as twenty-three sizes that happened to be
+    typed, so "make it all bigger" -- which is what was asked for -- is a change
+    to seven numbers rather than a hunt through the file.
+    """
+    steps = [rem(tokens_of(":root")[f"--fs-{name}"]) for name in LADDER]
+
+    assert steps == sorted(steps)
+    assert len(set(steps)) == len(steps)
+
+
+def test_every_size_on_the_page_is_a_step_or_a_named_display_size():
+    """No twenty-fourth value quietly reappearing inside a component.
+
+    The exceptions are deliberate and each is commented where it lives: two
+    monograms and an avatar fitted to their squares, the two clocks, the rail's
+    date and its corner marker, and the stat tile's count.
+    """
+    literals = sorted(set(re.findall(r"font-size:\s*([\d.]+rem);", PAGE_CSS)))
+
+    assert literals == [
+        "0.62rem",  # the rail's reset marker, below the ladder on purpose
+        "0.66rem",  # portrait monogram, small
+        "0.82rem",  # the masthead avatar's letter
+        "0.84rem",  # portrait monogram, medium
+        "1.05rem",  # "own time" -- words, not a clock reading
+        "1.15rem",  # the rail's date, on a phone
+        "1.25rem",  # a run's clock, on a phone
+        "1.4rem",  # the rail's date
+        "1.55rem",  # a run's clock: the loudest thing on the row
+        "1.75rem",  # a stat tile's count, and the login avatar's letter
+    ]
+
+
+def test_the_page_title_still_outranks_the_loudest_row():
+    """h1 is fluid, so the floor is what has to beat the clock -- at every width."""
+    floor = re.search(r"font-size:\s*clamp\(([\d.]+)rem", rule_body("h1"))
+
+    assert floor is not None
+    assert float(floor.group(1)) > font_size_of(".run__time")
+
+
+def test_the_bump_did_not_flatten_the_hierarchy():
+    """Everything came up; what outranked what still does."""
+    assert font_size_of(".run__time") > font_size_of(".run__bosses")
+    assert font_size_of(".run__bosses") > font_size_of(".run__meta")
+    assert font_size_of(".brand") > font_size_of(".nav__link")
+    assert font_size_of(".nav__link") > font_size_of(".nav__eyebrow")
+    assert font_size_of(".card__title") > font_size_of("table")
+    assert font_size_of("table") > font_size_of("th")
+    assert font_size_of(".note") > font_size_of(".chip")
+    # The eyebrows stay the smallest thing anybody is expected to read.
+    smallest = rem(tokens_of(":root")["--fs-micro"])
+    for selector in (".eyebrow", "th", ".stat__name", ".label", ".pill"):
+        assert font_size_of(selector) == smallest, selector
+
+
+def test_the_body_is_the_scales_own_middle():
+    """`rem` is the root's size, not this rule's, so the two have to be said to agree."""
+    assert font_size_of("body") == 1.0
+    assert rem(tokens_of(":root")["--fs-body"]) == 1.0
 
 
 # --- the nav ----------------------------------------------------------------
