@@ -17,7 +17,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from .. import audit
+from ..config import Settings
+from .auth import HEADER_LOGIN, is_local_peer
 from .deps import Caller
 from .errors import ApiError
 from .templating import build_templates
@@ -30,6 +34,75 @@ log = logging.getLogger(__name__)
 HERE = Path(__file__).resolve().parent
 TEMPLATE_DIR = HERE / "templates"
 STATIC_DIR = HERE / "static"
+
+#: The longest actor name kept. A tailnet login or a unix username; anything
+#: longer is a header being used as a payload rather than as a name.
+MAX_ACTOR = 64
+
+
+def resolve_actor(request: Request, settings: Settings) -> audit.Actor:
+    """Who to credit for this request's changes (DESIGN.md §5).
+
+    One shared token gets everybody in, so the name has to come from somewhere
+    else, and both places it can come from are headers -- which are worth
+    anything at all only because of *where the socket is*:
+
+    * ``Tailscale-User-Login``, which `tailscale serve` sets and a browser
+      cannot. Read only when ``TRUST_TAILSCALE_HEADERS`` is on **and** the peer
+      is this machine, exactly the pair :func:`bot.api.auth.tailscale_identity`
+      requires -- a header this process would refuse to authenticate must not be
+      good enough to sign somebody's name to a change either.
+    * :data:`bot.audit.HEADER_BOSSCTL`, which ``bossctl`` sets from the
+      operating-system user. It vouches for nothing, so it is read only over
+      loopback -- where whoever sent it can already run code as that user
+      anyway -- or when the tailnet header is trusted in front of it.
+
+    Neither is a credential: the request has been authenticated by the time a
+    handler runs. With nothing to go on the actor is ``token``, which is the
+    honest answer -- somebody holding ADMIN_TOKEN did this.
+    """
+    peer = request.client.host if request.client else None
+    local = is_local_peer(peer)
+
+    login = ""
+    if settings.trust_tailscale_headers and local:
+        login = (request.headers.get(HEADER_LOGIN) or "").strip().lower()[:MAX_ACTOR]
+
+    bossctl = ""
+    if local or settings.trust_tailscale_headers:
+        bossctl = (request.headers.get(audit.HEADER_BOSSCTL) or "").strip()[:MAX_ACTOR]
+
+    # The header that says *how* is bossctl's; the better *name*, when a request
+    # somehow carries both, is the one the tailnet vouched for.
+    return audit.Actor("cli" if bossctl else "portal", login or bossctl or "token")
+
+
+class ActorMiddleware:
+    """Resolve the caller once per request, for :mod:`bot.audit`.
+
+    Deliberately plain ASGI rather than a dependency: every mutating service
+    function needs the actor, and threading it through thirty route handlers
+    would mean a route added later could silently write anonymous rows. Set
+    here, in the same task the handler then runs in, so the context variable it
+    reads belongs to this request and to no other.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        bot = getattr(getattr(scope.get("app"), "state", None), "bot", None)
+        if bot is None:  # pragma: no cover - defensive; no bot, nothing to audit
+            await self.app(scope, receive, send)
+            return
+        token = audit.CURRENT_ACTOR.set(resolve_actor(Request(scope), bot.settings))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            audit.CURRENT_ACTOR.reset(token)
 
 
 def _wants_json(request: Request) -> bool:
@@ -56,6 +129,8 @@ def create_app(bot: BossBot) -> FastAPI:
     )
     app.state.bot = bot
     app.state.templates = build_templates(TEMPLATE_DIR, bot)
+    # Before the routers, so every handler runs with an actor resolved.
+    app.add_middleware(ActorMiddleware)
 
     # Routes before the mount: Starlette matches in registration order, and a
     # Mount at /static would otherwise swallow /static/portraits/<boss>, which
@@ -112,4 +187,10 @@ def create_app(bot: BossBot) -> FastAPI:
     return app
 
 
-__all__ = ["STATIC_DIR", "TEMPLATE_DIR", "create_app"]
+__all__ = [
+    "STATIC_DIR",
+    "TEMPLATE_DIR",
+    "ActorMiddleware",
+    "create_app",
+    "resolve_actor",
+]

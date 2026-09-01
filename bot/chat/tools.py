@@ -8,6 +8,13 @@ here against the service layer -- run ids through :func:`bot.api.service.load_ru
 times through :func:`bot.api.service.parse_when` -- exactly as if it had arrived
 over HTTP.  Nothing is passed through on the model's say-so.
 
+**A write is scoped to the person asking.**  The tools that target something
+that already exists refuse unless the asker is on it (or owns the weekly timing
+behind it) and is asking from the channel it lives in -- see
+:func:`_require_authority`, which is the one place that rule lives.  Otherwise
+one member could raise cards about every other party's evenings from their own
+channel.
+
 **No write reaches the schedule.**  The five ``propose_*`` tools do not change
 anything: they create a ``proposed`` amendment row and post the same ✅/❌ card
 the extractor posts, through the same :meth:`bot.extract.pipeline.Pipeline.apply_plan`
@@ -39,6 +46,7 @@ from ..ids import short_id
 from ..timeutil import utcnow
 from ..util import resolve_participant_text
 from ..weeks import WEEKDAY_NAMES, week_start
+from . import gate
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +99,12 @@ class ToolContext:
     author_id: str
     channel_id: str
     message_id: str
+    #: Does the author run this bot (:func:`bot.util.is_bot_admin`)? Decided from
+    #: the live member object by :meth:`bot.chat.agent.ChatPilot._is_admin` and
+    #: carried here as a fact, never re-derived from anything the model said. It
+    #: is the one exemption from :func:`_require_authority`; it defaults to
+    #: ``False`` so any context built without one is the least-privileged one.
+    is_admin: bool = False
     #: No card may be posted in this turn, whatever the model asks for. Set for
     #: the bot's *own* turns -- the rejection follow-up
     #: (:mod:`bot.chat.followup`), which is generated from a card rather than
@@ -530,6 +544,115 @@ def _get_pending(ctx: ToolContext, args: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# who may have a card drafted for them
+# ---------------------------------------------------------------------------
+
+#: Refusing a change to somebody else's run. It names the run because the asker
+#: already named it, and nothing else: who is on it is not this refusal's to say.
+NOT_THEIRS_RUN = (
+    "They are not on run {sid} and do not own the weekly timing behind it, so it is not "
+    "theirs to change. Say that only the people on a run -- or the owner of the weekly "
+    "timing it comes from -- can propose a change to it, and that putting somebody on a "
+    "run is not something you can do. Do not name anybody on it."
+)
+
+#: The same rule for a weekly timing, which is owned as well as attended.
+NOT_THEIRS_FIXED = (
+    "They are not on the weekly timing {sid} and do not own it, so it is not theirs to "
+    "remove. Say that only the people on it, or whoever owns it, can propose that. Do "
+    "not name anybody on it."
+)
+
+#: Refusing a change to a run that belongs to a different channel. The channel
+#: name is the *only* thing this may leak: it is what makes the refusal
+#: actionable ("ask there"), and the bot answers in that channel too.
+ELSEWHERE = (
+    "That {noun} lives in {where}, and changes to it are proposed from its own channel. "
+    "Tell them which channel it lives in and to ask there. Say nothing else about it."
+)
+
+
+def _fixed_owner(bot: Any, run: dict) -> str | None:
+    """Who owns the weekly timing this run was materialised from, if any.
+
+    The same lookup `/amend` does (:func:`bot.commands._owner_of`): a run does
+    not carry an owner, only the baseline behind it does.
+    """
+    fixed_id = run.get("fixed_run_id")
+    if not fixed_id:
+        return None
+    fixed = bot.repo.get_fixed_run(str(fixed_id))
+    return str(fixed["owner_id"]) if fixed else None
+
+
+def _pilot_channel(bot: Any, channel_id: str) -> bool:
+    """Is this a channel the pilot answers questions in?
+
+    Asked through :func:`bot.chat.gate.is_chat_channel`, so "somewhere the bot
+    can be asked" means exactly what the gate means by it -- category and thread
+    resolution included. A channel the bot cannot see is not one of its own.
+    """
+    try:
+        channel = bot.get_channel(int(channel_id))
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return False
+    return gate.is_chat_channel(channel, bot.settings)
+
+
+def _require_authority(
+    ctx: ToolContext, *, run: dict | None = None, fixed: dict | None = None
+) -> None:
+    """May this asker have a card drafted about this run (or weekly timing)?
+
+    The threat is cross-channel card drafting. :func:`resolve_run` searches every
+    channel's runs, and :meth:`bot.extract.pipeline.Pipeline.apply_plan` posts
+    the card in the channel the *question* came from -- so without this, anybody
+    holding the chat role could sit in their own channel and raise cards about
+    another party's evenings: pinging that party, and retiring the live cards
+    they were about to press, because a new proposal for a run supersedes the
+    older ones (:func:`bot.extract.commit.supersede`).
+
+    Two conditions, both required of everybody except an admin
+    (:attr:`ToolContext.is_admin`):
+
+    * they are on the run, or own the weekly timing behind it -- the same rule
+      `/amend` applies through :func:`bot.util.can_modify_run`; and
+    * the run is at home in the channel they are asking from.
+
+    The second is applied only when the run's own channel is one the pilot
+    answers in, because that is the whole content of the refusal: "ask in its
+    own channel" is advice, not a rule, if the bot does not listen there. A
+    deployment that gives the pilot one dedicated channel is asked about runs
+    that live elsewhere by design; a deployment that turns it on across the
+    party channels -- the one this attack was written against -- is not.
+
+    This is the *first* of two locks and the only one the model can reach. The
+    card's ✅ is the second and is independent: :func:`bot.extract.commit.may_commit`
+    still decides who may confirm what this drafts, and it is enforced against
+    the reacting member rather than the asking one.
+    """
+    if ctx.is_admin:
+        return
+    subject = run if run is not None else fixed
+    if subject is None:  # pragma: no cover - every caller names one
+        return
+    owner = _fixed_owner(ctx.bot, run) if run is not None else str(fixed["owner_id"])
+    if ctx.author_id not in [str(p) for p in subject["participants"]] and ctx.author_id != owner:
+        sid = short_id(subject["id"])
+        raise ToolError(
+            NOT_THEIRS_RUN.format(sid=sid) if run is not None else NOT_THEIRS_FIXED.format(sid=sid)
+        )
+    home = str(subject["channel_id"] or "")
+    if home and home != str(ctx.channel_id) and _pilot_channel(ctx.bot, home):
+        raise ToolError(
+            ELSEWHERE.format(
+                noun="run" if run is not None else "weekly timing",
+                where=service.channel_name(ctx.bot, home) or "another channel",
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
 # the write tools -- each one posts a card and changes nothing
 # ---------------------------------------------------------------------------
 
@@ -559,6 +682,10 @@ async def _propose(
     one; ``bosses`` then says what it is for. Everything else -- superseding an
     older card for the same bosses, the card wording, the ✅ handler -- is the
     extractor's, unchanged.
+
+    The one thing said differently is who the audit trail credits: a rescan's
+    card is the extractor's, and this one belongs to the member whose question
+    raised it -- taken from the message, like every other use of ``author_id``.
     """
     bot = ctx.bot
     local = at.astimezone(bot.tz) if at is not None else None
@@ -590,7 +717,9 @@ async def _propose(
         summary=summary,
         payload=dict(payload or {}),
     )
-    created = await bot.extractor.apply_plan(ctx.channel_id, [], [planned], week, summary)
+    created = await bot.extractor.apply_plan(
+        ctx.channel_id, [], [planned], week, summary, actor=ctx.author_id
+    )
     ctx.created.extend(created)
     if not created:  # pragma: no cover - apply_plan returns a row per proposal
         raise ToolError("The card could not be created. Tell them to try again in a moment.")
@@ -649,6 +778,7 @@ def _card_text(
 
 async def _propose_move(ctx: ToolContext, args: dict) -> str:
     run = resolve_run(ctx.bot, str(args.get("run_query") or ""))
+    _require_authority(ctx, run=run)
     raw = str(args.get("to_when") or "").strip()
     if not raw:
         raise ToolError("Ask them what day and time it should move to.")
@@ -994,6 +1124,7 @@ async def _propose_remove_fixed(ctx: ToolContext, args: dict) -> str:
     it had already produced, and the baseline quietly went on producing more.
     """
     fixed = resolve_fixed(ctx.bot, str(args.get("query") or ""))
+    _require_authority(ctx, fixed=fixed)
     return await _propose(
         ctx,
         kind="fix",
@@ -1017,6 +1148,7 @@ async def _propose_remove_fixed(ctx: ToolContext, args: dict) -> str:
 
 async def _propose_cancel(ctx: ToolContext, args: dict) -> str:
     run = resolve_run(ctx.bot, str(args.get("run_query") or ""))
+    _require_authority(ctx, run=run)
     if run["status"] == "cancelled":
         raise ToolError("That run is already cancelled.")
     return await _propose(
@@ -1035,8 +1167,13 @@ async def _propose_rsvp(ctx: ToolContext, args: dict) -> str:
     message to say that could point the answer at somebody else. A model told
     "say no for kanon" can at most produce a card recording the *speaker's* no,
     which is visible on the card and reversible with a ❌.
+
+    The participant check below survives :func:`_require_authority` rather than
+    being folded into it: an admin passes the authority check for any run, and
+    an admin who is not on a run still has nothing to answer for it.
     """
     run = resolve_run(ctx.bot, str(args.get("run_query") or ""))
+    _require_authority(ctx, run=run)
     answer = str(args.get("answer") or "").strip().lower()
     if answer not in ("yes", "no"):
         raise ToolError("answer must be 'yes' or 'no'. Ask them whether they can make it.")

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from . import backup, formatting
+from . import audit, backup, formatting
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
@@ -1160,6 +1160,15 @@ class BossBot(discord.Client):
         )
         if not result.applied:
             return result
+        # The reacting member, by id: a ✅ on a card is the one change to the
+        # schedule that already knows exactly whose decision it was.
+        audit.record(
+            self.repo,
+            audit.Actor("card", str(actor)),
+            result.kind or amendment["kind"],
+            result.run_id or amendment["id"],
+            f"{self._display_name(payload)} confirmed the {result.kind} on its card",
+        )
         await self._mark_superseded(result.superseded)
         # A move is the one change the party needs to see spelled out, and the
         # phase-1 notice already says it exactly right.

@@ -15,6 +15,7 @@ when a prefix is ambiguous.
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import sys
@@ -28,6 +29,8 @@ from dotenv import dotenv_values
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+
+from .audit import HEADER_BOSSCTL
 
 DEFAULT_URL = "http://127.0.0.1:8080"
 #: Ordinary calls are local and instant; the read budget covers a `digest` or a
@@ -54,6 +57,22 @@ STATUS_STYLE = {
 
 class ApiFailed(Exception):
     """The API said no; the message is meant to be printed as-is."""
+
+
+def os_user() -> str:
+    """The operating-system user, for the audit trail's benefit.
+
+    Sent as :data:`bot.audit.HEADER_BOSSCTL` so a change made from a terminal
+    is attributable to a person rather than to "the token". It is a label, not
+    a credential -- the request still carries ADMIN_TOKEN, and the bot ignores
+    the header from anywhere but the machine it is running on.
+    ``getpass.getuser`` consults the environment before the password database,
+    and raises when neither can answer (a container with no passwd entry).
+    """
+    try:
+        return getpass.getuser()[:64]
+    except Exception:  # noqa: BLE001 - never fail a command over a log label
+        return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +133,10 @@ class Api:
     def _client(self) -> httpx.Client:
         return httpx.Client(
             base_url=self.url,
-            headers={"Authorization": f"Bearer {self.token}"},
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                HEADER_BOSSCTL: os_user(),
+            },
             timeout=self.timeout,
         )
 
@@ -769,6 +791,30 @@ def interaction(
     console.print(row["question"], highlight=False, markup=False)
     console.print("\n[bold]It said[/bold]")
     console.print(row["reply"], highlight=False, markup=False)
+
+
+@app.command()
+def audit(limit: int = typer.Option(25, "--limit", "-n")) -> None:
+    """Who changed the schedule, and from where. Newest first."""
+    rows = api().get("/api/audit", limit=limit)
+    if not rows:
+        console.print("[dim]Nothing recorded yet.[/dim]")
+        return
+    print_table(
+        f"{len(rows)} change(s)",
+        ["when", "from", "who", "did", "to", "what happened"],
+        [
+            [
+                r["local_time"],
+                r["surface"],
+                r["actor"],
+                r["action"],
+                r["short_subject"] or "—",
+                r["detail"],
+            ]
+            for r in rows
+        ],
+    )
 
 
 @app.command()

@@ -332,6 +332,23 @@ async def test_propose_move_creates_a_card_and_moves_nothing(chat_bot, chat_seed
     assert cards(chat_bot)
 
 
+async def test_a_card_the_chatbot_raised_is_audited_against_the_asker(chat_bot, chat_seeded):
+    """A rescan's card is the extractor's; one raised here belongs to whoever asked.
+
+    Same surface either way -- a proposal always comes from something somebody
+    said in a channel -- and the name is the message's author id, never anything
+    the model wrote.
+    """
+    await tools.dispatch(
+        context(chat_bot, author_id=1002),
+        "propose_cancel",
+        {"run_query": short_id(chat_seeded["star"])},
+    )
+    raised = [row for row in chat_bot.repo.list_audit() if row["action"] == "propose"]
+    assert [(row["surface"], row["actor"]) for row in raised] == [("chat", "1002")]
+    assert raised[0]["subject"] == proposals(chat_bot)[0]["id"]
+
+
 async def test_the_card_is_the_extractors_card_and_the_normal_tick_approves_it(
     chat_bot, chat_seeded
 ):

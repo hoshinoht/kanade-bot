@@ -377,6 +377,26 @@ class ChatSummaryOut(BaseModel):
     completion_tokens: int
 
 
+# --- the audit trail --------------------------------------------------------
+
+
+class AuditOut(BaseModel):
+    """One recorded change: when, from where, who, and what."""
+
+    id: str
+    at: str
+    local_time: str
+    #: portal | cli | discord | chat | card | system.
+    surface: str
+    #: A tailnet login, a Discord user id, an OS username, or `token`.
+    actor: str
+    action: str
+    #: The run, card, fixed timing or config key that changed.
+    subject: str | None
+    short_subject: str | None
+    detail: str
+
+
 # --- members, reminders -----------------------------------------------------
 
 
@@ -606,6 +626,7 @@ __all__ = [
     "AmendmentOut",
     "ApproveIn",
     "ApproveOut",
+    "AuditOut",
     "BossOut",
     "ConfigIn",
     "ConfigOut",

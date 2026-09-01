@@ -728,6 +728,33 @@ def test_an_older_card_for_the_same_run_is_still_retired(fake_bot):
     assert repo.get_amendment(ids[0])["status"] == "proposed"
 
 
+def test_a_draft_read_elsewhere_leaves_a_partys_own_card_alone(fake_bot):
+    """Retiring is channel-scoped: `_record` says where its rows are going.
+
+    The run is homed in one party's channel and has a live card sitting there.
+    A burst read somewhere else proposes about the same run -- and must not
+    reach into that channel and retire what the party was about to press, in a
+    channel that saw neither the request nor the replacement.
+    """
+    from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
+
+    repo = fake_bot.repo
+    run = seeded_run(repo, OTHER_CHANNEL)
+    theirs = repo.create_amendment(
+        week_start=kl(2026, 8, 27), kind="move", run_id=run["id"], channel_id=str(OTHER_CHANNEL)
+    )
+    pipeline = effects_pipeline(fake_bot)
+    ids, retired = pipeline._record(
+        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+        str(WATCHED_CHANNEL),
+        kl(2026, 8, 27),
+        "",
+    )
+    assert retired == []
+    assert repo.get_amendment(theirs)["status"] == "proposed"
+    assert repo.get_amendment(ids[0])["status"] == "proposed"
+
+
 def test_each_row_carries_its_own_bursts_summary(fake_bot):
     """A week is several conversations; one summary describes one of them."""
     from .fake_bot import WATCHED_CHANNEL

@@ -23,6 +23,7 @@ from .models import (
     AmendmentOut,
     ApproveIn,
     ApproveOut,
+    AuditOut,
     ChatInteractionDetailOut,
     ChatInteractionOut,
     ChatSummaryOut,
@@ -258,6 +259,19 @@ async def get_chat_interaction(bot: Bot, caller: Caller, interaction_id: str) ->
     return service.chat_interaction_view(
         bot, service.load_chat_interaction(bot, interaction_id), detail=True
     )
+
+
+# ---------------------------------------------------------------------------
+# the audit trail -- who changed the schedule, and from where
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit", response_model=list[AuditOut], summary="Recent changes and who made them")
+async def get_audit(
+    bot: Bot, caller: Caller, limit: int = Query(default=200, ge=1, le=2000)
+) -> list[dict]:
+    """Newest first. Read-only: nothing writes here but the changes themselves."""
+    return service.audit_log(bot, limit)
 
 
 # ---------------------------------------------------------------------------

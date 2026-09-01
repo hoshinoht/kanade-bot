@@ -117,6 +117,78 @@ def test_the_prompt_carries_no_ids_and_no_secrets(repo, bosses):
         assert secret not in built
 
 
+# ---------------------------------------------------------------------------
+# what it is running on
+# ---------------------------------------------------------------------------
+
+
+def test_the_runtime_line_names_the_configured_model():
+    line = persona.runtime_line("gpt-oss:20b")
+    assert "gpt-oss:20b" in line
+    assert "Ollama" in line
+    assert "Discord bot" in line
+
+
+def test_the_runtime_line_forbids_inventing_one():
+    """Live, asked what it runs on, it answered "a fine-tuned LLaMA-2"."""
+    line = persona.runtime_line("gpt-oss:20b").lower()
+    assert "never invent" in line
+    assert "model name" in line
+
+
+def test_the_runtime_line_claims_nothing_about_where_it_runs():
+    """`CHAT_PILOT_MODEL` may be a cloud model proxied through the same daemon.
+
+    Swapping "a fine-tuned LLaMA-2" for "running on the machine that hosts the
+    bot" would be one false claim in place of another.
+    """
+    line = persona.runtime_line("gpt-oss:120b-cloud").lower()
+    for claim in ("local", "cloud", "on the machine", "on your", "server"):
+        assert claim not in line.replace("gpt-oss:120b-cloud", "")
+
+
+def test_the_runtime_line_does_not_answer_for_who_made_it():
+    """That belongs to the persona, which credits its developer with a link."""
+    line = persona.runtime_line("gpt-oss:20b").lower()
+    for topic in ("who made", "company", "the only facts"):
+        assert topic not in line
+
+
+def test_an_unconfigured_model_is_not_guessed_at():
+    line = persona.runtime_line("  ")
+    assert persona.UNNAMED_MODEL in line
+    assert "{model}" not in line
+    # No name means no backticks: "the `` model" would read as an empty one.
+    assert "`" not in line
+
+
+def test_the_model_name_is_not_baked_into_the_hard_rules():
+    """Those are pinned literals shared by every deployment; a model name is not."""
+    assert "gpt-oss" not in persona.HARD_RULES
+
+
+def test_the_runtime_facts_sit_with_the_clock_and_before_the_examples():
+    built = persona.system_prompt("PERSONA HERE", "CLOCK HERE", persona.runtime_line("some:model"))
+    assert built.index("CLOCK HERE") < built.index("some:model")
+    assert built.index("Operating rules") < built.index("some:model")
+
+
+def test_a_caller_that_names_no_runtime_still_gets_a_prompt():
+    """The two-argument call is what every test that pins the ordering makes."""
+    assert "Ollama" not in persona.system_prompt("PERSONA HERE", "CLOCK HERE")
+
+
+def test_the_assembled_prompt_tells_the_model_what_it_runs_on(repo, bosses):
+    """End to end: what `assemble` hands Ollama says which model is answering."""
+    from bot.chat.agent import ChatTurn
+
+    bot = build_bot(repo, bosses, chat_pilot_model="gpt-oss:20b")
+    pilot = ChatPilot(bot, client=object())
+    system = pilot.assemble([ChatTurn("user", "kanon: what model are u deployed on")])[0]
+    assert system["role"] == "system"
+    assert "gpt-oss:20b" in system["content"]
+
+
 def test_the_persona_is_read_once_and_reloadable(tmp_path, repo, bosses):
     path = tmp_path / "persona.md"
     path.write_text("first", encoding="utf-8")
