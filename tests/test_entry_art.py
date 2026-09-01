@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from bot import formatting
 from bot.api import service
 from bot.api.app import STATIC_DIR
 from bot.bosses import BossTable
@@ -417,3 +418,150 @@ def test_each_surfaces_crop_opens_below_the_name_plate():
     # for whichever comes first.
     assert re.search(r"\.run__art \{[^}]*--art-crop-sheet", CSS_RULES)
     assert re.search(r"\.runcard__art \{[^}]*--art-crop-card", CSS_RULES)
+
+
+# --- Discord: the morning ping's big picture --------------------------------
+
+
+@pytest.fixture
+def table_with_both(tmp_path: Path):
+    """A boss table with a portrait *and* entry artwork for the same boss.
+
+    The same filename in two directories, which is exactly the case a day-of
+    card has to survive: `Star.png` in the embed's corner and `Star.png` along
+    its bottom, on one message.
+    """
+    (tmp_path / "portraits").mkdir()
+    (tmp_path / "portraits" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n portrait")
+    art = tmp_path / "artwork" / "entry"
+    art.mkdir(parents=True)
+    (art / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n splash")
+    (tmp_path / "bosses.yaml").write_text(
+        """
+difficulties: {n: Normal, h: Hard}
+bosses:
+  Star:
+    full: Radiant Malefic Star
+    level: 280
+    difficulties: [n, h]
+    aliases: [star]
+  Limbo:
+    full: Limbo
+    level: 285
+    difficulties: [n, h]
+    aliases: [limbo]
+""",
+        encoding="utf-8",
+    )
+    return BossTable.load(tmp_path / "bosses.yaml")
+
+
+def day_run(bosses: list[str]):
+    """One run, with only the keys a card builder reads."""
+    from .conftest import kl
+
+    return {
+        "id": "r1",
+        "bosses": bosses,
+        "datetime": kl(2026, 9, 2, 21, 30),
+        "participants": ["1"],
+        "status": "planned",
+        "channel_id": "900",
+    }
+
+
+def test_the_day_of_card_carries_the_lead_bosss_splash(table_with_both):
+    """The lead-boss rule the thumbnail already follows, one slot down."""
+    from .conftest import TZ
+
+    card = formatting.day_of_card([day_run(["HStar", "HLimbo"])], TZ, {}, table=table_with_both)
+
+    assert card.image_path.name == "Star.png"
+    assert card.image_path.parent.name == "entry"
+
+
+def test_a_boss_with_no_splash_gets_no_image(bosses):
+    """The `bosses` fixture ships no artwork, which is the shipped case: the
+    card is exactly the card it was before this existed."""
+    from .conftest import TZ
+
+    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=bosses)
+
+    assert card.image_path is None
+
+
+def test_a_card_with_no_table_asks_for_no_splash():
+    assert formatting.lead_entry_art(["HStar"], None) is None
+    assert formatting.lead_entry_art([], object()) is None
+
+
+def test_only_the_morning_ping_gets_one(table_with_both):
+    """A countdown fires twice per run and a digest is a list; a 550px painting
+    on either buries the channel it is trying to be useful in. The thumbnail
+    still rides on both, because a corner portrait costs nothing."""
+    from .conftest import TZ
+
+    countdown = formatting.countdown_card(day_run(["HStar"]), 60, TZ, {}, table=table_with_both)
+
+    assert countdown.image_path is None
+    assert countdown.thumbnail_path is not None
+
+
+def test_both_pictures_ride_one_message_under_different_names(table_with_both):
+    """On disk they are both `Star.png`. Two attachments with one name make
+    `attachment://Star.png` ambiguous, and Discord picks one -- which is how a
+    550px splash lands in the thumbnail slot."""
+    from bot.client import IMAGE_PREFIX, BossBot
+
+    from .conftest import TZ
+
+    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=table_with_both)
+    files = BossBot._attachments(card)
+    embed = BossBot._embed(card)
+
+    assert len({item.filename for item in files}) == len(files) == 2
+    assert embed.thumbnail.url == "attachment://Star.png"
+    assert embed.image.url == f"attachment://{IMAGE_PREFIX}Star.png"
+    # ...and each url names an attachment that is actually on the message.
+    for url in (embed.thumbnail.url, embed.image.url):
+        assert url.removeprefix("attachment://") in {item.filename for item in files}
+
+
+def test_the_thumbnails_own_name_is_left_alone(table_with_both):
+    """`edit_card` rewrites an embed without re-uploading anything, so every
+    card already in the channel has an attachment called `Star.png`. Renaming
+    that one would point every future edit at a name those messages lack."""
+    from bot.client import BossBot
+
+    card = formatting.Card(content="hi", thumbnail_path=table_with_both.portrait_path("Star"))
+
+    assert BossBot._embed(card).thumbnail.url == "attachment://Star.png"
+    assert BossBot._attachments(card)[0].filename == "Star.png"
+
+
+def test_an_image_alone_is_enough_to_warrant_an_embed(table_with_both):
+    card = formatting.Card(content="hi", image_path=table_with_both.entry_art_path("Star"))
+
+    assert card.has_embed is True
+    # The literal, once, so the name that goes on the wire is pinned somewhere.
+    assert BossBotEmbed(card).image.url == "attachment://image-Star.png"
+
+
+def BossBotEmbed(card):
+    from bot.client import BossBot
+
+    return BossBot._embed(card)
+
+
+def test_quiet_mode_keeps_the_picture_and_still_notifies_nobody(table_with_both):
+    """An image changes neither gate: `quieted` rebuilds the card with
+    `replace`, so the artwork rides through untouched while the allow-list is
+    emptied."""
+    from .conftest import TZ
+
+    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=table_with_both)
+    quiet = formatting.quieted(card)
+
+    assert quiet.image_path == card.image_path
+    assert quiet.thumbnail_path == card.thumbnail_path
+    assert quiet.mention_users == []

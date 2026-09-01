@@ -341,4 +341,4 @@ def test_a_missing_file_is_survived_not_raised(tmp_path):
     from bot.client import BossBot
 
     card = formatting.Card(content="hi", thumbnail_path=tmp_path / "gone.png")
-    assert BossBot._attachment(card) is None
+    assert BossBot._attachments(card) == []
