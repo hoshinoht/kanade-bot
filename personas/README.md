@@ -15,11 +15,19 @@ cp personas/persona.example.md personas/persona.md
 docker compose restart bot
 ```
 
-`PERSONA_PATH` in `.env` picks the file, and `compose.yaml` defaults it to
-`/app/personas/persona.md`. This directory is bind-mounted read-only into the
-container, so editing a persona on the Mac and restarting is the whole loop —
-no rebuild, and nothing to copy into a volume. Point `PERSONA_PATH` somewhere
-else if you keep more than one and want to switch between them.
+This directory is bind-mounted read-only into the container, so editing a
+persona on the Mac and restarting is the whole loop — no rebuild, and nothing
+to copy into a volume.
+
+**Switching between voices needs no restart.** Keep as many files here as you
+like; the Config page's Chatbot panel lists every `.md` in this directory and
+the one you pick takes effect on the bot's next answer. Adding a voice is still
+a file drop — it is in the dropdown on the next page load.
+
+`PERSONA_PATH` in `.env` is the seed rather than the switch: `compose.yaml`
+points it at `/app/personas/persona.md`, and its filename is what the setting
+starts on. From then on the choice is stored with the rest of the runtime
+config, so a restart does not undo it.
 
 **Only the README and the template are tracked.** A real persona names a
 character, a community and its in-jokes, none of which belongs in a public

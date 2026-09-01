@@ -22,7 +22,7 @@ from . import audit, backup, formatting, identity
 from .api.server import ApiServer
 from .backfill import AccessDenied, record_channel
 from .bosses import BossTable
-from .chat import ChatPilot
+from .chat import ChatPilot, persona
 from .config import Settings
 from .db import Repo
 from .debug import TEST_PREFIX
@@ -85,6 +85,10 @@ CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
 CFG_CHAT = "chat_mode"
+#: Which file in ``personas/`` the bot is wearing, by name. A runtime row for
+#: the same reason :data:`CFG_QUIET` is one: a voice is the thing an operator
+#: most wants to change without a redeploy, and the environment only seeds it.
+CFG_PERSONA = "persona"
 #: The chatbot's four capacity numbers. Runtime rows rather than environment
 #: variables for the same reason :data:`CFG_QUIET` is one: they are what an
 #: operator reaches for while the guild is busy, and "edit `.env` and restart"
@@ -204,6 +208,27 @@ class BossBot(discord.Client):
         """
         default = "1" if self.settings.chat_pilot_configured else "0"
         return (self.repo.get_config(CFG_CHAT, default) or default) == "1"
+
+    @property
+    def persona_name(self) -> str:
+        """The persona file this deployment has chosen, by name, or ``""``.
+
+        A name and never a path: what it points at is resolved against the real
+        directory listing (:func:`bot.chat.persona.chosen_path`), so a row
+        hand-edited into something with a slash in it selects nothing rather
+        than reaching anywhere.
+        """
+        return self.repo.get_config(CFG_PERSONA, "") or ""
+
+    @staticmethod
+    def persona_choices() -> list[str]:
+        """The personas on offer, read off the bind mount every time it is asked.
+
+        On the client rather than in `bot.api.service` because that module is
+        imported *by* the chat package (`bot.chat.tools` dispatches over it), so
+        reaching the other way would close a circle.
+        """
+        return persona.available()
 
     @property
     def chat_rate_count(self) -> int:

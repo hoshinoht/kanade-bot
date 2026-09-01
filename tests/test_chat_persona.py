@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from bot.chat import persona
 from bot.chat.agent import ChatPilot
 
@@ -82,6 +84,59 @@ def test_a_fall_back_says_so_and_names_the_template(tmp_path):
     assert fallen.fell_back is True
     assert fallen.name == "persona.example.md"
     assert fallen.text
+
+
+# --- choosing one of several ------------------------------------------------
+
+
+@pytest.fixture
+def staged_personas(tmp_path, monkeypatch):
+    """A personas directory with two voices, a README, and some noise in it."""
+    (tmp_path / "kanade.md").write_text("You are Kanade.\n", encoding="utf-8")
+    (tmp_path / "persona.example.md").write_text("You are <BotName>.\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Personas\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("not a persona\n", encoding="utf-8")
+    (tmp_path / "drafts").mkdir()
+    monkeypatch.setattr(persona, "PERSONA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_every_markdown_file_but_the_readme_is_on_offer(staged_personas):
+    """The README documents the directory; the template is a real voice, and a
+    deployment that has not written its own is legitimately wearing it."""
+    assert persona.available() == ["kanade.md", "persona.example.md"]
+
+
+def test_a_directory_that_is_not_there_offers_nothing(tmp_path):
+    assert persona.available(tmp_path / "nowhere") == []
+
+
+def test_a_chosen_name_resolves_only_by_membership(staged_personas):
+    assert persona.chosen_path("kanade.md") == staged_personas / "kanade.md"
+    assert persona.chosen_path("") is None
+    assert persona.chosen_path("gone.md") is None
+    # Not on the list, so never joined to anything -- there is no path here to
+    # reject, because none was built.
+    assert persona.chosen_path("README.md") is None
+    assert persona.chosen_path("notes.txt") is None
+
+
+@pytest.mark.parametrize(
+    "attempt",
+    [
+        "../persona.example.md",
+        "../../etc/passwd",
+        "/etc/passwd",
+        "drafts/../kanade.md",
+        "drafts",
+        "kanade.md/../../secret.md",
+        ".",
+    ],
+)
+def test_nothing_shaped_like_a_path_ever_resolves(staged_personas, attempt):
+    """Membership rather than sanitising: each of these is simply not one of the
+    two names on offer, so none of them becomes a path at all."""
+    assert persona.chosen_path(attempt) is None
 
 
 def test_the_tracked_example_names_nobody_real():

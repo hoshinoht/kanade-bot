@@ -14,6 +14,7 @@ import re
 
 import pytest
 
+from bot.api import service
 from bot.api.app import STATIC_DIR
 from bot.api.templating import CONFIG_SECTIONS, read_section
 
@@ -236,18 +237,109 @@ def chatbot_panel(body: str) -> str:
     return body[start : body.index('id="notifications"')]
 
 
-def test_the_chatbot_panel_names_the_persona_file(auth, fake_bot, tmp_path, seeded):
-    """Which file the voice comes from, on the page rather than in the log."""
-    path = tmp_path / "kanade.md"
-    path.write_text("You are Placeholder, a scheduler bot.\n", encoding="utf-8")
-    fake_bot.settings.persona_path = str(path)
+@pytest.fixture
+def staged_personas(tmp_path, monkeypatch):
+    """Two voices on the bind mount, plus a README that is not one."""
+    from bot.chat import persona
+
+    (tmp_path / "kanade.md").write_text("You are Kanade, a scheduler bot.\n", encoding="utf-8")
+    (tmp_path / "gruff.md").write_text("You are Gruff, a scheduler bot.\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Personas\n", encoding="utf-8")
+    monkeypatch.setattr(persona, "PERSONA_DIR", tmp_path)
+    return tmp_path
+
+
+def test_the_panel_offers_every_voice_on_the_mount(auth, fake_bot, staged_personas, seeded):
+    """Read off the directory on each render, so a file dropped in is in the
+    list on the next page load rather than after a restart."""
+    fake_bot.repo.set_config("persona", "kanade.md")
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert '<select name="persona">' in panel
+    assert '<option value="kanade.md" selected>kanade.md</option>' in panel
+    assert '<option value="gruff.md">gruff.md</option>' in panel
+    assert "README.md" not in panel
+
+
+def test_choosing_a_voice_takes_effect_on_the_next_answer(auth, fake_bot, staged_personas, seeded):
+    """The whole point of the setting: no restart. The pilot caches the
+    document, so the write has to drop that cache."""
+    fake_bot.repo.set_config("persona", "kanade.md")
+    fake_bot.chat.reload_persona()
+    assert "Kanade" in fake_bot.chat.persona_text()
+
+    auth.post("/config", data={"section": "chatbot", "persona": "gruff.md"})
+
+    assert "Gruff" in fake_bot.chat.persona_text()
+    assert fake_bot.chat.persona_source().name == "gruff.md"
+
+
+def test_a_voice_that_is_not_on_the_mount_is_refused(auth, fake_bot, staged_personas, seeded):
+    """Membership, not sanitising -- and the refusal names filenames only,
+    because a persona's contents are the private half of this."""
+    from bot.api.errors import ApiError
+
+    for attempt in ("../persona.example.md", "/etc/passwd", "README.md", "nope.md"):
+        with pytest.raises(ApiError) as raised:
+            service.set_config(fake_bot, "persona", attempt)
+        assert "kanade.md" in raised.value.message  # what it offers instead
+        assert "You are" not in raised.value.message  # never the text itself
+
+    assert fake_bot.repo.get_config("persona") is None
+
+
+def test_the_change_is_audited_by_filename_and_nothing_else(
+    auth, fake_bot, staged_personas, seeded
+):
+    fake_bot.repo.set_config("persona", "kanade.md")
+
+    auth.post("/config", data={"section": "chatbot", "persona": "gruff.md"})
+
+    row = next(r for r in fake_bot.repo.list_audit() if r["subject"] == "persona")
+    assert row["surface"] == "portal"
+    assert "kanade.md -> gruff.md" in row["detail"]
+    # The voice is private: its words never reach the audit trail.
+    assert "You are" not in row["detail"]
+
+
+def test_a_chosen_voice_that_has_gone_missing_falls_back_and_says_so(
+    auth, fake_bot, staged_personas, seeded
+):
+    """The file was there when it was picked and is not now -- a deleted file,
+    a mount that came up empty. The bot answers in the template rather than in
+    nothing, and the panel says which."""
+    fake_bot.repo.set_config("persona", "kanade.md")
+    (staged_personas / "kanade.md").unlink()
     fake_bot.chat.reload_persona()
 
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert ">Persona</th>" in panel
-    assert "kanade.md" in panel
-    assert "fallback" not in panel
+    assert "fallback: persona.example.md" in panel
+    assert "status--at_risk" in panel
+    assert "kanade.md" in panel  # ...and names the choice that went missing
+
+
+def test_the_setting_seeds_from_the_configured_path(tmp_path):
+    """A fresh database starts on whatever `PERSONA_PATH` names, by basename --
+    a name, never the path itself. `seed_config` only inserts what is missing,
+    so a voice chosen at 9pm is not undone by the next restart reading `.env`."""
+    from bot.__main__ import build_repo
+    from bot.client import CFG_PERSONA
+
+    from .fake_bot import make_settings
+
+    settings = make_settings(
+        db_path=str(tmp_path / "bot.sqlite"), persona_path="/app/personas/kanade.md"
+    )
+    repo = build_repo(settings)
+    try:
+        assert repo.get_config(CFG_PERSONA) == "kanade.md"
+        # Seeding never overwrites: the row is the choice from here on.
+        repo.set_config(CFG_PERSONA, "gruff.md")
+        build_repo(settings).close()
+        assert repo.get_config(CFG_PERSONA) == "gruff.md"
+    finally:
+        repo.close()
 
 
 def test_a_deploy_with_no_persona_of_its_own_says_so(auth, fake_bot, seeded):

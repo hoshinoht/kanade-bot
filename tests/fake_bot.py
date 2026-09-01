@@ -254,6 +254,18 @@ class FakeBot:
         default = "1" if self.settings.chat_pilot_configured else "0"
         return (self.repo.get_config("chat_mode", default) or default) == "1"
 
+    @property
+    def persona_name(self) -> str:
+        return self.repo.get_config("persona", "") or ""
+
+    @staticmethod
+    def persona_choices() -> list[str]:
+        # The real directory, as the real client reads it: a fake list here
+        # would let a test pass against choices the bot could never load.
+        from bot.chat import persona
+
+        return persona.available()
+
     # The chatbot's four capacity numbers, read the way the real client reads
     # them -- through the same parsers, so the fake cannot disagree with it
     # about what a hand-edited row means.
