@@ -126,6 +126,53 @@ def test_asking_when_to_come_back_does_not_cost_an_answer():
     assert limiter.remaining(1002) == 1
 
 
+def test_resets_in_answers_while_there_is_still_room():
+    """Where `retry_after` says "no wait", `/limits` still has something to show."""
+    clock = Clock()
+    limiter = RateLimiter(3, 300, clock)
+    limiter.allow(1002)
+    clock.advance(100)
+
+    assert limiter.retry_after(1002) == 0.0, "they may ask right now"
+    assert limiter.resets_in(1002) == 200, "...and the one they spent is back in 200 s"
+
+
+def test_resets_in_is_zero_for_a_window_with_nothing_in_it():
+    """Nobody the limiter has heard of, and nobody whose hits have all expired."""
+    clock = Clock()
+    limiter = RateLimiter(2, 300, clock)
+    assert limiter.resets_in(1002) == 0.0
+    limiter.allow(1002)
+    clock.advance(301)
+    assert limiter.resets_in(1002) == 0.0
+
+
+def test_resets_in_and_retry_after_agree_once_the_window_is_full():
+    """The same arithmetic on the same oldest hit; only the empty case differs."""
+    clock = Clock()
+    limiter = RateLimiter(2, 300, clock)
+    limiter.allow(1002)
+    clock.advance(50)
+    limiter.allow(1002)
+
+    assert limiter.resets_in(1002) == limiter.retry_after(1002) == 250
+
+
+def test_resets_in_uses_the_overridden_window():
+    limiter = RateLimiter(1, 300, Clock())
+    limiter.set_override(1002, 5, 60)
+    limiter.allow(1002)
+
+    assert limiter.resets_in(1002) == 60
+
+
+def test_reading_the_reset_does_not_cost_an_answer():
+    limiter = RateLimiter(1, 300, Clock())
+    for _ in range(5):
+        limiter.resets_in(1002)
+    assert limiter.remaining(1002) == 1
+
+
 def test_reset_forgets_one_person_or_everybody():
     limiter = RateLimiter(1, 300, Clock())
     limiter.allow(1001)

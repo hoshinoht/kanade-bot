@@ -8,6 +8,7 @@ public but posts with ``AllowedMentions.none()`` so it never pings.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from datetime import datetime, time
 from typing import TYPE_CHECKING
@@ -153,6 +154,22 @@ def is_guild_admin(user: object) -> bool:
     return bool(permissions is not None and permissions.administrator)
 
 
+def is_staff(interaction: discord.Interaction) -> bool:
+    """Does whoever ran this command run the bot? (:func:`bot.util.is_bot_admin`)
+
+    The one "who is staff" rule this module has, so `/say`'s gate and `/limits`'
+    exemption cannot drift apart -- and so both agree with the chatbot, which
+    exempts the same people from the rate limit through
+    :meth:`bot.chat.agent.ChatPilot._is_admin`.
+    """
+    return is_bot_admin(
+        is_guild_admin(interaction.user),
+        interaction.guild is not None and interaction.guild.owner_id == interaction.user.id,
+        [r.id for r in getattr(interaction.user, "roles", [])],
+        _bot(interaction).settings.admin_role_id,
+    )
+
+
 async def _require_admin(interaction: discord.Interaction) -> bool:
     """The runtime half of `/say`'s gate; `/debug` applies the same rule.
 
@@ -161,14 +178,7 @@ async def _require_admin(interaction: discord.Interaction) -> bool:
     Settings -> Integrations, so the permission is checked again here -- and it
     is here, not in the visibility default, that ``ADMIN_ROLE_ID`` grants access.
     """
-    bot = _bot(interaction)
-    guild = interaction.guild
-    if is_bot_admin(
-        is_guild_admin(interaction.user),
-        guild is not None and guild.owner_id == interaction.user.id,
-        [r.id for r in getattr(interaction.user, "roles", [])],
-        bot.settings.admin_role_id,
-    ):
+    if is_staff(interaction):
         return True
     raise NotAnAdmin()
 
@@ -1317,6 +1327,91 @@ async def pings(
     )
 
 
+#: The allowance bar. Twelve segments splits even a small allowance into states
+#: a reader can tell apart, without becoming a wall of blocks on a phone.
+BAR_SEGMENTS = 12
+BAR_FILLED = "▰"
+BAR_EMPTY = "▱"
+
+#: What staff get instead of a bar, and the whole of `/limits` for them -- there
+#: is nothing to read, since :func:`bot.chat.gate.decide` skips the limiters
+#: entirely for them. A constant, like the chatbot's own refusals
+#: (:data:`bot.chat.agent.RATE_LIMITED_REPLY`): nothing about a quota is worth a
+#: generation, and this one would be a generation about not having a quota.
+STAFF_LIMITS_REPLY = "No limits for staff — fire away! 🎀🐾"
+
+
+def usage_bar(used: int, count: int) -> str:
+    """``▰▰▰▱▱▱▱▱▱▱▱▱`` — ``used`` of ``count`` as blocks.
+
+    Rounded **up**, so one answer out of a generous allowance still lights a
+    segment: a bar that reads as untouched when it is not is the one way this
+    display could mislead somebody about what they have left. The ceiling only
+    reaches the last segment when the window is genuinely full.
+    """
+    if count <= 0:  # pragma: no cover - `positive_int` refuses a non-positive count
+        return BAR_EMPTY * BAR_SEGMENTS
+    filled = min(math.ceil(BAR_SEGMENTS * used / count), BAR_SEGMENTS)
+    return BAR_FILLED * filled + BAR_EMPTY * (BAR_SEGMENTS - filled)
+
+
+@app_commands.command(name="limits", description="See how many chat answers you have left")
+@require_role()
+async def limits(interaction: discord.Interaction) -> None:
+    """Show the invoker their own chat allowance, and nobody else's.
+
+    Ephemeral like every other personal readback here: a quota is nobody's
+    business but its owner's, and a progress bar posted into a party channel is
+    the bot talking about itself where people are trying to boss.
+
+    Reads only. Every number comes from a non-mutating reader on
+    :class:`bot.chat.ratelimit.RateLimiter` and never from ``allow``, so asking
+    how many answers are left cannot itself spend one -- the same rule the
+    portal's Limits page runs on (:func:`bot.api.service.limits`).
+
+    The allowance shown is the member's *own* (``limit_for``), so somebody who
+    has been granted a bigger one sees their numbers rather than the guild's.
+    That is exactly why :meth:`bot.chat.agent.ChatPilot._say_limited` looks it
+    up before refusing anybody: being confidently wrong about somebody's own
+    case is worse than saying nothing.
+    """
+    # Imported here rather than at module scope for the reason `_set_status`
+    # gives: the chatbot's tools import `bot.api`, so reaching the pilot from
+    # the top of this file would put the whole portal behind the slash commands.
+    from .chat.agent import retry_note
+    from .chat.gate import GLOBAL_KEY
+
+    if is_staff(interaction):
+        await interaction.response.send_message(STAFF_LIMITS_REPLY, ephemeral=True)
+        return
+
+    pilot = _bot(interaction).chat
+    user_id = str(interaction.user.id)
+    count = pilot.limiter.limit_for(user_id)[0]
+    left = pilot.limiter.remaining(user_id)
+    used = max(count - left, 0)
+    if left <= 0:
+        wait = retry_note(pilot.limiter.retry_after(user_id))
+        when = f"None left — ask me again in about {wait}."
+    elif used:
+        wait = retry_note(pilot.limiter.resets_in(user_id))
+        when = f"{left} left — a spent one comes back in about {wait}."
+    else:
+        when = "Your whole allowance is there — ask away."
+
+    lines = [f"🎀 **Your chat answers** — {used} of {count} used", usage_bar(used, count), when]
+    if pilot.global_limiter.remaining(GLOBAL_KEY) <= 0:
+        # Their own bar can be nearly empty while the guild's shared pool is
+        # spent, and in that state they would be turned away regardless. A bar
+        # that says "go ahead" without this line is accurate and still a lie.
+        pool_wait = retry_note(pilot.global_limiter.retry_after(GLOBAL_KEY))
+        lines.append(
+            "-# The guild's shared pool is spent too, so nobody is being answered "
+            f"for about {pool_wait}."
+        )
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
 @app_commands.command(name="nick", description="Attach a chat alias to a member")
 @app_commands.describe(user="The member", alias="What they get called in chat, e.g. `MY`")
 @require_role()
@@ -1489,6 +1584,7 @@ def register_commands(bot: BossBot) -> None:
         rsvp,
         nick,
         pings,
+        limits,
         pingtime,
         rescan,
         say,
