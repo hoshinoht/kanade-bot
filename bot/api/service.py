@@ -2241,6 +2241,9 @@ def limits(bot: BossBot) -> dict:
 
 
 def get_config(bot: BossBot) -> dict:
+    # Cached on the pilot after the first read, so asking here costs a page load
+    # nothing and reports exactly what the bot is answering with.
+    persona_source = bot.chat.persona_source()
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
         "countdown_minutes": ",".join(str(m) for m in bot.countdowns),
@@ -2262,6 +2265,11 @@ def get_config(bot: BossBot) -> dict:
         "chat_channels": [str(c) for c in bot.settings.chat_pilot_channel_id_list],
         "chat_categories": [str(c) for c in bot.settings.chat_pilot_category_id_list],
         "chat_model": bot.settings.chat_pilot_model,
+        # Which persona file is actually loaded, and whether it is the tracked
+        # template. A deploy answering in the placeholder voice is a
+        # misconfiguration, and it used to be visible only in a startup WARNING.
+        "persona_file": persona_source.name,
+        "persona_fallback": persona_source.fell_back,
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",

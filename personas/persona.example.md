@@ -1,11 +1,13 @@
 <!--
   persona.example.md — TEMPLATE, committed to the repo as documentation.
 
-  The live persona file is NOT in git. Copy this file to the data volume (next to the
-  SQLite DB) and point the bot at it:
+  The live persona file is NOT in git. Copy this file beside it and point the bot at it:
 
-      cp persona.example.md /path/to/data/persona.md
-      export PERSONA_PATH=/path/to/data/persona.md    # defaults to <data dir>/persona.md
+      cp personas/persona.example.md personas/persona.md
+      # PERSONA_PATH defaults to /app/personas/persona.md in compose.yaml
+
+  `personas/` is bind-mounted read-only into the container, so writing a persona is a file
+  on the host and a `docker compose restart bot`. See personas/README.md.
 
   Why it lives outside git: the persona is per-deployment flavour text, it gets edited by
   hand far more often than code, and a real one may reference a character, community, or

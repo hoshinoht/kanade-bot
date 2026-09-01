@@ -176,6 +176,16 @@ CHAT_TABS = [
     ("interaction", "This interaction"),
 ]
 
+#: The tabs on one extraction, shaped like the interaction's: what came out
+#: first, then what went in, then the raw exchange for when the answer is wrong
+#: and you need to see what the model was actually handed, then the facts.
+EXTRACTION_TABS = [
+    ("produced", "What it produced"),
+    ("chat-read", "The chat it read"),
+    ("raw", "Raw exchange"),
+    ("extraction", "This extraction"),
+]
+
 
 def read_section(value: str | None) -> str:
     """The section a config form says it came from, or ``""`` for none.
@@ -242,6 +252,7 @@ def build_templates(directory: Path, bot: BossBot) -> Jinja2Templates:
             "config_sections": CONFIG_SECTIONS,
             "limits_tabs": LIMITS_TABS,
             "chat_tabs": CHAT_TABS,
+            "extraction_tabs": EXTRACTION_TABS,
             "status_icons": STATUS_ICONS,
             "status_words": STATUS_WORDS,
             "weekday_names": WEEKDAY_NAMES,
@@ -258,6 +269,7 @@ __all__ = [
     "COLORWAYS",
     "CONFIG_SECTIONS",
     "DEFAULT_COLORWAY",
+    "EXTRACTION_TABS",
     "LIMITS_TABS",
     "HTMX_SRC",
     "HTMX_SRI",

@@ -453,7 +453,7 @@ class ChatPilot:
         #: Referenced message id -> its author id (or None). One API call per
         #: replied-to message, however many people reply to it.
         self._replied: dict[str, str | None] = {}
-        self._persona: str | None = None
+        self._persona: persona.Persona | None = None
 
     # -- wiring ------------------------------------------------------------
     def client(self) -> Any:
@@ -473,15 +473,23 @@ class ChatPilot:
         """The runtime kill switch, seeded from whether the feature is configured."""
         return bool(getattr(self.bot, "chat_mode", False))
 
-    def persona_text(self) -> str:
-        """The persona document, read once per process.
+    def persona_source(self) -> persona.Persona:
+        """The persona document *and* the file it came from, read once per process.
 
         Cached because it is read on every message and never changes without a
         restart; :meth:`reload_persona` exists for the deploy that edits it.
+
+        The record rather than the text, because the portal's Config page says
+        which file is loaded and marks a fall back to the template -- a deploy
+        answering in the placeholder voice used to be visible only in a WARNING.
         """
         if self._persona is None:
-            self._persona = persona.load_persona(self.settings.persona_path)
+            self._persona = persona.read_persona(self.settings.persona_path)
         return self._persona
+
+    def persona_text(self) -> str:
+        """Just the words, which is all the prompt builders want."""
+        return self.persona_source().text
 
     def reload_persona(self) -> str:
         self._persona = None

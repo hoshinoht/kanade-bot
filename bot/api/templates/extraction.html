@@ -1,19 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Extraction {{ extraction.short_id }} — YuukiSakuna{% endblock %}
+{% block body_class %}framed{% endblock %}
 {% block content %}
+{# The band every framed page has: which extraction this is. What it *was* --
+   the model, how long it took, how much went in and came out -- is a tab of its
+   own, the way one chat interaction's facts are. #}
 <div class="page-head">
   <div>
     <p class="eyebrow"><a href="/extractions">Extractions</a> · #{{ extraction.short_id }}</p>
     <h1>{{ extraction.local_time }}</h1>
-    <p>{{ extraction.model }} ·
-      {% if extraction.latency_ms is not none %}{{ extraction.latency_ms }} ms{% else %}latency not recorded{% endif %} ·
-      {{ extraction.messages|length }} message(s) in, {{ extraction.amendments|length }} change(s) out</p>
   </div>
 </div>
 
-{% if extraction.messages %}
-<section class="card">
-  <div class="card__head"><h2 class="card__title">The chat it read</h2></div>
+{# The third window on the `.tabs` pattern. What came out is the front tab,
+   because that is what somebody opening an extraction came to check; the raw
+   exchange is a tab rather than two more cards, so a five-thousand-token prompt
+   sits behind a click and scrolls inside its own panel. #}
+<section class="card tabs">
+  <div class="card__head tabs__strip">
+    <nav class="tabs__tabs" aria-label="Sections of this extraction">
+      {% set tab_counts = {
+           "produced": extraction.amendments|length,
+           "chat-read": extraction.messages|length,
+         } %}
+      {% for key, label in extraction_tabs %}
+      <a class="tabs__tab" href="#{{ key }}">{{ label }}{% if key in tab_counts %}
+        <span class="tabs__count">{{ tab_counts[key] }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
+<section class="tabs__panel tabs__panel--first" id="produced">
+  {% if not extraction.amendments %}
+  <p class="note">It read the chat and found nothing to propose, which is the
+    ordinary outcome for a window with no scheduling talk in it.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Kind</th><th>Bosses</th><th>When</th><th>Confidence</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for item in extraction.amendments %}
+      <tr>
+        <td>{{ item.kind_label }}</td>
+        <td>{{ item.bosses|join(" + ") or "—" }}</td>
+        <td class="mono">{{ item.when }}</td>
+        <td><span class="conf conf--{{ item.confidence|confidence_band }}">{% if item.confidence is not none %}{{ "%.2f"|format(item.confidence) }}{% else %}—{% endif %}</span></td>
+        <td><span class="status status--{{ 'confirmed' if item.status == 'confirmed' else 'planned' }}">{{ item.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="tabs__panel" id="chat-read">
+  {% if not extraction.messages %}
+  <p class="note">The messages this ran over are no longer stored.</p>
+  {% else %}
   <div class="evidence">
     {% for line in extraction.messages %}
     <p class="evidence__line">
@@ -25,38 +67,24 @@
     </p>
     {% endfor %}
   </div>
+  {% endif %}
 </section>
-{% endif %}
 
-{% if extraction.amendments %}
-<section class="card">
-  <div class="card__head"><h2 class="card__title">What it produced</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Kind</th><th>Bosses</th><th>When</th><th>Confidence</th><th>Status</th></tr></thead>
-      <tbody>
-        {% for item in extraction.amendments %}
-        <tr>
-          <td>{{ item.kind_label }}</td>
-          <td>{{ item.bosses|join(" + ") or "—" }}</td>
-          <td class="mono">{{ item.when }}</td>
-          <td><span class="conf conf--{{ item.confidence|confidence_band }}">{% if item.confidence is not none %}{{ "%.2f"|format(item.confidence) }}{% else %}—{% endif %}</span></td>
-          <td><span class="status status--{{ 'confirmed' if item.status == 'confirmed' else 'planned' }}">{{ item.status }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
-
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Raw response</h2></div>
+<section class="tabs__panel" id="raw">
+  <h3 class="pane__section">Raw response</h3>
   <pre>{{ extraction.raw_response }}</pre>
+  <h3 class="pane__section">Prompt as sent</h3>
+  <pre>{{ extraction.prompt }}</pre>
 </section>
 
-<section class="card">
-  <div class="card__head"><h2 class="card__title">Prompt as sent</h2></div>
-  <pre>{{ extraction.prompt }}</pre>
+<section class="tabs__panel" id="extraction">
+  <dl class="stat__rows">
+    <div><dt>Model</dt><dd class="mono">{{ extraction.model }}</dd></div>
+    <div><dt>Latency</dt>
+      <dd class="mono">{% if extraction.latency_ms is not none %}{{ extraction.latency_ms }} ms{% else %}not recorded{% endif %}</dd></div>
+    <div><dt>Messages in</dt><dd class="mono">{{ extraction.messages|length }}</dd></div>
+    <div><dt>Changes out</dt><dd class="mono">{{ extraction.amendments|length }}</dd></div>
+  </dl>
+</section>
 </section>
 {% endblock %}

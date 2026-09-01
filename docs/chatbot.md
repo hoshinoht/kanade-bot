@@ -88,17 +88,21 @@ CHAT_PILOT_ROLE_ID=...          # the role that may talk to the bot
 CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
-# 2. Put the persona on the data volume. It is NOT in git: it is per-deployment
-#    flavour text, edited by hand, and may name a character you would rather not
-#    publish. `persona.example.md` in the repo is a template to write yours from.
-docker compose cp your-persona.md bot:/app/data/persona.md
+# 2. Write the persona. It is NOT in git: it is per-deployment flavour text,
+#    edited by hand, and may name a character you would rather not publish.
+#    `personas/` is bind-mounted into the container, so this is a file on the
+#    Mac and a restart -- see personas/README.md.
+cp personas/persona.example.md personas/persona.md
+$EDITOR personas/persona.md
 
 # 3. Rebuild, then mention it in the channel.
 docker compose up -d --build
 ```
 
 A missing persona file falls back to the tracked template and logs a WARNING, so
-a wrong `PERSONA_PATH` is obvious in the logs rather than being an outage.
+a wrong `PERSONA_PATH` is obvious rather than being an outage — and the Config
+page's Chatbot panel names the file it actually loaded, marked as a fallback
+when it is the template.
 
 ### Controlling it
 
