@@ -133,6 +133,15 @@ class Settings(BaseSettings):
     #: reply is worse than a visible refusal. Staff instead wait
     #: ``CHAT_PILOT_TIMEOUT``, which is what puts them at the front of the queue.
     chat_pilot_lock_wait_s: float = Field(default=2.0, ge=0)
+    #: How long one remembered exchange stays in a channel's conversation.
+    #: Measured per turn and applied when the prompt is built, exactly as the
+    #: rate limiter's windows slide -- there is no timer, and an active
+    #: back-and-forth never loses a live turn. It exists because an hour-old
+    #: history is worse than no history: "move it to 22:00" arriving long after
+    #: the thing it referred to was settled binds to a dead topic and the bot
+    #: answers confidently about the wrong run. 45 minutes is comfortably longer
+    #: than any real conversation and shorter than the gap that makes one stale.
+    chat_pilot_history_ttl_s: float = Field(default=2700.0, gt=0)
     #: The model that answers. Separate from ``OLLAMA_MODEL`` so the extractor's
     #: model can be changed without silently changing the bot's voice.
     chat_pilot_model: str = "gpt-oss:20b"

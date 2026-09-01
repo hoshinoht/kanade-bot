@@ -364,16 +364,50 @@ def runtime_line(model: str) -> str:
     return RUNTIME_LINE.format(model=f"the `{named}` model" if named else UNNAMED_MODEL)
 
 
-def system_prompt(persona: str, header: str, runtime: str = "") -> str:
-    """Persona, hard rules, clock, runtime, few-shot examples, voice reminder.
+#: How the current-focus line introduces itself. It names the channel because
+#: "the last card" with nothing qualifying it reads as the last card anywhere,
+#: and the pilot answers in more than one place.
+FOCUS_PREFIX = "The last card posted in this channel: "
+
+#: Why the line is there at all, said to the model in one sentence. The failure
+#: it is aimed at is a member finishing a three-step job -- create the run, move
+#: it, add people -- where every step after the first says "it", and the card
+#: that "it" means has scrolled out of the remembered conversation.
+FOCUS_SUFFIX = (
+    ' If somebody says "it" or "that run" with nothing else to point at, that is what '
+    "they mean. It is still only a proposal until somebody reacts ✅ on it."
+)
+
+
+def focus_line(card: str) -> str:
+    """The last card this channel saw, as one line of context, or ``""``.
+
+    A third fact about the here and now that no tool returns, sitting with
+    :func:`clock_header` and :func:`runtime_line` for that reason: a member's
+    "move it to 22:00" is answerable only if the bot knows what the last "it"
+    was, and no tool call can tell it which card it posted four minutes ago.
+
+    Absent rather than empty when there is nothing to say -- a channel with no
+    recent card, or one whose card has aged out. A placeholder line saying there
+    is no card would be a sentence about nothing at the top of every prompt, and
+    a small model reads sentences about nothing as topics.
+    """
+    text = (card or "").strip()
+    return f"{FOCUS_PREFIX}{text}.{FOCUS_SUFFIX}" if text else ""
+
+
+def system_prompt(persona: str, header: str, runtime: str = "", focus: str = "") -> str:
+    """Persona, hard rules, clock, runtime, focus, few-shot examples, voice reminder.
 
     The persona goes first because it is what the model should sound like, the
     rules second because later instructions win when the two disagree, and the
     clock after them because it is short and load-bearing. ``runtime``
-    (:func:`runtime_line`) sits with the clock: both are facts about the here and
-    now that no tool returns, and both exist because a model with no answer
-    invents one. It is optional so a caller that only cares about the voice --
-    every test that pins this ordering -- keeps its two-argument call.
+    (:func:`runtime_line`) and ``focus`` (:func:`focus_line`) sit with the clock:
+    all three are facts about the here and now that no tool returns, and all
+    three exist because a model with no answer invents one. Both are optional so
+    a caller that only cares about the voice -- every test that pins this
+    ordering -- keeps its two-argument call, and a channel with no recent card
+    contributes no line rather than an empty one.
 
     The examples and the reminder go last, and that placement is the whole point
     of them: recency is the one lever that reliably moves a small model, and the
@@ -391,6 +425,7 @@ def system_prompt(persona: str, header: str, runtime: str = "") -> str:
             HARD_RULES.strip(),
             header,
             runtime,
+            focus,
             examples_block(persona),
             voice_footer(persona),
         )
@@ -402,6 +437,8 @@ __all__ = [
     "DEFAULT_VOICE",
     "EXAMPLES_HEADING",
     "EXAMPLE_PERSONA",
+    "FOCUS_PREFIX",
+    "FOCUS_SUFFIX",
     "HARD_RULES",
     "MAX_EXAMPLES",
     "MAX_EXAMPLE_CHARS",
@@ -412,6 +449,7 @@ __all__ = [
     "VOICE_PREFIX",
     "clock_header",
     "examples_block",
+    "focus_line",
     "good_examples",
     "good_sections",
     "load_persona",
