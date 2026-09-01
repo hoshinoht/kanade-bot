@@ -95,6 +95,7 @@ CONFIG_KEYS = (
     "extract_enabled",
     "quiet_mode",
     "chat_mode",
+    "persona",
     "chat_pilot_rate_count",
     "chat_pilot_rate_window_s",
     "chat_pilot_global_rate_count",
@@ -2270,6 +2271,11 @@ def get_config(bot: BossBot) -> dict:
         # misconfiguration, and it used to be visible only in a startup WARNING.
         "persona_file": persona_source.name,
         "persona_fallback": persona_source.fell_back,
+        # The choice, and what there is to choose from. `persona` is what the
+        # setting says; `persona_file` above is what the bot actually read, and
+        # the two differ exactly when the chosen file has gone missing.
+        "persona": bot.persona_name,
+        "persona_choices": bot.persona_choices(),
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",
@@ -2326,6 +2332,13 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         bot.repo.set_config(key, stored)
         for run in bot.repo.list_runs():
             refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
+    elif key == "persona":
+        stored = _persona_choice(bot, value)
+        bot.repo.set_config(key, stored)
+        # The pilot reads the document once and keeps it. Without this the new
+        # voice would wait for a restart, which is the whole thing this setting
+        # exists to avoid: the next question is answered in it.
+        bot.chat.reload_persona()
     elif key in COUNT_KEYS:
         stored = str(_whole_number(value, key, minimum=1))
         bot.repo.set_config(key, stored)
@@ -2343,6 +2356,27 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         bot.repo.set_config(key, stored)
     _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
     return get_config(bot)
+
+
+def _persona_choice(bot: BossBot, value: Any) -> str:
+    """One of the files actually in ``personas/``, by name.
+
+    Validated by *membership* rather than by sanitising. The submitted string is
+    compared against the real directory listing and is only ever joined to a
+    path after it has matched one, so a separator, an absolute path and `..` are
+    not things to strip -- they are simply not names in that list. The listing
+    is read per call because the directory is a read-only bind mount that a
+    person drops files into between page loads.
+
+    Only filenames appear in the refusal. A persona's *contents* are the private
+    half of this feature and never leave the file.
+    """
+    wanted = str(value or "").strip()
+    choices = bot.persona_choices()
+    if wanted in choices:
+        return wanted
+    offered = ", ".join(f"`{name}`" for name in choices) or "none -- personas/ is empty"
+    raise BadRequest(f"`{wanted}` is not a persona in personas/ - one of: {offered}")
 
 
 def _whole_number(value: Any, label: str, minimum: int = 1) -> int:

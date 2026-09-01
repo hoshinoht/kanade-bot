@@ -104,6 +104,14 @@ a wrong `PERSONA_PATH` is obvious rather than being an outage — and the Config
 page's Chatbot panel names the file it actually loaded, marked as a fallback
 when it is the template.
 
+**Switching voices does not need a restart.** Keep several files in `personas/`
+and pick one from the dropdown on that panel: the choice is stored with the rest
+of the runtime config, the pilot drops its cached document, and the next
+question is answered in the new voice. `PERSONA_PATH` only seeds which file the
+setting starts on. Adding a voice is still a file drop — it appears in the list
+on the next page load, because the directory is read on each render rather than
+cached.
+
 ### Controlling it
 
 `chat_mode` is the runtime kill switch, in the same place `quiet_mode` and

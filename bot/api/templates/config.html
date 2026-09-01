@@ -108,28 +108,39 @@
           </label>
           <button class="btn btn--primary" type="submit">Save</button>
         </form>
-        {# Which file the voice is coming from. A deploy that fell back to the
-           tracked template answers in the placeholder voice, which used to be
-           visible only in a startup WARNING -- so it is a warn-state chip here
-           rather than a line somebody has to go and read the log for. #}
-        <div class="table-wrap">
-          <table>
-            <tbody>
-              <tr><th>Persona</th>
-                <td>
-                  {% if config.persona_fallback %}
-                  <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
-                  {% else %}
-                  <span class="mono">{{ config.persona_file }}</span>
-                  {% endif %}
-                </td></tr>
-            </tbody>
-          </table>
-        </div>
+        {# The voice, as a choice. Every `*.md` in the personas directory except
+           its README, read off the bind mount on each render -- a file dropped
+           in is in this list on the next page load, and the value that comes
+           back is checked against that same listing rather than parsed. #}
+        <form method="post" action="/config" class="filters">
+          <input type="hidden" name="section" value="chatbot">
+          <label class="field"><span>Persona</span>
+            <select name="persona">
+              {% for name in config.persona_choices %}
+              <option value="{{ name }}"{% if name == config.persona %} selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="btn btn--primary" type="submit"
+                  {{ "disabled" if not config.persona_choices }}>Use this voice</button>
+        </form>
+        {# What it is *actually* wearing, which is the same thing until the
+           chosen file goes missing. A deploy answering in the template's
+           placeholder voice is a misconfiguration, and it used to be visible
+           only in a startup WARNING. #}
         {% if config.persona_fallback %}
-        <p class="note">No persona of its own, so it is answering in the template's
-          placeholder voice. Drop one in <span class="mono">personas/</span> — see
-          that directory's README — and restart.</p>
+        <p class="note">
+          <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
+          {% if config.persona %}
+          <span class="mono">{{ config.persona }}</span> is chosen but is not in
+          <span class="mono">personas/</span> any more, so it is answering in the template's
+          placeholder voice.
+          {% else %}
+          No persona of its own, so it is answering in the template's placeholder voice.
+          {% endif %}
+          Drop one in <span class="mono">personas/</span> — see that directory's README — and
+          pick it here. No restart.
+        </p>
         {% endif %}
         <p class="note">
           {% if config.chat_configured %}

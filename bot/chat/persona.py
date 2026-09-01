@@ -320,6 +320,49 @@ class Persona:
         return self.path.name if self.path is not None else ""
 
 
+#: The README documents the directory; it is not a voice. Everything else with
+#: a ``.md`` on it is offered, the tracked template included -- a deployment
+#: that has not written its own yet is legitimately wearing that one.
+NOT_A_PERSONA = "README.md"
+
+
+def available(directory: Path | None = None) -> list[str]:
+    """Every persona on offer, by filename, sorted.
+
+    Enumerated per call rather than cached. The directory is a bind mount: a
+    file can appear between two page loads, and a stale list is both a wrong
+    dropdown and a wrong answer to "is this a real choice". A directory that is
+    not there at all -- a checkout with no personas, a mount that failed --
+    offers nothing rather than raising.
+
+    ``directory`` resolves at call time rather than as a default argument, so
+    :data:`PERSONA_DIR` is read when it is asked for and a test can stage one.
+    """
+    directory = PERSONA_DIR if directory is None else directory
+    try:
+        found = [item.name for item in directory.iterdir() if item.is_file()]
+    except OSError:
+        return []
+    return sorted(name for name in found if name.endswith(".md") and name != NOT_A_PERSONA)
+
+
+def chosen_path(name: str | None, directory: Path | None = None) -> Path | None:
+    """The file a chosen persona names, or ``None`` if it is not one of them.
+
+    Membership, not sanitising. The submitted string is compared against the
+    real directory listing and only joined to a path once it has matched one,
+    so ``../../etc/passwd``, an absolute path and anything with a separator in
+    it are all simply "not one of these names" -- there is no path to reject
+    because none was ever built. The same reason
+    :meth:`bot.bosses.BossTable.portrait_path` looks its filenames up in the
+    boss table rather than taking them from a URL.
+    """
+    if not name:
+        return None
+    directory = PERSONA_DIR if directory is None else directory
+    return directory / name if name in available(directory) else None
+
+
 def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> Persona:
     """The persona, from ``path`` if it is readable and from the template if not."""
     candidate = Path(path) if path else None
@@ -481,8 +524,11 @@ __all__ = [
     "HARD_RULES",
     "MAX_EXAMPLES",
     "MAX_EXAMPLE_CHARS",
+    "NOT_A_PERSONA",
     "PERSONA_DIR",
     "Persona",
+    "available",
+    "chosen_path",
     "REMINDER_PREFIX",
     "REMINDER_SUFFIX",
     "RUNTIME_LINE",

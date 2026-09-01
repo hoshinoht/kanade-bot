@@ -41,6 +41,7 @@ import time
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .. import events
@@ -484,8 +485,20 @@ class ChatPilot:
         answering in the placeholder voice used to be visible only in a WARNING.
         """
         if self._persona is None:
-            self._persona = persona.read_persona(self.settings.persona_path)
+            self._persona = persona.read_persona(self._persona_path())
         return self._persona
+
+    def _persona_path(self) -> str | Path:
+        """The file to read: the chosen one if it is really there, else `.env`'s.
+
+        The setting names a file in ``personas/`` and is resolved by membership
+        in that directory, so a choice whose file has since been deleted simply
+        stops matching and the deployment falls back through the ordinary
+        ``PERSONA_PATH`` chain -- and says so, in the log and on the Config
+        page, rather than answering with nothing.
+        """
+        chosen = persona.chosen_path(getattr(self.bot, "persona_name", ""))
+        return chosen if chosen is not None else self.settings.persona_path
 
     def persona_text(self) -> str:
         """Just the words, which is all the prompt builders want."""
