@@ -27,11 +27,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY bot ./bot
 COPY config ./config
-# The chatbot's fallback persona. The *real* one is not in the image or in git --
-# it goes on the data volume (`docker compose cp ... bot:/app/data/persona.md`) --
-# so without this a deployment that has not copied one yet has no voice at all
-# rather than the placeholder one the loader promises.
-COPY persona.example.md ./
+# The chatbot's fallback persona -- the one file from personas/ that belongs in
+# the image. The *real* one is not in the image or in git: it lives in the
+# host's personas/ directory, which compose bind-mounts over this path. Copied
+# by name, never `COPY personas`, so a personal persona sitting beside the
+# template can never be baked into a layer. Without this, a deployment that has
+# not written one yet has no voice at all rather than the placeholder the
+# loader promises.
+COPY personas/persona.example.md ./personas/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
