@@ -1299,6 +1299,23 @@ details[open] > summary.btn {
   min-height: 0;
 }
 
+/* What says it opens. `summary.btn` has already taken the user agent's own
+   marker away, so the caret is drawn here and turns a quarter clockwise when
+   the panel is open; the reduced-motion block at the foot of this file takes
+   that turn's duration to nothing along with every other transition. A summary
+   that read as one stray word is now a control with a disclosure on it. */
+.answers__summary::before {
+  content: "▸";
+  line-height: 1;
+  color: var(--faint);
+  transition: transform 0.14s ease;
+}
+
+.answers[open] > .answers__summary::before {
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
 .answers__body {
   display: grid;
   gap: 0.35rem;
@@ -1534,6 +1551,18 @@ details[open] > summary.btn {
 
 .boss + .boss {
   margin-left: 0.55rem;
+}
+
+/* Two bosses on one run, stacked. Inline they wrapped mid-boss at a card's
+   width -- the name on one line and its difficulty pill orphaned on the next --
+   so anywhere with room for the full in-game name gets one boss per line
+   instead. The inline form above is still what the board's compact cards use. */
+.bosslist {
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
 }
 
 /* A portrait and its monogram stand-in occupy the same box, so adding an image
@@ -1814,42 +1843,161 @@ details[open] > summary.btn {
   border-color: color-mix(in srgb, var(--win-ink) 40%, transparent);
 }
 
-/* ── a wall of settings cards ───────────────────────────────────────────────
+/* ── the settings window ────────────────────────────────────────────────────
  *
- * Cards of wildly different heights: two inputs in one of them, every watched
- * channel in another. A grid row stretches each card to its tallest sibling, so
- * the short ones were mostly empty and the last row left the rest of its width
- * blank. Columns pack them instead -- each card is exactly its own height, and
- * the browser fills top-to-bottom before moving right, which is what closes the
- * gaps a row-major grid cannot.
+ * Config is one window: a table of contents down the left, one section at a
+ * time on the right. It replaced a wall of cards -- first a grid whose rows
+ * stretched every card to its tallest sibling, then columns that packed them --
+ * because the real problem was never how the cards were arranged. It was that
+ * nine settings were all on screen at once, so none of them had room.
  *
- * Reading order becomes column-major, which is fine here: these are seven
- * unrelated settings and no one of them follows from another.
- *
- * `break-inside: avoid` is what keeps a card whole -- a column break through
- * one would cut it in half and draw a border round each half. */
-.cardcols {
-  columns: 17.5rem;
-  column-gap: 0.75rem;
+ * Switching is `:target`, and nothing else. The tabs are ordinary fragment
+ * links, the panel whose id matches shows, and with no fragment at all the
+ * first one shows. No JavaScript is anywhere near it. */
+
+.settings__body {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
 }
 
-.cardcols > .card {
-  break-inside: avoid;
-  /* Drawn below rather than above: a top margin at the head of a column is
-     dropped by some engines and kept by others, and this one has to be the
-     same on all of them. */
-  margin: 0 0 0.75rem;
+.settings__toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.5rem;
+  border-right: 2px solid var(--line);
+  background: var(--raise);
 }
 
-/* Out-specifies `.card + .card`, whose hand-drawn stacking gap is for cards in
-   normal flow and would be added on top of the column gap here.
-   That margin is the bug this replaced: inside the old grid it landed on every
-   card *except* the first, pushing each of them down 0.75rem while
-   `align-items: stretch` pulled their bottoms back into line -- so the first
-   card in the row appeared to float about twelve pixels above its neighbours
-   for no reason anybody could see in the markup. */
-.cardcols > .card + .card {
-  margin-top: 0;
+.settings__tab {
+  padding: 0.38rem 0.6rem;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.settings__tab:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Which tab is open. A stylesheet cannot compare an `href` to an id, so the
+   nine pairs are written out -- and a test holds this list to
+   `CONFIG_SECTIONS` in `bot/api/templating.py`, which is where sections are
+   actually declared. The last selector is the no-fragment case: the first tab,
+   because the first panel is what shows. */
+.settings:has(#pings:target) [href="#pings"],
+.settings:has(#watching:target) [href="#watching"],
+.settings:has(#chatbot:target) [href="#chatbot"],
+.settings:has(#notifications:target) [href="#notifications"],
+.settings:has(#theme:target) [href="#theme"],
+.settings:has(#digest:target) [href="#digest"],
+.settings:has(#rescan:target) [href="#rescan"],
+.settings:has(#access:target) [href="#access"],
+.settings:has(#env:target) [href="#env"],
+.settings:not(:has(.settings__panel:target)) .settings__tab:first-child {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.settings__detail {
+  min-width: 0;
+  padding: 0.9rem 1.05rem 1.1rem;
+}
+
+.settings__panel {
+  display: none;
+}
+
+.settings__panel:target {
+  display: block;
+}
+
+/* Nothing chosen yet: the first section, which is what a settings window opens
+   on. Scoped to direct children so an unrelated `#rescan-job` in the URL
+   cannot leave the window showing nothing at all. */
+.settings__detail:not(:has(> .settings__panel:target)) > .settings__panel:first-child {
+  display: block;
+}
+
+.settings__title {
+  margin: 0 0 0.7rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* A row of buttons that are each their own one-field form. */
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* The fieldsets in here group radios and checkboxes; the user agent's border
+   round them drew a second box inside a window that is already a box. */
+.settings__panel fieldset {
+  border: 0;
+  margin: 0 0 0.7rem;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Inside a panel a form is a row of fields with its Save on the end, and the
+   label sits on its control rather than a line away from it. */
+.settings__panel .filters {
+  margin: 0 0 0.6rem;
+  gap: 0.5rem 0.8rem;
+}
+
+.settings__panel .field {
+  gap: 0.15rem;
+}
+
+.settings__panel .note {
+  margin: 0.5rem 0 0;
+}
+
+.settings__panel .note + .note {
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 899px) {
+  .settings__body {
+    grid-template-columns: 1fr;
+  }
+
+  .settings__toc {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .settings__tab {
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--fs-small);
+  }
+
+  /* Every section at once, and the tabs become jump links. A phone loses a
+     fragment easily -- a back gesture, a reopened tab, a link somebody shared
+     -- and a settings page that answers with a blank pane because of it is
+     worse than one you scroll. */
+  .settings__panel {
+    display: block;
+  }
+
+  .settings__panel + .settings__panel {
+    margin-top: 1.3rem;
+    padding-top: 1.1rem;
+    border-top: 2px solid var(--line-soft);
+  }
 }
 
 /* ── the table pages: a window that scrolls, on a page that does not ────────
@@ -2004,6 +2152,21 @@ details[open] > summary.btn {
 
   body.framed .pager {
     flex: none;
+  }
+
+  /* The settings window: the sidebar and the open section each take the
+     leftover height and scroll on their own, so the table of contents is
+     always there and only the section you are reading moves. */
+  body.framed .settings__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 -1.1rem;
+  }
+
+  body.framed .settings__toc,
+  body.framed .settings__detail {
+    min-height: 0;
+    overflow-y: auto;
   }
 
   /* The headings stay while the rows go past. A shadow rather than a border,
@@ -2501,25 +2664,61 @@ dialog.runsheet[open] {
   overflow-y: auto;
 }
 
-.runsheet__x {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
+/* The sheet's title bar, which is also where the close control lives. Pinned to
+   the panel's corner it sat on top of the card's own top-right actions -- the
+   Move field and Preview ping -- at every width the sheet renders. A window's
+   chrome gets a strip of its own; then nothing can overlap. It sticks, because
+   the panel below it scrolls and a close button that scrolls away is not one. */
+.runsheet__bar {
+  position: sticky;
+  top: 0;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border: 2px solid var(--win);
+  border-radius: var(--r) var(--r) 0 0;
+}
+
+/* Caption, not content: the run's own clock and bosses are full size directly
+   underneath, so the bar only says which run this window is. */
+.runsheet__name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.runsheet__x {
+  flex: none;
   font: inherit;
-  font-size: var(--fs-body-sm);
+  font-size: var(--fs-small);
   line-height: 1;
-  padding: 0.3rem 0.5rem;
-  border: 2px solid var(--line);
+  padding: 0.28rem 0.5rem;
+  border: 2px solid color-mix(in srgb, var(--win-ink) 40%, transparent);
   border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--dim);
+  background: transparent;
+  color: var(--win-ink);
   cursor: pointer;
 }
 
 .runsheet__x:hover {
+  background: var(--surface);
+  border-color: var(--surface);
   color: var(--ink);
-  border-color: var(--accent);
+}
+
+/* One window rather than a card inside a frame: under the bar the run gives up
+   its top edge and its top corners. The left stripe stays -- that colour is the
+   run's status, not decoration. */
+.runsheet__panel > .run {
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
 }
 
 /* On a phone there is no board to open anything, so every sheet is simply the
@@ -2538,8 +2737,15 @@ dialog.runsheet[open] {
     overflow: visible;
   }
 
-  .runsheet__x {
+  /* Nothing to close, so no chrome to close it with -- and with the bar gone
+     the card takes its own top edge back and is a card again. */
+  .runsheet__bar {
     display: none;
+  }
+
+  .runsheet__panel > .run {
+    border-top: 2px solid var(--line);
+    border-radius: var(--r);
   }
 }
 

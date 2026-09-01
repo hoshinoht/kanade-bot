@@ -24,6 +24,12 @@ def board_of(body: str) -> str:
     return body[body.index('class="board"') : body.index('id="days"')]
 
 
+def card_for(body: str, short_id: str) -> str:
+    """One run's article, out of whichever sheet holds it."""
+    start = body.rindex("<article", 0, body.index(f'id="run-{short_id}"'))
+    return body[start : body.index("</article>", start)]
+
+
 # --- the shape of the week --------------------------------------------------
 
 
@@ -265,6 +271,53 @@ def test_a_swap_still_returns_the_row_and_not_the_sheet(auth, fake_bot, seeded):
     assert "<dialog" not in response.text
 
 
+def test_the_sheets_close_control_is_not_on_top_of_the_cards_own_actions(auth, seeded):
+    """A run card keeps its Move field and its Preview ping in the top-right
+    corner, which is exactly where the ✕ was pinned. The sheet's chrome gets a
+    strip of its own above the card instead of a corner over it."""
+    body = auth.get("/").text
+    sheet = body[body.index('<dialog class="runsheet"') :]
+    sheet = sheet[: sheet.index("</dialog>")]
+    chrome, card = sheet.split('<article class="run ', 1)
+
+    assert 'class="runsheet__bar"' in chrome
+    assert "runsheet__x" in chrome
+    assert "runsheet__x" not in card  # never inside the card's own action row
+    assert "Preview ping" in card
+
+    unpinned = PAGE_CSS[PAGE_CSS.index(".runsheet__x {") : PAGE_CSS.index(".runsheet__x:hover")]
+    assert "position: absolute" not in unpinned
+
+
+# --- more than one boss on a run --------------------------------------------
+
+
+def test_a_run_with_two_bosses_gives_each_one_its_own_line(auth, seeded):
+    """Inline they wrapped mid-boss, leaving the second one's difficulty pill
+    orphaned under the name it belongs to. The seed runs HStar with HFA."""
+    card = card_for(auth.get("/").text, service.short_id(seeded["run_star"]))
+
+    assert '<ul class="bosslist">' in card
+    assert card.count("<li>") == 2
+
+
+def test_a_run_with_one_boss_is_still_one_line(auth, seeded):
+    card = card_for(auth.get("/").text, service.short_id(seeded["run_kalos"]))
+
+    assert "bosslist" not in card
+    assert card.count('<span class="boss"') == 1
+
+
+def test_the_boards_cards_keep_their_compact_bosses(auth, seeded):
+    """The same macro, the other way round: a seventh of the page is not room
+    for a list, and the compact card has its own wrapping rules already."""
+    board = board_of(auth.get("/").text)
+
+    assert "bosslist" not in board
+    assert 'class="runcard__bosses"' in board
+    assert board.count('<span class="boss"') == 3  # HStar + HFA, and XKalos
+
+
 # --- the phone keeps what it had --------------------------------------------
 
 
@@ -283,12 +336,18 @@ def test_the_board_and_the_rail_never_show_at_once():
 
 
 def test_the_sheets_are_the_list_on_a_phone():
-    """No board to open them, so each one simply is the row it holds."""
-    narrow = PAGE_CSS[PAGE_CSS.index("@media (max-width: 899px)") :]
-    narrow = narrow[: narrow.index("\n}\n")]
-    assert "dialog.runsheet" in narrow
-    assert "display: block" in narrow
-    assert "position: static" in narrow
+    """No board to open them, so each one simply is the row it holds.
+
+    The stylesheet has more than one narrow media block now, so find the one
+    that talks about the sheets instead of trusting it to come first."""
+    blocks, pos = [], 0
+    while (start := PAGE_CSS.find("@media (max-width: 899px)", pos)) != -1:
+        blocks.append(PAGE_CSS[start : PAGE_CSS.index("\n}\n", start)])
+        pos = start + 1
+    narrow = [b for b in blocks if "dialog.runsheet" in b]
+    assert len(narrow) == 1
+    assert "display: block" in narrow[0]
+    assert "position: static" in narrow[0]
 
 
 def test_the_past_toggle_still_works_on_both(auth, fake_bot, seeded):

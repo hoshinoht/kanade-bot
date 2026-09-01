@@ -644,7 +644,9 @@ def finish_rescan(auth, response) -> str:
     The job runs as a task on the app's loop, so it is not done the instant the
     POST returns; polling the fragment is exactly what the page does.
     """
-    job_id = response.headers["location"].split("job=")[1]
+    # The redirect now carries `#rescan` so the settings window reopens on that
+    # section; a fragment is not part of the path a request is made to.
+    job_id = response.headers["location"].split("job=")[1].split("#")[0]
     for _ in range(50):
         body = auth.get(f"/rescan/{job_id}").text
         if "Re-reading" not in body:
@@ -912,14 +914,14 @@ def test_the_config_page_shows_what_the_bot_may_do(auth, fake_bot, seeded):
     body = auth.get("/config").text
     assert "Channel access" in body
     assert "#hstar-party" in body
-    table = body[body.index("Channel access") : body.index("A ❌ means")]
+    table = body[body.index('id="access"') : body.index("A ❌ means")]
     assert "❌" not in table
 
 
 def test_a_missing_permission_is_visible_at_a_glance(auth, fake_bot, seeded):
     fake_bot.channels[WATCHED_CHANNEL].permissions.send_messages = False
     body = auth.get("/config").text
-    table = body[body.index("Channel access") : body.index("A ❌ means")]
+    table = body[body.index('id="access"') : body.index("A ❌ means")]
     assert "❌" in table
     assert "Edit Channel" in body
 

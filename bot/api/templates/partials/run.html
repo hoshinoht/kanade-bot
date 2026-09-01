@@ -13,7 +13,9 @@
   </div>
 
   <div>
-    <p class="run__bosses">{{ boss_list(run.boss_detail) }}</p>
+    {# A list rather than a line when there is more than one boss, so the
+       second one keeps its pill and its level beside its own name. #}
+    <div class="run__bosses">{{ boss_list(run.boss_detail, stacked=True) }}</div>
     <div class="run__meta">
       <span class="status status--{{ run.status }}">{{ run.status_label }}</span>
       <span class="mono">{{ run.yes }}/{{ run.participants|length }} on</span>
@@ -134,7 +136,9 @@
      through the swap by the hidden field below, so recording two answers in a
      row does not close the panel between them. #}
   <details class="answers" {% if answers_open %}open{% endif %}>
-    <summary class="btn btn--ghost answers__summary">Answers</summary>
+    {# The word alone said nothing about being a disclosure. The caret is drawn
+       in portal.css, and the rest of the line says what opening it is for. #}
+    <summary class="btn answers__summary">Answers — set who’s in or out</summary>
     <div class="answers__body">
       <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
       {% for person in run.participants %}

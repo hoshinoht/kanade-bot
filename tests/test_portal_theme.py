@@ -200,7 +200,9 @@ def test_choosing_system_puts_the_question_back_to_the_device(auth):
 
 def test_the_config_page_offers_all_five_with_the_default_ticked(auth):
     body = auth.get("/config").text
-    card = body[body.index("Colourway") : body.index("Weekly digest")]
+    # The Theme panel of the settings window, by its id: "Weekly digest" now
+    # names a sidebar tab as well as a section, and the sidebar comes first.
+    card = body[body.index('id="theme"') : body.index('id="digest"')]
 
     for way in COLORWAYS:
         assert f'value="{way["key"]}"' in card
@@ -217,7 +219,7 @@ def test_the_config_page_offers_all_five_with_the_default_ticked(auth):
 def test_the_config_page_offers_the_three_modes_with_system_checked(auth):
     """System is what a browser with nothing stored -- and no script -- is on."""
     body = auth.get("/config").text
-    card = " ".join(body[body.index("Colourway") : body.index("Weekly digest")].split())
+    card = " ".join(body[body.index('id="theme"') : body.index('id="digest"')].split())
 
     for value, label in (("system", "System"), ("light", "Light"), ("dark", "Dark")):
         assert f'name="thememode" value="{value}"' in card
@@ -230,7 +232,9 @@ def test_the_config_page_offers_the_three_modes_with_system_checked(auth):
 def test_the_card_is_not_a_form_and_says_why(auth):
     """The two documented exceptions to "every control is a real form"."""
     body = auth.get("/config").text
-    card = body[body.index("Colourway") : body.index("Weekly digest")]
+    # The Theme panel of the settings window, by its id: "Weekly digest" now
+    # names a sidebar tab as well as a section, and the sidebar comes first.
+    card = body[body.index('id="theme"') : body.index('id="digest"')]
 
     assert "<form" not in card
     assert 'action="/theme"' not in card
