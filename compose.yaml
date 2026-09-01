@@ -1,7 +1,14 @@
+# Pinned so the project name follows the repo's identity, not the checkout
+# directory: the 2026-09-01 rename to kanade-bot showed what happens otherwise
+# (compose stops owning the running container and quietly provisions a fresh,
+# EMPTY data volume under the new derived name). Data was migrated from
+# boss-scheduler-bot_botdata to kanade-bot_botdata the same day.
+name: kanade-bot
+
 services:
   bot:
     build: .
-    container_name: boss-scheduler-bot
+    container_name: kanade-bot
     env_file: .env
     environment:
       # Ollama stays native on the host (no Metal passthrough in Docker on macOS).
