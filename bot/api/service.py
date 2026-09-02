@@ -1522,6 +1522,25 @@ def _bare_clock(bot: BossBot, text: str, now: datetime) -> datetime | None:
     return at + timedelta(days=1) if at <= local else at
 
 
+def _resolve_when(text: str, now: datetime, tz: Any) -> datetime | None:
+    """Parse ``text`` via the extractor's day/time resolver.
+
+    ``dateparser`` returns ``None`` for ``"next tuesday 22:30"`` and similar
+    ``next <weekday>`` forms. The extractor's :func:`bot.extract.resolve.resolve`
+    already handles them through ``_NEXT_RE`` and ``_WEEKDAY_ALIASES``; rather
+    than re-teach dateparser, split off the clock token (always the last
+    whitespace-separated word) and pass the rest as ``day_ref``.
+    """
+    words = text.split()
+    if len(words) < 2:
+        return None
+    time_part = words[-1]
+    if resolve.parse_clock(time_part) is None:
+        return None
+    day_part = " ".join(words[:-1])
+    return resolve.resolve(day_part, time_part, now, tz).at
+
+
 def parse_when(bot: BossBot, text: str) -> datetime:
     """``"wed 21:30"`` / ``"tomorrow 9:45pm"`` -> an instant, exactly as ``/amend``.
 
@@ -1542,6 +1561,10 @@ def parse_when(bot: BossBot, text: str) -> datetime:
             "RETURN_AS_TIMEZONE_AWARE": True,
         },
     )
+    if parsed is None:
+        # dateparser misses ``next <weekday> HH:MM`` -- fall back to the
+        # extractor's own resolver, which handles it through _NEXT_RE.
+        parsed = _resolve_when(cleaned, now, bot.tz)
     if parsed is None:
         raise BadRequest(
             f"couldn't read `{text}` as a date - try `wed 21:30` or `2026-09-02 21:30`"

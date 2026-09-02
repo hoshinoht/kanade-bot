@@ -6,6 +6,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- `parse_when` now resolves `next <weekday> HH:MM` (e.g. `next tuesday 22:30`).
+  `dateparser` returns `None` for this form when `PREFER_DATES_FROM=future` is
+  set; the fix falls back to the extractor's own day/time resolver, which already
+  handles `next` via `_NEXT_RE` and `_WEEKDAY_ALIASES`.
+- Failed proposal cards now include the proposal summary in the pipeline error
+  log, making it possible to identify which `propose_add` triggered a post
+  failure without enabling `DEBUG` logging.
+- Tool response text is now logged at `DEBUG` on the success path in addition to
+  the existing argument trace, completing the picture for `LOG_LEVEL=DEBUG`.
 - The Config section pills no longer overlap on mobile, and wide settings content
   can no longer force the portal beyond the viewport.
 
