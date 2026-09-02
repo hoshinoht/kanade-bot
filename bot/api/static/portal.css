@@ -1336,7 +1336,7 @@ details[open] > summary.btn {
 }
 
 .seg--status {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 /* ── the cards a run has produced ───────────────────────────────────────────
@@ -3808,6 +3808,21 @@ details fieldset {
 
   .run__actions {
     justify-content: flex-start;
+  }
+
+  /* A segmented control is one choice, not a stack of unrelated buttons.
+     Compact its labels on phones so the final status does not wrap onto a
+     second row while retaining the shared minimum button height. */
+  .seg--status {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .seg--status .seg__btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 0.2rem;
+    font-size: var(--fs-micro);
   }
 
   .rail__day {
