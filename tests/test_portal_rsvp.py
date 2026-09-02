@@ -13,13 +13,13 @@ from datetime import timedelta
 import pytest
 
 from bot.api import service
-from bot.api.app import STATIC_DIR
 from bot.materialise import DAY_OF, countdown_kind
+from bot.portal_styles import build_stylesheet
 
 from .conftest import TZ, kl
 from .fake_bot import WATCHED_CHANNEL
 
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 
 
 def row_for(body: str, short_id: str) -> str:

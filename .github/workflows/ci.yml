@@ -41,6 +41,9 @@ jobs:
       - name: Format
         run: uv run ruff format --check .
 
+      - name: Build portal stylesheet
+        run: uv run python -m bot.portal_styles --output /tmp/portal.css
+
       # The `ollama` marker hits a 13 GB local model on the developer's machine
       # and is deliberately never run here; `uv run pytest -m ollama` is a
       # local-only step. Everything else must pass.

@@ -18,8 +18,9 @@ from bot import behaviour_plugins
 from bot.api import service
 from bot.api.app import STATIC_DIR
 from bot.api.templating import CONFIG_SECTIONS, read_section
+from bot.portal_styles import build_stylesheet
 
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 PAGE_JS = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
 

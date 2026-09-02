@@ -9,9 +9,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - The portal stylesheet now has an SCSS source layout: `bot/api/static/portal.scss`
   is the ordered entrypoint and `bot/api/static/portal/*.scss` holds the split
   partials, broken out from the former monolithic `portal.css`.
-- `bot/api/static/portal.css` remains the checked-in, served artifact for now,
-  so the portal's behaviour and the raw-CSS test suite stay unchanged while the
-  source tree is easier to maintain.
+- `bot/api/static/portal.css` is now generated and git-ignored. Compose builds it
+  into the image from the SCSS sources; local and packaged runs serve the same
+  bundle from memory when the artifact is absent.
 - The package and API version metadata now report `3.1.1`.
 
 ## 3.1.0

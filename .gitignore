@@ -10,6 +10,8 @@ __pycache__/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+# Generated from bot/api/static/portal.scss; Docker and local tooling rebuild it.
+bot/api/static/portal.css
 .pytest_cache/
 .ruff_cache/
 .DS_Store
