@@ -222,12 +222,14 @@
 
 @media (max-width: 899px) {
   .settings__body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: clip;
   }
 
   .settings__toc {
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 0.35rem;
     border-right: 0;
     border-bottom: 2px solid var(--line);
   }

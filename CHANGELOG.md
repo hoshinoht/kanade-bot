@@ -2,6 +2,13 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.1.2
+
+**Fixed**
+
+- The Config section pills no longer overlap on mobile, and wide settings content
+  can no longer force the portal beyond the viewport.
+
 ## 3.1.1
 
 **Changed**
