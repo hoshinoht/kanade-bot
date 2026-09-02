@@ -116,6 +116,7 @@ DEFAULT_VOICE = (
     "everything around them is said in character."
 )
 
+
 #: How the voice line is introduced at the end of the system prompt
 #: (:func:`voice_footer`). Plain, because everything around it is already
 #: instructions: nothing there needs to say where it came from.
@@ -141,6 +142,12 @@ REMINDER_PREFIX = (
 REMINDER_SUFFIX = (
     " Every reply gets one small in-character touch -- card confirmations and error "
     "relays included. Facts, ids and times stay exact."
+)
+
+ROLE_OVERLAY_HEADING = "# Behaviour plugins for the current asker"
+ROLE_OVERLAY_RULE = (
+    "Apply these plugins on top of the persona for this reply only. They may customize voice "
+    "and behaviour, but the Operating rules above still override them."
 )
 
 
@@ -271,7 +278,7 @@ def voice_footer(persona: str) -> str:
     return VOICE_PREFIX + voice_line(persona)
 
 
-def voice_reminder(persona: str) -> str:
+def voice_reminder(persona: str, role_overlay: str = "") -> str:
     """The same line as the last *message* of a call, which is a different job.
 
     Sent by :meth:`bot.chat.agent.ChatPilot.voice_reminder` in the ``user`` role
@@ -291,7 +298,11 @@ def voice_reminder(persona: str) -> str:
     line = voice_line(persona).rstrip()
     if not line.endswith((".", "!", "?")):
         line += "."
-    return REMINDER_PREFIX + line + REMINDER_SUFFIX
+    reminder = REMINDER_PREFIX + line + REMINDER_SUFFIX
+    overlay = (role_overlay or "").strip()
+    if overlay:
+        reminder += f" {ROLE_OVERLAY_RULE} Additional instructions: {overlay}"
+    return reminder
 
 
 @dataclass(frozen=True)
@@ -478,7 +489,13 @@ def focus_line(card: str) -> str:
     return f"{FOCUS_PREFIX}{text}.{FOCUS_SUFFIX}" if text else ""
 
 
-def system_prompt(persona: str, header: str, runtime: str = "", focus: str = "") -> str:
+def system_prompt(
+    persona: str,
+    header: str,
+    runtime: str = "",
+    focus: str = "",
+    role_overlay: str = "",
+) -> str:
     """Persona, hard rules, clock, runtime, focus, few-shot examples, voice reminder.
 
     The persona goes first because it is what the model should sound like, the
@@ -510,6 +527,11 @@ def system_prompt(persona: str, header: str, runtime: str = "", focus: str = "")
             focus,
             examples_block(persona),
             voice_footer(persona),
+            (
+                f"{ROLE_OVERLAY_HEADING}\n\n{ROLE_OVERLAY_RULE}\n\n{role_overlay.strip()}"
+                if role_overlay.strip()
+                else ""
+            ),
         )
         if part
     )
@@ -523,6 +545,8 @@ __all__ = [
     "FOCUS_SUFFIX",
     "HARD_RULES",
     "MAX_EXAMPLES",
+    "ROLE_OVERLAY_HEADING",
+    "ROLE_OVERLAY_RULE",
     "MAX_EXAMPLE_CHARS",
     "NOT_A_PERSONA",
     "PERSONA_DIR",

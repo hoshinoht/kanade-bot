@@ -899,6 +899,40 @@ def test_an_empty_config_put_says_so(auth):
     assert "nothing to change" in response.json()["error"]
 
 
+def test_role_plugins_are_readable_and_writable_over_the_api(auth, tmp_path, monkeypatch):
+    from bot import behaviour_plugins
+
+    monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
+    behaviour_plugins.write("playful", "Use playful, smug banter.")
+    behaviour_plugins.write("concise", "Always answer in short lines.")
+    assignments = [
+        {"role_id": "1540491480936751205", "plugin": "playful"},
+        {"role_id": "1540491480936751206", "plugin": "concise"},
+    ]
+
+    body = auth.put("/api/config", json={"chat_role_plugins": assignments}).json()
+
+    assert body["chat_role_plugins"] == assignments
+    assert auth.get("/api/config").json()["chat_role_plugins"] == assignments
+
+
+@pytest.mark.parametrize(
+    "prompts",
+    [
+        [{"role_id": "not-an-id", "plugin": "playful"}],
+        [{"role_id": "1540491480936751205", "plugin": ""}],
+        [
+            {"role_id": "1540491480936751205", "plugin": "playful"},
+            {"role_id": "1540491480936751205", "plugin": "concise"},
+        ],
+    ],
+)
+def test_invalid_role_plugins_are_refused(auth, prompts):
+    response = auth.put("/api/config", json={"chat_role_plugins": prompts})
+
+    assert response.status_code == 400
+
+
 # --- digest, rescan, ping ---------------------------------------------------
 
 

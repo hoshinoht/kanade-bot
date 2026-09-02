@@ -2,6 +2,32 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.1.0
+
+**Added**
+
+- **Behaviour plugins** layer reusable Markdown instructions on top of the active
+  chatbot persona without replacing its voice or operating rules. Discord roles
+  can be assigned different plugins, and a member holding several configured
+  roles receives every matching plugin in assignment order while the main chat
+  role remains required for access.
+- **Live plugin management in Config → Chatbot**: create, edit and delete plugin
+  files, then add, update or remove role assignments without restarting the bot.
+  Plugin and assignment editors are collapsible and independently paginated for
+  larger lists, preserving the current page across form submissions.
+- Deployments can seed initial role assignments with `CHAT_ROLE_PLUGINS`.
+  Portal-managed assignments persist in SQLite, plugin instructions persist in
+  the writable, git-ignored `personas/behaviour-plugins/` directory, and the
+  tracked `example.md` documents how to write additional plugins.
+
+**Changed**
+
+- Matching behaviour-plugin instructions are reinforced on every model round,
+  including direct answers and automatic clarification follow-ups. The base
+  persona's factual and safety rules continue to override style instructions.
+- The compose persona mount is writable so portal-created plugin files survive
+  container rebuilds while the rest of the container root remains read-only.
+
 ## 3.0.2
 **Added**
 - Minor UI tweaks to the portal

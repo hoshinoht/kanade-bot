@@ -34,6 +34,9 @@ config/artwork/*/*
 personas/*
 !personas/README.md
 !personas/persona.example.md
+!personas/behaviour-plugins/
+personas/behaviour-plugins/*
+!personas/behaviour-plugins/example.md
 
 # The design spec is kept locally rather than published.
 DESIGN.md

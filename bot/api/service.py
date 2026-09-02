@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import audit, events, formatting
+from .. import audit, behaviour_plugins, events, formatting
 from ..bosses import BossParseError
 from ..export import message_record
 from ..extract import resolve
@@ -96,6 +96,7 @@ CONFIG_KEYS = (
     "quiet_mode",
     "chat_mode",
     "persona",
+    behaviour_plugins.CONFIG_KEY,
     "chat_pilot_rate_count",
     "chat_pilot_rate_window_s",
     "chat_pilot_global_rate_count",
@@ -2237,6 +2238,9 @@ def get_config(bot: BossBot) -> dict:
     # Cached on the pilot after the first read, so asking here costs a page load
     # nothing and reports exactly what the bot is answering with.
     persona_source = bot.chat.persona_source()
+    configured_role_plugins = behaviour_plugins.decode(
+        bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
+    )
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
         "countdown_minutes": ",".join(str(m) for m in bot.countdowns),
@@ -2268,6 +2272,8 @@ def get_config(bot: BossBot) -> dict:
         # the two differ exactly when the chosen file has gone missing.
         "persona": bot.persona_name,
         "persona_choices": bot.persona_choices(),
+        "chat_role_plugins": [item.as_dict() for item in configured_role_plugins],
+        "behaviour_plugins": [item.as_dict() for item in behaviour_plugins.list_plugins()],
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",
@@ -2331,6 +2337,19 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         # voice would wait for a restart, which is the whole thing this setting
         # exists to avoid: the next question is answered in it.
         bot.chat.reload_persona()
+    elif key == behaviour_plugins.CONFIG_KEY:
+        try:
+            stored = behaviour_plugins.encode(value)
+            missing = [
+                item.plugin
+                for item in behaviour_plugins.decode(stored)
+                if behaviour_plugins.read(item.plugin) is None
+            ]
+        except (TypeError, ValueError) as exc:
+            raise BadRequest(str(exc)) from None
+        if missing:
+            raise BadRequest(f"unknown behaviour plugin(s): {', '.join(missing)}")
+        bot.repo.set_config(key, stored)
     elif key in COUNT_KEYS:
         stored = str(_whole_number(value, key, minimum=1))
         bot.repo.set_config(key, stored)
@@ -2346,8 +2365,70 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
     else:
         stored = _as_flag(value)
         bot.repo.set_config(key, stored)
-    _audit(bot, "config", key, f"{key}: {before if before is not None else 'unset'} -> {stored}")
+    if key == behaviour_plugins.CONFIG_KEY:
+        before_count = len(behaviour_plugins.decode(before))
+        after_count = len(behaviour_plugins.decode(stored))
+        detail = f"{key}: {before_count} assignment(s) -> {after_count} assignment(s)"
+    else:
+        detail = f"{key}: {before if before is not None else 'unset'} -> {stored}"
+    _audit(bot, "config", key, detail)
     return get_config(bot)
+
+
+def set_role_plugin(bot: BossBot, role_id: Any, plugin: Any) -> dict:
+    """Add or update one role-to-plugin assignment while preserving its order."""
+    try:
+        candidate = behaviour_plugins.validate([{"role_id": role_id, "plugin": plugin}])[0]
+    except (IndexError, TypeError, ValueError) as exc:
+        raise BadRequest(str(exc) or "role id and plugin are required") from None
+    configured = behaviour_plugins.decode(bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]"))
+    updated = [candidate if item.role_id == candidate.role_id else item for item in configured]
+    if all(item.role_id != candidate.role_id for item in configured):
+        updated.append(candidate)
+    return set_config(bot, behaviour_plugins.CONFIG_KEY, [item.as_dict() for item in updated])
+
+
+def set_behaviour_plugin(bot: BossBot, name: Any, instructions: Any) -> dict:
+    """Create or edit one persisted behaviour plugin."""
+    before = behaviour_plugins.read(str(name or ""))
+    try:
+        saved = behaviour_plugins.write(name, instructions)
+    except (TypeError, ValueError) as exc:
+        raise BadRequest(str(exc)) from None
+    action = "updated" if before is not None else "created"
+    _audit(bot, "config", behaviour_plugins.CONFIG_KEY, f"plugin `{saved.name}` {action}")
+    return get_config(bot)
+
+
+def delete_behaviour_plugin(bot: BossBot, name: Any) -> dict:
+    """Delete an unused behaviour plugin from the persona bind mount."""
+    try:
+        safe = behaviour_plugins.plugin_name(name)
+    except (TypeError, ValueError) as exc:
+        raise BadRequest(str(exc)) from None
+    configured = behaviour_plugins.decode(bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]"))
+    used_by = [item.role_id for item in configured if item.plugin == safe]
+    if used_by:
+        raise BadRequest(f"plugin `{safe}` is still used by role(s): {', '.join(used_by)}")
+    try:
+        behaviour_plugins.delete(safe)
+    except ValueError as exc:
+        raise NotFound(str(exc)) from None
+    _audit(bot, "config", behaviour_plugins.CONFIG_KEY, f"plugin `{safe}` deleted")
+    return get_config(bot)
+
+
+def delete_role_plugin(bot: BossBot, role_id: Any) -> dict:
+    """Remove one role-to-plugin assignment from the portal-managed list."""
+    try:
+        wanted = behaviour_plugins.validate([{"role_id": role_id, "plugin": "validate"}])[0].role_id
+    except (IndexError, TypeError, ValueError) as exc:
+        raise BadRequest(str(exc) or "a valid role id is required") from None
+    configured = behaviour_plugins.decode(bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]"))
+    if all(item.role_id != wanted for item in configured):
+        raise NotFound(f"no behaviour plugin is assigned to role {wanted}")
+    remaining = [item.as_dict() for item in configured if item.role_id != wanted]
+    return set_config(bot, behaviour_plugins.CONFIG_KEY, remaining)
 
 
 def _persona_choice(bot: BossBot, value: Any) -> str:

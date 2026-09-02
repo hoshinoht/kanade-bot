@@ -124,6 +124,126 @@
           <button class="btn btn--primary" type="submit"
                   {{ "disabled" if not config.persona_choices }}>Use this voice</button>
         </form>
+        <h3 class="settings__subtitle">Behaviour plugins</h3>
+        <p class="note">
+          Plugins are reusable persona add-ons. Their instructions affect every chatbot reply
+          for assigned members while the selected persona and operating rules remain in force.
+          They are stored as git-ignored files under
+          <span class="mono">personas/behaviour-plugins/</span> and take effect immediately.
+        </p>
+        <div class="behaviour-collection" data-paginated-list data-page-size="5"
+             data-page-label="plugins" data-pagination-key="behaviour-plugins">
+          <div class="behaviour-editors">
+            {% for plugin in config.behaviour_plugins %}
+            <details class="behaviour-editor" data-page-item>
+              <summary class="behaviour-editor__summary">
+                <span class="status">Plugin</span>
+                <span class="mono">{{ plugin.name }}</span>
+                <span class="behaviour-editor__hint">Edit instructions</span>
+              </summary>
+              <form method="post" action="/config/behaviour-plugins"
+                    class="behaviour-editor__body">
+                <input type="hidden" name="name" value="{{ plugin.name }}">
+                <label class="field"><span>Instructions added to the persona</span>
+                  <textarea name="instructions" rows="5" required>{{ plugin.instructions }}</textarea>
+                </label>
+                <div class="behaviour-editor__actions">
+                  <button class="btn btn--primary" type="submit">Save</button>
+                  <button class="btn btn--danger" type="submit"
+                          formaction="/config/behaviour-plugins/{{ plugin.name }}/delete"
+                          hx-confirm="Delete the {{ plugin.name }} behaviour plugin?">Delete</button>
+                </div>
+              </form>
+            </details>
+            {% else %}
+            <p class="empty behaviour-editors__empty">No behaviour plugins yet.</p>
+            {% endfor %}
+          </div>
+          <nav class="pager behaviour-pager" data-page-controls hidden
+               aria-label="Behaviour plugin pages">
+            <button class="btn" type="button" data-page-previous>← Previous</button>
+            <span class="pager__at mono" data-page-status aria-live="polite"></span>
+            <button class="btn" type="button" data-page-next>Next →</button>
+          </nav>
+        </div>
+        <details class="behaviour-editor behaviour-editor--new">
+          <summary class="behaviour-editor__summary"><strong>Create behaviour plugin</strong></summary>
+          <form method="post" action="/config/behaviour-plugins"
+                class="behaviour-editor__body">
+            <label class="field"><span>Name</span>
+              <input name="name" pattern="[a-z0-9][a-z0-9_-]{0,49}" required
+                     placeholder="mesugaki" class="mono">
+            </label>
+            <label class="field"><span>Instructions added to the persona</span>
+              <textarea name="instructions" rows="5" required
+                        placeholder="Use playful, smug banter while keeping schedule facts exact."></textarea>
+            </label>
+            <button class="btn btn--primary" type="submit">Create plugin</button>
+          </form>
+        </details>
+
+        <h3 class="settings__subtitle">Role assignments</h3>
+        <p class="note">
+          A member must still hold the main chat role; assignments never grant access. If they
+          hold several roles below, all matching plugins are added in the order shown.
+        </p>
+        <div class="behaviour-collection" data-paginated-list data-page-size="5"
+             data-page-label="assignments" data-pagination-key="role-plugins">
+          <div class="behaviour-editors">
+            {% for item in config.chat_role_plugins %}
+            <details class="behaviour-editor" data-page-item>
+              <summary class="behaviour-editor__summary">
+                <span class="status">Role</span>
+                <span class="mono">{{ item.role_id }}</span>
+                <span class="chip chip--mono">{{ item.plugin }}</span>
+              </summary>
+              <form method="post" action="/config/role-plugins"
+                    class="behaviour-editor__body">
+                <input type="hidden" name="role_id" value="{{ item.role_id }}">
+                <label class="field"><span>Behaviour plugin</span>
+                  <select name="plugin" required>
+                    {% for plugin in config.behaviour_plugins %}
+                    <option value="{{ plugin.name }}"{% if plugin.name == item.plugin %} selected{% endif %}>{{ plugin.name }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <div class="behaviour-editor__actions">
+                  <button class="btn btn--primary" type="submit">Save</button>
+                  <button class="btn btn--danger" type="submit"
+                          formaction="/config/role-plugins/{{ item.role_id }}/delete"
+                          hx-confirm="Remove the plugin assignment for role {{ item.role_id }}?">Delete</button>
+                </div>
+              </form>
+            </details>
+            {% else %}
+            <p class="empty behaviour-editors__empty">No roles have behaviour plugins yet.</p>
+            {% endfor %}
+          </div>
+          <nav class="pager behaviour-pager" data-page-controls hidden
+               aria-label="Role assignment pages">
+            <button class="btn" type="button" data-page-previous>← Previous</button>
+            <span class="pager__at mono" data-page-status aria-live="polite"></span>
+            <button class="btn" type="button" data-page-next>Next →</button>
+          </nav>
+        </div>
+        <details class="behaviour-editor behaviour-editor--new">
+          <summary class="behaviour-editor__summary"><strong>Assign plugin to role</strong></summary>
+          <form method="post" action="/config/role-plugins" class="behaviour-editor__body">
+            <label class="field"><span>Discord role ID</span>
+              <input name="role_id" inputmode="numeric" pattern="[0-9]+" required
+                     placeholder="1540491480936751205" class="mono">
+            </label>
+            <label class="field"><span>Behaviour plugin</span>
+              <select name="plugin" required>
+                {% for plugin in config.behaviour_plugins %}
+                <option value="{{ plugin.name }}">{{ plugin.name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button class="btn btn--primary" type="submit"
+                    {{ "disabled" if not config.behaviour_plugins }}>Assign plugin</button>
+          </form>
+        </details>
         {# What it is *actually* wearing, which is the same thing until the
            chosen file goes missing. A deploy answering in the template's
            placeholder voice is a misconfiguration, and it used to be visible

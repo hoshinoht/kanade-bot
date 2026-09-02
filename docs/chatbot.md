@@ -85,6 +85,7 @@ allowance while the bot's question spends none of it.
 # 1. In .env -- note the CHAT_PILOT_ prefix. CHAT_CHANNEL_IDS / CHAT_CATEGORY_IDS
 #    are different lists (what the *extractor* reads) and must not be touched.
 CHAT_PILOT_ROLE_ID=...          # the role that may talk to the bot
+CHAT_ROLE_PLUGINS=...            # optional initial ROLE_ID=plugin assignments
 CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
@@ -98,6 +99,15 @@ $EDITOR personas/persona.md
 # 3. Rebuild, then mention it in the channel.
 docker compose up -d --build
 ```
+
+Reusable behaviour plugins are managed from the portal's **Config → Chatbot**
+panel and stored as git-ignored Markdown files under
+`personas/behaviour-plugins/`. Each role can be assigned a plugin; the plugin
+builds on the selected persona for every model round, multiple matching roles
+compose in listed order, and none grants chatbot access by itself —
+`CHAT_PILOT_ROLE_ID` is still required. `CHAT_ROLE_PLUGINS` only seeds initial
+assignments on a fresh database; portal changes are stored in SQLite and win
+afterward.
 
 A missing persona file falls back to the tracked template and logs a WARNING, so
 a wrong `PERSONA_PATH` is obvious rather than being an outage — and the Config
