@@ -2,6 +2,10 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.0.2
+**Added**
+- Minor UI tweaks to the portal
+
 ## 3.0.1
 **Fixed**
 - The chat model could combine a canonical boss token with a second difficulty, 

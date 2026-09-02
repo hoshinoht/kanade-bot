@@ -40,7 +40,7 @@ INITIAL_BACKOFF = 5.0
 MAX_BACKOFF = 300.0
 #: Fatal config errors still exit non-zero, but only after a pause: under
 #: ``restart: unless-stopped`` an immediate exit becomes a tight loop that
-#: hammers Discord's gateway with rejected IDENTIFYs.
+#: hammers Discord's gateway with rejected   IDENTIFYs.
 FATAL_EXIT_DELAY = 60.0
 
 

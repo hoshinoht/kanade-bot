@@ -3294,6 +3294,7 @@ tbody tr:hover {
   text-align: center;
   color: var(--dim);
   background: var(--surface);
+  margin:0 0 0.6rem;
 }
 
 .empty strong {
