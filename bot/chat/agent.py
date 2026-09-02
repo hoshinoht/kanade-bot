@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import events
+from .. import behaviour_plugins, events
 from ..extract.prompt import estimate_messages
 from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
 from ..timeutil import utcnow
@@ -808,6 +808,22 @@ class ChatPilot:
             self.settings.admin_role_id,
         )
 
+    def reply_overlay(self, author: Any) -> str:
+        """Combine behaviour plugins for the current chat-role holder.
+
+        A plugin customizes an already-authorized member; it is never another
+        access path. Requiring the ordinary role here means even an admin who can
+        bypass the gate receives no role plugin unless they explicitly hold it.
+        """
+        role_ids = [getattr(role, "id", role) for role in (getattr(author, "roles", None) or ())]
+        chat_role = self.settings.chat_pilot_role_id
+        if chat_role is None or str(chat_role) not in {str(role_id) for role_id in role_ids}:
+            return ""
+        configured = behaviour_plugins.decode(
+            self.bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
+        )
+        return behaviour_plugins.overlay(configured, role_ids)
+
     async def _answer(self, message: Any, channel_id: str, is_admin: bool = False) -> Generation:
         author_id = str(message.author.id)
         text = (message.content or "").strip()
@@ -818,8 +834,9 @@ class ChatPilot:
             message_id=str(message.id),
             is_admin=is_admin,
         )
-        conversation = self.build_conversation(message, channel_id)
-        result = await self.generate(conversation, context)
+        overlay = self.reply_overlay(message.author)
+        conversation = self.build_conversation(message, channel_id, overlay)
+        result = await self.generate(conversation, context, overlay)
 
         reply = result.reply or FAILURE_REPLY
         posted = await self._post(message, reply)
@@ -1020,14 +1037,18 @@ class ChatPilot:
             read_only=True,
         )
         question = followup.prompt(self.bot, amendments, author_id)
+        guild = getattr(channel, "guild", None)
+        get_member = getattr(guild, "get_member", None)
+        member = get_member(int(author_id)) if get_member is not None else None
+        overlay = self.reply_overlay(member)
         # A ``user`` turn, though nobody said it: gpt-oss's template lifts every
         # system message out of the conversation and into the instructions header
         # at the top, which would put this synthetic turn *before* the history it
         # is a reaction to. Its bracketed opener carries the provenance instead.
         conversation = self.assemble(
-            [*self.history(channel_id), ChatTurn("user", question)], channel_id
+            [*self.history(channel_id), ChatTurn("user", question)], channel_id, overlay
         )
-        result = await self.generate(conversation, context)
+        result = await self.generate(conversation, context, overlay)
         log.info(
             "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
             channel_id,
@@ -1298,7 +1319,9 @@ class ChatPilot:
         chain.reverse()
         return chain
 
-    def build_conversation(self, message: Any, channel_id: str) -> list[dict[str, str]]:
+    def build_conversation(
+        self, message: Any, channel_id: str, role_overlay: str = ""
+    ) -> list[dict[str, str]]:
         """System prompt, the re-anchored exchange, history, reply chain, question.
 
         The schedule is deliberately *not* pre-injected: it is ten runs and a
@@ -1324,10 +1347,13 @@ class ChatPilot:
         question = ChatTurn(
             "user", self._speaker(str(message.author.id), (message.content or "").strip())
         )
-        return self.assemble([*earlier, question], channel_id)
+        return self.assemble([*earlier, question], channel_id, role_overlay)
 
     def assemble(
-        self, turns: Sequence[ChatTurn], channel_id: str | None = None
+        self,
+        turns: Sequence[ChatTurn],
+        channel_id: str | None = None,
+        role_overlay: str = "",
     ) -> list[dict[str, str]]:
         """The system prompt, then as much of ``turns`` as the budget allows.
 
@@ -1350,6 +1376,7 @@ class ChatPilot:
             persona.clock_header(now, self.bot.tz, week),
             persona.runtime_line(self.settings.chat_pilot_model),
             persona.focus_line(self.focus(channel_id) if channel_id is not None else ""),
+            role_overlay,
         )
         rendered = [{"role": t.role, "content": t.content} for t in turns]
         # Measured over the conversation alone. The system prompt is a whole
@@ -1363,14 +1390,17 @@ class ChatPilot:
 
     # -- the model ---------------------------------------------------------
     async def generate(
-        self, conversation: list[dict[str, str]], context: tools.ToolContext
+        self,
+        conversation: list[dict[str, str]],
+        context: tools.ToolContext,
+        role_overlay: str = "",
     ) -> Generation:
         """Run the tool loop until the model answers in words. Never raises."""
         started = time.monotonic()
         result = Generation()
         try:
             await asyncio.wait_for(
-                self._loop(conversation, context, result),
+                self._loop(conversation, context, result, role_overlay),
                 timeout=self.settings.chat_pilot_timeout,
             )
         except TimeoutError:
@@ -1388,6 +1418,7 @@ class ChatPilot:
         conversation: list[dict[str, str]],
         context: tools.ToolContext,
         result: Generation,
+        role_overlay: str = "",
     ) -> None:
         messages: list[dict[str, Any]] = list(conversation)
         for round_number in range(1, MAX_TOOL_ROUNDS + 1):
@@ -1397,7 +1428,12 @@ class ChatPilot:
             # that never arrives because it kept looking things up.
             last = round_number == MAX_TOOL_ROUNDS
             asked_at = time.monotonic()
-            response = await self._chat(messages, with_tools=not last, context=context)
+            response = await self._chat(
+                messages,
+                with_tools=not last,
+                context=context,
+                role_overlay=role_overlay,
+            )
             content, calls = _message_text(response)
             model_ms = int((time.monotonic() - asked_at) * 1000)
             result.model_ms += model_ms
@@ -1442,7 +1478,7 @@ class ChatPilot:
         result.error = "the model kept calling tools"
         log.warning("chat: gave up after %d tool rounds", MAX_TOOL_ROUNDS)
 
-    def voice_reminder(self) -> dict[str, str]:
+    def voice_reminder(self, role_overlay: str = "") -> dict[str, str]:
         """The one line the model reads immediately before it writes.
 
         Sent as the **last message of every call**, after the conversation and
@@ -1469,10 +1505,17 @@ class ChatPilot:
         conversation, and re-derived from the cached persona each turn so a
         `reload_persona` takes effect immediately.
         """
-        return {"role": "user", "content": persona.voice_reminder(self.persona_text())}
+        return {
+            "role": "user",
+            "content": persona.voice_reminder(self.persona_text(), role_overlay),
+        }
 
     async def _chat(
-        self, messages: list[dict[str, Any]], with_tools: bool, context: tools.ToolContext
+        self,
+        messages: list[dict[str, Any]],
+        with_tools: bool,
+        context: tools.ToolContext,
+        role_overlay: str = "",
     ) -> Any:
         # A read-only turn is offered the read schemas only. That is the polite
         # half of the rule; `tools.run` refuses a write by name whatever the
@@ -1480,7 +1523,7 @@ class ChatPilot:
         offered = tools.read_tools() if context.read_only else tools.TOOLS
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
-            messages=[*messages, self.voice_reminder()],
+            messages=[*messages, self.voice_reminder(role_overlay)],
             # Temperature is set explicitly rather than left to the model's
             # Modelfile: the extractor pins 0 next door, and a reader who sees
             # that one is entitled to know this one is different on purpose.

@@ -14,11 +14,13 @@ import re
 
 import pytest
 
+from bot import behaviour_plugins
 from bot.api import service
 from bot.api.app import STATIC_DIR
 from bot.api.templating import CONFIG_SECTIONS, read_section
 
 PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_JS = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
 
 def rule_body(selector: str) -> str:
@@ -233,6 +235,115 @@ def test_a_fieldset_does_not_draw_a_second_box_inside_the_window(auth, seeded):
 def chatbot_panel(body: str) -> str:
     start = body.index('id="chatbot"')
     return body[start : body.index('id="notifications"')]
+
+
+@pytest.fixture
+def plugin_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
+    return tmp_path
+
+
+def test_the_chatbot_panel_has_behaviour_plugin_and_role_editors(auth, seeded, plugin_dir):
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert "Behaviour plugins" in panel
+    assert "Role assignments" in panel
+    assert 'action="/config/behaviour-plugins"' in panel
+    assert 'action="/config/role-plugins"' in panel
+    assert 'name="role_id"' in panel
+    assert 'name="plugin"' in panel
+
+
+def test_behaviour_plugin_editors_collapse_and_paginate_without_hiding_server_markup(
+    auth, seeded, plugin_dir
+):
+    for number in range(6):
+        behaviour_plugins.write(f"style-{number}", f"STYLE {number}")
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert 'data-pagination-key="behaviour-plugins"' in panel
+    assert 'data-pagination-key="role-plugins"' in panel
+    assert panel.count('data-page-size="5"') == 2
+    assert panel.count("data-page-previous") == 2
+    assert panel.count("data-page-next") == 2
+    assert '<details class="behaviour-editor" data-page-item>' in panel
+    assert '<summary class="behaviour-editor__summary">' in panel
+    assert '<details class="behaviour-editor behaviour-editor--new">' in panel
+    for number in range(6):
+        assert f"style-{number}" in panel
+
+    assert 'querySelectorAll("[data-page-item]")' in PAGE_JS
+    assert "window.sessionStorage" in PAGE_JS
+
+
+def test_plugins_and_role_assignments_can_be_managed_in_the_portal(
+    auth, fake_bot, seeded, plugin_dir
+):
+    role_id = "1540491480936751205"
+
+    created = auth.post(
+        "/config/behaviour-plugins",
+        data={"name": "mesugaki", "instructions": "Use playful, smug banter."},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    assert created.headers["location"].endswith("#chatbot")
+    assert behaviour_plugins.read("mesugaki").instructions == "Use playful, smug banter."
+
+    assigned = auth.post(
+        "/config/role-plugins",
+        data={"role_id": role_id, "plugin": "mesugaki"},
+        follow_redirects=False,
+    )
+    assert assigned.status_code == 303
+    assert service.get_config(fake_bot)["chat_role_plugins"] == [
+        {"role_id": role_id, "plugin": "mesugaki"}
+    ]
+
+    panel = chatbot_panel(auth.get("/config").text)
+    assert role_id in panel
+    assert "Use playful, smug banter." in panel
+    assert f"/config/role-plugins/{role_id}/delete" in panel
+
+    auth.post(
+        "/config/behaviour-plugins",
+        data={"name": "mesugaki", "instructions": "Use a different style."},
+    )
+    assert behaviour_plugins.read("mesugaki").instructions == "Use a different style."
+
+    in_use = auth.post(
+        "/config/behaviour-plugins/mesugaki/delete",
+        follow_redirects=False,
+    )
+    assert "kind=error" in in_use.headers["location"]
+
+    auth.post(f"/config/role-plugins/{role_id}/delete")
+    deleted = auth.post(
+        "/config/behaviour-plugins/mesugaki/delete",
+        follow_redirects=False,
+    )
+    assert deleted.status_code == 303
+    assert behaviour_plugins.read("mesugaki") is None
+
+
+def test_the_portal_renders_multiple_role_plugin_assignments_in_order(
+    auth, fake_bot, seeded, plugin_dir
+):
+    behaviour_plugins.write("first", "FIRST STYLE")
+    behaviour_plugins.write("second", "SECOND STYLE")
+    service.set_config(
+        fake_bot,
+        behaviour_plugins.CONFIG_KEY,
+        [
+            {"role_id": "1540491480936751205", "plugin": "first"},
+            {"role_id": "1540491480936751206", "plugin": "second"},
+        ],
+    )
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert panel.index("1540491480936751205") < panel.index("1540491480936751206")
 
 
 @pytest.fixture

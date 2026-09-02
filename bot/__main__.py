@@ -16,6 +16,7 @@ from pathlib import Path
 
 import discord
 
+from . import behaviour_plugins
 from .bosses import BossTable, BossTableError
 from .client import (
     CFG_CHAT,
@@ -105,6 +106,7 @@ def build_repo(settings: Settings) -> Repo:
             # then on the row wins, so a persona chosen from the portal is not
             # undone by the next restart reading `.env` again.
             CFG_PERSONA: Path(settings.persona_path).name,
+            behaviour_plugins.CONFIG_KEY: behaviour_plugins.seed_value(settings.chat_role_plugins),
             CFG_RATE_COUNT: str(settings.chat_pilot_rate_count),
             CFG_RATE_WINDOW: str(settings.chat_pilot_rate_window_s),
             CFG_POOL_COUNT: str(settings.chat_pilot_global_rate_count),

@@ -49,9 +49,11 @@ services:
       # (`bot.backup`), never from copying the WAL file underneath it.
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
-      # Read-only like config/: the bot reads a persona and never writes one,
-      # and editing it on the host is meant to need nothing but a restart.
-      - ./personas:/app/personas:ro
+      # Base personas are still edited as host files. The portal also stores
+      # reusable behaviour plugins under personas/behaviour-plugins/, so this
+      # one narrowly-scoped bind mount is writable while the container root and
+      # config remain read-only.
+      - ./personas:/app/personas
     restart: unless-stopped
     # Defense-in-depth: member input never reaches a shell or a URL, but if a
     # parsing dependency ever gave code execution, it lands in a root-immutable,

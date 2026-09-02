@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     #: the extractor reads", and a second, unrelated ``CHAT_*`` gate reading
     #: from a neighbouring line would be read as its companion.
     chat_pilot_role_id: int | None = None
+    #: Initial role-to-behaviour-plugin assignments as ``ROLE_ID=plugin`` pairs.
+    #: They seed SQLite once; the portal owns the mappings after that.
+    chat_role_plugins: str = ""
     #: Channels the chatbot answers in, comma separated. Independent of the
     #: watched-channel list: the pilot runs in its own channel, and a watched
     #: party channel must not start answering chat.
