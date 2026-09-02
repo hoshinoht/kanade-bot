@@ -26,6 +26,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY bot ./bot
+# Compose builds the served artifact from its source partials. Do this while the
+# image is writable; the running container deliberately has a read-only root.
+RUN python -m bot.portal_styles
 COPY config ./config
 # The chatbot's fallback persona -- the one file from personas/ that belongs in
 # the image. The *real* one is not in the image or in git: it lives in the

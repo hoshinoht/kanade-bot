@@ -18,13 +18,14 @@ import pytest
 from bot import identity
 from bot.api.app import STATIC_DIR
 from bot.api.templating import COLORWAYS, DEFAULT_COLORWAY, NAV, NAV_GROUPS
+from bot.portal_styles import build_stylesheet
 
 from .fake_bot import ADMIN_TOKEN, make_settings
 
 PNG = b"\x89PNG\r\n\x1a\n and then some pixels"
 
 PAGE_JS = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 
 DARK_MEDIA = "@media (prefers-color-scheme: dark)"
 

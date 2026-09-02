@@ -74,7 +74,20 @@ bot/
     models.py    request/response shapes
     templating.py the Jinja environment
     templates/   Jinja pages and partials
-    static/      portal.css
+    static/      portal.scss (entrypoint), portal/*.scss (partials), generated portal.css
 config/bosses.yaml
 tests/
 ```
+
+The portal stylesheet is split into CSS-compatible SCSS partials under
+`bot/api/static/portal/`, with `bot/api/static/portal.scss` as the ordered entrypoint.
+`bot/api/static/portal.css` is generated and git-ignored: `docker compose up --build` builds it
+into the image, while a local or packaged app with no artifact serves the same bundle from memory.
+To generate a local copy manually, run:
+
+```sh
+uv run python -m bot.portal_styles
+```
+
+Keep the partials CSS-compatible—the SCSS entrypoint provides ordering and decomposition, not
+Sass transformations.

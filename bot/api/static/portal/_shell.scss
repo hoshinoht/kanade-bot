@@ -1,0 +1,227 @@
+/* ── shell ──────────────────────────────────────────────────────────────── */
+
+/* A window does not dock to the menu bar. The gap under the masthead is here,
+   on the shell, and nowhere else: every page has a different first element -- a
+   page head on most, a flash after a save, and on Config the window itself --
+   so a gap owned by any one of them is a gap the other pages do not get. Config
+   sat flush against the bar for exactly that reason.
+
+   On a framed page this is padding on a flex *container*, so it comes out of
+   the height the window then flexes into rather than adding to the page: the
+   frame still ends at 100dvh. */
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.8rem var(--gutter) 5rem;
+  min-width: 0;
+}
+
+/* ...and nothing may bring a second one. The page heads below have given up
+   their top margins for this; this catches everything else that has one of its
+   own, a flash being the one that turns up in practice. */
+.shell > :first-child {
+  margin-top: 0;
+}
+
+/* The menu bar of the desktop: a cream strip, not a tint of the ground -- the
+   grounds are saturated enough that a translucent bar over one would take the
+   timezone and the nav down with it. */
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 2px solid var(--win);
+}
+
+.masthead__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.7rem var(--gutter) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  min-width: 0;
+}
+
+.masthead__inner > * {
+  min-width: 0;
+}
+
+/* Stays clearly above the nav links, which are now nearly body size -- a brand
+   only a hair larger than the row under it reads as one more link. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--fs-brand);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* The bot's own avatar, cached to disk at start-up and served from
+   `/identity/avatar`. It is an overlay rather than an <img> so a deployment
+   that has never reached Discord shows the monogram underneath instead of a
+   broken-image glyph -- and needs no script to tidy one away. */
+.brand__avatar,
+.gate__avatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.brand__avatar::after,
+.gate__avatar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+/* Fitted to its box rather than to the ladder: it is one letter standing in
+   for a picture, so it scales with the square and not with the prose. */
+.brand__avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 0.82rem;
+}
+
+.brand__avatar::after {
+  background-image: url("/identity/avatar");
+}
+
+.brand__by {
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, var(--dim) 70%, transparent);
+  color: var(--dim);
+}
+
+.brand__by:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.masthead__meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--faint);
+  letter-spacing: 0.02em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+  align-items: baseline;
+}
+
+/* ── nav ─────────────────────────────────────────────────────────────────
+ *
+ * Three labelled groups on a desktop; on a phone, Week and Inbox stay in reach
+ * and the rest fold into a <details>. The two layouts are separate markup and
+ * exactly one is ever displayed, which is what lets the disclosure be a real
+ * <details> -- forcing one open at a width is a fight with the user agent that
+ * some of them now win. */
+
+.nav {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin-top: 0.4rem;
+}
+
+.nav__desk {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.2rem 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav__desk::-webkit-scrollbar {
+  display: none;
+}
+
+.nav__phone {
+  display: none;
+}
+
+.nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+/* The group labels stay small -- they are labels, not destinations -- but not
+   so small that they read as noise beside links this size. */
+.nav__eyebrow {
+  padding-left: 0.7rem;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.nav__links {
+  display: flex;
+  gap: 0.1rem;
+}
+
+/* Nearly body size. These are the eleven things the portal can show you, read
+   at arm's length on a phone at night; at 0.8rem they were the smallest type in
+   the masthead, which is the wrong end of the scale for the only navigation
+   there is. */
+.nav__link {
+  flex: none;
+  padding: 0.42rem 0.7rem 0.5rem;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  white-space: nowrap;
+}
+
+.nav__link:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+/* Where you are, said three ways -- ink, weight and the accent underline -- so
+   it does not rest on telling two greys apart in a row of eleven. */
+.nav__link[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--raise);
+  border-bottom-color: var(--accent);
+}
+
+.pip {
+  display: inline-block;
+  min-width: 1.15em;
+  margin-left: 0.35em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  text-align: center;
+}
+

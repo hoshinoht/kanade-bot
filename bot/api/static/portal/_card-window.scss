@@ -1,0 +1,58 @@
+/* ── windows: cards, tables, empties ────────────────────────────────────────
+ *
+ * A card is a window. `.card__head` is its title bar: it bleeds out through
+ * the card's own padding with a negative margin, so the bar spans the frame
+ * without any card having to be re-marked-up for it. A card with no head keeps
+ * its padding and simply has no bar. */
+
+.card {
+  background: var(--surface);
+  border: 2px solid var(--win);
+  border-radius: var(--r);
+  padding: 1.05rem 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.card + .card {
+  margin-top: 0.75rem;
+}
+
+.card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.7rem;
+  margin: -1.05rem -1.1rem 0.85rem;
+  padding: 0.42rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border-radius: var(--r-in) var(--r-in) 0 0;
+}
+
+.card__title {
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin: 0;
+}
+
+.card__head a {
+  color: var(--win-ink);
+}
+
+/* A title bar carries more than a title -- the Inbox puts the confidence, the
+   channel and the id up there. They keep their shapes; only the colours that
+   were tuned against the page's surface are re-tuned against the bar. The
+   confidence keeps its own band colour by getting a surface to sit on, because
+   that colour is the whole point of it. */
+.card__head .id,
+.card__head .boss__lv,
+.modal__head .eyebrow {
+  color: color-mix(in srgb, var(--win-ink) 72%, var(--win));
+}
+
+.card__head .conf {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--win-ink) 40%, transparent);
+}
+

@@ -1,0 +1,35 @@
+/* Source entrypoint for the portal stylesheet.
+ *
+ * Compose builds the ignored `portal.css` artifact into its image; local runs
+ * serve the same bundle from memory when it is absent. Keep these partials
+ * CSS-compatible. The `@use` declarations define output order; no Sass runtime
+ * or compiler is required.
+ */
+
+@use "portal/tokens";
+@use "portal/base";
+@use "portal/shell";
+@use "portal/page-furniture";
+@use "portal/week-rail";
+@use "portal/filters-forms";
+@use "portal/buttons";
+@use "portal/runs";
+@use "portal/chips-status";
+@use "portal/bosses";
+@use "portal/boss-grid";
+@use "portal/card-window";
+@use "portal/settings";
+@use "portal/tabs";
+@use "portal/panes";
+@use "portal/now";
+@use "portal/board";
+@use "portal/runsheet";
+@use "portal/stats-tables";
+@use "portal/theme-picker";
+@use "portal/evidence";
+@use "portal/login-footnote";
+@use "portal/motion";
+@use "portal/phone";
+@use "portal/modal";
+@use "portal/inbox-amend";
+@use "portal/icons";

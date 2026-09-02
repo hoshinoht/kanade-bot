@@ -1,0 +1,471 @@
+/* ── day sections and run rows ──────────────────────────────────────────── */
+
+.day {
+  margin-top: 1.6rem;
+  scroll-margin-top: 7rem;
+}
+
+/* Its own small plaque: the day name and its count sit on the ground, and
+   `--faint` on a saturated ground is not a colour anybody can read. */
+.day__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  padding: 0.3rem 0.8rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.day__name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.day__count {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--faint);
+}
+
+.day__head::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: var(--line-soft);
+}
+
+.runs {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.run {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 0.4rem 1rem;
+  align-items: start;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-left: 5px solid var(--off);
+  border-radius: var(--r);
+  padding: 0.8rem 0.9rem;
+  box-shadow: var(--shadow);
+  /* Both for the entry-art veil below: something for it to be absolute
+     against, and a stacking context of the card's own, without which its
+     negative layer would sink behind this background and vanish. */
+  position: relative;
+  isolation: isolate;
+}
+
+.run--planned {
+  border-left-color: var(--warn);
+}
+.run--confirmed {
+  border-left-color: var(--ok);
+}
+.run--at_risk {
+  border-left-color: var(--risk);
+}
+.run--otot {
+  border-left-color: var(--own);
+}
+.run--cancelled,
+.run--done {
+  border-left-color: var(--faint);
+  opacity: 0.62;
+}
+
+/* ── the entry art, as a veil behind a run ──────────────────────────────────
+ *
+ * The splash MapleStory shows behind a boss's entry prompt, laid inside the
+ * card *behind its text*: cropped to the right of the frame, faded to a wash,
+ * and masked away before it reaches anything anybody has to read. Not a banner
+ * -- a banner is height, and a run card's height is the one thing the board
+ * cannot spend. Like the difficulty pills it is the game's picture rather than
+ * ours, so no colourway tints it.
+ *
+ * One base rule for both surfaces, because they are the same treatment at two
+ * sizes: the board's compact `.runcard` and the run card itself, which is also
+ * the run sheet's body and the whole of the phone list. `border-radius:
+ * inherit` is what lets one rule serve all three -- each card tells the veil
+ * its own corners, including the square top the sheet's title bar gives the
+ * card underneath it, and the rounded one a phone gives it back. What the
+ * variants below change is the crop window and the shape of the mask.
+ *
+ * `z-index: -1` inside a card that isolates: above the card's own surface,
+ * below every word on it. Both cards say `isolation: isolate` for exactly that
+ * reason; without a stacking context of their own the layer would sink behind
+ * the cream instead.
+ *
+ * Absent means absent: a run with no artwork leaves `run.entry_art` empty and
+ * no element is written, so the card is the card it was before this existed.
+ * Which is every card on a fresh clone, the artwork being git-ignored. */
+.run__art,
+.runcard__art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* An absolutely positioned <img> takes its own intrinsic size unless it is
+     told otherwise, so `inset` alone would leave it 778px wide. */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  opacity: var(--art-veil);
+  /* TUNING KNOB -- one boss, so nothing to share the edge with: the full-height
+     side vignette, opaque down the right and gone before the clock and the
+     party. Also the fallback shape, declared here rather than on a `--solo`
+     class so the property is never unset: `mask-image: var(--art-mask)` with
+     nothing behind it computes to no mask at all, which would lay the wash flat
+     across every word on the card -- the one thing this must never do.
+     The colour in a mask gradient is not paint, only its alpha is read, which
+     is why these are the one place on the page that names black without
+     meaning it. And the prefixed line is not politeness, for the same reason
+     the fallback is not: an older engine gets the shape rather than none. */
+  --art-mask: linear-gradient(to left, #000 12%, transparent 68%);
+  -webkit-mask-image: var(--art-mask);
+  mask-image: var(--art-mask);
+  /* It is scenery. The card behind it is a link on the board and a form
+     everywhere else. */
+  pointer-events: none;
+}
+
+/* Where each surface's crop window opens. Apart because the two windows are
+   very different slices of the same picture -- see `--art-crop-*` on `:root`,
+   which is also where the reason lives. */
+.run__art {
+  object-position: right var(--art-crop-sheet);
+}
+
+.runcard__art {
+  object-position: right var(--art-crop-card);
+}
+
+/* Two bosses, a corner each, meeting in a soft seam down the right edge. The
+   lead takes the top corner and the second the bottom, which is the order they
+   are named in and the order they are written in.
+
+   TUNING KNOB -- the lead's wedge, and the compact card's whole backdrop, which
+   is the same shape at a smaller size. Its fade is the longer of the two
+   because on the sheet the chrome title bar sits over most of the corner it
+   starts in. */
+.runcard__art,
+.run__art--lead {
+  --art-mask: linear-gradient(205deg, #000 12%, transparent 46%);
+}
+
+/* TUNING KNOB -- the second boss's wedge. Shorter, because nothing covers it. */
+.run__art--second {
+  --art-mask: linear-gradient(335deg, #000 5%, transparent 32%);
+}
+
+.run__time {
+  font-family: var(--mono);
+  font-size: 1.55rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* "own time" is words, not a clock reading, so it drops out of the big
+   tabular-figure treatment rather than wrapping inside it. */
+.run--otot .run__time {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  padding-top: 0.35rem;
+}
+
+.run__time small {
+  display: block;
+  font-family: var(--body);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 0.15rem;
+}
+
+.run > * {
+  min-width: 0;
+}
+
+.run__bosses {
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin: 0 0 0.3rem;
+}
+
+.run__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  font-size: var(--fs-body-sm);
+  color: var(--dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Prose in the same quiet voice. Never a flex container: flex splits a
+   paragraph's text nodes around any inline element, so a sentence continuing
+   after a <strong> starts a new item and its punctuation ends up orphaned --
+   which is exactly what `.run__meta` on a <p> used to do. */
+.note {
+  font-size: var(--fs-body-sm);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+  max-width: 68ch;
+}
+
+.run__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.run__actions form {
+  display: flex;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.run__actions input {
+  min-width: 0;
+  max-width: 7.5rem;
+}
+
+/* The status of a run is one choice out of five, so it reads as one control
+   rather than as four unrelated buttons. */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 2px solid var(--line-soft);
+}
+
+.statusbar__label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.statusbar__note {
+  font-size: var(--fs-small);
+  color: var(--risk);
+}
+
+.seg--status {
+  flex-wrap: nowrap;
+}
+
+/* ── the cards a run has produced ───────────────────────────────────────────
+ *
+ * A run's messages in the order the bot says them: morning, then the
+ * countdowns. Mono, because these are times -- the same rule the clock on the
+ * left follows -- and one line, because "did the morning ping go out?" is a
+ * glance, not a page. A posted card is a link out to the message itself; the
+ * two states that are *not* links are the two worth noticing.
+ */
+.run__cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.run__cards-label {
+  font-family: var(--body);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.cardlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.cardlink__at {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.cardlink--posted {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cardlink--posted:hover {
+  border-bottom-color: var(--accent);
+}
+
+.cardlink__out {
+  font-size: var(--fs-micro);
+  opacity: 0.75;
+}
+
+/* Nothing said yet: dashed, like the chip of somebody who has not answered. */
+.cardlink--queued {
+  color: var(--faint);
+  border-bottom: 1px dashed var(--line);
+}
+
+/* Fired into the void -- the host was asleep, or the run moved. Worth a colour
+   because it is the one state that explains a ping nobody remembers getting. */
+.cardlink--skipped {
+  color: var(--warn);
+}
+
+/* ── answers, folded away ──────────────────────────────────────────────────
+ *
+ * Correcting somebody's ✅ is a rare, deliberate act, so it hides behind a
+ * disclosure rather than putting three buttons per person on every row. Open,
+ * it borrows the status bar's segmented control: one vocabulary for "pick one
+ * of these states", used twice.
+ */
+.answers {
+  grid-column: 1 / -1;
+  margin-top: 0.4rem;
+}
+
+.answers__summary {
+  font-size: var(--fs-mini);
+  padding: 0.18rem 0.5rem;
+  min-height: 0;
+}
+
+/* What says it opens. `summary.btn` has already taken the user agent's own
+   marker away, so the chevron is one of the drawings from
+   `partials/icons.html`, and it turns a quarter clockwise when the panel is
+   open; the reduced-motion block at the foot of this file takes that turn's
+   duration to nothing along with every other transition. A summary that read as
+   one stray word is now a control with a disclosure on it. */
+.answers__summary .icon {
+  color: var(--faint);
+  transition: transform 0.14s ease;
+}
+
+.answers[open] > .answers__summary .icon {
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
+.answers__body {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0 0.2rem;
+}
+
+.answers__hint {
+  font-size: var(--fs-small);
+  color: var(--dim);
+  margin: 0;
+}
+
+.answers__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.answers__who {
+  flex: 1 1 8rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.seg--answer .seg__btn {
+  font-size: var(--fs-mini);
+  padding: 0.22rem 0.55rem;
+  min-height: 30px;
+}
+
+.seg__btn {
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  padding: 0.34rem 0.7rem;
+  min-height: 34px;
+  border: 0;
+  border-right: 2px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.seg__btn:last-child {
+  border-right: 0;
+}
+
+.seg__btn:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+.seg__btn--on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg__btn--on:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chanmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chanmark__btn {
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chanmark__btn:hover {
+  color: var(--accent);
+  background: var(--raise);
+}
+
+.run__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.45rem;
+}
+

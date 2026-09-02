@@ -1,0 +1,80 @@
+/* ── buttons ────────────────────────────────────────────────────────────── */
+
+.btn {
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  padding: 0.32rem 0.7rem;
+  border-radius: var(--r-sm);
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+}
+
+/* The chunky one, in the window chrome's own colour rather than the accent:
+   a title bar and the button that commits its form are the same object. */
+.btn--primary {
+  background: var(--win);
+  border-color: var(--win);
+  color: var(--win-ink);
+}
+
+.btn--primary:hover {
+  background: color-mix(in srgb, var(--win) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--win) 88%, var(--ink));
+  color: var(--win-ink);
+}
+
+.btn--danger:hover {
+  border-color: var(--risk);
+  color: var(--risk);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+summary.btn {
+  list-style: none;
+  user-select: none;
+}
+
+summary.btn::-webkit-details-marker {
+  display: none;
+}
+
+details[open] > summary.btn {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+/* A checkbox inside a chip is how the party is picked. */
+.chip:has(input) {
+  cursor: pointer;
+  padding-left: 0.3rem;
+}
+
+.chip input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+

@@ -171,7 +171,7 @@ async def test_a_run_in_another_chat_channel_is_refused_even_to_its_party(chat_b
         "propose_move",
         {"run_query": short_id(run["id"]), "to_when": "sunday 22:00"},
     )
-    assert "#bot-chatter" in answer
+    assert f"<#{ADOPTED_CHANNEL}>" in answer
     assert "its own channel" in answer
     assert proposals(chat_bot) == []
 
@@ -191,7 +191,7 @@ async def test_every_write_that_targets_a_run_applies_the_rule(
     answer = await tools.dispatch(
         context(chat_bot, author_id=1002), name, {"run_query": short_id(run["id"]), **arguments}
     )
-    assert "#bot-chatter" in answer
+    assert f"<#{ADOPTED_CHANNEL}>" in answer
     assert proposals(chat_bot) == []
 
 
@@ -202,7 +202,7 @@ async def test_a_weekly_timing_in_another_chat_channel_is_refused(chat_bot, chat
     answer = await tools.dispatch(
         context(chat_bot, author_id=1002), "propose_remove_fixed", {"query": "hbellona"}
     )
-    assert "#bot-chatter" in answer
+    assert f"<#{ADOPTED_CHANNEL}>" in answer
     assert proposals(chat_bot) == []
 
 

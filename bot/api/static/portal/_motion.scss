@@ -1,0 +1,35 @@
+/* ── motion: a short settle on load, nothing else ───────────────────────── */
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.run,
+.card {
+  animation: settle 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+.htmx-swapping {
+  opacity: 0.35;
+  transition: opacity 0.12s;
+}
+
+.htmx-request .btn,
+.btn.htmx-request {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+

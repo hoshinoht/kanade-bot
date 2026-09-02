@@ -14,10 +14,20 @@ from __future__ import annotations
 
 import pytest
 
+from bot import behaviour_plugins
 from bot.chat import persona
 from bot.chat.agent import ChatPilot, ChatTurn
 
-from .chat_support import CHAT_CHANNEL, FakeOllama, build_bot, chat_settings, message, says
+from .chat_support import (
+    CHAT_CHANNEL,
+    CHAT_ROLE,
+    PLUGIN_ROLE,
+    FakeOllama,
+    build_bot,
+    chat_settings,
+    message,
+    says,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -201,7 +211,86 @@ def test_the_bracketed_opener_never_reaches_the_system_prompt():
 
 
 # ---------------------------------------------------------------------------
-# (c) the persona is never trimmed
+# (c) per-role behaviour plugins
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def plugin_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
+    return tmp_path
+
+
+async def test_matching_role_plugin_builds_on_top_of_the_persona(repo, bosses, plugin_dir):
+    bot = build_bot(repo, bosses)
+    instructions = "Use playful, smug mesugaki-style banter for this member."
+    behaviour_plugins.write("mesugaki", instructions)
+    bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        behaviour_plugins.encode([{"role_id": str(PLUGIN_ROLE), "plugin": "mesugaki"}]),
+    )
+    agent = pilot(bot, says("zako-kun~"))
+
+    await agent.offer(message(bot, roles=(CHAT_ROLE, PLUGIN_ROLE)))
+
+    assert persona.DEFAULT_VOICE in agent._client.system
+    assert agent._client.system.rstrip().endswith(instructions)
+    assert instructions in agent._client.reminder()["content"]
+
+
+async def test_multiple_matching_plugins_compose_in_configured_order(repo, bosses, plugin_dir):
+    bot = build_bot(repo, bosses)
+    second_role = PLUGIN_ROLE + 1
+    behaviour_plugins.write("first", "FIRST PLUGIN")
+    behaviour_plugins.write("second", "SECOND PLUGIN")
+    bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        behaviour_plugins.encode(
+            [
+                {"role_id": str(PLUGIN_ROLE), "plugin": "first"},
+                {"role_id": str(second_role), "plugin": "second"},
+            ]
+        ),
+    )
+    agent = pilot(bot, says("combined"))
+
+    await agent.offer(message(bot, roles=(CHAT_ROLE, second_role, PLUGIN_ROLE)))
+
+    assert agent._client.system.index("FIRST PLUGIN") < agent._client.system.index("SECOND PLUGIN")
+
+
+async def test_unmatched_role_plugin_is_not_added(repo, bosses, plugin_dir):
+    bot = build_bot(repo, bosses)
+    behaviour_plugins.write("special", "SPECIAL PLUGIN")
+    bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        behaviour_plugins.encode([{"role_id": str(PLUGIN_ROLE), "plugin": "special"}]),
+    )
+    agent = pilot(bot, says("normal"))
+
+    await agent.offer(message(bot, roles=(CHAT_ROLE,)))
+
+    assert "SPECIAL PLUGIN" not in agent._client.system
+    assert "SPECIAL PLUGIN" not in agent._client.reminder()["content"]
+
+
+async def test_plugin_role_alone_does_not_grant_chat_access(repo, bosses, plugin_dir):
+    bot = build_bot(repo, bosses)
+    behaviour_plugins.write("special", "SPECIAL PLUGIN")
+    bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        behaviour_plugins.encode([{"role_id": str(PLUGIN_ROLE), "plugin": "special"}]),
+    )
+    agent = pilot(bot, says("must not be used"))
+
+    handled = await agent.offer(message(bot, roles=(PLUGIN_ROLE,)))
+
+    assert handled.handled is False
+    assert agent._client.calls == []
+
+
+# ---------------------------------------------------------------------------
+# (d) the persona is never trimmed
 # ---------------------------------------------------------------------------
 
 

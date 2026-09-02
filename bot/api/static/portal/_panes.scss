@@ -1,0 +1,284 @@
+/* ── the table pages: a window that scrolls, on a page that does not ────────
+ *
+ * A list of two thousand audit rows was a page you scrolled until you lost the
+ * headings and the search box with them. So on a desktop the *page* stops
+ * scrolling and the window does: masthead, page head and the pane's title bar
+ * hold still, the table scrolls between them with its headings stuck to the
+ * top, and the pager sits on the bottom edge where it can be reached without
+ * going anywhere.
+ *
+ * All of it is inside the width query below. A phone keeps ordinary vertical
+ * flow -- the no-scroll promise is a desktop one, and a 6cm-tall scrolling box
+ * inside a scrolling page is the worst of both.
+ *
+ * The height arithmetic is flexbox rather than `calc(100dvh - <a number>)`:
+ * the masthead's height is whatever its two rows come to, which changed twice
+ * in this redesign already, and a subtraction would have been wrong both times.
+ */
+
+/* At every width, framed or not: a table wider than its window scrolls
+   sideways rather than pushing the page out. This is what `.table-wrap` did
+   for these pages before they became panes, and a phone still needs it. */
+.pane__body {
+  overflow-x: auto;
+}
+
+.pane__search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* No fixed height: it holds body-size text, and a box shorter than its own
+   line clips the descenders (the lesson `.filters` learned in package one). */
+.pane__search input {
+  width: min(20rem, 42vw);
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+}
+
+/* A sub-heading inside a pane -- the Reminders page puts two tables in one. */
+.pane__section {
+  margin: 0.2rem 0 0.5rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.pane__section:not(:first-child) {
+  margin-top: 1.4rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-top: 2px solid var(--line);
+  background: var(--raise);
+}
+
+.pager__at {
+  font-size: var(--fs-small);
+  color: var(--dim);
+}
+
+/* The pager's own links push the "page N of M" to the middle, so the two
+   directions stay on the outside edges where they are the same shape as the
+   window they page. */
+.pager .btn:last-child {
+  margin-left: auto;
+}
+
+.pager .btn:first-child + .pager__at {
+  margin-left: 0;
+}
+
+@media (min-width: 900px) {
+  body.framed {
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* With JavaScript off, the Fixed page's Edit link is a fragment link and
+     `dialog:target` unfolds the editor in place -- which is taller than the
+     screen and, inside a frame that cannot scroll, unreachable. So a targeted
+     dialog gives the page back to the scrollbar. The frame is a convenience;
+     being able to edit a timing is not. */
+  body.framed:has(dialog:target) {
+    height: auto;
+    overflow: visible;
+    display: block;
+  }
+
+  body.framed .masthead {
+    flex: none;
+  }
+
+  body.framed .shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    /* `.shell` carries `margin: 0 auto` to centre itself. As a flex *item* --
+       which it becomes here -- an auto margin on the cross axis suppresses the
+       stretch that would otherwise give it the full width, so it sized to its
+       own content instead: /audit came out 1180px wide and /audit?q=limits
+       1023.27px, and the whole frame narrowed as you typed. A definite width
+       gives the auto margins something to centre rather than something to
+       decide. */
+    width: 100%;
+  }
+
+  /* Everything above the window keeps its own height; the window takes what is
+     left, however much that is. */
+  body.framed .shell > * {
+    flex: none;
+  }
+
+  body.framed .pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* The title bar is already the card's own negative-margin bleed; the body
+       below it does the padding, so the window can end at the viewport. */
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.framed .pane__swap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Undo the card's side padding so the table and the pager meet the frame. */
+    margin: 0 -1.1rem;
+  }
+
+  body.framed .pane__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 1.1rem;
+  }
+
+  body.framed .pager {
+    flex: none;
+  }
+
+  /* The settings window: the sidebar and the open section each take the
+     leftover height and scroll on their own, so the table of contents is
+     always there and only the section you are reading moves. */
+  body.framed .settings__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 -1.1rem;
+  }
+
+  /* The sidebar's raised ground meets the title bar. The head's bottom margin
+     is breathing room for content, and this body is chrome -- a strip of card
+     surface between the two reads as a gap in the window. */
+  body.framed .settings > .card__head {
+    margin-bottom: 0;
+  }
+
+  body.framed .settings__toc,
+  body.framed .settings__detail {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* The headings stay while the rows go past. A shadow rather than a border,
+     because a sticky element's own border scrolls with its box and leaves a
+     hairline floating a pixel out of place. */
+  body.framed .pane__body thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    border-bottom: 0;
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* ── a tabbed window, inside the frame ─────────────────────────────────
+   *
+   * The window takes the leftover height, the strip and anything pinned under
+   * it keep their own, and the open panel gets the rest and scrolls -- with
+   * its headings held, the way every other window over a table does.
+   *
+   * `display: contents` on /limits' swap wrapper is what lets the panels be
+   * siblings across it: three of the four are re-read on a timer and the
+   * fourth holds the form, which must never be inside what a refresh replaces.
+   * The wrapper keeps its boundary and its polling attributes; its children
+   * take their places in the window as though it were not there. */
+  body.framed .tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.framed .tabs #limits-live {
+    display: contents;
+  }
+
+  body.framed .tabs__strip,
+  body.framed .tabs > .stats,
+  body.framed .tabs #limits-live > .stats {
+    flex: none;
+  }
+
+  body.framed .tabs__panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Out to the window's edges and back in again, so the scrollbar rides the
+       window's edge while the content keeps the card's inset -- the bleed
+       `.pane__swap` does for the table pages. */
+    margin: 0 -1.1rem;
+    padding: 0 1.1rem 1.1rem;
+  }
+
+  body.framed .tabs__panel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    border-bottom: 0;
+    box-shadow: inset 0 -2px 0 var(--line);
+  }
+
+  /* A row of tiles rather than four cards. In a frame this row is a caption
+     over the window under it, and every millimetre it takes is one the content
+     does not get -- the same trade the now-strip already makes above the
+     board. Same figures, less around them. */
+  body.framed .stat {
+    padding: 0.55rem 0.8rem;
+  }
+
+  body.framed .stat__big {
+    font-size: var(--fs-brand);
+  }
+
+  /* ── the pane is the page, the head is its caption ─────────────────────
+   *
+   * A framed page exists to show one thing. When the head above it is a full
+   * hero card -- eyebrow, a heading at clamp(1.6rem, …), and a paragraph -- it
+   * spends the pane's budget on words that are read once: /chat's head and
+   * stat card together took two thirds of a 690px viewport and left the
+   * interactions two rows tall.
+   *
+   * So on framed pages the head is a band: same parts, caption weight. Not
+   * gated on height -- the proportion is wrong at every height, and a
+   * height query is for trimming further, not for getting it right. */
+  body.framed .page-head {
+    align-items: center;
+    gap: 0.3rem 0.9rem;
+    margin: 0 0 0.6rem;
+    padding: 0.55rem 0.95rem;
+  }
+
+  body.framed .page-head h1 {
+    font-size: var(--fs-brand);
+  }
+
+  body.framed .page-head p {
+    font-size: var(--fs-small);
+  }
+
+  /* A status bar, now that it is pinned to the bottom of the viewport rather
+     than sitting at the end of a long page. */
+  body.framed .footnote {
+    margin-top: 0.7rem;
+    margin-bottom: 0.7rem;
+  }
+}
+

@@ -451,6 +451,21 @@ class ReminderOut(BaseModel):
 # --- config and actions -----------------------------------------------------
 
 
+class RolePluginOut(BaseModel):
+    role_id: str
+    plugin: str
+
+
+class RolePluginIn(Strict):
+    role_id: str
+    plugin: str
+
+
+class BehaviourPluginOut(BaseModel):
+    name: str
+    instructions: str
+
+
 class ConfigOut(BaseModel):
     day_of_ping_time: str
     countdown_minutes: str
@@ -477,6 +492,9 @@ class ConfigOut(BaseModel):
     #: and they differ exactly when the chosen file has since gone missing.
     persona: str = ""
     persona_choices: list[str] = []
+    #: Portal-managed behaviour plugins layered over the persona for matching roles.
+    chat_role_plugins: list[RolePluginOut] = []
+    behaviour_plugins: list[BehaviourPluginOut] = []
     timezone: str
     reset: str
     model: str
@@ -505,6 +523,7 @@ class ConfigIn(Strict):
     #: on purpose: what the valid values are is a fact about a bind mount at
     #: request time, not something a schema can enumerate ahead of it.
     persona: str | None = None
+    chat_role_plugins: list[RolePluginIn] | None = None
     #: The chatbot's capacity, editable at runtime like the flags above.
     chat_pilot_rate_count: int | None = Field(default=None, ge=1)
     chat_pilot_rate_window_s: float | None = Field(default=None, gt=0)

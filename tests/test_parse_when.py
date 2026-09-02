@@ -185,6 +185,26 @@ def test_nonsense_is_still_refused(bot):
 
 
 # ---------------------------------------------------------------------------
+# next <weekday> -- dateparser returns None; the extractor's resolver handles it
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # NOW is Tuesday 2026-09-01 20:00; "next tuesday" is 7 days out.
+        ("next tuesday 22:30", kl(2026, 9, 8, 22, 30)),
+        ("next wed 21:30", kl(2026, 9, 2, 21, 30)),
+        ("next saturday 22:00", kl(2026, 9, 5, 22, 0)),
+        ("next sunday 21:30", kl(2026, 9, 6, 21, 30)),
+    ],
+)
+def test_next_weekday_resolves(bot, text, expected):
+    """``next <weekday>`` forms that dateparser returns None for."""
+    assert when(bot, text) == expected
+
+
+# ---------------------------------------------------------------------------
 # the normalisation itself
 # ---------------------------------------------------------------------------
 

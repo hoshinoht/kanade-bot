@@ -33,6 +33,8 @@ OTHER_CATEGORY = 606060606060606060
 ORPHAN_CHANNEL = 707070707070707070
 #: The role a member must hold to talk to the bot.
 CHAT_ROLE = 101010101010101010
+#: A role used to exercise portal-managed behaviour plugins.
+PLUGIN_ROLE = 111111111111111111
 #: The existing "who runs this bot" role, which is exempt from the rate limit.
 ADMIN_ROLE = 202020202020202020
 #: A role that is not either of the above.

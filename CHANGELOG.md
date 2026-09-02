@@ -2,6 +2,88 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.2.0
+
+**Added**
+
+- `get_schedule` can filter by `participant="me"` or one roster name while
+  retaining whole-group and channel-only schedule scopes.
+
+**Changed**
+
+- Chatbot factual replies now use compact Discord Markdown: bold boss names and
+  actions, italic dates and times, and code-formatted ids, statuses and RSVP
+  tallies.
+- Visible cross-channel schedule references are now clickable Discord channel
+  links.
+- Multi-block chatbot replies preserve one blank line around headings and
+  remarks while keeping consecutive schedule rows compact.
+- Package, runtime and API version metadata now report `3.2.0`.
+
+**Fixed**
+
+- Named participant filters are resolved against the roster instead of silently
+  returning the unfiltered schedule. Invalid, unknown and ambiguous participant
+  values are refused with a clarification prompt.
+
+## 3.1.2
+
+**Fixed**
+
+- `parse_when` now resolves `next <weekday> HH:MM` (e.g. `next tuesday 22:30`).
+  `dateparser` returns `None` for this form when `PREFER_DATES_FROM=future` is
+  set; the fix falls back to the extractor's own day/time resolver, which already
+  handles `next` via `_NEXT_RE` and `_WEEKDAY_ALIASES`.
+- Failed proposal cards now include the proposal summary in the pipeline error
+  log, making it possible to identify which `propose_add` triggered a post
+  failure without enabling `DEBUG` logging.
+- Tool response text is now logged at `DEBUG` on the success path in addition to
+  the existing argument trace, completing the picture for `LOG_LEVEL=DEBUG`.
+- The Config section pills no longer overlap on mobile, and wide settings content
+  can no longer force the portal beyond the viewport.
+
+## 3.1.1
+
+**Changed**
+
+- The portal stylesheet now has an SCSS source layout: `bot/api/static/portal.scss`
+  is the ordered entrypoint and `bot/api/static/portal/*.scss` holds the split
+  partials, broken out from the former monolithic `portal.css`.
+- `bot/api/static/portal.css` is now generated and git-ignored. Compose builds it
+  into the image from the SCSS sources; local and packaged runs serve the same
+  bundle from memory when the artifact is absent.
+- The package and API version metadata now report `3.1.1`.
+
+## 3.1.0
+
+**Added**
+
+- **Behaviour plugins** layer reusable Markdown instructions on top of the active
+  chatbot persona without replacing its voice or operating rules. Discord roles
+  can be assigned different plugins, and a member holding several configured
+  roles receives every matching plugin in assignment order while the main chat
+  role remains required for access.
+- **Live plugin management in Config → Chatbot**: create, edit and delete plugin
+  files, then add, update or remove role assignments without restarting the bot.
+  Plugin and assignment editors are collapsible and independently paginated for
+  larger lists, preserving the current page across form submissions.
+- Deployments can seed initial role assignments with `CHAT_ROLE_PLUGINS`.
+  Portal-managed assignments persist in SQLite, plugin instructions persist in
+  the writable, git-ignored `personas/behaviour-plugins/` directory, and the
+  tracked `example.md` documents how to write additional plugins.
+
+**Changed**
+
+- Matching behaviour-plugin instructions are reinforced on every model round,
+  including direct answers and automatic clarification follow-ups. The base
+  persona's factual and safety rules continue to override style instructions.
+- The compose persona mount is writable so portal-created plugin files survive
+  container rebuilds while the rest of the container root remains read-only.
+
+## 3.0.2
+**Added**
+- Minor UI tweaks to the portal
+
 ## 3.0.1
 **Fixed**
 - The chat model could combine a canonical boss token with a second difficulty, 

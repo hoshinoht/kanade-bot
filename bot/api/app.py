@@ -19,8 +19,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import audit
+from .. import __version__, audit
 from ..config import Settings
+from ..portal_styles import build_stylesheet
 from .auth import HEADER_LOGIN, is_local_peer
 from .deps import Caller
 from .errors import ApiError
@@ -120,7 +121,7 @@ def create_app(bot: BossBot) -> FastAPI:
             "Local control plane for the guild's boss schedule. Loopback only; "
             "reach it from the tailnet with `tailscale serve`."
         ),
-        version="0.3.0",
+        version=__version__,
         # FastAPI's own /docs and /openapi.json carry no dependencies, so they
         # are re-declared below behind the same auth as everything else.
         docs_url=None,
@@ -138,6 +139,16 @@ def create_app(bot: BossBot) -> FastAPI:
     # directory rather than from here.
     app.include_router(api_router)
     app.include_router(web_router)
+
+    # Docker builds a static artifact into the image. A fresh checkout or wheel
+    # deliberately has no generated file, so serve the same source bundle from
+    # memory rather than requiring a frontend build before a local run.
+    if not (STATIC_DIR / "portal.css").is_file():
+
+        @app.get("/static/portal.css", include_in_schema=False)
+        async def _portal_stylesheet() -> Response:
+            return Response(build_stylesheet(), media_type="text/css")
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(ApiError)

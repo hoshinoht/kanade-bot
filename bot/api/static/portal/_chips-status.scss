@@ -1,0 +1,129 @@
+/* ── chips ──────────────────────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  color: var(--dim);
+  background: var(--raise);
+  white-space: nowrap;
+}
+
+.chip--mono {
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.chip__x {
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  line-height: 1;
+  padding: 0 0.1rem;
+  margin-left: 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chip__x:hover {
+  color: var(--risk);
+}
+
+.chip__add {
+  font-size: var(--fs-small);
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  border: 2px dashed var(--line);
+  background: transparent;
+  color: var(--dim);
+}
+
+.chip--yes {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+}
+
+.chip--no {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+}
+
+.chip--maybe {
+  color: var(--own);
+  border-color: color-mix(in srgb, var(--own) 35%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, var(--surface));
+}
+
+.chip--waiting {
+  color: var(--faint);
+  border-style: dashed;
+  background: transparent;
+}
+
+/* The answer as a shape: ● on, ✕ out, ? maybe, ○ nothing yet. Colour alone
+   would leave the row unreadable to anyone who cannot separate the green chip
+   from the red one, and a filled dot beside a hollow one is legible at arm's
+   length in a way two similar words are not. */
+.chip__mark {
+  font-size: var(--fs-micro);
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.chip--waiting .chip__mark {
+  opacity: 0.7;
+}
+
+/* For screen readers only: the chips say their state in a glyph, which reads
+   as nothing at all out loud. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.status {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status--planned {
+  color: var(--warn);
+}
+.status--confirmed {
+  color: var(--ok);
+}
+.status--at_risk {
+  color: var(--risk);
+}
+.status--otot {
+  color: var(--own);
+}
+.status--cancelled,
+.status--done {
+  color: var(--faint);
+}
+
+/* Not a run status: the count of people who have not answered at all. It reads
+   quieter than "out" on purpose -- silence is not a problem yet. */
+.status--waiting {
+  color: var(--faint);
+}
+

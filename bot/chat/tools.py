@@ -172,6 +172,16 @@ TOOLS: list[dict] = [
                     "each one is in, or say it is the whole group's week."
                 ),
             },
+            "participant": {
+                "type": "string",
+                "description": (
+                    "Prefer 'me' when the question is about the person asking -- "
+                    "'what's for me', 'my runs', 'what am I on', 'my schedule' and "
+                    "similar. One roster name is also accepted when the question names "
+                    "a person or copies the asker's display name. Omit it only for a "
+                    "question about the whole group or a specific channel."
+                ),
+            },
         },
         ["week"],
     ),
@@ -488,30 +498,41 @@ def _is_over(run: dict) -> bool:
     return run["status"] == "done" or run["datetime"] <= utcnow()
 
 
+def _channel_reference(bot: Any, channel_id: Any) -> str | None:
+    """A clickable Discord channel reference, only for a visible channel."""
+    if service.channel_name(bot, channel_id) is None:
+        return None
+    try:
+        canonical_id = int(channel_id)
+    except (TypeError, ValueError):  # pragma: no cover - channel_name already rejected it
+        return None
+    return f"<#{canonical_id}>"
+
+
 def _run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
     local = run["datetime"].astimezone(bot.tz)
     rsvps = bot.repo.get_rsvps(run["id"])
     yes = sum(1 for uid in run["participants"] if rsvps.get(uid) == "yes")
     # Only on a guild-wide listing, and only when the bot can actually see the
-    # channel: `channel_name` returns None off the gateway, and "#None" would be
-    # worse than saying nothing.
-    where = service.channel_name(bot, run["channel_id"]) if with_channel else None
+    # channel. An unresolved `<#id>` would be worse than saying nothing.
+    where = _channel_reference(bot, run["channel_id"]) if with_channel else None
     return (
-        f"[{short_id(run['id'])}] {local.strftime('%a %d %b %H:%M')} "
-        f"{formatting.boss_labels(run['bosses'])} "
-        f"({run['status']}, {yes}/{len(run['participants'])} yes)"
-        + (f" in {where}" if where else "")
-        + (" -- already happened" if _is_over(run) else "")
+        f"`[{short_id(run['id'])}]` *{local.strftime('%a %d %b %H:%M')}* "
+        f"**{formatting.boss_labels(run['bosses'])}** "
+        f"(`{run['status']}`, `{yes}/{len(run['participants'])} yes`)"
+        + (f" · {where}" if where else "")
+        + (" — *already happened*" if _is_over(run) else "")
     )
 
 
 def _run_detail(bot: Any, run: dict) -> str:
     view = service.run_view(bot, run)
-    people = ", ".join(f"{p['name']} ({p['rsvp'] or 'no answer'})" for p in view["participants"])
+    people = ", ".join(f"{p['name']} (`{p['rsvp'] or 'no answer'}`)" for p in view["participants"])
     return (
-        f"Run {view['short_id']}: {formatting.boss_labels(view['bosses'])} on "
-        f"{view['local_day']} {view['local_time']}, status {view['status']}. "
-        f"On it: {people or 'nobody'}."
+        f"**Run `[{view['short_id']}]`**\n\n"
+        f"**{formatting.boss_labels(view['bosses'])}** · "
+        f"*{view['local_day']} {view['local_time']}* · `{view['status']}`\n"
+        f"On it: {people or '*nobody*'}."
     )
 
 
@@ -520,14 +541,55 @@ def _run_detail(bot: Any, run: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
+    """Resolve the schedule's optional participant filter to one roster id.
+
+    An omitted field means the group-wide schedule. A supplied field must be the
+    string ``"me"`` or exactly one resolvable roster member; invalid values are
+    refused rather than silently widened to every member's runs.
+    """
+    if "participant" not in args:
+        return None
+    value = args["participant"]
+    if not isinstance(value, str) or not value.strip():
+        raise ToolError(
+            "participant must be 'me' or one roster name. Ask them whose schedule they want."
+        )
+    raw = value.strip()
+    if raw.lower() == "me":
+        return ctx.author_id
+
+    resolution = resolve_participant_text(raw, ctx.bot.repo.list_members())
+    if resolution.unknown:
+        raise ToolError(
+            f"Nobody on the roster matches {', '.join(resolution.unknown)}. "
+            "Ask them whose schedule they want, or use participant='me' for the person asking."
+        )
+    if resolution.ambiguous:
+        options = "; ".join(
+            f"{name}: {', '.join(matches)}" for name, matches in resolution.ambiguous.items()
+        )
+        raise ToolError(f"Ask them which participant they mean -- {options}.")
+    if len(resolution.ids) != 1 or ctx.bot.repo.get_member(resolution.ids[0]) is None:
+        raise ToolError(
+            "The participant must identify one person on the roster. Ask them who they mean."
+        )
+    return str(resolution.ids[0])
+
+
 def _get_schedule(ctx: ToolContext, args: dict) -> str:
-    """The week, for the whole guild or for the channel the question came from.
+    """The week, optionally filtered to one channel or to the person asking.
 
     ``scope="all"`` is the default and what the tool always used to do. It now
     names each run's channel, because a guild-wide answer that reads like a
     channel-specific one is exactly the bug this argument exists to fix: asked
     "what runs are in this channel?", the model got the whole group's week and
     dutifully relabelled it "in this channel".
+
+    ``participant="me"`` filters further to runs the author is on, which is what
+    "what's for me this week" or "my runs" mean. A roster name is accepted as a
+    defensive fallback when the model ignores the schema and copies the asker's
+    name instead. Without a participant the listing remains group-wide.
     """
     week = str(args.get("week") or "this").strip().lower()
     if week not in ("this", "next"):
@@ -535,19 +597,45 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
     scope = str(args.get("scope") or "all").strip().lower()
     if scope not in ("all", "channel"):
         raise ToolError("scope must be 'all' or 'channel'.")
+    participant_id = _schedule_participant(ctx, args)
+    for_me = participant_id is not None and participant_id == str(ctx.author_id)
+    participant_name = service.member_name(ctx.bot, participant_id) if participant_id else None
 
     everything = [
         run
         for run in ctx.bot.repo.list_runs(week_start=service.week_for(ctx.bot, week))
         if run["status"] != "cancelled"
     ]
+
     here = ctx.channel_id
     runs = (
         [run for run in everything if str(run["channel_id"]) == str(here)]
         if scope == "channel"
         else everything
     )
+    if participant_id is not None:
+        runs = [run for run in runs if participant_id in [str(p) for p in run["participants"]]]
     if not runs:
+        if participant_id is not None:
+            participant_elsewhere = (
+                [
+                    run
+                    for run in everything
+                    if str(run["channel_id"]) != str(here)
+                    and participant_id in [str(p) for p in run["participants"]]
+                ]
+                if scope == "channel"
+                else []
+            )
+            subject = "You are" if for_me else f"{participant_name} is"
+            elsewhere = (
+                f" {subject} on {len(participant_elsewhere)} run(s) in other channels this week -- "
+                "call get_schedule again with scope='all' if they want those."
+                if participant_elsewhere
+                else ""
+            )
+            where = "in this channel " if scope == "channel" else ""
+            return f"{subject} not on any runs {where}for {week} boss week.{elsewhere}"
         if scope == "channel":
             # Never let "nothing here" be reported as "nothing at all".
             elsewhere = (
@@ -560,21 +648,37 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
         return f"Nothing is scheduled for {week} boss week."
 
     runs.sort(key=lambda run: run["datetime"])
-    lines = [_run_line(ctx.bot, run, with_channel=scope == "all") for run in runs[:MAX_RUNS]]
+    with_channel = scope == "all"
+    lines = [_run_line(ctx.bot, run, with_channel=with_channel) for run in runs[:MAX_RUNS]]
     more = len(runs) - len(lines)
-    heading = (
-        f"{week.capitalize()} boss week, in this channel only:"
-        if scope == "channel"
-        else f"{week.capitalize()} boss week, ALL channels (say which channel each run is in):"
-    )
-    answer = "\n".join([heading, *lines]) + (f"\n(and {more} more)" if more > 0 else "")
+    if participant_id is not None:
+        owner = "Your" if for_me else f"{participant_name}'s"
+        heading = (
+            f"**{owner} runs in {week} boss week, in this channel:**"
+            if scope == "channel"
+            else (
+                f"**{owner} runs in {week} boss week, all channels** "
+                "(say which channel each run is in):"
+            )
+        )
+    else:
+        heading = (
+            f"**{week.capitalize()} boss week, in this channel only:**"
+            if scope == "channel"
+            else (
+                f"**{week.capitalize()} boss week, ALL channels** "
+                "(say which channel each run is in):"
+            )
+        )
+    answer = "\n".join([heading, "", *lines]) + (f"\n*(and {more} more)*" if more > 0 else "")
+
     if all(_is_over(run) for run in runs):
         # The per-line markers are enough when only some are past; a week with
         # nothing left at all is what made the model pick a finished run as "the
         # next one", so that case is stated outright.
         answer += (
-            "\nEvery run listed has already happened -- nothing upcoming is left in "
-            f"{week} boss week."
+            "\n\n*Every run listed has already happened — nothing upcoming is left in "
+            f"{week} boss week.*"
         )
     return answer
 
@@ -591,14 +695,14 @@ def _list_bosses(ctx: ToolContext, args: dict) -> str:
     ``propose_add`` accepts, "Extreme Kalos" is what a member reads.
     """
     rows = [
-        f"{boss.short} ({boss.full}, lv {boss.level}): "
+        f"**{boss.short}** ({boss.full}, lv `{boss.level}`): "
         + ", ".join(
-            f"{boss.canonical(letter)} = {formatting.boss_label(boss.canonical(letter))}"
+            f"`{boss.canonical(letter)}` = {formatting.boss_label(boss.canonical(letter))}"
             for letter in boss.difficulties
         )
         for boss in ctx.bot.bosses.ordered()
     ]
-    return "\n".join(["Bosses this guild runs:", *rows])
+    return "\n".join(["**Bosses this guild runs**", "", *rows])
 
 
 def _get_pending(ctx: ToolContext, args: dict) -> str:
@@ -606,11 +710,11 @@ def _get_pending(ctx: ToolContext, args: dict) -> str:
     if not open_cards:
         return "There are no proposal cards waiting."
     lines = [
-        f"[{card['short_id']}] {card['kind_label']} "
-        f"{formatting.boss_labels(card['bosses'])} -> {card['when']}"
+        f"`[{card['short_id']}]` **{card['kind_label']}** "
+        f"**{formatting.boss_labels(card['bosses'])}** → *{card['when']}*"
         for card in open_cards[:MAX_RUNS]
     ]
-    return "\n".join(["Waiting for a ✅:", *lines])
+    return "\n".join(["**Waiting for a ✅**", "", *lines])
 
 
 # ---------------------------------------------------------------------------
@@ -717,7 +821,7 @@ def _require_authority(
         raise ToolError(
             ELSEWHERE.format(
                 noun="run" if run is not None else "weekly timing",
-                where=service.channel_name(ctx.bot, home) or "another channel",
+                where=_channel_reference(ctx.bot, home) or "another channel",
             )
         )
 
@@ -799,8 +903,9 @@ async def _propose(
             "The change was recorded but the card could not be posted to the channel. "
             "Tell them to check with an admin."
         )
+    card_ids = ", ".join(f"`[{short_id(a)}]`" for a in created)
     return (
-        f"Card {', '.join(short_id(a) for a in created)} posted: "
+        f"**Card posted:** {card_ids}\n\n"
         f"{_card_text(ctx, kind, amendment, at, run, payload)}. "
         "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it. "
         "Tell them the card is up and needs a ✅. The people named above are the whole "
@@ -870,7 +975,7 @@ def _card_text(
     if joining:
         party = f"{party} → {_names(ctx, joining)}"
     when = _card_when(ctx, kind, at, run, payload)
-    return f"{formatting.boss_labels(amendment.bosses)}{f' {when}' if when else ''} — {party}"
+    return f"**{formatting.boss_labels(amendment.bosses)}**{f' *{when}*' if when else ''} — {party}"
 
 
 def _names(ctx: ToolContext, user_ids: Sequence[str]) -> str:
@@ -1593,6 +1698,7 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
         return done(UNKNOWN_TOOL.format(name=name, known=", ".join(tool_names())), False, UNKNOWN)
     try:
         output = await handler(ctx, args) if name in _WRITE else handler(ctx, args)
+        log.debug("chat: %s response %r", name, output)
         return done(output)
     except ToolError as exc:
         log.info("chat: %s refused: %s", name, exc)

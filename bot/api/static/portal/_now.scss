@@ -1,0 +1,64 @@
+/* ── the now strip ──────────────────────────────────────────────────────────
+ *
+ * Four things read before the week is: what is next, who still owes an answer,
+ * what is waiting to be approved, and whether the model is free. Tiles rather
+ * than a sentence, because three of the four are a number somebody is checking
+ * against zero. */
+
+.now {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 0.8rem;
+}
+
+.now__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.6rem 0.85rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.now__tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.now__tile--next {
+  border-color: var(--win);
+}
+
+/* A number that is not zero when zero is what you wanted. */
+.now__tile--warn {
+  border-color: color-mix(in srgb, var(--warn) 65%, var(--line));
+}
+
+.now__label {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* No family of its own: the numeric tiles carry `.mono`, and setting one here
+   would out-specify it and turn every countdown back into prose. */
+.now__big {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.now__sub {
+  font-size: var(--fs-small);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
