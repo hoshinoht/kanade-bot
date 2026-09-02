@@ -1,0 +1,110 @@
+/* ── bosses: portrait, name, difficulty pill, level ─────────────────────── */
+
+.boss {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.boss + .boss {
+  margin-left: 0.55rem;
+}
+
+/* Two bosses on one run, stacked. Inline they wrapped mid-boss at a card's
+   width -- the name on one line and its difficulty pill orphaned on the next --
+   so anywhere with room for the full in-game name gets one boss per line
+   instead. The inline form above is still what the board's compact cards use. */
+.bosslist {
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
+/* A portrait and its monogram stand-in occupy the same box, so adding an image
+   never reflows the row. */
+.portrait {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--raise);
+  border: 2px solid var(--line);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+}
+
+/* Both monograms are fitted to their square, not to the ladder. */
+.portrait--sm {
+  width: 26px;
+  height: 26px;
+  font-size: 0.66rem;
+}
+
+.portrait--md {
+  width: 38px;
+  height: 38px;
+  font-size: 0.84rem;
+}
+
+/* The hue is the boss's, set on the element; only how light it is belongs to
+   the face -- which is why those two are tokens rather than a second rule
+   inside the dark media query. */
+.portrait--mono {
+  background: hsl(var(--mono-hue) var(--mono-s) var(--mono-l));
+  color: hsl(var(--mono-hue) var(--mono-ink-s) var(--mono-ink-l));
+  border-color: hsl(var(--mono-hue) var(--mono-line-s) var(--mono-line-l));
+}
+
+.boss__name {
+  font-weight: 600;
+  white-space: normal;
+}
+
+.boss__lv {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--faint);
+}
+
+/* The difficulty tier is a real thing in game, and these are its colours. */
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.42rem 0.09rem;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.5;
+  background: var(--off);
+  color: #fff;
+  vertical-align: 0.06em;
+}
+
+.pill--e {
+  background: var(--pill-e-bg);
+  color: var(--pill-e-fg);
+}
+.pill--n {
+  background: var(--pill-n-bg);
+  color: var(--pill-n-fg);
+}
+.pill--h {
+  background: var(--pill-h-bg);
+  color: var(--pill-h-fg);
+}
+.pill--c {
+  background: var(--pill-c-bg);
+  color: var(--pill-c-fg);
+}
+.pill--x {
+  background: var(--pill-x-bg);
+  color: var(--pill-x-fg);
+}
+

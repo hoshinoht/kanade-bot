@@ -74,7 +74,12 @@ bot/
     models.py    request/response shapes
     templating.py the Jinja environment
     templates/   Jinja pages and partials
-    static/      portal.css
+    static/      portal.css (served artifact), portal.scss (entrypoint), portal/*.scss (partials)
 config/bosses.yaml
 tests/
 ```
+
+The portal stylesheet is now split into SCSS partials under `bot/api/static/portal/`, with
+`bot/api/static/portal.scss` as the ordered entrypoint. The app still serves the checked-in
+`bot/api/static/portal.css` directly; regenerate it with a Sass compiler when you want to publish
+changes from the SCSS source tree.

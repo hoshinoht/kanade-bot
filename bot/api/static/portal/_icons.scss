@@ -1,0 +1,53 @@
+/* ── icons ──────────────────────────────────────────────────────────────────
+ *
+ * The portal draws its own marks instead of borrowing the reader's emoji font:
+ * `templates/partials/icons.html` writes one inline <svg> per call, and this is
+ * everything the stylesheet has to say about them.
+ *
+ * Sized in `em`, so an icon is as big as whatever text it stands in and follows
+ * the type ladder without being on it -- there is no icon size to choose. The
+ * stroke is `currentColor`, so the colour is always the colour of the words
+ * around it: a `.status--at_risk` cell makes its cross red, a title bar makes
+ * its ✕ the chrome's ink, and both faces of all five colourways are handled
+ * without one being named here.
+ *
+ * The nudge below the baseline is what an inline SVG needs to sit on a line of
+ * text rather than hang under it; a flex or grid parent ignores it, which is
+ * why the icon-only controls opt into flex instead. */
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.135em;
+}
+
+/* Controls whose entire content is one drawing. Centred by flex, because there
+   is no text on the line for a baseline to mean anything. */
+.runsheet__x,
+.modal__x,
+.chanmark__btn,
+.cardlink__out {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link-out mark on a posted card, which is a footnote to the label beside
+   it rather than a thing to read: smaller than the line, and half-lit. */
+.cardlink__out .icon {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+/* A table cell that is nothing but its mark. Slightly larger than the text
+   would have been, because there is no word beside it to give it scale. */
+td .icon {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.arrow {
+  color: var(--faint);
+  padding: 0 0.1rem;
+}

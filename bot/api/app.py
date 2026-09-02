@@ -120,7 +120,7 @@ def create_app(bot: BossBot) -> FastAPI:
             "Local control plane for the guild's boss schedule. Loopback only; "
             "reach it from the tailnet with `tailscale serve`."
         ),
-        version="0.3.0",
+        version="3.1.1",
         # FastAPI's own /docs and /openapi.json carry no dependencies, so they
         # are re-declared below behind the same auth as everything else.
         docs_url=None,
