@@ -1,0 +1,63 @@
+/* ── inbox evidence: the chat that justifies a change ───────────────────── */
+
+details form.filters {
+  padding: 0.6rem 0;
+  align-items: flex-end;
+}
+
+details fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.evidence {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--line);
+}
+
+.evidence__line {
+  font-size: var(--fs-body-sm);
+}
+
+.evidence__who {
+  font-weight: 600;
+}
+
+.evidence__at {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--faint);
+  margin-left: 0.4rem;
+}
+
+.evidence__text {
+  color: var(--dim);
+}
+
+.conf {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 2px solid;
+}
+
+.conf--high {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.conf--mid {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.conf--low,
+.conf--unknown {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+}
+

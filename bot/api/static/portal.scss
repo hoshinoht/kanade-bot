@@ -1,0 +1,35 @@
+/* Source entrypoint for the portal stylesheet.
+ *
+ * The app still serves `portal.css` directly. These partials are the SCSS
+ * source broken out from that monolithic file; compile this entrypoint back to
+ * `bot/api/static/portal.css` with an external Sass compiler when you want the
+ * served artifact regenerated.
+ */
+
+@use "portal/tokens";
+@use "portal/base";
+@use "portal/shell";
+@use "portal/page-furniture";
+@use "portal/week-rail";
+@use "portal/filters-forms";
+@use "portal/buttons";
+@use "portal/runs";
+@use "portal/chips-status";
+@use "portal/bosses";
+@use "portal/boss-grid";
+@use "portal/card-window";
+@use "portal/settings";
+@use "portal/tabs";
+@use "portal/panes";
+@use "portal/now";
+@use "portal/board";
+@use "portal/runsheet";
+@use "portal/stats-tables";
+@use "portal/theme-picker";
+@use "portal/evidence";
+@use "portal/login-footnote";
+@use "portal/motion";
+@use "portal/phone";
+@use "portal/modal";
+@use "portal/inbox-amend";
+@use "portal/icons";

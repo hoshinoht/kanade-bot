@@ -1,0 +1,27 @@
+/* ── inbox: the day-and-time an approver can overwrite ──────────────────── */
+
+/* This form lives in .run__actions, whose inputs are capped at 7.5rem so the
+   week page's amend boxes stay compact. Here the field takes a whole
+   "wed 21:30", so it opts out of that cap and takes the leftover row. */
+.amend-edit {
+  margin: 0;
+  flex: 1 1 15rem;
+}
+
+.field--grow {
+  flex: 1 1 11rem;
+  min-width: 0;
+}
+
+.run__actions .amend-edit .input--when {
+  width: 100%;
+  min-width: 9rem;
+  max-width: none;
+}
+
+/* A move shows the time it is leaving; nothing else has one. */
+.was {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+

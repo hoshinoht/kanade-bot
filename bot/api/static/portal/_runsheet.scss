@@ -1,0 +1,130 @@
+/* ── a run's sheet ──────────────────────────────────────────────────────────
+ *
+ * The ordinary run card, in a <dialog>, so the board can open one without the
+ * card existing twice on the page. Three states, one element: closed on a
+ * desktop until a card opens it (modal with JavaScript, `dialog:target`
+ * without), and shown in place on a phone, where it *is* the vertical list.
+ *
+ * `partials/run.html` goes inside unchanged, so every htmx action in it still
+ * targets `closest .run` and swaps its own article -- there being only one. */
+
+dialog.runsheet {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  width: min(52rem, calc(100% - 1.6rem));
+  max-width: none;
+  max-height: min(88vh, 52rem);
+  overflow: visible;
+}
+
+dialog.runsheet::backdrop {
+  background: rgb(12 11 18 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+dialog.runsheet:target {
+  display: block;
+  position: static;
+  margin: 0.6rem 0;
+}
+
+dialog.runsheet[open] {
+  animation: lift 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.runsheet__panel {
+  position: relative;
+  max-height: min(88vh, 52rem);
+  overflow-y: auto;
+}
+
+/* The sheet's title bar, which is also where the close control lives. Pinned to
+   the panel's corner it sat on top of the card's own top-right actions -- the
+   Move field and Preview ping -- at every width the sheet renders. A window's
+   chrome gets a strip of its own; then nothing can overlap. It sticks, because
+   the panel below it scrolls and a close button that scrolls away is not one. */
+.runsheet__bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+  border: 2px solid var(--win);
+  border-radius: var(--r) var(--r) 0 0;
+}
+
+/* Caption, not content: the run's own clock and bosses are full size directly
+   underneath, so the bar only says which run this window is. */
+.runsheet__name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.runsheet__x {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: 1;
+  padding: 0.28rem 0.5rem;
+  border: 2px solid color-mix(in srgb, var(--win-ink) 40%, transparent);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--win-ink);
+  cursor: pointer;
+}
+
+.runsheet__x:hover {
+  background: var(--surface);
+  border-color: var(--surface);
+  color: var(--ink);
+}
+
+/* One window rather than a card inside a frame: under the bar the run gives up
+   its top edge and its top corners. The left stripe stays -- that colour is the
+   run's status, not decoration. The entry-art veil follows without a rule of
+   its own, because it inherits whatever corners the card is currently wearing;
+   and it stays under the bar without one either, the bar being the only thing
+   in this panel with a `z-index`. */
+.runsheet__panel > .run {
+  border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+}
+
+/* On a phone there is no board to open anything, so every sheet is simply the
+   run row it contains -- the list this page has always been. */
+@media (max-width: 899px) {
+  dialog.runsheet {
+    display: block;
+    position: static;
+    width: auto;
+    max-height: none;
+    margin: 0;
+  }
+
+  .runsheet__panel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Nothing to close, so no chrome to close it with -- and with the bar gone
+     the card takes its own top edge back and is a card again. */
+  .runsheet__bar {
+    display: none;
+  }
+
+  .runsheet__panel > .run {
+    border-top: 2px solid var(--line);
+    border-radius: var(--r);
+  }
+}
+
