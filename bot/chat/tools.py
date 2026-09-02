@@ -1593,6 +1593,7 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
         return done(UNKNOWN_TOOL.format(name=name, known=", ".join(tool_names())), False, UNKNOWN)
     try:
         output = await handler(ctx, args) if name in _WRITE else handler(ctx, args)
+        log.debug("chat: %s response %r", name, output)
         return done(output)
     except ToolError as exc:
         log.info("chat: %s refused: %s", name, exc)
