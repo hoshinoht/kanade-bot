@@ -21,6 +21,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .. import audit
 from ..config import Settings
+from ..portal_styles import build_stylesheet
 from .auth import HEADER_LOGIN, is_local_peer
 from .deps import Caller
 from .errors import ApiError
@@ -138,6 +139,16 @@ def create_app(bot: BossBot) -> FastAPI:
     # directory rather than from here.
     app.include_router(api_router)
     app.include_router(web_router)
+
+    # Docker builds a static artifact into the image. A fresh checkout or wheel
+    # deliberately has no generated file, so serve the same source bundle from
+    # memory rather than requiring a frontend build before a local run.
+    if not (STATIC_DIR / "portal.css").is_file():
+
+        @app.get("/static/portal.css", include_in_schema=False)
+        async def _portal_stylesheet() -> Response:
+            return Response(build_stylesheet(), media_type="text/css")
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(ApiError)

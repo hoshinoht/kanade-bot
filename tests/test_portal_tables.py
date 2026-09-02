@@ -14,9 +14,9 @@ import re
 import pytest
 
 from bot.api import service
-from bot.api.app import STATIC_DIR
 from bot.api.templating import CHAT_TABS, EXTRACTION_TABS, LIMITS_TABS
 from bot.ids import short_id
+from bot.portal_styles import build_stylesheet
 
 from .conftest import kl
 from .fake_bot import add_pilot
@@ -33,7 +33,7 @@ TABLES = [
 
 PAGED = ["/audit", "/extractions", "/chat", "/reminders"]
 
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 
 #: The stylesheet with its prose taken out. Every rule in that file is
 #: explained above itself, so a test that scans for a declaration has to look at

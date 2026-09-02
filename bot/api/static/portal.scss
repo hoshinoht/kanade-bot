@@ -1,9 +1,9 @@
 /* Source entrypoint for the portal stylesheet.
  *
- * The app still serves `portal.css` directly. These partials are the SCSS
- * source broken out from that monolithic file; compile this entrypoint back to
- * `bot/api/static/portal.css` with an external Sass compiler when you want the
- * served artifact regenerated.
+ * Compose builds the ignored `portal.css` artifact into its image; local runs
+ * serve the same bundle from memory when it is absent. Keep these partials
+ * CSS-compatible. The `@use` declarations define output order; no Sass runtime
+ * or compiler is required.
  */
 
 @use "portal/tokens";

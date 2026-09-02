@@ -12,12 +12,12 @@ from __future__ import annotations
 import re
 
 from bot.api import service
-from bot.api.app import STATIC_DIR
+from bot.portal_styles import build_stylesheet
 
 from .conftest import TZ, kl
 from .fake_bot import OTHER_CHANNEL
 
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 
 
 def board_of(body: str) -> str:
