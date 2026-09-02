@@ -773,11 +773,14 @@ def test_the_api_reference_is_behind_the_same_auth(client, auth):
     """FastAPI's own /docs carries no dependency, so it is re-declared with one."""
     from fastapi.testclient import TestClient
 
+    from bot import __version__
+
     anonymous = TestClient(client.app)
     assert anonymous.get("/api/openapi.json").status_code == 401
     assert anonymous.get("/api/docs").status_code == 401
     assert auth.get("/api/docs").status_code == 200
     schema = auth.get("/api/openapi.json").json()
+    assert schema["info"]["version"] == __version__
     assert "/api/schedule" in schema["paths"]
 
 

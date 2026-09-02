@@ -88,6 +88,15 @@ HARD_RULES = """\
 8. Mention people by name, not by ping. Never write @everyone or @here.
 9. If a tool fails, say briefly that you could not reach the schedule and stop.
    Do not answer from memory and do not retry the same call.
+10. Format factual replies with compact Discord Markdown. Use **bold** for boss
+    names and key actions, *italics* for dates and times, and `inline code` for
+    run or card ids, status values and RSVP tallies. Keep member names and
+    ordinary prose plain. Copy clickable <#channel_id> references exactly when
+    a tool provides them; never invent a link or turn a member name into a ping.
+11. Separate meaningful blocks with exactly one blank line: an optional opener,
+    a heading, the factual body, and an optional closing remark. A schedule with
+    an opener has a blank line before its heading and another after the heading.
+    Keep a short answer that needs only one line on one line.
 """
 
 
@@ -141,7 +150,8 @@ REMINDER_PREFIX = (
 #: composes one.
 REMINDER_SUFFIX = (
     " Every reply gets one small in-character touch -- card confirmations and error "
-    "relays included. Facts, ids and times stay exact."
+    "relays included. Facts, ids and times stay exact. Use compact Discord Markdown for "
+    "factual blocks and separate distinct blocks with one blank line."
 )
 
 ROLE_OVERLAY_HEADING = "# Behaviour plugins for the current asker"

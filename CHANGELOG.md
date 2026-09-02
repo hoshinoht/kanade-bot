@@ -2,6 +2,30 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.2.0
+
+**Added**
+
+- `get_schedule` can filter by `participant="me"` or one roster name while
+  retaining whole-group and channel-only schedule scopes.
+
+**Changed**
+
+- Chatbot factual replies now use compact Discord Markdown: bold boss names and
+  actions, italic dates and times, and code-formatted ids, statuses and RSVP
+  tallies.
+- Visible cross-channel schedule references are now clickable Discord channel
+  links.
+- Multi-block chatbot replies preserve one blank line around headings and
+  remarks while keeping consecutive schedule rows compact.
+- Package, runtime and API version metadata now report `3.2.0`.
+
+**Fixed**
+
+- Named participant filters are resolved against the roster instead of silently
+  returning the unfiltered schedule. Invalid, unknown and ambiguous participant
+  values are refused with a clarification prompt.
+
 ## 3.1.2
 
 **Fixed**

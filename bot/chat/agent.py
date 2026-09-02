@@ -335,28 +335,53 @@ def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
 GLUED_BULLET = ": - "
 
 
+_SCHEDULE_RUN_LINE_RE = re.compile(r"^\s*(?:[-*]\s*)?`?\[[0-9a-fA-F]{8}\]`?\s+\S")
+
+
+def _tidy_blank_lines(text: str) -> str:
+    """Keep one blank line between blocks and collapse any excess.
+
+    Generated replies use the same opener / facts / closing shape whether they
+    list a schedule, confirm a card or answer an ordinary question. Preserving
+    one paragraph break globally keeps those blocks readable; normalising longer
+    runs prevents a model from spending the message budget on vertical space.
+    Consecutive schedule rows remain a compact one-line-per-run list even if the
+    model puts paragraph breaks between them.
+    """
+    normalised = re.sub(r"\n(?:[ \t]*\n){1,}", "\n\n", text)
+    lines = normalised.split("\n")
+    compact: list[str] = []
+    for index, line in enumerate(lines):
+        between_runs = (
+            not line
+            and compact
+            and index + 1 < len(lines)
+            and _SCHEDULE_RUN_LINE_RE.match(compact[-1]) is not None
+            and _SCHEDULE_RUN_LINE_RE.match(lines[index + 1]) is not None
+        )
+        if not between_runs:
+            compact.append(line)
+    return "\n".join(compact)
+
+
 def unglue_first_bullet(text: str) -> str:
     """Put a first list item that ended up on the header line onto its own line.
 
     Live, a schedule answer was stored as ``...(all channels): - **Hard Star**
     ... ✅ – #x\\n- **Hard Baldrix** ...`` -- every item but the first correctly
-    its own bullet -- and the same question answered cleanly seconds later. Two
-    separate things produce that, and this repairs both:
+    its own bullet -- and the same question answered cleanly seconds later. The
+    model writes it that way sometimes, which is a stochastic habit and not
+    something a prompt rule reliably removes.
 
-    * the model writes it that way sometimes, which is a stochastic habit and
-      not something a prompt rule reliably removes; and
-    * :meth:`ChatPilot._tidy` collapses blank lines into spaces, so a *correctly*
-      written ``header:\\n\\n- one\\n- two`` is glued by the time it gets here.
-
-    Done at post time rather than asked for in the persona because only one of
-    those two causes can read a persona. The normalised text is what is posted,
-    remembered and recorded -- there is one version of a reply, and it is the
-    one the channel saw.
+    Done at post time rather than asked for in the persona because a stochastic
+    formatting miss is easier to repair than to regenerate. The normalised text
+    is what is posted, remembered and recorded -- there is one version of a
+    reply, and it is the one the channel saw.
 
     Guarded on the text already being a list (``\\n- `` somewhere else), so
     ordinary prose that happens to contain ": - " is never touched.
     """
-    return text.replace(GLUED_BULLET, ":\n- ") if "\n- " in text else text
+    return text.replace(GLUED_BULLET, ":\n\n- ") if "\n- " in text else text
 
 
 #: The openers a *genuine* scheduler-written turn begins with -- the trailing
@@ -1544,10 +1569,12 @@ class ChatPilot:
         chatbot that writes an essay in a party channel is a worse chatbot, and
         the persona already asks for four sentences.
 
-        The blank-line collapse is also what makes :func:`unglue_first_bullet`
-        necessary, so the repair happens here, immediately after the damage.
+        Exactly one blank line is retained between meaningful blocks in every
+        reply. Longer runs of blank space are normalised by
+        :func:`_tidy_blank_lines`; a model-written first bullet stuck to its
+        heading is repaired separately by :func:`unglue_first_bullet`.
         """
-        text = " ".join((content or "").split("\n\n")).strip()
+        text = _tidy_blank_lines(content or "").strip()
         return unglue_first_bullet(text)[:1200].strip()
 
     # -- discord -----------------------------------------------------------
