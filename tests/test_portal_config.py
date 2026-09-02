@@ -113,9 +113,13 @@ def test_a_phone_shows_every_section_rather_than_hiding_eight():
     """A fragment is easy to lose on a phone -- a back gesture, a reopened tab,
     a shared link -- and a settings page that answers with a blank pane because
     of it is worse than one you scroll. So the tabs become jump links."""
-    block = PAGE_CSS[PAGE_CSS.index("  .settings__body {\n    grid-template-columns: 1fr;") :]
+    block = PAGE_CSS[
+        PAGE_CSS.index("  .settings__body {\n    grid-template-columns: minmax(0, 1fr);") :
+    ]
     block = block[: block.index("\n}\n")]
 
+    assert "overflow-x: clip;" in block
+    assert "gap: 0.35rem;" in block
     assert ".settings__panel {\n    display: block;\n  }" in block
     assert ".settings__tab {" in block
 
