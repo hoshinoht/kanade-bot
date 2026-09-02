@@ -104,11 +104,11 @@ async def test_all_scope_is_the_default_and_unchanged(chat_bot, chat_seeded):
     assert "Extreme Kalos" in answer
 
 
-async def test_all_scope_names_the_channel_each_run_lives_in(chat_bot, chat_seeded):
-    """So a cross-channel answer cannot be read as channel-specific."""
+async def test_all_scope_links_the_channel_each_run_lives_in(chat_bot, chat_seeded):
+    """So a cross-channel answer is both explicit and directly navigable."""
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="all")
-    assert "in #hstar-party" in answer
-    assert "in #xkalos-party" in answer
+    assert f"<#{WATCHED_CHANNEL}>" in answer
+    assert f"<#{OTHER_CHANNEL}>" in answer
 
 
 async def test_all_scope_labels_itself_as_every_channel(chat_bot, chat_seeded):
@@ -117,7 +117,7 @@ async def test_all_scope_labels_itself_as_every_channel(chat_bot, chat_seeded):
 
 async def test_channel_scope_does_not_repeat_the_channel_on_every_line(chat_bot, chat_seeded):
     """They already know which channel they are in; it is noise there."""
-    assert "in #hstar-party" not in await schedule(chat_bot, WATCHED_CHANNEL, scope="channel")
+    assert f"<#{WATCHED_CHANNEL}>" not in await schedule(chat_bot, WATCHED_CHANNEL, scope="channel")
 
 
 async def test_a_run_in_a_channel_the_bot_cannot_see_still_lists(chat_bot, chat_seeded):
@@ -125,8 +125,7 @@ async def test_a_run_in_a_channel_the_bot_cannot_see_still_lists(chat_bot, chat_
     chat_bot.channels.clear()
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="all")
     assert "Hard Star + Hard FA" in answer
-    assert "#None" not in answer
-    assert " in #" not in answer
+    assert "<#" not in answer
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +140,17 @@ async def test_an_unknown_scope_is_refused(chat_bot, chat_seeded):
 
 async def test_the_description_steers_the_model(chat_bot):
     schema = next(t for t in tools.TOOLS if t["function"]["name"] == "get_schedule")
-    described = schema["function"]["parameters"]["properties"]["scope"]["description"]
+    properties = schema["function"]["parameters"]["properties"]
+    scope_description = properties["scope"]["description"]
     for phrase in ("this channel", "here", "our runs", "never claim"):
-        assert phrase in described
-    assert set(schema["function"]["parameters"]["properties"]["scope"]["enum"]) == {
+        assert phrase in scope_description
+    assert set(properties["scope"]["enum"]) == {
         "all",
         "channel",
     }
+    participant = properties["participant"]
+    assert "enum" not in participant
+    for phrase in ("'me'", "roster name", "display name"):
+        assert phrase in participant["description"]
     # `week` stays required; `scope` is optional and defaults to today's behaviour.
     assert schema["function"]["parameters"]["required"] == ["week"]

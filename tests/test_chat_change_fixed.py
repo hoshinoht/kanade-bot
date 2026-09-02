@@ -413,7 +413,7 @@ async def test_a_timing_in_another_chat_channel_is_refused(chat_bot, chat_seeded
         chat_bot, ctx=context(chat_bot, author_id=1002), query="hbellona", time="23:30"
     )
 
-    assert "#bot-chatter" in answer
+    assert f"<#{ADOPTED_CHANNEL}>" in answer
     assert "its own channel" in answer
     assert proposals(chat_bot) == []
 

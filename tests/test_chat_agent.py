@@ -535,7 +535,7 @@ async def test_an_essay_is_trimmed(chat_bot, chat_seeded):
 def test_a_first_bullet_stuck_to_the_header_is_put_on_its_own_line():
     glued = "This week, all channels: - **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
     assert unglue_first_bullet(glued) == (
-        "This week, all channels:\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+        "This week, all channels:\n\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
     )
 
 
@@ -550,12 +550,39 @@ def test_prose_that_merely_contains_the_sequence_is_untouched():
     assert unglue_first_bullet(prose) == prose
 
 
-async def test_the_blank_lines_tidy_collapses_are_repaired_on_the_way_out(chat_bot, chat_seeded):
-    """`_tidy` turns a correctly written list into a glued one; this undoes it."""
+async def test_tidy_preserves_a_blank_line_between_a_heading_and_list(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"))
     result = (await agent.offer(message(chat_bot))).answered
 
-    assert result.reply == "This week:\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+    assert result.reply == "This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+
+
+async def test_schedule_commentary_keeps_a_blank_line_after_the_final_run(chat_bot, chat_seeded):
+    answer = (
+        "This boss week, all channels:\n\n"
+        "[1343d5bb] Fri 04 Sep 22:00 Extreme Kalos\n\n"
+        "[652410db] Mon 07 Sep 23:30 Hard Limbo\n\n"
+        "Ehh~? All those slots are still empty."
+    )
+    agent = pilot(chat_bot, says(answer))
+    result = (await agent.offer(message(chat_bot))).answered
+
+    assert result.reply == (
+        "This boss week, all channels:\n\n"
+        "[1343d5bb] Fri 04 Sep 22:00 Extreme Kalos\n"
+        "[652410db] Mon 07 Sep 23:30 Hard Limbo\n\n"
+        "Ehh~? All those slots are still empty."
+    )
+
+
+async def test_all_generated_output_keeps_markdown_blocks_and_normalises_excess_space(
+    chat_bot, chat_seeded
+):
+    answer = "*Opening remark*\n\n\n**Result**\n\n`value`\n\n\n\n*Closing remark*"
+    agent = pilot(chat_bot, says(answer))
+    result = (await agent.offer(message(chat_bot))).answered
+
+    assert result.reply == "*Opening remark*\n\n**Result**\n\n`value`\n\n*Closing remark*"
 
 
 async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, chat_seeded):
@@ -563,7 +590,7 @@ async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, c
     agent = pilot(chat_bot, says("This week: - **Hard Star** Mon\n- **Hard Baldrix** Wed"))
     await agent.offer(message(chat_bot))
 
-    wanted = "This week:\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+    wanted = "This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
     assert replies(chat_bot)[0].content == wanted
     assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == wanted
     assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == wanted

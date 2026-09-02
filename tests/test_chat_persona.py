@@ -165,6 +165,15 @@ def test_the_hard_rules_cover_the_things_that_matter():
         assert topic.lower() in rules
 
 
+def test_the_hard_rules_require_global_discord_formatting_and_block_spacing():
+    rules = persona.HARD_RULES
+    for markup in ("**bold**", "*italics*", "`inline code`", "<#channel_id>"):
+        assert markup in rules
+    assert "exactly one blank line" in rules
+    assert "blank line before its heading" in rules
+    assert "short answer" in rules
+
+
 def test_the_clock_header_says_today_and_the_boss_week(chat_bot):
     from bot.timeutil import utcnow
     from bot.weeks import current_week_start

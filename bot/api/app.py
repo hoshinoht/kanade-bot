@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import audit
+from .. import __version__, audit
 from ..config import Settings
 from ..portal_styles import build_stylesheet
 from .auth import HEADER_LOGIN, is_local_peer
@@ -121,7 +121,7 @@ def create_app(bot: BossBot) -> FastAPI:
             "Local control plane for the guild's boss schedule. Loopback only; "
             "reach it from the tailnet with `tailscale serve`."
         ),
-        version="3.1.1",
+        version=__version__,
         # FastAPI's own /docs and /openapi.json carry no dependencies, so they
         # are re-declared below behind the same auth as everything else.
         docs_url=None,
