@@ -21,10 +21,10 @@ import pytest
 
 from bot import formatting
 from bot.api import service
-from bot.api.app import STATIC_DIR
 from bot.bosses import BossTable
+from bot.portal_styles import build_stylesheet
 
-PAGE_CSS = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+PAGE_CSS = build_stylesheet()
 
 #: The stylesheet with its prose taken out, the same way test_portal_tables
 #: reads it: every rule in that file is explained above itself, so a comment

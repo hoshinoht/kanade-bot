@@ -1148,7 +1148,7 @@ class Pipeline:
         await self._mark_superseded(retired)
         posted = await self._post_card(channel_id, amendment_ids)
         if not posted:
-            self._note_unposted(channel_id, amendment_ids, report)
+            self._note_unposted(channel_id, amendment_ids, report, summary)
         # One row for the card, not one per amendment: a card is what a person
         # sees and answers, and a burst that proposes three changes is still one
         # thing that happened.
@@ -1184,12 +1184,14 @@ class Pipeline:
             self._note_unposted(channel_id, ids, report)
 
     def _note_unposted(
-        self, channel_id: str, amendment_ids: list[str], report: RescanReport | None
+        self, channel_id: str, amendment_ids: list[str], report: RescanReport | None,
+        summary: str | None = None,
     ) -> None:
         log.error(
-            "channel %s: could not post the card for %d proposal(s); they stay unposted",
+            "channel %s: could not post the card for %d proposal(s); they stay unposted%s",
             channel_id,
             len(amendment_ids),
+            f" ({summary})" if summary else "",
         )
         if report is not None:
             report.unposted += len(amendment_ids)

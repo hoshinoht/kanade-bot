@@ -1,0 +1,77 @@
+/* ── the theme picker ───────────────────────────────────────────────────────
+ *
+ * Five radio buttons wearing their own palette: the ground each one paints the
+ * desktop, and the accent it puts on a link. A real radio inside a real form,
+ * so choosing one is a POST that sets a cookie -- there is nothing here that
+ * needs a script. */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.4rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The mode radios carry a word and no lozenge, so they get their padding back. */
+.swatch--plain {
+  padding: 0.3rem 0.8rem;
+}
+
+.swatch:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.swatch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.swatch:has(input:checked) {
+  color: var(--ink);
+  border-color: var(--win);
+  background: var(--raise);
+}
+
+.swatch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pair: the ground as the lozenge, its accent as the dot on it. */
+.swatch__dots {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--sw-ground);
+  border: 2px solid color-mix(in srgb, var(--sw-accent) 40%, var(--line));
+}
+
+.swatch__dots::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 12px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+}
+

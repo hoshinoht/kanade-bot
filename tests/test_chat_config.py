@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from bot import behaviour_plugins
 from bot.api import service
 from bot.client import CFG_CHAT, BossBot
 from bot.db import Repo
@@ -98,6 +99,7 @@ def test_the_env_example_documents_every_new_setting():
     text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     for key in (
         "CHAT_PILOT_ROLE_ID",
+        "CHAT_ROLE_PLUGINS",
         "CHAT_PILOT_CHANNEL_IDS",
         "CHAT_PILOT_CATEGORY_IDS",
         "CHAT_PILOT_RATE_COUNT",
@@ -117,7 +119,12 @@ def test_the_env_example_carries_no_real_ids():
     from .conftest import REPO_ROOT
 
     text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-    for key in ("CHAT_PILOT_ROLE_ID", "CHAT_PILOT_CHANNEL_IDS", "CHAT_PILOT_CATEGORY_IDS"):
+    for key in (
+        "CHAT_PILOT_ROLE_ID",
+        "CHAT_ROLE_PLUGINS",
+        "CHAT_PILOT_CHANNEL_IDS",
+        "CHAT_PILOT_CATEGORY_IDS",
+    ):
         line = next(ln for ln in text.splitlines() if ln.startswith(f"{key}="))
         assert line == f"{key}="
 
@@ -151,6 +158,25 @@ def test_the_numbers_are_seeded_on_first_run_and_not_re_seeded_after(tmp_path):
     restarted = entrypoint.build_repo(settings)
 
     assert restarted.get_config("chat_pilot_rate_count") == "9"
+    restarted.close()
+
+
+def test_role_plugins_are_seeded_once_from_the_environment(tmp_path):
+    from bot import __main__ as entrypoint
+
+    settings = chat_settings(
+        db_path=str(tmp_path / "plugins.sqlite"),
+        chat_role_plugins=f"{CHAT_ROLE}=mesugaki",
+    )
+    repo = entrypoint.build_repo(settings)
+    assert behaviour_plugins.decode(repo.get_config(behaviour_plugins.CONFIG_KEY)) == [
+        behaviour_plugins.RolePlugin(str(CHAT_ROLE), "mesugaki")
+    ]
+
+    repo.set_config(behaviour_plugins.CONFIG_KEY, "[]")
+    repo.close()
+    restarted = entrypoint.build_repo(settings)
+    assert restarted.get_config(behaviour_plugins.CONFIG_KEY) == "[]"
     restarted.close()
 
 

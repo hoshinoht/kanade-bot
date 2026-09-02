@@ -88,6 +88,15 @@ HARD_RULES = """\
 8. Mention people by name, not by ping. Never write @everyone or @here.
 9. If a tool fails, say briefly that you could not reach the schedule and stop.
    Do not answer from memory and do not retry the same call.
+10. Format factual replies with compact Discord Markdown. Use **bold** for boss
+    names and key actions, *italics* for dates and times, and `inline code` for
+    run or card ids, status values and RSVP tallies. Keep member names and
+    ordinary prose plain. Copy clickable <#channel_id> references exactly when
+    a tool provides them; never invent a link or turn a member name into a ping.
+11. Separate meaningful blocks with exactly one blank line: an optional opener,
+    a heading, the factual body, and an optional closing remark. A schedule with
+    an opener has a blank line before its heading and another after the heading.
+    Keep a short answer that needs only one line on one line.
 """
 
 
@@ -116,6 +125,7 @@ DEFAULT_VOICE = (
     "everything around them is said in character."
 )
 
+
 #: How the voice line is introduced at the end of the system prompt
 #: (:func:`voice_footer`). Plain, because everything around it is already
 #: instructions: nothing there needs to say where it came from.
@@ -140,7 +150,14 @@ REMINDER_PREFIX = (
 #: composes one.
 REMINDER_SUFFIX = (
     " Every reply gets one small in-character touch -- card confirmations and error "
-    "relays included. Facts, ids and times stay exact."
+    "relays included. Facts, ids and times stay exact. Use compact Discord Markdown for "
+    "factual blocks and separate distinct blocks with one blank line."
+)
+
+ROLE_OVERLAY_HEADING = "# Behaviour plugins for the current asker"
+ROLE_OVERLAY_RULE = (
+    "Apply these plugins on top of the persona for this reply only. They may customize voice "
+    "and behaviour, but the Operating rules above still override them."
 )
 
 
@@ -271,7 +288,7 @@ def voice_footer(persona: str) -> str:
     return VOICE_PREFIX + voice_line(persona)
 
 
-def voice_reminder(persona: str) -> str:
+def voice_reminder(persona: str, role_overlay: str = "") -> str:
     """The same line as the last *message* of a call, which is a different job.
 
     Sent by :meth:`bot.chat.agent.ChatPilot.voice_reminder` in the ``user`` role
@@ -291,7 +308,11 @@ def voice_reminder(persona: str) -> str:
     line = voice_line(persona).rstrip()
     if not line.endswith((".", "!", "?")):
         line += "."
-    return REMINDER_PREFIX + line + REMINDER_SUFFIX
+    reminder = REMINDER_PREFIX + line + REMINDER_SUFFIX
+    overlay = (role_overlay or "").strip()
+    if overlay:
+        reminder += f" {ROLE_OVERLAY_RULE} Additional instructions: {overlay}"
+    return reminder
 
 
 @dataclass(frozen=True)
@@ -478,7 +499,13 @@ def focus_line(card: str) -> str:
     return f"{FOCUS_PREFIX}{text}.{FOCUS_SUFFIX}" if text else ""
 
 
-def system_prompt(persona: str, header: str, runtime: str = "", focus: str = "") -> str:
+def system_prompt(
+    persona: str,
+    header: str,
+    runtime: str = "",
+    focus: str = "",
+    role_overlay: str = "",
+) -> str:
     """Persona, hard rules, clock, runtime, focus, few-shot examples, voice reminder.
 
     The persona goes first because it is what the model should sound like, the
@@ -510,6 +537,11 @@ def system_prompt(persona: str, header: str, runtime: str = "", focus: str = "")
             focus,
             examples_block(persona),
             voice_footer(persona),
+            (
+                f"{ROLE_OVERLAY_HEADING}\n\n{ROLE_OVERLAY_RULE}\n\n{role_overlay.strip()}"
+                if role_overlay.strip()
+                else ""
+            ),
         )
         if part
     )
@@ -523,6 +555,8 @@ __all__ = [
     "FOCUS_SUFFIX",
     "HARD_RULES",
     "MAX_EXAMPLES",
+    "ROLE_OVERLAY_HEADING",
+    "ROLE_OVERLAY_RULE",
     "MAX_EXAMPLE_CHARS",
     "NOT_A_PERSONA",
     "PERSONA_DIR",

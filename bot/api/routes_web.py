@@ -1020,6 +1020,58 @@ async def web_config(request: Request, bot: Bot, caller: Caller) -> Response:
     return back_to(request, "/config", "Saved.", fragment=section)
 
 
+@router.post("/config/role-plugins")
+async def web_set_role_plugin(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    role_id: str = Form(),
+    plugin: str = Form(),
+) -> Response:
+    try:
+        service.set_role_plugin(bot, role_id, plugin)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Role style saved.", fragment="chatbot")
+
+
+@router.post("/config/role-plugins/{role_id}/delete")
+async def web_delete_role_plugin(
+    request: Request, bot: Bot, caller: Caller, role_id: str
+) -> Response:
+    try:
+        service.delete_role_plugin(bot, role_id)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Role style deleted.", fragment="chatbot")
+
+
+@router.post("/config/behaviour-plugins")
+async def web_set_behaviour_plugin(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    name: str = Form(),
+    instructions: str = Form(),
+) -> Response:
+    try:
+        service.set_behaviour_plugin(bot, name, instructions)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Behaviour plugin saved.", fragment="chatbot")
+
+
+@router.post("/config/behaviour-plugins/{name}/delete")
+async def web_delete_behaviour_plugin(
+    request: Request, bot: Bot, caller: Caller, name: str
+) -> Response:
+    try:
+        service.delete_behaviour_plugin(bot, name)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Behaviour plugin deleted.", fragment="chatbot")
+
+
 @router.post("/digest")
 async def web_digest(
     request: Request,

@@ -1,0 +1,123 @@
+/* ── phone ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .nav__desk {
+    display: none;
+  }
+
+  /* Week and Inbox stay in reach; everything else is behind the disclosure.
+     Both are real links and it is a real <details>, so this works with the
+     script blocked -- portal.js only closes the menu on an outside tap. */
+  .nav__phone {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
+  .nav__more {
+    margin-left: auto;
+  }
+
+  /* Sized as a link, because that is what it stands in for. */
+  .nav__more-btn {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.42rem 0.7rem 0.5rem;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--dim);
+  }
+
+  .nav__more-btn::-webkit-details-marker {
+    display: none;
+  }
+
+  .nav__more[open] > .nav__more-btn {
+    color: var(--ink);
+  }
+
+  .nav__sheet {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 30;
+    display: grid;
+    gap: 0.7rem;
+    min-width: 13.5rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--surface);
+    border: 2px solid var(--win);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+  }
+
+  .nav__sheet .nav__links {
+    flex-wrap: wrap;
+  }
+
+  .run {
+    grid-template-columns: 1fr;
+    padding: 0.75rem;
+  }
+
+  .run__time {
+    font-size: 1.25rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  /* "own time" is words, not a clock reading, so it drops out of the big
+     tabular-figure treatment rather than wrapping inside it. */
+  .run--otot .run__time {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    padding-top: 0.35rem;
+  }
+
+  .run__time small {
+    margin-top: 0;
+  }
+
+  .run__actions {
+    justify-content: flex-start;
+  }
+
+  /* A segmented control is one choice, not a stack of unrelated buttons.
+     Compact its labels on phones so the final status does not wrap onto a
+     second row while retaining the shared minimum button height. */
+  .seg--status {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .seg--status .seg__btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 0.2rem;
+    font-size: var(--fs-micro);
+  }
+
+  .rail__day {
+    padding: 0.5rem 0.15rem;
+    min-height: 4.4rem;
+  }
+
+  .rail__num {
+    font-size: 1.15rem;
+  }
+
+  .rail__reset {
+    display: none;
+  }
+
+  .masthead__meta {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+

@@ -2,10 +2,10 @@
  * updates.
  *
  * Every control on the portal is a real form or link, so this file only
- * upgrades three interactions: a link that points at a <dialog> opens it as a
- * modal instead of scrolling to it, the phone nav's <details> closes when you
- * tap outside it, and the Limits page listens for server-sent
- * events instead of asking on a timer. With the script blocked the same link is
+ * upgrades interactions: dialog links open as modals, the phone nav closes when
+ * tapped past, long behaviour-plugin lists paginate in place, and the Limits
+ * page listens for server-sent events instead of asking on a timer. With the
+ * script blocked the same dialog link is
  * a fragment link and `dialog:target` (portal.css) reveals the form in place,
  * so the page still edits a fixed timing without JavaScript; the Limits page
  * falls back to its slow htmx poll, and then to its Refresh link.
@@ -175,6 +175,72 @@
     }
   });
 
+  // -- compact pages for the two behaviour-plugin editor lists ----------------
+  //
+  // Every editor is server-rendered and visible without JavaScript. This is only
+  // a space-saving enhancement for a list that has grown past one screen, and
+  // sessionStorage returns an editor to the page it was on after its form posts.
+  function storedListPage(key) {
+    try {
+      return Number(window.sessionStorage.getItem("config-page:" + key)) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function storeListPage(key, page) {
+    try {
+      window.sessionStorage.setItem("config-page:" + key, String(page));
+    } catch (e) {
+      // Pagination still works for this document when storage is unavailable.
+    }
+  }
+
+  function paginateList(root) {
+    var items = root.querySelectorAll("[data-page-item]");
+    var controls = root.querySelector("[data-page-controls]");
+    var pageSize = Number(root.dataset.pageSize) || 5;
+    if (!controls || items.length <= pageSize) {
+      return;
+    }
+
+    var previous = controls.querySelector("[data-page-previous]");
+    var next = controls.querySelector("[data-page-next]");
+    var status = controls.querySelector("[data-page-status]");
+    var key = root.dataset.paginationKey || "list";
+    var pages = Math.ceil(items.length / pageSize);
+    var current = Math.min(storedListPage(key), pages - 1);
+
+    function render(page) {
+      current = Math.max(0, Math.min(page, pages - 1));
+      for (var i = 0; i < items.length; i++) {
+        items[i].hidden = Math.floor(i / pageSize) !== current;
+      }
+      previous.disabled = current === 0;
+      next.disabled = current === pages - 1;
+      status.textContent =
+        "Page " + (current + 1) + " of " + pages + " · " + items.length + " " +
+        (root.dataset.pageLabel || "items");
+      storeListPage(key, current);
+    }
+
+    previous.addEventListener("click", function () {
+      render(current - 1);
+    });
+    next.addEventListener("click", function () {
+      render(current + 1);
+    });
+    controls.hidden = false;
+    render(current);
+  }
+
+  function paginateLists() {
+    var lists = document.querySelectorAll("[data-paginated-list]");
+    for (var i = 0; i < lists.length; i++) {
+      paginateList(lists[i]);
+    }
+  }
+
   // -- the Limits page, updated when something happens rather than on a timer --
 
   function liveRegion() {
@@ -238,5 +304,6 @@
   onReady(watchLive);
   onReady(markColorway);
   onReady(markTheme);
+  onReady(paginateLists);
   window.setInterval(tickHeld, 1000);
 })();

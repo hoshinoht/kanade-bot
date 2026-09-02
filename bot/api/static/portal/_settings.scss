@@ -1,0 +1,258 @@
+/* ── the settings window ────────────────────────────────────────────────────
+ *
+ * Config is one window: a table of contents down the left, one section at a
+ * time on the right. It replaced a wall of cards -- first a grid whose rows
+ * stretched every card to its tallest sibling, then columns that packed them --
+ * because the real problem was never how the cards were arranged. It was that
+ * nine settings were all on screen at once, so none of them had room.
+ *
+ * Switching is `:target`, and nothing else. The tabs are ordinary fragment
+ * links, the panel whose id matches shows, and with no fragment at all the
+ * first one shows. No JavaScript is anywhere near it. */
+
+.settings__body {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+}
+
+.settings__toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.5rem;
+  border-right: 2px solid var(--line);
+  background: var(--raise);
+}
+
+.settings__tab {
+  padding: 0.38rem 0.6rem;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.settings__tab:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* Which tab is open. A stylesheet cannot compare an `href` to an id, so the
+   nine pairs are written out -- and a test holds this list to
+   `CONFIG_SECTIONS` in `bot/api/templating.py`, which is where sections are
+   actually declared. The last selector is the no-fragment case: the first tab,
+   because the first panel is what shows. */
+.settings:has(#pings:target) [href="#pings"],
+.settings:has(#watching:target) [href="#watching"],
+.settings:has(#chatbot:target) [href="#chatbot"],
+.settings:has(#notifications:target) [href="#notifications"],
+.settings:has(#theme:target) [href="#theme"],
+.settings:has(#digest:target) [href="#digest"],
+.settings:has(#rescan:target) [href="#rescan"],
+.settings:has(#access:target) [href="#access"],
+.settings:has(#env:target) [href="#env"],
+.settings:not(:has(.settings__panel:target)) .settings__tab:first-child {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.settings__detail {
+  min-width: 0;
+  padding: 0.9rem 1.05rem 1.1rem;
+}
+
+.settings__panel {
+  display: none;
+}
+
+.settings__panel:target {
+  display: block;
+}
+
+/* Nothing chosen yet: the first section, which is what a settings window opens
+   on. Scoped to direct children so an unrelated `#rescan-job` in the URL
+   cannot leave the window showing nothing at all. */
+.settings__detail:not(:has(> .settings__panel:target)) > .settings__panel:first-child {
+  display: block;
+}
+
+.settings__title {
+  margin: 0 0 0.7rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* A row of buttons that are each their own one-field form. */
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* The fieldsets in here group radios and checkboxes; the user agent's border
+   round them drew a second box inside a window that is already a box. */
+.settings__panel fieldset {
+  border: 0;
+  margin: 0 0 0.7rem;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Inside a panel a form is a row of fields with its Save on the end, and the
+   label sits on its control rather than a line away from it. */
+.settings__panel .filters {
+  margin: 0 0 0.6rem;
+  gap: 0.5rem 0.8rem;
+}
+
+.settings__panel .field {
+  gap: 0.15rem;
+}
+
+.settings__panel .note {
+  margin: 0.5rem 0 0;
+}
+
+.settings__panel .note + .note {
+  margin-top: 0.4rem;
+}
+
+.settings__subtitle {
+  margin: 1rem 0 0.2rem;
+  font-size: var(--fs-body);
+}
+
+.behaviour-collection {
+  margin: 0.65rem 0;
+}
+
+.behaviour-editors {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.behaviour-editor {
+  overflow: clip;
+  background: var(--raise);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.behaviour-editor--new {
+  margin-top: 0.65rem;
+  background: var(--surface);
+  border-style: dashed;
+}
+
+.behaviour-editor__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.behaviour-editor__summary::-webkit-details-marker {
+  display: none;
+}
+
+.behaviour-editor__summary::after {
+  content: "›";
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  transition: transform 0.14s ease;
+}
+
+.behaviour-editor[open] > .behaviour-editor__summary {
+  border-bottom: 2px solid var(--line-soft);
+}
+
+.behaviour-editor[open] > .behaviour-editor__summary::after {
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
+.behaviour-editor__hint {
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+
+.behaviour-editor__body {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem;
+}
+
+.behaviour-editor__body textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.behaviour-editor__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.behaviour-editors__empty {
+  margin: 0;
+}
+
+.behaviour-pager {
+  margin-top: 0.45rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.behaviour-pager .pager__at {
+  margin-left: 0;
+}
+
+@media (max-width: 899px) {
+  .settings__body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: clip;
+  }
+
+  .settings__toc {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    border-right: 0;
+    border-bottom: 2px solid var(--line);
+  }
+
+  .settings__tab {
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--fs-small);
+  }
+
+  /* Every section at once, and the tabs become jump links. A phone loses a
+     fragment easily -- a back gesture, a reopened tab, a link somebody shared
+     -- and a settings page that answers with a blank pane because of it is
+     worse than one you scroll. */
+  .settings__panel {
+    display: block;
+  }
+
+  .settings__panel + .settings__panel {
+    margin-top: 1.3rem;
+    padding-top: 1.1rem;
+    border-top: 2px solid var(--line-soft);
+  }
+}
+

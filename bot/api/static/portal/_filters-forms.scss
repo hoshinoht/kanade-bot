@@ -1,0 +1,97 @@
+/* ── filter bar ─────────────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 1.1rem 0 0.4rem;
+}
+
+/* A filter bar that is a page's own control sits on the ground, so it gets a
+   panel; the ones nested inside a card already have one. */
+.shell > .filters {
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* Tall enough for body-size text plus its padding and border, which 2.2rem no
+   longer was once the scale came up -- a fixed height shorter than its content
+   clips the descenders rather than growing. */
+.filters input,
+.filters select,
+.filters .btn {
+  height: 2.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.field > span,
+.label {
+  display: block;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  max-width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.36rem 0.6rem;
+  min-width: 0;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+textarea {
+  font-family: var(--mono);
+  font-size: var(--fs-body-sm);
+}
+
+.seg {
+  display: inline-flex;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.seg a {
+  padding: 0.4rem 0.75rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-right: 2px solid var(--line);
+}
+
+.seg a:last-child {
+  border-right: 0;
+}
+
+.seg a[aria-current="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+

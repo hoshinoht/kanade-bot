@@ -1,0 +1,438 @@
+/* Boss scheduler portal — "Kanade's desktop".
+ *
+ * Read on a phone, at night, to answer one question: what is on, and has
+ * everyone answered? So the week keeps its own shape -- seven columns starting
+ * on the reset day, not a Monday-first calendar -- and the clock time is the
+ * loudest thing on every row.
+ *
+ * The frame around that is a small retro operating system: a saturated
+ * coloured ground, and every piece of content in a cream window with a
+ * chrome-coloured title bar and three dots on it. The dots are drawn from
+ * `.card__head` with one ::before and two box-shadows, so the markup a window
+ * needs is exactly the markup a card already had.
+ *
+ * Because the ground is saturated, *nothing legible sits directly on it*: the
+ * masthead, the page head, the filter bar, each day's label and the footnote
+ * are all panels. That is the rule to keep when adding to this file.
+ *
+ * Type: Solway for what the thing is called (brand, page and card titles),
+ * Zilla Slab for everything spoken, Sometype Mono for everything counted --
+ * times, ids, latencies, table numbers. Slab against slab against slab: the
+ * contrast is weight and width rather than serif against sans.
+ *
+ * Colour is five user-chosen colourways, each with a daytime and an after-hours
+ * face. Both choices are the browser's own: `templates/partials/theme_boot.html`
+ * stamps `data-colorway` and `data-theme` on <html> from localStorage before the
+ * first paint, and a page with neither attribute -- nothing stored, or no
+ * JavaScript -- wears marigold and lets `prefers-color-scheme` decide the hour.
+ * Which is why marigold lives on `:root` rather than in a block of its own.
+ *
+ * Light values live on `:root` and on the `[data-colorway]` blocks; the dark
+ * ones only override inside the one media query, so no component's colour is
+ * ever *defined* in there -- a token missing from a dark block falls back to
+ * something real rather than to nothing.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ── marigold, the default: gold ground, ink-blue accent ─────────────── */
+  --ground: #eec75f;
+  --surface: #fbf6e8;
+  --ink: #4a4a58;
+  --dim: #6e6b62;
+  --line: #e3d8b8;
+  --win: #5f6579;
+  --win-ink: #fbf6e8;
+  --accent: #4d5c9e;
+  --accent-ink: #f2f4fc;
+  --ok: #35906c;
+  --risk: #c4444a;
+
+  /* ── the two signal colours no colourway names ────────────────────────
+   *
+   * "Waiting on an answer" and "own time" are states of a run, not notes in
+   * the palette: amber and blue mean the same thing on every ground, the way
+   * the green of `ok` and the red of `risk` do. */
+  --warn: #8a6207;
+  --own: #3a6a95;
+
+  /* ── derived, once, from whichever colourway is on ────────────────────
+   *
+   * Declared here and nowhere else: custom properties are substituted on the
+   * element that has them, and every anchor above is also set on <html>, so
+   * these follow a colourway (and its dark face) without being restated. */
+  --raise: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  --line-soft: color-mix(in srgb, var(--line) 55%, var(--surface));
+  --faint: color-mix(in srgb, var(--dim) 85%, var(--surface));
+  --off: color-mix(in srgb, var(--dim) 70%, var(--line));
+  --accent-wash: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
+
+  /* Difficulty pills, keyed to the in-game boss list rather than to this
+     page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
+     black-and-ember Extreme. They are the one thing on the page a colourway
+     does not touch, because they are the game's, not ours. */
+  --pill-e-bg: #d7d9dd;
+  --pill-e-fg: #23252b;
+  --pill-n-bg: #2f93b3;
+  --pill-n-fg: #ffffff;
+  --pill-h-bg: #d9407f;
+  --pill-h-fg: #ffffff;
+  --pill-c-bg: #17161c;
+  --pill-c-fg: #f0a030;
+  --pill-x-bg: #17161c;
+  --pill-x-fg: #ff5a3c;
+
+  /* The boss monogram's tint, as numbers rather than colours: the hue is set
+     per boss on the element (`--mono-hue`), and only the saturation and
+     lightness change between the two faces. */
+  --mono-s: 42%;
+  --mono-l: 88%;
+  --mono-ink-s: 55%;
+  --mono-ink-l: 26%;
+  --mono-line-s: 35%;
+  --mono-line-l: 78%;
+
+  /* ── the entry-art veil: the numbers screenshots move ─────────────────────
+   *
+   * How much of a boss's entry artwork comes through behind its run card, and
+   * where in the picture each surface's crop window starts. Numbers rather than
+   * colours, like the monogram's above, and here rather than typed into the
+   * rules that use them, because tuning this is "try 0.3, try 0.45" against a
+   * screenshot. The mask shapes are the other knob and live with their rules,
+   * one gradient each.
+   *
+   * The crops are a dodge, not a taste: most of these splashes bake the boss's
+   * name plate into the top of the frame, so a window opening at the top of the
+   * picture shows a caption. Two of them because the two surfaces show windows
+   * of very different proportions -- the compact card's is the taller slice, so
+   * it has to start further down to clear the same band. */
+  --art-veil: 0.38;
+  --art-crop-sheet: 30%;
+  --art-crop-card: 60%;
+
+  --display: "Solway", "Palatino Linotype", Palatino, Georgia, serif;
+  --body: "Zilla Slab", Georgia, "Times New Roman", serif;
+  --mono: "Sometype Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo,
+    monospace;
+
+  /* ── the type scale ───────────────────────────────────────────────────────
+   *
+   * Seven steps. Every size on the page is one of them, or a display size
+   * named where it is used (a run's clock, a stat's count, h1, a monogram
+   * fitted to its box) -- there is no eighth value hiding in a component.
+   *
+   * The whole ladder sits a step above where the numbers suggest, because
+   * warm cream and a slab serif read smaller than they measure: the portal
+   * was called hard to read at sizes that were metrically fine. `rem` here is
+   * the *root* size (16px), not `body`'s, so these do not follow the body
+   * rule below -- which is why raising the scale means raising the ladder.
+   */
+  --fs-micro: 0.7rem; /* eyebrows, table headings, difficulty pills */
+  --fs-mini: 0.76rem; /* ids, levels, timestamps -- small counted things */
+  --fs-small: 0.83rem; /* chips, statuses, buttons, segmented controls */
+  --fs-body-sm: 0.9rem; /* notes, table bodies, secondary prose */
+  --fs-body: 1rem; /* body text, and the nav */
+  --fs-lg: 1.1rem; /* the name of a window: card, modal and dialog titles */
+  --fs-brand: 1.3rem; /* the masthead's own name */
+
+  --r: 12px;
+  --r-in: 10px; /* inside a 2px border, so a title bar's corners match */
+  --r-sm: 8px;
+  --shadow: 0 2px 0 color-mix(in srgb, var(--win) 20%, transparent),
+    0 14px 28px -22px rgb(0 0 0 / 45%);
+  --gutter: clamp(0.9rem, 3vw, 2rem);
+}
+
+[data-colorway="blossom"] {
+  --ground: #f2a8b8;
+  --surface: #faf2ec;
+  --ink: #57474c;
+  --dim: #75626a;
+  --line: #e8d5d5;
+  --win: #91707a;
+  --win-ink: #faf2ec;
+  --accent: #d5537a;
+  --accent-ink: #fff2f5;
+  --ok: #35906c;
+  --risk: #a83c30;
+}
+
+[data-colorway="periwinkle"] {
+  --ground: #9fb0e4;
+  --surface: #f5f2ea;
+  --ink: #474e5e;
+  --dim: #656b7a;
+  --line: #d8d8d4;
+  --win: #6d7692;
+  --win-ink: #f5f2ea;
+  --accent: #4a5fae;
+  --accent-ink: #f0f4fd;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="coral"] {
+  --ground: #e87d85;
+  --surface: #f7f0e1;
+  --ink: #57504a;
+  --dim: #6b6459;
+  --line: #ddcfb8;
+  --win: #8d857c;
+  --win-ink: #f7f0e1;
+  --accent: #d95965;
+  --accent-ink: #fff6ee;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+[data-colorway="twilight"] {
+  --ground: #8b7ad2;
+  --surface: #f5f1ec;
+  --ink: #4b4658;
+  --dim: #696274;
+  --line: #ded6db;
+  --win: #5f5474;
+  --win-ink: #f5f1ec;
+  --accent: #6446ab;
+  --accent-ink: #f4effc;
+  --ok: #35906c;
+  --risk: #c04a55;
+}
+
+/* ── after hours ────────────────────────────────────────────────────────────
+ *
+ * Three states, not two: follow the device (the default), or say light, or say
+ * dark. The device is right nearly always, so it stays the default and the
+ * override is a preference like the colourway -- stored in this browser, read
+ * by `templates/partials/theme_boot.html` into `data-theme` before first paint.
+ *
+ * That takes two rules for one night face, and they are written out twice
+ * below. The alternative is resolving the media query in JavaScript and
+ * stamping `data-theme` always, which would mean a browser with the script off
+ * had no way to be dark at all -- exactly the degradation this portal refuses
+ * everywhere else. So: this block, guarded with `:not([data-theme="light"])`
+ * so an explicit light beats a dark device, and its twin below for an explicit
+ * dark on a light device.
+ *
+ *      >>> THE TWO DARK BLOCKS ARE COPIES. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Specificity, which is what makes the three states resolve in the right
+ * order: light `:root` and `[data-colorway]` are (0,1,0); a dark default,
+ * either spelling, is (0,2,0); a dark colourway, either spelling, is (0,3,0).
+ * The two dark spellings tie with each other and carry the same values, so the
+ * tie never shows.
+ *
+ * Only overrides live in here. `:root` carries marigold's night face and the
+ * two shared signal colours; each colourway then restates its own eleven, so
+ * every one of them is fully described in both faces. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #232735;
+    --surface: #303648;
+    --ink: #ece4cd;
+    --dim: #b0ab97;
+    --line: #454b60;
+    --win: #4f5871;
+    --win-ink: #ece4cd;
+    /* Gold takes over at night: the ground it had to stand out from is gone. */
+    --accent: #e9c25e;
+    --accent-ink: #2a2410;
+    --ok: #7cc79f;
+    --risk: #ef8b8b;
+
+    --warn: #e2a44f;
+    --own: #8ab8e6;
+
+    --pill-e-bg: #3a3d45;
+    --pill-e-fg: #e6e8ee;
+    --pill-n-bg: #3aa7c9;
+    --pill-n-fg: #06222b;
+    --pill-h-bg: #e8579a;
+    --pill-h-fg: #2b0716;
+    --pill-c-bg: #0e0d12;
+    --pill-c-fg: #f5b452;
+    --pill-x-bg: #0e0d12;
+    --pill-x-fg: #ff7050;
+
+    --mono-s: 32%;
+    --mono-l: 24%;
+    --mono-ink-s: 65%;
+    --mono-ink-l: 78%;
+    --mono-line-s: 28%;
+    --mono-line-l: 34%;
+
+    --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+  }
+
+  :root:not([data-theme="light"])[data-colorway="blossom"] {
+    --ground: #322629;
+    --surface: #423236;
+    --ink: #f0e3e2;
+    --dim: #b09aa0;
+    --line: #5a464c;
+    --win: #7d5f66;
+    --win-ink: #f0e3e2;
+    --accent: #f29db4;
+    --accent-ink: #401f2a;
+    --ok: #8cccab;
+    --risk: #ee8f85;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="periwinkle"] {
+    --ground: #262c3a;
+    --surface: #343d4e;
+    --ink: #e7ebf2;
+    --dim: #9aa3b5;
+    --line: #465063;
+    --win: #5d6981;
+    --win-ink: #e7ebf2;
+    --accent: #a8bcf0;
+    --accent-ink: #1c2438;
+    --ok: #83c8a8;
+    --risk: #ef8f93;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="coral"] {
+    --ground: #322a2e;
+    --surface: #453d39;
+    --ink: #ece1cf;
+    --dim: #ab9f90;
+    --line: #5c5249;
+    --win: #6e655c;
+    --win-ink: #ece1cf;
+    --accent: #ef939b;
+    --accent-ink: #402226;
+    --ok: #8cccab;
+    --risk: #e2828a;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="twilight"] {
+    --ground: #2a2436;
+    --surface: #383045;
+    --ink: #eae4f0;
+    --dim: #a49bb3;
+    --line: #4c4260;
+    --win: #5b4f73;
+    --win-ink: #eae4f0;
+    --accent: #b9a4ec;
+    --accent-ink: #241a3a;
+    --ok: #86c9a8;
+    --risk: #ef8b95;
+  }
+}
+
+/* ── the same night, asked for rather than inherited ─────────────────────────
+ *
+ *      >>> COPIES OF THE BLOCK ABOVE. CHANGE ONE, CHANGE THE OTHER. <<<
+ *
+ * Everything below this line is the same eleven-plus tokens as the media query
+ * carries, under the selector that means "this reader said dark" rather than
+ * "this device says dark". Nothing new is introduced here; if a token needs a
+ * different value at night, it needs it in both places. */
+
+/* Said light: nothing to override -- the light values are already on `:root`
+   and the media query above has excluded itself. Only the browser's own
+   furniture still has to be told. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  /* Scrollbars, form controls and the canvas behind the page, which otherwise
+     stay light on a light device and give the window a white halo. */
+  color-scheme: dark;
+
+  --ground: #232735;
+  --surface: #303648;
+  --ink: #ece4cd;
+  --dim: #b0ab97;
+  --line: #454b60;
+  --win: #4f5871;
+  --win-ink: #ece4cd;
+  --accent: #e9c25e;
+  --accent-ink: #2a2410;
+  --ok: #7cc79f;
+  --risk: #ef8b8b;
+
+  --warn: #e2a44f;
+  --own: #8ab8e6;
+
+  --pill-e-bg: #3a3d45;
+  --pill-e-fg: #e6e8ee;
+  --pill-n-bg: #3aa7c9;
+  --pill-n-fg: #06222b;
+  --pill-h-bg: #e8579a;
+  --pill-h-fg: #2b0716;
+  --pill-c-bg: #0e0d12;
+  --pill-c-fg: #f5b452;
+  --pill-x-bg: #0e0d12;
+  --pill-x-fg: #ff7050;
+
+  --mono-s: 32%;
+  --mono-l: 24%;
+  --mono-ink-s: 65%;
+  --mono-ink-l: 78%;
+  --mono-line-s: 28%;
+  --mono-line-l: 34%;
+
+  --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+}
+
+:root[data-theme="dark"][data-colorway="blossom"] {
+  --ground: #322629;
+  --surface: #423236;
+  --ink: #f0e3e2;
+  --dim: #b09aa0;
+  --line: #5a464c;
+  --win: #7d5f66;
+  --win-ink: #f0e3e2;
+  --accent: #f29db4;
+  --accent-ink: #401f2a;
+  --ok: #8cccab;
+  --risk: #ee8f85;
+}
+
+:root[data-theme="dark"][data-colorway="periwinkle"] {
+  --ground: #262c3a;
+  --surface: #343d4e;
+  --ink: #e7ebf2;
+  --dim: #9aa3b5;
+  --line: #465063;
+  --win: #5d6981;
+  --win-ink: #e7ebf2;
+  --accent: #a8bcf0;
+  --accent-ink: #1c2438;
+  --ok: #83c8a8;
+  --risk: #ef8f93;
+}
+
+:root[data-theme="dark"][data-colorway="coral"] {
+  --ground: #322a2e;
+  --surface: #453d39;
+  --ink: #ece1cf;
+  --dim: #ab9f90;
+  --line: #5c5249;
+  --win: #6e655c;
+  --win-ink: #ece1cf;
+  --accent: #ef939b;
+  --accent-ink: #402226;
+  --ok: #8cccab;
+  --risk: #e2828a;
+}
+
+:root[data-theme="dark"][data-colorway="twilight"] {
+  --ground: #2a2436;
+  --surface: #383045;
+  --ink: #eae4f0;
+  --dim: #a49bb3;
+  --line: #4c4260;
+  --win: #5b4f73;
+  --win-ink: #eae4f0;
+  --accent: #b9a4ec;
+  --accent-ink: #241a3a;
+  --ok: #86c9a8;
+  --risk: #ef8b95;
+}
+

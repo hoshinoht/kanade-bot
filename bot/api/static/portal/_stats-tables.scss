@@ -1,0 +1,236 @@
+/* ── stat strip ─────────────────────────────────────────────────────────────
+ *
+ * One tile per model on the Chat tab, and per measurement on an interaction.
+ * The count is the loud thing, as the clock time is on a run row; everything
+ * that qualifies it is a label-and-figure pair underneath, in tabular mono so
+ * two tiles side by side can be read as a column. */
+
+/* ── totals, as a strip rather than a wall ──────────────────────────────────
+ *
+ * The Chat page's per-model figures used to be one tile each, stacked under a
+ * hero card: two cards above the pane, and at 1000x690 the interactions had
+ * two rows left. The same figures read fine as label-and-figure pairs on one
+ * line -- a row per model, so several models still each get their own -- and
+ * they live inside the head band rather than in a card of their own. */
+
+.statline {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+  padding-top: 0.45rem;
+  border-top: 2px solid var(--line-soft);
+  min-width: 0;
+}
+
+.statline__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 1rem;
+  min-width: 0;
+}
+
+.statline__model {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.statline__pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+.statline__k {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 0.75rem;
+}
+
+/* A tile row after something else in a panel: `.card + .card` only sees cards,
+   and these two would otherwise touch. */
+.tabs__panel .stats {
+  margin-top: 0.75rem;
+}
+
+.stat {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow);
+}
+
+.stat__name {
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* The model's own name is content, not a label: it is case-sensitive and it is
+   what somebody would paste into `.env`, so it keeps its own casing. */
+.stat__name--id {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--dim);
+}
+
+.stat__big {
+  margin: 0.15rem 0 0.6rem;
+  font-family: var(--mono);
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.stat__unit {
+  display: block;
+  font-family: var(--body);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+
+.stat__rows {
+  margin: 0;
+  display: grid;
+  gap: 0.2rem;
+  font-size: var(--fs-body-sm);
+}
+
+.stat__rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-top: 2px solid var(--line-soft);
+  padding-top: 0.2rem;
+}
+
+.stat__rows dt {
+  color: var(--dim);
+}
+
+.stat__rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* Inside a window the table is already framed; a second border around it would
+   read as two panels stacked. */
+.card .table-wrap {
+  box-shadow: none;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-body-sm);
+}
+
+th {
+  text-align: left;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--raise);
+}
+
+.empty {
+  border: 2px dashed var(--line);
+  border-radius: var(--r);
+  padding: 2rem 1.2rem;
+  text-align: center;
+  color: var(--dim);
+  background: var(--surface);
+  margin:0 0 0.6rem;
+}
+
+.empty strong {
+  display: block;
+  font-family: var(--display);
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  margin-bottom: 0.3rem;
+}
+
+.flash {
+  border-radius: var(--r-sm);
+  padding: 0.55rem 0.8rem;
+  font-size: var(--fs-body-sm);
+  margin: 0.6rem 0;
+  border: 2px solid;
+}
+
+/* Opaque, not a tint of whatever is behind: a flash lands on the ground. */
+.flash--ok {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+}
+
+.flash--error {
+  color: var(--risk);
+  border-color: color-mix(in srgb, var(--risk) 45%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  background: var(--raise);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.75rem 0.85rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+

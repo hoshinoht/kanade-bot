@@ -1,0 +1,115 @@
+/* ── the week rail: the shape of a boss week ────────────────────────────── */
+
+.rail {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.rail__day {
+  position: relative;
+  display: block;
+  padding: 0.6rem 0.35rem 0.55rem;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  border-right: 1px solid var(--line-soft);
+  min-height: 5.1rem;
+}
+
+.rail__day:last-child {
+  border-right: 0;
+}
+
+.rail__day:hover {
+  background: var(--raise);
+}
+
+.rail__dow {
+  display: block;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.rail__num {
+  display: block;
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.rail__day--empty .rail__num {
+  color: var(--faint);
+}
+
+.rail__day--today .rail__num {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rail__day--today::after {
+  content: "";
+  position: absolute;
+  inset: auto 22% 0;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+
+/* The reset day is where the boss week actually begins -- the one piece of
+   domain knowledge a generic calendar would flatten away. */
+.rail__reset {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.35rem;
+  font-family: var(--mono);
+  /* Below the ladder on purpose: a corner marker, not a label anybody reads. */
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+.rail__pips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 0.4rem;
+  min-height: 8px;
+}
+
+.pip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--off);
+}
+
+.pip-dot--planned {
+  background: var(--warn);
+}
+.pip-dot--confirmed {
+  background: var(--ok);
+}
+.pip-dot--at_risk {
+  background: var(--risk);
+}
+.pip-dot--otot {
+  background: var(--own);
+}
+.pip-dot--cancelled,
+.pip-dot--done {
+  background: var(--faint);
+  opacity: 0.5;
+}
+

@@ -97,6 +97,12 @@ async def test_get_schedule_lists_the_week(chat_bot, chat_seeded):
     assert "Hard Star + Hard FA" in answer
     assert "Extreme Kalos" in answer
     assert short_id(chat_seeded["star"]) in answer
+    star = chat_bot.repo.get_run(chat_seeded["star"])
+    line = line_for(answer, chat_seeded["star"])
+    assert f"`[{short_id(chat_seeded['star'])}]`" in line
+    assert f"*{star['datetime'].astimezone(chat_bot.tz):%a %d %b %H:%M}*" in line
+    assert "**Hard Star + Hard FA**" in line
+    assert "`planned`" in line and "`0/2 yes`" in line
 
 
 async def test_get_schedule_says_so_when_a_week_is_empty(chat_bot, chat_seeded):
@@ -153,12 +159,109 @@ async def test_get_schedule_stays_quiet_while_one_run_is_still_to_come(
     assert "nothing upcoming" not in answer
 
 
+# participant="me" -- the bug: "what's for me" returned the entire schedule
+
+
+async def test_get_schedule_for_me_returns_only_the_askers_runs(chat_bot, chat_seeded):
+    """User 1002 is on both runs; participant='me' must return both and only those."""
+    answer = await tools.dispatch(
+        context(chat_bot, author_id=1002), "get_schedule", {"week": "this", "participant": "me"}
+    )
+    assert short_id(chat_seeded["star"]) in answer
+    assert short_id(chat_seeded["kalos"]) in answer
+    assert "Your runs" in answer
+
+
+async def test_get_schedule_for_me_excludes_runs_the_asker_is_not_on(chat_bot, chat_seeded):
+    """User 1001 is only on Star; participant='me' must not return Kalos."""
+    answer = await tools.dispatch(
+        context(chat_bot, author_id=1001), "get_schedule", {"week": "this", "participant": "me"}
+    )
+    assert short_id(chat_seeded["star"]) in answer
+    assert short_id(chat_seeded["kalos"]) not in answer
+
+
+async def test_get_schedule_for_me_says_so_when_not_on_any_run(chat_bot, chat_seeded):
+    answer = await tools.dispatch(
+        context(chat_bot, author_id=9999), "get_schedule", {"week": "this", "participant": "me"}
+    )
+    assert "not on any runs" in answer
+    assert short_id(chat_seeded["star"]) not in answer
+
+
+async def test_get_schedule_accepts_askers_name_when_model_ignores_enum(chat_bot, chat_seeded):
+    answer = await tools.dispatch(
+        context(chat_bot, author_id=1001),
+        "get_schedule",
+        {"week": "this", "participant": "Alvin"},
+    )
+    assert short_id(chat_seeded["star"]) in answer
+    assert short_id(chat_seeded["kalos"]) not in answer
+    assert "Your runs" in answer
+
+
+async def test_get_schedule_can_filter_to_a_named_member(chat_bot, chat_seeded):
+    answer = await tools.dispatch(
+        context(chat_bot, author_id=1001),
+        "get_schedule",
+        {"week": "this", "participant": "Priya"},
+    )
+    assert short_id(chat_seeded["star"]) not in answer
+    assert short_id(chat_seeded["kalos"]) in answer
+    assert "Priya's runs" in answer
+
+
+async def test_get_schedule_refuses_an_unknown_participant_instead_of_listing_all(
+    chat_bot, chat_seeded
+):
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "participant": "nobody-here"},
+    )
+    assert not outcome.ok
+    assert outcome.error == tools.REFUSED
+    assert "Nobody on the roster matches" in outcome.output
+    assert short_id(chat_seeded["star"]) not in outcome.output
+    assert short_id(chat_seeded["kalos"]) not in outcome.output
+
+
+@pytest.mark.parametrize("participant", [None, "", "   ", False, 0, [], {}])
+async def test_get_schedule_refuses_an_invalid_supplied_participant(
+    chat_bot, chat_seeded, participant
+):
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "participant": participant},
+    )
+    assert not outcome.ok
+    assert outcome.error == tools.REFUSED
+    assert "participant must be 'me' or one roster name" in outcome.output
+    assert short_id(chat_seeded["star"]) not in outcome.output
+    assert short_id(chat_seeded["kalos"]) not in outcome.output
+
+
+async def test_get_schedule_refuses_an_ambiguous_participant(chat_bot, chat_seeded):
+    chat_bot.repo.upsert_member(1004, "kanonn", "kanonn", True)
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "participant": "kano"}
+    )
+    assert "Ask them which participant they mean" in answer
+    assert "kanon" in answer and "kanonn" in answer
+    assert short_id(chat_seeded["star"]) not in answer
+    assert short_id(chat_seeded["kalos"]) not in answer
+
+
 async def test_get_run_by_short_id(chat_bot, chat_seeded):
     answer = await tools.dispatch(
         context(chat_bot), "get_run", {"query": short_id(chat_seeded["star"])}
     )
     assert "Hard Star + Hard FA" in answer
     assert "kanon" in answer
+    assert f"`[{short_id(chat_seeded['star'])}]`" in answer
+    assert "**Hard Star + Hard FA**" in answer
+    assert "`planned`" in answer
 
 
 async def test_get_run_by_boss_name(chat_bot, chat_seeded):
@@ -180,8 +283,9 @@ async def test_list_bosses_names_the_table(chat_bot):
     """Both vocabularies: the token to pass back, and the words to say."""
     answer = await tools.dispatch(context(chat_bot), "list_bosses", {})
     assert "Kalos" in answer
-    assert "XKalos" in answer
+    assert "`XKalos`" in answer
     assert "Extreme Kalos" in answer
+    assert "**Bosses this guild runs**\n\n" in answer
 
 
 async def test_get_pending_is_empty_until_something_is_proposed(chat_bot, chat_seeded):
