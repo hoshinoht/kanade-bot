@@ -1336,9 +1336,7 @@ async def style_autocomplete(
     options = ["default", *_selectable_styles(_bot(interaction))]
     term = current.strip().casefold()
     return [
-        app_commands.Choice(name=name, value=name)
-        for name in options
-        if term in name.casefold()
+        app_commands.Choice(name=name, value=name) for name in options if term in name.casefold()
     ][:25]
 
 

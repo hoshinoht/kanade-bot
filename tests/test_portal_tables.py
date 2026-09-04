@@ -152,9 +152,7 @@ def test_members_include_chat_staff_saved_and_override_access(fake_bot, seeded):
     assert {"Alvin tan", "Priya"} <= names
 
 
-def test_members_show_saved_and_next_reply_styles(
-    auth, fake_bot, seeded, tmp_path, monkeypatch
-):
+def test_members_show_saved_and_next_reply_styles(auth, fake_bot, seeded, tmp_path, monkeypatch):
     monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
     behaviour_plugins.write("public", "PUBLIC")
     behaviour_plugins.write("override", "OVERRIDE")

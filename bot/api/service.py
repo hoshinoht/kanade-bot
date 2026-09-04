@@ -2523,11 +2523,7 @@ async def post_guide(
     files: list[discord.File] = []
     if embed_data:
         for data in embed_data:
-            c = (
-                discord.Colour(data["colour"])
-                if data.get("colour")
-                else discord.Colour.default()
-            )
+            c = discord.Colour(data["colour"]) if data.get("colour") else discord.Colour.default()
             embed = discord.Embed(
                 title=data.get("title", ""),
                 description=data.get("description", ""),

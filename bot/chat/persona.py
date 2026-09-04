@@ -499,9 +499,7 @@ def component_system_prompt(
             components.identity.strip(),
             components.default_behaviour.strip(),
             components.active_profile.strip(),
-            effective_examples_block(
-                components.default_behaviour, components.active_profile
-            ),
+            effective_examples_block(components.default_behaviour, components.active_profile),
             assistant_scope,
             scheduler_policy,
             grounding_policy,

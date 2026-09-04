@@ -51,9 +51,7 @@ def run_style(bot, profile=None):
 def test_style_saves_only_a_public_choice(styles):
     interaction = run_style(styles, "calm")
     assert styles.repo.get_reply_style(901) == "calm"
-    assert interaction.response.sent == [
-        ("Reply style preference saved as **calm**.", True)
-    ]
+    assert interaction.response.sent == [("Reply style preference saved as **calm**.", True)]
     audit = styles.repo.list_audit()[0]
     assert "saved reply style `calm`" in audit["detail"]
 
