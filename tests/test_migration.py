@@ -110,9 +110,12 @@ def test_unversioned_existing_database_is_not_mislabeled_v10(tmp_path):
     conn = sqlite3.connect(path)
     columns = [row[1] for row in conn.execute("PRAGMA table_info(members)")]
     assert columns == ["user_id"]
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+        ).fetchone()[0]
+        == 0
+    )
     conn.close()
 
 

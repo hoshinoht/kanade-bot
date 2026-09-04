@@ -1013,9 +1013,7 @@ def test_public_profile_catalog_is_explicit_and_ordered(auth, tmp_path, monkeypa
     behaviour_plugins.write("brief", "BRIEF")
     behaviour_plugins.write("playful", "PLAYFUL")
 
-    body = auth.put(
-        "/api/config", json={"chat_selectable_plugins": ["playful", "brief"]}
-    ).json()
+    body = auth.put("/api/config", json={"chat_selectable_plugins": ["playful", "brief"]}).json()
     assert body["chat_selectable_plugins"] == ["playful", "brief"]
 
 

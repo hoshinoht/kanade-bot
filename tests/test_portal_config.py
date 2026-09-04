@@ -368,9 +368,7 @@ def test_publication_and_role_priority_are_portal_managed(auth, fake_bot, seeded
 
     auth.post("/config/behaviour-plugins/first/selectable", data={"selectable": "1"})
     assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first"]
-    blocked = auth.post(
-        "/config/behaviour-plugins/first/delete", follow_redirects=False
-    )
+    blocked = auth.post("/config/behaviour-plugins/first/delete", follow_redirects=False)
     assert "kind=error" in blocked.headers["location"]
 
 

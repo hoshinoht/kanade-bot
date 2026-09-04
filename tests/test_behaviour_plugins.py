@@ -125,9 +125,7 @@ def test_missing_profile_is_skipped_and_diagnosed(tmp_path):
         directory=tmp_path,
     )
     assert resolution.effective == "valid"
-    assert [issue.message for issue in issues] == [
-        "role 100: profile `missing` is unreadable"
-    ]
+    assert [issue.message for issue in issues] == ["role 100: profile `missing` is unreadable"]
 
 
 def test_reserved_profile_names_are_rejected(tmp_path):

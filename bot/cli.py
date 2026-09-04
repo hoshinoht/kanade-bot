@@ -716,9 +716,7 @@ def ping(
 def post_message(
     channel: str = typer.Option(..., "--channel", "-c", help="Discord channel id."),
     message: str = typer.Argument(..., help="Message text. Discord markdown supported."),
-    file: Path | None = typer.Option(
-        None, "--file", "-f", help="Read message from a file."
-    ),
+    file: Path | None = typer.Option(None, "--file", "-f", help="Read message from a file."),
     stdin: bool = typer.Option(False, "--stdin", help="Read message from stdin."),
 ) -> None:
     """Post a message to a Discord channel.
@@ -765,30 +763,25 @@ def guide(
     # Load boss entries if the bosses marker is present.
     boss_entries = []
     if boss_path.exists():
-        boss_entries = (
-            yaml.safe_load(boss_path.read_text(encoding="utf-8")) or {}
-        ).get("bosses", [])
+        boss_entries = (yaml.safe_load(boss_path.read_text(encoding="utf-8")) or {}).get(
+            "bosses", []
+        )
 
     # Build boss embeds with portrait thumbnails and per-boss colours.
     boss_embeds: list[dict] = []
     for b in boss_entries:
         tokens = " \u00b7 ".join(b["tokens"])
         portrait = portraits / f"{b['portrait']}.png"
-        boss_embeds.append({
-            "title": f"**{b['name']}** \u00b7 Lv{b['level']}",
-            "description": (
-                f"{b['named']}\n"
-                f"`{tokens}`\n"
-                f"also answers to: {b['aliases']}"
-            ),
-            "colour": b.get("colour", 0x98A1B3),
-            "thumbnail_path": str(portrait) if portrait.exists() else None,
-        })
+        boss_embeds.append(
+            {
+                "title": f"**{b['name']}** \u00b7 Lv{b['level']}",
+                "description": (f"{b['named']}\n`{tokens}`\nalso answers to: {b['aliases']}"),
+                "colour": b.get("colour", 0x98A1B3),
+                "thumbnail_path": str(portrait) if portrait.exists() else None,
+            }
+        )
 
-    footer_text = (
-        "*Powered by kanade \u00b7 "
-        "<https://github.com/hoshinoht/kanade-bot>*"
-    )
+    footer_text = "*Powered by kanade \u00b7 <https://github.com/hoshinoht/kanade-bot>*"
 
     posted = 0
     for content in messages:
@@ -799,8 +792,7 @@ def guide(
                 # Discord caps embeds at 10 per message.
                 chunk_size = 10
                 chunks = [
-                    boss_embeds[i : i + chunk_size]
-                    for i in range(0, len(boss_embeds), chunk_size)
+                    boss_embeds[i : i + chunk_size] for i in range(0, len(boss_embeds), chunk_size)
                 ]
                 for ci, chunk in enumerate(chunks):
                     api().post(
@@ -825,9 +817,7 @@ def guide(
                 {"channel_id": channel, "content": footer_text},
             )
             posted += 1
-            console.print(
-                f"[green]\u2713[/green] Message {posted} (footer)"
-            )
+            console.print(f"[green]\u2713[/green] Message {posted} (footer)")
         else:
             text = content.strip()
             if not text:
@@ -839,8 +829,7 @@ def guide(
             )
             posted += 1
             console.print(
-                f"[green]\u2713[/green] Message {posted}: "
-                f"spacer"
+                f"[green]\u2713[/green] Message {posted}: spacer"
                 if text == "\u200b"
                 else f"{len(text)} chars"
             )
