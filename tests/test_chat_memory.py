@@ -205,8 +205,9 @@ async def test_only_the_last_card_is_kept(chat_bot, chat_seeded):
     await agent.offer(message(chat_bot, "@bot who's on it?"))
 
     system = system_of(agent)
-    assert "Hard Limbo" in system
-    assert "Hard Bellona" not in system
+    focus = system[system.index(persona.FOCUS_PREFIX) :].split("\n\n", 1)[0]
+    assert "Hard Limbo" in focus
+    assert "Hard Bellona" not in focus
 
 
 async def test_the_focus_line_expires_on_the_history_ttl(chat_bot, chat_seeded):

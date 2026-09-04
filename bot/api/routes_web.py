@@ -1,14 +1,4 @@
-"""The portal: server-rendered pages plus HTMX partials.
-
-Every action is a real ``<form>`` with a real ``action``, and htmx only upgrades
-it to an in-place swap.  With the CDN blocked (or JavaScript off) the same POST
-still lands, the handler still runs, and the browser gets a redirect back to the
-page it came from -- so the portal degrades instead of breaking.
-
-Handlers here are thin: they turn form fields into the arguments
-:mod:`bot.api.service` already takes, and choose between "return the fragment"
-and "redirect with a message" based on the ``HX-Request`` header.
-"""
+"""Server-rendered portal pages and HTMX partials."""
 
 from __future__ import annotations
 
@@ -83,13 +73,7 @@ def fragment(request: Request, name: str, **context: Any) -> HTMLResponse:
 def table_page(
     request: Request, name: str, active: str, rows_partial: str, **context: Any
 ) -> Response:
-    """A table page, or just its rows when htmx asked for them.
-
-    One URL, two answers, the way every action on the portal already works: a
-    plain GET renders the page, an ``HX-Request`` gets the region the search box
-    and the pager target. There is no second route to keep in step, and no
-    second template -- the page includes the same partial this returns.
-    """
+    """Render a table page or its HTMX rows fragment."""
     if request.headers.get("HX-Request"):
         return fragment(request, rows_partial, **context)
     return render(request, name, active, **context)
@@ -102,27 +86,14 @@ def back_to(
     kind: str = "ok",
     fragment: str = "",
 ) -> Response:
-    """Where a plain form post lands, with what it has to say.
-
-    ``fragment`` is how the Config window puts you back on the section you were
-    editing: it is one page with nine panels chosen by ``:target``, so a save
-    made under Chatbot has to redirect to ``/config?msg=…#chatbot`` -- query
-    first, fragment last, which is the one order a URL allows.
-    """
+    """Redirect after a plain form post."""
     query = urlencode({"msg": message, "kind": kind}) if message else ""
     anchor = f"#{fragment}" if fragment else ""
     return RedirectResponse(f"{path}{'?' if query else ''}{query}{anchor}", status_code=303)
 
 
 def safe_next(candidate: str | None, fallback: str = "/") -> str:
-    r"""A ``next=`` value that can only point back into this portal.
-
-    ``/login?next=https://evil.example`` would otherwise turn the sign-in page
-    into an open redirect: a link that looks like the portal and lands
-    somewhere else, with the token already typed. Only a path is allowed --
-    one leading slash, no scheme, no protocol-relative ``//host``, no backslash
-    (browsers normalise ``/\evil`` to ``//evil``), no control characters.
-    """
+    r"""Return a portal-local ``next`` path to prevent open redirects."""
     value = (candidate or "").strip()
     if not value.startswith("/") or value.startswith(("//", "/\\")):
         return fallback
@@ -154,12 +125,7 @@ def _job_or_none(bot, job_id: str) -> dict | None:
 
 
 def watched_channels(bot) -> list[dict]:
-    """Channels a run may live in, named where the bot can see them.
-
-    Built from the live guild when connected, and from the configured ids plus
-    the channels already in use otherwise -- so the page still offers sensible
-    options while the gateway is down.
-    """
+    """Return watched channels from live and configured state."""
     found: dict[str, str] = {}
     guild = bot.get_guild(bot.settings.guild_id)
     for channel in getattr(guild, "text_channels", []) or []:
@@ -215,8 +181,7 @@ async def login(request: Request, token: str = Form(), next: str = Form(default=
         issue_session(bot.settings.admin_token, Identity(who="admin token", via="cookie")),
         max_age=int(SESSION_MAX_AGE.total_seconds()),
         httponly=True,
-        # Strict is what stops another site's page POSTing to 127.0.0.1:8080
-        # with this cookie attached; there is no CSRF token beyond it.
+        # SameSite is this session cookie's CSRF boundary.
         samesite="strict",
         path="/",
     )
@@ -241,8 +206,7 @@ def _identity_image(bot, name: str) -> Response:
         raise NotFound(f"no {name.removesuffix('.png')} has been cached yet")
     return FileResponse(
         path,
-        # The bytes are whatever Discord served, under a fixed name; the format
-        # is read back off them rather than guessed from the suffix.
+        # Detect the cached bytes' actual media type.
         media_type=identity.media_type(path),
         headers={"Cache-Control": "public, max-age=86400, must-revalidate"},
     )
@@ -250,15 +214,7 @@ def _identity_image(bot, name: str) -> Response:
 
 @router.get("/identity/avatar")
 async def identity_avatar(request: Request, bot: Bot) -> Response:
-    """The bot's own avatar, from the disk cache.
-
-    Deliberately unauthenticated, exactly like ``/static/portraits/<boss>`` and
-    the stylesheet: it is the sign-in page's own artwork, so gating it would
-    mean the one page nobody is signed in on could never show it -- and it is a
-    picture the browser has to be allowed to cache. Two static images and no
-    state; ``/healthz`` is still the only route that says anything about the
-    guild without credentials.
-    """
+    """Return the public, cached bot avatar."""
     return _identity_image(bot, identity.AVATAR_NAME)
 
 
@@ -446,30 +402,12 @@ async def limits_fragment(request: Request, bot: Bot, caller: Caller) -> HTMLRes
     return fragment(request, "partials/limits.html", limits=service.limits(bot))
 
 
-#: How often a stream that has said nothing sends a comment line. Long enough
-#: to be nearly free, short enough to keep an idle connection open through
-#: whatever sits in front of the bot -- `tailscale serve` will drop a stream
-#: that goes quiet for minutes, and so will most reverse proxies.
+#: Keep idle event streams open through reverse proxies.
 HEARTBEAT_S = 20.0
 
 
 async def limits_event_stream() -> AsyncIterator[str]:
-    """The Limits page's event stream, as the text it sends down the wire.
-
-    The event carries no detail (see :mod:`bot.infrastructure.events`) -- the page answers it by
-    refetching ``/limits/live``, so all it has to say is *that* something moved.
-    Several nudges arriving together are collapsed into one, for the same
-    reason: the fragment is the whole state either way, so two refetches would
-    be one wasted.
-
-    The subscription is a context manager, so it is dropped on a clean end and
-    on the cancellation a disconnected browser produces alike. Without that, a
-    laptop closing its lid would leave a queue nobody ever reads again.
-
-    A module-level generator rather than a closure inside the handler so it can
-    be driven directly in a test: an endless stream over a test client is a
-    hang waiting to happen, and the interesting behaviour is all in here.
-    """
+    """Stream change notices; clients refetch the complete Limits fragment."""
     with events.subscribe(events.LIMITS) as queue:
         # Opens the stream immediately, so the browser's `EventSource` reaches
         # `onopen` rather than sitting on a connection that has sent no bytes.
@@ -1071,6 +1009,30 @@ async def web_delete_behaviour_plugin(
     except ApiError as exc:
         return back_to(request, "/config", exc.message, "error", fragment="chatbot")
     return back_to(request, "/config", "Behaviour plugin deleted.", fragment="chatbot")
+
+
+@router.post("/config/behaviour-plugins/{name}/selectable")
+async def web_set_behaviour_plugin_selectable(
+    request: Request, bot: Bot, caller: Caller, name: str
+) -> Response:
+    form = await request.form()
+    try:
+        service.set_behaviour_plugin_selectable(bot, name, str(form.get("selectable") or "") == "1")
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Public style catalog updated.", fragment="chatbot")
+
+
+@router.post("/config/role-plugins/{role_id}/move")
+async def web_move_role_plugin(
+    request: Request, bot: Bot, caller: Caller, role_id: str
+) -> Response:
+    form = await request.form()
+    try:
+        service.move_role_plugin(bot, role_id, str(form.get("direction") or ""))
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    return back_to(request, "/config", "Role priority updated.", fragment="chatbot")
 
 
 @router.post("/digest")

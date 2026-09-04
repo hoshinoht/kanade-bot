@@ -43,6 +43,7 @@ def make_settings(**overrides: Any) -> Settings:
         "db_path": ":memory:",
         "admin_token": ADMIN_TOKEN,
         "post_channel_id": WATCHED_CHANNEL,
+        "persona_path": "personas/identities/example.md",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -144,6 +145,7 @@ class FakeGuild:
         self.text_channels = channels
         self.me = FakeMe()
         self.roles: dict[int, FakeGuildRole] = {}
+        self.members: list[FakeGuildMember] = []
         for channel in channels:
             channel.guild = self
 
@@ -501,6 +503,7 @@ def add_pilot(
         bot.settings.admin_role_id = admin_role_id
         member.roles.append(FakeGuildRole(admin_role_id))
     role.members.append(member)
+    bot.guild.members.append(member)
     return member
 
 

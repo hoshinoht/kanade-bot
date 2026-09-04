@@ -14,6 +14,7 @@ import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
 
+import pytest
 from discord import app_commands
 
 from bot.agent.rsvp import EMOJI_YES
@@ -22,7 +23,7 @@ from bot.api.app import resolve_actor
 from bot.api.auth import HEADER_LOGIN
 from bot.infrastructure import audit
 from bot.infrastructure.audit import HEADER_BOSSCTL
-from bot.infrastructure.db import AUDIT_KEPT, SCHEMA_VERSION, Repo
+from bot.infrastructure.db import AUDIT_KEPT, Repo
 
 from .conftest import kl
 from .fake_bot import ADMIN_TOKEN, WATCHED_CHANNEL, make_settings
@@ -57,28 +58,17 @@ def rows_for(fake_bot, action: str) -> list[dict]:
 # --- the schema -------------------------------------------------------------
 
 
-def test_a_live_database_gains_the_trail_without_losing_anything(tmp_path):
-    """v6 -> v7 adds a table and touches nothing else.
-
-    Walked all the way to :data:`bot.db.SCHEMA_VERSION` rather than stopping at
-    7: a database this old goes through every later step too, and what matters
-    is that it arrives with the trail and with everything it started with.
-    """
+def test_a_pre_v9_database_requires_the_previous_release(tmp_path):
     path = tmp_path / "v6.sqlite"
     repo = Repo(path)
     repo.upsert_member(7, "harbour4417", "MY", True)
-    fixed = repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
+    repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
     repo._conn.execute("DROP TABLE audit")
     repo._conn.execute("UPDATE schema_version SET version = 6")
     repo.close()
 
-    migrated = Repo(path)
-    version = migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-    assert version == SCHEMA_VERSION
-    assert migrated.list_audit() == []
-    assert migrated.get_member("7")["display_name"] == "harbour4417"
-    assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
-    migrated.close()
+    with pytest.raises(RuntimeError, match="upgrades from v9 only"):
+        Repo(path)
 
 
 def test_the_newest_rows_are_kept_and_the_rest_go(repo):

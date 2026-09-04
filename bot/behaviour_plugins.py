@@ -10,12 +10,17 @@ from pathlib import Path
 from typing import Any
 
 CONFIG_KEY = "chat_role_plugins"
-PLUGIN_DIR = Path(__file__).resolve().parent.parent / "personas" / "behaviour-plugins"
+SELECTABLE_CONFIG_KEY = "chat_selectable_plugins"
+PERSONA_ROOT = Path(__file__).resolve().parent.parent / "personas"
+DEFAULT_PLUGIN_DIR = PERSONA_ROOT / "behaviours" / "profiles"
+PLUGIN_DIR = DEFAULT_PLUGIN_DIR
+LEGACY_PLUGIN_DIR = PERSONA_ROOT / "behaviour-plugins"
 MAX_ROLE_PLUGINS = 20
 MAX_PLUGINS = 30
 MAX_INSTRUCTIONS_CHARS = 4000
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,49}$")
 NOT_A_PLUGIN = {"example.md", "README.md"}
+RESERVED_NAMES = {"default", "example", "readme"}
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,41 @@ class Plugin:
         return {"name": self.name, "instructions": self.instructions}
 
 
+@dataclass(frozen=True)
+class ConfigIssue:
+    index: int | None
+    message: str
+
+
+@dataclass(frozen=True)
+class StyleResolution:
+    """Resolved behaviour profile with safe projections."""
+
+    selected: str | None
+    effective: str
+    source: str
+    instructions: str
+    role_id: str | None = None
+    selected_available: bool = True
+
+    def prompt_instructions(self) -> str:
+        """The only projection allowed into a model prompt."""
+        return self.instructions
+
+    def member_view(self) -> dict[str, str | bool | None]:
+        """Return the member-safe preference view."""
+        return {"reply_style": self.selected, "available": self.selected_available}
+
+    def admin_view(self) -> dict[str, str | bool | None]:
+        return {
+            "reply_style": self.selected,
+            "reply_style_available": self.selected_available,
+            "effective_style": self.effective,
+            "style_source": self.source,
+            "style_role_id": self.role_id,
+        }
+
+
 def _role_id(value: Any) -> str:
     role_id = str(value or "").strip()
     if not role_id.isdigit() or int(role_id) <= 0 or len(role_id) > 20:
@@ -50,12 +90,22 @@ def plugin_name(value: Any) -> str:
         name = name[:-3]
     if not _PLUGIN_NAME_RE.fullmatch(name):
         raise ValueError("plugin names use 1-50 lowercase letters, numbers, hyphens or underscores")
+    if name in RESERVED_NAMES:
+        raise ValueError(f"`{name}` is reserved and cannot be a behaviour plugin")
     return name
 
 
 def available(directory: Path | None = None) -> list[str]:
-    """Plugin names currently stored on the writable persona bind mount."""
-    directory = PLUGIN_DIR if directory is None else directory
+    """Return available plugin names."""
+    if directory is None:
+        names = set(_available_in(PLUGIN_DIR))
+        if PLUGIN_DIR == DEFAULT_PLUGIN_DIR:
+            names.update(_available_in(LEGACY_PLUGIN_DIR))
+        return sorted(names)
+    return _available_in(directory)
+
+
+def _available_in(directory: Path) -> list[str]:
     try:
         names = [
             path.stem
@@ -68,23 +118,27 @@ def available(directory: Path | None = None) -> list[str]:
 
 
 def read(name: str, directory: Path | None = None) -> Plugin | None:
-    """Read one existing plugin by membership, never by a submitted path."""
-    directory = PLUGIN_DIR if directory is None else directory
+    """Read a plugin only after filename membership validation."""
     try:
         safe = plugin_name(name)
     except ValueError:
         return None
-    if safe not in available(directory):
-        return None
-    try:
-        instructions = (directory / f"{safe}.md").read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    return Plugin(safe, instructions) if instructions else None
+    directories = [directory] if directory is not None else [PLUGIN_DIR]
+    if directory is None and PLUGIN_DIR == DEFAULT_PLUGIN_DIR:
+        directories.append(LEGACY_PLUGIN_DIR)
+    for source in directories:
+        if safe not in _available_in(source):
+            continue
+        try:
+            instructions = (source / f"{safe}.md").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if instructions:
+            return Plugin(safe, instructions)
+    return None
 
 
 def list_plugins(directory: Path | None = None) -> list[Plugin]:
-    directory = PLUGIN_DIR if directory is None else directory
     return [found for name in available(directory) if (found := read(name, directory)) is not None]
 
 
@@ -162,16 +216,135 @@ def seed_value(raw: str) -> str:
 
 
 def decode(raw: str | None) -> list[RolePlugin]:
-    """Read stored assignments defensively; a damaged row applies no plugins."""
+    """Read every individually valid assignment; one bad entry cannot erase the rest."""
+    assignments, _issues = decode_with_issues(raw)
+    return assignments
+
+
+def decode_with_issues(raw: str | None) -> tuple[list[RolePlugin], list[ConfigIssue]]:
+    """Parse stored role assignments and retain per-entry diagnostics."""
+    if not raw:
+        return [], []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [], [ConfigIssue(None, f"invalid JSON: {exc.msg}")]
+    if not isinstance(value, list):
+        return [], [ConfigIssue(None, "assignments must be a list")]
+    assignments: list[RolePlugin] = []
+    issues: list[ConfigIssue] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        try:
+            parsed = validate([item])[0]
+            if parsed.role_id in seen:
+                raise ValueError(f"role {parsed.role_id} is listed more than once")
+        except (IndexError, TypeError, ValueError) as exc:
+            issues.append(ConfigIssue(index, str(exc) or "invalid role assignment"))
+            continue
+        seen.add(parsed.role_id)
+        assignments.append(parsed)
+    if len(assignments) > MAX_ROLE_PLUGINS:
+        issues.append(
+            ConfigIssue(None, f"at most {MAX_ROLE_PLUGINS} role plugins may be configured")
+        )
+        assignments = assignments[:MAX_ROLE_PLUGINS]
+    return assignments, issues
+
+
+def assignment_diagnostics(
+    raw: str | None, directory: Path | None = None
+) -> tuple[list[RolePlugin], list[ConfigIssue]]:
+    """Return valid assignments and configuration issues."""
+    assignments, issues = decode_with_issues(raw)
+    issues = list(issues)
+    for index, assignment in enumerate(assignments):
+        if read(assignment.plugin, directory) is None:
+            issues.append(
+                ConfigIssue(
+                    index,
+                    f"role {assignment.role_id}: profile `{assignment.plugin}` is unreadable",
+                )
+            )
+    return assignments, issues
+
+
+def encode_catalog(names: Iterable[Any]) -> str:
+    """Validate and encode the ordered member-selectable profile catalog."""
+    kept: list[str] = []
+    for value in names:
+        name = plugin_name(value)
+        if name not in kept:
+            kept.append(name)
+    if len(kept) > MAX_PLUGINS:
+        raise ValueError(f"at most {MAX_PLUGINS} behaviour plugins may be selectable")
+    return json.dumps(kept, separators=(",", ":"))
+
+
+def decode_catalog(raw: str | None) -> list[str]:
+    """Read a catalog defensively while preserving valid ordered names."""
     if not raw:
         return []
     try:
         value = json.loads(raw)
-        if not isinstance(value, list):
-            return []
-        return validate(value)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except json.JSONDecodeError:
         return []
+    if not isinstance(value, list):
+        return []
+    kept: list[str] = []
+    for item in value:
+        try:
+            name = plugin_name(item)
+        except (TypeError, ValueError):
+            continue
+        if name not in kept:
+            kept.append(name)
+    return kept[:MAX_PLUGINS]
+
+
+def resolve(
+    *,
+    selected: str | None,
+    selectable: Iterable[str],
+    assignments: Iterable[RolePlugin],
+    role_ids: Iterable[int | str],
+    default_instructions: str,
+    directory: Path | None = None,
+) -> StyleResolution:
+    """Resolve an effective profile without exposing source metadata to prompts."""
+    held = {str(role_id) for role_id in role_ids}
+    for assignment in assignments:
+        if assignment.role_id not in held:
+            continue
+        plugin = read(assignment.plugin, directory)
+        if plugin is not None:
+            return StyleResolution(
+                selected=selected,
+                effective=plugin.name,
+                source="role",
+                instructions=plugin.instructions,
+                role_id=assignment.role_id,
+                selected_available=_selection_available(selected, selectable, directory),
+            )
+    available = _selection_available(selected, selectable, directory)
+    plugin = read(selected, directory) if selected and available else None
+    if plugin is not None:
+        return StyleResolution(selected, plugin.name, "member", plugin.instructions)
+    return StyleResolution(
+        selected=selected,
+        effective="default",
+        source="default",
+        instructions=default_instructions,
+        selected_available=available,
+    )
+
+
+def _selection_available(
+    selected: str | None, selectable: Iterable[str], directory: Path | None
+) -> bool:
+    if selected is None:
+        return True
+    return selected in set(selectable) and read(selected, directory) is not None
 
 
 def overlay(
@@ -179,7 +352,9 @@ def overlay(
     role_ids: Iterable[int | str],
     directory: Path | None = None,
 ) -> str:
-    """Combine every matching, readable plugin in assignment order."""
+    """Compatibility helper: return the first readable matching role profile."""
     held = {str(role_id) for role_id in role_ids}
-    selected = [read(item.plugin, directory) for item in assignments if item.role_id in held]
-    return "\n\n".join(plugin.instructions for plugin in selected if plugin is not None)
+    for item in assignments:
+        if item.role_id in held and (plugin := read(item.plugin, directory)) is not None:
+            return plugin.instructions
+    return ""

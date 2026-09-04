@@ -2,6 +2,62 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 4.0.0
+
+**Added**
+
+- **Member-selectable reply styles** (`/style` command): members choose from a
+  public catalog of 13 profiles — chuunibyou, concise, gacha-addict, imouto,
+  kouhai, kuudere, mesugaki, ojou-sama, onee-san, raid-leader, sleep-deprived,
+  tsundere, vip-butler — with Discord autocomplete, ephemeral feedback, and
+  `none` to reset to default. Choices are saved per-member in SQLite.
+- **Component prompt system**: the chatbot prompt is assembled from discrete
+  components in explicit precedence — identity, default behaviour, active
+  profile, assistant scope, scheduler policy, grounding policy, runtime
+  context, and voice cue — instead of a single monolithic template.
+- **Dynamic assistant name** extracted from `# Persona: ...` in the identity
+  file; never hard-coded.
+- **Role-based style precedence**: first configured readable matching role
+  silently supersedes a member's saved choice. The member sees the same
+  response style; the mechanism is never disclosed.
+- **Portal style visibility**: Members page shows both the saved style and the
+  style that would apply to the next reply. Config page includes profile
+  publication toggle, role-priority move controls, and broken-entry
+  diagnostics.
+- **Profile deletion guard**: profiles assigned to a role or published cannot
+  be deleted.
+- Code-owned prompt assets: `assistant-scope.md`, `scheduler-policy.md`,
+  `grounding-policy.md` in `bot/chat/prompts/`.
+
+**Changed**
+
+- **Schema v9 → v10**: `members` table gains nullable `reply_style`.
+  Unversioned databases and schemas older than v9 are rejected at startup.
+- Compose project renamed from `kanade-bot` to `kanade`; `bot` and `caddy`
+  services retained, Valkey deferred until multi-process scaling.
+- Persona directory restructured into `identities/`, `behaviours/`, and
+  `behaviours/profiles/`; legacy filenames remain valid with new paths taking
+  precedence.
+- Behaviour-plugins renamed to reply profiles under `behaviours/profiles/`;
+  portal labels updated accordingly.
+- Style resolution uses first-configured-readable-match instead of composing
+  all matching role assignments.
+- `/style` reports a choice was "saved", never "active".
+- Identity template deliberately excludes a `**Voice:**` slot; default
+  behaviour carries the trailing voice cue.
+- `CHAT_PILOT_HISTORY_TTL_S` default reduced to 2700 seconds.
+- Verbose comments condensed across all touched files.
+- Dockerfile copies only tracked fallback templates; live files come from the
+  host bind mount.
+
+**Fixed**
+
+- Profile deletion no longer silently orphans role assignments or public
+  publication flags.
+- Missing persona files fall back to tracked templates with a log warning
+  instead of failing silently.
+- Tool-schema diagnostic logging added for easier troubleshooting.
+
 ## 3.3.0
 
 **Added**

@@ -1,15 +1,4 @@
-"""SQLite storage.
-
-Deliberately no ORM: explicit schema SQL, a ``schema_version`` table, and a thin
-repository over :mod:`sqlite3`.  Lists are stored as JSON text and all datetimes
-as ISO-8601 UTC strings.
-
-Calls run synchronously on the event loop.  At this scale (a handful of rows per
-guild per week, and a 30 s tick) each statement is microseconds, so the extra
-machinery of a thread executor would buy nothing.  Every method here is a plain
-function of ``self._conn`` though, so wrapping the class in ``asyncio.to_thread``
-later is a mechanical change.
-"""
+"""SQLite-backed application storage."""
 
 from __future__ import annotations
 
@@ -27,27 +16,18 @@ from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
-#: How many chat interactions are kept. The table is a diagnostic, not a
-#: transcript: five hundred is weeks of a guild's questions at the rate the
-#: pilot is actually used, and it bounds a table nothing else ever deletes from.
+#: Bound diagnostic chat history.
 CHAT_INTERACTIONS_KEPT = 500
 
-#: How many audit rows are kept. Deliberately four times the chat log: this is
-#: the answer to "who moved my run", which is asked weeks later about a night
-#: nobody wrote down, and a row is three short strings rather than a prompt.
+#: Bound audit history.
 AUDIT_KEPT = 2000
 
-#: Where a change came from. Documentation rather than a constraint -- an audit
-#: row must never be the thing that fails a mutation, so nothing validates
-#: against this (see :meth:`Repo.log_audit`).
+#: Known audit sources; logging intentionally accepts unknown sources.
 AUDIT_SURFACES = ("portal", "cli", "discord", "chat", "card", "system")
 
-#: The `amendments.payload` key that says the chat pilot has already asked what
-#: this card should have said. Set once, by :meth:`Repo.claim_chat_followup`,
-#: and never cleared: "one follow-up per card" is a promise about the card's
-#: whole life, not about the current reaction.
+#: Persistent marker enforcing one chat follow-up per card.
 CHAT_FOLLOWUP_KEY = "chat_followup_at"
 
 RUN_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
@@ -56,12 +36,7 @@ RSVP_STATES = ("yes", "no", "maybe")
 #: `essential` is the default: only the posts that ask them to act.
 PING_LEVELS = ("essential", "all", "off")
 DEFAULT_PING_LEVEL = "essential"
-#: `superseded` = a newer card about the same run replaced this one, or a sibling
-#: amendment for the run was committed. Kept rather than deleted so the
-#: extraction log still shows what was proposed and why it never applied.
-#: `withdrawn` = the card itself was deleted from Discord, so there is nothing
-#: left to react to. Kept rather than deleted so the extraction log still shows
-#: what was proposed and why it never applied.
+#: Retained proposal states preserve extraction history.
 AMENDMENT_STATUSES = (
     "proposed",
     "confirmed",
@@ -84,6 +59,8 @@ CREATE TABLE IF NOT EXISTS members (
     has_role     INTEGER NOT NULL DEFAULT 0,
     -- how much this member wants to be @mentioned: essential | all | off
     ping_level   TEXT NOT NULL DEFAULT 'essential',
+    -- member-selected chatbot behaviour profile; NULL means the deployment default
+    reply_style  TEXT,
     updated_at   TEXT NOT NULL
 );
 
@@ -191,9 +168,7 @@ CREATE TABLE IF NOT EXISTS extractions (
     amendment_ids TEXT NOT NULL DEFAULT '[]'
 );
 
--- Test pings posted by /debug ping. Kept out of `reminders` so a test can never
--- satisfy or suppress a real scheduled ping, but recorded so ✅/❌ on a test
--- message still map back to the run and drive the real RSVP flow.
+-- Debug pings remain isolated from scheduled reminders.
 CREATE TABLE IF NOT EXISTS debug_messages (
     message_id TEXT PRIMARY KEY,
     run_id     TEXT NOT NULL,
@@ -204,8 +179,7 @@ CREATE TABLE IF NOT EXISTS debug_messages (
 
 CREATE INDEX IF NOT EXISTS debug_messages_run ON debug_messages (run_id);
 
--- One "X can't make it" notice per person per run, so a ❌ toggled on and off
--- (or spammed) never floods the channel; deleted again when they go ✅.
+-- At most one decline notice per member and run.
 CREATE TABLE IF NOT EXISTS decline_notices (
     run_id      TEXT NOT NULL,
     user_id     TEXT NOT NULL,
@@ -220,9 +194,7 @@ CREATE TABLE IF NOT EXISTS config (
     value TEXT NOT NULL
 );
 
--- v4. One row per rescan asked for, so the portal can show the last few runs
--- after a restart. The live queue is in memory (bot/rescan.py); this is the
--- record of what was asked and what came of it.
+-- Persist rescan outcomes; the live queue remains in memory.
 CREATE TABLE IF NOT EXISTS rescan_jobs (
     id           TEXT PRIMARY KEY,
     channels     TEXT NOT NULL DEFAULT '[]',
@@ -240,16 +212,7 @@ CREATE TABLE IF NOT EXISTS rescan_jobs (
 
 CREATE INDEX IF NOT EXISTS rescan_jobs_recent ON rescan_jobs (created_at DESC);
 
--- v6. One row per interaction the chatbot *handled*: a question that reached
--- the model and an answer (or a failure) that came back. A message the rate
--- limiter or the busy channel turned away gets no row -- nothing was asked of
--- the model, so there is nothing to account for, and counting those as
--- interactions would make every average here a lie.
---
--- The columns exist to answer "what is this costing us and where is it going
--- wrong": the model is configurable and currently remote, so tokens are money,
--- and the model/tool split is what says whether a slow answer was the model
--- thinking or the schedule being read. Pruned to CHAT_INTERACTIONS_KEPT rows.
+-- Handled model interactions only; pruned to CHAT_INTERACTIONS_KEPT rows.
 CREATE TABLE IF NOT EXISTS chat_interactions (
     id                TEXT PRIMARY KEY,
     at                TEXT NOT NULL,
@@ -259,66 +222,44 @@ CREATE TABLE IF NOT EXISTS chat_interactions (
     model             TEXT NOT NULL DEFAULT '',
     question          TEXT NOT NULL DEFAULT '',
     reply             TEXT NOT NULL DEFAULT '',
-    -- answered | failed. Nothing else is stored: see the table comment.
+    -- answered | failed
     outcome           TEXT NOT NULL DEFAULT 'answered',
-    -- The generation's own words for what went wrong, when it did.
+    -- Provider or generation failure.
     error             TEXT,
     rounds            INTEGER NOT NULL DEFAULT 0,
     latency_ms        INTEGER,
-    -- The split of `latency_ms`: time inside the model, time inside the tools.
-    -- They do not add up to it (there is assembly either side); they are the
-    -- two parts worth naming.
+    -- Partial latency split; assembly time is excluded.
     model_ms          INTEGER,
     tools_ms          INTEGER,
-    -- Summed across rounds, and null when the model did not report them:
-    -- `prompt_eval_count` / `eval_count` are Ollama's, not the API's.
+    -- Summed provider counters across rounds.
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
-    -- [{name, round, arguments, output, ms, outcome, created, posted}], one per
-    -- call, in order. Older rows omit the additive round/output/posted keys.
+    -- Ordered tool-call diagnostics as JSON.
     tool_calls        TEXT NOT NULL DEFAULT '[]',
-    -- [{round, content, thinking, requested_tools}], one provider response per
-    -- model round. Diagnostics only: prompts are intentionally never stored.
+    -- Provider responses by round; prompts are never stored.
     model_rounds      TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS chat_interactions_recent ON chat_interactions (at DESC);
 
--- v7. One row per change to the schedule, and the human behind it. The admin
--- plane is one shared token, so without this a portal edit is attributable to
--- "the portal" and nothing more -- which is no answer at all when the party
--- wants to know who moved Thursday. The actor is whoever the surface could
--- name: a tailnet login, a Discord user id, the operating-system user behind
--- `bossctl`, or the literal 'token' when the only credential was the token
--- itself. Pruned to AUDIT_KEPT rows on insert.
+-- Schedule changes with the best actor identity available; pruned on insert.
 CREATE TABLE IF NOT EXISTS audit (
     id      TEXT PRIMARY KEY,
     at      TEXT NOT NULL,
-    -- portal | cli | discord | chat | card | system (AUDIT_SURFACES).
+    -- See AUDIT_SURFACES.
     surface TEXT NOT NULL DEFAULT 'system',
     actor   TEXT NOT NULL DEFAULT 'token',
-    -- A short verb: amend, cancel, rsvp, fixed_add, config, swap, status...
+    -- Short action verb.
     action  TEXT NOT NULL,
-    -- What was changed: a run, fixed-run or amendment id, or a config key.
+    -- Changed entity id or config key.
     subject TEXT,
-    -- One sentence a person can read without looking anything else up.
+    -- Human-readable summary.
     detail  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS audit_recent ON audit (at DESC);
 
--- v8. Members whose chatbot allowance is not the guild default. Sparse on
--- purpose: a row exists only where somebody was given their own numbers, and
--- deleting it is what "back to the default" means.
---
--- Its own table rather than two columns on `members`, because `members` syncs
--- from the bossing role and this is a fact about the *chat* role -- somebody
--- can hold one without the other, and a roster row invented to hold an
--- allowance would then look like a bosser to everything that reads it.
---
--- The spent windows themselves stay in memory (bot/chat/ratelimit.py): a
--- restart forgetting who has asked what is the right trade, but forgetting that
--- somebody was granted a bigger allowance is not.
+-- Sparse persisted allowance overrides; spent windows remain in memory.
 CREATE TABLE IF NOT EXISTS chat_rate_limits (
     user_id    TEXT PRIMARY KEY,
     count      INTEGER NOT NULL,
@@ -328,196 +269,12 @@ CREATE TABLE IF NOT EXISTS chat_rate_limits (
 """
 
 
-#: Tables rebuilt by the v1->v2 migration. `members`, `messages` and `config`
-#: carry real state and are left untouched.
-_V2_REBUILT_TABLES = (
-    "debug_messages",
-    "reminders",
-    "rsvps",
-    "runs",
-    "fixed_runs",
-    "amendments",
-    "extractions",
-)
-
-#: Columns of `fixed_runs` carried across the v1->v2 rebuild (everything but the id).
-_V2_FIXED_RUN_COLUMNS = (
-    "owner_id",
-    "channel_id",
-    "bosses",
-    "weekday",
-    "time",
-    "participants",
-    "note",
-    "created_at",
-)
-
-
-def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
-    """Integer autoincrement ids -> uuid4 text.
-
-    Rewriting every key and foreign key in place would be a lot of machinery for
-    a young database, so the scheduling tables are rebuilt instead. The one
-    thing worth keeping is `fixed_runs`: those are hand-entered baselines
-    (bosses, day, time, participants, home channel) that would be tedious to
-    re-enter. They are carried across with fresh uuids; `runs` and `reminders`
-    are derived data and are rebuilt from them by the next materialisation.
-    """
-    try:
-        saved = [
-            tuple(row)
-            for row in conn.execute(f"SELECT {', '.join(_V2_FIXED_RUN_COLUMNS)} FROM fixed_runs")
-        ]
-    except sqlite3.OperationalError:
-        saved = []
-
-    counts: dict[str, int] = {}
-    for table in _V2_REBUILT_TABLES:
-        try:
-            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # noqa: S608
-        except sqlite3.OperationalError:
-            counts[table] = 0
-        conn.execute(f"DROP TABLE IF EXISTS {table}")
-
-    conn.executescript(SCHEMA_SQL)
-
-    placeholders = ", ".join("?" * (len(_V2_FIXED_RUN_COLUMNS) + 1))
-    for row in saved:
-        conn.execute(
-            f"INSERT INTO fixed_runs (id, {', '.join(_V2_FIXED_RUN_COLUMNS)}) "  # noqa: S608
-            f"VALUES ({placeholders})",
-            (new_id(), *row),
-        )
-
-    discarded = ", ".join(f"{t}={n}" for t, n in counts.items() if n and t != "fixed_runs")
-    log.warning(
-        "schema v1->v2: scheduling ids are now uuid4. Carried %d fixed run(s) across with "
-        "new ids; rebuilt %s (derived rows discarded: %s). members, messages and config "
-        "were preserved; runs and reminders regenerate on the next materialisation.",
-        len(saved),
-        ", ".join(_V2_REBUILT_TABLES),
-        discarded or "none",
-    )
-
-
-#: Columns the chat extractor added to ``amendments`` in v3 (all additive).
-_V3_AMENDMENT_COLUMNS: dict[str, str] = {
-    "channel_id": "TEXT",
-    "is_question": "INTEGER NOT NULL DEFAULT 0",
-    "rsvp": "TEXT",
-    "day_ref": "TEXT",
-    "time_ref": "TEXT",
-    "summary": "TEXT",
-    "payload": "TEXT NOT NULL DEFAULT '{}'",
-}
-
-
-def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
-    """v2 -> v3: extractor columns on ``amendments``; ``decline_notices`` table.
-
-    Purely additive: ``ALTER TABLE ... ADD COLUMN`` for anything missing, and the
-    new table arrives via ``SCHEMA_SQL`` (``CREATE TABLE IF NOT EXISTS``) after
-    the step. No data is touched.
-    """
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(amendments)")}
-    added = []
-    for name, decl in _V3_AMENDMENT_COLUMNS.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE amendments ADD COLUMN {name} {decl}")
-            added.append(name)
-    log.info("schema v2->v3: amendments gained %s; decline_notices table added", added or "nothing")
-
-
-#: version -> the step that upgrades *from* that version to the next.
-def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
-    """v4 only adds ``rescan_jobs``, which ``SCHEMA_SQL`` creates on its own.
-
-    A numbered step is still needed so :meth:`Repo.migrate` can walk past v3;
-    the work is the ``CREATE TABLE IF NOT EXISTS`` that runs afterwards.
-    """
-
-
-def _migrate_4_to_5(conn: sqlite3.Connection) -> None:
-    """v4 -> v5: ``members.ping_level``, the per-person mention preference.
-
-    Additive, and everyone starts on the default (``essential``), which is the
-    behaviour the guild already had for the posts that ask them to act.
-    ``SCHEMA_SQL`` cannot do this itself: the table already exists, so its
-    ``CREATE TABLE IF NOT EXISTS`` is a no-op on an upgrade.
-    """
+def _migrate_9_to_10(conn: sqlite3.Connection) -> None:
+    """v9 -> v10: nullable member-selected chatbot reply style."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(members)")}
-    if not existing:
-        # No `members` table yet: a database old enough to predate it walks
-        # through this step on its way forward, and `SCHEMA_SQL` creates the
-        # table -- with the column already on it -- once the steps are done.
-        return
-    if "ping_level" in existing:
-        return
-    conn.execute(
-        f"ALTER TABLE members ADD COLUMN ping_level TEXT NOT NULL DEFAULT '{DEFAULT_PING_LEVEL}'"
-    )
-    log.info("schema v4->v5: members gained ping_level (everyone on %s)", DEFAULT_PING_LEVEL)
-
-
-def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
-    """v6 only adds ``chat_interactions``, which ``SCHEMA_SQL`` creates itself.
-
-    A numbered step is still needed so :meth:`Repo.migrate` can walk past v5, as
-    with v3->v4; the work is the ``CREATE TABLE IF NOT EXISTS`` afterwards.
-    """
-
-
-def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
-    """v7 only adds ``audit``, which ``SCHEMA_SQL`` creates itself.
-
-    A numbered step is still needed so :meth:`Repo.migrate` can walk past v6, as
-    with v3->v4 and v5->v6; the work is the ``CREATE TABLE IF NOT EXISTS``
-    afterwards. Nothing is backfilled: the trail starts the day it is switched
-    on, and inventing rows for changes nobody recorded would be worse than a
-    short history.
-    """
-
-
-def _migrate_7_to_8(conn: sqlite3.Connection) -> None:
-    """v8 only adds ``chat_rate_limits``, which ``SCHEMA_SQL`` creates itself.
-
-    A numbered step is still needed so :meth:`Repo.migrate` can walk past v7, as
-    with v3->v4, v5->v6 and v6->v7; the work is the ``CREATE TABLE IF NOT
-    EXISTS`` afterwards. Nothing is backfilled, and nothing needs to be: no rows
-    means everybody is on the guild default, which is what they were on before.
-    """
-
-
-def _migrate_8_to_9(conn: sqlite3.Connection) -> None:
-    """v8 -> v9: provider round diagnostics on ``chat_interactions``.
-
-    The chat log already exists on a v8 deployment, so its fresh-table default
-    cannot add this column. The additive default keeps every old interaction
-    readable as an empty trace and leaves its recorded question, reply and tool
-    calls untouched.
-    """
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(chat_interactions)")}
-    if not existing:
-        # A pre-v6 file walking through every numbered step has no chat table
-        # yet; ``SCHEMA_SQL`` creates it at the latest shape after the walk.
-        return
-    if "model_rounds" not in existing:
-        conn.execute(
-            "ALTER TABLE chat_interactions ADD COLUMN model_rounds TEXT NOT NULL DEFAULT '[]'"
-        )
-        log.info("schema v8->v9: chat_interactions gained model_rounds")
-
-
-MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
-    1: _migrate_1_to_2,
-    2: _migrate_2_to_3,
-    3: _migrate_3_to_4,
-    4: _migrate_4_to_5,
-    5: _migrate_5_to_6,
-    6: _migrate_6_to_7,
-    7: _migrate_7_to_8,
-    8: _migrate_8_to_9,
-}
+    if existing and "reply_style" not in existing:
+        conn.execute("ALTER TABLE members ADD COLUMN reply_style TEXT")
+        log.info("schema v9->v10: members gained reply_style")
 
 
 def _json_list(value: str | None) -> list:
@@ -535,25 +292,12 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def _like_escape(term: str) -> str:
-    r"""``%``, ``_`` and ``\`` as themselves rather than as wildcards.
-
-    A portal search box takes whatever somebody types, and ``100%`` typed into
-    one that did not do this would match every row in the table.
-    """
+    r"""Escape SQL ``LIKE`` wildcard characters."""
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _search_where(columns: Sequence[str], q: str) -> tuple[str, list[str]]:
-    """``(sql, params)`` for "this text appears in any of these columns".
-
-    One substring, not a set of words that all have to match: these are small
-    logs read by one or two people, and "hstar wed" meaning *neither* row
-    because no single cell holds both words is a search box that has to be
-    learned. Case-insensitive because SQLite's ``LIKE`` is, for ASCII.
-
-    Returns ``("", [])`` for an empty query, so a caller can splice it in
-    without a branch on either side.
-    """
+    """Return a ``LIKE`` clause and parameters for a text search."""
     term = (q or "").strip()
     if not term:
         return "", []
@@ -562,12 +306,7 @@ def _search_where(columns: Sequence[str], q: str) -> tuple[str, list[str]]:
 
 
 def _percentile(ordered: Sequence[int], fraction: float) -> int | None:
-    """Nearest-rank percentile of an already-sorted list, or ``None`` if empty.
-
-    Nearest-rank rather than interpolated: every value here is a real
-    measurement of a real answer, and "the 95th percentile answer took 31
-    seconds" is a sentence about one of them.
-    """
+    """Return a nearest-rank percentile, or ``None`` for an empty sequence."""
     if not ordered:
         return None
     rank = max(1, math.ceil(fraction * len(ordered)))
@@ -577,27 +316,14 @@ def _percentile(ordered: Sequence[int], fraction: float) -> int | None:
 class Repo:
     """Thin repository over a single SQLite connection."""
 
-    #: Called with a run id whenever something a posted reminder card *shows*
-    #: has changed: the RSVP tally, the run's status, or its line-up. The client
-    #: sets it (:meth:`bot.agent.client.BossBot.card_needs_refresh`) so a card already
-    #: in a channel is re-rendered whoever changed the answer -- a reaction,
-    #: `/rsvp`, the portal, a chat-extracted "Can". Hooking the writes rather
-    #: than the callers is the only way to catch all four without every one of
-    #: them having to remember; a caller that forgets is exactly how the tally
-    #: on a live card froze at "2/4 ✅" while the database said 4/4.
+    #: Called after a run change that requires card re-rendering.
     on_run_changed: Callable[[str], None] | None = None
 
     def __init__(self, path: str | Path):
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        # `check_same_thread=False`: the connection is created wherever the
-        # process happens to start (``python -m bot`` builds it inside
-        # ``asyncio.run``; a test builds it on the pytest thread) and then used
-        # from the bot's event loop. There is exactly one connection and one
-        # user of it at a time -- every HTTP handler in `bot.api` is `async def`
-        # so it runs on that loop rather than in FastAPI's worker threadpool,
-        # which `tests/test_api_app.py::test_every_route_is_async` enforces.
+        # One event-loop-owned connection; async routes avoid worker threads.
         self._conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -607,16 +333,28 @@ class Repo:
 
     # -- lifecycle --------------------------------------------------------
     def migrate(self) -> None:
-        """Bring the database up to :data:`SCHEMA_VERSION`.
-
-        A fresh file is created at the latest shape. An existing one is walked
-        forward one numbered step at a time by :data:`MIGRATIONS`, then
-        ``SCHEMA_SQL`` runs to add any table introduced since.
-        """
+        """Create or upgrade the database to the supported schema version."""
+        existing_tables = {
+            row["name"]
+            for row in self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        if existing_tables and "schema_version" not in existing_tables:
+            raise RuntimeError(
+                f"database at {self.path} has no schema version; refusing to treat existing "
+                "application tables as a fresh v10 database"
+            )
         self._conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
         row = self._conn.execute("SELECT version FROM schema_version").fetchone()
 
         if row is None:
+            application_tables = existing_tables - {"schema_version"}
+            if application_tables:
+                raise RuntimeError(
+                    f"database at {self.path} has no schema version; refusing to treat existing "
+                    "application tables as a fresh v10 database"
+                )
             self._conn.executescript(SCHEMA_SQL)
             self._conn.execute("DELETE FROM schema_version")
             self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
@@ -628,33 +366,22 @@ class Repo:
                 f"database at {self.path} was written by a newer bot "
                 f"(schema v{current} > v{SCHEMA_VERSION})"
             )
-        while current < SCHEMA_VERSION:
-            step = MIGRATIONS.get(current)
-            if step is None:  # pragma: no cover - defensive
-                raise RuntimeError(f"no migration from schema v{current}")
-            log.info("migrating database %s: v%d -> v%d", self.path, current, current + 1)
-            step(self._conn)
-            current += 1
-            self._conn.execute("UPDATE schema_version SET version = ?", (current,))
+        if current < 9:
+            raise RuntimeError(
+                f"database at {self.path} is schema v{current}; this release supports "
+                "upgrades from v9 only"
+            )
+        if current == 9:
+            log.info("migrating database %s: v9 -> v10", self.path)
+            _migrate_9_to_10(self._conn)
+            self._conn.execute("UPDATE schema_version SET version = 10")
         self._conn.executescript(SCHEMA_SQL)
 
     def close(self) -> None:
         self._conn.close()
 
     def backup_to(self, path: str | Path) -> None:
-        """Write a consistent snapshot of the whole database to ``path``.
-
-        SQLite's online backup API, not a file copy: in WAL mode the ``.sqlite``
-        file on its own is only whatever was last checkpointed, so copying it
-        while the bot is writing can produce a file that will not open. This
-        copies page by page against the live connection and takes the WAL with
-        it. See :mod:`bot.infrastructure.backup` for when it is called.
-
-        The copy is left in rollback-journal mode rather than the WAL mode it
-        inherits, so the snapshot is one self-contained file: opening it to look
-        at it does not litter the backups directory with ``-wal``/``-shm``
-        siblings, and restoring it is a copy of exactly one path.
-        """
+        """Write a consistent, self-contained database snapshot."""
         dest = sqlite3.connect(str(path))
         try:
             with dest:
@@ -662,8 +389,7 @@ class Repo:
             dest.execute("PRAGMA journal_mode=DELETE")
         finally:
             dest.close()
-        # Leaving WAL takes the -wal with it but not always the -shm, and both
-        # belong to a file written seconds ago by this call alone.
+        # Remove WAL sidecars left after switching the copy's journal mode.
         for sibling in (f"{path}-wal", f"{path}-shm"):
             Path(sibling).unlink(missing_ok=True)
 
@@ -753,12 +479,7 @@ class Repo:
         return bool(member and member["has_role"])
 
     def get_ping_level(self, user_id: int | str) -> str:
-        """How much this person wants to be @mentioned.
-
-        Somebody the roster has never seen (a guest on a run, a member who left)
-        gets the default rather than an error: a missing row must never stop a
-        reminder going out.
-        """
+        """Return a member's mention preference or the default."""
         member = self.get_member(user_id)
         return member["ping_level"] if member else DEFAULT_PING_LEVEL
 
@@ -774,12 +495,30 @@ class Repo:
             raise KeyError(str(user_id))
         return level
 
+    def get_reply_style(self, user_id: int | str) -> str | None:
+        member = self.get_member(user_id)
+        return member["reply_style"] if member else None
+
+    def set_reply_style(self, user_id: int | str, style: str | None) -> str | None:
+        """Store a profile name or NULL; catalog membership is a caller concern."""
+        stored = str(style).strip().lower() if style is not None else None
+        if stored == "":
+            stored = None
+        updated = self._conn.execute(
+            "UPDATE members SET reply_style = ?, updated_at = ? WHERE user_id = ?",
+            (stored, to_iso(utcnow()), str(user_id)),
+        ).rowcount
+        if not updated:
+            raise KeyError(str(user_id))
+        return stored
+
     @staticmethod
     def _member(row: sqlite3.Row) -> dict:
         data = dict(row)
         data["aliases"] = _json_list(data["aliases"])
         data["has_role"] = bool(data["has_role"])
         data["ping_level"] = data.get("ping_level") or DEFAULT_PING_LEVEL
+        data["reply_style"] = data.get("reply_style") or None
         return data
 
     # -- chatbot allowances ------------------------------------------------
@@ -856,14 +595,7 @@ class Repo:
     def list_fixed_runs(
         self, participant: str | None = None, involving: int | str | None = None
     ) -> list[dict]:
-        """Every baseline timing, ordered by when it happens.
-
-        ``participant`` narrows to runs someone is *on*.  ``involving`` is the
-        wider "mine": the runs someone is on **or owns**.  Setting a party's
-        timing up does not put you on it (`/fixed add` deliberately does not add
-        the invoker), so filtering on participation alone hides a pilot's or an
-        admin's own timings from them, which reads as data loss.
-        """
+        """Return baseline timings, optionally by participant or owner."""
         if involving is not None:
             rows = self._conn.execute(
                 """
@@ -961,13 +693,7 @@ class Repo:
         involving: int | str | None = None,
         statuses: Sequence[str] | None = None,
     ) -> list[dict]:
-        """Runs, newest-slot last.
-
-        ``participant`` is "on this run"; ``involving`` also counts runs
-        materialised from a fixed timing the person owns, which is what "mine"
-        means everywhere a human reads it.  ``statuses`` keeps only those
-        statuses -- the callers that hide `done`/`cancelled` pass it.
-        """
+        """Return runs ordered by time, with optional filters."""
         sql = "SELECT * FROM runs"
         params: list[Any] = []
         if week_start is not None:
@@ -1022,12 +748,7 @@ class Repo:
         )
 
     def set_run_fixed(self, run_id: str, fixed_run_id: str | None) -> None:
-        """Link a run to the weekly timing that now produces it, or unlink it.
-
-        The partial unique index on ``(fixed_run_id, week_start)`` is the guard:
-        a week cannot end up with two runs claiming the same timing, whichever
-        route wrote the second one.
-        """
+        """Link or unlink a run's fixed timing."""
         self._conn.execute("UPDATE runs SET fixed_run_id = ? WHERE id = ?", (fixed_run_id, run_id))
 
     def set_run_bosses(self, run_id: str, bosses: Sequence[str]) -> None:
@@ -1133,13 +854,7 @@ class Repo:
     def reschedule_unposted_reminder(
         self, reminder_id: str, fire_at: datetime, now: datetime
     ) -> bool:
-        """Move an unposted reminder, reopening or skipping it as its new time requires.
-
-        A row with a ``message_id`` is evidence of a card that reached Discord;
-        keep both it and its reaction lookup intact. A no-message sent row is a
-        skipped reminder: reopening it when its new time is ahead is safe, while
-        a queued row moved into the past is retired at the supplied ``now``.
-        """
+        """Reschedule a reminder that has not posted a card."""
         fire_at_iso = to_iso(fire_at)
         if fire_at > now:
             cursor = self._conn.execute(
@@ -1202,12 +917,7 @@ class Repo:
         )
 
     def debug_messages_for_run(self, run_id: str) -> list[dict]:
-        """Test cards posted for one run, oldest first.
-
-        A `/debug ping` is a real card carrying a real tally -- its ✅/❌ drive
-        the genuine RSVP flow -- so it goes stale like any other and has to be
-        re-rendered with it.
-        """
+        """Return test cards for a run, oldest first."""
         rows = self._conn.execute(
             "SELECT * FROM debug_messages WHERE run_id = ? ORDER BY created_at", (run_id,)
         )
@@ -1310,11 +1020,7 @@ class Repo:
         unprocessed_only: bool = False,
         limit: int | None = None,
     ) -> list[dict]:
-        """One channel's stored messages in ``[since, until)``, oldest first.
-
-        ``limit`` keeps the *newest* rows (the tail of the window), because that
-        is what a prompt wants when a channel has been busy.
-        """
+        """Return one channel's messages in ``[since, until)``, oldest first."""
         sql = "SELECT * FROM messages WHERE channel_id = ? AND created_at >= ?"
         params: list[Any] = [str(channel_id), to_iso(since)]
         if until is not None:
@@ -1447,12 +1153,7 @@ class Repo:
         )
 
     def set_amendment_datetime(self, amendment_id: str, new_datetime: datetime | None) -> None:
-        """Overwrite the instant a proposal would move a run to.
-
-        Used by the portal's "edit, then approve": the reader corrects the time
-        the extractor read, and the correction -- not the model's value -- is
-        what `commit()` then applies.
-        """
+        """Overwrite the instant a proposal would move a run to."""
         self._conn.execute(
             "UPDATE amendments SET new_datetime = ? WHERE id = ?",
             (to_iso(new_datetime) if new_datetime else None, amendment_id),
@@ -1462,24 +1163,8 @@ class Repo:
         self._conn.execute("UPDATE amendments SET run_id = ? WHERE id = ?", (run_id, amendment_id))
 
     def claim_chat_followup(self, amendment_id: str, at: datetime | None = None) -> bool:
-        """Take the right to follow up on this card, once and for all.
-
-        ``True`` the first time it is asked about a card and ``False`` for ever
-        after, so a member who reacts ❌, un-reacts and reacts again gets one
-        question rather than three -- and two ❌ arriving together produce one
-        between them.
-
-        The check and the set are one statement, so there is no window between
-        them to lose: the ``WHERE`` clause *is* the check. It lives in
-        :data:`CHAT_FOLLOWUP_KEY` inside the amendment's own ``payload`` rather
-        than in a table of its own, because it is a fact about one card, it dies
-        with that card, and a marker in a side table is a thing to forget to
-        delete. Nothing else reads the key: the commit handlers take only the
-        keys their kind writes.
-        """
-        # `json_valid` guards the one row shape this cannot assume: `payload` is
-        # NOT NULL DEFAULT '{}', but a v1 database rebuilt by hand could hold
-        # something else, and a JSON error here would unwind into a rejection.
+        """Atomically claim a card's one permitted chatbot follow-up."""
+        # Guard malformed legacy payloads so a rejection cannot raise.
         payload = "CASE WHEN json_valid(payload) THEN payload ELSE '{}' END"
         cursor = self._conn.execute(
             f"""
@@ -1768,10 +1453,7 @@ class Repo:
         )
         return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
 
-    #: What the Chat page searches by text. The member and the channel are
-    #: stored here as ids and read everywhere else as names, so those are
-    #: matched through ``ids`` -- resolved against the roster and the guild by
-    #: the caller, which is the only layer that knows what a name is.
+    #: Name-derived member/channel matches arrive separately through ``ids``.
     CHAT_SEARCH = ("model", "question", "reply", "outcome")
 
     def _chat_where(self, q: str, ids: Sequence[str] = ()) -> tuple[str, list[Any]]:
@@ -1808,22 +1490,7 @@ class Repo:
         return self._chat_interaction(row) if row else None
 
     def chat_interaction_for_amendment(self, amendment_id: str) -> dict | None:
-        """The interaction whose tool calls raised ``amendment_id``, if one did.
-
-        This is the provenance the rejection follow-up runs on: a card the
-        chatbot posted has an interaction here naming it in a tool call's
-        ``created`` list, and a card the *extractor* raised has none at all. It
-        also answers the other half of the question -- ``author_id`` is the
-        member who asked for the card, which is the only person a follow-up is
-        ever addressed to.
-
-        The ``LIKE`` narrows the scan; the loop is what decides, because a
-        substring of a JSON blob is not an id. Newest first, so a card somehow
-        named twice is attributed to the interaction that last touched it.
-        Nothing older than :data:`CHAT_INTERACTIONS_KEPT` interactions is
-        findable, which is the same as saying a card outlived the log of how it
-        came to exist -- proposals expire in a day and the log holds weeks.
-        """
+        """Return the chatbot interaction that created an amendment, if any."""
         wanted = str(amendment_id)
         rows = self._conn.execute(
             "SELECT * FROM chat_interactions WHERE tool_calls LIKE ? ORDER BY at DESC, id DESC",
@@ -1842,14 +1509,7 @@ class Repo:
         ]
 
     def chat_interaction_stats(self) -> list[dict]:
-        """Per model: how many, how they went, how slow, and what they cost.
-
-        Aggregated in Python rather than SQL because a percentile is not
-        something SQLite computes, and the alternative -- an average alone --
-        hides exactly the answer worth knowing about, the one that took forty
-        seconds. The table is capped at :data:`CHAT_INTERACTIONS_KEPT` rows, so
-        reading all of them costs less than the query planner would.
-        """
+        """Return per-model interaction counts, latency, and token totals."""
         by_model: dict[str, dict] = {}
         for row in self._conn.execute(
             "SELECT model, outcome, latency_ms, prompt_tokens, completion_tokens "
@@ -1903,17 +1563,7 @@ class Repo:
         at: datetime | None = None,
         keep: int = AUDIT_KEPT,
     ) -> str:
-        """Record one change and who made it, then prune back to ``keep``.
-
-        Nothing here validates: an unknown surface is stored as it arrives.
-        This is written on the way *out* of a mutation that has already
-        happened, so raising would turn a bad label into a failed edit -- see
-        :func:`bot.infrastructure.audit.record`, which is how every caller reaches this.
-
-        Pruned on insert for the same reason
-        :meth:`log_chat_interaction` is: the only moment the table is certainly
-        growing is the moment something was added to it.
-        """
+        """Record a change and actor, then prune the audit log."""
         audit_id = new_id()
         self._conn.execute(
             """

@@ -5,14 +5,13 @@
     {{ no_match(listing.q, "The search reads the Discord name, the server nickname and the chat aliases.") }}
     {% else %}
     <div class="empty">
-      <strong>The roster is empty.</strong>
-      It syncs from <code>BOSSING_ROLE_ID</code> when the bot connects. Check the startup log line
-      <code>roster synced: N members</code>.
+      <strong>No relevant members found.</strong>
+      This page includes the bossing roster and members with chatbot or style access.
     </div>
     {% endif %}
   {% else %}
   <table>
-    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>@mentions</th><th>Add an alias</th></tr></thead>
+    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>@mentions</th><th>Chosen reply style</th><th>Applies to next reply</th><th>Add an alias</th></tr></thead>
     <tbody>
       {% for member in listing.rows %}
       <tr>
@@ -26,10 +25,30 @@
           <span class="chip {{ 'chip--waiting' if member.ping_level == 'off' }}">{{ member.ping_level }}</span>
         </td>
         <td>
+          <span class="chip chip--mono">{{ member.reply_style or "default" }}</span>
+          {% if member.reply_style and member.reply_style_available is defined and not member.reply_style_available %}
+          <span class="status status--at_risk">unavailable</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if member.effective_style %}
+          <span class="chip chip--mono">{{ member.effective_style }}</span>
+          {% if member.style_source == "role" %}
+          <span class="status">role: {{ member.style_role_name or member.style_role_id }}</span>
+          {% endif %}
+          {% elif member.style_source == "unknown" %}
+          <span class="status status--at_risk">unknown — Discord state unavailable</span>
+          {% else %}
+          <span class="id">not applicable</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if member.persisted %}
           <form method="post" action="/members/{{ member.user_id }}/nick" class="filters" style="margin:0">
             <input name="alias" placeholder="MY" size="8" required aria-label="New alias for {{ member.display_name }}">
             <button class="btn" type="submit">Add</button>
           </form>
+          {% else %}<span class="id">live Discord member</span>{% endif %}
         </td>
       </tr>
       {% endfor %}

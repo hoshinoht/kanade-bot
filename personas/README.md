@@ -1,64 +1,52 @@
 # Personas
 
-The document that tells the chatbot who it is. Everything the bot *knows* comes
-from tools; everything it *sounds like* comes from here.
+Prompt content is split by responsibility:
 
-```
-personas/persona.example.md   the tracked template — placeholders, no real names
-personas/persona.md           yours, git-ignored, and what the bot loads
+```text
+identities/example.md                 tracked identity template
+identities/persona.md                 live identity, git-ignored
+behaviours/default.example.md         tracked default-behaviour template
+behaviours/default.md                 live default behaviour, git-ignored
+behaviours/profiles/example.md        tracked reply-profile template
+behaviours/profiles/<name>.md         live profiles, git-ignored
 ```
 
-Copy the template, fill it in, and restart:
+Create the live files and restart:
 
-```
-cp personas/persona.example.md personas/persona.md
+```sh
+cp personas/identities/example.md personas/identities/persona.md
+cp personas/behaviours/default.example.md personas/behaviours/default.md
 docker compose restart bot
 ```
 
-This directory is bind-mounted into the container. Base personas are still
-ordinary host files; the portal only writes inside `behaviour-plugins/`, where
-its reusable persona add-ons are stored. No rebuild or container copy is needed.
+The directory is bind-mounted at `/app/personas`. `PERSONA_PATH` seeds the
+identity filename for a fresh database; later identity choices are stored in
+SQLite and can be changed from **Config → Chatbot** without restarting. New
+paths take precedence, but legacy root identities and `behaviour-plugins/`
+profiles remain readable during migration.
 
-**Switching between voices needs no restart.** Keep as many files here as you
-like; the Config page's Chatbot panel lists every `.md` in this directory and
-the one you pick takes effect on the bot's next answer. Adding a voice is still
-a file drop — it is in the dropdown on the next page load.
+Identity says who the assistant is. Default behaviour defines normal delivery.
+Profiles replace that delivery for one reply. Code-owned files under
+`bot/chat/prompts/` define assistant scope, scheduler authority, grounding, and
+privacy; deployment files cannot override them.
 
-`PERSONA_PATH` in `.env` is the seed rather than the switch: `compose.yaml`
-points it at `/app/personas/persona.md`, and its filename is what the setting
-starts on. From then on the choice is stored with the rest of the runtime
-config, so a restart does not undo it.
+Put a one-line `**Voice:** ...` cue and any `**Good**` worked examples in the
+default behaviour or profile. An active profile's examples replace the default
+examples rather than combining with them.
 
-**Only the READMEs and templates are tracked.** A real persona or behaviour
-plugin can name a character, a community and its in-jokes, none of which belongs
-in a public repository — the same reason `config/portraits/` keeps only its
-README. Keep the templates neutral if you edit them.
+## Reply profiles
 
-**Nothing here is required.** With no persona file the bot loads the template
-and logs a WARNING, and the Config page's Chatbot panel says *fallback:
-persona.example.md* — a deployment answering in the placeholder voice is a
-misconfiguration, so it is made visible rather than left in the logs.
+Create and edit profiles in **Config → Chatbot**. Publishing adds a profile to
+the `/style` catalog. Members can save only published, readable profiles, and
+`/style default` clears their choice.
 
-The whole file goes into the system prompt verbatim, so keep it to a few
-thousand tokens: a short sharp persona outperforms a long one. The template
-explains which sections actually steer the model, and the `**Voice:**` line is
-the one the bot repeats last, immediately before it composes each reply.
+Role assignments are ordered. The first readable profile whose Discord role the
+member currently holds applies to the next reply; otherwise the saved choice or
+default behaviour applies. Role assignments never grant chatbot access.
 
-The persona never contains a rule about what the bot may *do*. Those are in
-`bot/chat/persona.py` as hard rules appended after this document, and the
-channel and role gates are enforced before a prompt is built — a model cannot
-leak a rule it was never shown.
+The portal shows both the saved choice and the style that would apply next.
+Member-facing replies describe a choice only as saved and do not reveal role
+assignment metadata.
 
-## Behaviour plugins
-
-Behaviour plugins are reusable add-ons to the selected base persona. Copy
-`behaviour-plugins/example.md` to a real name or create one from **Config →
-Chatbot**. The portal stores each plugin as a git-ignored Markdown file in that
-directory and can edit or delete it later.
-
-Role assignments are managed in the same panel. A role never grants access by
-itself: the member must still hold `CHAT_PILOT_ROLE_ID`. If they hold several
-assigned roles, every matching plugin is added in the order shown in the portal.
-Plugin instructions are included in the system prompt and repeated in the final
-scheduler reminder on every model round, so they influence tool-result replies
-and clarification replies as well as simple answers.
+Only templates and this README are tracked. Keep live identities, behaviours,
+profiles, and maintainer reference notes private.

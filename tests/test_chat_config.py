@@ -15,6 +15,7 @@ import pytest
 from bot import behaviour_plugins
 from bot.agent.client import CFG_CHAT, BossBot
 from bot.api import service
+from bot.infrastructure.config import Settings
 from bot.infrastructure.db import Repo
 
 from .chat_support import CHAT_CATEGORY, CHAT_CHANNEL, CHAT_ROLE, chat_settings, message
@@ -78,7 +79,8 @@ def test_the_defaults_are_the_documented_ones():
     assert settings.chat_pilot_lock_wait_s == 2.0
     assert settings.chat_pilot_model == "gpt-oss:20b"
     assert settings.chat_pilot_timeout == 60.0
-    assert settings.persona_path == "data/persona.md"
+    assert settings.persona_path == "personas/identities/example.md"
+    assert Settings.model_fields["persona_path"].default == "personas/identities/persona.md"
 
 
 def test_the_capacity_settings_are_read_from_the_environment():
