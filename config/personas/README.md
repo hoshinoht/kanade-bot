@@ -14,12 +14,12 @@ behaviours/profiles/<name>.md         live profiles, git-ignored
 Create the live files and restart:
 
 ```sh
-cp personas/identities/example.md personas/identities/persona.md
-cp personas/behaviours/default.example.md personas/behaviours/default.md
+cp config/personas/identities/example.md config/personas/identities/persona.md
+cp config/personas/behaviours/default.example.md config/personas/behaviours/default.md
 docker compose restart bot
 ```
 
-The directory is bind-mounted at `/app/personas`. `PERSONA_PATH` seeds the
+The directory is bind-mounted at `/app/config/personas`. `PERSONA_PATH` seeds the
 identity filename for a fresh database; later identity choices are stored in
 SQLite and can be changed from **Config → Chatbot** without restarting. New
 paths take precedence, but legacy root identities and `behaviour-plugins/`

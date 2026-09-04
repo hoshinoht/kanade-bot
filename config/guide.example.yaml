@@ -1,0 +1,104 @@
+# Guide messages posted by `bossctl guide`.
+#
+# Copy this file to guide.yaml and edit the messages to match your
+# server.  The CLI reads this file, then posts each entry as a
+# separate Discord message.
+#
+# The special key `bosses: true` in any message marks it as the boss
+# list — the CLI replaces that line with per-boss entries generated
+# from guide_bosses.yaml and attaches portrait PNGs as embed
+# thumbnails from portraits/icon/.
+#
+# Empty strings post as blank messages for visual spacing.
+
+messages:
+  - |
+    # ☕ YuukiSakuna — your boss-run keeper
+    Kon-sakuna~ I remember every weekly timing so you don't have to — I build each
+    boss week's runs, ping exactly the people on them, and keep the attendance score.
+    Elite at scheduling, hopeless at everything else, as intended.
+
+    ## The roles
+    - <@&ROLE_ID_BOSSING> — the roster. Hold this and I know you exist: you
+      can be put on runs and use my commands.
+    - <@&ROLE_ID_SPEECH> — may talk to me anywhere under the bossing
+      category. No role, no reply — I don't argue, I simply ignore.
+    - <@&ROLE_ID_STAFF> — the staff. They run `/say` and `/debug` and
+      skip my rate limit. Yes, they're my favourites. No, you can't apply
+      through me.
+
+  - ""
+
+  - |
+    ## 📅 How the week works
+    Fixed timings become real runs at every weekly reset. On a run day I post one
+    grouped morning reminder in the party's channel, then countdowns at **T-1h**
+    and **T-15m**.
+
+    ### React on my reminders
+    - ✅ — you're coming. When everyone on a run has ✅'d, it's **confirmed**.
+    - ❌ — you're not. The run goes **at-risk** and I tag the others to
+      reschedule.
+
+    ### 🗳️ Proposal cards
+    I also read the party channels, and when I spot a change ("push hstar to
+    wed 2300") I post a card describing it. Nothing changes until someone on the
+    run reacts ✅ — I draft, you ratify. React ❌ and it's off. My card, your call.
+
+  - ""
+
+  - |
+    ## 💬 Talk to me
+    Anywhere under the bossing category — @-mention me, or just reply to
+    something I said (needs <@&ROLE_ID_SPEECH>).
+
+    **Ask me things**
+    > "what's on this week?" · "when is the next run here?" ·
+    > "who's on the hstar run?"
+
+    **Ask me to do things**
+    > "schedule a Hard Bellona run tonight 21:30 for me and @X"
+    > "move hstar to wednesday 2300" · "take me off friday" ·
+    > "stop the weekly Tuesday run"
+
+    Anything that changes the schedule comes out as the same ✅/❌ card — I
+    cannot touch the schedule on my own, which the staff insist is a feature.
+    Missing a detail (which Bellona? what time?) and I'll ask one question —
+    answer with a normal reply. Reject my card with ❌ and I'll ask what you
+    wanted instead; answer that and the corrected card goes up.
+
+    -# 👀 heard you · ⏳ wait a moment (4 per 5 min, nya) · 💬 busy
+
+  - ""
+
+  - |
+    ## 🎮 The commands
+    Need <@&ROLE_ID_BOSSING>. Ids come with dropdowns — you almost never
+    type one.
+
+    - `/schedule` — your runs; in a party channel, that channel's runs
+    - `/fixed add` — record a weekly timing, in your party's channel
+    - `/fixed list` · `edit` · `remove` — manage the timings
+    - `/amend` — move a run ("wed 21:30", "tomorrow 9pm" both fine)
+    - `/rsvp` — answer without hunting for the reaction
+    - `/status` · `/cancel` · `/otot` · `/restore` · `/done` —
+      planned · confirmed · own time · cancelled · done
+    - `/swap` — substitute someone for this week only, timing unchanged
+    - `/style` — choose my reply voice (formal · casual · tsundere · …)
+    - `/limits` — how many chat answers you have left
+    - `/nick` — teach me someone's chat nickname
+
+    **Bosses want a difficulty:** `hstar`, `xkalos`, `hfa`. A bare
+    "kalos"? Chiga~u — I'll list the valid forms and wait.
+
+    -# Staff: /say · /debug · /pings · /pingtime · /rescan · /bot pause · resume
+
+  - ""
+
+  - |
+    ## 📖 The bosses
+    Everything I schedule, lowest level first. Call one by its token —
+    difficulty letter + name, like `hstar` — or say it in words,
+    "Hard Star". Nicknames in small print work too.
+
+    bosses: true

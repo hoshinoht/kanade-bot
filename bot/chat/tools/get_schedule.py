@@ -16,12 +16,7 @@ from .resolution import _RELATIVE_DAYS
 
 
 def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
-    """Resolve the schedule's optional participant filter to one roster id.
-
-    An omitted field means the group-wide schedule. A supplied field must be the
-    string ``"me"`` or exactly one resolvable roster member; invalid values are
-    refused rather than silently widened to every member's runs.
-    """
+    """Resolve the optional participant filter to one roster id, or ``None``."""
     if "participant" not in args:
         return None
     value = args["participant"]
@@ -45,9 +40,7 @@ def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
         if reference
     }
     if raw in bot_references:
-        # Small models sometimes copy the mention that summoned the bot into the
-        # participant field. In a first-person schedule question that mention is
-        # conversational routing, not the person whose runs were requested.
+        # Small models copy the bot mention into participant; treat as first-person.
         return ctx.author_id
 
     resolution = resolve_participant_text(raw, ctx.bot.repo.list_members())
@@ -69,21 +62,15 @@ def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
 def _schedule_date(
     ctx: ToolContext, args: dict, selected_week: datetime, now: datetime
 ) -> date | None:
-    """Resolve an optional day to one local date inside ``selected_week``.
-
-    Relative words name a date from the captured clock. Weekdays instead name
-    the unique occurrence inside the requested boss week, so ``week='next',
-    day='friday'`` cannot accidentally point at this week's Friday.
-    """
-    if "day" not in args:
+    """Resolve an optional day to one local date inside ``selected_week``."""
+    raw_day = args.get("day")
+    if not isinstance(raw_day, str) or not raw_day.strip():
         return None
-    value = args["day"]
-    if not isinstance(value, str) or not value.strip():
-        raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
+    value = raw_day.strip()
 
-    raw = value.strip().lower()
     today = now.astimezone(ctx.bot.tz).date()
     week_date = selected_week.astimezone(ctx.bot.tz).date()
+    raw = value.lower()
     if raw in _RELATIVE_DAYS:
         chosen = today + timedelta(days=_RELATIVE_DAYS[raw])
     elif raw in WEEKDAY_ALIASES:
@@ -92,9 +79,7 @@ def _schedule_date(
     else:
         raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
 
-    # A reset need not be midnight. In that case both reset-day calendar dates
-    # overlap the boss week (the opening evening and the closing daytime), so
-    # validate against the actual interval rather than assuming seven dates.
+    # Reset need not be midnight; validate against the actual boss-week interval.
     last_week_date = (week_end(selected_week, ctx.bot.tz) - timedelta(microseconds=1)).date()
     if not week_date <= chosen <= last_week_date:
         other_week = "next" if chosen > last_week_date else "this"
@@ -118,6 +103,8 @@ def handle(ctx: ToolContext, args: dict) -> str:
     participant_name = service.member_name(ctx.bot, participant_id) if participant_id else None
 
     now = utcnow()
+    raw_day = args.get("day")
+    has_day = isinstance(raw_day, str) and raw_day.strip()
     selected_week = (
         (
             next_week_start(
@@ -128,7 +115,7 @@ def handle(ctx: ToolContext, args: dict) -> str:
                 ctx.bot.tz, ctx.bot.settings.reset_weekday, ctx.bot.settings.reset_time, now
             )
         )
-        if "day" in args
+        if has_day
         else service.week_for(ctx.bot, week)
     )
     selected_date = _schedule_date(ctx, args, selected_week, now)
@@ -184,7 +171,7 @@ def handle(ctx: ToolContext, args: dict) -> str:
             where = " in this channel" if scope == "channel" else ""
             return f"{subject} not on any runs{where} {period}.{elsewhere}"
         if scope == "channel":
-            # Never let "nothing here" be reported as "nothing at all".
+            # Never report "nothing here" as "nothing at all".
             count = len(dated)
             counted_runs = f"{count} {'run' if count == 1 else 'runs'}"
             channels = "another channel" if count == 1 else "other channels"
@@ -226,9 +213,8 @@ def handle(ctx: ToolContext, args: dict) -> str:
     answer = "\n".join([heading, "", *lines]) + (f"\n*(and {more} more)*" if more > 0 else "")
 
     if all(is_over(run) for run in runs):
-        # The per-line markers are enough when only some are past; a week with
-        # nothing left at all is what made the model pick a finished run as "the
-        # next one", so that case is stated outright.
+        # State outright when nothing upcoming is left — the model otherwise
+        # picks a finished run as "the next one".
         answer += (
             "\n\n*Every run listed has already happened — nothing upcoming is left "
             f"{'on ' + date_label if date_label else f'in {week} boss week'}.*"

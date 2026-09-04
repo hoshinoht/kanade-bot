@@ -198,7 +198,7 @@ def chat_settings(**overrides: Any):
         "chat_pilot_channel_ids": str(CHAT_CHANNEL),
         "chat_pilot_category_ids": str(CHAT_CATEGORY),
         "admin_role_id": ADMIN_ROLE,
-        "persona_path": "personas/identities/example.md",
+        "persona_path": "config/personas/identities/example.md",
     }
     values.update(overrides)
     return make_settings(**values)

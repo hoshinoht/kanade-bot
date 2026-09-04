@@ -87,7 +87,7 @@ CFG_PAUSED = "paused"
 CFG_EXTRACT = "extract_enabled"
 CFG_QUIET = "quiet_mode"
 CFG_CHAT = "chat_mode"
-#: Which file in ``personas/`` the bot is wearing, by name. A runtime row for
+#: Which file in ``config/personas/`` the bot is wearing, by name. A runtime row for
 #: the same reason :data:`CFG_QUIET` is one: a voice is the thing an operator
 #: most wants to change without a redeploy, and the environment only seeds it.
 CFG_PERSONA = "persona"

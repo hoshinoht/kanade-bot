@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     #: Sampling temperature for chatbot replies.
     chat_pilot_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     #: Stable identity document on the persona bind mount.
-    persona_path: str = "personas/identities/persona.md"
+    persona_path: str = "config/personas/identities/persona.md"
 
     # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Empty refuses every non-health API request.

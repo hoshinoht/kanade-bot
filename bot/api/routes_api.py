@@ -37,6 +37,8 @@ from .models import (
     FixedCreate,
     FixedOut,
     FixedUpdate,
+    GuideIn,
+    GuideOut,
     LimitOverrideIn,
     LimitOverrideOut,
     LimitResetOut,
@@ -55,6 +57,8 @@ from .models import (
     RescanTargetOut,
     RsvpIn,
     RunOut,
+    SayIn,
+    SayOut,
     ScheduleOut,
     StatusIn,
     SwapIn,
@@ -386,6 +390,26 @@ async def get_access(bot: Bot, caller: Caller) -> list[dict]:
 async def post_digest(bot: Bot, caller: Caller, body: DigestIn | None = None) -> dict:
     body = body or DigestIn()
     return await service.post_digest(bot, body.channel_id, week=body.week)
+
+
+@router.post("/say", response_model=SayOut, summary="Post a plain-text message to a channel")
+async def post_say(bot: Bot, caller: Caller, body: SayIn) -> dict:
+    return await service.post_say(bot, body.channel_id, body.content)
+
+
+@router.post(
+    "/guide",
+    response_model=GuideOut,
+    summary="Post a message with embeds and file attachments",
+)
+async def post_guide(bot: Bot, caller: Caller, body: GuideIn) -> dict:
+    return await service.post_guide(
+        bot,
+        body.channel_id,
+        body.content,
+        embed_data=[e.model_dump() for e in body.embeds] if body.embeds else None,
+        file_blobs=body.files if body.files else None,
+    )
 
 
 @router.get(

@@ -1,10 +1,5 @@
-/* ── modal: an editor that is too tall to unfold in place ───────────────── */
+/* ── modal: editor that unfolds in a dialog ────────────────────────────────── */
 
-/* The fixed-timing editor contains the whole in-game boss list. Unfolded
-   inside its table row it pushed every other timing several screens down, so
-   it opens as a dialog instead: head and foot pinned, the body scrolling
-   between them. Without JavaScript the Edit link is an ordinary fragment
-   link, and this reveals the same form in place. */
 dialog.modal {
   padding: 0;
   border: 0;
@@ -148,5 +143,134 @@ dialog.modal[open] {
   .modal__well {
     max-height: 46vh;
   }
+}
+
+/* ── member list: compact card rows ───────────────────────────────────────── */
+
+.memberlist {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.memberlist__row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.memberlist__row:hover {
+  background: var(--raise);
+}
+
+.memberlist__row:last-child {
+  border-bottom: 0;
+}
+
+.memberlist__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.memberlist__name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberlist__stat {
+  flex: none;
+  font-size: var(--fs-small);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.memberlist__chevron {
+  flex: none;
+  color: var(--faint);
+  transition: color 0.1s;
+}
+
+.memberlist__row:hover .memberlist__chevron {
+  color: var(--dim);
+}
+
+/* ── member sheet modal ───────────────────────────────────────────────────── */
+
+dialog.membersheet {
+  width: min(32rem, calc(100% - 1.6rem));
+  max-height: min(80vh, 36rem);
+}
+
+.membersheet__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.8rem;
+  align-items: baseline;
+}
+
+.membersheet__grid dt {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.membersheet__grid dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.membersheet__section {
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.membersheet__label {
+  margin: 0 0 0.3rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.membersheet__aliases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.4rem;
+}
+
+.membersheet__alias-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.membersheet__alias-form input {
+  font-size: var(--fs-small);
+  padding: 0.15rem 0.4rem;
 }
 

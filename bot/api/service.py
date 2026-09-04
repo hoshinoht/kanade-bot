@@ -2389,7 +2389,7 @@ def delete_role_plugin(bot: BossBot, role_id: Any) -> dict:
 
 
 def _persona_choice(bot: BossBot, value: Any) -> str:
-    """One of the files actually in ``personas/``, by name.
+    """One of the files actually in ``config/personas/``, by name.
 
     Validated by *membership* rather than by sanitising. The submitted string is
     compared against the real directory listing and is only ever joined to a
@@ -2405,8 +2405,8 @@ def _persona_choice(bot: BossBot, value: Any) -> str:
     choices = bot.persona_choices()
     if wanted in choices:
         return wanted
-    offered = ", ".join(f"`{name}`" for name in choices) or "none -- personas/ is empty"
-    raise BadRequest(f"`{wanted}` is not a persona in personas/ - one of: {offered}")
+    offered = ", ".join(f"`{name}`" for name in choices) or "none -- config/personas/ is empty"
+    raise BadRequest(f"`{wanted}` is not a persona in config/personas/ - one of: {offered}")
 
 
 def _whole_number(value: Any, label: str, minimum: int = 1) -> int:
@@ -2456,6 +2456,118 @@ async def post_digest(
     return {
         "posted": True,
         "week": week,
+        "channel_id": str(cid) if cid else None,
+        "message_id": str(message.id),
+        "url": message_url(bot, cid, message.id),
+    }
+
+
+async def post_say(bot: BossBot, channel_id: str, content: str) -> dict:
+    """Post a plain-text message to a channel, notifying nobody."""
+    from bot.agent.util import mentions_in
+
+    found = await bot.find_channel(channel_id)
+    if found.channel is None:
+        raise BadRequest(f"couldn't post: {found.problem}")
+    users, roles = mentions_in(content)
+    message = await bot.post_plain(found.channel, content, users, mention_roles=roles)
+    if message is None:
+        raise BadRequest("Discord refused the message; check the bot logs")
+    cid = getattr(getattr(message, "channel", None), "id", channel_id)
+    _audit(
+        bot,
+        "say",
+        str(cid) if cid else None,
+        f"posted {len(content)} chars in {channel_name(bot, cid) or f'channel {cid}'}",
+    )
+    return {
+        "posted": True,
+        "channel_id": str(cid) if cid else None,
+        "message_id": str(message.id),
+        "url": message_url(bot, cid, message.id),
+    }
+
+
+async def post_guide(
+    bot: BossBot,
+    channel_id: str,
+    content: str,
+    embed_data: list[dict] | None = None,
+    file_blobs: dict[str, str] | None = None,
+) -> dict:
+    """Post a message with optional embeds and file attachments.
+
+    *file_blobs* maps filename → base64-encoded bytes, so the CLI can ship
+    images without sharing a filesystem with the container.
+    """
+    import base64
+    import io
+    from pathlib import Path
+
+    import discord
+
+    from bot.agent.util import mentions_in
+
+    found = await bot.find_channel(channel_id)
+    if found.channel is None:
+        raise BadRequest(f"couldn't post: {found.problem}")
+
+    users, roles = mentions_in(content)
+    allowed = discord.AllowedMentions(
+        everyone=False,
+        roles=([discord.Object(id=int(rid)) for rid in roles] if roles else False),
+        users=[discord.Object(id=int(uid)) for uid in users],
+    )
+
+    embeds: list[discord.Embed] = []
+    files: list[discord.File] = []
+    if embed_data:
+        for data in embed_data:
+            c = (
+                discord.Colour(data["colour"])
+                if data.get("colour")
+                else discord.Colour.default()
+            )
+            embed = discord.Embed(
+                title=data.get("title", ""),
+                description=data.get("description", ""),
+                colour=c,
+            )
+            thumb_path = data.get("thumbnail_path")
+            if thumb_path:
+                fname = Path(thumb_path).name
+                embed.set_thumbnail(url=f"attachment://{fname}")
+                try:
+                    files.append(discord.File(thumb_path, filename=fname))
+                except OSError:
+                    log.warning("could not read guide file: %s", thumb_path)
+            if data.get("footer"):
+                embed.set_footer(text=data["footer"])
+            embeds.append(embed)
+
+    if file_blobs:
+        for fname, b64data in file_blobs.items():
+            raw = base64.b64decode(b64data)
+            files.append(discord.File(io.BytesIO(raw), filename=fname))
+
+    message = await found.channel.send(
+        content,
+        embeds=embeds if embeds else None,
+        allowed_mentions=allowed,
+        files=files if files else None,
+    )
+    if message is None:
+        raise BadRequest("Discord refused the message; check the bot logs")
+
+    cid = getattr(getattr(message, "channel", None), "id", channel_id)
+    _audit(
+        bot,
+        "guide",
+        str(cid) if cid else None,
+        f"posted guide ({len(content)} chars, {len(embeds)} embeds, {len(files)} files)",
+    )
+    return {
+        "posted": True,
         "channel_id": str(cid) if cid else None,
         "message_id": str(message.id),
         "url": message_url(bot, cid, message.id),

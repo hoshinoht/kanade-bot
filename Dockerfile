@@ -30,9 +30,9 @@ COPY bot ./bot
 RUN python -m bot.portal_styles
 COPY config ./config
 # Copy tracked fallbacks only; private prompts must not enter image layers.
-COPY personas/identities/example.md ./personas/identities/example.md
-COPY personas/behaviours/default.example.md ./personas/behaviours/default.example.md
-COPY personas/behaviours/profiles/example.md ./personas/behaviours/profiles/example.md
+COPY config/personas/identities/example.md ./config/personas/identities/example.md
+COPY config/personas/behaviours/default.example.md ./config/personas/behaviours/default.example.md
+COPY config/personas/behaviours/profiles/example.md ./config/personas/behaviours/profiles/example.md
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 

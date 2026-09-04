@@ -1,4 +1,5 @@
 {% from "partials/macros.html" import no_match %}
+{% from "partials/icons.html" import icon %}
 <div class="pane__body">
   {% if not listing.rows %}
     {% if listing.q %}
@@ -10,49 +11,22 @@
     </div>
     {% endif %}
   {% else %}
-  <table>
-    <thead><tr><th>Member</th><th>Server nickname</th><th>Chat aliases</th><th>Runs this week</th><th>@mentions</th><th>Chosen reply style</th><th>Applies to next reply</th><th>Add an alias</th></tr></thead>
-    <tbody>
-      {% for member in listing.rows %}
-      <tr>
-        <td><strong>{{ member.display_name }}</strong><div class="id">{{ member.user_id }}</div></td>
-        <td>{{ member.nickname or "—" }}</td>
-        <td>
-          {% for alias in member.aliases %}<span class="chip chip--mono">{{ alias }}</span> {% else %}<span class="id">none</span>{% endfor %}
-        </td>
-        <td class="mono">{{ member.runs_this_week }}</td>
-        <td>
-          <span class="chip {{ 'chip--waiting' if member.ping_level == 'off' }}">{{ member.ping_level }}</span>
-        </td>
-        <td>
-          <span class="chip chip--mono">{{ member.reply_style or "default" }}</span>
-          {% if member.reply_style and member.reply_style_available is defined and not member.reply_style_available %}
-          <span class="status status--at_risk">unavailable</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if member.effective_style %}
-          <span class="chip chip--mono">{{ member.effective_style }}</span>
-          {% if member.style_source == "role" %}
-          <span class="status">role: {{ member.style_role_name or member.style_role_id }}</span>
-          {% endif %}
-          {% elif member.style_source == "unknown" %}
-          <span class="status status--at_risk">unknown — Discord state unavailable</span>
-          {% else %}
-          <span class="id">not applicable</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if member.persisted %}
-          <form method="post" action="/members/{{ member.user_id }}/nick" class="filters" style="margin:0">
-            <input name="alias" placeholder="MY" size="8" required aria-label="New alias for {{ member.display_name }}">
-            <button class="btn" type="submit">Add</button>
-          </form>
-          {% else %}<span class="id">live Discord member</span>{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="memberlist">
+    {% for member in listing.rows %}
+    <button class="memberlist__row" type="button"
+            data-dialog="member-{{ member.user_id }}">
+      <div class="memberlist__name">
+        <strong>{{ member.display_name }}</strong>
+        {% if member.nickname %}<span class="id">{{ member.nickname }}</span>{% endif %}
+      </div>
+      <span class="memberlist__stat mono">{{ member.runs_this_week }} run{{ "" if member.runs_this_week == 1 else "s" }}</span>
+      {% if member.reply_style %}
+      <span class="chip chip--mono">{{ member.reply_style }}</span>
+      {% endif %}
+      <span class="memberlist__chevron" aria-hidden="true">{{ icon("chevron-right") }}</span>
+    </button>
+    {% include "partials/member_sheet.html" %}
+    {% endfor %}
+  </div>
   {% endif %}
 </div>

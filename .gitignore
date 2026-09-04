@@ -22,24 +22,31 @@ config/portraits/*
 config/artwork/*/*
 !config/artwork/*/README.md
 
+# Guide content — editable per deployment, never committed.
+config/guide.yaml
+config/guide_bosses.yaml
+!config/guide.example.yaml
+!config/guide_bosses.example.yaml
+!config/README.md
+
 .claude
 
 # Track templates only; all live prompt content stays private.
-personas/*
-!personas/README.md
-!personas/persona.example.md
-!personas/behaviour-plugins/
-personas/behaviour-plugins/*
-!personas/behaviour-plugins/example.md
-!personas/identities/
-personas/identities/*
-!personas/identities/example.md
-!personas/behaviours/
-personas/behaviours/*
-!personas/behaviours/default.example.md
-!personas/behaviours/profiles/
-personas/behaviours/profiles/*
-!personas/behaviours/profiles/example.md
+config/personas/*
+!config/personas/README.md
+!config/personas/persona.example.md
+!config/personas/behaviour-plugins/
+config/personas/behaviour-plugins/*
+!config/personas/behaviour-plugins/example.md
+!config/personas/identities/
+config/personas/identities/*
+!config/personas/identities/example.md
+!config/personas/behaviours/
+config/personas/behaviours/*
+!config/personas/behaviours/default.example.md
+!config/personas/behaviours/profiles/
+config/personas/behaviours/profiles/*
+!config/personas/behaviours/profiles/example.md
 
 # Local design notes.
 DESIGN.md
