@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-# uv is pinned so the lockfile is always resolved by a known version.
+# Pin the package manager used by the lockfile.
 FROM ghcr.io/astral-sh/uv:0.11.1 AS uv
 
 FROM python:3.12-slim
 
-# zoneinfo needs the system tz database (Asia/Kuala_Lumpur et al).
+# Required by zoneinfo.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/*
@@ -20,29 +20,23 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencies first: they change far less often than the source.
+# Cache dependencies before copying source.
 COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY bot ./bot
-# Compose builds the served artifact from its source partials. Do this while the
-# image is writable; the running container deliberately has a read-only root.
+# Build CSS before the runtime root becomes read-only.
 RUN python -m bot.portal_styles
 COPY config ./config
-# The chatbot's fallback persona -- the one file from personas/ that belongs in
-# the image. The *real* one is not in the image or in git: it lives in the
-# host's personas/ directory, which compose bind-mounts over this path. Copied
-# by name, never `COPY personas`, so a personal persona sitting beside the
-# template can never be baked into a layer. Without this, a deployment that has
-# not written one yet has no voice at all rather than the placeholder the
-# loader promises.
-COPY personas/persona.example.md ./personas/
+# Copy tracked fallbacks only; private prompts must not enter image layers.
+COPY config/personas/identities/example.md ./config/personas/identities/example.md
+COPY config/personas/behaviours/default.example.md ./config/personas/behaviours/default.example.md
+COPY config/personas/behaviours/profiles/example.md ./config/personas/behaviours/profiles/example.md
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
-# Non-root. /app/data is created here so the container still starts when no
-# volume is mounted; compose bind-mounts ./data over it in normal use.
+# Run as non-root and retain a standalone data path.
 RUN useradd --create-home --uid 10001 bossbot \
     && mkdir -p /app/data \
     && chown -R bossbot:bossbot /app

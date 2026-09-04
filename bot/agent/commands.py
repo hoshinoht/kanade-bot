@@ -1,9 +1,4 @@
-"""Slash commands.
-
-Everything is registered on the client's tree and copied to the configured guild
-so it shows up immediately.  Replies are ephemeral except ``/schedule``, which is
-public but posts with ``AllowedMentions.none()`` so it never pings.
-"""
+"""Slash commands."""
 
 from __future__ import annotations
 
@@ -17,6 +12,7 @@ import dateparser
 import discord
 from discord import app_commands
 
+from bot import behaviour_plugins
 from bot.domain.bosses import BossParseError
 from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
 from bot.domain.timeutil import local_naive, utcnow
@@ -68,12 +64,10 @@ WINDOW_LABELS = {
 
 WINDOW_CHOICES = [app_commands.Choice(name=WINDOW_LABELS[value], value=value) for value in WINDOWS]
 
-#: Runs a human is offered to act on, and the ones `/schedule` shows: a night
-#: that has been and gone is neither. `/debug` deliberately still sees everything.
+#: Runs available to members and shown by ``/schedule``.
 ACTIONABLE_STATUSES = LIVE_STATUSES
 
-#: `/restore` and `/status` have to reach the runs the others hide -- putting a
-#: cancelled run back is the whole point of them.
+#: Statuses ``/restore`` and ``/status`` must reach.
 RESTORABLE_STATUSES = ("planned", "confirmed", "at_risk", "otot", "done", "cancelled")
 
 STATUS_CHOICES = [
@@ -92,6 +86,10 @@ class MissingBossingRole(app_commands.CheckFailure):
     """Raised when a non-member tries to use a scheduling command."""
 
 
+class MissingChatAccess(app_commands.CheckFailure):
+    """Raised when a member without chatbot access sets a style."""
+
+
 class NotAllowed(app_commands.CheckFailure):
     """Raised when a member touches a run they are not part of."""
 
@@ -105,30 +103,14 @@ def _bot(interaction: discord.Interaction) -> BossBot:
 
 
 def _actor(interaction: discord.Interaction) -> audit.Actor:
-    """Who the audit trail credits for a slash command: the member who ran it.
-
-    The service functions these commands share with the portal record who made
-    each change (:mod:`bot.infrastructure.audit`), and they read the actor from the context
-    rather than an argument. Nothing sets it out here, so a `/status` would be
-    filed as `system` -- the one surface that always knows exactly whose
-    decision it was, recorded as nobody's.
-    """
+    """Return the invoking member's audit actor."""
     return audit.Actor("discord", str(interaction.user.id))
 
 
 def _record(
     interaction: discord.Interaction, action: str, subject: str | None, detail: str
 ) -> None:
-    """Note a change a command made on its own, without the service layer.
-
-    Most commands here write through the repository directly rather than
-    through :mod:`bot.api.service`, so there is nothing between them and SQLite
-    to record what happened. The action verbs and the wording of ``detail``
-    deliberately match the service's, so one trail reads the same whether a run
-    was moved from Discord or from the portal.
-
-    Always called *after* the change: a command that refused writes no row.
-    """
+    """Record a completed command-side change."""
     audit.record(_bot(interaction).repo, _actor(interaction), action, subject, detail)
 
 
@@ -157,13 +139,7 @@ def is_guild_admin(user: object) -> bool:
 
 
 def is_staff(interaction: discord.Interaction) -> bool:
-    """Does whoever ran this command run the bot? (:func:`bot.agent.util.is_bot_admin`)
-
-    The one "who is staff" rule this module has, so `/say`'s gate and `/limits`'
-    exemption cannot drift apart -- and so both agree with the chatbot, which
-    exempts the same people from the rate limit through
-    :meth:`bot.chat.agent.ChatPilot._is_admin`.
-    """
+    """Return whether the invoker is bot staff."""
     return is_bot_admin(
         is_guild_admin(interaction.user),
         interaction.guild is not None and interaction.guild.owner_id == interaction.user.id,
@@ -172,14 +148,25 @@ def is_staff(interaction: discord.Interaction) -> bool:
     )
 
 
-async def _require_admin(interaction: discord.Interaction) -> bool:
-    """The runtime half of `/say`'s gate; `/debug` applies the same rule.
+async def _require_chat_access(interaction: discord.Interaction) -> bool:
+    """The slash-command form of the chatbot's role-or-staff access gate."""
+    if is_staff(interaction):
+        return True
+    configured = _bot(interaction).settings.chat_pilot_role_id
+    roles = getattr(interaction.user, "roles", ()) or ()
+    if configured is not None and any(
+        str(getattr(role, "id", role)) == str(configured) for role in roles
+    ):
+        return True
+    raise MissingChatAccess()
 
-    ``default_permissions(administrator=True)`` hides the command from everyone
-    else, but it is only a *default*: a server can hand it back out under Server
-    Settings -> Integrations, so the permission is checked again here -- and it
-    is here, not in the visibility default, that ``ADMIN_ROLE_ID`` grants access.
-    """
+
+def require_chat_access():
+    return app_commands.check(_require_chat_access)
+
+
+async def _require_admin(interaction: discord.Interaction) -> bool:
+    """Enforce the runtime staff gate for admin commands."""
     if is_staff(interaction):
         return True
     raise NotAnAdmin()
@@ -198,17 +185,7 @@ def _resolve_participants(
     picked: Sequence[discord.Member | None] = (),
     include_invoker: bool = True,
 ) -> tuple[list[str], str | None]:
-    """Work out a run's participants from the pickers and the text field.
-
-    Order is invoker (``/fixed add`` only), then the ``memberN`` pickers, then
-    anything typed into ``participants:`` -- de-duplicated, order preserved.
-
-    ``include_invoker`` is off for both ``/fixed add`` and ``/fixed edit``: the
-    person setting a timing up (an admin, a pilot) is not necessarily on the
-    run, and only listed participants get pinged. Pick yourself if you're on it.
-
-    Returns ``(participant_ids, error)``.
-    """
+    """Resolve selected and typed participants as ``(ids, error)``."""
     ids: list[str] = []
 
     def add(uid: int | str) -> None:
@@ -227,7 +204,7 @@ def _resolve_participants(
             continue
         add(member.id)
 
-    # Free text is a fallback for people typing names instead of using a picker.
+    # Accept typed names when a picker was not used.
     resolution = resolve_participant_text(raw, bot.repo.list_members())
     for uid in resolution.ids:
         add(uid)
@@ -259,11 +236,7 @@ def _resolve_participants(
 
 
 def _resolve(bot: BossBot, raw: str, candidates: list[str], noun: str) -> str:
-    """Turn typed text into one id, or raise :class:`NotAllowed` with advice.
-
-    Accepts a full uuid or any unique prefix, so the `#a1b2c3d4` the bot prints
-    can be pasted straight back in -- though autocomplete usually fills it.
-    """
+    """Resolve an ID or raise ``NotAllowed`` with guidance."""
     try:
         return resolve_id(raw, candidates)
     except IdAmbiguous as exc:
@@ -274,11 +247,7 @@ def _resolve(bot: BossBot, raw: str, candidates: list[str], noun: str) -> str:
 
 
 def _visible_runs(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
-    """Runs the invoker may act on: this week and next, theirs unless admin.
-
-    "Theirs" is on-the-run *or* owner of the fixed timing behind it, and a run
-    whose night has passed is left out -- see :data:`ACTIONABLE_STATUSES`.
-    """
+    """Return actionable runs visible to the invoker."""
     runs: list[dict] = []
     for which in ("this", "next"):
         runs.extend(
@@ -351,11 +320,7 @@ async def run_autocomplete(
 async def any_run_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    """Like :func:`run_autocomplete`, but including cancelled/own-time/done runs.
-
-    `/restore` and `/status` exist precisely to reach those, so hiding them
-    would make the commands unusable from the dropdown.
-    """
+    """Suggest runs including non-actionable statuses."""
     try:
         bot = _bot(interaction)
         runs: list[dict] = []
@@ -535,8 +500,7 @@ class FixedGroup(app_commands.Group):
             interaction.user.id,
             interaction.guild,
             picked=(member1, member2, member3, member4, member5, member6),
-            # The person setting up a party's timing is not necessarily on the
-            # run (a guild admin, a pilot) - only listed participants get pinged.
+            # Only listed participants receive pings.
             include_invoker=False,
         )
         if problem:
@@ -561,8 +525,7 @@ class FixedGroup(app_commands.Group):
             f"{WEEKDAY_NAMES[parse_weekday(day.value)]} {hhmm.strftime('%H:%M')} "
             f"for {len(ids)} member(s)",
         )
-        # The invoker is not added automatically, so say plainly when they have
-        # set up a run that will never ping them.
+        # Warn owners who are not participants.
         not_on_it = (
             "\n(you're the owner but not on this run — it won't ping you; "
             "`/fixed edit` to add yourself)"
@@ -590,9 +553,7 @@ class FixedGroup(app_commands.Group):
     ) -> None:
         bot = _bot(interaction)
         only_mine = (scope.value if scope else "mine") == "mine"
-        # "Mine" is owner *or* participant: `/fixed add` does not put the
-        # invoker on the run, so filtering on participation alone hides a
-        # pilot's own timings from them and reads as data loss.
+        # ``mine`` includes fixed-run owners.
         rows = bot.repo.list_fixed_runs(involving=interaction.user.id if only_mine else None)
         if not rows:
             await interaction.response.send_message(
@@ -809,8 +770,7 @@ async def schedule(
 ) -> None:
     bot = _bot(interaction)
     which_week = week.value if week else "this"
-    # Inside a party channel the useful default is "this channel's runs";
-    # anywhere else it is "my runs".
+    # Party channels default to their own runs.
     default_scope = "channel" if bot.is_watched(interaction.channel) else "mine"
     which_scope = scope.value if scope else default_scope
     ws = _week_for(bot, which_week)
@@ -820,8 +780,7 @@ async def schedule(
         involving=interaction.user.id if which_scope == "mine" else None,
         channel_id=interaction.channel_id if which_scope == "channel" else None,
     )
-    # A boss week is materialised whole, so by Sunday it already holds
-    # Thursday's finished runs. They are hidden unless asked for.
+    # Hide materialised past runs unless requested.
     runs = everything if show_past else [r for r in everything if r["status"] in LIVE_STATUSES]
     hidden = len(everything) - len(runs)
 
@@ -935,9 +894,7 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
         f"{formatting.local_day(parsed, bot.tz)} {formatting.local_time(parsed, bot.tz)}.",
         ephemeral=True,
     )
-    # The move is already applied, and everyone on it gets the morning card and
-    # its countdowns anyway, so this receipt names people rather than pinging
-    # them (DESIGN.md §3, "Mention policy").
+    # This notice names participants rather than pinging them.
     who = audience(bot.repo, updated["participants"], "amend")
     await _announce(
         bot,
@@ -994,15 +951,8 @@ async def status(
 
 
 async def _set_status(interaction: discord.Interaction, run_id: str, state: str) -> None:
-    """The one path behind `/status`, `/otot`, `/cancel`, `/restore` and `/done`.
-
-    It goes through the same service function the portal and `bossctl` use, so
-    a transition means the same thing however it was asked for -- including the
-    channel notice, which is posted once and only when something changed.
-    """
-    # Imported here rather than at module scope: `bot.api` pulls in FastAPI and
-    # the whole portal, and the slash-command layer must not depend on that
-    # being importable to work.
+    """Set a status through the shared service path."""
+    # Avoid importing the FastAPI layer with slash commands.
     from bot.api import service
     from bot.api.errors import ApiError
 
@@ -1015,8 +965,7 @@ async def _set_status(interaction: discord.Interaction, run_id: str, state: str)
     was = run["status"]
     await interaction.response.defer(ephemeral=True)
     try:
-        # The reply is ephemeral, so the channel still needs telling -- but
-        # without the "(via portal)" marker, because this *was* a chat decision.
+        # Mark this as a Discord, not portal, action.
         with audit.acting(_actor(interaction)):
             updated = await service.set_status(bot, run["id"], state, mark=False)
     except ApiError as exc:
@@ -1213,10 +1162,7 @@ async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None
     if running is None:
         await interaction.response.send_message("Nothing is being re-read.", ephemeral=True)
         return
-    # Not routed through `service.cancel_rescan`, which the portal uses: that
-    # raises on a job that has already finished and builds a whole job view to
-    # return, neither of which this reply wants. The row it writes is the same
-    # one, so both surfaces read alike on the Audit page.
+    # Slash cancellation does not need the portal service's strict result view.
     if bot.rescans.cancel(running.id):
         _record(
             interaction,
@@ -1232,12 +1178,7 @@ async def _cancel_rescan(interaction: discord.Interaction, bot: BossBot) -> None
 
 
 def rescan_summary(report) -> str:
-    """The ephemeral reply for `/debug extract` (a `RescanReport`).
-
-    Leads with what it read rather than what it found, because "nothing found"
-    means something quite different after backfilling 300 messages than after
-    backfilling none.
-    """
+    """Format the ``/debug extract`` rescan report."""
     label = WINDOW_LABELS.get(report.window, report.window)
     head = (
         f"Read **{label}** in {report.elapsed_ms / 1000:.1f}s — "
@@ -1298,7 +1239,7 @@ async def pings(
     """Set (or read back) the invoker's own mention level. Nobody can set anyone else's."""
     bot = _bot(interaction)
     user = interaction.user
-    # A member who has the role but has never been synced has no row to update.
+    # Create a row for unsynced role members.
     if bot.repo.get_member(user.id) is None:
         bot.repo.upsert_member(
             user.id, user.display_name, getattr(user, "nick", None), bot.has_bossing_role(user)
@@ -1329,28 +1270,87 @@ async def pings(
     )
 
 
-#: The allowance bar. Twelve segments splits even a small allowance into states
-#: a reader can tell apart, without becoming a wall of blocks on a phone.
+def _selectable_styles(bot: BossBot) -> list[str]:
+    configured = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+    )
+    return [name for name in configured if behaviour_plugins.read(name) is not None]
+
+
+@app_commands.command(name="style", description="Choose how the bot replies to you")
+@app_commands.describe(profile="Leave empty to see your saved choice; use default to reset")
+@require_chat_access()
+async def style(interaction: discord.Interaction, profile: str | None = None) -> None:
+    """Store only the invoker's public reply-style preference."""
+    bot = _bot(interaction)
+    user = interaction.user
+    if bot.repo.get_member(user.id) is None:
+        bot.repo.upsert_member(
+            user.id, user.display_name, getattr(user, "nick", None), bot.has_bossing_role(user)
+        )
+    current = bot.repo.get_reply_style(user.id)
+    public = _selectable_styles(bot)
+    if profile is None:
+        saved = f"**{current}**" if current else "**default**"
+        unavailable = current is not None and current not in public
+        suffix = " (currently unavailable)" if unavailable else ""
+        choices = ", ".join(f"`{name}`" for name in public) or "no optional styles"
+        await interaction.response.send_message(
+            f"Your saved reply style is {saved}{suffix}. Available: `default`"
+            + (f", {choices}." if public else "."),
+            ephemeral=True,
+        )
+        return
+
+    requested = profile.strip().lower()
+    if requested == "default":
+        chosen = None
+    else:
+        try:
+            chosen = behaviour_plugins.plugin_name(requested)
+        except ValueError:
+            chosen = requested
+        if chosen not in public:
+            await interaction.response.send_message(
+                "That reply style is not available. Use `/style` to see the public choices.",
+                ephemeral=True,
+            )
+            return
+    bot.repo.set_reply_style(user.id, chosen)
+    label = chosen or "default"
+    _record(
+        interaction,
+        "member",
+        str(user.id),
+        f"{user.display_name} saved reply style `{label}`",
+    )
+    await interaction.response.send_message(
+        f"Reply style preference saved as **{label}**.", ephemeral=True
+    )
+
+
+@style.autocomplete("profile")
+async def style_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    options = ["default", *_selectable_styles(_bot(interaction))]
+    term = current.strip().casefold()
+    return [
+        app_commands.Choice(name=name, value=name) for name in options if term in name.casefold()
+    ][:25]
+
+
+#: Segments in the chat-allowance bar.
 BAR_SEGMENTS = 12
 BAR_FILLED = "▰"
 BAR_EMPTY = "▱"
 
-#: What staff get instead of a bar, and the whole of `/limits` for them -- there
-#: is nothing to read, since :func:`bot.chat.gate.decide` skips the limiters
-#: entirely for them. A constant, like the chatbot's own refusals
-#: (:data:`bot.chat.agent.RATE_LIMITED_REPLY`): nothing about a quota is worth a
-#: generation, and this one would be a generation about not having a quota.
+#: Staff bypass the chat limiters.
 STAFF_LIMITS_REPLY = "No limits for staff — fire away! 🎀🐾"
 
 
 def usage_bar(used: int, count: int) -> str:
-    """``▰▰▰▱▱▱▱▱▱▱▱▱`` — ``used`` of ``count`` as blocks.
-
-    Rounded **up**, so one answer out of a generous allowance still lights a
-    segment: a bar that reads as untouched when it is not is the one way this
-    display could mislead somebody about what they have left. The ceiling only
-    reaches the last segment when the window is genuinely full.
-    """
+    """Render used allowance as blocks, rounding up."""
     if count <= 0:  # pragma: no cover - `positive_int` refuses a non-positive count
         return BAR_EMPTY * BAR_SEGMENTS
     filled = min(math.ceil(BAR_SEGMENTS * used / count), BAR_SEGMENTS)
@@ -1360,26 +1360,8 @@ def usage_bar(used: int, count: int) -> str:
 @app_commands.command(name="limits", description="See how many chat answers you have left")
 @require_role()
 async def limits(interaction: discord.Interaction) -> None:
-    """Show the invoker their own chat allowance, and nobody else's.
-
-    Ephemeral like every other personal readback here: a quota is nobody's
-    business but its owner's, and a progress bar posted into a party channel is
-    the bot talking about itself where people are trying to boss.
-
-    Reads only. Every number comes from a non-mutating reader on
-    :class:`bot.chat.ratelimit.RateLimiter` and never from ``allow``, so asking
-    how many answers are left cannot itself spend one -- the same rule the
-    portal's Limits page runs on (:func:`bot.api.service.limits`).
-
-    The allowance shown is the member's *own* (``limit_for``), so somebody who
-    has been granted a bigger one sees their numbers rather than the guild's.
-    That is exactly why :meth:`bot.chat.agent.ChatPilot._say_limited` looks it
-    up before refusing anybody: being confidently wrong about somebody's own
-    case is worse than saying nothing.
-    """
-    # Imported here rather than at module scope for the reason `_set_status`
-    # gives: the chatbot's tools import `bot.api`, so reaching the pilot from
-    # the top of this file would put the whole portal behind the slash commands.
+    """Show the invoker's chat allowance."""
+    # Avoid importing the API layer with slash commands.
     from bot.chat.agent import retry_note
     from bot.chat.gate import GLOBAL_KEY
 
@@ -1403,9 +1385,7 @@ async def limits(interaction: discord.Interaction) -> None:
 
     lines = [f"🎀 **Your chat answers** — {used} of {count} used", usage_bar(used, count), when]
     if pilot.global_limiter.remaining(GLOBAL_KEY) <= 0:
-        # Their own bar can be nearly empty while the guild's shared pool is
-        # spent, and in that state they would be turned away regardless. A bar
-        # that says "go ahead" without this line is accurate and still a lie.
+        # The shared pool also gates replies.
         pool_wait = retry_note(pilot.global_limiter.retry_after(GLOBAL_KEY))
         lines.append(
             "-# The guild's shared pool is spent too, so nobody is being answered "
@@ -1461,9 +1441,7 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
     )
 
 
-#: How long a `/say` may be. Discord's own limit is 2000, and `post_plain` can
-#: add the quiet-mode note underneath, so leave that room rather than have the
-#: send rejected after the command has already reported success.
+#: Leave room for ``post_plain`` additions under Discord's 2000-character limit.
 SAY_LIMIT = 1900
 
 
@@ -1480,15 +1458,7 @@ async def say(
     message: str,
     channel: discord.TextChannel | None = None,
 ) -> None:
-    """Speak as the bot, in a channel it can already post in.
-
-    Unlike everything else the bot writes, this really does notify: an admin who
-    types `@kanon` into it meant to reach kanon, and a bot announcement nobody
-    sees is not worth having. The allow-list is built from the mentions actually
-    written in the text, so it can never notify anybody the message does not
-    name. `@everyone`/`@here` stays blocked -- that is the one mention nobody
-    can opt out of -- and quiet mode still silences the lot.
-    """
+    """Post an admin message with explicit mentions only."""
     bot = _bot(interaction)
     target = channel or interaction.channel
     text = message.strip()
@@ -1503,14 +1473,9 @@ async def say(
 
     target_id = getattr(target, "id", None)
     lookup = await bot.find_channel(target_id)
-    # `find_channel` falls back to POST_CHANNEL_ID, which is right for a
-    # reminder that must land somewhere and wrong here: "post this in #general"
-    # must not quietly become "post this in the digest channel".
+    # ``/say`` must not fall back to the digest channel.
     if lookup.channel is None or getattr(lookup.channel, "id", None) != target_id:
-        # A successful fallback leaves `problem` empty, so the reason the *asked
-        # for* channel was refused comes from the same helper `find_channel`
-        # would have used -- "grant the role View Channel + Send Messages there"
-        # is the sentence that gets this fixed.
+        # Report access to the requested channel.
         problem = lookup.problem or bot.no_access(target_id, target)
         await interaction.response.send_message(f"❌ {problem}", ephemeral=True)
         return
@@ -1556,6 +1521,8 @@ async def on_app_command_error(
         )
     elif isinstance(error, MissingBossingRole):
         message = "❌ You need the bossing role to use this bot."
+    elif isinstance(error, MissingChatAccess):
+        message = "❌ You need chatbot access to set a reply style."
     elif isinstance(error, NotAnAdmin):
         message = "❌ `/say` is for server admins, the server owner and the admin role."
     elif isinstance(error, (NotAllowed, app_commands.CheckFailure)):
@@ -1590,6 +1557,7 @@ def register_commands(bot: BossBot) -> None:
         rsvp,
         nick,
         pings,
+        style,
         limits,
         pingtime,
         rescan,

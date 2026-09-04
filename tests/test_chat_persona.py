@@ -27,7 +27,7 @@ def test_a_missing_file_falls_back_and_warns(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="bot.chat.persona"):
         text = persona.load_persona(tmp_path / "nope.md")
     assert text
-    assert "persona.example.md" in caplog.text
+    assert "example.md" in caplog.text
     assert "falling back" in caplog.text
 
 
@@ -55,10 +55,7 @@ def test_the_tracked_example_is_present_and_usable():
 
 
 def test_personas_live_in_their_own_directory():
-    """The `config/portraits` pattern: a directory with a README and a template
-    tracked, and everything a deployment actually writes ignored. It is
-    bind-mounted into the container, so a persona is a file on the host."""
-    assert persona.EXAMPLE_PERSONA.parent == persona.PERSONA_DIR
+    assert persona.EXAMPLE_PERSONA.parent == persona.PERSONA_DIR / "identities"
     assert persona.PERSONA_DIR.name == "personas"
     assert (persona.PERSONA_DIR / "README.md").is_file()
 
@@ -82,7 +79,7 @@ def test_a_fall_back_says_so_and_names_the_template(tmp_path):
     fallen = persona.read_persona(tmp_path / "nope.md")
 
     assert fallen.fell_back is True
-    assert fallen.name == "persona.example.md"
+    assert fallen.name == "example.md"
     assert fallen.text
 
 
@@ -157,6 +154,42 @@ def test_the_prompt_is_persona_then_rules_then_clock():
     built = persona.system_prompt("PERSONA HERE", "CLOCK HERE")
     assert built.index("PERSONA HERE") < built.index("Operating rules")
     assert built.index("Operating rules") < built.index("CLOCK HERE")
+
+
+def test_component_prompt_has_explicit_precedence_and_dynamic_name():
+    built = persona.component_system_prompt(
+        persona.PromptComponents(
+            identity="# Persona: Kanade\n\nIDENTITY",
+            default_behaviour="DEFAULT\n\n**Voice:** Calm.",
+            active_profile="PROFILE",
+        ),
+        "CLOCK",
+        "RUNTIME",
+    )
+    ordered = (
+        "# Persona: Kanade",
+        "DEFAULT",
+        "PROFILE",
+        "# Assistant scope",
+        "CLOCK",
+        "RUNTIME",
+        persona.VOICE_PREFIX,
+    )
+    assert [built.index(item) for item in ordered] == sorted(built.index(item) for item in ordered)
+    scope = built[built.index("# Assistant scope") : built.index("# Scheduler policy")]
+    assert "Kanade" in scope
+    assert "Yuuki" not in built
+
+
+def test_profile_examples_replace_default_examples():
+    default = "**Good**\n\n> `default example`"
+    profile = "**Good**\n\n> `profile example`"
+    built = persona.component_system_prompt(
+        persona.PromptComponents("# Persona: Test", default, profile), "CLOCK"
+    )
+    promoted = built[built.index(persona.EXAMPLES_HEADING) :]
+    assert "profile example" in promoted
+    assert "default example" not in promoted
 
 
 def test_the_hard_rules_cover_the_things_that_matter():

@@ -185,7 +185,8 @@ async def test_the_question_is_generated_in_persona_with_the_voice_reminder(chat
 
     from bot.chat import persona
 
-    assert persona.HARD_RULES.strip() in agent._client.system
+    assert "# Scheduler policy" in agent._client.system
+    assert "# Grounding, privacy and presentation policy" in agent._client.system
     assert agent._client.reminder()["content"].startswith(persona.REMINDER_PREFIX)
 
 

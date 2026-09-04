@@ -89,38 +89,33 @@ CHAT_ROLE_PLUGINS=...            # optional initial ROLE_ID=plugin assignments
 CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
-# 2. Write the persona. It is NOT in git: it is per-deployment flavour text,
-#    edited by hand, and may name a character you would rather not publish.
-#    `personas/` is bind-mounted into the container, so this is a file on the
-#    Mac and a restart -- see personas/README.md.
-cp personas/persona.example.md personas/persona.md
-$EDITOR personas/persona.md
+# 2. Create private identity and default-behaviour files.
+cp config/personas/identities/example.md config/personas/identities/persona.md
+cp config/personas/behaviours/default.example.md config/personas/behaviours/default.md
+$EDITOR config/personas/identities/persona.md config/personas/behaviours/default.md
 
 # 3. Rebuild, then mention it in the channel.
 docker compose up -d --build
 ```
 
-Reusable behaviour plugins are managed from the portal's **Config → Chatbot**
-panel and stored as git-ignored Markdown files under
-`personas/behaviour-plugins/`. Each role can be assigned a plugin; the plugin
-builds on the selected persona for every model round, multiple matching roles
-compose in listed order, and none grants chatbot access by itself —
-`CHAT_PILOT_ROLE_ID` is still required. `CHAT_ROLE_PLUGINS` only seeds initial
-assignments on a fresh database; portal changes are stored in SQLite and win
-afterward.
+Reply profiles are managed from **Config → Chatbot** and stored under
+`config/personas/behaviours/profiles/`. Publish profiles that members may choose with
+`/style`; unpublished profiles remain private. Role assignments are ordered,
+and the first readable matching role profile supersedes the saved member choice.
+Assignments never grant access. `CHAT_ROLE_PLUGINS` seeds only a fresh database.
 
 A missing persona file falls back to the tracked template and logs a WARNING, so
 a wrong `PERSONA_PATH` is obvious rather than being an outage — and the Config
 page's Chatbot panel names the file it actually loaded, marked as a fallback
 when it is the template.
 
-**Switching voices does not need a restart.** Keep several files in `personas/`
-and pick one from the dropdown on that panel: the choice is stored with the rest
-of the runtime config, the pilot drops its cached document, and the next
-question is answered in the new voice. `PERSONA_PATH` only seeds which file the
-setting starts on. Adding a voice is still a file drop — it appears in the list
-on the next page load, because the directory is read on each render rather than
-cached.
+**Switching identities does not need a restart.** Keep identity files under
+`config/personas/identities/` and select one in the portal. `PERSONA_PATH` only seeds a
+fresh database. Legacy root-level identity files remain readable.
+
+Members use `/style` to inspect or save a public reply profile. The response is
+ephemeral and says only what was saved. The Members portal page separately shows
+the saved choice and the style that current Discord roles would apply next.
 
 ### Controlling it
 
@@ -147,9 +142,22 @@ to the bot is a conversation; the pilot acts on it through its tools. Ambient
 chat in the same channel (no mention) still goes to the extractor exactly as
 before.
 
-### Tuning the voice
+### Prompt structure and voice
 
-Two levers sit in code; the persona document itself is yours.
+The system prompt is assembled in this order:
+
+1. identity
+2. default behaviour
+3. active reply profile
+4. active-profile examples, otherwise default examples
+5. assistant scope
+6. scheduler policy
+7. grounding and privacy policy
+8. runtime facts
+9. one bounded voice cue
+
+The assistant name comes from the identity's `# Persona: ...` heading. Policy
+files never hard-code it.
 
 `CHAT_PILOT_TEMPERATURE` (default `0.7`) is the chatbot's own sampling
 temperature. It is deliberately *not* the extractor's `0`: that one reads a
@@ -158,10 +166,7 @@ holds a conversation and a greedy decode reads like a form letter. Warmth is
 safe here because every change it drafts is a card somebody still has to ✅.
 `top_p` is left at the model's default.
 
-The persona document is thousands of tokens long and sits at the very top of the
-prompt — the furthest point from where the model actually composes. So one line
-of it is repeated as the **last** thing in the system prompt. Put it in your
-persona file as:
+Put the voice cue in default behaviour and, when needed, in a profile:
 
 ```markdown
 **Voice:** Dry, fond of the party, allergic to exclamation marks.
@@ -176,16 +181,22 @@ gpt-oss chat template hoists every system message into the instructions header
 at the top of the prompt, which is exactly the burial the repetition exists to
 escape.
 
-The bot also shows the model your `**Good**` worked examples as few-shot lines
-(at most 8, ~600 characters, first ones win). Write them as `> ` followed by the
-line in backticks under a `**Good**` heading; the `**Bad**` block below it is not
-promoted, code fences are skipped, and unfilled `<placeholders>` are ignored.
+The bot promotes up to eight `**Good**` examples within a small character
+budget. Profile examples replace default examples. `**Bad**` sections, code
+fences, and unfilled placeholders are not promoted.
 
 `Voice:`, `**Voice**:` and `<!-- voice: ... -->` all work; the first one in the
 file wins. Leave the angle-bracket placeholder in and the bot falls back to a
 generic "answer in the voice defined above" reminder. Keep it to one sentence —
 the sentence you would give a stand-in who had thirty seconds to learn the
 character.
+
+### Database upgrade
+
+Schema v10 supports direct upgrades from v9 only. Back up the v9 SQLite database
+and private persona tree before starting the new image. Older schemas must first
+be opened by the previous release. Rolling back to a v9 binary requires restoring
+the v9 database backup and legacy prompt paths.
 
 ### Working out why it said that
 

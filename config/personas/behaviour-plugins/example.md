@@ -5,7 +5,7 @@
   Copy this file to a short lowercase name, edit the instructions below, then
   open Config → Chatbot → Role assignments and map a Discord role ID to it:
 
-      cp personas/behaviour-plugins/example.md personas/behaviour-plugins/playful.md
+      cp config/personas/behaviour-plugins/example.md config/personas/behaviour-plugins/playful.md
 
   Real plugin files are git-ignored. You can also create, edit, assign, and
   delete plugins directly from Config → Chatbot; they are stored in this folder.
