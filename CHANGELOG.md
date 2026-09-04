@@ -2,6 +2,17 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## Unreleased
+
+**Fixed**
+
+- Chat no longer leaks tool refusals into Discord. A clarification that
+  contains a `?` anywhere (not just trailing) is kept as-is on `REFUSED`,
+  unless it falsely claims a card went up. Overwritten refusals are passed
+  through the member-facing filter, which now strips model-only
+  instructions (`short form` / `back to the tool` / `for the tool only` /
+  `never show them`, `propose_*` names).
+
 ## 4.1.1
 
 **Added**
