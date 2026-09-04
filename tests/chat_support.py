@@ -198,10 +198,7 @@ def chat_settings(**overrides: Any):
         "chat_pilot_channel_ids": str(CHAT_CHANNEL),
         "chat_pilot_category_ids": str(CHAT_CATEGORY),
         "admin_role_id": ADMIN_ROLE,
-        # Empty means "no file was configured", so the loader falls back to the
-        # tracked template and the tests never depend on a developer's own
-        # persona being present.
-        "persona_path": "",
+        "persona_path": "personas/identities/example.md",
     }
     values.update(overrides)
     return make_settings(**values)

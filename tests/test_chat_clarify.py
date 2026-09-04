@@ -80,7 +80,7 @@ def test_the_rules_are_numbered_once_and_in_order():
 async def test_the_rule_reaches_the_model_in_the_system_prompt(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("hi"))
     await agent.offer(message(chat_bot))
-    assert "ONE short, specific question" in agent._client.system
+    assert "ask one short question" in agent._client.system
 
 
 # ---------------------------------------------------------------------------

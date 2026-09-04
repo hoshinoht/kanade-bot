@@ -1,6 +1,5 @@
 .env
-# Backups and variants of it are the same secrets in a different filename.
-# `.env.example` is the tracked template and stays tracked (negated below).
+# Environment variants may contain the same secrets.
 .env.*
 !.env.example
 data/
@@ -10,41 +9,41 @@ __pycache__/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-# Generated from bot/api/static/portal.scss; Docker and local tooling rebuild it.
+# Generated from portal.scss.
 bot/api/static/portal.css
 .pytest_cache/
 .ruff_cache/
 .DS_Store
 
-# Boss portraits are game assets; the README explains what to drop in.
+# Untracked game assets.
 config/portraits/*
 !config/portraits/README.md
 
-# Boss artwork is the same deal one directory along -- the entry-UI splashes the
-# portal bands its run cards with. The family is a wildcard so a second kind of
-# artwork is ignored the day it is added rather than the day somebody notices a
-# 5MB PNG in a diff; each family keeps its own tracked README.
 config/artwork/*/*
 !config/artwork/*/README.md
 
 .claude
 
-# The live persona is deployment flavour text: it names a character and the
-# guild's in-jokes, it is edited far more often than code, and it lives in a
-# directory of its own that is bind-mounted into the container. Only the README
-# and the template are tracked -- the `config/portraits` pattern.
+# Track templates only; all live prompt content stays private.
 personas/*
 !personas/README.md
 !personas/persona.example.md
 !personas/behaviour-plugins/
 personas/behaviour-plugins/*
 !personas/behaviour-plugins/example.md
+!personas/identities/
+personas/identities/*
+!personas/identities/example.md
+!personas/behaviours/
+personas/behaviours/*
+!personas/behaviours/default.example.md
+!personas/behaviours/profiles/
+personas/behaviours/profiles/*
+!personas/behaviours/profiles/example.md
 
-# The design spec is kept locally rather than published.
+# Local design notes.
 DESIGN.md
 
-# The live Caddyfile names the personal domain; only the template is tracked,
-# same pattern as .env.example and personas/persona.example.md. The token it
-# needs lives in .env.caddy, already covered by `.env.*` above.
+# The live Caddyfile names the private domain.
 caddy/Caddyfile
 !caddy/Caddyfile.example

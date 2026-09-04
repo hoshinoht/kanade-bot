@@ -1,10 +1,4 @@
-"""Request and response shapes for ``/api``.
-
-Response models double as the contract ``bossctl`` reads: FastAPI filters every
-handler's return value down to the fields declared here, so a view growing an
-extra key never silently changes the JSON.  Requests are strict -- an unknown
-field is a typo worth reporting, not something to ignore.
-"""
+"""Request and response models for ``/api``."""
 
 from __future__ import annotations
 
@@ -45,10 +39,7 @@ class BossOut(BaseModel):
     letter: str
     difficulty: str
     label: str
-    #: ``/static/portraits/<short>?size=icon`` when `config/portraits/` has a
-    #: file. The small render, because every portrait either surface draws is a
-    #: badge; drop the query for the full picture, which is what Discord
-    #: attaches to a card.
+    #: Icon portrait URL, when available.
     portrait: str | None = None
     monogram: MonogramOut | None = None
 
@@ -60,12 +51,7 @@ class ParticipantOut(BaseModel):
 
 
 class RunCardOut(BaseModel):
-    """One reminder message a run has produced, or still owes.
-
-    ``state`` is `posted` (``url`` opens it in Discord), `queued` (nothing said
-    yet) or `skipped` -- retired without a message, which is what a sleeping
-    host or a cancelled run leaves behind.
-    """
+    """A run's posted, queued, or skipped reminder."""
 
     kind: str
     label: str
@@ -100,8 +86,7 @@ class RunOut(BaseModel):
     no: int
     maybe: int = 0
     unanswered: int
-    #: The run's reminder messages, oldest first, so a caller can jump straight
-    #: to the card in Discord. `bossctl` can grow the same view from here.
+    #: Reminder messages, oldest first.
     cards: list[RunCardOut] = []
     roster_change: RosterChangeOut | None = None
 
@@ -178,13 +163,11 @@ class AmendIn(Strict):
 
 class RsvpIn(Strict):
     user_id: str
-    #: `clear` removes the answer instead of recording one -- the correction for
-    #: a ✅ somebody left by accident, which must leave them *unanswered*.
+    #: ``clear`` removes the answer.
     answer: Answer | Literal["clear"]
 
 
-#: `at_risk` is derived from the answers people give, and `done` is also set
-#: automatically once a run's night has passed; neither is set by hand here.
+#: Derived statuses are not set directly.
 RunStatus = Literal["planned", "confirmed", "otot", "done", "cancelled"]
 
 
@@ -428,6 +411,8 @@ class MemberOut(BaseModel):
     has_role: bool
     #: How much this member wants to be @mentioned: essential | all | off.
     ping_level: str
+    #: ``None`` uses the deployment default.
+    reply_style: str | None = None
     updated_at: str
     runs_this_week: int
 
@@ -481,6 +466,7 @@ class RolePluginIn(Strict):
 class BehaviourPluginOut(BaseModel):
     name: str
     instructions: str
+    selectable: bool = False
 
 
 class ConfigOut(BaseModel):
@@ -499,19 +485,17 @@ class ConfigOut(BaseModel):
     chat_channels: list[str] = []
     chat_categories: list[str] = []
     chat_model: str = ""
-    #: The persona file the bot actually loaded, by name, and whether that was
-    #: the tracked template rather than a real one -- which is a misconfigured
-    #: deploy answering in the placeholder voice.
+    #: Loaded persona and whether it is a fallback.
     persona_file: str = ""
     persona_fallback: bool = False
-    #: The chosen persona, by filename, and the files there are to choose from.
-    #: `persona` is the setting; `persona_file` above is what was actually read,
-    #: and they differ exactly when the chosen file has since gone missing.
+    #: Configured persona and available choices.
     persona: str = ""
     persona_choices: list[str] = []
     #: Portal-managed behaviour plugins layered over the persona for matching roles.
     chat_role_plugins: list[RolePluginOut] = []
+    chat_role_plugin_issues: list[str] = []
     behaviour_plugins: list[BehaviourPluginOut] = []
+    chat_selectable_plugins: list[str] = []
     timezone: str
     reset: str
     model: str
@@ -535,12 +519,10 @@ class ConfigIn(Strict):
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
     chat_mode: bool | None = None
-    #: A filename in `personas/`, checked against that directory's real listing
-    #: rather than parsed -- see `service._persona_choice`. A free string here
-    #: on purpose: what the valid values are is a fact about a bind mount at
-    #: request time, not something a schema can enumerate ahead of it.
+    #: A persona filename validated against the live directory.
     persona: str | None = None
     chat_role_plugins: list[RolePluginIn] | None = None
+    chat_selectable_plugins: list[str] | None = None
     #: The chatbot's capacity, editable at runtime like the flags above.
     chat_pilot_rate_count: int | None = Field(default=None, ge=1)
     chat_pilot_rate_window_s: float | None = Field(default=None, gt=0)

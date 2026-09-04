@@ -1,9 +1,4 @@
-"""Environment configuration.
-
-Only *deployment* values live here.  Values the guild may want to change at
-runtime (day-of ping time, countdown offsets, pause flag) are seeded from these
-on first run and then live in the ``config`` table -- see :mod:`bot.infrastructure.db`.
-"""
+"""Deployment environment configuration."""
 
 from __future__ import annotations
 
@@ -18,11 +13,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from bot.domain.weeks import parse_hhmm, parse_weekday
 
-#: ``KEY=value   # note`` -- python-dotenv does not reliably strip these, and it
-#: hands the whole comment through as the value when ``value`` is blank.
+#: Match trailing ``.env`` comments before validation.
 _INLINE_COMMENT_RE = re.compile(r"(?:^|\s)#.*$", re.DOTALL)
 
-#: Never touched by comment stripping: a secret is whatever the user pasted.
+#: Secrets are not comment-stripped.
 _VERBATIM = frozenset({"discord_token", "admin_token"})
 
 
@@ -31,12 +25,7 @@ def _int_list(raw: str) -> list[int]:
 
 
 class Settings(BaseSettings):
-    """Reads ``.env`` / the process environment.
-
-    Comma-separated values are declared as plain strings because
-    pydantic-settings JSON-decodes complex fields; the parsed forms are exposed
-    as properties instead.
-    """
+    """Read ``.env`` and process environment settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -82,8 +71,7 @@ class Settings(BaseSettings):
     ollama_timeout: float = Field(default=120.0, gt=0)
     #: `think` for gpt-oss-style reasoning models: low/medium/high, or "off".
     ollama_think: str = "low"
-    #: Context window handed to the model. The prompt is built to stay well
-    #: under this; a bigger window costs RAM for no benefit here.
+    #: Context window handed to the model.
     ollama_num_ctx: int = Field(default=8192, ge=2048)
 
     #: Master switch for chat extraction. Messages are still logged when off.
@@ -100,74 +88,38 @@ class Settings(BaseSettings):
     backfill_on_start: bool = True
 
     # --- phase 4: the speech pilot ---------------------------------------
-    #: The role that may talk to the chatbot. Unset means nobody, which is one
-    #: of the two ways the feature stays off. Deliberately *not* named
-    #: ``CHAT_ROLE_ID``: ``CHAT_CHANNEL_IDS`` above already means "the channels
-    #: the extractor reads", and a second, unrelated ``CHAT_*`` gate reading
-    #: from a neighbouring line would be read as its companion.
+    #: Role permitted to use the chatbot; unset disables it.
     chat_pilot_role_id: int | None = None
     #: Initial role-to-behaviour-plugin assignments as ``ROLE_ID=plugin`` pairs.
     #: They seed SQLite once; the portal owns the mappings after that.
     chat_role_plugins: str = ""
-    #: Channels the chatbot answers in, comma separated. Independent of the
-    #: watched-channel list: the pilot runs in its own channel, and a watched
-    #: party channel must not start answering chat.
+    #: Chatbot channels, independent of extractor channels.
     chat_pilot_channel_ids: str = ""
-    #: Categories whose text channels the chatbot answers in, comma separated.
-    #: Resolved per message, exactly as ``CHAT_CATEGORY_IDS`` is for the
-    #: extractor, so a channel added to the category later is picked up without
-    #: a restart. Both lists empty = feature off.
+    #: Chatbot categories; both channel lists empty disables the feature.
     chat_pilot_category_ids: str = ""
     #: Replies per person per window before the bot goes quiet at them.
     #: ``ADMIN_ROLE_ID`` holders are exempt (see :func:`bot.agent.util.is_bot_admin`).
     chat_pilot_rate_count: int = Field(default=4, ge=1)
     chat_pilot_rate_window_s: float = Field(default=300.0, gt=0)
-    #: Answers per window across *everybody*, on top of the per-person limit
-    #: above. The host runs one 13 GB model and can only produce so many answers
-    #: an hour, so this is what keeps handing the pilot role to more people from
-    #: turning the bot into a queue: twelve answers a quarter of an hour is
-    #: roughly what the machine has to give. ``ADMIN_ROLE_ID`` holders neither
-    #: spend from this pool nor are refused by it.
+    #: Guild-wide answer limit; administrators are exempt.
     chat_pilot_global_rate_count: int = Field(default=12, ge=1)
     chat_pilot_global_rate_window_s: float = Field(default=900.0, gt=0)
-    #: How long a question waits for the shared model (:data:`bot.infrastructure.modellock`)
-    #: before it is shed with 💬 rather than queued. Two seconds covers "the
-    #: model was between calls"; past that the asker has moved on and a late
-    #: reply is worse than a visible refusal. Staff instead wait
-    #: ``CHAT_PILOT_TIMEOUT``, which is what puts them at the front of the queue.
+    #: Shared-model wait before normal requests are shed; staff wait the timeout.
     chat_pilot_lock_wait_s: float = Field(default=2.0, ge=0)
-    #: How long one remembered exchange stays in a channel's conversation.
-    #: Measured per turn and applied when the prompt is built, exactly as the
-    #: rate limiter's windows slide -- there is no timer, and an active
-    #: back-and-forth never loses a live turn. It exists because an hour-old
-    #: history is worse than no history: "move it to 22:00" arriving long after
-    #: the thing it referred to was settled binds to a dead topic and the bot
-    #: answers confidently about the wrong run. 45 minutes is comfortably longer
-    #: than any real conversation and shorter than the gap that makes one stale.
+    #: Per-turn conversation-history TTL.
     chat_pilot_history_ttl_s: float = Field(default=2700.0, gt=0)
     #: The model that answers. Separate from ``OLLAMA_MODEL`` so the extractor's
     #: model can be changed without silently changing the bot's voice.
     chat_pilot_model: str = "gpt-oss:20b"
     #: Seconds for one whole answer, tool rounds included.
     chat_pilot_timeout: float = Field(default=60.0, gt=0)
-    #: Sampling temperature for the chatbot. Deliberately *not* the extractor's
-    #: ``temperature: 0``: that one is reading a schedule out of chat, where the
-    #: only good answer is the literal one, while this is holding a conversation
-    #: and a greedy decode makes it read like a form letter. Warmth is safe here
-    #: because every write it drafts is a card a human still has to ✅.
-    #: ``top_p`` is deliberately left at the model's own default rather than
-    #: pinned here -- two knobs to tune this is one more than anybody will.
+    #: Sampling temperature for chatbot replies.
     chat_pilot_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    #: The persona document, loaded verbatim into the system prompt. It is
-    #: deployment flavour text rather than code, so it lives on the data volume
-    #: beside the database; compose overrides this to ``/app/data/persona.md``.
-    #: A missing file falls back to the tracked ``persona.example.md``.
-    persona_path: str = "data/persona.md"
+    #: Stable identity document on the persona bind mount.
+    persona_path: str = "personas/identities/persona.md"
 
     # --- phase 3: the portal + `bossctl` ---------------------------------
-    #: Bearer token for the HTTP API. Empty means the API starts but refuses
-    #: every non-health request, so a half-configured deployment fails loudly
-    #: instead of quietly serving the schedule to whoever can reach the port.
+    #: Empty refuses every non-health API request.
     admin_token: str = ""
     #: Tailscale logins allowed through `tailscale serve`, comma separated.
     allowed_tailscale_logins: str = ""
@@ -178,11 +130,7 @@ class Settings(BaseSettings):
     #: Discord user id credited for changes made in the portal. Defaults to the
     #: guild owner when unset.
     portal_actor_id: int | None = None
-    #: Interface the API binds. ``127.0.0.1`` is right when the bot runs
-    #: natively on the host. **Inside the container it must be ``0.0.0.0``** --
-    #: compose sets it -- because the loopback of a container namespace is not
-    #: the host's; the "loopback only" guarantee comes from the compose port
-    #: mapping ``127.0.0.1:8080:8080``, not from this value.
+    #: Compose overrides this to ``0.0.0.0`` inside the container namespace.
     api_host: str = "127.0.0.1"
     api_port: int = 8080
 
@@ -194,20 +142,13 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _tidy_env_values(cls, values: Any) -> Any:
-        """Strip inline ``# comments`` and drop blanks so defaults apply.
-
-        Hand-written ``.env`` files routinely carry trailing comments, and a
-        blank-but-commented line like ``ADMIN_ROLE_ID=   # optional`` otherwise
-        arrives as the comment text and fails to parse as an int.
-        """
+        """Strip inline comments and blanks before validation."""
         if not isinstance(values, dict):
             return values
         cleaned: dict[str, Any] = {}
         for key, value in values.items():
             if not isinstance(value, str) or str(key).lower() in _VERBATIM:
-                # A secret is whatever was pasted, `#` included -- but a line
-                # left as `ADMIN_TOKEN=   # generate with ...` is a comment, not
-                # a token, and must read as "unset" rather than authenticate.
+                # A comment-only secret value is unset, not a credential.
                 if isinstance(value, str) and value.strip().startswith("#"):
                     continue
                 cleaned[key] = value
@@ -289,11 +230,7 @@ class Settings(BaseSettings):
 
     @property
     def chat_pilot_configured(self) -> bool:
-        """Both gates are set, so the chatbot could answer somebody.
-
-        Either half missing leaves it off: with no role nobody may speak to it,
-        and with neither a channel nor a category there is nowhere it listens.
-        """
+        """Whether both chatbot gates are configured."""
         return self.chat_pilot_role_id is not None and bool(
             self.chat_pilot_channel_id_list or self.chat_pilot_category_id_list
         )
@@ -316,14 +253,7 @@ class Settings(BaseSettings):
 
     @property
     def think(self) -> str | bool | None:
-        """The value the ollama client wants.
-
-        A level passes through; ``off`` becomes an explicit ``False``. Omitting
-        the key is *not* the same as ``False``: a model that reasons by default
-        (Gemma 4) then puts its whole answer into ``message.thinking`` and
-        leaves ``content`` empty -- 500+ s for nothing, measured. Anything else
-        (unset, a typo) omits the key and lets the model do its default.
-        """
+        """Return the Ollama ``think`` argument."""
         level = (self.ollama_think or "").strip().lower()
         if level in ("low", "medium", "high"):
             return level
@@ -338,9 +268,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Load settings once.
-
-    Deliberately *not* called at import time: importing :mod:`bot` must work in
-    tests and in ``python -c "import bot"`` without a populated environment.
-    """
+    """Load and cache settings lazily."""
     return Settings()  # type: ignore[call-arg]

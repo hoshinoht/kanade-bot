@@ -2,18 +2,7 @@
 {% block title %}Config — YuukiSakuna{% endblock %}
 {% block body_class %}framed{% endblock %}
 {% block content %}
-{# The whole page is one window: a table of contents down the left, one section
-   at a time on the right. Switching is `:target` and nothing else -- the tabs
-   are real fragment links, `portal.css` shows the panel whose id matches, and
-   with no fragment the first panel shows. No JavaScript is involved in getting
-   from one section to another.
-
-   Each form carries the section it belongs to in a hidden field, so a save
-   redirects back to `/config?msg=…#chatbot` rather than to the top of the
-   window (`routes_web.back_to`).
-
-   There is no page head above this: the window's own title bar is the head,
-   which is the whole point of a settings app. #}
+{# Fragment links select settings panels without JavaScript. #}
 {% if config.missing_manage_messages %}
 {# Above the window, like a flash: it is true whichever section is open. #}
 <div class="empty" role="status">
@@ -84,8 +73,7 @@
             <button class="btn" type="submit" {{ "disabled" if not config.chat_configured }}>{{ "Turn the chatbot off" if config.chat_mode else "Turn the chatbot on" }}</button>
           </form>
         </div>
-        {# The four capacity numbers. `.env` seeds them; from here on the stored
-           value wins, so tuning them at 9pm needs neither an edit nor a restart. #}
+        {# Stored limits override .env values. #}
         <form method="post" action="/config" class="filters">
           <input type="hidden" name="section" value="chatbot">
           <label class="field"><span>Answers per person</span>
@@ -108,13 +96,10 @@
           </label>
           <button class="btn btn--primary" type="submit">Save</button>
         </form>
-        {# The voice, as a choice. Every `*.md` in the personas directory except
-           its README, read off the bind mount on each render -- a file dropped
-           in is in this list on the next page load, and the value that comes
-           back is checked against that same listing rather than parsed. #}
+        {# Choices come from the live persona directory. #}
         <form method="post" action="/config" class="filters">
           <input type="hidden" name="section" value="chatbot">
-          <label class="field"><span>Persona</span>
+          <label class="field"><span>Identity</span>
             <select name="persona">
               {% for name in config.persona_choices %}
               <option value="{{ name }}"{% if name == config.persona %} selected{% endif %}>{{ name }}</option>
@@ -122,14 +107,13 @@
             </select>
           </label>
           <button class="btn btn--primary" type="submit"
-                  {{ "disabled" if not config.persona_choices }}>Use this voice</button>
+                  {{ "disabled" if not config.persona_choices }}>Use this identity</button>
         </form>
-        <h3 class="settings__subtitle">Behaviour plugins</h3>
+        <h3 class="settings__subtitle">Reply profiles</h3>
         <p class="note">
-          Plugins are reusable persona add-ons. Their instructions affect every chatbot reply
-          for assigned members while the selected persona and operating rules remain in force.
-          They are stored as git-ignored files under
-          <span class="mono">personas/behaviour-plugins/</span> and take effect immediately.
+          Profiles change reply delivery without changing scheduler policy. Publish a profile
+          for member selection or assign it to a Discord role. Files live under
+          <span class="mono">personas/behaviours/profiles/</span> and apply immediately.
         </p>
         <div class="behaviour-collection" data-paginated-list data-page-size="5"
              data-page-label="plugins" data-pagination-key="behaviour-plugins">
@@ -137,26 +121,34 @@
             {% for plugin in config.behaviour_plugins %}
             <details class="behaviour-editor" data-page-item>
               <summary class="behaviour-editor__summary">
-                <span class="status">Plugin</span>
+                <span class="status">Profile</span>
                 <span class="mono">{{ plugin.name }}</span>
+                <span class="chip chip--mono">{{ "public" if plugin.selectable else "private" }}</span>
                 <span class="behaviour-editor__hint">Edit instructions</span>
               </summary>
               <form method="post" action="/config/behaviour-plugins"
                     class="behaviour-editor__body">
                 <input type="hidden" name="name" value="{{ plugin.name }}">
-                <label class="field"><span>Instructions added to the persona</span>
+                <label class="field"><span>Profile instructions</span>
                   <textarea name="instructions" rows="5" required>{{ plugin.instructions }}</textarea>
                 </label>
                 <div class="behaviour-editor__actions">
                   <button class="btn btn--primary" type="submit">Save</button>
                   <button class="btn btn--danger" type="submit"
                           formaction="/config/behaviour-plugins/{{ plugin.name }}/delete"
-                          hx-confirm="Delete the {{ plugin.name }} behaviour plugin?">Delete</button>
+                          hx-confirm="Delete the {{ plugin.name }} reply profile?">Delete</button>
                 </div>
+              </form>
+              <form method="post" action="/config/behaviour-plugins/{{ plugin.name }}/selectable"
+                    class="behaviour-editor__body">
+                <input type="hidden" name="selectable" value="{{ '0' if plugin.selectable else '1' }}">
+                <button class="btn" type="submit">
+                  {{ "Remove from member choices" if plugin.selectable else "Publish for member choice" }}
+                </button>
               </form>
             </details>
             {% else %}
-            <p class="empty behaviour-editors__empty">No behaviour plugins yet.</p>
+            <p class="empty behaviour-editors__empty">No reply profiles yet.</p>
             {% endfor %}
           </div>
           <nav class="pager behaviour-pager" data-page-controls hidden
@@ -167,26 +159,30 @@
           </nav>
         </div>
         <details class="behaviour-editor behaviour-editor--new">
-          <summary class="behaviour-editor__summary"><strong>Create behaviour plugin</strong></summary>
+          <summary class="behaviour-editor__summary"><strong>Create reply profile</strong></summary>
           <form method="post" action="/config/behaviour-plugins"
                 class="behaviour-editor__body">
             <label class="field"><span>Name</span>
               <input name="name" pattern="[a-z0-9][a-z0-9_-]{0,49}" required
                      placeholder="mesugaki" class="mono">
             </label>
-            <label class="field"><span>Instructions added to the persona</span>
+            <label class="field"><span>Profile instructions</span>
               <textarea name="instructions" rows="5" required
                         placeholder="Use playful, smug banter while keeping schedule facts exact."></textarea>
             </label>
-            <button class="btn btn--primary" type="submit">Create plugin</button>
+            <button class="btn btn--primary" type="submit">Create profile</button>
           </form>
         </details>
 
         <h3 class="settings__subtitle">Role assignments</h3>
         <p class="note">
           A member must still hold the main chat role; assignments never grant access. If they
-          hold several roles below, all matching plugins are added in the order shown.
+          hold several roles below, the first readable match in this order applies.
         </p>
+        {% for issue in config.chat_role_plugin_issues %}
+        <p class="note"><span class="status status--at_risk">Skipped configuration</span>
+          {{ issue }}</p>
+        {% endfor %}
         <div class="behaviour-collection" data-paginated-list data-page-size="5"
              data-page-label="assignments" data-pagination-key="role-plugins">
           <div class="behaviour-editors">
@@ -214,6 +210,11 @@
                           hx-confirm="Remove the plugin assignment for role {{ item.role_id }}?">Delete</button>
                 </div>
               </form>
+              <form method="post" action="/config/role-plugins/{{ item.role_id }}/move"
+                    class="behaviour-editor__body">
+                <button class="btn" name="direction" value="up" type="submit">Move up</button>
+                <button class="btn" name="direction" value="down" type="submit">Move down</button>
+              </form>
             </details>
             {% else %}
             <p class="empty behaviour-editors__empty">No roles have behaviour plugins yet.</p>
@@ -227,7 +228,7 @@
           </nav>
         </div>
         <details class="behaviour-editor behaviour-editor--new">
-          <summary class="behaviour-editor__summary"><strong>Assign plugin to role</strong></summary>
+          <summary class="behaviour-editor__summary"><strong>Assign profile to role</strong></summary>
           <form method="post" action="/config/role-plugins" class="behaviour-editor__body">
             <label class="field"><span>Discord role ID</span>
               <input name="role_id" inputmode="numeric" pattern="[0-9]+" required
@@ -244,21 +245,18 @@
                     {{ "disabled" if not config.behaviour_plugins }}>Assign plugin</button>
           </form>
         </details>
-        {# What it is *actually* wearing, which is the same thing until the
-           chosen file goes missing. A deploy answering in the template's
-           placeholder voice is a misconfiguration, and it used to be visible
-           only in a startup WARNING. #}
+        {# Warn when the configured persona is unavailable. #}
         {% if config.persona_fallback %}
         <p class="note">
           <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
           {% if config.persona %}
           <span class="mono">{{ config.persona }}</span> is chosen but is not in
-          <span class="mono">personas/</span> any more, so it is answering in the template's
-          placeholder voice.
+          <span class="mono">personas/identities/</span> any more, so it is using the
+          template identity.
           {% else %}
-          No persona of its own, so it is answering in the template's placeholder voice.
+          No identity of its own, so it is using the template identity.
           {% endif %}
-          Drop one in <span class="mono">personas/</span> — see that directory's README — and
+          Drop one in <span class="mono">personas/identities/</span> — see the personas README — and
           pick it here. No restart.
         </p>
         {% endif %}
@@ -287,10 +285,7 @@
             <button class="btn" type="submit">{{ "Turn quiet mode off" if config.quiet_mode else "Turn quiet mode on" }}</button>
           </form>
         </div>
-        {# The 🔕 stays an emoji: it is not this page's mark but the character
-           the bot actually puts on the message (`formatting.QUIET_MARKER`), and
-           naming it with anything else would describe something the reader will
-           never find in Discord. #}
+        {# Match the marker used in Discord. #}
         <p class="note">
           Quiet mode is <strong>{{ "on" if config.quiet_mode else "off" }}</strong>.
           While it is on the bot posts everything as usual but notifies nobody —
@@ -300,12 +295,7 @@
 
       <section class="settings__panel" id="theme" aria-labelledby="theme-h">
         <h2 class="settings__title" id="theme-h">Theme</h2>
-        {# The two controls on the portal that are not real forms, deliberately:
-           both are kept in this browser's localStorage and applied by
-           `static/portal.js`, so there is no server state for a POST to write
-           and nothing to redirect back to. The reasoning is written out at the
-           top of portal.js. What is ticked here is the *default*; portal.js
-           re-ticks whatever is stored as soon as it runs. #}
+        {# Theme preferences are browser-local. #}
         <fieldset class="field">
           <span class="label">Colourway</span>
           <div class="swatches">
@@ -319,8 +309,7 @@
             {% endfor %}
           </div>
         </fieldset>
-        {# "System" is stored as nothing at all -- see portal.js -- so it is the
-           one ticked here, which is also what a browser with no script gets. #}
+        {# System is the no-script default. #}
         <fieldset class="field">
           <span class="label">Mode</span>
           <div class="swatches">
@@ -392,8 +381,7 @@
             </div>
           </fieldset>
         </form>
-        {# The swap target, inside its own section: a job's progress replaces
-           this element and nothing around it. #}
+        {# HTMX replaces only this job fragment. #}
         <div id="rescan-job">
           {% if job %}{% include "partials/rescan_job.html" %}{% endif %}
         </div>
@@ -432,8 +420,7 @@
             <button class="btn" type="submit">Check again</button>
           </form>
         </div>
-        {# The swap target. Named apart from the section's own id, which the
-           sidebar link uses. #}
+        {# Keep the HTMX target distinct from the panel ID. #}
         <div id="access-table">{% include "partials/access.html" %}</div>
       </section>
 
@@ -444,10 +431,7 @@
             <tbody>
               <tr><th>Timezone</th><td class="mono">{{ config.timezone }}</td></tr>
               <tr><th>Boss week starts</th><td class="mono">{{ config.reset }}</td></tr>
-              {# Two rows, because they are two models and here they differ: a
-                 local one reads the channels, a bigger one does the talking.
-                 One row called "Model" said the wrong thing about whichever of
-                 them the reader had in mind. #}
+               {# Extraction and chat may use different models. #}
               <tr><th title="Reads the party channels and drafts the cards in the Inbox — the extractor, and every rescan">Data model</th>
                 <td class="mono">{{ config.model }}</td></tr>
               <tr><th title="Answers when somebody with the chat role mentions the bot">Speech model</th>

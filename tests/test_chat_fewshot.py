@@ -57,9 +57,12 @@ lots of character notes
 """
 
 
-def voiced_bot(repo, bosses, tmp_path, text: str = VOICED):
+def voiced_bot(repo, bosses, tmp_path, monkeypatch, text: str = VOICED):
     path = tmp_path / "persona.md"
-    path.write_text(text, encoding="utf-8")
+    path.write_text("# Persona: Placeholder\n", encoding="utf-8")
+    behaviour = tmp_path / "default.md"
+    behaviour.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(persona, "DEFAULT_BEHAVIOUR", behaviour)
     return build_bot(repo, bosses, persona_path=str(path))
 
 
@@ -123,8 +126,8 @@ async def test_every_round_ends_with_it(chat_bot, chat_seeded):
         assert call["messages"][-1]["content"].startswith(persona.REMINDER_PREFIX)
 
 
-async def test_the_reminder_carries_the_personas_own_voice(repo, bosses, tmp_path):
-    bot = voiced_bot(repo, bosses, tmp_path)
+async def test_the_reminder_carries_the_active_voice(repo, bosses, tmp_path, monkeypatch):
+    bot = voiced_bot(repo, bosses, tmp_path, monkeypatch)
     agent = pilot(bot, says("ok"))
     await agent.offer(message(bot))
     assert (
@@ -180,8 +183,9 @@ def test_a_persona_with_no_good_section_contributes_nothing():
 
 
 def test_the_tracked_template_contributes_nothing():
-    """Its examples are all unfilled `<placeholders>`."""
-    template = persona.load_persona(None)
+    template = persona.read_default_behaviour(
+        persona.EXAMPLE_DEFAULT_BEHAVIOUR
+    ).text
     assert "**Good**" in template
     assert persona.good_examples(template) == []
 
@@ -276,16 +280,13 @@ def test_a_persona_without_examples_leaves_no_empty_heading():
     assert built.rstrip().endswith("Dry.")
 
 
-async def test_the_examples_reach_the_model(repo, bosses, tmp_path):
-    bot = voiced_bot(repo, bosses, tmp_path)
+async def test_the_examples_reach_the_model(repo, bosses, tmp_path, monkeypatch):
+    bot = voiced_bot(repo, bosses, tmp_path, monkeypatch)
     agent = pilot(bot, says("ok"))
     await agent.offer(message(bot))
 
     system = agent._client.system
     assert persona.EXAMPLES_HEADING in system
-    # The whole document is in the prompt, `**Bad**` section and all -- that is
-    # deliberate, and there it is labelled as what *not* to do. What must not
-    # happen is a Bad line being promoted into the few-shot list.
     promoted = system[system.index(persona.EXAMPLES_HEADING) :]
     assert "Wed 21:30, same as always." in promoted
     assert "WED!!!" not in promoted

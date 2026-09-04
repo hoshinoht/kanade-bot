@@ -31,7 +31,7 @@ ANY_HUE = _AnyHue()
 # --- schedule ---------------------------------------------------------------
 
 
-def test_schedule_groups_by_day_and_counts_rsvps(auth, seeded):
+def test_schedule_groups_by_day_and_counts_rsvps(auth, fake_bot, seeded):
     body = auth.get("/api/schedule").json()
     assert body["count"] == 2
     assert body["timezone"] == "Asia/Kuala_Lumpur"
@@ -41,7 +41,11 @@ def test_schedule_groups_by_day_and_counts_rsvps(auth, seeded):
     assert star["unanswered"] == 1
     assert star["status_label"] == "⚠️ unconfirmed"
     assert star["channel_name"] == "#hstar-party"
-    assert [d["heading"] for d in body["days"]] == ["Mon 31 Aug", "Tue 01 Sep"]
+    expected = [
+        run["datetime"].astimezone(fake_bot.tz).strftime("%a %d %b")
+        for run in fake_bot.repo.list_runs(week_start=seeded["week_start"])
+    ]
+    assert [day["heading"] for day in body["days"]] == expected
 
 
 def test_schedule_boss_detail_carries_the_full_in_game_name(auth, seeded):
@@ -869,6 +873,14 @@ def test_members_lists_the_roster_with_this_weeks_load(auth, seeded):
     assert by_id["1002"]["nickname"] == "kanon"
 
 
+def test_member_api_exposes_saved_style_without_override_metadata(auth, fake_bot, seeded):
+    fake_bot.repo.set_reply_style(1002, "brief")
+    member = next(row for row in auth.get("/api/members").json() if row["user_id"] == "1002")
+    assert member["reply_style"] == "brief"
+    assert "effective_style" not in member
+    assert "style_source" not in member
+
+
 def test_adding_an_alias(auth, fake_bot, seeded):
     body = auth.post("/api/members/1002/nick", json={"alias": "MY"}).json()
     assert body["aliases"] == ["MY"]
@@ -992,6 +1004,19 @@ def test_role_plugins_are_readable_and_writable_over_the_api(auth, tmp_path, mon
 
     assert body["chat_role_plugins"] == assignments
     assert auth.get("/api/config").json()["chat_role_plugins"] == assignments
+
+
+def test_public_profile_catalog_is_explicit_and_ordered(auth, tmp_path, monkeypatch):
+    from bot import behaviour_plugins
+
+    monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
+    behaviour_plugins.write("brief", "BRIEF")
+    behaviour_plugins.write("playful", "PLAYFUL")
+
+    body = auth.put(
+        "/api/config", json={"chat_selectable_plugins": ["playful", "brief"]}
+    ).json()
+    assert body["chat_selectable_plugins"] == ["playful", "brief"]
 
 
 @pytest.mark.parametrize(

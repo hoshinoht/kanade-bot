@@ -6,6 +6,8 @@ import sqlite3
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from bot.agent import formatting
 from bot.agent.materialise import DAY_OF, countdown_kind, is_stale, reconcile_day_of, reminder_specs
 from bot.infrastructure.db import Repo
@@ -194,7 +196,7 @@ def test_decline_notice_round_trip():
     assert row["message_id"] is None and row["notified_at"] == at  # cooldown survives
 
 
-def test_migrating_an_old_database_forward_is_additive(tmp_path):
+def test_a_pre_v9_database_requires_the_previous_release(tmp_path):
     path = tmp_path / "v2.sqlite"
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -215,14 +217,5 @@ def test_migrating_an_old_database_forward_is_additive(tmp_path):
     )
     conn.close()
 
-    repo = Repo(path)
-    cols = {row[1] for row in repo._conn.execute("PRAGMA table_info(amendments)")}
-    assert {"channel_id", "is_question", "payload", "day_ref"} <= cols
-    assert repo._conn.execute("SELECT COUNT(*) FROM amendments").fetchone()[0] == 1
-    assert repo.get_config("day_of_ping_time") == "09:00"
-    from bot.infrastructure.db import SCHEMA_VERSION
-
-    # It walks all the way to the current schema, whatever that is now.
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
-    assert repo.get_decline_notice("x", "y") is None  # v3's table exists
-    assert repo.recent_rescan_jobs() == []  # v4's table exists
+    with pytest.raises(RuntimeError, match="upgrades from v9 only"):
+        Repo(path)

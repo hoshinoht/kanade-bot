@@ -1,18 +1,4 @@
-"""Everything the API does, in terms of the repository and the live bot.
-
-The slash commands and this module must not drift apart, so the mutating
-functions here call exactly the repository methods :mod:`bot.agent.commands` calls --
-``set_run_datetime`` + ``refresh_run_reminders`` for a move, ``set_run_status``
-for a cancel, ``commit()`` for an approval -- and reuse the same validation
-(``BossTable.parse``, the bossing-role check, "the channel must be watched").
-What is new here is only the *shape*: ids arrive as strings from HTTP rather
-than from an autocomplete, so every lookup accepts a short prefix, and the
-return values are plain JSON-able dicts that both ``routes_api`` and the Jinja
-templates render.
-
-Nothing in here imports FastAPI. Functions that need Discord (posting a card,
-paging channel history) are ``async`` and take the live :class:`~bot.agent.client.BossBot`.
-"""
+"""API operations over the repository and live bot."""
 
 from __future__ import annotations
 
@@ -76,12 +62,7 @@ def _audit(
     detail: str = "",
     actor: audit.Actor | None = None,
 ) -> None:
-    """Note a change on the audit trail, crediting whoever asked for it.
-
-    The actor comes from the request in flight (:class:`bot.api.app.
-    ActorMiddleware` puts it there) unless a caller knows better. Called *after*
-    the change, so a mutation that raised leaves no row claiming it happened.
-    """
+    """Record a completed change with its actor."""
     audit.record(bot.repo, actor or audit.current(), action, subject, detail)
 
 
@@ -90,9 +71,7 @@ def _bosses_of(run: dict) -> str:
     return formatting.format_bosses(run["bosses"])
 
 
-#: Runtime config the portal may read and write, and how to validate each one.
-#: Anything not listed here is refused -- `config set` is not a way to write
-#: arbitrary rows into the `config` table.
+#: Runtime configuration keys accepted by the API.
 CONFIG_KEYS = (
     "day_of_ping_time",
     "countdown_minutes",
@@ -102,16 +81,14 @@ CONFIG_KEYS = (
     "chat_mode",
     "persona",
     behaviour_plugins.CONFIG_KEY,
+    behaviour_plugins.SELECTABLE_CONFIG_KEY,
     "chat_pilot_rate_count",
     "chat_pilot_rate_window_s",
     "chat_pilot_global_rate_count",
     "chat_pilot_global_rate_window_s",
 )
 
-#: The capacity settings, split by what a valid value looks like: a whole number
-#: of answers, or a number of seconds. Both are checked here rather than trusted
-#: from the request, because ``bossctl config set`` and the portal both arrive
-#: as text and a window of zero would refuse everybody for ever.
+#: Capacity settings grouped by value type.
 COUNT_KEYS = ("chat_pilot_rate_count", "chat_pilot_global_rate_count")
 WINDOW_KEYS = ("chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s")
 
@@ -344,21 +321,12 @@ def boss_view(bot: BossBot, token: str) -> dict:
     }
 
 
-#: Every portrait the portal draws is a badge -- 26px beside a boss's name,
-#: 38px in the boss grid, and nothing anywhere bigger -- so all of them ask for
-#: the small render. The full file is artwork now: it is what Discord attaches
-#: as a card's thumbnail (:func:`bot.agent.formatting.lead_portrait`), and what
-#: ``?size=full`` still serves to anything that wants it.
+#: Portal badges use the small portrait render.
 PORTAL_PORTRAIT_SIZE = "icon"
 
 
 def portrait_url(bot: BossBot, short: str, size: str = "full") -> str | None:
-    """The portal URL for a boss portrait, or ``None`` when there is no file.
-
-    The size rides in the query rather than in the path so the two renders are
-    two cache entries under one route -- and so a boss with no small file, which
-    falls back to the big one, is still asked for under the URL the page wrote.
-    """
+    """Return a cache-distinct portrait URL, or ``None`` when absent."""
     if bot.bosses.portrait_path(short, size) is None:
         return None
     return f"/static/portraits/{short}" + (f"?size={size}" if size != "full" else "")
@@ -369,26 +337,12 @@ def entry_art_url(bot: BossBot, short: str) -> str | None:
     return f"/static/entry/{short}" if bot.bosses.entry_art_path(short) else None
 
 
-#: How many pieces of entry artwork one card can wear. Two, because the sheet
-#: splits its right edge diagonally between them and a third would have nowhere
-#: to be -- and because a run here has never named more than two bosses anyway.
+#: The sheet supports two artwork layers.
 MAX_ENTRY_ART = 2
 
 
 def run_entry_art(bot: BossBot, bosses: Sequence[str]) -> list[str]:
-    """The artwork a run's cards wear, in the order the run names its bosses.
-
-    The lead boss is first for the reason it always was: a run is named after
-    the boss it leads with, which is the same choice
-    :func:`bot.agent.formatting.lead_portrait` makes for a card in Discord. The
-    compact card on the board has room for one picture and uses that one; the
-    sheet has room for the second and splits its right edge between them.
-
-    A boss with no file is absent rather than a gap, so two bosses of which one
-    has artwork make a one-layer card and not a half-empty two-layer one. An
-    empty list is the ordinary case on a fresh clone, the artwork being
-    git-ignored -- every surface that reads this has to render without it.
-    """
+    """Return up to two available artwork URLs, lead boss first."""
     urls: list[str] = []
     for token in bosses:
         parts = bot.bosses.split(token)
@@ -401,12 +355,7 @@ def run_entry_art(bot: BossBot, bosses: Sequence[str]) -> list[str]:
 
 
 def boss_grid(bot: BossBot, selected: Sequence[str] = ()) -> list[dict]:
-    """The in-game boss list: one row per boss, its difficulties as pills.
-
-    ``selected`` marks the tokens that are already chosen, so the same grid
-    serves the fixed-run editor (a picker) and `/bosses` (a read-only view of
-    what the guild actually runs).
-    """
+    """Return bosses and difficulties, marking selected tokens."""
     chosen = {str(t) for t in selected}
     rows = []
     for boss in bot.bosses.ordered():
@@ -455,10 +404,7 @@ def run_view(bot: BossBot, run: dict, rsvps: dict[str, str] | None = None) -> di
         "short_id": short_id(run["id"]),
         "bosses": run["bosses"],
         "boss_detail": [boss_view(bot, b) for b in run["bosses"]],
-        # Up to two, lead boss first -- see `run_entry_art`. Read by the board's
-        # compact cards, which take the first, and by the run card itself, which
-        # takes both: the same run view rendered twice rather than two sets of
-        # facts.
+        # Compact cards use the first layer; full cards may use both.
         "entry_art": run_entry_art(bot, run["bosses"]),
         "datetime": to_iso(run["datetime"]),
         "local_date": local.strftime("%Y-%m-%d"),
@@ -595,10 +541,7 @@ def amendment_view(bot: BossBot, amendment: dict, with_evidence: bool = True) ->
         "when": when_label(bot, amendment),
         "day_ref": amendment["day_ref"],
         "time_ref": amendment["time_ref"],
-        # Only a move has an "old → new": a new run or a correction has no
-        # earlier time to arrow away from, even when it matched an existing run
-        # (which is how `new run` cards came to read "Sat 21:30 → TBD"). The
-        # Discord card already reads it this way; see formatting.proposal_line.
+        # Only moves have an old time to display.
         "from_when": (
             f"{formatting.local_day(run['datetime'], bot.tz)} "
             f"{formatting.local_time(run['datetime'], bot.tz)}"
@@ -797,42 +740,18 @@ def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
     return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
 
 
-# ---------------------------------------------------------------------------
-# the table pages: one search box, one pager, six listings
-# ---------------------------------------------------------------------------
-#
-# Every page that is a list of rows answers the same two questions -- "which
-# rows" and "where in them am I" -- so they answer them the same way and the
-# templates share one contract: ``rows``, ``q``, and the numbers a pager needs.
-#
-# Where the search happens differs, and deliberately. The three log tables are
-# searched in SQL (:meth:`bot.infrastructure.db.Repo.list_audit` and friends), because their
-# columns are the text being looked for and paging in SQL is the only way not
-# to build two thousand views to show twenty. Reminders, members and fixed
-# timings are searched here, over rows that have already been rendered, because
-# what a reader searches for on those pages -- a boss's full name, a member's
-# nickname, a channel's ``#name`` -- is not in the database at all: it comes
-# from the boss table, the roster and the live guild.
+# -- table listings ----------------------------------------------------------
+# Logs search in SQL; rendered rows search here for derived names.
 
-#: Rows per page on the logs. Twenty fills a laptop window without the table
-#: pane having to scroll at all; the pane's own scrollbar is a shock absorber
-#: for a short window, not how the page is meant to be read.
+#: Rows per log page.
 PAGE_SIZE = 20
 
-#: How far back the Reminders page looks. Unlike the logs this list is built by
-#: joining every run to its reminders, so it is capped before it is filtered
-#: rather than paged in SQL -- and a cap is honest here: nobody scrolls to a
-#: ping from four months ago, they search for it.
+#: Maximum reminders scanned for the portal listing.
 REMINDER_SCAN = 1000
 
 
 def _page_meta(total: int, page: int, per_page: int = PAGE_SIZE) -> dict:
-    """Where in a result set we are, clamped to somewhere that exists.
-
-    A ``?page=`` past the end is a stale bookmark, or a search that narrowed
-    under somebody -- not an error worth a 404, so it lands on the last page
-    there actually is.
-    """
+    """Return clamped pagination metadata."""
     pages = max(1, (total + per_page - 1) // per_page)
     current = min(max(int(page or 1), 1), pages)
     return {
@@ -851,20 +770,12 @@ def _listing(rows: list[dict], meta: dict, q: str) -> dict:
 
 
 def _found(rows: list[dict], q: str) -> dict:
-    """A search-only listing: everything that matched, and no pager.
-
-    Same shape as a paged one so the templates need no branch -- one page of
-    one, which is what "no paging" actually is.
-    """
+    """Return an unpaged listing using the standard shape."""
     return _listing(rows, _page_meta(len(rows), 1, max(len(rows), 1)), q)
 
 
 def _matches(q: str, *fields: object) -> bool:
-    """Does the query appear in any of these already-rendered strings?
-
-    Case-insensitive substring, matching what the SQL side does, so the search
-    box means one thing on all six pages.
-    """
+    """Match a case-insensitive query against fields."""
     term = (q or "").strip().casefold()
     if not term:
         return True
@@ -884,14 +795,7 @@ def extractions_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
 
 
 def _named_ids(bot: BossBot, q: str) -> list[str]:
-    """Members and channels whose *name* contains the query.
-
-    The chat log stores both as ids and every page shows them as names, so a
-    search box has to be answered against the name. Resolved here because this
-    is the layer that knows what a name is: a channel's comes from the live
-    guild and is not in the database at all, and a member's may be a nickname
-    or one of the aliases the extractor matches on.
-    """
+    """Return member and channel IDs matching a name query."""
     term = (q or "").strip().casefold()
     if not term:
         return []
@@ -916,17 +820,7 @@ def chat_listing(bot: BossBot, page: int = 1, q: str = "") -> dict:
 
 
 def reminders_listing(bot: BossBot, page: int = 1, q: str = "", run_id: str | None = None) -> dict:
-    """Queued and sent, both searched; only the sent half is paged.
-
-    Queued is bounded by what has been materialised -- two boss weeks, so tens
-    of rows -- and a pager over it would be a control that never has a second
-    page. Sent grows for as long as the runs do, so that is the half that gets
-    one.
-
-    ``run_id`` is the narrower "just this run's pings", which the page offers no
-    control for; it is here because ``/reminders?run_id=`` has always answered
-    it and a URL that used to work should keep working.
-    """
+    """List reminders, paging sent rows only."""
     rows = reminders(bot, run_id=run_id, limit=REMINDER_SCAN)
     kept = [
         row
@@ -951,13 +845,15 @@ def reminders_listing(bot: BossBot, page: int = 1, q: str = "", run_id: str | No
 def members_listing(bot: BossBot, q: str = "") -> dict:
     rows = [
         member
-        for member in members(bot)
+        for member in relevant_style_members(bot)
         if _matches(
             q,
             member["display_name"],
             member["nickname"],
             " ".join(member["aliases"]),
             member["user_id"],
+            member.get("reply_style"),
+            member.get("effective_style"),
         )
     ]
     return _found(rows, q)
@@ -990,6 +886,7 @@ def member_view(bot: BossBot, member: dict, run_counts: dict[str, int]) -> dict:
         "aliases": member["aliases"],
         "has_role": member["has_role"],
         "ping_level": member["ping_level"],
+        "reply_style": member.get("reply_style"),
         "updated_at": member["updated_at"],
         "runs_this_week": run_counts.get(member["user_id"], 0),
     }
@@ -1009,9 +906,7 @@ def reminder_view(bot: BossBot, reminder: dict, run: dict | None) -> dict:
         "url": message_url(bot, run["channel_id"] if run else None, reminder["message_id"]),
         "bosses": run["bosses"] if run else [],
         "boss_detail": [boss_view(bot, b) for b in run["bosses"]] if run else [],
-        # Who the ping is for, by the name the roster knows them by. The page
-        # shows it and the search box matches on it: "which of Priya's pings
-        # went out?" is the question this table is opened with.
+        # Render participant names for display and search.
         "party": [member_name(bot, uid) for uid in run["participants"]] if run else [],
         "run_local": formatting.local_day(run["datetime"], bot.tz) if run else None,
         "status": run["status"] if run else None,
@@ -1031,16 +926,9 @@ def schedule(
     boss: str | None = None,
     show_past: bool = False,
 ) -> dict:
-    """One week's runs, filtered, grouped by day -- the Week view's whole payload.
-
-    A boss week is materialised whole, so by Sunday it already holds Thursday's
-    finished runs. ``done`` and ``cancelled`` are hidden unless ``show_past``,
-    and the count of what was hidden is returned so the page can say so rather
-    than quietly dropping rows.
-    """
+    """Return filtered runs grouped by day for one week."""
     ws = week_for(bot, week)
-    # "mine" counts runs whose fixed timing the member owns, not just ones they
-    # are on -- the same rule `/schedule scope:mine` applies.
+    # ``mine`` includes fixed-run owners.
     everything = bot.repo.list_runs(week_start=ws, involving=user_id, channel_id=channel_id)
     if boss:
         wanted = boss.strip().lower()
@@ -1064,12 +952,7 @@ def schedule(
 
 
 def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
-    """The seven days of a boss week, in the week's own order (reset day first).
-
-    This is what the portal's rail renders: the shape of the week, whose first
-    column is Thursday here rather than Monday, plus a pip per run so a glance
-    says which nights are busy.
-    """
+    """Return boss-week days in reset-day order."""
     ws = week_for(bot, week)
     local_ws = ws.astimezone(bot.tz)
     today = utcnow().astimezone(bot.tz).date()
@@ -1108,50 +991,22 @@ def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
 # ---------------------------------------------------------------------------
 # the week, as a board
 # ---------------------------------------------------------------------------
-#
-# The rail drew the shape of a boss week in seven cells and then handed off to a
-# list underneath it, which meant the shape and the runs were never on screen
-# together: you looked at the pips, scrolled past them, and lost the week.
-# On a desktop the seven cells grow into seven columns and become the page --
-# the rail's job, done properly. A phone keeps the rail and the list, because
-# seven columns on a 360px screen is seven columns nobody can read.
 
 
-#: A day with nothing on it: wide enough for "Thu" stacked over "04" and for
-#: nothing else. Six of these is the difference between a board that says "the
-#: week is one busy Wednesday" and one that gives six sevenths of the canvas to
-#: emptiness.
+#: Grid width for an empty day.
 BOARD_SPINE = "3.5rem"
 
-#: A day with runs. Never narrower than a card can be read at, and otherwise an
-#: equal share of what the spines left behind -- equal because a day's *count*
-#: is expressed down its column, not across it. A week busy enough that seven
-#: minimums do not fit scrolls sideways rather than shrinking below legible.
-#: Written without a space inside the ``minmax`` so the track list is a
-#: whitespace-separated list of tracks and nothing else -- which is what CSS
-#: reads it as, and what a reader (or a test) can split on.
+#: Grid track for a day with runs; must remain a single CSS token.
 BOARD_RUN_TRACK = "minmax(230px,1fr)"
 
 
 def board_tracks(columns: Sequence[dict]) -> str:
-    """The board's ``grid-template-columns``, sized to what each day holds.
-
-    Built here rather than in the stylesheet because the stylesheet cannot
-    count: which of the seven days have runs is a fact about this week, known
-    at render time, and the alternative is measuring it in the browser.
-    """
+    """Build ``grid-template-columns`` for populated days."""
     return " ".join(BOARD_SPINE if not column["runs"] else BOARD_RUN_TRACK for column in columns)
 
 
 def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
-    """The week's runs in seven day columns, reset day first.
-
-    Built from the *filtered* run views the page already has rather than from
-    the database again, so the board narrows with the filter bar and cannot
-    disagree with the list under it. The seven dates come from the week itself,
-    so a day with nothing on it is still a column -- an empty Tuesday is a fact
-    about the week, not a row to omit.
-    """
+    """Group filtered runs into seven reset-day-first columns."""
     local_ws = week_for(bot, week).astimezone(bot.tz)
     today = utcnow().astimezone(bot.tz).date()
     by_date: dict[str, list[dict]] = {}
@@ -1179,12 +1034,7 @@ def board_columns(bot: BossBot, week: str, runs: Sequence[dict]) -> list[dict]:
 
 
 def countdown(target: datetime, now: datetime | None = None) -> str:
-    """How long until something, in the coarsest unit that is still useful.
-
-    Rendered on the server and left alone: it is read once, at a glance, on a
-    page somebody opens to find out whether they have time to eat first. A
-    ticking clock would be a second thing on the page that can be wrong.
-    """
+    """Format remaining time in a coarse unit."""
     seconds = int((target - (now or utcnow())).total_seconds())
     if seconds <= 0:
         return "now"
@@ -1430,23 +1280,12 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-#: How far ahead a parsed date may land before it is treated as a misreading.
-#: ``dateparser`` reads a bare ``2300`` as the *year* 2300, which reached a
-#: proposal card three centuries out; nothing this guild schedules is more than
-#: a boss week or two away, so anything past this is a parse that went wrong
-#: rather than a plan.
+#: Reject dateparser mistakes such as reading ``2300`` as a year.
 MAX_HORIZON = timedelta(days=400)
 
 
 def _day_words() -> list[tuple[str, str]]:
-    """``[(what people type, what dateparser understands)]``, longest first.
-
-    Built from the extractor's own day vocabulary
-    (:mod:`bot.extract.resolve`) rather than a second table, so "tmr" means
-    tomorrow in `/amend` and in chat for the same reason and at the same time.
-    Deliberately *only* the day words: this is a parser for text somebody typed
-    into a command, not the extractor's fuzzy keyword gate.
-    """
+    """Return shared day aliases for dateparser, longest first."""
     pairs = [
         *((word, "today") for word in resolve.TODAY_WORDS | resolve.SOON_WORDS),
         *((word, "tomorrow") for word in resolve.TOMORROW_WORDS),
@@ -1630,16 +1469,10 @@ async def cancel_run(bot: BossBot, run_id: str) -> dict:
     return await set_status(bot, run_id, "cancelled")
 
 
-#: The statuses a person may set, in the order the portal's control shows them.
-#: `at_risk` is *derived* -- it means somebody said no, and setting it by hand
-#: would be a claim about an answer nobody gave.
+#: Settable statuses; ``at_risk`` remains derived from RSVPs.
 SETTABLE_STATUSES: tuple[str, ...] = ("planned", "confirmed", "otot", "done", "cancelled")
 
-#: How each target status reads in the party's channel, and what it does to the
-#: run's reminders. `refresh_run_reminders` derives the right set from the
-#: status itself (`bot.agent.materialise.reminder_specs`), so "rebuild" covers
-#: planned/confirmed keeping both kinds, `otot` keeping only the morning ping,
-#: and `cancelled`/`done` keeping none.
+#: Member-facing status labels; reminder policy derives from the status.
 STATUS_LABELS: dict[str, str] = {
     "planned": "back on the schedule",
     "confirmed": "confirmed",
@@ -1802,11 +1635,7 @@ async def swap_participants(
 
 
 def roster_change(bot: BossBot, run: dict) -> dict:
-    """How this week's party differs from the fixed timing behind it.
-
-    Shown as "(this week: -X +Y)" so a one-night stand-in is visible without
-    opening anything -- the baseline is unchanged, and that is easy to forget.
-    """
+    """Return this week's roster delta from its fixed baseline."""
     fixed_id = run.get("fixed_run_id")
     fixed = bot.repo.get_fixed_run(fixed_id) if fixed_id else None
     if fixed is None:
@@ -1821,10 +1650,7 @@ def roster_change(bot: BossBot, run: dict) -> dict:
     }
 
 
-#: What an answer can be set to from the portal, the API or `bossctl`.
-#: ``clear`` is not an answer but the removal of one -- the correction for a
-#: reaction somebody left by accident, which needs to leave the person
-#: *unanswered* rather than recorded as a maybe.
+#: ``clear`` removes an answer instead of recording a state.
 RSVP_ANSWERS = ("yes", "no", "maybe", "clear")
 
 
@@ -1988,6 +1814,94 @@ def members(bot: BossBot, with_role: bool = True) -> list[dict]:
     return [member_view(bot, m, counts) for m in bot.repo.list_members(with_role=with_role)]
 
 
+def _live_staff(bot: BossBot, member: Any, guild: Any) -> bool:
+    permissions = getattr(member, "guild_permissions", None)
+    return is_bot_admin(
+        bool(getattr(permissions, "administrator", False)),
+        getattr(guild, "owner_id", None) == getattr(member, "id", None),
+        [getattr(role, "id", role) for role in (getattr(member, "roles", None) or ())],
+        bot.settings.admin_role_id,
+    )
+
+
+def relevant_style_members(bot: BossBot) -> list[dict]:
+    """Return members relevant to reply-style administration."""
+    counts = _run_counts(bot)
+    stored = {str(row["user_id"]): row for row in bot.repo.list_members(with_role=False)}
+    guild = bot.get_guild(bot.settings.guild_id)
+    live_members = list(getattr(guild, "members", ()) or ()) if guild is not None else []
+    live_by_id = {
+        str(member.id): member for member in live_members if not getattr(member, "bot", False)
+    }
+    assignments, assignment_issues = behaviour_plugins.assignment_diagnostics(
+        bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
+    )
+    override_roles = {item.role_id for item in assignments}
+    chat_role = str(bot.settings.chat_pilot_role_id or "")
+    relevant_ids = {
+        user_id
+        for user_id, member in stored.items()
+        if member["has_role"] or member.get("reply_style")
+    }
+    for user_id, member in live_by_id.items():
+        held = {str(getattr(role, "id", role)) for role in (getattr(member, "roles", None) or ())}
+        if chat_role in held or held & override_roles or _live_staff(bot, member, guild):
+            relevant_ids.add(user_id)
+
+    role_state_known = guild is not None and bool(getattr(guild, "chunked", True))
+    selectable = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+    )
+    default = bot.chat.default_behaviour_text()
+    rows: list[dict] = []
+    for user_id in relevant_ids:
+        saved = stored.get(user_id)
+        live = live_by_id.get(user_id)
+        base = saved or {
+            "user_id": user_id,
+            "display_name": getattr(live, "display_name", user_id),
+            "nickname": getattr(live, "nick", None),
+            "aliases": [],
+            "has_role": False,
+            "ping_level": "essential",
+            "reply_style": None,
+            "updated_at": "",
+        }
+        row = member_view(bot, base, counts)
+        row["persisted"] = saved is not None
+        if live is None:
+            row.update(
+                effective_style=None,
+                style_source="not_applicable" if role_state_known else "unknown",
+                style_role_id=None,
+                style_role_name=None,
+                style_diagnostics=[issue.message for issue in assignment_issues],
+            )
+        elif not role_state_known:
+            row.update(
+                effective_style=None,
+                style_source="unknown",
+                style_role_id=None,
+                style_role_name=None,
+                style_diagnostics=[issue.message for issue in assignment_issues],
+            )
+        else:
+            roles = [getattr(role, "id", role) for role in (getattr(live, "roles", None) or ())]
+            resolution = behaviour_plugins.resolve(
+                selected=base.get("reply_style"),
+                selectable=selectable,
+                assignments=assignments,
+                role_ids=roles,
+                default_instructions=default,
+            )
+            row.update(resolution.admin_view())
+            role = guild.get_role(int(resolution.role_id)) if resolution.role_id else None
+            row["style_role_name"] = getattr(role, "name", None)
+            row["style_diagnostics"] = [issue.message for issue in assignment_issues]
+        rows.append(row)
+    return sorted(rows, key=lambda row: row["display_name"].casefold())
+
+
 def update_member(bot: BossBot, user_id: int | str, ping_level: str | None = None) -> dict:
     """Edit one member's own settings. Only ``ping_level`` is editable today."""
     member = bot.repo.get_member(user_id)
@@ -2039,20 +1953,7 @@ def access_report(bot: BossBot) -> list[dict]:
 
 
 def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
-    """Give one member their answers back, and forget the notice they were sent.
-
-    Individual windows only, deliberately. There is no way here to clear the
-    guild's pool or everybody at once: the pool is a fact about what the host
-    can produce in an hour rather than about a person, and a "reset all" button
-    is the one somebody presses instead of asking why the bot is busy.
-
-    The roster is *not* consulted first, unlike :func:`set_nick` and
-    :func:`update_member`. Holding the chat role does not require holding the
-    bossing role, so somebody can be rate limited while not being on the roster
-    at all -- and the window shown on the Limits page has to be clearable from
-    the button next to it. Clearing a key with no window is harmless and says
-    so; the name falls back to ``user 1002`` exactly as it does on the page.
-    """
+    """Clear one member's answer window."""
     bot.chat.forget_limit(user_id)
     events.notify()
     name = member_name(bot, user_id)
@@ -2061,16 +1962,7 @@ def reset_user_limit(bot: BossBot, user_id: int | str) -> dict:
 
 
 def set_user_limit(bot: BossBot, user_id: int | str, count: int, window_s: float) -> dict:
-    """Give one member their own allowance instead of the guild default.
-
-    Stored, so it survives a restart, and pushed into the live limiter at once
-    (:meth:`bot.chat.agent.ChatPilot.apply_limits`) -- an override that only took
-    effect after a redeploy would be useless at the moment somebody asks for it.
-
-    Not restricted to the roster, for the reason :func:`reset_user_limit` gives:
-    the chat role and the bossing role are different things, and it must be
-    possible to raise the allowance of somebody who has not asked yet today.
-    """
+    """Set one member's allowance override."""
     count = _whole_number(count, "count", minimum=1)
     window_s = _seconds(window_s, "window_s")
     bot.repo.set_rate_limit(user_id, count, window_s)
@@ -2087,12 +1979,7 @@ def set_user_limit(bot: BossBot, user_id: int | str, count: int, window_s: float
 
 
 def clear_user_limit(bot: BossBot, user_id: int | str) -> dict:
-    """Put one member back on the guild default, keeping their spent window.
-
-    Idempotent: clearing an allowance nobody had is not an error, because the
-    end state the caller asked for -- "this member is on the default" -- is the
-    one they get either way.
-    """
+    """Clear one member's allowance override."""
     had = bot.repo.clear_rate_limit(user_id)
     bot.chat.apply_limits()
     events.notify()
@@ -2103,13 +1990,7 @@ def clear_user_limit(bot: BossBot, user_id: int | str) -> dict:
 
 
 def _is_staff(bot: BossBot, member: Any) -> bool:
-    """The same "who runs this bot" rule the chat gate applies to a message.
-
-    Read from the live member object for the same reason
-    :meth:`bot.chat.agent.ChatPilot._is_admin` does: staff are exempt from every
-    budget, so a page offering to raise their allowance would be offering to
-    change a number nothing reads.
-    """
+    """Return whether a live member is bot staff."""
     permissions = getattr(member, "guild_permissions", None)
     guild = getattr(member, "guild", None)
     return is_bot_admin(
@@ -2121,22 +2002,7 @@ def _is_staff(bot: BossBot, member: Any) -> bool:
 
 
 def pilot_roster(bot: BossBot) -> list[dict]:
-    """Everybody holding ``CHAT_PILOT_ROLE_ID``, and where each of them stands.
-
-    A **live read** of Discord's role member cache -- the same source
-    :func:`bot.agent.util.roster_rows` uses for the bossing role, available because
-    the members intent is already on. Nothing is stored: the answer to "who may
-    talk to the bot" is the role, and a copy of it in SQLite would be a second
-    answer that goes stale the moment somebody is given the role.
-
-    Empty whenever it cannot be known -- no role configured, no guild (the bot
-    is not connected, or a test never built one), or a role id that resolves to
-    nothing. The page says so rather than showing an empty table as though the
-    role had no holders.
-
-    Bot accounts are dropped, exactly as ``roster_rows`` drops them: another bot
-    holding the role is not somebody whose allowance anybody needs to tune.
-    """
+    """Return live, non-bot holders of the chat role."""
     role_id = bot.settings.chat_pilot_role_id
     guild = bot.get_guild(bot.settings.guild_id) if role_id is not None else None
     role = guild.get_role(int(role_id)) if guild is not None else None
@@ -2155,10 +2021,7 @@ def pilot_roster(bot: BossBot) -> list[dict]:
         rows.append(
             {
                 "user_id": user_id,
-                # The roster's name when it knows them, so one person reads the
-                # same on this table and the one above it; the live display name
-                # otherwise, since holding the chat role does not put anybody on
-                # the bossing roster.
+                # Prefer the roster name when available.
                 "name": member_name(bot, user_id)
                 if bot.repo.get_member(user_id)
                 else getattr(member, "display_name", user_id),
@@ -2203,19 +2066,7 @@ def _pool_view(limiter: Any, key: str) -> dict:
 
 
 def limits(bot: BossBot) -> dict:
-    """What the host is doing right now, and how much of it is left.
-
-    The one page that answers "why is the bot slow?" without reading the log.
-    Everything here is *live* state rather than anything stored -- the lock, two
-    sliding windows and a queue -- so it is read fresh on every request and there
-    is nothing to keep in step with the database.
-
-    Read-only by construction: the limiter is asked with
-    :meth:`bot.chat.ratelimit.RateLimiter.remaining` and
-    :meth:`~bot.chat.ratelimit.RateLimiter.snapshot`, never ``allow``, so opening
-    the page cannot spend anybody's allowance -- including the pool it is
-    reporting on.
-    """
+    """Return live model and rate-limit state without consuming allowance."""
     from bot.infrastructure.modellock import EXTRACTOR, holder
 
     from ..chat.gate import GLOBAL_KEY
@@ -2278,11 +2129,13 @@ def limits(bot: BossBot) -> dict:
 
 
 def get_config(bot: BossBot) -> dict:
-    # Cached on the pilot after the first read, so asking here costs a page load
-    # nothing and reports exactly what the bot is answering with.
+    # Use the pilot's loaded persona state.
     persona_source = bot.chat.persona_source()
-    configured_role_plugins = behaviour_plugins.decode(
+    configured_role_plugins, role_plugin_issues = behaviour_plugins.assignment_diagnostics(
         bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
+    )
+    selectable_plugins = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
     )
     return {
         "day_of_ping_time": bot.ping_time.strftime("%H:%M"),
@@ -2316,7 +2169,12 @@ def get_config(bot: BossBot) -> dict:
         "persona": bot.persona_name,
         "persona_choices": bot.persona_choices(),
         "chat_role_plugins": [item.as_dict() for item in configured_role_plugins],
-        "behaviour_plugins": [item.as_dict() for item in behaviour_plugins.list_plugins()],
+        "chat_role_plugin_issues": [issue.message for issue in role_plugin_issues],
+        "behaviour_plugins": [
+            {**item.as_dict(), "selectable": item.name in selectable_plugins}
+            for item in behaviour_plugins.list_plugins()
+        ],
+        "chat_selectable_plugins": selectable_plugins,
         "timezone": bot.settings.tz,
         "reset": f"{WEEKDAY_NAMES[bot.settings.reset_weekday]} "
         f"{bot.settings.reset_time.strftime('%H:%M')}",
@@ -2378,9 +2236,7 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
     elif key == "persona":
         stored = _persona_choice(bot, value)
         bot.repo.set_config(key, stored)
-        # The pilot reads the document once and keeps it. Without this the new
-        # voice would wait for a restart, which is the whole thing this setting
-        # exists to avoid: the next question is answered in it.
+        # Apply persona changes without a restart.
         bot.chat.reload_persona()
     elif key == behaviour_plugins.CONFIG_KEY:
         try:
@@ -2395,11 +2251,23 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         if missing:
             raise BadRequest(f"unknown behaviour plugin(s): {', '.join(missing)}")
         bot.repo.set_config(key, stored)
+    elif key == behaviour_plugins.SELECTABLE_CONFIG_KEY:
+        try:
+            stored = behaviour_plugins.encode_catalog(value)
+            missing = [
+                name
+                for name in behaviour_plugins.decode_catalog(stored)
+                if behaviour_plugins.read(name) is None
+            ]
+        except (TypeError, ValueError) as exc:
+            raise BadRequest(str(exc)) from None
+        if missing:
+            raise BadRequest(f"unknown behaviour plugin(s): {', '.join(missing)}")
+        bot.repo.set_config(key, stored)
     elif key in COUNT_KEYS:
         stored = str(_whole_number(value, key, minimum=1))
         bot.repo.set_config(key, stored)
-        # The limiters live for the whole process, so a new number means nothing
-        # until they are told. Windows already open are reinterpreted under it.
+        # Update the live limiters.
         bot.chat.apply_limits()
         events.notify()
     elif key in WINDOW_KEYS:
@@ -2410,9 +2278,14 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
     else:
         stored = _as_flag(value)
         bot.repo.set_config(key, stored)
-    if key == behaviour_plugins.CONFIG_KEY:
-        before_count = len(behaviour_plugins.decode(before))
-        after_count = len(behaviour_plugins.decode(stored))
+    if key in (behaviour_plugins.CONFIG_KEY, behaviour_plugins.SELECTABLE_CONFIG_KEY):
+        decoder = (
+            behaviour_plugins.decode
+            if key == behaviour_plugins.CONFIG_KEY
+            else behaviour_plugins.decode_catalog
+        )
+        before_count = len(decoder(before))
+        after_count = len(decoder(stored))
         detail = f"{key}: {before_count} assignment(s) -> {after_count} assignment(s)"
     else:
         detail = f"{key}: {before if before is not None else 'unset'} -> {stored}"
@@ -2445,6 +2318,40 @@ def set_behaviour_plugin(bot: BossBot, name: Any, instructions: Any) -> dict:
     return get_config(bot)
 
 
+def set_behaviour_plugin_selectable(bot: BossBot, name: Any, selectable: bool) -> dict:
+    """Publish or unpublish one readable profile in the member catalog."""
+    try:
+        safe = behaviour_plugins.plugin_name(name)
+    except (TypeError, ValueError) as exc:
+        raise BadRequest(str(exc)) from None
+    if behaviour_plugins.read(safe) is None:
+        raise NotFound(f"behaviour plugin `{safe}` does not exist")
+    current = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+    )
+    updated = [item for item in current if item != safe]
+    if selectable:
+        updated.append(safe)
+    return set_config(bot, behaviour_plugins.SELECTABLE_CONFIG_KEY, updated)
+
+
+def move_role_plugin(bot: BossBot, role_id: Any, direction: str) -> dict:
+    """Move a role assignment one position; list order is override priority."""
+    configured = behaviour_plugins.decode(bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]"))
+    wanted = str(role_id or "").strip()
+    index = next((i for i, item in enumerate(configured) if item.role_id == wanted), None)
+    if index is None:
+        raise NotFound(f"no behaviour plugin is assigned to role {wanted}")
+    step = -1 if direction == "up" else 1 if direction == "down" else 0
+    if step == 0:
+        raise BadRequest("direction must be `up` or `down`")
+    target = index + step
+    if not 0 <= target < len(configured):
+        return get_config(bot)
+    configured[index], configured[target] = configured[target], configured[index]
+    return set_config(bot, behaviour_plugins.CONFIG_KEY, [item.as_dict() for item in configured])
+
+
 def delete_behaviour_plugin(bot: BossBot, name: Any) -> dict:
     """Delete an unused behaviour plugin from the persona bind mount."""
     try:
@@ -2455,6 +2362,11 @@ def delete_behaviour_plugin(bot: BossBot, name: Any) -> dict:
     used_by = [item.role_id for item in configured if item.plugin == safe]
     if used_by:
         raise BadRequest(f"plugin `{safe}` is still used by role(s): {', '.join(used_by)}")
+    selectable = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+    )
+    if safe in selectable:
+        raise BadRequest(f"plugin `{safe}` is still published for member selection")
     try:
         behaviour_plugins.delete(safe)
     except ValueError as exc:

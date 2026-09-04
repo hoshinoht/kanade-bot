@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from bot.agent import formatting, pings
-from bot.infrastructure.db import DEFAULT_PING_LEVEL, PING_LEVELS, SCHEMA_VERSION, Repo
+from bot.infrastructure.db import DEFAULT_PING_LEVEL, PING_LEVELS, Repo
 
 from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 
@@ -260,7 +260,7 @@ def test_the_members_page_shows_each_level(auth, fake_bot, seeded):
     assert "off" in body
 
 
-def test_a_v4_database_gains_the_column_and_keeps_its_rows(tmp_path):
+def test_a_v4_database_requires_the_previous_release(tmp_path):
     path = tmp_path / "v4.sqlite"
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -280,19 +280,8 @@ def test_a_v4_database_gains_the_column_and_keeps_its_rows(tmp_path):
     )
     conn.close()
 
-    repo = Repo(path)
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
-    member = repo.get_member("7")
-    assert member["display_name"] == "harbour4417"  # untouched
-    assert member["aliases"] == ["MY"]
-    assert member["ping_level"] == DEFAULT_PING_LEVEL  # and everyone starts on the default
-    assert repo.get_config("day_of_ping_time") == "08:30"
-    repo.set_ping_level("7", "off")
-    repo.close()
-
-    again = Repo(path)  # re-opening is a no-op, and the choice survives
-    assert again.get_ping_level("7") == "off"
-    again.close()
+    with pytest.raises(RuntimeError, match="upgrades from v9 only"):
+        Repo(path)
 
 
 def test_every_level_round_trips_through_the_database(repo: Repo):
