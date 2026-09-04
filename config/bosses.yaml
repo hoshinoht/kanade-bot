@@ -26,6 +26,11 @@ difficulties:
   x: Extreme
 
 bosses:
+  Lotus:
+    full: Lotus
+    level: 260
+    difficulties: [x]
+    aliases: [lotus, lot, suu]
   Seren:
     full: Chosen Seren
     level: 260

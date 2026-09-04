@@ -12,6 +12,7 @@ grows by a pixel, because the picture sits behind the words rather than above
 them.
 
 ```
+config/artwork/entry/Lotus.png      Lotus
 config/artwork/entry/Seren.png      Chosen Seren
 config/artwork/entry/Kalos.png      Gatekeeper Kalos
 config/artwork/entry/FA.png         The First Adversary

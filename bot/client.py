@@ -530,9 +530,13 @@ class BossBot(discord.Client):
             created = materialise_week(self.repo, week, self.tz, ping_time, countdowns, now=now)
             if created:
                 log.info("materialised %d run(s) for week starting %s", len(created), week)
-        moved = reconcile_day_of(self.repo, self.tz, ping_time)
-        if moved:
-            log.info("re-placed %d day-of reminder(s) at %s", moved, ping_time.strftime("%H:%M"))
+        reconciled = reconcile_day_of(self.repo, self.tz, ping_time, now=now)
+        if reconciled:
+            log.info(
+                "reconciled %d day-of reminder(s) at %s",
+                reconciled,
+                ping_time.strftime("%H:%M"),
+            )
         self.repo.set_config(
             CFG_LAST_WEEK,
             to_iso(

@@ -174,6 +174,21 @@ def test_the_hard_rules_require_global_discord_formatting_and_block_spacing():
     assert "short answer" in rules
 
 
+def test_the_hard_rules_keep_scheduler_internals_out_of_member_replies():
+    rules = persona.HARD_RULES.lower()
+    for phrase in (
+        "bare schedule or date question",
+        "whole group across all channels",
+        "implementation details private",
+        "assignment-style arguments",
+        "nothing in this channel",
+        "runs in other channels",
+    ):
+        assert phrase in rules
+    for leaked_example in ("get_schedule", "scope=", "participant="):
+        assert leaked_example not in rules
+
+
 def test_the_clock_header_says_today_and_the_boss_week(chat_bot):
     from bot.timeutil import utcnow
     from bot.weeks import current_week_start

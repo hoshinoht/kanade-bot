@@ -1184,7 +1184,10 @@ class Pipeline:
             self._note_unposted(channel_id, ids, report)
 
     def _note_unposted(
-        self, channel_id: str, amendment_ids: list[str], report: RescanReport | None,
+        self,
+        channel_id: str,
+        amendment_ids: list[str],
+        report: RescanReport | None,
         summary: str | None = None,
     ) -> None:
         log.error(

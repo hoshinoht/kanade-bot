@@ -24,7 +24,7 @@ services:
       # from `.env` if you want to switch between them.
       # Missing, it falls back to the tracked persona.example.md, warns in the
       # log, and says so on the Config page's Chatbot panel.
-      PERSONA_PATH: /app/personas/persona.md
+      PERSONA_PATH: /app/personas/yuuki-sakuna.md
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
       # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.

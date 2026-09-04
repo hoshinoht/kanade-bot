@@ -32,7 +32,7 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .. import formatting
@@ -45,7 +45,15 @@ from ..extract.schema import Amendment
 from ..ids import short_id
 from ..timeutil import utcnow
 from ..util import resolve_participant_text
-from ..weeks import WEEKDAY_NAMES, parse_hhmm, parse_weekday, week_start
+from ..weeks import (
+    WEEKDAY_NAMES,
+    current_week_start,
+    next_week_start,
+    parse_hhmm,
+    parse_weekday,
+    week_end,
+    week_start,
+)
 from . import gate
 
 log = logging.getLogger(__name__)
@@ -73,6 +81,7 @@ __all__ = [
     "ToolError",
     "ToolOutcome",
     "dispatch",
+    "is_write_tool",
     "read_tools",
     "resolve_fixed",
     "resolve_run",
@@ -114,10 +123,28 @@ class ToolContext:
     read_only: bool = False
     #: Amendment ids this turn created, so the agent can report accurately.
     created: list[str] = None  # type: ignore[assignment]
+    #: Amendment ids whose proposal cards were successfully posted. A row can be
+    #: created before Discord rejects its card, so ``created`` is not proof that
+    #: anybody can see or confirm a proposal.
+    posted: list[str] = None  # type: ignore[assignment]
+    #: The two Discord identities that can legitimately be used to address the
+    #: bot. They are resolved from the live message before the model runs, then
+    #: carried here so a copied trigger mention can never be mistaken for a
+    #: roster member. Kept after the original fields so positional callers retain
+    #: their old meaning.
+    bot_user_id: str | None = None
+    self_role_id: str | None = None
+    #: Trusted defaults derived from the Discord message before the model runs.
+    #: Kept separate because "my runs across all channels" is global in one
+    #: dimension and explicitly personal in the other.
+    force_all_channels: bool = False
+    force_group_schedule: bool = False
 
     def __post_init__(self) -> None:
         if self.created is None:
             self.created = []
+        if self.posted is None:
+            self.posted = []
 
 
 # ---------------------------------------------------------------------------
@@ -165,21 +192,32 @@ TOOLS: list[dict] = [
                 "type": "string",
                 "enum": ["all", "channel"],
                 "description": (
-                    "Use 'channel' when they say 'this channel', 'here', 'our runs' or "
-                    "anything else meaning the channel you are talking in. Use 'all' "
-                    "(the default) for the whole group. When you answer from 'all', "
-                    "never claim the runs are channel-specific -- say which channel "
-                    "each one is in, or say it is the whole group's week."
+                    "Use 'channel' only when they explicitly say 'this channel', 'here', "
+                    "'our runs' or equivalent. A bare date question such as 'what's for "
+                    "tomorrow?' asks about the whole group across all channels: use 'all', "
+                    "which is the default. The @mention used to address the bot is not a "
+                    "channel qualifier. When answering from 'all', say which channel each "
+                    "run is in, or say it is the whole group's schedule."
                 ),
             },
             "participant": {
                 "type": "string",
                 "description": (
-                    "Prefer 'me' when the question is about the person asking -- "
-                    "'what's for me', 'my runs', 'what am I on', 'my schedule' and "
-                    "similar. One roster name is also accepted when the question names "
-                    "a person or copies the asker's display name. Omit it only for a "
-                    "question about the whole group or a specific channel."
+                    "Set this only when they explicitly ask 'what's for me', 'my runs', "
+                    "'what am I on', 'my schedule', or name one roster member. A bare date "
+                    "question such as 'what's for tomorrow?' does not ask about the person "
+                    "speaking: omit this field. Never copy the @mention used to address the "
+                    "bot; it is not a participant."
+                ),
+            },
+            "day": {
+                "type": "string",
+                "description": (
+                    "Optional date within the selected boss week: 'today', 'tonight', "
+                    "'tomorrow', or one weekday. Use it whenever the question names a day; "
+                    "omit it only when they ask for the whole boss week. i.e. 'whats this weeks"
+                    "schedule' Choose the boss week that contains the requested date. DO NOT"
+                    "INCLUDE if query asks for entire week!"
                 ),
             },
         },
@@ -399,16 +437,26 @@ def _says(query: str, word: str) -> bool:
     return re.search(rf"\b{re.escape(word)}\b", query) is not None
 
 
-def _day_matches(query: str, run: dict, bot: Any) -> bool:
-    local = run["datetime"].astimezone(bot.tz)
-    weekday = local.weekday()
-    if any(_says(query, word) for word, index in WEEKDAY_ALIASES.items() if index == weekday):
-        return True
-    today = utcnow().astimezone(bot.tz).date()
-    return any(
-        _says(query, word) and (local.date() - today).days == offset
+def _referenced_dates(query: str, bot: Any, now: datetime) -> set:
+    """The concrete local dates named by a run query, from one captured clock.
+
+    A weekday is not a property of both boss weeks: on Thursday, ``friday``
+    means this coming Friday, not that Friday and the one seven days later.
+    Relative words retain their old meaning, but are resolved from the same
+    instant so a query at a reset boundary cannot mix two different ``today``s.
+    """
+    today = now.astimezone(bot.tz).date()
+    dates = {
+        today + timedelta(days=(weekday - today.weekday()) % 7)
+        for word, weekday in WEEKDAY_ALIASES.items()
+        if _says(query, word)
+    }
+    dates.update(
+        today + timedelta(days=offset)
         for word, offset in _RELATIVE_DAYS.items()
+        if _says(query, word)
     )
+    return dates
 
 
 def _names_a_day(query: str) -> bool:
@@ -435,10 +483,19 @@ def resolve_run(bot: Any, query: str) -> dict:
         pass
 
     low = text.lower()
+    now = utcnow()
+    dates = _referenced_dates(low, bot, now)
+    if len(dates) > 1:
+        raise ToolError(
+            f"`{text}` names more than one day. Ask them which one they mean; do not guess."
+        )
     candidates = [
         run
-        for which in ("this", "next")
-        for run in bot.repo.list_runs(week_start=service.week_for(bot, which))
+        for start in (
+            current_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now),
+            next_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now),
+        )
+        for run in bot.repo.list_runs(week_start=start)
         if run["status"] not in ("cancelled", "done")
     ]
     by_boss = [
@@ -446,18 +503,18 @@ def resolve_run(bot: Any, query: str) -> dict:
         for run in candidates
         if any(_says(low, word) for token in run["bosses"] for word in _boss_words(bot, token))
     ]
-    named_day = _names_a_day(low)
+    named_day = bool(dates)
     if not by_boss and not named_day:
         # Nothing in the text locates a run. Falling back to "every run" here
         # would resolve gibberish to the only run in a quiet week, and a
         # `propose_cancel` built on that guess cancels the wrong night.
         raise ToolError(
-            f"No run matches `{text}`. Call get_schedule to see what is on, then ask them "
+            f"No run matches `{text}`. Check what is scheduled, then ask them "
             "which one they mean. Do not guess."
         )
     matches = by_boss or candidates
     if named_day:
-        narrowed = [run for run in matches if _day_matches(low, run, bot)]
+        narrowed = [run for run in matches if run["datetime"].astimezone(bot.tz).date() in dates]
         if narrowed:
             matches = narrowed
         elif by_boss:
@@ -468,7 +525,7 @@ def resolve_run(bot: Any, query: str) -> dict:
             )
     if not matches:
         raise ToolError(
-            f"No run matches `{text}`. Call get_schedule to see what is on, then ask them "
+            f"No run matches `{text}`. Check what is scheduled, then ask them "
             "which one they mean. Do not guess."
         )
     if len(matches) > 1:
@@ -552,29 +609,83 @@ def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
         return None
     value = args["participant"]
     if not isinstance(value, str) or not value.strip():
-        raise ToolError(
-            "participant must be 'me' or one roster name. Ask them whose schedule they want."
-        )
+        raise ToolError("Ask whose schedule they want: their own, or one roster member's.")
     raw = value.strip()
     if raw.lower() == "me":
+        return ctx.author_id
+
+    bot_user = str(ctx.bot_user_id or "")
+    self_role = str(ctx.self_role_id or "")
+    bot_references = {
+        reference
+        for reference in (
+            bot_user,
+            f"<@{bot_user}>" if bot_user else "",
+            f"<@!{bot_user}>" if bot_user else "",
+            self_role,
+            f"<@&{self_role}>" if self_role else "",
+        )
+        if reference
+    }
+    if raw in bot_references:
+        # Small models sometimes copy the mention that summoned the bot into the
+        # participant field. In a first-person schedule question that mention is
+        # conversational routing, not the person whose runs were requested.
         return ctx.author_id
 
     resolution = resolve_participant_text(raw, ctx.bot.repo.list_members())
     if resolution.unknown:
         raise ToolError(
             f"Nobody on the roster matches {', '.join(resolution.unknown)}. "
-            "Ask them whose schedule they want, or use participant='me' for the person asking."
+            "Ask whose schedule they want; if they mean their own, ask them to say so."
         )
     if resolution.ambiguous:
         options = "; ".join(
             f"{name}: {', '.join(matches)}" for name, matches in resolution.ambiguous.items()
         )
-        raise ToolError(f"Ask them which participant they mean -- {options}.")
+        raise ToolError(f"Ask which person they mean -- {options}.")
     if len(resolution.ids) != 1 or ctx.bot.repo.get_member(resolution.ids[0]) is None:
-        raise ToolError(
-            "The participant must identify one person on the roster. Ask them who they mean."
-        )
+        raise ToolError("That does not identify one person on the roster. Ask who they mean.")
     return str(resolution.ids[0])
+
+
+def _schedule_date(
+    ctx: ToolContext, args: dict, selected_week: datetime, now: datetime
+) -> date | None:
+    """Resolve an optional day to one local date inside ``selected_week``.
+
+    Relative words name a date from the captured clock. Weekdays instead name
+    the unique occurrence inside the requested boss week, so ``week='next',
+    day='friday'`` cannot accidentally point at this week's Friday.
+    """
+    if "day" not in args:
+        return None
+    value = args["day"]
+    if not isinstance(value, str) or not value.strip():
+        raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
+
+    raw = value.strip().lower()
+    today = now.astimezone(ctx.bot.tz).date()
+    week_date = selected_week.astimezone(ctx.bot.tz).date()
+    if raw in _RELATIVE_DAYS:
+        chosen = today + timedelta(days=_RELATIVE_DAYS[raw])
+    elif raw in WEEKDAY_ALIASES:
+        weekday = WEEKDAY_ALIASES[raw]
+        chosen = week_date + timedelta(days=(weekday - week_date.weekday()) % 7)
+    else:
+        raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
+
+    # A reset need not be midnight. In that case both reset-day calendar dates
+    # overlap the boss week (the opening evening and the closing daytime), so
+    # validate against the actual interval rather than assuming seven dates.
+    last_week_date = (week_end(selected_week, ctx.bot.tz) - timedelta(microseconds=1)).date()
+    if not week_date <= chosen <= last_week_date:
+        other_week = "next" if chosen > last_week_date else "this"
+        raise ToolError(
+            f"{value.strip()} is not in the requested boss week. It belongs to the "
+            f"{other_week} boss week; ask whether they want that week instead."
+        )
+    return chosen
 
 
 def _get_schedule(ctx: ToolContext, args: dict) -> str:
@@ -593,25 +704,51 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
     """
     week = str(args.get("week") or "this").strip().lower()
     if week not in ("this", "next"):
-        raise ToolError("week must be 'this' or 'next'. Ask them which week they mean.")
-    scope = str(args.get("scope") or "all").strip().lower()
+        raise ToolError("Ask whether they mean this boss week or next boss week.")
+    scope = "all" if ctx.force_all_channels else str(args.get("scope") or "all").strip().lower()
     if scope not in ("all", "channel"):
-        raise ToolError("scope must be 'all' or 'channel'.")
-    participant_id = _schedule_participant(ctx, args)
+        raise ToolError("Ask whether they want this channel or all channels.")
+    participant_id = None if ctx.force_group_schedule else _schedule_participant(ctx, args)
     for_me = participant_id is not None and participant_id == str(ctx.author_id)
     participant_name = service.member_name(ctx.bot, participant_id) if participant_id else None
 
+    now = utcnow()
+    selected_week = (
+        (
+            next_week_start(
+                ctx.bot.tz, ctx.bot.settings.reset_weekday, ctx.bot.settings.reset_time, now
+            )
+            if week == "next"
+            else current_week_start(
+                ctx.bot.tz, ctx.bot.settings.reset_weekday, ctx.bot.settings.reset_time, now
+            )
+        )
+        if "day" in args
+        else service.week_for(ctx.bot, week)
+    )
+    selected_date = _schedule_date(ctx, args, selected_week, now)
+    date_label = selected_date.strftime("%a %d %b") if selected_date is not None else None
+
     everything = [
         run
-        for run in ctx.bot.repo.list_runs(week_start=service.week_for(ctx.bot, week))
+        for run in ctx.bot.repo.list_runs(week_start=selected_week)
         if run["status"] != "cancelled"
     ]
+    dated = (
+        [
+            run
+            for run in everything
+            if run["datetime"].astimezone(ctx.bot.tz).date() == selected_date
+        ]
+        if selected_date is not None
+        else everything
+    )
 
     here = ctx.channel_id
     runs = (
-        [run for run in everything if str(run["channel_id"]) == str(here)]
+        [run for run in dated if str(run["channel_id"]) == str(here)]
         if scope == "channel"
-        else everything
+        else dated
     )
     if participant_id is not None:
         runs = [run for run in runs if participant_id in [str(p) for p in run["participants"]]]
@@ -620,7 +757,7 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
             participant_elsewhere = (
                 [
                     run
-                    for run in everything
+                    for run in dated
                     if str(run["channel_id"]) != str(here)
                     and participant_id in [str(p) for p in run["participants"]]
                 ]
@@ -628,24 +765,39 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
                 else []
             )
             subject = "You are" if for_me else f"{participant_name} is"
+            period = f"on {date_label}" if date_label else f"for {week} boss week"
+            count = len(participant_elsewhere)
+            counted_runs = f"{count} {'run' if count == 1 else 'runs'}"
+            channels = "another channel" if count == 1 else "other channels"
             elsewhere = (
-                f" {subject} on {len(participant_elsewhere)} run(s) in other channels this week -- "
-                "call get_schedule again with scope='all' if they want those."
+                f" {subject} on {counted_runs} in {channels} {period}. If the original "
+                "question did not explicitly limit the channel, check all channels before "
+                "answering; otherwise ask whether they want to see those runs too."
                 if participant_elsewhere
                 else ""
             )
-            where = "in this channel " if scope == "channel" else ""
-            return f"{subject} not on any runs {where}for {week} boss week.{elsewhere}"
+            where = " in this channel" if scope == "channel" else ""
+            return f"{subject} not on any runs{where} {period}.{elsewhere}"
         if scope == "channel":
             # Never let "nothing here" be reported as "nothing at all".
+            count = len(dated)
+            counted_runs = f"{count} {'run' if count == 1 else 'runs'}"
+            channels = "another channel" if count == 1 else "other channels"
             elsewhere = (
-                f" The group has {len(everything)} run(s) in other channels this week -- "
-                "call get_schedule again with scope='all' if they want those."
-                if everything
+                f" The group has {counted_runs} in {channels} "
+                f"{'on ' + date_label if date_label else 'this week'}. If the original "
+                "question did not explicitly limit the channel, check all channels before "
+                "answering; otherwise ask whether they want to see those runs too."
+                if dated
                 else ""
             )
-            return f"No runs are scheduled in this channel for {week} boss week.{elsewhere}"
-        return f"Nothing is scheduled for {week} boss week."
+            period = f"on {date_label}" if date_label else f"for {week} boss week"
+            return f"No runs are scheduled in this channel {period}.{elsewhere}"
+        return (
+            f"Nothing is scheduled on {date_label}."
+            if date_label
+            else f"Nothing is scheduled for {week} boss week."
+        )
 
     runs.sort(key=lambda run: run["datetime"])
     with_channel = scope == "all"
@@ -653,22 +805,18 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
     more = len(runs) - len(lines)
     if participant_id is not None:
         owner = "Your" if for_me else f"{participant_name}'s"
+        period = f"on {date_label}" if date_label else f"in {week} boss week"
         heading = (
-            f"**{owner} runs in {week} boss week, in this channel:**"
+            f"**{owner} runs {period}, in this channel:**"
             if scope == "channel"
-            else (
-                f"**{owner} runs in {week} boss week, all channels** "
-                "(say which channel each run is in):"
-            )
+            else f"**{owner} runs {period}, all channels** (say which channel each run is in):"
         )
     else:
+        period = f"Runs on {date_label}" if date_label else f"{week.capitalize()} boss week"
         heading = (
-            f"**{week.capitalize()} boss week, in this channel only:**"
+            f"**{period}, in this channel only:**"
             if scope == "channel"
-            else (
-                f"**{week.capitalize()} boss week, ALL channels** "
-                "(say which channel each run is in):"
-            )
+            else f"**{period}, ALL channels** (say which channel each run is in):"
         )
     answer = "\n".join([heading, "", *lines]) + (f"\n*(and {more} more)*" if more > 0 else "")
 
@@ -677,8 +825,8 @@ def _get_schedule(ctx: ToolContext, args: dict) -> str:
         # nothing left at all is what made the model pick a finished run as "the
         # next one", so that case is stated outright.
         answer += (
-            "\n\n*Every run listed has already happened — nothing upcoming is left in "
-            f"{week} boss week.*"
+            "\n\n*Every run listed has already happened — nothing upcoming is left "
+            f"{'on ' + date_label if date_label else f'in {week} boss week'}.*"
         )
     return answer
 
@@ -897,12 +1045,17 @@ async def _propose(
     ctx.created.extend(created)
     if not created:  # pragma: no cover - apply_plan returns a row per proposal
         raise ToolError("The card could not be created. Tell them to try again in a moment.")
-    posted = any((bot.repo.get_amendment(aid) or {}).get("proposal_message_id") for aid in created)
+    posted = [
+        amendment_id
+        for amendment_id in created
+        if (bot.repo.get_amendment(amendment_id) or {}).get("proposal_message_id")
+    ]
     if not posted:
         raise ToolError(
             "The change was recorded but the card could not be posted to the channel. "
             "Tell them to check with an admin."
         )
+    ctx.posted.extend(posted)
     card_ids = ", ".join(f"`[{short_id(a)}]`" for a in created)
     return (
         f"**Card posted:** {card_ids}\n\n"
@@ -1388,7 +1541,7 @@ def resolve_fixed(bot: Any, query: str) -> dict:
         raise ToolError(
             f"`{text}` matches more than one weekly timing. Ask which one they mean -- name "
             "the boss and the night each one is on, and do not pick one yourself. Their "
-            "answer comes back as a normal message and you can call the tool again then, "
+            "answer comes back as a normal message and you can try again then, "
             f"with the short id in brackets if that is clearer: {listed}"
         )
     return matches[0]
@@ -1594,6 +1747,16 @@ _WRITE = {
 }
 
 
+def is_write_tool(name: str) -> bool:
+    """Whether ``name`` is one of the card-posting tools.
+
+    The pilot uses this after a generation to keep a model from claiming that a
+    failed write posted a card. Keeping the classification beside the dispatcher
+    means a newly added write tool is guarded as soon as it reaches ``_WRITE``.
+    """
+    return name in _WRITE
+
+
 def read_tools() -> list[dict]:
     """:data:`TOOLS` with the six ``propose_*`` schemas taken out.
 
@@ -1657,6 +1820,11 @@ class ToolOutcome:
     duration_ms: int = 0
     #: Amendment ids this one call created, so a card can be traced to the call.
     created: list[str] = field(default_factory=list)
+    #: The subset of ``created`` whose cards made it into Discord. A created row
+    #: without one is diagnostic state, not a proposal a person can confirm.
+    posted: list[str] = field(default_factory=list)
+    #: The one-based model round that requested this call, set by the pilot.
+    round: int = 0
 
     @property
     def outcome(self) -> str:
@@ -1672,6 +1840,7 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
     """
     started = time.monotonic()
     already = len(ctx.created)
+    already_posted = len(ctx.posted)
     args = _arguments(arguments)
 
     def done(output: str, ok: bool = True, error: str | None = None) -> ToolOutcome:
@@ -1683,6 +1852,7 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
             error=error,
             duration_ms=int((time.monotonic() - started) * 1000),
             created=list(ctx.created[already:]),
+            posted=list(ctx.posted[already_posted:]),
         )
 
     if ctx.read_only and name in _WRITE:

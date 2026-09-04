@@ -83,14 +83,16 @@ async def test_an_empty_channel_offers_the_whole_group_instead(chat_bot, chat_se
     """The pilot's own channel has no runs; the group's week is not empty."""
     answer = await schedule(chat_bot, CHAT_CHANNEL, scope="channel")
     assert "No runs are scheduled in this channel" in answer
-    assert "scope='all'" in answer
-    assert "2 run(s) in other channels" in answer
+    assert "check all channels before answering" in answer
+    assert "2 runs in other channels" in answer
+    for internal in ("scope=", "get_schedule", "participant="):
+        assert internal not in answer
 
 
 async def test_an_empty_channel_in_an_empty_week_does_not_promise_runs(chat_bot, chat_seeded):
     answer = await schedule(chat_bot, CHAT_CHANNEL, week="next", scope="channel")
     assert "No runs are scheduled in this channel" in answer
-    assert "scope='all'" not in answer
+    assert "check all channels" not in answer
 
 
 # ---------------------------------------------------------------------------
@@ -135,14 +137,15 @@ async def test_a_run_in_a_channel_the_bot_cannot_see_still_lists(chat_bot, chat_
 
 async def test_an_unknown_scope_is_refused(chat_bot, chat_seeded):
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="mine")
-    assert "scope must be" in answer
+    assert "this channel or all channels" in answer
+    assert "scope" not in answer
 
 
 async def test_the_description_steers_the_model(chat_bot):
     schema = next(t for t in tools.TOOLS if t["function"]["name"] == "get_schedule")
     properties = schema["function"]["parameters"]["properties"]
     scope_description = properties["scope"]["description"]
-    for phrase in ("this channel", "here", "our runs", "never claim"):
+    for phrase in ("only", "this channel", "here", "our runs", "what's for tomorrow?"):
         assert phrase in scope_description
     assert set(properties["scope"]["enum"]) == {
         "all",
@@ -150,7 +153,10 @@ async def test_the_description_steers_the_model(chat_bot):
     }
     participant = properties["participant"]
     assert "enum" not in participant
-    for phrase in ("'me'", "roster name", "display name"):
+    for phrase in ("what's for me", "roster member", "what's for tomorrow?", "omit this field"):
         assert phrase in participant["description"]
+    day = properties["day"]
+    for phrase in ("'today'", "'tonight'", "'tomorrow'", "weekday"):
+        assert phrase in day["description"]
     # `week` stays required; `scope` is optional and defaults to today's behaviour.
     assert schema["function"]["parameters"]["required"] == ["week"]

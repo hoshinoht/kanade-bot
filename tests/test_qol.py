@@ -49,11 +49,56 @@ def test_reconcile_moves_unsent_day_of_to_new_ping_time():
     run = _run(repo, datetime(2026, 9, 7, 21, 30, tzinfo=TZ))
     for spec in reminder_specs(run["datetime"], run["status"], TZ, time(9, 0), [60]):
         repo.add_reminder(run["id"], spec.kind, spec.fire_at)
-    moved = reconcile_day_of(repo, TZ, time(1, 0))
+    now = datetime(2026, 8, 31, 12, 0, tzinfo=TZ)
+    moved = reconcile_day_of(repo, TZ, time(1, 0), now=now)
     assert moved == 1
     fire = next(r for r in repo.list_reminders(run["id"]) if r["kind"] == DAY_OF)["fire_at"]
     assert fire.astimezone(TZ) == datetime(2026, 9, 7, 1, 0, tzinfo=TZ)
-    assert reconcile_day_of(repo, TZ, time(1, 0)) == 0  # idempotent
+    assert reconcile_day_of(repo, TZ, time(1, 0), now=now) == 0  # idempotent
+
+
+def test_reconcile_reopens_a_skipped_day_of_when_its_new_time_is_future():
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 9, 7, 21, 30, tzinfo=TZ))
+    reminder_id = repo.add_reminder(run["id"], DAY_OF, datetime(2026, 9, 7, 9, 0, tzinfo=TZ))
+    now = datetime(2026, 9, 7, 9, 30, tzinfo=TZ)
+    repo.mark_reminder_sent(reminder_id, at=now)
+
+    assert reconcile_day_of(repo, TZ, time(10, 0), now=now) == 1
+
+    (reminder,) = repo.list_reminders(run["id"])
+    assert reminder["fire_at"] == datetime(2026, 9, 7, 10, 0, tzinfo=TZ)
+    assert reminder["sent_at"] is None
+    assert repo.due_reminders(now) == []
+
+
+def test_reconcile_skips_a_queued_day_of_moved_into_the_past():
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 9, 7, 21, 30, tzinfo=TZ))
+    reminder_id = repo.add_reminder(run["id"], DAY_OF, datetime(2026, 9, 7, 9, 0, tzinfo=TZ))
+    now = datetime(2026, 9, 7, 9, 30, tzinfo=TZ)
+
+    assert reconcile_day_of(repo, TZ, time(8, 0), now=now) == 1
+
+    reminder = repo.get_reminder(reminder_id)
+    assert reminder["fire_at"] == datetime(2026, 9, 7, 8, 0, tzinfo=TZ)
+    assert reminder["sent_at"] == now
+    assert repo.due_reminders(now) == []
+    assert reconcile_day_of(repo, TZ, time(8, 0), now=now) == 0
+
+
+def test_reconcile_keeps_a_posted_day_of_and_its_message_mapping():
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 9, 7, 21, 30, tzinfo=TZ))
+    reminder_id = repo.add_reminder(run["id"], DAY_OF, datetime(2026, 9, 7, 9, 0, tzinfo=TZ))
+    repo.mark_reminder_sent(reminder_id, message_id=4242, at=datetime(2026, 9, 7, 9, 0, tzinfo=TZ))
+
+    assert reconcile_day_of(repo, TZ, time(10, 0), now=datetime(2026, 9, 7, 8, 0, tzinfo=TZ)) == 0
+
+    reminder = repo.get_reminder(reminder_id)
+    assert reminder["fire_at"] == datetime(2026, 9, 7, 9, 0, tzinfo=TZ)
+    assert reminder["message_id"] == "4242"
+    assert [row["id"] for row in repo.reminders_by_message(4242)] == [reminder_id]
 
 
 def test_a_countdown_goes_to_the_whole_party_bar_the_decliners():
