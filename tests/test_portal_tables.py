@@ -15,7 +15,7 @@ import pytest
 
 from bot.api import service
 from bot.api.templating import CHAT_TABS, EXTRACTION_TABS, LIMITS_TABS
-from bot.ids import short_id
+from bot.domain.ids import short_id
 from bot.portal_styles import build_stylesheet
 
 from .conftest import kl
@@ -548,6 +548,15 @@ def test_the_limits_tabs_count_what_their_panels_hold(auth, fake_bot, seeded):
     # The tab with nothing to count carries no figure at all.
     allowance = strip[strip.index('href="#set-allowance"') :]
     assert "tabs__count" not in allowance
+
+
+def test_the_limits_member_table_scrolls_inside_its_panel(auth, fake_bot, seeded):
+    """The five-column table must not widen a phone's page past its frame."""
+    add_pilot(fake_bot, 1002, "kanon")
+
+    panel = panel_of(auth.get("/limits/live").text, "who-may-ask")
+    wrapper = panel.index('<div class="table-wrap">')
+    assert wrapper < panel.index("<table>") < panel.index("</div>", wrapper)
 
 
 def test_a_failed_generation_is_never_behind_a_tab(auth, fake_bot):

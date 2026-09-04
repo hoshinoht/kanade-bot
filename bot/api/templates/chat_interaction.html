@@ -57,12 +57,13 @@
   {% else %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Tool</th><th>Arguments</th><th>Took</th><th>Outcome</th><th>Raised</th></tr></thead>
+      <thead><tr><th>Tool</th><th>Arguments</th><th>Return</th><th>Took</th><th>Outcome</th><th>Raised</th></tr></thead>
       <tbody>
         {% for call in interaction.tool_calls %}
         <tr>
           <td class="mono">{{ call.name }}</td>
           <td class="mono">{{ call.arguments or "—" }}</td>
+          <td><pre>{{ call.output or "—" }}</pre></td>
           <td class="mono">{{ call.ms|duration }}</td>
           <td><span class="status status--{{ 'confirmed' if call.ok else 'at_risk' }}">{{ call.outcome }}</span></td>
           <td>
@@ -78,6 +79,22 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
+</section>
+
+<section class="tabs__panel" id="model-trace">
+  {% if not interaction.model_rounds %}
+  <p class="note">No provider response trace was recorded for this interaction.</p>
+  {% else %}
+    {% for round in interaction.model_rounds %}
+    <h3 class="pane__section">Round {{ round.round }}</h3>
+    <h4 class="pane__section">Requested tools</h4>
+    <pre>{{ round.requested_tools|join("\n") or "—" }}</pre>
+    <h4 class="pane__section">Thinking</h4>
+    <pre>{{ round.thinking if round.thinking is not none else "(not returned)" }}</pre>
+    <h4 class="pane__section">Raw content</h4>
+    <pre>{{ round.content if round.content is not none else "(not returned)" }}</pre>
+    {% endfor %}
   {% endif %}
 </section>
 

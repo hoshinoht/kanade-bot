@@ -21,8 +21,9 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..ids import short_id
-from ..weeks import WEEKDAY_NAMES
+from bot.domain.ids import short_id
+from bot.domain.weeks import WEEKDAY_NAMES
+
 from .gate import find_bosses
 
 #: Rough characters-per-token for the prose part of a prompt.  Prose alone sits

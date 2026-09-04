@@ -8,7 +8,7 @@ import time
 import pytest
 
 from bot.api.service import PORTAL_APPLIED, PORTAL_REJECTED
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .fake_bot import (
     OTHER_CHANNEL,
@@ -415,6 +415,54 @@ def test_the_chat_list_summarises_and_the_detail_shows_its_work(auth, seeded):
     assert detail["model_ms"] == 8100
     assert detail["tool_calls"][0]["arguments"] == "week='this'"
     assert detail["tool_calls"][0]["ok"] is True
+    # Rows written before diagnostics gained their additive JSON keys stay
+    # readable, and do not pretend to know a round or return they never stored.
+    assert detail["tool_calls"][0]["round"] == 0
+    assert detail["tool_calls"][0]["output"] == ""
+    assert detail["model_rounds"] == []
+
+
+def test_the_chat_detail_exposes_model_rounds_and_tool_returns(auth, fake_bot):
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="what's on?",
+        reply="Two runs.",
+        outcome="answered",
+        tool_calls=[
+            {
+                "name": "get_schedule",
+                "round": 1,
+                "arguments": "week='this'",
+                "output": "one\ntwo",
+                "ms": 12,
+                "outcome": "ok",
+                "created": [],
+                "posted": [],
+            }
+        ],
+        model_rounds=[
+            {
+                "round": 1,
+                "content": "  checking\n",
+                "thinking": "look it up",
+                "requested_tools": ["get_schedule"],
+            },
+            {"round": 2, "content": "Two runs.", "thinking": None, "requested_tools": []},
+        ],
+    )
+
+    detail = auth.get(f"/api/chat/{short_id(interaction)}").json()
+    assert detail["tool_calls"][0]["round"] == 1
+    assert detail["tool_calls"][0]["output"] == "one\ntwo"
+    assert detail["model_rounds"] == [
+        {
+            "round": 1,
+            "content": "  checking\n",
+            "thinking": "look it up",
+            "requested_tools": ["get_schedule"],
+        },
+        {"round": 2, "content": "Two runs.", "thinking": None, "requested_tools": []},
+    ]
 
 
 def test_the_chat_summary_totals_per_model(auth, seeded):
@@ -460,7 +508,7 @@ def test_limits_reports_an_idle_host(auth, fake_bot):
 
 def test_limits_names_who_is_holding_the_model(auth, fake_bot, model_lock):
     """The point of the label: "busy" is half an answer and "busy with what" is the rest."""
-    from bot import modellock
+    from bot.infrastructure import modellock
 
     assert auth.portal.call(modellock.acquire_within, 5, modellock.EXTRACTOR) is True
     try:
@@ -867,10 +915,40 @@ def test_setting_the_ping_time_re_places_the_pending_morning_pings(auth, fake_bo
     assert day_of[0]["fire_at"].astimezone(fake_bot.tz).strftime("%H:%M") == "08:30"
 
 
-def test_setting_the_countdowns_rebuilds_them(auth, fake_bot, seeded):
+def test_setting_the_ping_time_preserves_a_posted_morning_mapping(auth, fake_bot, seeded):
+    morning = next(
+        reminder
+        for reminder in fake_bot.repo.list_reminders(seeded["run_star"])
+        if reminder["kind"] == "day_of"
+    )
+    fake_bot.repo.mark_reminder_sent(morning["id"], 900000000000000013)
+
+    auth.put("/api/config", json={"day_of_ping_time": "08:30"})
+
+    preserved = fake_bot.repo.get_reminder(morning["id"])
+    assert preserved["message_id"] == "900000000000000013"
+    assert [row["id"] for row in fake_bot.repo.reminders_by_message(900000000000000013)] == [
+        morning["id"]
+    ]
+
+
+def test_setting_the_countdowns_preserves_posted_mornings_and_replaces_pending_kinds(
+    auth, fake_bot, seeded
+):
+    morning = next(
+        reminder
+        for reminder in fake_bot.repo.list_reminders(seeded["run_star"])
+        if reminder["kind"] == "day_of"
+    )
+    fake_bot.repo.mark_reminder_sent(morning["id"], 900000000000000011)
+
     auth.put("/api/config", json={"countdown_minutes": "30, 5"})
+
     kinds = {r["kind"] for r in fake_bot.repo.list_reminders(seeded["run_star"])}
     assert kinds == {"day_of", "countdown_30", "countdown_5"}
+    assert [row["id"] for row in fake_bot.repo.reminders_by_message(900000000000000011)] == [
+        morning["id"]
+    ]
 
 
 def test_pausing_and_turning_the_extractor_off(auth, fake_bot, seeded):

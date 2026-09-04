@@ -31,9 +31,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .. import formatting
+from bot.agent import formatting
+from bot.domain.weeks import WEEKDAY_NAMES
+
 from ..extract.commit import FIX_REMOVE
-from ..weeks import WEEKDAY_NAMES
 from . import gate
 
 #: How long a channel is left alone after a follow-up is *started*, across
@@ -81,7 +82,7 @@ def scope(
        channel that has since left the allow-list gets no follow-up.
     3. The **chat pilot created it**. This is the check that keeps the extractor
        out: a card read out of ambient party chat has no interaction behind it
-       (:meth:`bot.db.Repo.chat_interaction_for_amendment`), nobody asked the
+    (:meth:`bot.infrastructure.db.Repo.chat_interaction_for_amendment`), nobody asked the
        bot for it, and asking "what should it be instead?" about a guess the bot
        volunteered is noise.
     4. The reactor is the member who asked. A card names a party, and any of

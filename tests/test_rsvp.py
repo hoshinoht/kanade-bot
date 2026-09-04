@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from bot.db import Repo
-from bot.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, compute_status, state_for_emoji
+from bot.agent.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, compute_status, state_for_emoji
+from bot.infrastructure.db import Repo
 
 from .conftest import kl
 
@@ -215,7 +215,7 @@ def test_the_sticky_statuses_are_still_untouchable(repo: Repo, status):
 
 def test_a_roster_change_takes_a_confirmed_run_back_to_the_tally(repo: Repo):
     """The stand-in never agreed to anything, so the confirm no longer holds."""
-    from bot.rsvp import recompute_after_roster_change
+    from bot.agent.rsvp import recompute_after_roster_change
 
     run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
     repo.set_run_status(run_id, "confirmed")
@@ -226,7 +226,7 @@ def test_a_roster_change_takes_a_confirmed_run_back_to_the_tally(repo: Repo):
 
 def test_a_roster_change_that_leaves_a_full_tally_stays_confirmed(repo: Repo):
     """Losing the one person who had not answered settles the run, not unsettles it."""
-    from bot.rsvp import recompute_after_roster_change
+    from bot.agent.rsvp import recompute_after_roster_change
 
     run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_YES, added=True)
@@ -236,7 +236,7 @@ def test_a_roster_change_that_leaves_a_full_tally_stays_confirmed(repo: Repo):
 
 
 def test_a_roster_change_never_revives_a_cancelled_run(repo: Repo):
-    from bot.rsvp import recompute_after_roster_change
+    from bot.agent.rsvp import recompute_after_roster_change
 
     run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
     repo.set_run_status(run_id, "cancelled")

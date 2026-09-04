@@ -14,7 +14,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 
-from .db import DEFAULT_PING_LEVEL, PING_LEVELS, Repo
+from bot.infrastructure.db import DEFAULT_PING_LEVEL, PING_LEVELS, Repo
+
 from .formatting import Audience
 
 log = logging.getLogger(__name__)

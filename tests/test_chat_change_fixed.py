@@ -19,12 +19,12 @@ from datetime import time as clock_time
 
 import pytest
 
-from bot import formatting
+from bot.agent import formatting
+from bot.agent.materialise import materialise_week
 from bot.chat import tools
+from bot.domain.ids import short_id
+from bot.domain.weeks import next_week_start, slot_in_week
 from bot.extract.commit import FIX_EDIT, commit, may_commit
-from bot.ids import short_id
-from bot.materialise import materialise_week
-from bot.weeks import next_week_start, slot_in_week
 
 from .chat_support import ADOPTED_CHANNEL, CHAT_CHANNEL
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
@@ -59,8 +59,8 @@ def star_fixed(bot) -> dict:
 
 def materialise_both_weeks(bot) -> None:
     """What ``BossBot.materialise_weeks`` does, without the live client."""
-    from bot.timeutil import utcnow
-    from bot.weeks import current_week_start, week_end
+    from bot.domain.timeutil import utcnow
+    from bot.domain.weeks import current_week_start, week_end
 
     now = utcnow()
     this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, now)

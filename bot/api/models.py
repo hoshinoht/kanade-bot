@@ -342,12 +342,28 @@ class ChatCardOut(BaseModel):
 
 class ChatToolCallOut(BaseModel):
     name: str
+    #: One-based model round that requested the call. Zero is an older trace
+    #: written before rounds were persisted.
+    round: int
     #: As the DEBUG log renders them, truncated to ~200 characters.
     arguments: str
+    #: The full tool return the model received.
+    output: str
     ms: int | None
     outcome: str
     ok: bool
     created: list[ChatCardOut]
+    posted: list[ChatCardOut]
+
+
+class ChatModelRoundOut(BaseModel):
+    """One provider response, stored without the prompt that produced it."""
+
+    round: int
+    content: str | None
+    #: ``None`` means the provider did not return a thinking field.
+    thinking: str | None
+    requested_tools: list[str]
 
 
 class ChatInteractionDetailOut(ChatInteractionOut):
@@ -358,6 +374,7 @@ class ChatInteractionDetailOut(ChatInteractionOut):
     tools_ms: int | None
     message_id: str | None
     tool_calls: list[ChatToolCallOut]
+    model_rounds: list[ChatModelRoundOut]
 
 
 class ChatModelStatsOut(BaseModel):

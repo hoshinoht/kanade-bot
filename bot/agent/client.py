@@ -18,16 +18,21 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from . import audit, backup, formatting, identity
-from .api.server import ApiServer
-from .backfill import AccessDenied, record_channel
-from .bosses import BossTable
-from .chat import ChatPilot, persona
-from .config import Settings
-from .db import Repo
+from bot.api.server import ApiServer
+from bot.chat import ChatPilot, persona
+from bot.domain.bosses import BossTable
+from bot.domain.timeutil import to_iso, utcnow
+from bot.domain.weeks import current_week_start, next_week_start, parse_hhmm
+from bot.extract.commit import CommitResult, commit, expire_stale, may_commit, reject
+from bot.extract.pipeline import Pipeline
+from bot.infrastructure import audit, backup, identity
+from bot.infrastructure.backfill import AccessDenied, record_channel
+from bot.infrastructure.config import Settings
+from bot.infrastructure.db import Repo
+from bot.infrastructure.watch import is_watched, origin_ids
+
+from . import formatting
 from .debug import TEST_PREFIX
-from .extract.commit import CommitResult, commit, expire_stale, may_commit, reject
-from .extract.pipeline import Pipeline
 from .materialise import (
     DAY_OF,
     countdown_minutes,
@@ -40,10 +45,7 @@ from .materialise import (
 from .pings import audience
 from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
-from .timeutil import to_iso, utcnow
 from .util import positive_float, positive_int, roster_rows
-from .watch import is_watched, origin_ids
-from .weeks import current_week_start, next_week_start, parse_hhmm
 
 log = logging.getLogger(__name__)
 
@@ -137,7 +139,7 @@ class BossBot(discord.Client):
         self._backup_failed_on: str | None = None
         #: Runs whose posted cards no longer match the database, and the task
         #: draining them. Every write that a card displays goes through
-        #: :attr:`bot.db.Repo.on_run_changed`, so no caller has to remember.
+        #: :attr:`bot.infrastructure.db.Repo.on_run_changed`, so no caller has to remember.
         self._stale_cards: set[str] = set()
         self._card_refresh: asyncio.Task | None = None
         repo.on_run_changed = self.card_needs_refresh
@@ -335,7 +337,7 @@ class BossBot(discord.Client):
     async def cache_identity(self) -> None:
         """Keep the portal a copy of the bot's own avatar and banner.
 
-        Purely cosmetic (:mod:`bot.identity`), so it is placed after the roster
+        Purely cosmetic (:mod:`bot.infrastructure.identity`), so it is placed after the roster
         and the week -- the two things a start actually owes the guild -- and
         nothing it does is allowed to escape. A failure leaves whatever was
         cached last time in place, so the sign-in page keeps its artwork through
@@ -355,7 +357,7 @@ class BossBot(discord.Client):
 
         Categories are expanded here rather than from config, so a channel added
         to a watched category is picked up without a restart -- the same rule
-        :func:`bot.watch.is_watched` applies per message.
+        :func:`bot.infrastructure.watch.is_watched` applies per message.
         """
         guild = self.get_guild(self.settings.guild_id)
         if guild is None:
@@ -530,9 +532,13 @@ class BossBot(discord.Client):
             created = materialise_week(self.repo, week, self.tz, ping_time, countdowns, now=now)
             if created:
                 log.info("materialised %d run(s) for week starting %s", len(created), week)
-        moved = reconcile_day_of(self.repo, self.tz, ping_time)
-        if moved:
-            log.info("re-placed %d day-of reminder(s) at %s", moved, ping_time.strftime("%H:%M"))
+        reconciled = reconcile_day_of(self.repo, self.tz, ping_time, now=now)
+        if reconciled:
+            log.info(
+                "reconciled %d day-of reminder(s) at %s",
+                reconciled,
+                ping_time.strftime("%H:%M"),
+            )
         self.repo.set_config(
             CFG_LAST_WEEK,
             to_iso(
@@ -780,7 +786,7 @@ class BossBot(discord.Client):
     def card_needs_refresh(self, run_id: str) -> None:
         """A run changed; queue its posted cards for a re-render.
 
-        Called *synchronously* from :class:`bot.db.Repo` on every write a card
+        Called *synchronously* from :class:`bot.infrastructure.db.Repo` on every write a card
         displays, so a reaction, `/rsvp`, the portal and a chat-extracted answer
         all arrive here without any of them knowing this exists. The work is
         queued rather than done: a single handler often writes several times
@@ -1422,7 +1428,7 @@ class BossBot(discord.Client):
         """Snapshot the database once a local day; returns the file if it wrote one.
 
         The database lives in a named volume, so this is what puts a copy back
-        on the host (``bot.backup``). Failing to write one is a thing to fix, not
+        on the host (``bot.infrastructure.backup``). Failing to write one is a thing to fix, not
         a reason to stop reminding people about tonight's boss, so nothing here
         is allowed to escape into the tick.
         """

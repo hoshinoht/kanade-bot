@@ -1,7 +1,7 @@
 """Turning fixed runs into concrete weekly runs, and runs into reminder rows.
 
 The ``reminders`` table is the scheduler's source of truth: rows are written
-here, and a 30 s ``discord.ext.tasks`` loop in :mod:`bot.client` picks up
+here, and a 30 s ``discord.ext.tasks`` loop in :mod:`bot.agent.client` picks up
 anything whose ``fire_at`` has passed and that has not been sent.  Nothing is
 held in memory, so a restart loses nothing.
 """
@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from .db import Repo
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import slot_in_week, week_end
+from bot.infrastructure.db import Repo
+
 from .rsvp import recompute_after_roster_change
-from .timeutil import utcnow
-from .weeks import slot_in_week, week_end
 
 log = logging.getLogger(__name__)
 
@@ -223,10 +224,10 @@ def adopt_run(
     things the weekly actually decides are pushed onto it -- which slot, which
     party, and which timing it belongs to.
 
-    The party goes through :func:`bot.rsvp.recompute_after_roster_change` for the
+    The party goes through :func:`bot.agent.rsvp.recompute_after_roster_change` for the
     reason ``/swap`` does: somebody added by the weekly never agreed to this run,
     so a ``confirmed`` goes back to being derived, while the answers of members
-    still on it survive (:func:`bot.rsvp.compute_status` ignores the rest).
+    still on it survive (:func:`bot.agent.rsvp.compute_status` ignores the rest).
     """
     repo.set_run_fixed(run["id"], fixed["id"])
     repo.set_run_datetime(run["id"], run_at, week_start)
@@ -304,20 +305,35 @@ def materialise_week(
     return created
 
 
-def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time) -> int:
-    """Re-place unsent day-of reminders after the ping time changed; returns how many moved."""
-    moved = 0
-    for reminder in repo.unsent_reminders(kind=DAY_OF):
-        run = repo.get_run(reminder["run_id"])
-        if run is None:
+def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time, now: datetime | None = None) -> int:
+    """Reconcile day-of reminders after the ping time changed.
+
+    A posted morning card remains the record it was when it reached Discord.
+    Queued cards move to the new time, with a newly-past time retired instead of
+    becoming immediately due. A skipped row can safely reopen if its new time is
+    still ahead. Returns the number of rows whose state or fire time changed.
+    """
+    now = now or utcnow()
+    changed = 0
+    for run in repo.list_runs():
+        reminder = next(
+            (row for row in repo.list_reminders(run["id"]) if row["kind"] == DAY_OF), None
+        )
+        if reminder is None:
             continue
-        specs = reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
-        wanted = {s.kind: s for s in specs}
-        spec = wanted.get(DAY_OF)
-        if spec is not None and spec.fire_at != reminder["fire_at"]:
-            repo.set_reminder_fire_at(reminder["id"], spec.fire_at)
-            moved += 1
-    return moved
+        spec = next(
+            (
+                candidate
+                for candidate in reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
+                if candidate.kind == DAY_OF
+            ),
+            None,
+        )
+        if spec is not None and repo.reschedule_unposted_reminder(
+            reminder["id"], spec.fire_at, now
+        ):
+            changed += 1
+    return changed
 
 
 def refresh_run_reminders(
@@ -352,7 +368,7 @@ def apply_fixed_to_runs(
     state the slash command and the portal leave it in.
 
     Only the fields the edit actually *touched* are pushed, which is the rule the
-    other two routes follow (``bot.commands._apply_fixed_to_runs``,
+    other two routes follow (``bot.agent.commands._apply_fixed_to_runs``,
     ``bot.api.service._apply_fixed_to_runs``): re-snapping every field would undo
     this week's `/amend` -- editing a note would drag a run that was moved
     Mon -> Wed back to Monday. A run that is already ``done`` or ``cancelled`` is

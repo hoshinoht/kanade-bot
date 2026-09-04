@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from bot.db import Repo
+from bot.domain.ids import short_id
 from bot.extract.match import match_run, needs_run
 from bot.extract.schema import Amendment
-from bot.ids import short_id
+from bot.infrastructure.db import Repo
 
 from .conftest import kl
 

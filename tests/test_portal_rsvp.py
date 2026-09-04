@@ -8,12 +8,12 @@ reacted by accident or told you in-game instead.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 
 import pytest
 
+from bot.agent.materialise import DAY_OF, countdown_kind, reconcile_day_of
 from bot.api import service
-from bot.materialise import DAY_OF, countdown_kind
 from bot.portal_styles import build_stylesheet
 
 from .conftest import TZ, kl
@@ -117,6 +117,23 @@ def test_a_card_that_fired_into_the_void_says_so(fake_bot, seeded):
 
     assert card["state"] == "skipped"
     assert card["url"] is None
+
+
+def test_a_skipped_morning_reopened_by_a_later_ping_time_is_queued(fake_bot, seeded):
+    run_id = seeded["run_star"]
+    repo = fake_bot.repo
+    repo.delete_reminders(run_id)
+    repo.delete_reminders(seeded["run_kalos"])
+    repo.set_run_datetime(run_id, kl(2026, 9, 7, 21, 30), seeded["week_start"])
+    reminder = repo.add_reminder(run_id, DAY_OF, kl(2026, 9, 7, 9, 0))
+    now = kl(2026, 9, 7, 9, 30)
+    repo.mark_reminder_sent(reminder, at=now)
+
+    assert reconcile_day_of(repo, fake_bot.tz, time(10, 0), now=now) == 1
+
+    (card,) = service.run_cards(fake_bot, repo.get_run(run_id))
+    assert card["state"] == "queued"
+    assert card["message_id"] is None
 
 
 def test_the_countdowns_are_named_the_way_the_countdown_itself_reads(fake_bot, seeded):

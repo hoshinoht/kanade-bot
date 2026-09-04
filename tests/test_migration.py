@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from bot.db import SCHEMA_VERSION, Repo
+from bot.infrastructure.db import SCHEMA_VERSION, Repo
 
 # The v1 shape, trimmed to what the migration has to reason about.
 V1_SQL = """
@@ -123,8 +123,8 @@ def test_derived_rows_are_rebuilt_empty(v1_db):
 def test_the_carried_baselines_rematerialise(v1_db):
     from datetime import time
 
-    from bot.materialise import materialise_week
-    from bot.weeks import current_week_start
+    from bot.agent.materialise import materialise_week
+    from bot.domain.weeks import current_week_start
 
     from .conftest import COUNTDOWNS, RESET_TIME, RESET_WEEKDAY, TZ
 
@@ -214,6 +214,42 @@ def test_a_live_database_gains_the_allowances_without_losing_anything(tmp_path):
     assert migrated.list_rate_limits() == []
     assert migrated.get_member("7")["display_name"] == "harbour4417"
     assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
+    migrated.close()
+
+
+def test_a_v8_interaction_gains_an_empty_model_trace_without_losing_its_reply(tmp_path):
+    """The v9 column is additive: the existing diagnostic record remains whole."""
+    path = tmp_path / "v8.sqlite"
+    repo = Repo(path)
+    interaction = repo.log_chat_interaction(
+        model="m",
+        question="what happened?",
+        reply="A card was posted.",
+        outcome="answered",
+        tool_calls=[{"name": "propose_move", "created": ["an-amendment"]}],
+    )
+    columns = [
+        row["name"]
+        for row in repo._conn.execute("PRAGMA table_info(chat_interactions)")
+        if row["name"] != "model_rounds"
+    ]
+    column_sql = ", ".join(columns)
+    repo._conn.execute(
+        f"CREATE TABLE old_chat_interactions AS SELECT {column_sql} FROM chat_interactions"
+    )
+    repo._conn.execute("DROP TABLE chat_interactions")
+    repo._conn.execute("ALTER TABLE old_chat_interactions RENAME TO chat_interactions")
+    repo._conn.execute("UPDATE schema_version SET version = 8")
+    repo.close()
+
+    migrated = Repo(path)
+    row = migrated.get_chat_interaction(interaction)
+    assert row["reply"] == "A card was posted."
+    assert row["tool_calls"] == [{"name": "propose_move", "created": ["an-amendment"]}]
+    assert row["model_rounds"] == []
+    assert "model_rounds" in {
+        column["name"] for column in migrated._conn.execute("PRAGMA table_info(chat_interactions)")
+    }
     migrated.close()
 
 

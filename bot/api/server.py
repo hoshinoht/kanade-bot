@@ -26,7 +26,7 @@ import uvicorn
 from .app import create_app
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 log = logging.getLogger(__name__)
 

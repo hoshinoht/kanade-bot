@@ -18,7 +18,7 @@ import pytest
 
 from bot.chat import tools
 from bot.chat.agent import MAX_TOOL_ROUNDS, ChatPilot
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .chat_support import CHAT_CHANNEL, FakeOllama, message, says, wants
 

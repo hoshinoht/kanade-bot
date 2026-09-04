@@ -14,9 +14,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from bot import backup
-from bot.client import CFG_LAST_BACKUP, BossBot
-from bot.db import Repo
+from bot.agent.client import CFG_LAST_BACKUP, BossBot
+from bot.infrastructure import backup
+from bot.infrastructure.db import Repo
 
 from .conftest import TZ, kl
 

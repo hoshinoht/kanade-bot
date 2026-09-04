@@ -2,6 +2,44 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 3.3.0
+
+**Added**
+
+- The web portal now persists and displays each model round, including thinking
+  traces, raw responses, tool arguments, complete tool results and posted-card
+  outcomes.
+- `get_schedule` now supports `today`, `tonight`, `tomorrow` and weekday filters,
+  composed with participant and channel scopes.
+- Added `Lotus` boss into list of available bosses.
+
+**Changed**
+
+- Reorganised the Python package into `agent`, `domain`, and `infrastructure`
+  namespaces, and split the chatbot's monolithic tool module into individual
+  tools behind the existing `bot.chat.tools` interface.
+- Reminder reconciliation now preserves mappings for already-posted reminders,
+  reopens eligible skipped reminders, retires newly past reminders and rebuilds
+  countdowns only for live runs.
+
+**Fixed**
+
+- Run lookup now resolves weekdays to one concrete date across current and next
+  boss weeks and refuses conflicting day references instead of choosing one.
+- First-person schedule requests no longer mistake the bot's user or managed-role
+  trigger mention for a roster participant.
+- Bare date questions now default to the whole group's schedule across all
+  channels instead of silently applying person and channel filters.
+- Member-facing replies no longer expose scheduler function/option syntax or
+  emit the `<none>` placeholder; known runs in other channels remain explicit.
+- Failed Discord proposal posts can no longer be described as successfully
+  posted cards merely because their database rows were created.
+- Reminder reconciliation no longer deletes live morning-message mappings,
+  creates no-op audit entries or leaves stale reminder states behind.
+- Wide Limits tables now scroll on narrow screens instead of clipping the mobile
+  portal.
+- `get_schedule` tool call description tightened
+
 ## 3.2.0
 
 **Added**

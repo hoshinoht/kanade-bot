@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import yaml
 
-from bot.formatting import DIFFICULTY_WORDS, boss_label, boss_labels
+from bot.agent.formatting import DIFFICULTY_WORDS, boss_label, boss_labels
 
 from .conftest import REPO_ROOT
 

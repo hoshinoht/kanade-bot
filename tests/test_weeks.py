@@ -6,7 +6,7 @@ from datetime import UTC, time, timedelta
 
 import pytest
 
-from bot.weeks import (
+from bot.domain.weeks import (
     current_week_start,
     next_week_start,
     parse_hhmm,

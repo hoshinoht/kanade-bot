@@ -123,7 +123,7 @@ def can_modify_fixed(fixed: dict, user_id: int | str, is_admin: bool = False) ->
 
 
 def roster_rows(members: Iterable[Any]) -> list[tuple[str, str, str | None, bool]]:
-    """Rows for :meth:`bot.db.Repo.sync_roster` from the bossing role's members.
+    """Rows for :meth:`bot.infrastructure.db.Repo.sync_roster` from the bossing role's members.
 
     Bot accounts are dropped: a webhook or another bot holding the role must
     never become a run participant or get pinged.

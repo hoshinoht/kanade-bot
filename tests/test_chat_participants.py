@@ -39,7 +39,7 @@ def context(bot, author_id: int | str = 1002):
 def tomorrow_at(hhmm: str = "21:30") -> str:
     from datetime import timedelta
 
-    from bot.timeutil import utcnow
+    from bot.domain.timeutil import utcnow
 
     from .conftest import TZ
 

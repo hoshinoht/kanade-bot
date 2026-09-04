@@ -52,10 +52,10 @@ HARD_RULES = """\
    never invent a run, never round or "tidy" a time to make a line scan better.
 2. Use the tools. You cannot see the schedule; every fact about it comes from a
    tool call. If somebody asks what is on and you have not called a tool this
-   turn, call one before answering. When the question says "this channel",
-   "here" or "our runs", call get_schedule with scope='channel' — never
-   scope='all' — and when you do answer from scope='all', say the answer covers
-   every channel.
+   turn, call one before answering. A bare schedule or date question covers the
+   whole group across all channels. Limit it to one channel only when they
+   explicitly say "this channel", "here" or "our runs", and limit it to one
+   person only when they explicitly say "for me", "my runs" or name somebody.
 3. You cannot change anything yourself. The write tools post a proposal card
    into the channel for a human to confirm with a ✅ reaction. When you use one,
    say plainly that a card has been posted and that it needs a ✅ to take
@@ -97,6 +97,14 @@ HARD_RULES = """\
     a heading, the factual body, and an optional closing remark. A schedule with
     an opener has a blank line before its heading and another after the heading.
     Keep a short answer that needs only one line on one line.
+12. Keep implementation details private. Never put tool names, option names,
+    invocation syntax or assignment-style arguments in a member reply. Translate
+    every instruction into ordinary Discord language. Never print an unfilled
+    placeholder such as <none>; say the fact plainly or omit the empty fragment.
+13. "Nothing in this channel" never means "nothing anywhere". Preserve every
+    fact and count a schedule lookup reports about runs in other channels. If the
+    original question did not explicitly limit the channel, look up the whole
+    group's schedule before answering.
 """
 
 
@@ -375,7 +383,7 @@ def chosen_path(name: str | None, directory: Path | None = None) -> Path | None:
     so ``../../etc/passwd``, an absolute path and anything with a separator in
     it are all simply "not one of these names" -- there is no path to reject
     because none was ever built. The same reason
-    :meth:`bot.bosses.BossTable.portrait_path` looks its filenames up in the
+    :meth:`bot.domain.bosses.BossTable.portrait_path` looks its filenames up in the
     boss table rather than taking them from a URL.
     """
     if not name:

@@ -34,19 +34,34 @@ skips itself if Ollama is unreachable.
 ```
 bot/
   __main__.py    entrypoint, login backoff, signal handling
-  config.py      env settings (pydantic-settings)
-  db.py          SQLite schema + repository
-  weeks.py       boss-week arithmetic (pure)
-  bosses.py      alias table + token parsing (pure)
-  materialise.py fixed runs -> runs -> reminder rows (pure-ish)
-  rsvp.py        reaction -> RSVP -> run status (pure)
-  formatting.py  message and embed text (pure)
-  watch.py       which channels the bot listens to (pure)
-  client.py      discord.py client, tick loop, reactions
-  commands.py    slash commands
+  cli.py         `bossctl` -- the Typer CLI, over the same HTTP API
   export.py      `python -m bot.export` -- channel history -> JSONL
   health.py      container healthcheck (heartbeat + /healthz)
-  cli.py         `bossctl` -- the Typer CLI, over the same HTTP API
+  domain/        pure scheduling rules and values
+    ids.py        UUID identifiers and short forms
+    timeutil.py   UTC and local datetime helpers
+    weeks.py      boss-week arithmetic
+    bosses.py     alias table + token parsing
+  infrastructure/ deployment and storage integration
+    config.py     env settings (pydantic-settings)
+    db.py         SQLite schema + repository
+    events.py     portal refresh notifications
+    modellock.py  shared model lock
+    audit.py       audit trail
+    backup.py      nightly SQLite snapshots
+    identity.py    cached bot identity artwork
+    watch.py       channel gate
+    backfill.py    channel history -> `messages`
+  agent/         Discord orchestration and presentation
+    client.py      discord.py client, tick loop, reactions
+    commands.py    slash commands
+    debug.py       debug command group
+    rescan.py      rescan job queue
+    materialise.py fixed runs -> runs -> reminder rows
+    rsvp.py        reaction -> RSVP -> run status
+    formatting.py  message and embed text
+    pings.py       mention resolver
+    util.py        shared command and event helpers
   extract/       the chat extractor
     gate.py      keyword gate + boss-token finder (pure, no model)
     prompt.py    the prompt: boss table, channel runs, roster, messages
@@ -62,7 +77,27 @@ bot/
     gate.py      answer or ignore: channel, mention, role, rate limit (pure)
     ratelimit.py per-person sliding window (pure)
     persona.py   PERSONA_PATH + the hard rules -> the system prompt
-    tools.py     the tool schemas and the dispatcher over api/service.py
+    tools/       closed model-callable tool package over api/service.py
+      __init__.py             stable facade: schemas, dispatch, contracts, clock seam
+      schemas.py              canonical ordered tool schemas
+      dispatching.py          read/write registries and guarded dispatch
+      contracts.py            ToolContext, ToolError, ToolOutcome, status constants
+      get_schedule.py         schedule lookup
+      get_run.py              one-run lookup
+      list_bosses.py          boss catalogue lookup
+      get_pending.py          pending-card lookup
+      propose_move.py         single-run move card
+      propose_add.py          new one-off or weekly card
+      propose_cancel.py       single-run cancellation card
+      propose_remove_fixed.py recurring timing removal card
+      propose_change_fixed.py recurring timing edit card
+      propose_rsvp.py         asker-only RSVP card
+      resolution.py           shared run and weekly matching
+      rendering.py            shared schedule display formatting
+      participants.py         boss and participant validation
+      authority.py            existing-run card authority checks
+      proposals.py            shared extractor proposal/card construction
+      clock.py                dynamic facade clock lookup for tests
     agent.py     context assembly and the Ollama tool loop
   api/           the portal + CLI API, served on the bot's own loop
     server.py    uvicorn as a task next to discord.py; start/stop

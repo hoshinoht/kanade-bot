@@ -3,7 +3,7 @@
 Nothing here runs until a human reacts ✅ on the proposal card, and only a
 participant of the target run (or an admin, or the guild owner) counts.  The
 functions are pure repository work with no Discord objects, so every kind can be
-unit tested against an in-memory database; :mod:`bot.client` supplies the
+unit tested against an in-memory database; :mod:`bot.agent.client` supplies the
 reaction, the channel and the follow-up message.
 """
 
@@ -16,15 +16,15 @@ from datetime import time as clock_time
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
-from ..db import Repo
-from ..materialise import (
+from bot.agent.materialise import (
     apply_fixed_to_runs,
     ensure_reminders,
     refresh_run_reminders,
     retire_fixed_run,
 )
-from ..rsvp import compute_status, recompute_after_roster_change
-from ..weeks import current_week_start, next_week_start, week_start
+from bot.agent.rsvp import compute_status, recompute_after_roster_change
+from bot.domain.weeks import current_week_start, next_week_start, week_start
+from bot.infrastructure.db import Repo
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def may_commit(
     lurker, a webhook -- could create a run that pings the whole party every week.
 
     ``has_role`` is passed in rather than looked up so this stays free of the
-    client: :meth:`bot.client.BossBot.has_bossing_role` reads the live member
+    client: :meth:`bot.agent.client.BossBot.has_bossing_role` reads the live member
     object when there is one and falls back to the roster table when there is not.
     """
     if is_admin or is_owner:
@@ -100,7 +100,7 @@ def supersede(
 
     Keyed on the target run, or -- for `add`/`fix`, which have no run yet -- on
     the channel plus the exact boss set they would create. The second key is
-    channel-scoped by construction (:meth:`bot.db.Repo.proposed_for_bosses`);
+    channel-scoped by construction (:meth:`bot.infrastructure.db.Repo.proposed_for_bosses`);
     the first is not, and ``from_channel`` is what scopes it.
 
     ``from_channel`` is where the row doing the retiring lives. A card may be
@@ -308,7 +308,7 @@ def _otot(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, c
     result.run_id = run["id"]
     repo.set_run_status(run["id"], "otot")
     # `otot` keeps the day-of ping so nobody forgets before reset, and drops the
-    # countdowns (bot.materialise.reminder_specs decides that).
+    # countdowns (bot.agent.materialise.reminder_specs decides that).
     refresh_run_reminders(repo, run["id"], ctx.tz, ctx.ping_time, ctx.countdowns)
     return None
 
@@ -379,7 +379,7 @@ def _rsvp(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, c
     """Record an answer that was proposed rather than applied.
 
     The extractor never gets here: it applies a chat answer immediately through
-    :func:`bot.rsvp.apply_reaction`, because reading "can" off a message is
+    :func:`bot.agent.rsvp.apply_reaction`, because reading "can" off a message is
     recording an opinion its author already stated in public. The chatbot does
     card its answers -- it is acting on a sentence addressed to *it*, so the
     person it is answering for gets to see the card first.
@@ -456,7 +456,7 @@ def _note_adoption(repo: Repo, fixed_id: str, result: CommitResult, ctx: Context
     """Say on the card when the new timing took over a run the week already had.
 
     ``make this run weekly`` reaches the tools as a `fix`, and
-    :func:`bot.materialise.materialise_week` folds the matching one-off into the
+    :func:`bot.agent.materialise.materialise_week` folds the matching one-off into the
     new timing rather than leaving a duplicate beside it -- which is what the
     member meant, and worth saying, because the run they were looking at has just
     moved to the weekly's slot.
@@ -483,7 +483,7 @@ def _note_adoption(repo: Repo, fixed_id: str, result: CommitResult, ctx: Context
 def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
     """Retire a weekly timing: no more runs from it, and this week's is cancelled.
 
-    Deliberately the same :func:`bot.materialise.retire_fixed_run` that
+    Deliberately the same :func:`bot.agent.materialise.retire_fixed_run` that
     `/fixed remove` and the portal call, so a baseline removed from chat leaves
     the database in exactly the state the other two routes leave it in --
     including what it does about runs that have already happened.
@@ -513,7 +513,7 @@ def _refix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
     first could never do, and what made the live failure this handles cost a
     party two of its three members.
 
-    The push onto those runs is :func:`bot.materialise.apply_fixed_to_runs`, the
+    The push onto those runs is :func:`bot.agent.materialise.apply_fixed_to_runs`, the
     same helper shape `/fixed edit` and the portal's ``PATCH`` follow: only the
     fields the edit touched, and never a night that has already happened.
     Re-materialising afterwards is left to ``on_fixed_created``, exactly as a

@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import pytest
 
+from bot.agent.materialise import RUN_DONE_AFTER
 from bot.extract.pipeline import STALE_GRACE, Planned, already_passed
 from bot.extract.resolve import Resolved
 from bot.extract.schema import Amendment
@@ -18,7 +19,6 @@ from bot.extract.window import (
     should_widen,
     window_since,
 )
-from bot.materialise import RUN_DONE_AFTER
 
 from .conftest import RESET_TIME, RESET_WEEKDAY, TZ, kl
 

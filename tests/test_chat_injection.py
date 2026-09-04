@@ -16,7 +16,7 @@ import pytest
 
 from bot.chat import gate, persona, tools
 from bot.chat.agent import ChatPilot
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .chat_support import (
     BOT_USER_ID,
