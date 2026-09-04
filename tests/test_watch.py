@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.util import roster_rows
-from bot.watch import is_watched
+from bot.agent.util import roster_rows
+from bot.infrastructure.watch import is_watched
 
 CHANNELS = [100]
 CATEGORIES = [200]

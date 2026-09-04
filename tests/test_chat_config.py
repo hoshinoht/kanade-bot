@@ -13,9 +13,9 @@ from datetime import UTC, datetime
 import pytest
 
 from bot import behaviour_plugins
+from bot.agent.client import CFG_CHAT, BossBot
 from bot.api import service
-from bot.client import CFG_CHAT, BossBot
-from bot.db import Repo
+from bot.infrastructure.db import Repo
 
 from .chat_support import CHAT_CATEGORY, CHAT_CHANNEL, CHAT_ROLE, chat_settings, message
 from .fake_bot import UNWATCHED_CHANNEL, WATCHED_CHANNEL
@@ -300,7 +300,7 @@ def test_the_flag_is_seeded_on_first_run():
 
 
 def test_debug_status_names_the_chatbot_without_printing_its_ids(chat_bot):
-    from bot.debug import _chat_state
+    from bot.agent.debug import _chat_state
 
     line = _chat_state(chat_bot)
     assert "on" in line
@@ -311,7 +311,7 @@ def test_debug_status_names_the_chatbot_without_printing_its_ids(chat_bot):
 
 
 def test_debug_status_says_when_it_is_not_configured(repo, bosses):
-    from bot.debug import _chat_state
+    from bot.agent.debug import _chat_state
 
     from .chat_support import build_bot
 

@@ -27,8 +27,9 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from .. import events, identity
-from ..weeks import WEEKDAY_NAMES
+from bot.domain.weeks import WEEKDAY_NAMES
+from bot.infrastructure import events, identity
+
 from . import service
 from .auth import (
     SESSION_COOKIE,
@@ -455,7 +456,7 @@ HEARTBEAT_S = 20.0
 async def limits_event_stream() -> AsyncIterator[str]:
     """The Limits page's event stream, as the text it sends down the wire.
 
-    The event carries no detail (see :mod:`bot.events`) -- the page answers it by
+    The event carries no detail (see :mod:`bot.infrastructure.events`) -- the page answers it by
     refetching ``/limits/live``, so all it has to say is *that* something moved.
     Several nudges arriving together are collapsed into one, for the same
     reason: the fragment is the whole state either way, so two refetches would

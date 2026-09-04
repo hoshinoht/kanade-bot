@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi.templating import Jinja2Templates
 
-from ..formatting import STATUS_LABEL
-from ..ids import short_id
-from ..timeutil import from_iso, utcnow
-from ..weeks import WEEKDAY_NAMES
+from bot.agent.formatting import STATUS_LABEL
+from bot.domain.ids import short_id
+from bot.domain.timeutil import from_iso, utcnow
+from bot.domain.weeks import WEEKDAY_NAMES
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 #: Pinned so the page cannot change under us, with the integrity hash cdnjs
 #: publishes for it. The portal reads and submits fine without htmx -- every
@@ -101,7 +101,7 @@ DEFAULT_COLORWAY = "marigold"
 
 #: The six run states as drawings rather than as emoji.
 #:
-#: :data:`bot.formatting.STATUS_MARK` is Discord's vocabulary and stays Discord's:
+#: :data:`bot.agent.formatting.STATUS_MARK` is Discord's vocabulary and stays Discord's:
 #: over there a reaction *is* an emoji, and a reader who has seen "⚠️ unconfirmed"
 #: on a card should find the same glyph on the next one. The portal is not a chat
 #: client. Its emoji were the one thing on the page a colourway could not tint and
@@ -168,11 +168,13 @@ LIMITS_TABS = [
     ("set-allowance", "Allowance"),
 ]
 
-#: The tabs on one chat interaction: what was said, what it looked up, and the
-#: facts about the exchange. Same three readers as above.
+#: The tabs on one chat interaction: what was said, what it looked up, what the
+#: provider returned, and the facts about the exchange. Same three readers as
+#: above.
 CHAT_TABS = [
     ("conversation", "Conversation"),
     ("tool-trace", "Tool trace"),
+    ("model-trace", "Model trace"),
     ("interaction", "This interaction"),
 ]
 

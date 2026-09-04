@@ -19,8 +19,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import __version__, audit
-from ..config import Settings
+from bot.infrastructure import audit
+from bot.infrastructure.config import Settings
+
+from .. import __version__
 from ..portal_styles import build_stylesheet
 from .auth import HEADER_LOGIN, is_local_peer
 from .deps import Caller
@@ -28,7 +30,7 @@ from .errors import ApiError
 from .templating import build_templates
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ def resolve_actor(request: Request, settings: Settings) -> audit.Actor:
       is this machine, exactly the pair :func:`bot.api.auth.tailscale_identity`
       requires -- a header this process would refuse to authenticate must not be
       good enough to sign somebody's name to a change either.
-    * :data:`bot.audit.HEADER_BOSSCTL`, which ``bossctl`` sets from the
+    * :data:`bot.infrastructure.audit.HEADER_BOSSCTL`, which ``bossctl`` sets from the
       operating-system user. It vouches for nothing, so it is read only over
       loopback -- where whoever sent it can already run code as that user
       anyway -- or when the tailnet header is trusted in front of it.
@@ -79,7 +81,7 @@ def resolve_actor(request: Request, settings: Settings) -> audit.Actor:
 
 
 class ActorMiddleware:
-    """Resolve the caller once per request, for :mod:`bot.audit`.
+    """Resolve the caller once per request, for :mod:`bot.infrastructure.audit`.
 
     Deliberately plain ASGI rather than a dependency: every mutating service
     function needs the actor, and threading it through thirty route handlers

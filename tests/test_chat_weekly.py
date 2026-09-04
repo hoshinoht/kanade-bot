@@ -18,12 +18,12 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from bot import formatting
+from bot.agent import formatting
+from bot.agent.materialise import materialise_week
 from bot.chat import tools
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import WEEKDAY_NAMES, current_week_start, week_end, week_start
 from bot.extract.commit import commit, may_commit
-from bot.materialise import materialise_week
-from bot.timeutil import utcnow
-from bot.weeks import WEEKDAY_NAMES, current_week_start, week_end, week_start
 
 from .chat_support import CHAT_CHANNEL
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ

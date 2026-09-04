@@ -14,11 +14,11 @@ from datetime import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from bot.bosses import BossTable
-from bot.config import Settings
-from bot.db import Repo
-from bot.util import positive_float, positive_int
-from bot.weeks import parse_hhmm
+from bot.agent.util import positive_float, positive_int
+from bot.domain.bosses import BossTable
+from bot.domain.weeks import parse_hhmm
+from bot.infrastructure.config import Settings
+from bot.infrastructure.db import Repo
 
 GUILD_ID = 111111111111111111
 OWNER_ID = 999999999999999999
@@ -170,9 +170,9 @@ class FakeExtractor:
     async def rescan_window(
         self, channel_id, window="week", post=True, automated=False, should_stop=None
     ):
+        from bot.domain.timeutil import utcnow
         from bot.extract.pipeline import RescanReport
         from bot.extract.window import clamp_window
-        from bot.timeutil import utcnow
 
         window = clamp_window(window, automated)
         self.calls.append((str(channel_id), window, post))
@@ -193,7 +193,7 @@ class FakeBot:
         self.extractor = FakeExtractor()
         # The real worker over the fake bot: the queue is what the API and the
         # portal talk to, so faking it would test nothing.
-        from bot.rescan import RescanWorker
+        from bot.agent.rescan import RescanWorker
 
         self.rescans = RescanWorker(self)
         # Likewise real, and for the same reason: `/api/limits` reports this
@@ -316,7 +316,7 @@ class FakeBot:
         return None
 
     def is_watched(self, channel) -> bool:
-        from bot.watch import is_watched
+        from bot.infrastructure.watch import is_watched
 
         return is_watched(
             channel,
@@ -329,12 +329,12 @@ class FakeBot:
 
     def watched_text_channels(self):
         """Delegates to the real implementation, so the fake cannot drift from it."""
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.watched_text_channels(self)
 
     def resolve_channel(self, channel_id):
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.resolve_channel(self, channel_id)
 
@@ -360,7 +360,7 @@ class FakeBot:
 
     async def find_channel(self, channel_id=None):
         """Mirrors :meth:`bot.client.BossBot.find_channel`, including its reasons."""
-        from bot.client import ChannelLookup
+        from bot.agent.client import ChannelLookup
 
         problems = []
         for candidate in (channel_id, self.settings.post_channel_id):
@@ -384,22 +384,22 @@ class FakeBot:
         return ChannelLookup(channel=None, problem="; ".join(problems))
 
     def can_send_in(self, channel):
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.can_send_in(self, channel)
 
     def no_access(self, channel_id, channel=None):
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.no_access(self, channel_id, channel)
 
     def access_report(self):
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.access_report(self)
 
     def missing_manage_messages(self):
-        from bot.client import BossBot
+        from bot.agent.client import BossBot
 
         return BossBot.missing_manage_messages(self)
 
@@ -414,7 +414,7 @@ class FakeBot:
         # test asserting "quiet mode notifies nobody" would pass against a fake
         # that notifies everybody.
         if self.quiet_mode:
-            from bot import formatting
+            from bot.agent import formatting
 
             content, mention_users, mention_roles = formatting.quiet_line(content), [], []
         self.posts.append(
@@ -433,7 +433,7 @@ class FakeBot:
         if self.quiet_mode:
             # Mirrors `BossBot._prepared`: the card says so, and the allow-list
             # is empty however many names the card spells out.
-            from bot import formatting
+            from bot.agent import formatting
 
             card = (
                 formatting.quiet_line(card) if isinstance(card, str) else formatting.quieted(card)

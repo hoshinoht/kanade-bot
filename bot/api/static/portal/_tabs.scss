@@ -74,6 +74,7 @@
 .tabs:has(#set-allowance:target) [href="#set-allowance"],
 .tabs:has(#conversation:target) [href="#conversation"],
 .tabs:has(#tool-trace:target) [href="#tool-trace"],
+.tabs:has(#model-trace:target) [href="#model-trace"],
 .tabs:has(#interaction:target) [href="#interaction"],
 .tabs:has(#produced:target) [href="#produced"],
 .tabs:has(#chat-read:target) [href="#chat-read"],
@@ -124,4 +125,3 @@
     opacity: 1;
   }
 }
-

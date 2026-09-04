@@ -10,7 +10,7 @@ from datetime import date, time, timedelta
 
 import pytest
 
-from bot import formatting
+from bot.agent import formatting
 from bot.extract.pipeline import (
     Planned,
     consolidate,
@@ -470,7 +470,7 @@ def test_a_matched_run_always_shares_a_boss_with_its_amendment():
 
 
 def test_deleting_a_card_withdraws_the_proposals_it_carried(fake_bot, seeded):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     amendment = seeded["amendment"]
     assert fake_bot.repo.get_amendment(amendment)["status"] == "proposed"
@@ -480,7 +480,7 @@ def test_deleting_a_card_withdraws_the_proposals_it_carried(fake_bot, seeded):
 
 
 def test_deleting_an_unrelated_message_does_nothing(fake_bot, seeded):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     assert BossBot.withdraw_card(fake_bot, 424242) == []
     assert fake_bot.repo.get_amendment(seeded["amendment"])["status"] == "proposed"
@@ -488,7 +488,7 @@ def test_deleting_an_unrelated_message_does_nothing(fake_bot, seeded):
 
 def test_an_already_answered_card_is_left_alone(fake_bot, seeded):
     """Deleting the card afterwards must not rewrite what was decided."""
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     fake_bot.repo.set_amendment_status(seeded["amendment"], "confirmed")
     assert BossBot.withdraw_card(fake_bot, 900000000000000001) == []
@@ -496,7 +496,7 @@ def test_an_already_answered_card_is_left_alone(fake_bot, seeded):
 
 
 def test_a_withdrawn_proposal_leaves_the_inbox(auth, fake_bot, seeded):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     assert len(auth.get("/api/pending").json()) == 1
     BossBot.withdraw_card(fake_bot, 900000000000000001)
@@ -504,7 +504,7 @@ def test_a_withdrawn_proposal_leaves_the_inbox(auth, fake_bot, seeded):
 
 
 def test_withdrawn_is_a_real_status():
-    from bot.db import AMENDMENT_STATUSES
+    from bot.infrastructure.db import AMENDMENT_STATUSES
 
     assert "withdrawn" in AMENDMENT_STATUSES
 

@@ -13,7 +13,7 @@ import pytest
 
 from bot.api import routes_api, routes_web
 from bot.api.templating import HTMX_SRC, confidence_band
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .fake_bot import (
     ADMIN_TOKEN,
@@ -158,6 +158,43 @@ def test_the_chat_detail_shows_the_question_the_reply_and_the_trace(auth, seeded
     assert "Star is Monday 21:30" in body
     assert "week=&#39;this&#39;" in body  # the arguments, as the DEBUG log renders them
     assert "3,120" in body  # prompt tokens
+    assert "Model trace" in body
+    assert "Return" in body
+
+
+def test_chat_diagnostics_are_escaped_and_keep_newlines(auth, fake_bot):
+    interaction = fake_bot.repo.log_chat_interaction(
+        model="qwen3:32b",
+        question="hi",
+        reply="hello",
+        outcome="answered",
+        tool_calls=[
+            {
+                "name": "get_schedule",
+                "arguments": "",
+                "output": "first line\n<script>tool()</script>",
+                "ms": 1,
+                "outcome": "ok",
+                "created": [],
+            }
+        ],
+        model_rounds=[
+            {
+                "round": 1,
+                "content": "<script>content()</script>\nnext line",
+                "thinking": "</pre><script>thinking()</script>",
+                "requested_tools": ["get_schedule"],
+            }
+        ],
+    )
+
+    body = auth.get(f"/chat/{short_id(interaction)}").text
+    assert "first line\n&lt;script&gt;tool()&lt;/script&gt;" in body
+    assert "&lt;script&gt;content()&lt;/script&gt;\nnext line" in body
+    assert "&lt;/pre&gt;&lt;script&gt;thinking()&lt;/script&gt;" in body
+    assert "<script>tool()" not in body
+    assert "<script>content()" not in body
+    assert "<script>thinking()" not in body
 
 
 def test_a_chat_detail_says_when_the_model_reported_no_tokens(auth, fake_bot):
@@ -222,8 +259,8 @@ def test_the_limits_page_says_the_model_is_free_when_it_is(auth, fake_bot):
 
 
 def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded, model_lock):
-    from bot import modellock
     from bot.chat.gate import GLOBAL_KEY
+    from bot.infrastructure import modellock
 
     fake_bot.chat.limiter.allow(1002)
     fake_bot.chat.global_limiter.allow(GLOBAL_KEY)
@@ -632,6 +669,25 @@ def test_saving_config_from_the_page(auth, fake_bot, seeded):
     )
     assert fake_bot.ping_time.strftime("%H:%M") == "08:15"
     assert fake_bot.countdowns == [45]
+
+
+def test_saving_unchanged_pings_keeps_a_posted_morning_mapping(auth, fake_bot, seeded):
+    repo = fake_bot.repo
+    repo.set_config("day_of_ping_time", "09:00")
+    repo.set_config("countdown_minutes", "60,15")
+    morning = next(r for r in repo.list_reminders(seeded["run_star"]) if r["kind"] == "day_of")
+    repo.mark_reminder_sent(morning["id"], 900000000000000010)
+    before = len(repo.list_audit())
+
+    response = auth.post(
+        "/config",
+        data={"day_of_ping_time": "09:00", "countdown_minutes": "60,15"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert [row["id"] for row in repo.reminders_by_message(900000000000000010)] == [morning["id"]]
+    assert len(repo.list_audit()) == before
 
 
 def test_a_bad_config_value_comes_back_as_an_error_flash(auth, seeded):

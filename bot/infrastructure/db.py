@@ -22,12 +22,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .ids import new_id
-from .timeutil import from_iso, to_iso, utcnow
+from bot.domain.ids import new_id
+from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 #: How many chat interactions are kept. The table is a diagnostic, not a
 #: transcript: five hundred is weeks of a guild's questions at the rate the
@@ -274,8 +274,12 @@ CREATE TABLE IF NOT EXISTS chat_interactions (
     -- `prompt_eval_count` / `eval_count` are Ollama's, not the API's.
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
-    -- [{name, arguments, ms, outcome, created}], one per call, in order.
-    tool_calls        TEXT NOT NULL DEFAULT '[]'
+    -- [{name, round, arguments, output, ms, outcome, created, posted}], one per
+    -- call, in order. Older rows omit the additive round/output/posted keys.
+    tool_calls        TEXT NOT NULL DEFAULT '[]',
+    -- [{round, content, thinking, requested_tools}], one provider response per
+    -- model round. Diagnostics only: prompts are intentionally never stored.
+    model_rounds      TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS chat_interactions_recent ON chat_interactions (at DESC);
@@ -484,6 +488,26 @@ def _migrate_7_to_8(conn: sqlite3.Connection) -> None:
     """
 
 
+def _migrate_8_to_9(conn: sqlite3.Connection) -> None:
+    """v8 -> v9: provider round diagnostics on ``chat_interactions``.
+
+    The chat log already exists on a v8 deployment, so its fresh-table default
+    cannot add this column. The additive default keeps every old interaction
+    readable as an empty trace and leaves its recorded question, reply and tool
+    calls untouched.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(chat_interactions)")}
+    if not existing:
+        # A pre-v6 file walking through every numbered step has no chat table
+        # yet; ``SCHEMA_SQL`` creates it at the latest shape after the walk.
+        return
+    if "model_rounds" not in existing:
+        conn.execute(
+            "ALTER TABLE chat_interactions ADD COLUMN model_rounds TEXT NOT NULL DEFAULT '[]'"
+        )
+        log.info("schema v8->v9: chat_interactions gained model_rounds")
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
@@ -492,6 +516,7 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     5: _migrate_5_to_6,
     6: _migrate_6_to_7,
     7: _migrate_7_to_8,
+    8: _migrate_8_to_9,
 }
 
 
@@ -554,7 +579,7 @@ class Repo:
 
     #: Called with a run id whenever something a posted reminder card *shows*
     #: has changed: the RSVP tally, the run's status, or its line-up. The client
-    #: sets it (:meth:`bot.client.BossBot.card_needs_refresh`) so a card already
+    #: sets it (:meth:`bot.agent.client.BossBot.card_needs_refresh`) so a card already
     #: in a channel is re-rendered whoever changed the answer -- a reaction,
     #: `/rsvp`, the portal, a chat-extracted "Can". Hooking the writes rather
     #: than the callers is the only way to catch all four without every one of
@@ -623,7 +648,7 @@ class Repo:
         file on its own is only whatever was last checkpointed, so copying it
         while the bot is writing can produce a file that will not open. This
         copies page by page against the live connection and takes the WAL with
-        it. See :mod:`bot.backup` for when it is called.
+        it. See :mod:`bot.infrastructure.backup` for when it is called.
 
         The copy is left in rollback-journal mode rather than the WAL mode it
         inherits, so the snapshot is one self-contained file: opening it to look
@@ -1104,6 +1129,37 @@ class Repo:
         self._conn.execute(
             "UPDATE reminders SET fire_at = ? WHERE id = ?", (to_iso(fire_at), reminder_id)
         )
+
+    def reschedule_unposted_reminder(
+        self, reminder_id: str, fire_at: datetime, now: datetime
+    ) -> bool:
+        """Move an unposted reminder, reopening or skipping it as its new time requires.
+
+        A row with a ``message_id`` is evidence of a card that reached Discord;
+        keep both it and its reaction lookup intact. A no-message sent row is a
+        skipped reminder: reopening it when its new time is ahead is safe, while
+        a queued row moved into the past is retired at the supplied ``now``.
+        """
+        fire_at_iso = to_iso(fire_at)
+        if fire_at > now:
+            cursor = self._conn.execute(
+                """
+                UPDATE reminders SET fire_at = ?, sent_at = NULL
+                WHERE id = ? AND message_id IS NULL
+                  AND (fire_at != ? OR sent_at IS NOT NULL)
+                """,
+                (fire_at_iso, reminder_id, fire_at_iso),
+            )
+        else:
+            cursor = self._conn.execute(
+                """
+                UPDATE reminders SET fire_at = ?, sent_at = COALESCE(sent_at, ?)
+                WHERE id = ? AND message_id IS NULL
+                  AND (fire_at != ? OR sent_at IS NULL)
+                """,
+                (fire_at_iso, to_iso(now), reminder_id, fire_at_iso),
+            )
+        return bool(cursor.rowcount)
 
     def mark_reminder_sent(
         self, reminder_id: str, message_id: int | str | None = None, at: datetime | None = None
@@ -1656,13 +1712,14 @@ class Repo:
         prompt_tokens: int | None = None,
         completion_tokens: int | None = None,
         tool_calls: Sequence[dict] = (),
+        model_rounds: Sequence[dict] = (),
         at: datetime | None = None,
         keep: int = CHAT_INTERACTIONS_KEPT,
     ) -> str:
         """Record one handled interaction, then prune the log back to ``keep``.
 
         Pruning on insert rather than on a timer for the same reason
-        :mod:`bot.backup` prunes as it writes: the only moment the table is
+        :mod:`bot.infrastructure.backup` prunes as it writes: the only moment the table is
         certainly growing is the moment something was added to it, and a
         separate sweep is one more thing that can quietly stop running.
         """
@@ -1672,8 +1729,8 @@ class Repo:
             INSERT INTO chat_interactions
                 (id, at, channel_id, message_id, author_id, model, question, reply, outcome,
                  error, rounds, latency_ms, model_ms, tools_ms, prompt_tokens,
-                 completion_tokens, tool_calls)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  completion_tokens, tool_calls, model_rounds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 interaction_id,
@@ -1693,6 +1750,7 @@ class Repo:
                 _int_or_none(prompt_tokens),
                 _int_or_none(completion_tokens),
                 json.dumps(list(tool_calls)),
+                json.dumps(list(model_rounds)),
             ),
         )
         self.prune_chat_interactions(keep)
@@ -1830,6 +1888,7 @@ class Repo:
         data = dict(row)
         data["at"] = from_iso(data["at"])
         data["tool_calls"] = json.loads(data["tool_calls"] or "[]")
+        data["model_rounds"] = json.loads(data["model_rounds"] or "[]")
         return data
 
     # -- audit trail -------------------------------------------------------
@@ -1849,7 +1908,7 @@ class Repo:
         Nothing here validates: an unknown surface is stored as it arrives.
         This is written on the way *out* of a mutation that has already
         happened, so raising would turn a bad label into a failed edit -- see
-        :func:`bot.audit.record`, which is how every caller reaches this.
+        :func:`bot.infrastructure.audit.record`, which is how every caller reaches this.
 
         Pruned on insert for the same reason
         :meth:`log_chat_interaction` is: the only moment the table is certainly

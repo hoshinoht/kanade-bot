@@ -25,15 +25,18 @@ difficulties:
   c: Chaos
   x: Extreme
 
+# Grandis bosses mostly, as Arcane River bosses are often solo'ed these days and don't
+# need parties. (Though you can still add them if you want!)
 bosses:
+  Lotus:
+    full: Lotus
+    level: 260
+    difficulties: [x]
+    aliases: [lotus, lot, suu]
   Seren:
     full: Chosen Seren
     level: 260
     difficulties: [n, h, x]
-    # NOTE: "cseren" is deliberately NOT an alias. Seren has no Chaos difficulty,
-    # so the token parses as c + seren and is rejected with a suggestion of the
-    # forms that do exist.
-    # `serene`/`sereen` are how the guild spells it in chat.
     aliases: [seren, serene, sereen, chosenseren]
 
   Kalos:
@@ -49,7 +52,7 @@ bosses:
     aliases: [fa, firstadversary, first-adversary, adversary]
 
   Carling:
-    full: Carling
+    full: Karling
     level: 275
     difficulties: [e, n, h, x]
     aliases: [carling, carl, kaling, karling, kalling, caling, carlin, karl]
@@ -64,9 +67,9 @@ bosses:
     full: Radiant Malefic Star
     level: 280
     difficulties: [n, h]
-    aliases: [star, rms, rmc, malefic, radiantmaleficstar]
+    aliases: [star, rms, rmc, malefic, hmc, radiantmaleficstar]
 
-  Bellona:
+  Bellona: #KMS Overdrive Update boss, not released yet.
     full: Bellona
     level: 280
     difficulties: [e, n, h]
@@ -76,14 +79,12 @@ bosses:
     full: Limbo
     level: 285
     difficulties: [n, h]
-    # `limb` is the guild's usual short form ("hlimb").
     aliases: [limbo, limb]
 
   Baldrix:
     full: Baldrix
     level: 290
     difficulties: [n, h]
-    # The guild's channel names use nbaldguy/hbaldguy.
     aliases: [baldrix, baldguy, bald, baldrick, bladrix, baldrx]
 
   Jupiter:

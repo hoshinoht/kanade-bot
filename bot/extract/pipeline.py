@@ -29,12 +29,14 @@ from datetime import time as clock_time
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from .. import audit, formatting, pings
-from ..materialise import RUN_DONE_AFTER
-from ..rsvp import apply_reaction
-from ..timeutil import utcnow
-from ..watch import origin_ids
-from ..weeks import week_end, week_start
+from bot.agent import formatting, pings
+from bot.agent.materialise import RUN_DONE_AFTER
+from bot.agent.rsvp import apply_reaction
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import week_end, week_start
+from bot.infrastructure import audit
+from bot.infrastructure.watch import origin_ids
+
 from . import gate
 from . import prompt as prompt_mod
 from .commit import supersede
@@ -54,7 +56,7 @@ from .window import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +80,7 @@ SPLIT_ACROSS_RUNS = frozenset({"sub", "move", "cancel", "otot"})
 #: "change to wed?" in a channel with two runs -- and guessing there moves
 #: somebody's night, so a `move`/`cancel`/`otot`/`split` is dropped instead.
 #: These two are the reversible ones: an `rsvp` is an opinion, and
-#: :func:`bot.rsvp.apply_reaction` ignores it outright unless the person is on
+#: :func:`bot.agent.rsvp.apply_reaction` ignores it outright unless the person is on
 #: the run it landed on, which is most of the guesswork undone already -- a bare
 #: "Can" is the commonest thing anyone says and never names a boss. A stand-in
 #: on the wrong one of two equally likely runs is a `/swap` away.
@@ -1184,7 +1186,10 @@ class Pipeline:
             self._note_unposted(channel_id, ids, report)
 
     def _note_unposted(
-        self, channel_id: str, amendment_ids: list[str], report: RescanReport | None,
+        self,
+        channel_id: str,
+        amendment_ids: list[str],
+        report: RescanReport | None,
         summary: str | None = None,
     ) -> None:
         log.error(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bot.bosses import BossParseError, BossTable, BossTableError
+from bot.domain.bosses import BossParseError, BossTable, BossTableError
 
 
 @pytest.mark.parametrize(

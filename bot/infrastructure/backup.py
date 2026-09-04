@@ -10,7 +10,7 @@ exactly the thing ``ls`` on the host cannot see -- so a snapshot goes to
 Snapshots go through SQLite's **online backup API**, never a file copy: with
 ``journal_mode=WAL`` the ``.sqlite`` file alone is only whatever was last
 checkpointed, and copying it while the bot is writing can produce a file that
-does not open.  :meth:`bot.db.Repo.backup_to` is the one page-consistent way to
+does not open.  :meth:`bot.infrastructure.db.Repo.backup_to` is the one page-consistent way to
 do it while the connection stays open.
 """
 

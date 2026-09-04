@@ -17,25 +17,10 @@ import dateparser
 import discord
 from discord import app_commands
 
-from . import audit, formatting
-from .bosses import BossParseError
-from .debug import DebugGroup, DebugNotAllowed
-from .extract.window import DEFAULT_WINDOW, WINDOWS
-from .ids import IdAmbiguous, IdError, resolve_id, short_id
-from .materialise import LIVE_STATUSES, refresh_run_reminders
-from .pings import PING_LEVELS, audience, normalise_level
-from .rsvp import compute_status
-from .timeutil import local_naive, utcnow
-from .util import (
-    can_modify_fixed,
-    can_modify_run,
-    is_bot_admin,
-    mention,
-    mentions_in,
-    resolve_participant_text,
-)
-from .watch import origin_ids
-from .weeks import (
+from bot.domain.bosses import BossParseError
+from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
+from bot.domain.timeutil import local_naive, utcnow
+from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
     next_week_start,
@@ -43,6 +28,23 @@ from .weeks import (
     parse_weekday,
     slot_in_week,
     week_start,
+)
+from bot.extract.window import DEFAULT_WINDOW, WINDOWS
+from bot.infrastructure import audit
+from bot.infrastructure.watch import origin_ids
+
+from . import formatting
+from .debug import DebugGroup, DebugNotAllowed
+from .materialise import LIVE_STATUSES, reconcile_day_of, refresh_run_reminders
+from .pings import PING_LEVELS, audience, normalise_level
+from .rsvp import compute_status
+from .util import (
+    can_modify_fixed,
+    can_modify_run,
+    is_bot_admin,
+    mention,
+    mentions_in,
+    resolve_participant_text,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -106,7 +108,7 @@ def _actor(interaction: discord.Interaction) -> audit.Actor:
     """Who the audit trail credits for a slash command: the member who ran it.
 
     The service functions these commands share with the portal record who made
-    each change (:mod:`bot.audit`), and they read the actor from the context
+    each change (:mod:`bot.infrastructure.audit`), and they read the actor from the context
     rather than an argument. Nothing sets it out here, so a `/status` would be
     filed as `system` -- the one surface that always knows exactly whose
     decision it was, recorded as nobody's.
@@ -155,7 +157,7 @@ def is_guild_admin(user: object) -> bool:
 
 
 def is_staff(interaction: discord.Interaction) -> bool:
-    """Does whoever ran this command run the bot? (:func:`bot.util.is_bot_admin`)
+    """Does whoever ran this command run the bot? (:func:`bot.agent.util.is_bot_admin`)
 
     The one "who is staff" rule this module has, so `/say`'s gate and `/limits`'
     exemption cannot drift apart -- and so both agree with the chatbot, which
@@ -1001,8 +1003,8 @@ async def _set_status(interaction: discord.Interaction, run_id: str, state: str)
     # Imported here rather than at module scope: `bot.api` pulls in FastAPI and
     # the whole portal, and the slash-command layer must not depend on that
     # being importable to work.
-    from .api import service
-    from .api.errors import ApiError
+    from bot.api import service
+    from bot.api.errors import ApiError
 
     bot = _bot(interaction)
     try:
@@ -1052,8 +1054,8 @@ async def swap(
     out2: discord.Member | None = None,
     into2: discord.Member | None = None,
 ) -> None:
-    from .api import service
-    from .api.errors import ApiError
+    from bot.api import service
+    from bot.api.errors import ApiError
 
     bot = _bot(interaction)
     try:
@@ -1160,8 +1162,8 @@ async def rescan(
     cancel: bool = False,
 ) -> None:
     bot = _bot(interaction)
-    from .api import service
-    from .api.errors import ApiError
+    from bot.api import service
+    from bot.api.errors import ApiError
 
     if cancel:
         await _cancel_rescan(interaction, bot)
@@ -1378,8 +1380,8 @@ async def limits(interaction: discord.Interaction) -> None:
     # Imported here rather than at module scope for the reason `_set_status`
     # gives: the chatbot's tools import `bot.api`, so reaching the pilot from
     # the top of this file would put the whole portal behind the slash commands.
-    from .chat.agent import retry_note
-    from .chat.gate import GLOBAL_KEY
+    from bot.chat.agent import retry_note
+    from bot.chat.gate import GLOBAL_KEY
 
     if is_staff(interaction):
         await interaction.response.send_message(STAFF_LIMITS_REPLY, ephemeral=True)
@@ -1441,16 +1443,20 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
     before = bot.repo.get_config("day_of_ping_time")
-    bot.repo.set_config("day_of_ping_time", parsed.strftime("%H:%M"))
-    # Re-place every day-of reminder that has not fired yet.
-    moved = 0
-    for reminder in bot.repo.unsent_reminders(kind="day_of"):
-        _sync_run_reminders(bot, reminder["run_id"])
-        moved += 1
-    _record_config(interaction, "day_of_ping_time", before, parsed.strftime("%H:%M"))
+    stored = parsed.strftime("%H:%M")
+    if before == stored:
+        await interaction.response.send_message(
+            f"✅ Day-of pings already go out at **{stored}** {bot.settings.tz}.",
+            ephemeral=True,
+        )
+        return
+    now = utcnow()
+    bot.repo.set_config("day_of_ping_time", stored)
+    changed = reconcile_day_of(bot.repo, bot.tz, parsed, now=now)
+    _record_config(interaction, "day_of_ping_time", before, stored)
     await interaction.response.send_message(
-        f"✅ Day-of pings now go out at **{parsed.strftime('%H:%M')}** "
-        f"{bot.settings.tz} ({moved} pending reminder(s) rescheduled).",
+        f"✅ Day-of pings now go out at **{stored}** "
+        f"{bot.settings.tz} ({changed} reminder(s) reconciled).",
         ephemeral=True,
     )
 

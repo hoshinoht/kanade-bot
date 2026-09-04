@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from bot import formatting
+from bot.agent import formatting
 from bot.api.app import TEMPLATE_DIR
 from bot.api.templating import STATUS_ICONS, STATUS_WORDS
 

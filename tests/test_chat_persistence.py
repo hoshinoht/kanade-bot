@@ -19,7 +19,7 @@ import pytest
 
 from bot.chat import gate
 from bot.chat.agent import FAILURE_REPLY, MAX_TOOL_ROUNDS, ChatPilot
-from bot.db import CHAT_INTERACTIONS_KEPT
+from bot.infrastructure.db import CHAT_INTERACTIONS_KEPT
 
 from .chat_support import CHAT_CHANNEL, FakeOllama, costed, message, says, wants
 
@@ -73,6 +73,35 @@ async def test_the_tool_trace_survives_intact(chat_bot, chat_seeded):
     assert call["outcome"] == "ok"
     assert call["created"] == []
     assert isinstance(call["ms"], int)
+
+
+async def test_provider_rounds_and_full_tool_returns_are_preserved(chat_bot, chat_seeded):
+    first = wants("get_schedule", week="this")
+    first["message"]["content"] = "  looking it up\n"
+    first["message"]["thinking"] = "check the schedule\nthen answer"
+    second = {
+        "message": {
+            "content": "  Two runs.\n",
+            "thinking": None,
+            "tool_calls": [],
+        }
+    }
+    agent = pilot(chat_bot, first, second)
+    await agent.offer(message(chat_bot))
+
+    row = only_row(chat_bot)
+    assert row["model_rounds"] == [
+        {
+            "round": 1,
+            "content": "  looking it up\n",
+            "thinking": "check the schedule\nthen answer",
+            "requested_tools": ["get_schedule"],
+        },
+        {"round": 2, "content": "  Two runs.\n", "thinking": None, "requested_tools": []},
+    ]
+    (call,) = row["tool_calls"]
+    assert call["round"] == 1
+    assert "Hard Star + Hard FA" in call["output"]
 
 
 async def test_a_refusal_is_recorded_as_a_refusal(chat_bot, chat_seeded):

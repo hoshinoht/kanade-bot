@@ -13,13 +13,17 @@ restart makes it likely.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 from bot.chat import gate
 from bot.chat.agent import ChatPilot
+from bot.domain.ids import short_id
 
 from .chat_support import (
     BOT_USER_ID,
+    CHAT_CHANNEL,
     OFF_LIMITS_CHANNEL,
     OTHER_ROLE,
     FakeOllama,
@@ -27,7 +31,9 @@ from .chat_support import (
     FakeRole,
     message,
     says,
+    wants,
 )
+from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 
 pytestmark = pytest.mark.anyio
 
@@ -95,6 +101,259 @@ async def test_the_pilot_answers_a_managed_role_mention_end_to_end(chat_bot, cha
     result = await agent.offer(role_mention(chat_bot, SELF_ROLE))
     assert result.handled is True
     assert result.answered.reply == "On it."
+
+
+async def test_role_mention_schedule_for_me_today_does_not_ask_who(
+    chat_bot, chat_seeded, monkeypatch
+):
+    """Regression for chat #9a6714cb: the trigger role is routing, not a participant."""
+    week = chat_seeded["week_start"]
+    now = week + timedelta(hours=12)
+    monkeypatch.setattr("bot.chat.tools.utcnow", lambda: now)
+    run_id = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    somebody_elses_run = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(hours=22),
+        participants=["1001"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    agent = pilot(
+        with_self_role(chat_bot),
+        wants(
+            "get_schedule",
+            week="this",
+            scope="channel",
+            participant=str(SELF_ROLE),
+            day="today",
+        ),
+        says("Your Hard Carling run is tonight."),
+    )
+    msg = message(chat_bot, f"<@&{SELF_ROLE}> what's for me today", mentions=())
+    msg.role_mentions = [FakeRole(SELF_ROLE)]
+
+    handling = await agent.offer(msg)
+
+    assert handling.handled is True
+    (outcome,) = handling.answered.outcomes
+    assert outcome.ok
+    assert short_id(run_id) in outcome.output
+    assert short_id(somebody_elses_run) not in outcome.output
+    assert "Your runs on" in outcome.output
+    assert "Ask them who" not in outcome.output
+
+
+async def test_bare_tomorrow_question_ignores_an_over_scoped_model_call(
+    chat_bot, chat_seeded, monkeypatch
+):
+    """The second live failure: trusted wording beats the model's silent filters."""
+    week = chat_seeded["week_start"]
+    now = week + timedelta(hours=12)
+    monkeypatch.setattr("bot.chat.tools.utcnow", lambda: now)
+    elsewhere = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=WATCHED_CHANNEL,
+    )
+    somebody_elses_run = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(days=1, hours=22),
+        participants=["1001"],
+        status="planned",
+        source="amend",
+        channel_id=OTHER_CHANNEL,
+    )
+    agent = pilot(
+        with_self_role(chat_bot),
+        wants(
+            "get_schedule",
+            week="this",
+            scope="channel",
+            participant="me",
+            day="tomorrow",
+        ),
+        says(
+            f"Tomorrow has Hard Carling `[{short_id(elsewhere)}]` and "
+            f"Hard Baldrix `[{short_id(somebody_elses_run)}]`."
+        ),
+    )
+    msg = message(chat_bot, f"<@&{SELF_ROLE}> what's for tomorrow", mentions=())
+    msg.role_mentions = [FakeRole(SELF_ROLE)]
+
+    handling = await agent.offer(msg)
+
+    (outcome,) = handling.answered.outcomes
+    assert outcome.ok
+    assert outcome.arguments["scope"] == "channel"
+    assert outcome.arguments["participant"] == "me"
+    assert short_id(elsewhere) in outcome.output
+    assert short_id(somebody_elses_run) in outcome.output
+    assert "ALL channels" in outcome.output
+    assert short_id(elsewhere) in handling.answered.reply
+    assert short_id(somebody_elses_run) in handling.answered.reply
+    assert "<none>" not in handling.answered.reply
+
+
+async def test_personal_all_channel_question_keeps_the_person_filter(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr("bot.chat.tools.utcnow", lambda: week + timedelta(hours=12))
+    mine = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=WATCHED_CHANNEL,
+    )
+    not_mine = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(days=1, hours=22),
+        participants=["1001"],
+        status="planned",
+        source="amend",
+        channel_id=OTHER_CHANNEL,
+    )
+    agent = pilot(
+        with_self_role(chat_bot),
+        wants(
+            "get_schedule",
+            week="this",
+            scope="channel",
+            participant="me",
+            day="tomorrow",
+        ),
+        says("Your run is listed."),
+    )
+    msg = message(
+        chat_bot,
+        f"<@&{SELF_ROLE}> what's for me tomorrow across all channels?",
+        mentions=(),
+    )
+    msg.role_mentions = [FakeRole(SELF_ROLE)]
+
+    outcome = (await agent.offer(msg)).answered.outcomes[0]
+
+    assert short_id(mine) in outcome.output
+    assert short_id(not_mine) not in outcome.output
+    assert "Your runs" in outcome.output
+    assert "all channels" in outcome.output
+
+
+@pytest.mark.parametrize(
+    ("person_text", "participant"),
+    [("<@1003>", "<@1003>"), ("Priya", "Priya")],
+)
+async def test_named_member_remains_a_person_filter(
+    chat_bot, chat_seeded, monkeypatch, person_text, participant
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr("bot.chat.tools.utcnow", lambda: week + timedelta(hours=12))
+    priya = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1003"],
+        status="planned",
+        source="amend",
+        channel_id=WATCHED_CHANNEL,
+    )
+    mine = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(days=1, hours=22),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=OTHER_CHANNEL,
+    )
+    agent = pilot(
+        with_self_role(chat_bot),
+        wants(
+            "get_schedule",
+            week="this",
+            scope="channel",
+            participant=participant,
+            day="tomorrow",
+        ),
+        says("Priya's run is listed."),
+    )
+    msg = message(
+        chat_bot,
+        f"<@&{SELF_ROLE}> what's for {person_text} tomorrow across all channels?",
+        mentions=(1003,) if person_text.startswith("<@") else (),
+    )
+    msg.role_mentions = [FakeRole(SELF_ROLE)]
+
+    outcome = (await agent.offer(msg)).answered.outcomes[0]
+
+    assert short_id(priya) in outcome.output
+    assert short_id(mine) not in outcome.output
+    assert "Priya's runs" in outcome.output
+    assert "all channels" in outcome.output
+
+
+async def test_explicit_channel_question_keeps_channel_scope_but_not_person_scope(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr("bot.chat.tools.utcnow", lambda: week + timedelta(hours=12))
+    local = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1001"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    elsewhere = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(days=1, hours=22),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=WATCHED_CHANNEL,
+    )
+    agent = pilot(
+        with_self_role(chat_bot),
+        wants(
+            "get_schedule",
+            week="this",
+            scope="channel",
+            participant="me",
+            day="tomorrow",
+        ),
+        says("This channel's run is listed."),
+    )
+    msg = message(chat_bot, f"<@&{SELF_ROLE}> what's for tomorrow in this channel?", mentions=())
+    msg.role_mentions = [FakeRole(SELF_ROLE)]
+
+    outcome = (await agent.offer(msg)).answered.outcomes[0]
+
+    assert short_id(local) in outcome.output
+    assert short_id(elsewhere) not in outcome.output
+    assert "in this channel only" in outcome.output
+    assert "Your runs" not in outcome.output
 
 
 async def test_the_pilot_still_ignores_other_role_mentions(chat_bot, chat_seeded):

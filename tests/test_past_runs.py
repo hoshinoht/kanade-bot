@@ -11,9 +11,15 @@ from datetime import timedelta
 
 import pytest
 
-from bot.db import Repo
-from bot.materialise import LIVE_STATUSES, RUN_DONE_AFTER, is_past, mark_done, materialise_week
-from bot.weeks import current_week_start
+from bot.agent.materialise import (
+    LIVE_STATUSES,
+    RUN_DONE_AFTER,
+    is_past,
+    mark_done,
+    materialise_week,
+)
+from bot.domain.weeks import current_week_start
+from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 

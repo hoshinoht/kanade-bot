@@ -6,7 +6,7 @@ a stand-in for one night must not change who gets pinged next week.
 
 from __future__ import annotations
 
-from bot import formatting
+from bot.agent import formatting
 from bot.extract.pipeline import volunteers_for
 from bot.extract.schema import Amendment
 

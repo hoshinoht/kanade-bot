@@ -3,7 +3,7 @@
 Discord will hand these over, but only over the network and only while the
 gateway is up, and the portal is a page somebody opens on a phone at 9pm --
 often the moment something is already wrong.  So they are fetched once at start
-(:meth:`bot.client.BossBot.cache_identity`) and written next to the database,
+(:meth:`bot.agent.client.BossBot.cache_identity`) and written next to the database,
 and every read after that is a file read.
 
 Everything here is cosmetic and everything here is allowed to fail.  A refresh

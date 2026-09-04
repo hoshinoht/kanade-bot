@@ -23,12 +23,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from bot.agent.client import BossBot
+from bot.agent.rsvp import EMOJI_NO, EMOJI_YES
 from bot.chat import followup, tools
 from bot.chat.agent import ChatPilot
-from bot.client import BossBot
+from bot.domain.ids import short_id
 from bot.extract.commit import CommitResult
-from bot.ids import short_id
-from bot.rsvp import EMOJI_NO, EMOJI_YES
 
 from .chat_support import (
     BOT_USER_ID,

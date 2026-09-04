@@ -6,6 +6,7 @@ shows it next to that boss everywhere, and the bot attaches it as the thumbnail
 on that run's day-of and countdown pings.
 
 ```
+config/portraits/Lotus.png      Lotus
 config/portraits/Seren.png      Chosen Seren
 config/portraits/Kalos.png      Gatekeeper Kalos
 config/portraits/FA.png         The First Adversary

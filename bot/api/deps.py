@@ -13,7 +13,7 @@ from fastapi import Depends, Request
 from .auth import Identity, authenticate
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 
 def get_bot(request: Request) -> BossBot:

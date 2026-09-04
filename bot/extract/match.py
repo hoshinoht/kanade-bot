@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from ..ids import canonical as canonical_id
-from ..ids import short_id
+from bot.domain.ids import canonical as canonical_id
+from bot.domain.ids import short_id
 
 #: Runs in these statuses are never the target of a chat amendment.
 DEAD_STATUSES = ("cancelled", "done")

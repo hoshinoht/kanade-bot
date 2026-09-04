@@ -18,9 +18,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from bot.agent.client import BossBot
 from bot.chat.agent import Handling
-from bot.client import BossBot
-from bot.db import Repo
+from bot.infrastructure.db import Repo
 
 from .chat_support import (
     ADOPTED_CHANNEL,

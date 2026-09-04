@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from bot import identity
 from bot.api.app import STATIC_DIR
 from bot.api.templating import COLORWAYS, DEFAULT_COLORWAY, NAV, NAV_GROUPS
+from bot.infrastructure import identity
 from bot.portal_styles import build_stylesheet
 
 from .fake_bot import ADMIN_TOKEN, make_settings
@@ -602,7 +602,7 @@ def test_the_type_is_read_off_the_bytes_not_the_name(tmp_path, head, expected):
 
 def test_caching_identity_never_breaks_a_start(tmp_path, monkeypatch):
     """`on_ready` calls this; nothing cosmetic may take the bot down with it."""
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     async def explode(_client):
         raise RuntimeError("discord.py changed under us")

@@ -41,7 +41,7 @@ def proposals(bot):
 def tomorrow_at(bot, hhmm: str = "21:30") -> str:
     from datetime import timedelta
 
-    from bot.timeutil import utcnow
+    from bot.domain.timeutil import utcnow
 
     return (utcnow().astimezone(TZ) + timedelta(days=1)).strftime(f"%Y-%m-%d {hhmm}")
 

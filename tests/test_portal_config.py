@@ -438,7 +438,7 @@ def test_the_setting_seeds_from_the_configured_path(tmp_path):
     a name, never the path itself. `seed_config` only inserts what is missing,
     so a voice chosen at 9pm is not undone by the next restart reading `.env`."""
     from bot.__main__ import build_repo
-    from bot.client import CFG_PERSONA
+    from bot.agent.client import CFG_PERSONA
 
     from .fake_bot import make_settings
 

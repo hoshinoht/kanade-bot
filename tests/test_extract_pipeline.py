@@ -13,13 +13,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from bot import formatting
-from bot.config import Settings
-from bot.db import Repo
+from bot.agent import formatting
 from bot.extract import gate
 from bot.extract.llm import ExtractionCall
 from bot.extract.pipeline import Pipeline, plan_burst, urgent
 from bot.extract.schema import Amendment, Extraction
+from bot.infrastructure.config import Settings
+from bot.infrastructure.db import Repo
 
 from .conftest import PING_TIME, TZ, kl
 

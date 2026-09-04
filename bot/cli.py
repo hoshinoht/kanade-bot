@@ -30,7 +30,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .audit import HEADER_BOSSCTL
+from .infrastructure.audit import HEADER_BOSSCTL
 
 DEFAULT_URL = "http://127.0.0.1:8080"
 #: Ordinary calls are local and instant; the read budget covers a `digest` or a
@@ -62,7 +62,7 @@ class ApiFailed(Exception):
 def os_user() -> str:
     """The operating-system user, for the audit trail's benefit.
 
-    Sent as :data:`bot.audit.HEADER_BOSSCTL` so a change made from a terminal
+    Sent as :data:`bot.infrastructure.audit.HEADER_BOSSCTL` so a change made from a terminal
     is attributable to a person rather than to "the token". It is a label, not
     a credential -- the request still carries ADMIN_TOKEN, and the bot ignores
     the header from anywhere but the machine it is running on.
@@ -493,7 +493,7 @@ def resolve_member(who: str) -> dict:
     Typing an id is what the API wants, but nobody remembers snowflakes, so the
     same name-matching the bot uses in chat is applied to the roster here.
     """
-    from .util import match_roster
+    from .agent.util import match_roster
 
     rows = api().get("/api/members", with_role=False)
     exact = [m for m in rows if m["user_id"] == who.strip()]

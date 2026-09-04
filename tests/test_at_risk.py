@@ -14,11 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot import formatting
-from bot.client import BossBot
-from bot.db import Repo
-from bot.materialise import DAY_OF, reminder_specs
-from bot.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
+from bot.agent import formatting
+from bot.agent.client import BossBot
+from bot.agent.materialise import DAY_OF, reminder_specs
+from bot.agent.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
+from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, TZ, kl
 from .fake_bot import WATCHED_CHANNEL
@@ -168,7 +168,7 @@ def test_the_countdown_does_not_ping_the_person_who_declined(repo):
     """Built exactly as `_send_countdown` builds it: everyone else on the run is
     pinged, and the decliner is named -- the party can see who is out -- but
     their phone stays quiet."""
-    from bot.pings import audience
+    from bot.agent.pings import audience
 
     repo.upsert_member(1001, "Alvin tan", None, True)
     repo.upsert_member(1002, "kanon [AZUR]", "kanon", True)

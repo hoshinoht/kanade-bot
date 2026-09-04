@@ -19,7 +19,7 @@ import pytest
 
 from bot.chat import persona
 from bot.chat.agent import ANCHOR_CACHE, ChatPilot, ChatTurn
-from bot.timeutil import utcnow
+from bot.domain.timeutil import utcnow
 
 from .chat_support import (
     BOT_USER_ID,

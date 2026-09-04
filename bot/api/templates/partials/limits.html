@@ -103,43 +103,45 @@
     Everybody holding the chat-pilot role, read live from Discord. Staff are exempt from
     every budget, so their allowance is not a number anything reads.
   </p>
-  <table>
-    <thead>
-      <tr><th>Member</th><th>User id</th><th>Allowance</th><th>This window</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for row in limits.pilots %}
-      <tr>
-        <td>
-          {{ row.name }}
-          {% if row.staff %}<span class="chip">staff</span>
-          {% elif row.overridden %}<span class="chip">own allowance</span>{% endif %}
-        </td>
-        <td class="mono">{{ row.user_id }}</td>
-        <td class="mono">
-          {% if row.staff %}<span class="id">exempt</span>
-          {% else %}{{ row.count }} per {{ "%g"|format(row.window_s) }}s{% endif %}
-        </td>
-        <td class="mono">
-          {% if row.staff %}—
-          {% elif row.has_window %}{{ row.used }} used, {{ row.remaining }} left
-          {% else %}<span class="id">idle</span>{% endif %}
-        </td>
-        <td class="rowbtns">
-          {# Staff get no controls: every one of them would change a number
-             that nothing consults for them. #}
-          {% if not row.staff %}
-          {# A link, not script: it opens the Allowance tab with the form
-             filled in, so prefilling works with htmx and JavaScript both off. #}
-          <a class="btn" href="/limits?user={{ row.user_id }}#set-allowance">Set</a>
-          {% if row.overridden %}{{ clear_override(row.user_id) }}{% endif %}
-          {% if row.has_window %}{{ reset_window(row.user_id) }}{% endif %}
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Member</th><th>User id</th><th>Allowance</th><th>This window</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in limits.pilots %}
+        <tr>
+          <td>
+            {{ row.name }}
+            {% if row.staff %}<span class="chip">staff</span>
+            {% elif row.overridden %}<span class="chip">own allowance</span>{% endif %}
+          </td>
+          <td class="mono">{{ row.user_id }}</td>
+          <td class="mono">
+            {% if row.staff %}<span class="id">exempt</span>
+            {% else %}{{ row.count }} per {{ "%g"|format(row.window_s) }}s{% endif %}
+          </td>
+          <td class="mono">
+            {% if row.staff %}—
+            {% elif row.has_window %}{{ row.used }} used, {{ row.remaining }} left
+            {% else %}<span class="id">idle</span>{% endif %}
+          </td>
+          <td class="rowbtns">
+            {# Staff get no controls: every one of them would change a number
+               that nothing consults for them. #}
+            {% if not row.staff %}
+            {# A link, not script: it opens the Allowance tab with the form
+               filled in, so prefilling works with htmx and JavaScript both off. #}
+            <a class="btn" href="/limits?user={{ row.user_id }}#set-allowance">Set</a>
+            {% if row.overridden %}{{ clear_override(row.user_id) }}{% endif %}
+            {% if row.has_window %}{{ reset_window(row.user_id) }}{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
 </section>
 
@@ -246,4 +248,3 @@
   </div>
   {% endif %}
 </section>
-

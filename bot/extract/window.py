@@ -15,8 +15,8 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..timeutil import utcnow
-from ..weeks import current_week_start, week_start
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import current_week_start, week_start
 
 #: Silence that ends a burst when replaying history. The live debounce is 90 s;
 #: history is replayed with a much wider gap because a planning thread is not

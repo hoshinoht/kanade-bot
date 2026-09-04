@@ -23,8 +23,8 @@ Three properties the rest of the bot depends on:
   the case that actually runs in those tests.
 * It **never raises**. Nothing here is worth failing a mutation over.
 
-It lives at the top of the package rather than under :mod:`bot.api` so
-:mod:`bot.modellock` can import it: the lock is held by the extractor and the
+It lives outside the API package so :mod:`bot.infrastructure.modellock` can
+import it: the lock is held by the extractor and the
 chatbot, neither of which should have to know the HTTP layer exists.
 """
 

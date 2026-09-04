@@ -4,7 +4,7 @@ Structured so that the interesting parts are testable without a gateway or a
 model. :meth:`ChatPilot.offer` is the only entry point and does no reasoning of
 its own -- it asks :mod:`bot.chat.gate` whether to answer, holds a per-channel
 lock so one channel cannot have two answers in flight, takes the host's one
-model lock (:mod:`bot.modellock`) so the whole machine cannot, and hands the
+model lock (:mod:`bot.infrastructure.modellock`) so the whole machine cannot, and hands the
 assembled conversation to :meth:`ChatPilot.generate`, which is the part with the
 model in it.
 
@@ -44,13 +44,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import behaviour_plugins, events
+from bot.agent.util import is_bot_admin
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import current_week_start
+from bot.infrastructure import events
+from bot.infrastructure.modellock import (
+    FOLLOWUP,
+    MODEL_LOCK,
+    acquire_within,
+    chat_label,
+    held,
+    release,
+)
+from bot.infrastructure.watch import origin_ids
+
+from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages
-from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
-from ..timeutil import utcnow
-from ..util import is_bot_admin
-from ..watch import origin_ids
-from ..weeks import current_week_start
 from . import followup, gate, persona, tools
 from .ratelimit import RateLimiter
 
@@ -223,6 +232,12 @@ class Generation:
     #: One per tool call, with its arguments, duration and outcome.
     outcomes: list[tools.ToolOutcome] = field(default_factory=list)
     created: list[str] = field(default_factory=list)
+    #: Only amendments whose cards were successfully posted. ``created`` also
+    #: includes rows left behind when Discord rejected the card post.
+    posted: list[str] = field(default_factory=list)
+    #: Provider-returned material from each model round, in order. This is
+    #: diagnostic data only; it never changes the messages replayed to the model.
+    model_rounds: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     latency_ms: int = 0
     #: The two named parts of ``latency_ms``: time waiting on the model, summed
@@ -264,18 +279,32 @@ def _client(settings: Any, host: str | None = None):
     return AsyncClient(host=host or settings.ollama_host, timeout=settings.chat_pilot_timeout)
 
 
-def _message_text(response: Any) -> tuple[str, list]:
-    """``(content, tool_calls)`` from a ChatResponse, tolerating a plain dict."""
+def _message_parts(response: Any) -> tuple[str | None, str | None, list]:
+    """Raw content, thinking and calls from a response or dict stand-in."""
     message = getattr(response, "message", None)
     if message is None and isinstance(response, dict):
         message = response.get("message")
     if message is None:
-        return "", []
+        return None, None, []
     if isinstance(message, dict):
-        return (message.get("content") or "").strip(), list(message.get("tool_calls") or [])
-    content = getattr(message, "content", None)
-    calls = getattr(message, "tool_calls", None)
-    return (content or "").strip(), list(calls or [])
+        content = message.get("content")
+        thinking = message.get("thinking")
+        calls = message.get("tool_calls")
+    else:
+        content = getattr(message, "content", None)
+        thinking = getattr(message, "thinking", None)
+        calls = getattr(message, "tool_calls", None)
+    return (
+        content if isinstance(content, str) else None,
+        thinking if isinstance(thinking, str) else None,
+        list(calls or []),
+    )
+
+
+def _message_text(response: Any) -> tuple[str, list]:
+    """``(content, tool_calls)`` from a ChatResponse, tolerating a plain dict."""
+    content, _thinking, calls = _message_parts(response)
+    return (content or "").strip(), calls
 
 
 def _usage(response: Any) -> tuple[int | None, int | None]:
@@ -320,10 +349,13 @@ def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
     return [
         {
             "name": outcome.name or "?",
+            "round": outcome.round,
             "arguments": _brief(outcome.arguments),
+            "output": outcome.output,
             "ms": outcome.duration_ms,
             "outcome": outcome.outcome,
             "created": list(outcome.created),
+            "posted": list(outcome.posted),
         }
         for outcome in outcomes
     ]
@@ -362,6 +394,87 @@ def _tidy_blank_lines(text: str) -> str:
         if not between_runs:
             compact.append(line)
     return "\n".join(compact)
+
+
+_EMPTY_PLACEHOLDER_RE = re.compile(r"`?<\s*none\s*>`?", re.IGNORECASE)
+_SCHEDULE_CALL_RE = re.compile(r"`?\bget_schedule\s*\([^)]*\)`?", re.IGNORECASE | re.DOTALL)
+_SCHEDULE_ARGUMENT_RE = re.compile(
+    r"`?(?:\b(?P<assigned>participant|scope|week|day)\s*=|"
+    r"['\"](?P<json>participant|scope|week|day)['\"]\s*:)\s*"
+    r"(?:(?P<quote>['\"])(?P<quoted>[^'\"]+)(?P=quote)|"
+    r"(?P<bare><@(?:[!&])?\d+>|[\w-]+))`?",
+    re.IGNORECASE,
+)
+_BARE_SCHEDULE_RE = re.compile(
+    r"what(?:'s|s| is)\s+(?:on|for)\s+"
+    r"(?:today|tonight|tomorrow|tmr|tmrw|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|"
+    r"thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)(?:\s+(?:in this channel|here))?",
+    re.IGNORECASE,
+)
+_SCHEDULE_QUESTION_RE = re.compile(r"what(?:'s|s| is)\s+(?:on|for)\s+.+", re.IGNORECASE)
+_CHANNEL_QUALIFIER_RE = re.compile(r"\b(?:this channel|in here|here|our runs)\b", re.IGNORECASE)
+_PERSON_QUALIFIER_RE = re.compile(
+    r"\b(?:for me|my runs|my schedule|am i|do i|i am|i'm|myself)\b|<@!?\d+>",
+    re.IGNORECASE,
+)
+
+
+def _schedule_defaults(
+    text: str, bot_user_id: str | None, self_role_id: str | None
+) -> tuple[bool, bool]:
+    """Trusted ``(all channels, whole group)`` defaults for this message.
+
+    Narrow on purpose: schema guidance handles varied natural language, while
+    this guard covers complete schedule/date questions without breaking
+    contextual follow-ups such as "and tomorrow?". Only the bot's own mentions
+    are routing noise; another member's mention remains a person qualifier.
+    """
+    cleaned = text or ""
+    if bot_user_id:
+        cleaned = re.sub(rf"<@!?{re.escape(bot_user_id)}>", " ", cleaned)
+    if self_role_id:
+        cleaned = re.sub(rf"<@&{re.escape(self_role_id)}>", " ", cleaned)
+    cleaned = re.sub(r"[?!.,]+\s*$", "", cleaned).strip()
+    all_channels = re.search(r"\b(?:whole server|all channels)\b", cleaned, re.I)
+    whole_group = re.search(r"\b(?:whole group|everyone)\b", cleaned, re.I)
+    complete_question = _SCHEDULE_QUESTION_RE.fullmatch(cleaned) is not None
+    explicit_channel = _CHANNEL_QUALIFIER_RE.search(cleaned) is not None
+    explicit_person = _PERSON_QUALIFIER_RE.search(cleaned) is not None
+    force_all = bool(all_channels or whole_group) or (complete_question and not explicit_channel)
+    force_group = _BARE_SCHEDULE_RE.fullmatch(cleaned) is not None or (
+        bool(whole_group) and not explicit_person
+    )
+    return force_all, force_group
+
+
+def _member_facing(text: str) -> str:
+    """Remove narrowly evidenced scheduler internals from a model reply.
+
+    Raw model rounds and tool arguments remain untouched for the portal. This is
+    only the version posted to Discord, remembered and stored as the reply.
+    Discord channel references are deliberately not matched: a broad ``<...>``
+    cleanup would destroy valid ``<#channel_id>`` links.
+    """
+    cleaned = _EMPTY_PLACEHOLDER_RE.sub("", text or "")
+    cleaned = _SCHEDULE_CALL_RE.sub("the schedule", cleaned)
+
+    def natural_argument(match: re.Match) -> str:
+        name = (match.group("assigned") or match.group("json")).lower()
+        value = match.group("quoted") or match.group("bare") or ""
+        if value.startswith("<@"):
+            return "the named person"
+        natural = {
+            ("participant", "me"): "your own runs",
+            ("scope", "channel"): "this channel",
+            ("scope", "all"): "all channels",
+            ("week", "this"): "this boss week",
+            ("week", "next"): "next boss week",
+        }.get((name, value.lower()), value)
+        return natural
+
+    cleaned = _SCHEDULE_ARGUMENT_RE.sub(natural_argument, cleaned)
+    cleaned = re.sub(r"\b(?:call|use)\s+get_schedule\b", "check the schedule", cleaned, flags=re.I)
+    return re.sub(r"\bget_schedule\b", "the schedule lookup", cleaned, flags=re.I)
 
 
 def unglue_first_bullet(text: str) -> str:
@@ -573,6 +686,7 @@ class ChatPilot:
         # ``_require_authority``). Evaluating it twice would risk the two
         # disagreeing about who is staff for one message.
         is_admin = self._is_admin(getattr(message, "author", None))
+        self_role_id = self._self_role_id(message)
         decision = gate.decide(
             message,
             self.settings,
@@ -581,7 +695,7 @@ class ChatPilot:
             is_admin=is_admin,
             limiter=self.limiter,
             global_limiter=self.global_limiter,
-            self_role_id=self._self_role_id(message),
+            self_role_id=self_role_id,
             replied_author_id=replied_author_id,
         )
         if decision.act or decision.busy:
@@ -648,7 +762,17 @@ class ChatPilot:
             # send -- rather than round each model call. Releasing between rounds
             # would let an extraction take the model in the middle of a
             # conversation and stretch one answer past its own timeout.
-            return Handling(True, "ok", await self._answer(message, channel_id, is_admin))
+            return Handling(
+                True,
+                "ok",
+                await self._answer(
+                    message,
+                    channel_id,
+                    is_admin,
+                    bot_user_id=str(bot_user_id) if bot_user_id is not None else None,
+                    self_role_id=str(self_role_id) if self_role_id is not None else None,
+                ),
+            )
         finally:
             release()
             self._busy.discard(channel_id)
@@ -814,7 +938,7 @@ class ChatPilot:
         self._replied[key] = author_id
 
     def _is_admin(self, user: Any) -> bool:
-        """The existing "who runs this bot" rule (:func:`bot.util.is_bot_admin`).
+        """The existing "who runs this bot" rule (:func:`bot.agent.util.is_bot_admin`).
 
         Two callers, one rule: the gate uses it as the chat role's stand-in and
         as the rate-limit exemption, and it rides along on the
@@ -849,14 +973,29 @@ class ChatPilot:
         )
         return behaviour_plugins.overlay(configured, role_ids)
 
-    async def _answer(self, message: Any, channel_id: str, is_admin: bool = False) -> Generation:
+    async def _answer(
+        self,
+        message: Any,
+        channel_id: str,
+        is_admin: bool = False,
+        *,
+        bot_user_id: str | None = None,
+        self_role_id: str | None = None,
+    ) -> Generation:
         author_id = str(message.author.id)
         text = (message.content or "").strip()
+        force_all_channels, force_group_schedule = _schedule_defaults(
+            text, bot_user_id, self_role_id
+        )
         context = tools.ToolContext(
             bot=self.bot,
             author_id=author_id,
             channel_id=channel_id,
             message_id=str(message.id),
+            bot_user_id=bot_user_id,
+            self_role_id=self_role_id,
+            force_all_channels=force_all_channels,
+            force_group_schedule=force_group_schedule,
             is_admin=is_admin,
         )
         overlay = self.reply_overlay(message.author)
@@ -887,7 +1026,7 @@ class ChatPilot:
             result.rounds,
             len(result.tool_calls),
             f": {result.trace}" if result.outcomes else "",
-            f" -> proposal {', '.join(result.created)}" if result.created else "",
+            f" -> proposal {', '.join(result.posted)}" if result.posted else "",
             f" [{result.error}]" if result.error else "",
         )
         self._record(getattr(message, "id", None), channel_id, author_id, text, reply, result)
@@ -905,7 +1044,7 @@ class ChatPilot:
         """Write the interaction to the database. Never raises.
 
         The same rule the whole module runs on, and the same one
-        :attr:`bot.db.Repo.on_run_changed` follows: the member's answer has
+        :attr:`bot.infrastructure.db.Repo.on_run_changed` follows: the member's answer has
         already been posted by the time this runs, and a bookkeeping row that
         cannot be written is a line in the log, not a failed conversation.
 
@@ -932,6 +1071,7 @@ class ChatPilot:
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
                 tool_calls=tool_trace(result.outcomes),
+                model_rounds=result.model_rounds,
             )
         except Exception:  # noqa: BLE001 - analytics must never cost an answer
             log.exception("chat: could not record the interaction")
@@ -946,7 +1086,7 @@ class ChatPilot:
     ) -> Handling:
         """A ❌ landed on a card the pilot posted: ask what it should be instead.
 
-        Called from :meth:`bot.client.BossBot._handle_proposal_reaction` after
+        Called from :meth:`bot.agent.client.BossBot._handle_proposal_reaction` after
         the amendments have been rejected, and does nothing at all unless
         :func:`bot.chat.followup.scope` says this rejection is the pilot's --
         see there for the gates, and for why the question is built from the row
@@ -956,7 +1096,7 @@ class ChatPilot:
         deliberately **synchronous**. This runs on the event loop, so a stretch
         with no ``await`` in it cannot be interleaved: two ❌ arriving together
         cannot both find the channel free, and cannot both claim the card. The
-        claim (:meth:`bot.db.Repo.claim_chat_followup`) is a single atomic
+        claim (:meth:`bot.infrastructure.db.Repo.claim_chat_followup`) is a single atomic
         statement as well, so the promise survives a future edit that puts an
         ``await`` in the middle of this.
 
@@ -1434,9 +1574,40 @@ class ChatPilot:
         except Exception as exc:  # noqa: BLE001 - chat must never break the bot
             result.error = f"{type(exc).__name__}: {exc}"
             log.exception("chat: the model call failed")
+        self._finalize_write_reply(result)
+        if result.reply:
+            result.reply = self._tidy(_member_facing(result.reply))
         result.created = list(context.created)
+        result.posted = list(context.posted)
         result.latency_ms = int((time.monotonic() - started) * 1000)
         return result
+
+    def _finalize_write_reply(self, result: Generation) -> None:
+        """Replace an unresolved write claim with the tool's real answer.
+
+        The last card tool decides this, structurally rather than by trying to
+        recognise phrases such as "posted" in model prose. A successful retry
+        appears later in the trace and therefore wins over an earlier refusal.
+        A refusal may keep the short clarification question the operating rules
+        ask the model to write; a failure, or declarative prose after a refusal,
+        cannot stand in for a card that never reached Discord.
+        """
+        for outcome in reversed(result.outcomes):
+            if not tools.is_write_tool(outcome.name):
+                continue
+            if outcome.ok and outcome.posted:
+                return
+            if outcome.error == tools.REFUSED and result.reply.rstrip().endswith("?"):
+                return
+            if result.reply:
+                detail = self._tidy(outcome.output)
+                status = (
+                    "The requested card was posted, but the request did not finish cleanly."
+                    if outcome.posted
+                    else "The requested card was not posted."
+                )
+                result.reply = self._tidy(status + (f" {detail}" if detail else ""))
+            return
 
     async def _loop(
         self,
@@ -1459,10 +1630,19 @@ class ChatPilot:
                 context=context,
                 role_overlay=role_overlay,
             )
-            content, calls = _message_text(response)
+            raw_content, thinking, calls = _message_parts(response)
+            content = (raw_content or "").strip()
             model_ms = int((time.monotonic() - asked_at) * 1000)
             result.model_ms += model_ms
             result.add_usage(*_usage(response))
+            result.model_rounds.append(
+                {
+                    "round": round_number,
+                    "content": raw_content,
+                    "thinking": thinking,
+                    "requested_tools": [_call_parts(call)[0] for call in calls],
+                }
+            )
             log.debug(
                 "chat: round %d/%d model answered in %d ms (%s%s)",
                 round_number,
@@ -1479,13 +1659,14 @@ class ChatPilot:
                 name, arguments = _call_parts(call)
                 result.tool_calls.append(name)
                 outcome = await tools.run(context, name, arguments)
+                outcome.round = round_number
                 result.outcomes.append(outcome)
                 result.tools_ms += outcome.duration_ms
-                if outcome.ok and outcome.created:
+                if outcome.ok and outcome.posted:
                     # The one place the pilot learns a write tool actually
                     # posted something. The last id wins: a later card in the
                     # same turn is the one on screen.
-                    self.note_card(context.channel_id, outcome.created[-1])
+                    self.note_card(context.channel_id, outcome.posted[-1])
                 # The line that answers "why did it propose that": the arguments
                 # the model actually passed, and whether the tool obeyed.
                 log.debug(
@@ -1496,7 +1677,7 @@ class ChatPilot:
                     _brief(outcome.arguments),
                     outcome.outcome,
                     outcome.duration_ms,
-                    f" card {', '.join(outcome.created)}" if outcome.created else "",
+                    f" card {', '.join(outcome.posted)}" if outcome.posted else "",
                 )
                 messages.append({"role": "tool", "name": name, "content": outcome.output})
         # Four rounds of tools and still nothing said.
@@ -1581,7 +1762,7 @@ class ChatPilot:
     async def _post(self, message: Any, content: str) -> Any:
         """Reply in the channel, notifying the asker and nobody else.
 
-        Through :meth:`bot.client.BossBot.post_plain`, which is the bot's one
+        Through :meth:`bot.agent.client.BossBot.post_plain`, which is the bot's one
         plain-message path: it builds the explicit allow-list, applies quiet
         mode, and refuses ``@everyone`` from any caller. Nothing here constructs
         an ``AllowedMentions`` of its own, so the chatbot cannot become a second
