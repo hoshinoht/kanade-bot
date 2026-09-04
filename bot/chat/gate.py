@@ -26,8 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..config import Settings
-from ..watch import is_watched
+from bot.infrastructure.config import Settings
+from bot.infrastructure.watch import is_watched
 
 #: The three things the bot ever says with a reaction, and only ever to somebody
 #: whose message it accepted or would have. Every other refusal stays silent.
@@ -269,7 +269,7 @@ def decide(
     must not widen how much of the machine the guild can consume in an hour.
 
     ``is_admin`` is the existing "who runs this bot" rule
-    (:func:`bot.util.is_bot_admin`) and does two things here: it stands in for
+    (:func:`bot.agent.util.is_bot_admin`) and does two things here: it stands in for
     the chat role, and it exempts the holder from both budgets. Staff being
     silently ignored by their own bot is a support ticket nobody can debug from
     inside Discord -- and anyone who can already `/say`, `/debug` and approve

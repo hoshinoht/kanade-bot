@@ -24,7 +24,7 @@ services:
       # from `.env` if you want to switch between them.
       # Missing, it falls back to the tracked persona.example.md, warns in the
       # log, and says so on the Config page's Chatbot panel.
-      PERSONA_PATH: /app/personas/yuuki-sakuna.md
+      PERSONA_PATH: /app/personas/persona.md
       # A container's loopback is its own namespace, so binding 127.0.0.1 here
       # would make the published port unreachable. "Never leaves the host" is
       # enforced by the `ports:` mapping below, not by this value.
@@ -46,7 +46,7 @@ services:
       # and a copy nobody can see from the host is not much of a backup. The
       # bot writes one snapshot a day here, so `data/backups` on the Mac holds
       # the last fortnight. Consistency comes from SQLite's backup API
-      # (`bot.backup`), never from copying the WAL file underneath it.
+       # (`bot.infrastructure.backup`), never from copying the WAL file underneath it.
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
       # Base personas are still edited as host files. The portal also stores

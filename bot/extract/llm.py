@@ -5,7 +5,7 @@ a time (:data:`MODEL_LOCK`) and ``keep_alive=-1`` keeps it resident between
 bursts -- otherwise every call pays to reload the weights.
 
 The lock is re-exported here rather than owned here: it is
-:data:`bot.modellock.MODEL_LOCK`, and the chatbot takes the same one. An
+:data:`bot.infrastructure.modellock.MODEL_LOCK`, and the chatbot takes the same one. An
 extraction therefore waits for a chat answer exactly as it waits for another
 extraction, which is the point -- the host has one model, not one per feature.
 
@@ -25,8 +25,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ..config import Settings
-from ..modellock import EXTRACTOR, MODEL_LOCK, held
+from bot.infrastructure.config import Settings
+from bot.infrastructure.modellock import EXTRACTOR, MODEL_LOCK, held
+
 from .schema import Extraction, json_schema
 
 log = logging.getLogger(__name__)

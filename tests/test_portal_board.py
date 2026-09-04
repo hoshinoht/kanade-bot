@@ -221,7 +221,7 @@ def test_seven_busy_days_scroll_rather_than_shrink_below_legible():
 
 
 def test_today_is_marked(fake_bot, seeded):
-    from bot.timeutil import utcnow
+    from bot.domain.timeutil import utcnow
 
     today = utcnow().astimezone(TZ).date().strftime("%Y-%m-%d")
     columns = service.board_columns(fake_bot, "this", [])
@@ -289,7 +289,7 @@ def test_the_mark_on_a_discord_card_is_the_labels_own_emoji():
     card in Discord should not meet a second glyph on the next one -- which is a
     fact about the bot's own messages and the API that quotes them. The portal
     draws these six states instead; see `test_portal_icons.py`."""
-    from bot import formatting
+    from bot.agent import formatting
 
     assert set(formatting.STATUS_MARK) == set(formatting.STATUS_LABEL)
     for status, label in formatting.STATUS_LABEL.items():
@@ -489,7 +489,7 @@ def synthetic_run(short: str, hours: float, status: str = "planned", unanswered:
     """A run view with only the keys the strip reads, at a known distance from now."""
     from datetime import timedelta
 
-    from bot.timeutil import to_iso, utcnow
+    from bot.domain.timeutil import to_iso, utcnow
 
     return {
         "id": f"id-{short}",

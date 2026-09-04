@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from bot.db import SCHEMA_VERSION, Repo
+from bot.infrastructure.db import SCHEMA_VERSION, Repo
 
 # The v1 shape, trimmed to what the migration has to reason about.
 V1_SQL = """
@@ -123,8 +123,8 @@ def test_derived_rows_are_rebuilt_empty(v1_db):
 def test_the_carried_baselines_rematerialise(v1_db):
     from datetime import time
 
-    from bot.materialise import materialise_week
-    from bot.weeks import current_week_start
+    from bot.agent.materialise import materialise_week
+    from bot.domain.weeks import current_week_start
 
     from .conftest import COUNTDOWNS, RESET_TIME, RESET_WEEKDAY, TZ
 

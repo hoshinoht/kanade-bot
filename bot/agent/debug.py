@@ -23,12 +23,13 @@ from zoneinfo import ZoneInfo
 import discord
 from discord import app_commands
 
+from bot.domain.ids import IdError, resolve_id, short_id
+from bot.domain.timeutil import from_iso, utcnow
+from bot.extract.window import WINDOWS
+
 from . import formatting
-from .extract.window import WINDOWS
-from .ids import IdError, resolve_id, short_id
 from .materialise import DAY_OF, countdown_minutes
 from .pings import audience
-from .timeutil import from_iso, utcnow
 from .util import is_bot_admin
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -59,7 +60,7 @@ def may_debug(
 ) -> bool:
     """Whoever runs the bot, plus anyone explicitly listed in ``DEBUG_USER_IDS``.
 
-    The first part is exactly `/say`'s rule (:func:`bot.util.is_bot_admin`):
+    The first part is exactly `/say`'s rule (:func:`bot.agent.util.is_bot_admin`):
     ``ADMIN_ROLE_ID``, the guild owner, or Discord's Administrator permission.
     The allow-list stays on top of it, so a tester who is deliberately not an
     admin keeps the access the operator gave them on purpose.
@@ -169,7 +170,7 @@ KIND_CHOICES = [
     for n in ("day_of", "countdown_60", "countdown_15", "amend", "decline")
 ]
 
-#: Declared here rather than imported from `bot.commands`, which imports this
+#: Declared here rather than imported from `bot.agent.commands`, which imports this
 #: module -- the labels live with the windows themselves.
 WINDOW_CHOICES = [app_commands.Choice(name=value, value=value) for value in WINDOWS]
 
@@ -438,8 +439,9 @@ class DebugGroup(app_commands.Group):
     async def extract(
         self, interaction: discord.Interaction, window: app_commands.Choice[str] | None = None
     ) -> None:
+        from bot.infrastructure.watch import origin_ids
+
         from .commands import DEFAULT_WINDOW, rescan_summary
-        from .watch import origin_ids
 
         bot = _bot(interaction)
         if not bot.is_watched(interaction.channel):

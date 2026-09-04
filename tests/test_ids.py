@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from bot.ids import (
+from bot.domain.ids import (
     MIN_PREFIX,
     IdAmbiguous,
     IdNotFound,

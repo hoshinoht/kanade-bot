@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from bot.chat import tools
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .chat_support import CHAT_CHANNEL
 from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
@@ -61,7 +61,7 @@ async def test_channel_scope_says_it_is_channel_only(chat_bot, chat_seeded):
 
 async def test_a_thread_asks_on_behalf_of_its_parent_channel(chat_bot, chat_seeded):
     """`ToolContext.channel_id` is already parent-resolved by `origin_ids`."""
-    from bot.watch import origin_ids
+    from bot.infrastructure.watch import origin_ids
 
     from .chat_support import thread_in
 

@@ -16,9 +16,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from bot.chat.gate import GLOBAL_KEY
-from bot.chat.ratelimit import RateLimiter
-from bot.commands import (
+from bot.agent.commands import (
     BAR_EMPTY,
     BAR_FILLED,
     BAR_SEGMENTS,
@@ -27,6 +25,8 @@ from bot.commands import (
     register_commands,
     usage_bar,
 )
+from bot.chat.gate import GLOBAL_KEY
+from bot.chat.ratelimit import RateLimiter
 
 from .chat_support import ADMIN_ROLE, CHAT_CHANNEL, CHAT_ROLE, FakeAuthor
 from .fake_bot import OWNER_ID

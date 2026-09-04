@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.bosses import BossTable
-from bot.db import Repo
+from bot.domain.bosses import BossTable
+from bot.infrastructure.db import Repo
 
 from .fake_bot import FakeBot, FakeChannel, FakeMe, make_settings
 
@@ -273,8 +273,8 @@ def seed(bot: FakeBot) -> dict:
     Returned as ids so a test can name what it means. The roster names are the
     suite's existing placeholders; nothing here is a real member.
     """
-    from bot.materialise import materialise_week
-    from bot.weeks import current_week_start
+    from bot.agent.materialise import materialise_week
+    from bot.domain.weeks import current_week_start
 
     from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
     from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL

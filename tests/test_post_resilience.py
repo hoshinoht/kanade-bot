@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import discord
 import pytest
 
-from bot.client import POST_ATTEMPTS, BossBot
+from bot.agent.client import POST_ATTEMPTS, BossBot
 
 
 class FakeMessage:
@@ -121,7 +121,7 @@ def test_a_posted_card_is_not_lost_when_its_reactions_fail(bot, no_waiting):
 
 
 def test_a_good_post_still_gets_both_reactions(bot, no_waiting):
-    from bot.rsvp import EMOJI_NO, EMOJI_YES
+    from bot.agent.rsvp import EMOJI_NO, EMOJI_YES
 
     channel = FakeChannel(FakeMessage())
     message = asyncio.run(bot._post(channel, "a card"))

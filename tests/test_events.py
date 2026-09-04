@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from bot import events
+from bot.infrastructure import events
 
 from .fake_bot import WATCHED_CHANNEL
 
@@ -198,7 +198,7 @@ def nudges(monkeypatch):
 
 
 async def test_taking_and_giving_back_the_model_both_nudge(nudges, model_lock):
-    from bot import modellock
+    from bot.infrastructure import modellock
 
     async with modellock.held(modellock.EXTRACTOR):
         assert nudges == [events.LIMITS]
@@ -206,7 +206,7 @@ async def test_taking_and_giving_back_the_model_both_nudge(nudges, model_lock):
 
 
 async def test_the_bounded_acquire_and_its_release_nudge_too(nudges, model_lock):
-    from bot import modellock
+    from bot.infrastructure import modellock
 
     assert await modellock.acquire_within(5, modellock.EXTRACTOR) is True
     modellock.release()

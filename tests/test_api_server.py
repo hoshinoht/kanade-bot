@@ -122,7 +122,7 @@ def test_the_limits_stream_delivers_an_event_over_a_real_connection(fake_bot):
     actually exercised. Everything about *what* the stream says is covered by
     driving the generator directly in `test_events.py`.
     """
-    from bot import events, modellock
+    from bot.infrastructure import events, modellock
 
     port = free_port()
     fake_bot.settings = make_settings(api_port=port, api_host="127.0.0.1")

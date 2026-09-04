@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.util import can_modify_fixed, can_modify_run, mention, parse_mentions
+from bot.agent.util import can_modify_fixed, can_modify_run, mention, parse_mentions
 
 RUN = {"id": 1, "participants": ["10", "20"], "status": "planned"}
 FIXED = {"id": 1, "owner_id": "10", "participants": ["10", "20"]}

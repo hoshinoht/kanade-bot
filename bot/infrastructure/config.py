@@ -2,7 +2,7 @@
 
 Only *deployment* values live here.  Values the guild may want to change at
 runtime (day-of ping time, countdown offsets, pause flag) are seeded from these
-on first run and then live in the ``config`` table -- see :mod:`bot.db`.
+on first run and then live in the ``config`` table -- see :mod:`bot.infrastructure.db`.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .weeks import parse_hhmm, parse_weekday
+from bot.domain.weeks import parse_hhmm, parse_weekday
 
 #: ``KEY=value   # note`` -- python-dotenv does not reliably strip these, and it
 #: hands the whole comment through as the value when ``value`` is blank.
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     #: a restart. Both lists empty = feature off.
     chat_pilot_category_ids: str = ""
     #: Replies per person per window before the bot goes quiet at them.
-    #: ``ADMIN_ROLE_ID`` holders are exempt (see :func:`bot.util.is_bot_admin`).
+    #: ``ADMIN_ROLE_ID`` holders are exempt (see :func:`bot.agent.util.is_bot_admin`).
     chat_pilot_rate_count: int = Field(default=4, ge=1)
     chat_pilot_rate_window_s: float = Field(default=300.0, gt=0)
     #: Answers per window across *everybody*, on top of the per-person limit
@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     #: spend from this pool nor are refused by it.
     chat_pilot_global_rate_count: int = Field(default=12, ge=1)
     chat_pilot_global_rate_window_s: float = Field(default=900.0, gt=0)
-    #: How long a question waits for the shared model (:data:`bot.modellock`)
+    #: How long a question waits for the shared model (:data:`bot.infrastructure.modellock`)
     #: before it is shed with 💬 rather than queued. Two seconds covers "the
     #: model was between calls"; past that the asker has moved on and a late
     #: reply is worse than a visible refusal. Staff instead wait

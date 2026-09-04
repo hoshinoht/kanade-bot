@@ -12,8 +12,8 @@ from datetime import time, timedelta
 
 import pytest
 
+from bot.agent.materialise import DAY_OF, countdown_kind, reconcile_day_of
 from bot.api import service
-from bot.materialise import DAY_OF, countdown_kind, reconcile_day_of
 from bot.portal_styles import build_stylesheet
 
 from .conftest import TZ, kl

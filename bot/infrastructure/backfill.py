@@ -73,7 +73,7 @@ async def record_source(
 
     Bot messages are skipped -- the bot's own reminders and cards must never
     become chat the extractor reads back. Messages are filed under the *parent*
-    channel (:func:`bot.watch.origin_ids`), so a thread's planning groups with
+    channel (:func:`bot.infrastructure.watch.origin_ids`), so a thread's planning groups with
     its channel's.
     """
     count = 0

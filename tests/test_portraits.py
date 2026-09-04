@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from bot import formatting
-from bot.bosses import BossTable
+from bot.agent import formatting
+from bot.domain.bosses import BossTable
 
 from .fake_bot import ADMIN_TOKEN
 
@@ -315,7 +315,7 @@ def test_a_card_with_no_table_asks_for_nothing():
 
 
 def test_the_embed_points_at_the_attachment(table_with_portraits):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     card = formatting.Card(content="hi", thumbnail_path=table_with_portraits.portrait_path("Star"))
     embed = BossBot._embed(card)
@@ -327,7 +327,7 @@ def test_an_embedless_card_stays_embedless():
 
 
 def BossBotEmbed(card):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     return BossBot._embed(card)
 
@@ -338,7 +338,7 @@ def test_a_thumbnail_alone_is_enough_to_warrant_an_embed(table_with_portraits):
 
 
 def test_a_missing_file_is_survived_not_raised(tmp_path):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     card = formatting.Card(content="hi", thumbnail_path=tmp_path / "gone.png")
     assert BossBot._attachments(card) == []

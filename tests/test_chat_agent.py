@@ -22,7 +22,7 @@ from bot.chat.agent import (
     retry_note,
     unglue_first_bullet,
 )
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .chat_support import (
     ADMIN_ROLE,
@@ -813,6 +813,6 @@ async def test_the_client_shuts_down_with_the_bot(chat_bot, chat_seeded):
     """`BossBot.close` must reach the chat pilot, or the connection pool leaks."""
     import inspect
 
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     assert "self.chat.close()" in inspect.getsource(BossBot.close)

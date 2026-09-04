@@ -6,9 +6,9 @@ import sqlite3
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from bot import formatting
-from bot.db import Repo
-from bot.materialise import DAY_OF, countdown_kind, is_stale, reconcile_day_of, reminder_specs
+from bot.agent import formatting
+from bot.agent.materialise import DAY_OF, countdown_kind, is_stale, reconcile_day_of, reminder_specs
+from bot.infrastructure.db import Repo
 
 TZ = ZoneInfo("Asia/Kuala_Lumpur")
 WS = datetime(2026, 8, 27, 0, 0, tzinfo=TZ)
@@ -220,7 +220,7 @@ def test_migrating_an_old_database_forward_is_additive(tmp_path):
     assert {"channel_id", "is_question", "payload", "day_ref"} <= cols
     assert repo._conn.execute("SELECT COUNT(*) FROM amendments").fetchone()[0] == 1
     assert repo.get_config("day_of_ping_time") == "09:00"
-    from bot.db import SCHEMA_VERSION
+    from bot.infrastructure.db import SCHEMA_VERSION
 
     # It walks all the way to the current schema, whatever that is now.
     assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION

@@ -18,11 +18,11 @@ from types import SimpleNamespace
 import pytest
 from discord import app_commands
 
-from bot import formatting
-from bot.client import CFG_QUIET, BossBot
-from bot.commands import SAY_LIMIT, NotAnAdmin, register_commands, say
-from bot.debug import DebugGroup, DebugNotAllowed, may_debug
-from bot.util import is_bot_admin, mentions_in
+from bot.agent import formatting
+from bot.agent.client import CFG_QUIET, BossBot
+from bot.agent.commands import SAY_LIMIT, NotAnAdmin, register_commands, say
+from bot.agent.debug import DebugGroup, DebugNotAllowed, may_debug
+from bot.agent.util import is_bot_admin, mentions_in
 
 from .fake_bot import OTHER_CHANNEL, OWNER_ID, WATCHED_CHANNEL, make_settings
 

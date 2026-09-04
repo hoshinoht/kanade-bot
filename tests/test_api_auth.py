@@ -89,7 +89,7 @@ def test_without_an_admin_token_everything_but_health_is_503(fake_bot):
 
 def test_an_admin_token_that_is_only_a_comment_reads_as_unset(monkeypatch):
     """`ADMIN_TOKEN=   # generate with ...` must not become the token itself."""
-    from bot.config import Settings
+    from bot.infrastructure.config import Settings
 
     monkeypatch.setenv("ADMIN_TOKEN", "#generate with: openssl rand -hex 32")
     settings = Settings(

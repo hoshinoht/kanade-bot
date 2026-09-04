@@ -6,11 +6,11 @@ import asyncio
 
 import pytest
 
-from bot import formatting
-from bot.client import CFG_LAST_DIGEST, BossBot
-from bot.ids import short_id
-from bot.materialise import materialise_week
-from bot.weeks import current_week_start
+from bot.agent import formatting
+from bot.agent.client import CFG_LAST_DIGEST, BossBot
+from bot.agent.materialise import materialise_week
+from bot.domain.ids import short_id
+from bot.domain.weeks import current_week_start
 
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 from .fake_bot import WATCHED_CHANNEL, FakeBot, make_settings
@@ -175,7 +175,7 @@ def test_a_restart_between_the_reset_and_the_first_tick_still_posts(fake_bot):
     """`materialise_weeks` runs on every `on_ready` and stamps the *materialised*
     week, so sharing that key would swallow the digest of any week the bot
     restarted into."""
-    from bot.client import CFG_LAST_WEEK
+    from bot.agent.client import CFG_LAST_WEEK
 
     digest(fake_bot, SUNDAY)
     fake_bot.repo.set_config(CFG_LAST_WEEK, "whatever on_ready wrote")
@@ -244,7 +244,7 @@ def test_a_pipeline_reads_the_runtime_flag_not_the_env_var(fake_bot):
 
 def test_build_repo_seeds_the_flag(tmp_path):
     from bot.__main__ import build_repo
-    from bot.client import CFG_EXTRACT
+    from bot.agent.client import CFG_EXTRACT
 
     from .fake_bot import make_settings
 

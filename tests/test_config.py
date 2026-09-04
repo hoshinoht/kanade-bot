@@ -7,7 +7,7 @@ from datetime import time
 import pytest
 from pydantic import ValidationError
 
-from bot.config import Settings
+from bot.infrastructure.config import Settings
 
 REQUIRED = {
     "discord_token": "token",

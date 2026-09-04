@@ -19,9 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from bot import formatting
+from bot.agent import formatting
 from bot.api import service
-from bot.bosses import BossTable
+from bot.domain.bosses import BossTable
 from bot.portal_styles import build_stylesheet
 
 PAGE_CSS = build_stylesheet()
@@ -511,7 +511,7 @@ def test_both_pictures_ride_one_message_under_different_names(table_with_both):
     """On disk they are both `Star.png`. Two attachments with one name make
     `attachment://Star.png` ambiguous, and Discord picks one -- which is how a
     550px splash lands in the thumbnail slot."""
-    from bot.client import IMAGE_PREFIX, BossBot
+    from bot.agent.client import IMAGE_PREFIX, BossBot
 
     from .conftest import TZ
 
@@ -531,7 +531,7 @@ def test_the_thumbnails_own_name_is_left_alone(table_with_both):
     """`edit_card` rewrites an embed without re-uploading anything, so every
     card already in the channel has an attachment called `Star.png`. Renaming
     that one would point every future edit at a name those messages lack."""
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     card = formatting.Card(content="hi", thumbnail_path=table_with_both.portrait_path("Star"))
 
@@ -548,7 +548,7 @@ def test_an_image_alone_is_enough_to_warrant_an_embed(table_with_both):
 
 
 def BossBotEmbed(card):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     return BossBot._embed(card)
 

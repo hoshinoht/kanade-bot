@@ -13,9 +13,9 @@ from datetime import timedelta
 import pytest
 
 from bot.chat import tools
+from bot.domain.ids import short_id
+from bot.domain.weeks import current_week_start
 from bot.extract.commit import commit, may_commit
-from bot.ids import short_id
-from bot.weeks import current_week_start
 
 from .chat_support import CHAT_CHANNEL
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ

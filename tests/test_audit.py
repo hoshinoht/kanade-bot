@@ -16,13 +16,13 @@ from types import SimpleNamespace
 
 from discord import app_commands
 
-from bot import audit
+from bot.agent.rsvp import EMOJI_YES
 from bot.api import create_app
 from bot.api.app import resolve_actor
 from bot.api.auth import HEADER_LOGIN
-from bot.audit import HEADER_BOSSCTL
-from bot.db import AUDIT_KEPT, SCHEMA_VERSION, Repo
-from bot.rsvp import EMOJI_YES
+from bot.infrastructure import audit
+from bot.infrastructure.audit import HEADER_BOSSCTL
+from bot.infrastructure.db import AUDIT_KEPT, SCHEMA_VERSION, Repo
 
 from .conftest import kl
 from .fake_bot import ADMIN_TOKEN, WATCHED_CHANNEL, make_settings
@@ -309,7 +309,7 @@ def test_an_answer_read_out_of_chat_names_the_person_who_gave_it(fake_bot, seede
 
 def test_a_tick_on_a_card_names_the_member_who_reacted(fake_bot, seeded):
     """The one change that always knows exactly whose decision it was."""
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     class Wired(BossBot):
         user = SimpleNamespace(id=5555555555555555555)
@@ -373,7 +373,7 @@ def test_a_slash_command_names_the_member_who_ran_it(fake_bot, seeded):
     surface that always knows exactly whose decision a change was, recorded as
     nobody's.
     """
-    from bot.commands import _set_status
+    from bot.agent.commands import _set_status
 
     fake_bot.is_admin = lambda _user: False
     interaction = SlashInteraction(fake_bot, user_id=1001)
@@ -387,7 +387,7 @@ def test_a_slash_command_names_the_member_who_ran_it(fake_bot, seeded):
 
 def test_a_slash_amend_names_the_member_who_ran_it(fake_bot, seeded):
     """`/amend` moves a run through the repository, never through the service."""
-    from bot.commands import amend
+    from bot.agent.commands import amend
 
     fake_bot.is_admin = lambda _user: False
     interaction = SlashInteraction(fake_bot, user_id=1001)
@@ -401,7 +401,7 @@ def test_a_slash_amend_names_the_member_who_ran_it(fake_bot, seeded):
 
 
 def test_a_slash_rsvp_names_the_member_who_ran_it(fake_bot, seeded):
-    from bot.commands import rsvp
+    from bot.agent.commands import rsvp
 
     interaction = SlashInteraction(fake_bot, user_id=1002)
 
@@ -413,7 +413,7 @@ def test_a_slash_rsvp_names_the_member_who_ran_it(fake_bot, seeded):
 
 
 def test_a_noop_pingtime_leaves_reminders_and_audit_alone(fake_bot, seeded):
-    from bot.commands import pingtime
+    from bot.agent.commands import pingtime
 
     fake_bot.repo.set_config("day_of_ping_time", "09:00")
     morning = next(
@@ -435,7 +435,7 @@ def test_a_noop_pingtime_leaves_reminders_and_audit_alone(fake_bot, seeded):
 
 def test_a_slash_fixed_remove_names_the_member_who_ran_it(fake_bot, seeded):
     """The `/fixed` group writes through the repository too."""
-    from bot.commands import FixedGroup
+    from bot.agent.commands import FixedGroup
 
     fake_bot.is_admin = lambda _user: False
     group = FixedGroup()
@@ -452,7 +452,7 @@ def test_a_slash_fixed_remove_names_the_member_who_ran_it(fake_bot, seeded):
 
 def test_stopping_a_rescan_from_discord_names_the_member(fake_bot):
     """`/rescan cancel:True` talks to the worker directly, not to the service."""
-    from bot.commands import _cancel_rescan
+    from bot.agent.commands import _cancel_rescan
 
     job = fake_bot.rescans.submit([str(WATCHED_CHANNEL)], window="week", source="slash")
     interaction = SlashInteraction(fake_bot, user_id=1001)
@@ -465,7 +465,7 @@ def test_stopping_a_rescan_from_discord_names_the_member(fake_bot):
 
 def test_a_refused_command_writes_nothing(fake_bot, seeded):
     """1003 is on the other party's run, so `/rsvp` turns them down."""
-    from bot.commands import rsvp
+    from bot.agent.commands import rsvp
 
     interaction = SlashInteraction(fake_bot, user_id=1003)
 

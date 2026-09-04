@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from bot.db import Repo
+from bot.agent.materialise import DAY_OF, countdown_kind
+from bot.domain.timeutil import utcnow
 from bot.extract.commit import (
     PROPOSAL_TTL,
     commit,
@@ -13,8 +14,7 @@ from bot.extract.commit import (
     reject,
     supersede,
 )
-from bot.materialise import DAY_OF, countdown_kind
-from bot.timeutil import utcnow
+from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 
@@ -558,7 +558,7 @@ def test_a_sub_with_nobody_joining_just_removes_the_person(repo: Repo, run):
 
 
 def test_removing_someone_clears_the_rsvp_they_left(repo: Repo, run):
-    from bot.rsvp import EMOJI_YES, apply_reaction
+    from bot.agent.rsvp import EMOJI_YES, apply_reaction
 
     apply_reaction(repo, run, ALVIN, EMOJI_YES, added=True)
     assert ALVIN in repo.get_rsvps(run["id"])
@@ -577,7 +577,7 @@ def test_removing_someone_clears_the_rsvp_they_left(repo: Repo, run):
 
 def test_removing_the_last_unanswered_person_settles_the_run(repo: Repo, run):
     """The roster-change recompute runs on a plain removal too."""
-    from bot.rsvp import EMOJI_YES, apply_reaction
+    from bot.agent.rsvp import EMOJI_YES, apply_reaction
 
     for uid in (MY, PRIYA):
         apply_reaction(repo, repo.get_run(run["id"]), uid, EMOJI_YES, added=True)
