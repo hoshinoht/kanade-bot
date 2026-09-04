@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import timedelta
 
 import pytest
 
@@ -474,6 +475,64 @@ async def test_a_write_tool_is_reported_back_with_its_card(chat_bot, chat_seeded
     assert chat_bot.repo.get_amendment(result.created[0])["status"] == "proposed"
 
 
+async def test_a_refused_move_cannot_be_replied_to_as_a_posted_card(chat_bot, chat_seeded):
+    """The model's final prose is not evidence that a card made it to Discord."""
+    star = chat_bot.repo.get_run(chat_seeded["star"])
+    chat_bot.repo.create_run(
+        week_start=star["week_start"],
+        bosses=["HStar"],
+        run_at=star["datetime"] + timedelta(days=2),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=star["channel_id"],
+    )
+    agent = pilot(
+        chat_bot,
+        wants("propose_move", run_query="hstar", to_when="sunday 22:00"),
+        says("Card's up — someone ✅ it."),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot move hstar to sunday 10pm"))).answered
+    assert result is not None
+    assert "not posted" in result.reply
+    assert "matches more than one run" in result.reply
+    assert "Card's up" not in result.reply
+    assert replies(chat_bot)[0].content == result.reply
+    assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == result.reply
+    row = chat_bot.repo.recent_chat_interactions()[0]
+    assert row["reply"] == result.reply
+    assert row["model_rounds"][-1]["content"] == "Card's up — someone ✅ it."
+
+
+async def test_a_successful_write_retry_supersedes_an_earlier_refusal(chat_bot, chat_seeded):
+    star = chat_bot.repo.get_run(chat_seeded["star"])
+    chat_bot.repo.create_run(
+        week_start=star["week_start"],
+        bosses=["HStar"],
+        run_at=star["datetime"] + timedelta(days=2),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=star["channel_id"],
+    )
+    agent = pilot(
+        chat_bot,
+        wants("propose_move", run_query="hstar", to_when="sunday 22:00"),
+        wants(
+            "propose_move",
+            run_query=short_id(chat_seeded["star"]),
+            to_when="sunday 22:00",
+        ),
+        says("Card's up — someone ✅ it."),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot move hstar to sunday 10pm"))).answered
+    assert result is not None
+    assert result.reply == "Card's up — someone ✅ it."
+    assert result.posted == result.created
+
+
 async def test_an_unknown_tool_does_not_end_the_turn(chat_bot, chat_seeded):
     agent = pilot(chat_bot, wants("approve_everything"), says("I can't do that one."))
     result = (await agent.offer(message(chat_bot))).answered
@@ -594,6 +653,33 @@ async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, c
     assert replies(chat_bot)[0].content == wanted
     assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == wanted
     assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == wanted
+
+
+async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bot, chat_seeded):
+    raw = (
+        'Try `get_schedule(\n{"scope": "all"}\n)` or participant="Alvin Tan"; '
+        f"participant=<@1003>; participant=<@&1234>. `<none>` See <#{CHAT_CHANNEL}>."
+    )
+    agent = pilot(chat_bot, says(raw))
+
+    result = (await agent.offer(message(chat_bot))).answered
+
+    assert "Alvin Tan" in result.reply
+    assert "the named person" in result.reply
+    assert "the schedule" in result.reply
+    assert f"<#{CHAT_CHANNEL}>" in result.reply
+    for internal in (
+        "<none>",
+        "participant=",
+        '"scope"',
+        "get_schedule",
+        "<@1003>",
+        "<@&1234>",
+    ):
+        assert internal not in result.reply
+        assert internal not in replies(chat_bot)[0].content
+        assert internal not in chat_bot.repo.recent_chat_interactions()[0]["reply"]
+    assert result.model_rounds[0]["content"] == raw
 
 
 # ---------------------------------------------------------------------------

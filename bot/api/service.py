@@ -36,6 +36,8 @@ from ..materialise import (
     DAY_OF,
     LIVE_STATUSES,
     countdown_minutes,
+    ensure_reminders,
+    reconcile_day_of,
     refresh_run_reminders,
     retire_fixed_run,
 )
@@ -704,13 +706,27 @@ def chat_interaction_view(bot: BossBot, interaction: dict, detail: bool = False)
         view["tool_calls"] = [
             {
                 "name": call.get("name") or "?",
+                # v9 added this to the persisted trace. A zero says this is an
+                # older row, rather than inventing which round made the call.
+                "round": int(call.get("round") or 0),
                 "arguments": call.get("arguments") or "",
+                "output": call.get("output") or "",
                 "ms": call.get("ms"),
                 "outcome": call.get("outcome") or "",
                 "ok": call.get("outcome") == "ok",
                 "created": created_cards(bot, call.get("created") or []),
+                "posted": created_cards(bot, call.get("posted") or []),
             }
             for call in tool_calls
+        ]
+        view["model_rounds"] = [
+            {
+                "round": int(round_.get("round") or 0),
+                "content": round_.get("content"),
+                "thinking": round_.get("thinking"),
+                "requested_tools": list(round_.get("requested_tools") or []),
+            }
+            for round_ in interaction.get("model_rounds") or []
         ]
     return view
 
@@ -2335,12 +2351,11 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
             stored = parse_hhmm(str(value)).strftime("%H:%M")
         except ValueError as exc:
             raise BadRequest(str(exc)) from None
+        if stored == before:
+            return get_config(bot)
+        now = utcnow()
         bot.repo.set_config(key, stored)
-        # Re-place every morning ping that has not fired yet, as /pingtime does.
-        for reminder in bot.repo.unsent_reminders(kind="day_of"):
-            refresh_run_reminders(
-                bot.repo, reminder["run_id"], bot.tz, bot.ping_time, bot.countdowns
-            )
+        reconcile_day_of(bot.repo, bot.tz, bot.ping_time, now=now)
     elif key == "countdown_minutes":
         minutes = [p.strip() for p in str(value).replace(";", ",").split(",") if p.strip()]
         try:
@@ -2350,9 +2365,12 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         if not parsed or any(m <= 0 for m in parsed):
             raise BadRequest("countdown_minutes must be positive whole minutes, e.g. `60,15`")
         stored = ",".join(str(m) for m in sorted(set(parsed), reverse=True))
+        if stored == before:
+            return get_config(bot)
+        now = utcnow()
         bot.repo.set_config(key, stored)
-        for run in bot.repo.list_runs():
-            refresh_run_reminders(bot.repo, run["id"], bot.tz, bot.ping_time, bot.countdowns)
+        for run in bot.repo.list_runs(statuses=LIVE_STATUSES):
+            ensure_reminders(bot.repo, run, bot.tz, bot.ping_time, bot.countdowns, now=now)
     elif key == "persona":
         stored = _persona_choice(bot, value)
         bot.repo.set_config(key, stored)

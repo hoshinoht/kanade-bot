@@ -15,9 +15,11 @@ import pytest
 from bot.chat import tools
 from bot.extract.commit import commit, may_commit
 from bot.ids import short_id
+from bot.weeks import current_week_start
 
 from .chat_support import CHAT_CHANNEL
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
+from .fake_bot import WATCHED_CHANNEL
 
 pytestmark = pytest.mark.anyio
 
@@ -27,12 +29,19 @@ def anyio_backend():
     return "asyncio"
 
 
-def context(bot, author_id: int | str = 1002, message_id: int = 950000000000000123):
+def context(
+    bot,
+    author_id: int | str = 1002,
+    message_id: int = 950000000000000123,
+    self_role_id: int | str | None = None,
+):
     return tools.ToolContext(
         bot=bot,
         author_id=str(author_id),
         channel_id=str(CHAT_CHANNEL),
         message_id=str(message_id),
+        bot_user_id=str(bot.user.id),
+        self_role_id=str(self_role_id) if self_role_id is not None else None,
     )
 
 
@@ -189,6 +198,35 @@ async def test_get_schedule_for_me_says_so_when_not_on_any_run(chat_bot, chat_se
     assert short_id(chat_seeded["star"]) not in answer
 
 
+async def test_get_schedule_treats_copied_bot_triggers_as_the_asker(chat_bot, chat_seeded):
+    self_role = "151515151515151515"
+    bot_id = str(chat_bot.user.id)
+
+    for participant in (bot_id, f"<@{bot_id}>", f"<@!{bot_id}>", self_role, f"<@&{self_role}>"):
+        answer = await tools.dispatch(
+            context(chat_bot, author_id=1001, self_role_id=self_role),
+            "get_schedule",
+            {"week": "this", "participant": participant},
+        )
+        assert "Your runs" in answer
+        assert short_id(chat_seeded["star"]) in answer
+        assert short_id(chat_seeded["kalos"]) not in answer
+
+
+@pytest.mark.parametrize("participant", ["303030303030303030", "<@&303030303030303030>"])
+async def test_get_schedule_does_not_treat_an_arbitrary_role_as_the_asker(
+    chat_bot, chat_seeded, participant
+):
+    outcome = await tools.run(
+        context(chat_bot, self_role_id="151515151515151515"),
+        "get_schedule",
+        {"week": "this", "participant": participant},
+    )
+    assert not outcome.ok
+    assert outcome.error == tools.REFUSED
+    assert short_id(chat_seeded["star"]) not in outcome.output
+
+
 async def test_get_schedule_accepts_askers_name_when_model_ignores_enum(chat_bot, chat_seeded):
     answer = await tools.dispatch(
         context(chat_bot, author_id=1001),
@@ -237,7 +275,8 @@ async def test_get_schedule_refuses_an_invalid_supplied_participant(
     )
     assert not outcome.ok
     assert outcome.error == tools.REFUSED
-    assert "participant must be 'me' or one roster name" in outcome.output
+    assert "Ask whose schedule they want" in outcome.output
+    assert "participant" not in outcome.output
     assert short_id(chat_seeded["star"]) not in outcome.output
     assert short_id(chat_seeded["kalos"]) not in outcome.output
 
@@ -247,10 +286,167 @@ async def test_get_schedule_refuses_an_ambiguous_participant(chat_bot, chat_seed
     answer = await tools.dispatch(
         context(chat_bot), "get_schedule", {"week": "this", "participant": "kano"}
     )
-    assert "Ask them which participant they mean" in answer
+    assert "Ask which person they mean" in answer
     assert "kanon" in answer and "kanonn" in answer
     assert short_id(chat_seeded["star"]) not in answer
     assert short_id(chat_seeded["kalos"]) not in answer
+
+
+async def test_get_schedule_filters_to_today_for_the_asker_in_this_channel(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    now = week + timedelta(hours=12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    today = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    later = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HBaldrix"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot, self_role_id="151515151515151515"),
+        "get_schedule",
+        {
+            "week": "this",
+            "scope": "channel",
+            "participant": "151515151515151515",
+            "day": "today",
+        },
+    )
+
+    assert "Your runs on" in answer
+    assert short_id(today) in answer
+    assert short_id(later) not in answer
+
+
+async def test_channel_person_filter_reports_tomorrows_elsewhere_run_naturally(
+    chat_bot, chat_seeded, monkeypatch
+):
+    """The portal trace from the second live conversation, without reply internals."""
+    week = chat_seeded["week_start"]
+    now = week + timedelta(hours=12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=WATCHED_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "scope": "channel", "participant": "me", "day": "tomorrow"},
+    )
+
+    assert "You are not on any runs in this channel" in answer
+    assert "You are on 1 run in another channel" in answer
+    assert "check all channels before answering" in answer
+    for internal in ("scope=", "participant=", "get_schedule"):
+        assert internal not in answer
+
+
+async def test_get_schedule_resolves_a_weekday_inside_the_selected_boss_week(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(hours=12))
+    next_friday = chat_bot.repo.create_run(
+        week_start=week + timedelta(days=7),
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=8, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "next", "participant": "me", "day": "friday"},
+    )
+
+    assert short_id(next_friday) in answer
+    assert "Your runs on" in answer
+
+
+@pytest.mark.parametrize(
+    "day", [None, "", "someday", "today tomorrow", "today tonight", "not friday"]
+)
+async def test_get_schedule_refuses_an_invalid_or_ambiguous_day(chat_bot, chat_seeded, day):
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "day": day},
+    )
+    assert not outcome.ok
+    assert outcome.error == tools.REFUSED
+    assert short_id(chat_seeded["star"]) not in outcome.output
+
+
+async def test_get_schedule_refuses_a_relative_day_outside_the_selected_week(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=6, hours=12))
+
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "day": "tomorrow"},
+    )
+
+    assert not outcome.ok
+    assert "not in the requested boss week" in outcome.output
+    assert "next boss week" in outcome.output
+    assert "week=" not in outcome.output
+
+
+async def test_get_schedule_accepts_today_before_a_non_midnight_reset(
+    chat_bot, chat_seeded, monkeypatch
+):
+    chat_bot.settings.boss_week_reset_time = "18:00"
+    now = chat_seeded["week_start"] + timedelta(hours=12)
+    week = current_week_start(
+        chat_bot.tz, chat_bot.settings.reset_weekday, chat_bot.settings.reset_time, now
+    )
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before_reset = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=now + timedelta(hours=1),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "scope": "channel", "participant": "me", "day": "today"},
+    )
+
+    assert short_id(before_reset) in answer
+    assert "Your runs on" in answer
 
 
 async def test_get_run_by_short_id(chat_bot, chat_seeded):
@@ -309,6 +505,41 @@ def test_resolve_run_narrows_by_day(chat_bot, chat_seeded):
     star = chat_bot.repo.get_run(chat_seeded["star"])
     day = star["datetime"].astimezone(TZ).strftime("%A").lower()
     assert tools.resolve_run(chat_bot, f"hstar {day}")["id"] == chat_seeded["star"]
+
+
+def test_resolve_run_weekday_picks_the_nearest_concrete_date(chat_bot, chat_seeded, monkeypatch):
+    """Thursday's Friday is not the next boss week's Friday too."""
+    week = chat_seeded["week_start"]
+    now = week + timedelta(hours=12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    this_friday = chat_bot.repo.create_run(
+        week_start=week,
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=1, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    chat_bot.repo.create_run(
+        week_start=week + timedelta(days=7),
+        bosses=["HCarling"],
+        run_at=week + timedelta(days=8, hours=21),
+        participants=["1002"],
+        status="planned",
+        source="amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    assert tools.resolve_run(chat_bot, "hcarling friday")["id"] == this_friday
+
+
+def test_resolve_run_refuses_two_distinct_day_references(chat_bot, chat_seeded, monkeypatch):
+    now = chat_seeded["week_start"] + timedelta(hours=12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+
+    with pytest.raises(tools.ToolError, match="names more than one day"):
+        tools.resolve_run(chat_bot, "hcarling friday saturday")
 
 
 def second_kalos(chat_bot, chat_seeded, days: int = 3) -> str:
@@ -663,9 +894,14 @@ async def test_a_write_that_cannot_post_its_card_says_so(chat_bot, chat_seeded):
     """No card in the channel means nobody can confirm it, and the model must not claim one."""
     chat_bot.channels[CHAT_CHANNEL].permissions.send_messages = False
     chat_bot.settings.post_channel_id = None
-    answer = await tools.dispatch(
-        context(chat_bot),
+    ctx = context(chat_bot)
+    outcome = await tools.run(
+        ctx,
         "propose_cancel",
         {"run_query": short_id(chat_seeded["star"])},
     )
-    assert "could not be posted" in answer
+    assert "could not be posted" in outcome.output
+    assert outcome.created
+    assert outcome.posted == []
+    assert ctx.created == outcome.created
+    assert ctx.posted == []

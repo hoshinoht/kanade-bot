@@ -168,11 +168,13 @@ LIMITS_TABS = [
     ("set-allowance", "Allowance"),
 ]
 
-#: The tabs on one chat interaction: what was said, what it looked up, and the
-#: facts about the exchange. Same three readers as above.
+#: The tabs on one chat interaction: what was said, what it looked up, what the
+#: provider returned, and the facts about the exchange. Same three readers as
+#: above.
 CHAT_TABS = [
     ("conversation", "Conversation"),
     ("tool-trace", "Tool trace"),
+    ("model-trace", "Model trace"),
     ("interaction", "This interaction"),
 ]
 

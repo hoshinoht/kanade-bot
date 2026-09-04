@@ -412,6 +412,27 @@ def test_a_slash_rsvp_names_the_member_who_ran_it(fake_bot, seeded):
     assert row["detail"].startswith("yes for member-1002 on ")
 
 
+def test_a_noop_pingtime_leaves_reminders_and_audit_alone(fake_bot, seeded):
+    from bot.commands import pingtime
+
+    fake_bot.repo.set_config("day_of_ping_time", "09:00")
+    morning = next(
+        reminder
+        for reminder in fake_bot.repo.list_reminders(seeded["run_star"])
+        if reminder["kind"] == "day_of"
+    )
+    fake_bot.repo.mark_reminder_sent(morning["id"], 900000000000000012)
+    interaction = SlashInteraction(fake_bot, user_id=1001)
+
+    asyncio.run(pingtime.callback(interaction, time="9:00"))
+
+    assert [row["id"] for row in fake_bot.repo.reminders_by_message(900000000000000012)] == [
+        morning["id"]
+    ]
+    assert fake_bot.repo.list_audit() == []
+    assert "already go out" in interaction.sent[0]
+
+
 def test_a_slash_fixed_remove_names_the_member_who_ran_it(fake_bot, seeded):
     """The `/fixed` group writes through the repository too."""
     from bot.commands import FixedGroup

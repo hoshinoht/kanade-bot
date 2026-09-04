@@ -22,7 +22,7 @@ from .bosses import BossParseError
 from .debug import DebugGroup, DebugNotAllowed
 from .extract.window import DEFAULT_WINDOW, WINDOWS
 from .ids import IdAmbiguous, IdError, resolve_id, short_id
-from .materialise import LIVE_STATUSES, refresh_run_reminders
+from .materialise import LIVE_STATUSES, reconcile_day_of, refresh_run_reminders
 from .pings import PING_LEVELS, audience, normalise_level
 from .rsvp import compute_status
 from .timeutil import local_naive, utcnow
@@ -1441,16 +1441,20 @@ async def pingtime(interaction: discord.Interaction, time: str) -> None:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
     before = bot.repo.get_config("day_of_ping_time")
-    bot.repo.set_config("day_of_ping_time", parsed.strftime("%H:%M"))
-    # Re-place every day-of reminder that has not fired yet.
-    moved = 0
-    for reminder in bot.repo.unsent_reminders(kind="day_of"):
-        _sync_run_reminders(bot, reminder["run_id"])
-        moved += 1
-    _record_config(interaction, "day_of_ping_time", before, parsed.strftime("%H:%M"))
+    stored = parsed.strftime("%H:%M")
+    if before == stored:
+        await interaction.response.send_message(
+            f"✅ Day-of pings already go out at **{stored}** {bot.settings.tz}.",
+            ephemeral=True,
+        )
+        return
+    now = utcnow()
+    bot.repo.set_config("day_of_ping_time", stored)
+    changed = reconcile_day_of(bot.repo, bot.tz, parsed, now=now)
+    _record_config(interaction, "day_of_ping_time", before, stored)
     await interaction.response.send_message(
-        f"✅ Day-of pings now go out at **{parsed.strftime('%H:%M')}** "
-        f"{bot.settings.tz} ({moved} pending reminder(s) rescheduled).",
+        f"✅ Day-of pings now go out at **{stored}** "
+        f"{bot.settings.tz} ({changed} reminder(s) reconciled).",
         ephemeral=True,
     )
 

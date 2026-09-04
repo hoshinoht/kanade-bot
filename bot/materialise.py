@@ -304,20 +304,35 @@ def materialise_week(
     return created
 
 
-def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time) -> int:
-    """Re-place unsent day-of reminders after the ping time changed; returns how many moved."""
-    moved = 0
-    for reminder in repo.unsent_reminders(kind=DAY_OF):
-        run = repo.get_run(reminder["run_id"])
-        if run is None:
+def reconcile_day_of(repo: Repo, tz: ZoneInfo, ping_time: time, now: datetime | None = None) -> int:
+    """Reconcile day-of reminders after the ping time changed.
+
+    A posted morning card remains the record it was when it reached Discord.
+    Queued cards move to the new time, with a newly-past time retired instead of
+    becoming immediately due. A skipped row can safely reopen if its new time is
+    still ahead. Returns the number of rows whose state or fire time changed.
+    """
+    now = now or utcnow()
+    changed = 0
+    for run in repo.list_runs():
+        reminder = next(
+            (row for row in repo.list_reminders(run["id"]) if row["kind"] == DAY_OF), None
+        )
+        if reminder is None:
             continue
-        specs = reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
-        wanted = {s.kind: s for s in specs}
-        spec = wanted.get(DAY_OF)
-        if spec is not None and spec.fire_at != reminder["fire_at"]:
-            repo.set_reminder_fire_at(reminder["id"], spec.fire_at)
-            moved += 1
-    return moved
+        spec = next(
+            (
+                candidate
+                for candidate in reminder_specs(run["datetime"], run["status"], tz, ping_time, ())
+                if candidate.kind == DAY_OF
+            ),
+            None,
+        )
+        if spec is not None and repo.reschedule_unposted_reminder(
+            reminder["id"], spec.fire_at, now
+        ):
+            changed += 1
+    return changed
 
 
 def refresh_run_reminders(

@@ -550,6 +550,15 @@ def test_the_limits_tabs_count_what_their_panels_hold(auth, fake_bot, seeded):
     assert "tabs__count" not in allowance
 
 
+def test_the_limits_member_table_scrolls_inside_its_panel(auth, fake_bot, seeded):
+    """The five-column table must not widen a phone's page past its frame."""
+    add_pilot(fake_bot, 1002, "kanon")
+
+    panel = panel_of(auth.get("/limits/live").text, "who-may-ask")
+    wrapper = panel.index('<div class="table-wrap">')
+    assert wrapper < panel.index("<table>") < panel.index("</div>", wrapper)
+
+
 def test_a_failed_generation_is_never_behind_a_tab(auth, fake_bot):
     """The first fact about the interaction, and a tab is somewhere a fact can
     be missed -- so it sits above the window rather than inside it."""
