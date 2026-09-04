@@ -25,7 +25,7 @@ from bot.export import (
     parse_when,
     slugify,
 )
-from bot.watch import origin_ids
+from bot.infrastructure.watch import origin_ids
 
 from .conftest import TZ, kl
 

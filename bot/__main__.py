@@ -17,8 +17,7 @@ from pathlib import Path
 import discord
 
 from . import behaviour_plugins
-from .bosses import BossTable, BossTableError
-from .client import (
+from .agent.client import (
     CFG_CHAT,
     CFG_COUNTDOWNS,
     CFG_EXTRACT,
@@ -32,8 +31,9 @@ from .client import (
     CFG_RATE_WINDOW,
     BossBot,
 )
-from .config import Settings, get_settings
-from .db import Repo
+from .domain.bosses import BossTable, BossTableError
+from .infrastructure.config import Settings, get_settings
+from .infrastructure.db import Repo
 
 log = logging.getLogger("bot")
 

@@ -35,7 +35,8 @@ from datetime import timedelta
 from fastapi import Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-from ..config import Settings
+from bot.infrastructure.config import Settings
+
 from .errors import NotConfigured, Unauthorized
 
 log = logging.getLogger(__name__)

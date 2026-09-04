@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from bot.util import match_roster, resolve_participant_text
+from bot.agent.util import match_roster, resolve_participant_text
 
 ROSTER = [
     {"user_id": "1", "display_name": "harbour4417", "nickname": None, "aliases": ["MY"]},

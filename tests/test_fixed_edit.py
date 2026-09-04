@@ -11,10 +11,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.commands import _apply_fixed_to_runs, _resolve_participants
-from bot.db import Repo
-from bot.materialise import materialise_week
-from bot.weeks import current_week_start, slot_in_week
+from bot.agent.commands import _apply_fixed_to_runs, _resolve_participants
+from bot.agent.materialise import materialise_week
+from bot.domain.weeks import current_week_start, slot_in_week
+from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
 

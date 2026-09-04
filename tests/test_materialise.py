@@ -6,13 +6,13 @@ from datetime import time, timedelta
 
 import pytest
 
-from bot.db import Repo
-from bot.materialise import (
+from bot.agent.materialise import (
     ensure_reminders,
     materialise_week,
     refresh_run_reminders,
     reminder_specs,
 )
+from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, TZ, kl
 

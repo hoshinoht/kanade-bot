@@ -15,7 +15,7 @@ import pytest
 
 from bot.api import service
 from bot.api.templating import CHAT_TABS, EXTRACTION_TABS, LIMITS_TABS
-from bot.ids import short_id
+from bot.domain.ids import short_id
 from bot.portal_styles import build_stylesheet
 
 from .conftest import kl

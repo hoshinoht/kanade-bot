@@ -13,7 +13,7 @@ import pytest
 
 from bot.api import routes_api, routes_web
 from bot.api.templating import HTMX_SRC, confidence_band
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .fake_bot import (
     ADMIN_TOKEN,
@@ -259,8 +259,8 @@ def test_the_limits_page_says_the_model_is_free_when_it_is(auth, fake_bot):
 
 
 def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded, model_lock):
-    from bot import modellock
     from bot.chat.gate import GLOBAL_KEY
+    from bot.infrastructure import modellock
 
     fake_bot.chat.limiter.allow(1002)
     fake_bot.chat.global_limiter.allow(GLOBAL_KEY)

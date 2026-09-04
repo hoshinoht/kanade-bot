@@ -383,7 +383,7 @@ def chosen_path(name: str | None, directory: Path | None = None) -> Path | None:
     so ``../../etc/passwd``, an absolute path and anything with a separator in
     it are all simply "not one of these names" -- there is no path to reject
     because none was ever built. The same reason
-    :meth:`bot.bosses.BossTable.portrait_path` looks its filenames up in the
+    :meth:`bot.domain.bosses.BossTable.portrait_path` looks its filenames up in the
     boss table rather than taking them from a URL.
     """
     if not name:

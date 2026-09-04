@@ -19,14 +19,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot import formatting
-from bot.client import BossBot
-from bot.db import Repo
-from bot.debug import TEST_PREFIX
-from bot.materialise import DAY_OF, countdown_kind
-from bot.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, recompute_after_roster_change
-from bot.timeutil import utcnow
-from bot.weeks import week_start
+from bot.agent import formatting
+from bot.agent.client import BossBot
+from bot.agent.debug import TEST_PREFIX
+from bot.agent.materialise import DAY_OF, countdown_kind
+from bot.agent.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, recompute_after_roster_change
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import week_start
+from bot.infrastructure.db import Repo
 
 from .conftest import RESET_TIME, RESET_WEEKDAY, TZ, kl
 from .fake_bot import WATCHED_CHANNEL
@@ -337,7 +337,7 @@ def test_an_edit_carries_the_same_allow_list_as_the_send(bot, repo, channel):
 
 
 def test_quiet_mode_covers_the_edit_too(bot, repo, channel):
-    from bot.client import CFG_QUIET
+    from bot.agent.client import CFG_QUIET
 
     run = a_run(repo)
     posted(repo, run)

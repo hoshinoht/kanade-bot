@@ -22,8 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .ids import new_id
-from .timeutil import from_iso, to_iso, utcnow
+from bot.domain.ids import new_id
+from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -579,7 +579,7 @@ class Repo:
 
     #: Called with a run id whenever something a posted reminder card *shows*
     #: has changed: the RSVP tally, the run's status, or its line-up. The client
-    #: sets it (:meth:`bot.client.BossBot.card_needs_refresh`) so a card already
+    #: sets it (:meth:`bot.agent.client.BossBot.card_needs_refresh`) so a card already
     #: in a channel is re-rendered whoever changed the answer -- a reaction,
     #: `/rsvp`, the portal, a chat-extracted "Can". Hooking the writes rather
     #: than the callers is the only way to catch all four without every one of
@@ -648,7 +648,7 @@ class Repo:
         file on its own is only whatever was last checkpointed, so copying it
         while the bot is writing can produce a file that will not open. This
         copies page by page against the live connection and takes the WAL with
-        it. See :mod:`bot.backup` for when it is called.
+        it. See :mod:`bot.infrastructure.backup` for when it is called.
 
         The copy is left in rollback-journal mode rather than the WAL mode it
         inherits, so the snapshot is one self-contained file: opening it to look
@@ -1719,7 +1719,7 @@ class Repo:
         """Record one handled interaction, then prune the log back to ``keep``.
 
         Pruning on insert rather than on a timer for the same reason
-        :mod:`bot.backup` prunes as it writes: the only moment the table is
+        :mod:`bot.infrastructure.backup` prunes as it writes: the only moment the table is
         certainly growing is the moment something was added to it, and a
         separate sweep is one more thing that can quietly stop running.
         """
@@ -1908,7 +1908,7 @@ class Repo:
         Nothing here validates: an unknown surface is stored as it arrives.
         This is written on the way *out* of a mutation that has already
         happened, so raising would turn a bad label into a failed edit -- see
-        :func:`bot.audit.record`, which is how every caller reaches this.
+        :func:`bot.infrastructure.audit.record`, which is how every caller reaches this.
 
         Pruned on insert for the same reason
         :meth:`log_chat_interaction` is: the only moment the table is certainly

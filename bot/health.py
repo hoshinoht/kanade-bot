@@ -8,7 +8,7 @@ Two things have to be true for the container to be useful, and this checks both:
   and it lives in the same process, so a wedged API means a wedged loop.
 
 Deliberately reads ``DB_PATH`` and ``API_PORT`` straight from the environment
-rather than through :class:`bot.config.Settings`, so a missing ``DISCORD_TOKEN``
+rather than through :class:`bot.infrastructure.config.Settings`, so a missing ``DISCORD_TOKEN``
 cannot make a healthy container look unhealthy.
 """
 
@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 
-from .timeutil import from_iso, utcnow
+from .domain.timeutil import from_iso, utcnow
 
 MAX_AGE = timedelta(minutes=3)
 #: How long to wait for the in-process API. It is on loopback and does no I/O

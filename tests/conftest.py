@@ -7,8 +7,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bot.bosses import BossTable
-from bot.db import Repo
+from bot.domain.bosses import BossTable
+from bot.infrastructure.db import Repo
 
 TZ = ZoneInfo("Asia/Kuala_Lumpur")
 RESET_WEEKDAY = 3  # Thursday
@@ -72,9 +72,9 @@ def model_lock(monkeypatch):
     """
     import asyncio
 
-    from bot import modellock
     from bot.chat import agent
     from bot.extract import llm
+    from bot.infrastructure import modellock
 
     lock = asyncio.Lock()
     for module in (modellock, agent, llm):
@@ -161,8 +161,8 @@ def seeded(fake_bot):
     Returned as a dict of ids so a test can say what it means rather than
     re-deriving them from list order.
     """
-    from bot.materialise import materialise_week
-    from bot.weeks import current_week_start
+    from bot.agent.materialise import materialise_week
+    from bot.domain.weeks import current_week_start
 
     from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 

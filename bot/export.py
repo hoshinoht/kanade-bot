@@ -7,7 +7,7 @@ ships before ``bossctl`` exists (DESIGN.md §5, "Message export").
 It logs in with a throwaway :class:`discord.Client` using the **bot token** --
 never a user token, which would be self-botting and against Discord's ToS -- and
 does nothing else: no command sync, no reminder tick, no posting.  Only channels
-that pass :func:`bot.watch.is_watched` can be exported, and attachments are
+that pass :func:`bot.infrastructure.watch.is_watched` can be exported, and attachments are
 recorded as ``[image]``/``[file]`` markers, never downloaded.
 
 Exports land in git-ignored ``data/exports/``.
@@ -29,12 +29,12 @@ from zoneinfo import ZoneInfo
 
 import discord
 
-from .backfill import AccessDenied, iter_history, thread_list
-from .config import Settings, get_settings
-from .db import Repo
-from .timeutil import to_iso
-from .watch import is_watched, origin_ids
-from .weeks import current_week_start
+from .domain.timeutil import to_iso
+from .domain.weeks import current_week_start
+from .infrastructure.backfill import AccessDenied, iter_history, thread_list
+from .infrastructure.config import Settings, get_settings
+from .infrastructure.db import Repo
+from .infrastructure.watch import is_watched, origin_ids
 
 log = logging.getLogger("bot.export")
 
@@ -235,7 +235,7 @@ async def _export_source(
     The JSONL keeps the bot's own messages (a fixture wants to see the card the
     conversation was answering), but they are deliberately *not* stored: the
     extractor must never read its own proposals back as chat. That is the same
-    rule :func:`bot.backfill.record_source` and the live listener apply.
+    rule :func:`bot.infrastructure.backfill.record_source` and the live listener apply.
     """
     count = 0
     async for message in iter_history(source, since, until):

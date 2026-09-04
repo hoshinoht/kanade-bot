@@ -7,10 +7,10 @@ every schedule change now posts the same notice a slash command would, marked
 
 from __future__ import annotations
 
-from bot import formatting
+from bot.agent import formatting
+from bot.agent.materialise import LIVE_STATUSES
 from bot.api import service
-from bot.ids import short_id
-from bot.materialise import LIVE_STATUSES
+from bot.domain.ids import short_id
 
 from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 
@@ -181,7 +181,7 @@ def test_an_invented_status_is_refused(auth, seeded):
 
 def test_at_risk_is_the_only_status_a_person_cannot_choose():
     """It means somebody said no; setting it by hand would invent an answer."""
-    from bot.db import RUN_STATUSES
+    from bot.infrastructure.db import RUN_STATUSES
 
     assert set(service.SETTABLE_STATUSES) == set(RUN_STATUSES) - {"at_risk"}
     assert set(LIVE_STATUSES) - {"at_risk"} <= set(service.SETTABLE_STATUSES)

@@ -1,7 +1,7 @@
 """Everything the API does, in terms of the repository and the live bot.
 
 The slash commands and this module must not drift apart, so the mutating
-functions here call exactly the repository methods :mod:`bot.commands` calls --
+functions here call exactly the repository methods :mod:`bot.agent.commands` calls --
 ``set_run_datetime`` + ``refresh_run_reminders`` for a move, ``set_run_status``
 for a cancel, ``commit()`` for an approval -- and reuse the same validation
 (``BossTable.parse``, the bossing-role check, "the channel must be watched").
@@ -11,7 +11,7 @@ return values are plain JSON-able dicts that both ``routes_api`` and the Jinja
 templates render.
 
 Nothing in here imports FastAPI. Functions that need Discord (posting a card,
-paging channel history) are ``async`` and take the live :class:`~bot.client.BossBot`.
+paging channel history) are ``async`` and take the live :class:`~bot.agent.client.BossBot`.
 """
 
 from __future__ import annotations
@@ -25,14 +25,9 @@ from typing import TYPE_CHECKING, Any
 
 import dateparser
 
-from .. import audit, behaviour_plugins, events, formatting
-from ..bosses import BossParseError
-from ..export import message_record
-from ..extract import resolve
-from ..extract.commit import commit, reject
-from ..extract.window import DEFAULT_WINDOW, WINDOWS
-from ..ids import IdAmbiguous, IdError, resolve_id, short_id
-from ..materialise import (
+from bot import behaviour_plugins
+from bot.agent import formatting
+from bot.agent.materialise import (
     DAY_OF,
     LIVE_STATUSES,
     countdown_minutes,
@@ -41,11 +36,13 @@ from ..materialise import (
     refresh_run_reminders,
     retire_fixed_run,
 )
-from ..pings import audience, normalise_level
-from ..rsvp import compute_status, recompute_after_roster_change
-from ..timeutil import from_iso, local_naive, to_iso, utcnow
-from ..util import is_bot_admin
-from ..weeks import (
+from bot.agent.pings import audience, normalise_level
+from bot.agent.rsvp import compute_status, recompute_after_roster_change
+from bot.agent.util import is_bot_admin
+from bot.domain.bosses import BossParseError
+from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
+from bot.domain.timeutil import from_iso, local_naive, to_iso, utcnow
+from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
     next_week_start,
@@ -54,10 +51,16 @@ from ..weeks import (
     slot_in_week,
     week_start,
 )
+from bot.export import message_record
+from bot.extract import resolve
+from bot.extract.commit import commit, reject
+from bot.extract.window import DEFAULT_WINDOW, WINDOWS
+from bot.infrastructure import audit, events
+
 from .errors import BadRequest, NotFound
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..client import BossBot
+    from bot.agent.client import BossBot
 
 log = logging.getLogger(__name__)
 
@@ -344,7 +347,7 @@ def boss_view(bot: BossBot, token: str) -> dict:
 #: Every portrait the portal draws is a badge -- 26px beside a boss's name,
 #: 38px in the boss grid, and nothing anywhere bigger -- so all of them ask for
 #: the small render. The full file is artwork now: it is what Discord attaches
-#: as a card's thumbnail (:func:`bot.formatting.lead_portrait`), and what
+#: as a card's thumbnail (:func:`bot.agent.formatting.lead_portrait`), and what
 #: ``?size=full`` still serves to anything that wants it.
 PORTAL_PORTRAIT_SIZE = "icon"
 
@@ -377,7 +380,7 @@ def run_entry_art(bot: BossBot, bosses: Sequence[str]) -> list[str]:
 
     The lead boss is first for the reason it always was: a run is named after
     the boss it leads with, which is the same choice
-    :func:`bot.formatting.lead_portrait` makes for a card in Discord. The
+    :func:`bot.agent.formatting.lead_portrait` makes for a card in Discord. The
     compact card on the board has room for one picture and uses that one; the
     sheet has room for the second and splits its right edge between them.
 
@@ -540,7 +543,7 @@ def kind_label(amendment: dict) -> str:
     marker in their payload (:data:`bot.extract.commit.FIX_REMOVE` and
     ``FIX_EDIT``), so the kind by itself calls a card that retires a weekly
     timing -- or changes one -- "new weekly", which is its opposite. Exactly the
-    rule :func:`bot.formatting.proposal_line` applies, so one card is called one
+    rule :func:`bot.agent.formatting.proposal_line` applies, so one card is called one
     thing whether it is read in Discord or in the portal.
     """
     payload = amendment["payload"] or {}
@@ -551,13 +554,13 @@ def kind_label(amendment: dict) -> str:
 def when_label(bot: BossBot, amendment: dict) -> str:
     """The one-line "when" the inbox and the extraction table print.
 
-    :func:`bot.formatting.when_text` with the card's bold taken off, except for
+    :func:`bot.agent.formatting.when_text` with the card's bold taken off, except for
     a `fix`. A recurring night is a weekday and an HH:MM kept in the payload and
     never reaches ``new_datetime``, so ``when_text`` has nothing to find and all
     three weekly cards read **TBD** here -- silent about the single fact each one
     is proposing. Read from the payload for the same reason
-    :func:`bot.formatting.weekly_text` and
-    :func:`bot.formatting.weekly_change_text` read it from there, so a weekly
+    :func:`bot.agent.formatting.weekly_text` and
+    :func:`bot.agent.formatting.weekly_change_text` read it from there, so a weekly
     timing is named the same way in the portal as on its card.
 
     Whichever night the card is *about*: the one being proposed where there is
@@ -803,7 +806,7 @@ def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
 # templates share one contract: ``rows``, ``q``, and the numbers a pager needs.
 #
 # Where the search happens differs, and deliberately. The three log tables are
-# searched in SQL (:meth:`bot.db.Repo.list_audit` and friends), because their
+# searched in SQL (:meth:`bot.infrastructure.db.Repo.list_audit` and friends), because their
 # columns are the text being looked for and paging in SQL is the only way not
 # to build two thousand views to show twenty. Reminders, members and fixed
 # timings are searched here, over rows that have already been rendered, because
@@ -1325,7 +1328,7 @@ async def update_fixed(bot: BossBot, fixed_id: str, **changes: Any) -> dict:
 
     Re-snapping every field would undo this week's ``/amend`` -- editing a note
     would drag a run that was moved Mon -> Wed back to Monday -- so this mirrors
-    ``bot.commands._apply_fixed_to_runs`` exactly.
+    ``bot.agent.commands._apply_fixed_to_runs`` exactly.
     """
     fixed = load_fixed(bot, fixed_id)
     fields: dict[str, Any] = {}
@@ -1634,7 +1637,7 @@ SETTABLE_STATUSES: tuple[str, ...] = ("planned", "confirmed", "otot", "done", "c
 
 #: How each target status reads in the party's channel, and what it does to the
 #: run's reminders. `refresh_run_reminders` derives the right set from the
-#: status itself (`bot.materialise.reminder_specs`), so "rebuild" covers
+#: status itself (`bot.agent.materialise.reminder_specs`), so "rebuild" covers
 #: planned/confirmed keeping both kinds, `otot` keeping only the morning ping,
 #: and `cancelled`/`done` keeping none.
 STATUS_LABELS: dict[str, str] = {
@@ -2121,7 +2124,7 @@ def pilot_roster(bot: BossBot) -> list[dict]:
     """Everybody holding ``CHAT_PILOT_ROLE_ID``, and where each of them stands.
 
     A **live read** of Discord's role member cache -- the same source
-    :func:`bot.util.roster_rows` uses for the bossing role, available because
+    :func:`bot.agent.util.roster_rows` uses for the bossing role, available because
     the members intent is already on. Nothing is stored: the answer to "who may
     talk to the bot" is the role, and a copy of it in SQLite would be a second
     answer that goes stale the moment somebody is given the role.
@@ -2213,8 +2216,9 @@ def limits(bot: BossBot) -> dict:
     the page cannot spend anybody's allowance -- including the pool it is
     reporting on.
     """
+    from bot.infrastructure.modellock import EXTRACTOR, holder
+
     from ..chat.gate import GLOBAL_KEY
-    from ..modellock import EXTRACTOR, holder
 
     pilot = bot.chat
     model = holder()
@@ -2680,10 +2684,10 @@ def queue_rescan(
 
     Deliberately *not* awaited: re-reading a boss week is minutes of model time,
     and doing it inline froze the reminder tick, reactions and every other
-    command behind Ollama. :class:`bot.rescan.RescanWorker` drains the queue one
+    command behind Ollama. :class:`bot.agent.rescan.RescanWorker` drains the queue one
     channel at a time while the rest of the bot carries on.
     """
-    from ..rescan import job_view
+    from bot.agent.rescan import job_view
 
     _check_rescan_allowed(bot, window)
     targets = resolve_rescan_channels(bot, channels)
@@ -2707,7 +2711,7 @@ def queue_rescan(
 
 def rescan_job(bot: BossBot, job_id: str) -> dict:
     """One job's progress, live from memory."""
-    from ..rescan import job_view
+    from bot.agent.rescan import job_view
 
     job = bot.rescans.get(job_id)
     if job is None:
@@ -2730,7 +2734,7 @@ def cancel_rescan(bot: BossBot, job_id: str) -> dict:
 
 def recent_rescans(bot: BossBot, limit: int = 5) -> list[dict]:
     """The last few rescans, newest first -- what the Config page shows."""
-    from ..rescan import job_view
+    from bot.agent.rescan import job_view
 
     return [job_view(job) for job in bot.rescans.recent(limit)]
 
@@ -2758,7 +2762,7 @@ async def rescan(
 
 async def debug_ping(bot: BossBot, run_id: str, kind: str) -> dict:
     """Post one real reminder message now, without touching the run's reminder rows."""
-    from ..debug import TEST_PREFIX, DebugGroup
+    from bot.agent.debug import TEST_PREFIX, DebugGroup
 
     run = load_run(bot, run_id)
     card = DebugGroup._render(bot, run, kind, _PortalActor(bot))

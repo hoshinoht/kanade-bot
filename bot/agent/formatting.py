@@ -3,7 +3,7 @@
 Pure string building, no Discord objects, so the wording is unit testable.
 
 Who appears as a ``<@id>`` mention and who appears as a plain name is decided by
-the :class:`Audience` a caller passes in -- built by :func:`bot.pings.audience`
+the :class:`Audience` a caller passes in -- built by :func:`bot.agent.pings.audience`
 from the mention policy in DESIGN.md §3. Without one (older call sites, and the
 unit tests that only care about wording) everybody is rendered as a mention, and
 ``allowed_mentions`` is still the thing that decides who is actually notified.
@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .ids import short_id
+from bot.domain.ids import short_id
+from bot.domain.weeks import WEEKDAY_NAMES
+
 from .rsvp import EMOJI_NO, EMOJI_YES
 from .util import mention
-from .weeks import WEEKDAY_NAMES
 
 STATUS_LABEL: dict[str, str] = {
     "planned": "⚠️ unconfirmed",
@@ -72,7 +73,7 @@ class Card:
     #: every card: see the note where the day-of builder sets it.
     image_path: Path | None = None
     #: The user ids this card may actually notify, already resolved against the
-    #: mention policy (:mod:`bot.pings`). ``BossBot._post`` turns it into the
+    #: mention policy (:mod:`bot.agent.pings`). ``BossBot._post`` turns it into the
     #: message's ``allowed_mentions``, so a card cannot ping anyone its own
     #: wording does not account for.
     mention_users: list[str] = field(default_factory=list)
@@ -93,7 +94,7 @@ class Card:
 class Audience:
     """Who a message names, and which of them it is allowed to notify.
 
-    ``mentioned`` is the resolved list from :func:`bot.pings.resolve_mentions`;
+    ``mentioned`` is the resolved list from :func:`bot.agent.pings.resolve_mentions`;
     everyone else is rendered from ``names``. A person with no name on file
     falls back to a ``<@id>``, which Discord still renders as their display
     name -- and, absent from ``allowed_mentions``, still does not notify them.
@@ -123,7 +124,7 @@ def format_bosses(bosses: list[str]) -> str:
 #: The difficulty prefix spelled out, mirroring ``difficulties:`` in
 #: ``config/bosses.yaml``. Kept here rather than read from the table because
 #: every caller of :func:`boss_label` renders a stored token and has no
-#: :class:`bot.bosses.BossTable` to hand; ``tests/test_boss_labels.py`` fails if
+#: :class:`bot.domain.bosses.BossTable` to hand; ``tests/test_boss_labels.py`` fails if
 #: the two ever drift apart.
 DIFFICULTY_WORDS: dict[str, str] = {
     "e": "Easy",

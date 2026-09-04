@@ -15,6 +15,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Reorganised the Python package into `agent`, `domain`, and `infrastructure`
+  namespaces, and split the chatbot's monolithic tool module into individual
+  tools behind the existing `bot.chat.tools` interface.
 - Reminder reconciliation now preserves mappings for already-posted reminders,
   reopens eligible skipped reminders, retires newly past reminders and rebuilds
   countdowns only for live runs.

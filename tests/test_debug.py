@@ -6,8 +6,8 @@ from datetime import timedelta
 
 import pytest
 
-from bot.db import Repo
-from bot.debug import format_uptime, may_debug, render_reminder_rows, upcoming_window
+from bot.agent.debug import format_uptime, may_debug, render_reminder_rows, upcoming_window
+from bot.infrastructure.db import Repo
 
 from .conftest import TZ, kl
 
@@ -168,7 +168,7 @@ def test_recent_debug_messages_are_scoped_by_channel_and_age(repo: Repo):
     run_id = repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
     repo.add_debug_message(1, run_id, 900, "day_of")
     repo.add_debug_message(2, run_id, 901, "day_of")
-    from bot.timeutil import utcnow
+    from bot.domain.timeutil import utcnow
 
     cutoff = utcnow() - timedelta(hours=24)
     assert len(repo.recent_debug_messages(cutoff)) == 2
@@ -198,11 +198,11 @@ def _report(**kw):
 
 def test_rescan_summary_is_importable_by_debug_extract():
     """The worker refactor once dropped this and `/debug extract` raised ImportError."""
-    from bot.commands import rescan_summary  # noqa: F401
+    from bot.agent.commands import rescan_summary  # noqa: F401
 
 
 def test_rescan_summary_says_when_the_model_was_not_asked():
-    from bot.commands import rescan_summary
+    from bot.agent.commands import rescan_summary
 
     text = rescan_summary(_report(backfilled=12, gated=0))
     assert "12 message(s) pulled" in text
@@ -210,14 +210,14 @@ def test_rescan_summary_says_when_the_model_was_not_asked():
 
 
 def test_rescan_summary_leads_with_the_model_error():
-    from bot.commands import rescan_summary
+    from bot.agent.commands import rescan_summary
 
     text = rescan_summary(_report(gated=3, bursts=1, extracted=1, errors=["ReadTimeout"]))
     assert "ReadTimeout" in text
 
 
 def test_rescan_summary_reports_no_change_with_the_drop_reasons():
-    from bot.commands import rescan_summary
+    from bot.agent.commands import rescan_summary
 
     text = rescan_summary(_report(gated=3, bursts=1, extracted=1, dropped=2, stale=1))
     assert "No change found" in text

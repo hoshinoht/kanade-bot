@@ -42,10 +42,10 @@ if str(REPO_ROOT) not in sys.path:
     # script's sys.path[0] is `scripts/`, so the repo root has to go on explicitly.
     sys.path.insert(0, str(REPO_ROOT))
 
-from bot.bosses import BossTable  # noqa: E402
-from bot.config import Settings  # noqa: E402
+from bot.domain.bosses import BossTable  # noqa: E402
 from bot.extract import prompt as prompt_mod  # noqa: E402
 from bot.extract.llm import Extractor  # noqa: E402
+from bot.infrastructure.config import Settings  # noqa: E402
 from tests import fixture_loader as fl  # noqa: E402
 
 #: The host runs Ollama natively; the container's `host.docker.internal` is wrong here.

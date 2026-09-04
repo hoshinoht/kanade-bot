@@ -13,8 +13,8 @@ from datetime import timedelta
 
 import pytest
 
-from bot import backfill
-from bot.db import Repo
+from bot.infrastructure import backfill
+from bot.infrastructure.db import Repo
 
 from .conftest import kl
 from .fake_bot import UNWATCHED_CHANNEL, WATCHED_CHANNEL
@@ -148,7 +148,7 @@ def test_a_channel_with_no_archived_threads_endpoint_still_works(repo: Repo):
 
 
 def test_backfill_refuses_an_unwatched_channel(fake_bot):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     channel = FakeHistoryChannel(channel_id=UNWATCHED_CHANNEL, name="off-topic")
     channel.messages = [message(1, 1001, 20, channel)]
@@ -158,7 +158,7 @@ def test_backfill_refuses_an_unwatched_channel(fake_bot):
 
 
 def test_backfill_stores_a_watched_channel(fake_bot):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     channel = FakeHistoryChannel()
     channel.messages = [message(1, 1001, 20, channel)]
@@ -167,7 +167,7 @@ def test_backfill_stores_a_watched_channel(fake_bot):
 
 
 def test_backfill_all_sweeps_every_watched_channel(fake_bot):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     calls = []
 
@@ -182,7 +182,7 @@ def test_backfill_all_sweeps_every_watched_channel(fake_bot):
 
 
 def test_backfill_all_with_no_visible_guild_is_a_no_op(fake_bot):
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     fake_bot.guild = None
     assert asyncio.run(BossBot.backfill_all(fake_bot, SINCE)) == 0
@@ -190,7 +190,7 @@ def test_backfill_all_with_no_visible_guild_is_a_no_op(fake_bot):
 
 def test_resolving_a_channel_never_falls_back_to_the_post_channel(fake_bot):
     """`post_channel` falls back on purpose; reading history must not."""
-    from bot.client import BossBot
+    from bot.agent.client import BossBot
 
     assert BossBot.resolve_channel(fake_bot, WATCHED_CHANNEL).id == WATCHED_CHANNEL
     assert BossBot.resolve_channel(fake_bot, 424242) is None

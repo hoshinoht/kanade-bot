@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from bot.formatting import (
+from bot.agent.formatting import (
     CONFIRM_HINT,
     TBD,
     card_kind,
@@ -16,7 +16,7 @@ from bot.formatting import (
     proposal_line,
     when_text,
 )
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .conftest import TZ, kl
 
@@ -192,7 +192,7 @@ def test_a_suggestion_card_names_who_has_not_answered():
 
 
 def test_a_fix_card_is_pinned_and_purple():
-    from bot.formatting import COLOUR_FIXED
+    from bot.agent.formatting import COLOUR_FIXED
 
     card = proposal_card(
         [amendment("fix", bosses=["HLimbo", "NBaldrix"], new_datetime=kl(2026, 9, 1, 22, 30))],

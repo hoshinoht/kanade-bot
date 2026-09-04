@@ -1,7 +1,7 @@
 """Turning fixed runs into concrete weekly runs, and runs into reminder rows.
 
 The ``reminders`` table is the scheduler's source of truth: rows are written
-here, and a 30 s ``discord.ext.tasks`` loop in :mod:`bot.client` picks up
+here, and a 30 s ``discord.ext.tasks`` loop in :mod:`bot.agent.client` picks up
 anything whose ``fire_at`` has passed and that has not been sent.  Nothing is
 held in memory, so a restart loses nothing.
 """
@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from .db import Repo
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import slot_in_week, week_end
+from bot.infrastructure.db import Repo
+
 from .rsvp import recompute_after_roster_change
-from .timeutil import utcnow
-from .weeks import slot_in_week, week_end
 
 log = logging.getLogger(__name__)
 
@@ -223,10 +224,10 @@ def adopt_run(
     things the weekly actually decides are pushed onto it -- which slot, which
     party, and which timing it belongs to.
 
-    The party goes through :func:`bot.rsvp.recompute_after_roster_change` for the
+    The party goes through :func:`bot.agent.rsvp.recompute_after_roster_change` for the
     reason ``/swap`` does: somebody added by the weekly never agreed to this run,
     so a ``confirmed`` goes back to being derived, while the answers of members
-    still on it survive (:func:`bot.rsvp.compute_status` ignores the rest).
+    still on it survive (:func:`bot.agent.rsvp.compute_status` ignores the rest).
     """
     repo.set_run_fixed(run["id"], fixed["id"])
     repo.set_run_datetime(run["id"], run_at, week_start)
@@ -367,7 +368,7 @@ def apply_fixed_to_runs(
     state the slash command and the portal leave it in.
 
     Only the fields the edit actually *touched* are pushed, which is the rule the
-    other two routes follow (``bot.commands._apply_fixed_to_runs``,
+    other two routes follow (``bot.agent.commands._apply_fixed_to_runs``,
     ``bot.api.service._apply_fixed_to_runs``): re-snapping every field would undo
     this week's `/amend` -- editing a note would drag a run that was moved
     Mon -> Wed back to Monday. A run that is already ``done`` or ``cancelled`` is

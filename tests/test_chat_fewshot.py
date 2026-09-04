@@ -22,7 +22,7 @@ import pytest
 
 from bot.chat import persona
 from bot.chat.agent import ChatPilot
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .chat_support import FakeOllama, build_bot, message, says, wants
 

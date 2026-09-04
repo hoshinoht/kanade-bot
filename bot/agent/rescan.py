@@ -25,9 +25,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from . import events
-from .extract.window import DEFAULT_WINDOW, clamp_window
-from .timeutil import utcnow
+from bot.domain.timeutil import utcnow
+from bot.extract.window import DEFAULT_WINDOW, clamp_window
+from bot.infrastructure import events
 
 if TYPE_CHECKING:  # pragma: no cover
     from .client import BossBot
@@ -275,7 +275,7 @@ class RescanWorker:
         job.started_at = utcnow()
         self.bot.repo.update_rescan_job(job.id, status=RUNNING, started_at=job.started_at)
 
-        from .api import service
+        from bot.api import service
 
         failure: str | None = None
         for channel_id in job.channels:

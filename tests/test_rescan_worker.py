@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from bot.rescan import CANCELLED, DONE, QUEUED, RUNNING, RescanWorker, job_view
+from bot.agent.rescan import CANCELLED, DONE, QUEUED, RUNNING, RescanWorker, job_view
 
 from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 

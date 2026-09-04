@@ -25,7 +25,7 @@ A bare hour of 1-11 with no ``am``/``pm`` means **pm**: this guild's runs are al
 evening runs and "930", "10", "at 11" are always 21:30, 22:00, 23:00.  A bare
 ``12`` means midnight, which is how "12" reads at the end of a boss night.  Hours
 of 13-23 are already 24-hour and are left alone.  This is deliberately *not*
-:func:`bot.weeks.parse_hhmm`, which reads compact digits as 24-hour (``930`` ->
+:func:`bot.domain.weeks.parse_hhmm`, which reads compact digits as 24-hour (``930`` ->
 09:30) because it parses times typed into a slash command, not chat.
 """
 
@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from ..weeks import WEEKDAYS
+from bot.domain.weeks import WEEKDAYS
 
 #: Bare hours at or below this are read as pm; see the module docstring.
 PM_CUTOFF = 11

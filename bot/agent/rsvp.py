@@ -1,7 +1,7 @@
 """RSVP + run-status logic.
 
 Kept free of Discord objects so the reaction handling can be unit tested against
-an in-memory database: :mod:`bot.client` only translates raw reaction events
+an in-memory database: :mod:`bot.agent.client` only translates raw reaction events
 into ``(run, user_id, emoji, added)`` and calls in here.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .db import Repo
+from bot.infrastructure.db import Repo
 
 EMOJI_YES = "✅"  # white heavy check mark
 EMOJI_NO = "❌"  # cross mark

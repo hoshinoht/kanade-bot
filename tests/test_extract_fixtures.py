@@ -18,10 +18,10 @@ import asyncio
 
 import pytest
 
-from bot.config import Settings
-from bot.debug import ollama_reachable
+from bot.agent.debug import ollama_reachable
 from bot.extract import prompt as prompt_mod
 from bot.extract.llm import Extractor
+from bot.infrastructure.config import Settings
 
 from . import fixture_loader as fl
 

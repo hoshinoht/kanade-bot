@@ -15,7 +15,7 @@ module is the seam between a mutation and the row that remembers it:
 * :func:`record` writes the row and **never raises**, because an audit trail
   that can fail a mutation is worse than no audit trail at all.
 
-Nothing here validates a surface against :data:`bot.db.AUDIT_SURFACES`: a
+Nothing here validates a surface against :data:`bot.infrastructure.db.AUDIT_SURFACES`: a
 mislabelled row is a bad log line, and refusing it would be a lost edit.
 """
 

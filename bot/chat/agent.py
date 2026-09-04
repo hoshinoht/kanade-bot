@@ -4,7 +4,7 @@ Structured so that the interesting parts are testable without a gateway or a
 model. :meth:`ChatPilot.offer` is the only entry point and does no reasoning of
 its own -- it asks :mod:`bot.chat.gate` whether to answer, holds a per-channel
 lock so one channel cannot have two answers in flight, takes the host's one
-model lock (:mod:`bot.modellock`) so the whole machine cannot, and hands the
+model lock (:mod:`bot.infrastructure.modellock`) so the whole machine cannot, and hands the
 assembled conversation to :meth:`ChatPilot.generate`, which is the part with the
 model in it.
 
@@ -44,13 +44,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import behaviour_plugins, events
+from bot.agent.util import is_bot_admin
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import current_week_start
+from bot.infrastructure import events
+from bot.infrastructure.modellock import (
+    FOLLOWUP,
+    MODEL_LOCK,
+    acquire_within,
+    chat_label,
+    held,
+    release,
+)
+from bot.infrastructure.watch import origin_ids
+
+from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages
-from ..modellock import FOLLOWUP, MODEL_LOCK, acquire_within, chat_label, held, release
-from ..timeutil import utcnow
-from ..util import is_bot_admin
-from ..watch import origin_ids
-from ..weeks import current_week_start
 from . import followup, gate, persona, tools
 from .ratelimit import RateLimiter
 
@@ -929,7 +938,7 @@ class ChatPilot:
         self._replied[key] = author_id
 
     def _is_admin(self, user: Any) -> bool:
-        """The existing "who runs this bot" rule (:func:`bot.util.is_bot_admin`).
+        """The existing "who runs this bot" rule (:func:`bot.agent.util.is_bot_admin`).
 
         Two callers, one rule: the gate uses it as the chat role's stand-in and
         as the rate-limit exemption, and it rides along on the
@@ -1035,7 +1044,7 @@ class ChatPilot:
         """Write the interaction to the database. Never raises.
 
         The same rule the whole module runs on, and the same one
-        :attr:`bot.db.Repo.on_run_changed` follows: the member's answer has
+        :attr:`bot.infrastructure.db.Repo.on_run_changed` follows: the member's answer has
         already been posted by the time this runs, and a bookkeeping row that
         cannot be written is a line in the log, not a failed conversation.
 
@@ -1077,7 +1086,7 @@ class ChatPilot:
     ) -> Handling:
         """A ❌ landed on a card the pilot posted: ask what it should be instead.
 
-        Called from :meth:`bot.client.BossBot._handle_proposal_reaction` after
+        Called from :meth:`bot.agent.client.BossBot._handle_proposal_reaction` after
         the amendments have been rejected, and does nothing at all unless
         :func:`bot.chat.followup.scope` says this rejection is the pilot's --
         see there for the gates, and for why the question is built from the row
@@ -1087,7 +1096,7 @@ class ChatPilot:
         deliberately **synchronous**. This runs on the event loop, so a stretch
         with no ``await`` in it cannot be interleaved: two ❌ arriving together
         cannot both find the channel free, and cannot both claim the card. The
-        claim (:meth:`bot.db.Repo.claim_chat_followup`) is a single atomic
+        claim (:meth:`bot.infrastructure.db.Repo.claim_chat_followup`) is a single atomic
         statement as well, so the promise survives a future edit that puts an
         ``await`` in the middle of this.
 
@@ -1753,7 +1762,7 @@ class ChatPilot:
     async def _post(self, message: Any, content: str) -> Any:
         """Reply in the channel, notifying the asker and nobody else.
 
-        Through :meth:`bot.client.BossBot.post_plain`, which is the bot's one
+        Through :meth:`bot.agent.client.BossBot.post_plain`, which is the bot's one
         plain-message path: it builds the explicit allow-list, applies quiet
         mode, and refuses ``@everyone`` from any caller. Nothing here constructs
         an ``AllowedMentions`` of its own, so the chatbot cannot become a second

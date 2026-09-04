@@ -18,8 +18,8 @@ from datetime import timedelta
 import pytest
 
 from bot.chat import tools
-from bot.ids import short_id
-from bot.timeutil import utcnow
+from bot.domain.ids import short_id
+from bot.domain.timeutil import utcnow
 
 from .chat_support import ADOPTED_CHANNEL, CHAT_CHANNEL
 from .fake_bot import WATCHED_CHANNEL

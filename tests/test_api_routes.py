@@ -8,7 +8,7 @@ import time
 import pytest
 
 from bot.api.service import PORTAL_APPLIED, PORTAL_REJECTED
-from bot.ids import short_id
+from bot.domain.ids import short_id
 
 from .fake_bot import (
     OTHER_CHANNEL,
@@ -508,7 +508,7 @@ def test_limits_reports_an_idle_host(auth, fake_bot):
 
 def test_limits_names_who_is_holding_the_model(auth, fake_bot, model_lock):
     """The point of the label: "busy" is half an answer and "busy with what" is the rest."""
-    from bot import modellock
+    from bot.infrastructure import modellock
 
     assert auth.portal.call(modellock.acquire_within, 5, modellock.EXTRACTOR) is True
     try:

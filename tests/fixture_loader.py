@@ -19,10 +19,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from bot.domain.weeks import parse_hhmm, parse_weekday
 from bot.extract import prompt as prompt_mod
 from bot.extract.pipeline import Plan, plan_burst
 from bot.extract.schema import Amendment
-from bot.weeks import parse_hhmm, parse_weekday
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "extract"
 

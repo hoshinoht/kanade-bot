@@ -19,7 +19,7 @@ import pytest
 
 from bot.chat import gate
 from bot.chat.agent import FAILURE_REPLY, MAX_TOOL_ROUNDS, ChatPilot
-from bot.db import CHAT_INTERACTIONS_KEPT
+from bot.infrastructure.db import CHAT_INTERACTIONS_KEPT
 
 from .chat_support import CHAT_CHANNEL, FakeOllama, costed, message, says, wants
 

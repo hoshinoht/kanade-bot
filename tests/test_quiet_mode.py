@@ -16,9 +16,9 @@ import asyncio
 import discord
 import pytest
 
-from bot import formatting
-from bot.client import CFG_QUIET, BossBot
-from bot.db import Repo
+from bot.agent import formatting
+from bot.agent.client import CFG_QUIET, BossBot
+from bot.infrastructure.db import Repo
 
 from .fake_bot import WATCHED_CHANNEL
 

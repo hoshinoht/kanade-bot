@@ -14,8 +14,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from bot import formatting, pings
-from bot.db import DEFAULT_PING_LEVEL, PING_LEVELS, SCHEMA_VERSION, Repo
+from bot.agent import formatting, pings
+from bot.infrastructure.db import DEFAULT_PING_LEVEL, PING_LEVELS, SCHEMA_VERSION, Repo
 
 from .fake_bot import OTHER_CHANNEL, WATCHED_CHANNEL
 
@@ -354,7 +354,7 @@ def test_the_access_fragment_has_a_manage_messages_column(auth, fake_bot):
 
 
 def test_debug_status_lists_manage_messages_per_channel(fake_bot):
-    from bot.debug import manage_messages_lines
+    from bot.agent.debug import manage_messages_lines
 
     fake_bot.channels[OTHER_CHANNEL].permissions.manage_messages = False
     line = manage_messages_lines(fake_bot.access_report())[0]
