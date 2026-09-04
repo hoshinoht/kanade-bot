@@ -323,9 +323,69 @@ def _schedule_defaults(
     return force_all, force_group
 
 
+#: A write claim that must never survive a refusal: the model said a card went
+#: up even though the tool refused to post one.
+_WRITE_CLAIM_RE = re.compile(r"card'?s up|\bposted\b|✅", re.IGNORECASE)
+
+
+def _looks_like_clarification(text: str) -> bool:
+    """Whether a refused-turn reply already asks the member a question.
+
+    The old check required a trailing ``?``, so a good clarification ending in
+    ``... tonight 23:30.`` was overwritten with the raw tool refusal. Any
+    ``?`` counts, unless the reply also claims a card went up (a lie after a
+    refusal that the overwrite must still correct).
+    """
+    if "?" not in (text or ""):
+        return False
+    return _WRITE_CLAIM_RE.search(text or "") is None
+
+
+def _strip_tool_directives(text: str) -> str:
+    """Drop model-only tool instructions that must never reach a member."""
+    cleaned = text or ""
+    # Keep the spoken options, drop the tool-only half:
+    # "Ask in words ('Easy ...?') and pass the short form (HBellona) back to
+    # the tool." -> "Ask in words ('Easy ...?')."
+    cleaned = re.sub(r"\s+and pass the short form\b[^.?!]*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"[^.?!]*\bshort forms? are for the tool only\b[^.?!]*[.?!]?",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"[^.?!]*\bfor the tool only\b[^.?!]*[.?!]?",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"[^.?!]*\bnever show them to a member\b[^.?!]*[.?!]?",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s*\bback to the tool\b[^.?!]*[.?!]?", "", cleaned, flags=re.IGNORECASE)
+    # Model-only guard: "Ask them which one they mean -- do not choose ..." ->
+    # "Ask them which one they mean."
+    cleaned = re.sub(
+        r"\s*(?:--|—|–)\s*do not (?:choose|pick|guess|offer)[^.?!]*\.",
+        ".",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\bpropose_\w+\b", "the schedule change", cleaned)
+    cleaned = re.sub(r"\bweekly\s*=\s*true\b", "weekly", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+\.", ".", cleaned)
+    return re.sub(r"\.\s*\.", ".", cleaned)
+
+
 def _member_facing(text: str) -> str:
     """Remove scheduler internals while preserving Discord channel links."""
     cleaned = _EMPTY_PLACEHOLDER_RE.sub("", text or "")
+    cleaned = _strip_tool_directives(cleaned)
     cleaned = _SCHEDULE_CALL_RE.sub("the schedule", cleaned)
 
     def natural_argument(match: re.Match) -> str:
@@ -1107,10 +1167,10 @@ class ChatPilot:
                 continue
             if outcome.ok and outcome.posted:
                 return
-            if outcome.error == tools.REFUSED and result.reply.rstrip().endswith("?"):
+            if outcome.error == tools.REFUSED and _looks_like_clarification(result.reply or ""):
                 return
             if result.reply:
-                detail = self._tidy(outcome.output)
+                detail = self._tidy(_member_facing(outcome.output))
                 status = (
                     "The requested card was posted, but the request did not finish cleanly."
                     if outcome.posted
