@@ -113,7 +113,7 @@
         <p class="note">
           Profiles change reply delivery without changing scheduler policy. Publish a profile
           for member selection or assign it to a Discord role. Files live under
-          <span class="mono">personas/behaviours/profiles/</span> and apply immediately.
+          <span class="mono">config/personas/behaviours/profiles/</span> and apply immediately.
         </p>
         <div class="behaviour-collection" data-paginated-list data-page-size="5"
              data-page-label="plugins" data-pagination-key="behaviour-plugins">
@@ -251,12 +251,12 @@
           <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
           {% if config.persona %}
           <span class="mono">{{ config.persona }}</span> is chosen but is not in
-          <span class="mono">personas/identities/</span> any more, so it is using the
+          <span class="mono">config/personas/identities/</span> any more, so it is using the
           template identity.
           {% else %}
           No identity of its own, so it is using the template identity.
           {% endif %}
-          Drop one in <span class="mono">personas/identities/</span> — see the personas README — and
+          Drop one in <span class="mono">config/personas/identities/</span> — see the personas README — and
           pick it here. No restart.
         </p>
         {% endif %}

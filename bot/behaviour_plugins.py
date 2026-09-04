@@ -11,7 +11,7 @@ from typing import Any
 
 CONFIG_KEY = "chat_role_plugins"
 SELECTABLE_CONFIG_KEY = "chat_selectable_plugins"
-PERSONA_ROOT = Path(__file__).resolve().parent.parent / "personas"
+PERSONA_ROOT = Path(__file__).resolve().parent.parent / "config" / "personas"
 DEFAULT_PLUGIN_DIR = PERSONA_ROOT / "behaviours" / "profiles"
 PLUGIN_DIR = DEFAULT_PLUGIN_DIR
 LEGACY_PLUGIN_DIR = PERSONA_ROOT / "behaviour-plugins"

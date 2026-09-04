@@ -1,12 +1,7 @@
 /* ── a run's sheet ──────────────────────────────────────────────────────────
  *
- * The ordinary run card, in a <dialog>, so the board can open one without the
- * card existing twice on the page. Three states, one element: closed on a
- * desktop until a card opens it (modal with JavaScript, `dialog:target`
- * without), and shown in place on a phone, where it *is* the vertical list.
- *
- * `partials/run.html` goes inside unchanged, so every htmx action in it still
- * targets `closest .run` and swaps its own article -- there being only one. */
+ * The run card in a <dialog>.  Desktop: closed until a card opens it (modal
+ * with JS, `dialog:target` without).  Phone: shown in place as the list. */
 
 dialog.runsheet {
   padding: 0;
@@ -40,11 +35,8 @@ dialog.runsheet[open] {
   overflow-y: auto;
 }
 
-/* The sheet's title bar, which is also where the close control lives. Pinned to
-   the panel's corner it sat on top of the card's own top-right actions -- the
-   Move field and Preview ping -- at every width the sheet renders. A window's
-   chrome gets a strip of its own; then nothing can overlap. It sticks, because
-   the panel below it scrolls and a close button that scrolls away is not one. */
+/* Title bar pinned to the top: the panel scrolls, but the close button
+   must not scroll away with it. */
 .runsheet__bar {
   position: sticky;
   top: 0;

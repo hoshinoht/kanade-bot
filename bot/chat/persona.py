@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 log = logging.getLogger(__name__)
 
 #: Deployment-owned persona files.
-PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "personas"
+PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "personas"
 
 #: Deployment-owned behaviour and code-owned policy documents.
 DEFAULT_BEHAVIOUR = PERSONA_DIR / "behaviours" / "default.md"
@@ -382,7 +382,7 @@ def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> P
         except OSError as exc:
             log.warning(
                 "no persona at %s (%s); falling back to %s - the bot will answer in the "
-                "placeholder voice until the real file is in personas/",
+                "placeholder voice until the real file is in config/personas/",
                 candidate,
                 exc,
                 fallback.name,

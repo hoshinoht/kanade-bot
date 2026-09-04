@@ -509,7 +509,7 @@ def test_a_deploy_with_no_persona_of_its_own_says_so(auth, fake_bot, seeded):
 
     assert "fallback: example.md" in panel
     assert "status--at_risk" in panel
-    assert "personas/" in panel  # ...and where to put a real one
+    assert "config/personas/" in panel  # ...and where to put a real one
 
 
 # --- what .env holds --------------------------------------------------------

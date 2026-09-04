@@ -43,7 +43,7 @@ def make_settings(**overrides: Any) -> Settings:
         "db_path": ":memory:",
         "admin_token": ADMIN_TOKEN,
         "post_channel_id": WATCHED_CHANNEL,
-        "persona_path": "personas/identities/example.md",
+        "persona_path": "config/personas/identities/example.md",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

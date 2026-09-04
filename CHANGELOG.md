@@ -2,6 +2,55 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 4.1.1
+
+**Added**
+
+- `bossctl guide` — posts the full server guide to a Discord channel.
+  Reads message templates from `config/guide.yaml` and boss entries from
+  `config/guide_bosses.yaml`, attaching portrait thumbnails as embed
+  images with per-boss accent colours. API endpoint `POST /api/guide`
+  added for messages with embeds and file uploads.
+- Guide config files (`guide.yaml`, `guide_bosses.yaml`) are
+  git-ignored with committed examples and a `config/README.md` for
+  setup instructions.
+- Role IDs in guide messages now render as clickable Discord mentions.
+
+**Changed**
+
+- **Personas directory moved** from `personas/` to `config/personas/`. All
+  bind mounts, config defaults, gitignore rules, and documentation updated.
+  Legacy root-level identity files and `behaviour-plugins/` profiles remain
+  readable during migration.
+- Guide "Talk to me" section updated: speech-pilot works anywhere under
+  the bossing category, not a single channel.
+- Guide messages now have vertical spacing between sections.
+- Footer is a standalone message (no `---` divider).
+
+## 4.0.1
+
+**Added**
+
+- `bossctl post-message` — post a Discord message from the CLI with full
+  markdown support. Accepts `--channel`, `--file`, or `--stdin` for longer
+  content. API endpoint `POST /api/say` added alongside it.
+- Members page redesigned as a compact card list with modal detail sheets,
+  replacing the overflowed 8-column table.
+
+**Changed**
+
+- Docker volumes renamed from `kanade-bot_*` to `kanade_*`; old volumes
+  migrated and removed.
+- `get_schedule` now correctly resolves the entire boss week when `day` is
+  omitted or empty, instead of refusing with a validation error.
+- Member list rows show a chevron affordance and tighter spacing.
+
+**Fixed**
+
+- Member list rows now visually indicate clickability.
+- Verbose comments condensed across `get_schedule.py`, `_modal.scss` and
+  `_runsheet.scss`.
+
 ## 4.0.0
 
 **Added**

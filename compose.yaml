@@ -10,7 +10,7 @@ services:
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
       # Private identity on the host bind mount; missing files use the template.
-      PERSONA_PATH: /app/personas/identities/persona.md
+      PERSONA_PATH: /app/config/personas/identities/persona.md
       # Host exposure is restricted by `ports`, not this container bind address.
       API_HOST: "0.0.0.0"
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -23,9 +23,9 @@ services:
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
       # Writable for private identities, behaviours, and portal-managed profiles.
-      - ./personas:/app/personas
+      - ./config/personas:/app/config/personas
     restart: unless-stopped
-    # Root stays immutable; only mounted data and personas are writable.
+    # Root stays immutable; only mounted data and config/personas are writable.
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -78,10 +78,12 @@ services:
         max-size: "10m"
         max-file: "3"
 volumes:
-  # Preserve volumes created under the former `kanade-bot` project name.
   botdata:
-    name: kanade-bot_botdata
+    name: kanade_botdata
+    external: true
   caddydata:
-    name: kanade-bot_caddydata
+    name: kanade_caddydata
+    external: true
   caddyconfig:
-    name: kanade-bot_caddyconfig
+    name: kanade_caddyconfig
+    external: true

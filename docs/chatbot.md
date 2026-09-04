@@ -90,16 +90,16 @@ CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
 # 2. Create private identity and default-behaviour files.
-cp personas/identities/example.md personas/identities/persona.md
-cp personas/behaviours/default.example.md personas/behaviours/default.md
-$EDITOR personas/identities/persona.md personas/behaviours/default.md
+cp config/personas/identities/example.md config/personas/identities/persona.md
+cp config/personas/behaviours/default.example.md config/personas/behaviours/default.md
+$EDITOR config/personas/identities/persona.md config/personas/behaviours/default.md
 
 # 3. Rebuild, then mention it in the channel.
 docker compose up -d --build
 ```
 
 Reply profiles are managed from **Config → Chatbot** and stored under
-`personas/behaviours/profiles/`. Publish profiles that members may choose with
+`config/personas/behaviours/profiles/`. Publish profiles that members may choose with
 `/style`; unpublished profiles remain private. Role assignments are ordered,
 and the first readable matching role profile supersedes the saved member choice.
 Assignments never grant access. `CHAT_ROLE_PLUGINS` seeds only a fresh database.
@@ -110,7 +110,7 @@ page's Chatbot panel names the file it actually loaded, marked as a fallback
 when it is the template.
 
 **Switching identities does not need a restart.** Keep identity files under
-`personas/identities/` and select one in the portal. `PERSONA_PATH` only seeds a
+`config/personas/identities/` and select one in the portal. `PERSONA_PATH` only seeds a
 fresh database. Legacy root-level identity files remain readable.
 
 Members use `/style` to inspect or save a public reply profile. The response is

@@ -1,0 +1,82 @@
+{# One member's detail sheet in a <dialog>.  Opens from the compact card row
+   via data-dialog, same pattern as the Fixed page editor and the run sheet. #}
+{% from "partials/icons.html" import icon %}
+<dialog class="modal membersheet" id="member-{{ member.user_id }}"
+        aria-label="{{ member.display_name }}">
+  <div class="modal__panel">
+    <header class="modal__head">
+      <div>
+        <p class="eyebrow">Member</p>
+        <h2 class="modal__title">{{ member.display_name }}</h2>
+      </div>
+      <button class="modal__x" type="button" data-dialog-close aria-label="Close">
+        {{ icon("x") }}
+      </button>
+    </header>
+
+    <div class="modal__body">
+      <dl class="membersheet__grid">
+        <dt>User ID</dt>
+        <dd class="mono">{{ member.user_id }}</dd>
+
+        <dt>Server nickname</dt>
+        <dd>{{ member.nickname or "—" }}</dd>
+
+        <dt>Runs this week</dt>
+        <dd class="mono">{{ member.runs_this_week }}</dd>
+
+        <dt>@mentions</dt>
+        <dd>
+          <span class="chip {{ 'chip--waiting' if member.ping_level == 'off' }}">
+            {{ member.ping_level }}
+          </span>
+        </dd>
+
+        <dt>Chosen style</dt>
+        <dd>
+          <span class="chip chip--mono">{{ member.reply_style or "default" }}</span>
+          {% if member.reply_style and member.reply_style_available is defined and not member.reply_style_available %}
+          <span class="status status--at_risk">unavailable</span>
+          {% endif %}
+        </dd>
+
+        <dt>Applies to next reply</dt>
+        <dd>
+          {% if member.effective_style %}
+          <span class="chip chip--mono">{{ member.effective_style }}</span>
+          {% if member.style_source == "role" %}
+          <span class="status">role: {{ member.style_role_name or member.style_role_id }}</span>
+          {% endif %}
+          {% elif member.style_source == "unknown" %}
+          <span class="status status--at_risk">unknown — Discord state unavailable</span>
+          {% else %}
+          <span class="id">not applicable</span>
+          {% endif %}
+        </dd>
+      </dl>
+
+      <div class="membersheet__section">
+        <h3 class="membersheet__label">Chat aliases</h3>
+        <div class="membersheet__aliases">
+          {% for alias in member.aliases %}
+          <span class="chip chip--mono">{{ alias }}</span>
+          {% else %}
+          <span class="id">none</span>
+          {% endfor %}
+        </div>
+        {% if member.persisted %}
+        <form method="post" action="/members/{{ member.user_id }}/nick"
+              class="filters membersheet__alias-form">
+          <input name="alias" placeholder="New alias" size="12" required
+                 aria-label="New alias for {{ member.display_name }}">
+          <button class="btn" type="submit">Add</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <footer class="modal__foot">
+      <button class="btn" type="button" data-dialog-close>Close</button>
+    </footer>
+  </div>
+</dialog>

@@ -781,6 +781,40 @@ class HealthOut(BaseModel):
     status: str
 
 
+class SayIn(Strict):
+    channel_id: str
+    content: str
+
+
+class SayOut(BaseModel):
+    posted: bool
+    channel_id: str
+    message_id: str
+    url: str | None
+
+
+class GuideEmbedIn(Strict):
+    title: str
+    description: str
+    colour: int | None = None
+    thumbnail_path: str | None = None
+    footer: str | None = None
+
+
+class GuideIn(Strict):
+    channel_id: str
+    content: str = ""
+    embeds: list[GuideEmbedIn] = []
+    files: dict[str, str] = {}  # filename → base64-encoded bytes
+
+
+class GuideOut(BaseModel):
+    posted: bool
+    channel_id: str
+    message_id: str
+    url: str | None
+
+
 __all__ = [
     "AccessOut",
     "AmendIn",
@@ -802,6 +836,9 @@ __all__ = [
     "FixedCreate",
     "FixedOut",
     "FixedUpdate",
+    "GuideIn",
+    "GuideOut",
+    "GuideEmbedIn",
     "HealthOut",
     "AnsweringOut",
     "JobsOut",
@@ -836,6 +873,8 @@ __all__ = [
     "RunStatus",
     "RosterChangeOut",
     "RosterMemberOut",
+    "SayIn",
+    "SayOut",
     "StatusIn",
     "SwapIn",
     "RunOut",
