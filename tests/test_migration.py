@@ -1,4 +1,4 @@
-"""Schema migrations, and specifically v1 (integer ids) -> v2 (uuid4)."""
+"""Supported database creation and the deployment's v9 -> v10 migration."""
 
 from __future__ import annotations
 
@@ -8,249 +8,115 @@ import pytest
 
 from bot.infrastructure.db import SCHEMA_VERSION, Repo
 
-# The v1 shape, trimmed to what the migration has to reason about.
-V1_SQL = """
-CREATE TABLE schema_version (version INTEGER NOT NULL);
-CREATE TABLE members (
-    user_id TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '', nickname TEXT,
-    aliases TEXT NOT NULL DEFAULT '[]', has_role INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE fixed_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL, channel_id TEXT,
-    bosses TEXT NOT NULL, weekday INTEGER NOT NULL, time TEXT NOT NULL,
-    participants TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL
-);
-CREATE TABLE runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, fixed_run_id INTEGER, channel_id TEXT,
-    week_start TEXT NOT NULL, bosses TEXT NOT NULL, datetime TEXT NOT NULL,
-    participants TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'planned',
-    source TEXT NOT NULL DEFAULT 'fixed', created_at TEXT NOT NULL
-);
-CREATE TABLE rsvps (
-    run_id INTEGER NOT NULL, user_id TEXT NOT NULL, state TEXT NOT NULL,
-    source TEXT NOT NULL DEFAULT 'reaction', at TEXT NOT NULL,
-    PRIMARY KEY (run_id, user_id)
-);
-CREATE TABLE reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, fire_at TEXT NOT NULL,
-    kind TEXT NOT NULL, sent_at TEXT, message_id TEXT, UNIQUE (run_id, kind)
-);
-CREATE TABLE messages (
-    id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, author_id TEXT NOT NULL,
-    created_at TEXT NOT NULL, content TEXT NOT NULL, processed_at TEXT
-);
-CREATE TABLE config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-"""
 
-
-@pytest.fixture
-def v1_db(tmp_path):
-    """A populated v1 database on disk."""
-    path = tmp_path / "v1.sqlite"
+def v9_database(path) -> None:
     conn = sqlite3.connect(path)
-    conn.executescript(V1_SQL)
-    conn.execute("INSERT INTO schema_version (version) VALUES (1)")
-    conn.execute(
-        "INSERT INTO members VALUES ('7', 'harbour4417', 'MY', '[\"MY\"]', 1,"
-        " '2026-08-30T00:00:00+00:00')"
+    conn.executescript(
+        """
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version VALUES (9);
+        CREATE TABLE members (
+            user_id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL DEFAULT '',
+            nickname TEXT,
+            aliases TEXT NOT NULL DEFAULT '[]',
+            has_role INTEGER NOT NULL DEFAULT 0,
+            ping_level TEXT NOT NULL DEFAULT 'essential',
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO members VALUES (
+            '7', 'harbour4417', 'MY', '["MY"]', 1, 'off',
+            '2026-08-30T00:00:00+00:00'
+        );
+        CREATE TABLE config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO config VALUES ('persona', 'persona.md');
+        """
     )
-    conn.execute(
-        "INSERT INTO messages VALUES ('55', '900', '7', '2026-08-30T00:00:00+00:00', 'hi', NULL)"
-    )
-    conn.execute("INSERT INTO config VALUES ('day_of_ping_time', '08:30')")
-    conn.execute(
-        "INSERT INTO fixed_runs (owner_id, channel_id, bosses, weekday, time, participants,"
-        " created_at) VALUES ('7', '900', '[\"HStar\"]', 0, '21:30', '[\"7\"]', 'x')"
-    )
-    conn.execute(
-        "INSERT INTO runs (fixed_run_id, channel_id, week_start, bosses, datetime, participants,"
-        " created_at) VALUES (1, '900', 'w', '[\"HStar\"]',"
-        " '2026-08-31T13:30:00+00:00', '[\"7\"]', 'x')"
-    )
-    conn.execute("INSERT INTO reminders (run_id, fire_at, kind) VALUES (1, 'x', 'day_of')")
-    conn.execute("INSERT INTO rsvps VALUES (1, '7', 'yes', 'reaction', 'x')")
     conn.commit()
     conn.close()
-    return path
 
 
-def test_opening_a_v1_database_migrates_it(v1_db):
-    repo = Repo(v1_db)
-    version = repo._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-    assert version == SCHEMA_VERSION
+def test_a_fresh_database_starts_at_v10_with_reply_styles(tmp_path):
+    repo = Repo(tmp_path / "fresh.sqlite")
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 10
+    repo.upsert_member(7, "harbour4417", "MY", True)
+    assert repo.get_reply_style(7) is None
     repo.close()
 
 
-def test_real_state_is_preserved(v1_db):
-    repo = Repo(v1_db)
-    member = repo.get_member("7")
+def test_v9_migrates_to_v10_without_losing_member_state(tmp_path):
+    path = tmp_path / "v9.sqlite"
+    v9_database(path)
+
+    repo = Repo(path)
+
+    assert SCHEMA_VERSION == 10
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 10
+    member = repo.get_member(7)
     assert member["display_name"] == "harbour4417"
     assert member["aliases"] == ["MY"]
-    assert member["has_role"] is True
-    assert repo._conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
-    # Runtime config the owner changed must survive.
-    assert repo.get_config("day_of_ping_time") == "08:30"
+    assert member["ping_level"] == "off"
+    assert member["reply_style"] is None
+    assert repo.get_config("persona") == "persona.md"
     repo.close()
 
 
-def test_hand_entered_baselines_are_carried_across(v1_db):
-    # Fixed runs are configuration someone typed in; losing them would mean
-    # re-entering bosses, day, time and participants by hand.
-    import uuid
-
-    repo = Repo(v1_db)
-    fixed = repo.list_fixed_runs()
-    assert len(fixed) == 1
-    assert fixed[0]["bosses"] == ["HStar"]
-    assert fixed[0]["weekday"] == 0
-    assert fixed[0]["time"] == "21:30"
-    assert fixed[0]["participants"] == ["7"]
-    assert fixed[0]["channel_id"] == "900"
-    assert uuid.UUID(fixed[0]["id"]).version == 4  # and it has a new uuid
+def test_reply_style_survives_reopening(tmp_path):
+    path = tmp_path / "v9.sqlite"
+    v9_database(path)
+    repo = Repo(path)
+    repo.set_reply_style(7, "concise")
     repo.close()
 
-
-def test_derived_rows_are_rebuilt_empty(v1_db):
-    # runs/reminders regenerate from the baselines on the next materialisation.
-    repo = Repo(v1_db)
-    assert repo.list_runs() == []
-    assert repo._conn.execute("SELECT COUNT(*) FROM reminders").fetchone()[0] == 0
-    assert repo._conn.execute("SELECT COUNT(*) FROM rsvps").fetchone()[0] == 0
-    repo.close()
+    reopened = Repo(path)
+    assert reopened.get_reply_style(7) == "concise"
+    reopened.close()
 
 
-def test_the_carried_baselines_rematerialise(v1_db):
-    from datetime import time
+def test_v9_to_v10_is_idempotent(tmp_path):
+    path = tmp_path / "v9.sqlite"
+    v9_database(path)
+    Repo(path).close()
+    Repo(path).close()
 
-    from bot.agent.materialise import materialise_week
-    from bot.domain.weeks import current_week_start
-
-    from .conftest import COUNTDOWNS, RESET_TIME, RESET_WEEKDAY, TZ
-
-    repo = Repo(v1_db)
-    week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
-    # As of the reset: `materialise_week` creates nothing for a slot that has
-    # already passed, so run this at the wall clock and the carried baseline
-    # stops rematerialising partway through the week.
-    created = materialise_week(repo, week, TZ, time(9, 0), COUNTDOWNS, now=week)
-    assert len(created) == 1
-    run = repo.get_run(created[0])
-    assert run["bosses"] == ["HStar"]
-    assert run["channel_id"] == "900"
-    repo.close()
+    conn = sqlite3.connect(path)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(members)")]
+    assert columns.count("reply_style") == 1
+    conn.close()
 
 
-def test_new_rows_get_uuid_ids_after_migrating(v1_db):
-    import uuid
+def test_pre_v9_database_is_refused_with_upgrade_direction(tmp_path):
+    path = tmp_path / "old.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE schema_version (version INTEGER NOT NULL);"
+        "INSERT INTO schema_version VALUES (8);"
+    )
+    conn.close()
 
-    repo = Repo(v1_db)
-    fixed_id = repo.add_fixed_run("7", ["HStar"], 0, "21:30", ["7"], channel_id=900)
-    assert uuid.UUID(fixed_id).version == 4
-    repo.close()
+    with pytest.raises(RuntimeError, match="supports upgrades from v9 only"):
+        Repo(path)
 
 
-def test_migrating_is_idempotent(v1_db):
-    first = Repo(v1_db)
-    ids = [f["id"] for f in first.list_fixed_runs()]
-    first.close()
+def test_unversioned_existing_database_is_not_mislabeled_v10(tmp_path):
+    path = tmp_path / "unversioned.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE members (user_id TEXT PRIMARY KEY)")
+    conn.close()
 
-    repo = Repo(v1_db)  # second open must be a no-op
+    with pytest.raises(RuntimeError, match="has no schema version"):
+        Repo(path)
+
+    conn = sqlite3.connect(path)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(members)")]
+    assert columns == ["user_id"]
     assert (
-        repo._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-        == SCHEMA_VERSION
+        conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+        ).fetchone()[0]
+        == 0
     )
-    assert repo.get_member("7") is not None
-    assert [f["id"] for f in repo.list_fixed_runs()] == ids  # not duplicated or re-keyed
-    repo.close()
-
-
-def test_a_fresh_database_starts_at_the_latest_version(tmp_path):
-    repo = Repo(tmp_path / "fresh.sqlite")
-    rows = repo._conn.execute("SELECT version FROM schema_version").fetchall()
-    assert [r["version"] for r in rows] == [SCHEMA_VERSION]
-    repo.close()
-
-
-def test_a_live_database_gains_the_chat_log_without_losing_anything(tmp_path):
-    """v5 onward adds tables and touches nothing else.
-
-    Written against a *real* v5 file rather than a hand-rolled one: the step
-    that matters is the one a running deployment will take, and the running
-    deployment's v5 is whatever `SCHEMA_SQL` built. The landing version is the
-    constant, not a literal, so adding a schema version does not stale this.
-    """
-    path = tmp_path / "v5.sqlite"
-    repo = Repo(path)
-    repo.upsert_member(7, "harbour4417", "MY", True)
-    fixed = repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
-    repo._conn.execute("DROP TABLE chat_interactions")
-    repo._conn.execute("UPDATE schema_version SET version = 5")
-    repo.close()
-
-    migrated = Repo(path)
-    version = migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-    assert version == SCHEMA_VERSION
-    assert migrated.recent_chat_interactions() == []
-    assert migrated.get_member("7")["display_name"] == "harbour4417"
-    assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
-    migrated.close()
-
-
-def test_a_live_database_gains_the_allowances_without_losing_anything(tmp_path):
-    """v7 -> v8 adds ``chat_rate_limits``, and nobody has one until they are given it."""
-    path = tmp_path / "v7.sqlite"
-    repo = Repo(path)
-    repo.upsert_member(7, "harbour4417", "MY", True)
-    fixed = repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
-    repo._conn.execute("DROP TABLE chat_rate_limits")
-    repo._conn.execute("UPDATE schema_version SET version = 7")
-    repo.close()
-
-    migrated = Repo(path)
-    version = migrated._conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-    assert version == SCHEMA_VERSION
-    # No rows means everybody is on the guild default, which is where they were.
-    assert migrated.list_rate_limits() == []
-    assert migrated.get_member("7")["display_name"] == "harbour4417"
-    assert [f["id"] for f in migrated.list_fixed_runs()] == [fixed]
-    migrated.close()
-
-
-def test_a_v8_interaction_gains_an_empty_model_trace_without_losing_its_reply(tmp_path):
-    """The v9 column is additive: the existing diagnostic record remains whole."""
-    path = tmp_path / "v8.sqlite"
-    repo = Repo(path)
-    interaction = repo.log_chat_interaction(
-        model="m",
-        question="what happened?",
-        reply="A card was posted.",
-        outcome="answered",
-        tool_calls=[{"name": "propose_move", "created": ["an-amendment"]}],
-    )
-    columns = [
-        row["name"]
-        for row in repo._conn.execute("PRAGMA table_info(chat_interactions)")
-        if row["name"] != "model_rounds"
-    ]
-    column_sql = ", ".join(columns)
-    repo._conn.execute(
-        f"CREATE TABLE old_chat_interactions AS SELECT {column_sql} FROM chat_interactions"
-    )
-    repo._conn.execute("DROP TABLE chat_interactions")
-    repo._conn.execute("ALTER TABLE old_chat_interactions RENAME TO chat_interactions")
-    repo._conn.execute("UPDATE schema_version SET version = 8")
-    repo.close()
-
-    migrated = Repo(path)
-    row = migrated.get_chat_interaction(interaction)
-    assert row["reply"] == "A card was posted."
-    assert row["tool_calls"] == [{"name": "propose_move", "created": ["an-amendment"]}]
-    assert row["model_rounds"] == []
-    assert "model_rounds" in {
-        column["name"] for column in migrated._conn.execute("PRAGMA table_info(chat_interactions)")
-    }
-    migrated.close()
+    conn.close()
 
 
 def test_a_database_from_a_newer_bot_is_refused(tmp_path):

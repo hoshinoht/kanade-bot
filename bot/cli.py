@@ -712,6 +712,132 @@ def ping(
     console.print(f"[green]✓[/green] Posted a {kind} test: {result['url']}")
 
 
+@app.command("post-message")
+def post_message(
+    channel: str = typer.Option(..., "--channel", "-c", help="Discord channel id."),
+    message: str = typer.Argument(..., help="Message text. Discord markdown supported."),
+    file: Path | None = typer.Option(None, "--file", "-f", help="Read message from a file."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read message from stdin."),
+) -> None:
+    """Post a message to a Discord channel.
+
+    Accepts Discord markdown: **bold**, *italic*, `code`, ~~strikethrough~~,
+    > blockquotes, [links](url), and <@user_id> / <#channel_id> mentions.
+    Use --file or --stdin for longer content.
+    """
+    if file:
+        text = file.read_text(encoding="utf-8").strip()
+    elif stdin:
+        text = sys.stdin.read().strip()
+    else:
+        text = message.strip()
+    if not text:
+        fail("nothing to post — provide a message, --file, or --stdin")
+    result = api().post("/api/say", {"channel_id": channel, "content": text})
+    console.print(f"[green]✓[/green] Posted {len(text)} chars: {result['url']}")
+
+
+@app.command()
+def guide(
+    channel: str = typer.Option(..., "--channel", "-c", help="Discord channel id."),
+) -> None:
+    """Post the full #sakuna-guide to Discord.
+
+    Reads messages from config/guide.yaml and boss entries from
+    config/guide_bosses.yaml. Portrait PNGs are attached as embed
+    thumbnails from config/portraits/icon/.
+    """
+    import yaml
+
+    cfg_dir = Path("config")
+    guide_path = cfg_dir / "guide.yaml"
+    boss_path = cfg_dir / "guide_bosses.yaml"
+    portraits = cfg_dir / "portraits" / "icon"
+
+    if not guide_path.exists():
+        fail(f"guide config not found: {guide_path}")
+
+    guide = yaml.safe_load(guide_path.read_text(encoding="utf-8")) or {}
+    messages = guide.get("messages", [])
+
+    # Load boss entries if the bosses marker is present.
+    boss_entries = []
+    if boss_path.exists():
+        boss_entries = (yaml.safe_load(boss_path.read_text(encoding="utf-8")) or {}).get(
+            "bosses", []
+        )
+
+    # Build boss embeds with portrait thumbnails and per-boss colours.
+    boss_embeds: list[dict] = []
+    for b in boss_entries:
+        tokens = " \u00b7 ".join(b["tokens"])
+        portrait = portraits / f"{b['portrait']}.png"
+        boss_embeds.append(
+            {
+                "title": f"**{b['name']}** \u00b7 Lv{b['level']}",
+                "description": (f"{b['named']}\n`{tokens}`\nalso answers to: {b['aliases']}"),
+                "colour": b.get("colour", 0x98A1B3),
+                "thumbnail_path": str(portrait) if portrait.exists() else None,
+            }
+        )
+
+    footer_text = "*Powered by kanade \u00b7 <https://github.com/hoshinoht/kanade-bot>*"
+
+    posted = 0
+    for content in messages:
+        # Detect the bosses placeholder and replace with embeds.
+        if "bosses: true" in content:
+            header = content.replace("bosses: true", "").strip()
+            if boss_embeds:
+                # Discord caps embeds at 10 per message.
+                chunk_size = 10
+                chunks = [
+                    boss_embeds[i : i + chunk_size] for i in range(0, len(boss_embeds), chunk_size)
+                ]
+                for ci, chunk in enumerate(chunks):
+                    api().post(
+                        "/api/guide",
+                        {
+                            "channel_id": channel,
+                            "content": header if ci == 0 else "",
+                            "embeds": chunk,
+                        },
+                    )
+                    posted += 1
+                    console.print(
+                        f"[green]\u2713[/green] Message {posted} "
+                        f"(bosses {ci + 1}/{len(chunks)}): "
+                        f"{len(chunk)} embeds"
+                    )
+                    time.sleep(1)
+
+            # Footer as its own message.
+            api().post(
+                "/api/say",
+                {"channel_id": channel, "content": footer_text},
+            )
+            posted += 1
+            console.print(f"[green]\u2713[/green] Message {posted} (footer)")
+        else:
+            text = content.strip()
+            if not text:
+                # Spacer — use a thin space so Discord renders a gap.
+                text = "\u200b"
+            api().post(
+                "/api/say",
+                {"channel_id": channel, "content": text},
+            )
+            posted += 1
+            console.print(
+                f"[green]\u2713[/green] Message {posted}: spacer"
+                if text == "\u200b"
+                else f"{len(text)} chars"
+            )
+        time.sleep(1)
+
+    console.print(f"[green]\u2713[/green] Done — {posted} messages posted")
+
+
 @app.command()
 def extractions(limit: int = typer.Option(25, "--limit", "-n")) -> None:
     """The model call log -- the prompt-tuning tool."""
@@ -1110,7 +1236,7 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 def config_set(
     key: str = typer.Argument(
         help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
-        "quiet_mode, chat_mode, persona (a filename in personas/), or one of "
+        "quiet_mode, chat_mode, persona (a filename in config/personas/), or one of "
         "the chat_pilot_*_rate_* numbers."
     ),
     value: str = typer.Argument(help="The new value."),

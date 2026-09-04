@@ -1,76 +1,41 @@
-# Pinned so the project name follows the repo's identity, not the checkout
-# directory: the 2026-09-01 rename to kanade-bot showed what happens otherwise
-# (compose stops owning the running container and quietly provisions a fresh,
-# EMPTY data volume under the new derived name). Data was migrated from
-# boss-scheduler-bot_botdata to kanade-bot_botdata the same day.
-name: kanade-bot
-
+name: kanade
 services:
   bot:
     build: .
     container_name: kanade-bot
     env_file: .env
     environment:
-      # Ollama stays native on the host (no Metal passthrough in Docker on macOS).
-      # Unused until phase 2, but wired now so nothing changes later.
+      # Ollama stays on the macOS host for Metal support.
       OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /app/data/bot.sqlite
       BOSSES_PATH: /app/config/bosses.yaml
-      # In `personas/` on the host, bind-mounted below: drop a file in, restart,
-      # done. It used to live on the data volume, which meant a
-      # `docker compose cp` to change one line of flavour text.
-      # The filename is deliberately generic -- nothing identity-specific
-      # belongs in a tracked file. Keep several and point PERSONA_PATH at one
-      # from `.env` if you want to switch between them.
-      # Missing, it falls back to the tracked persona.example.md, warns in the
-      # log, and says so on the Config page's Chatbot panel.
-      PERSONA_PATH: /app/personas/persona.md
-      # A container's loopback is its own namespace, so binding 127.0.0.1 here
-      # would make the published port unreachable. "Never leaves the host" is
-      # enforced by the `ports:` mapping below, not by this value.
+      # Private identity on the host bind mount; missing files use the template.
+      PERSONA_PATH: /app/config/personas/identities/persona.md
+      # Host exposure is restricted by `ports`, not this container bind address.
       API_HOST: "0.0.0.0"
     extra_hosts: ["host.docker.internal:host-gateway"]
-    # LOOPBACK ONLY. Docker accepts connections on the host's 127.0.0.1 and
-    # forwards them in; nothing on the LAN can reach the portal. Tailnet access
-    # goes through the caddy service below, which replaced `tailscale serve`
-    # on 2026-09-01; this mapping stays for host-local CLI and dev use. Never
-    # `funnel` or publish wider - that would put the portal on the internet.
+    # Loopback only; tailnet traffic enters through Caddy.
     ports: ["127.0.0.1:8080:8080"]
     volumes:
-      # Named volume, not a bind mount: SQLite over macOS VirtioFS has weak
-      # fsync guarantees, and a hard kill mid-write corrupted the DB once
-      # (2026-08-31). Host-side access goes through `docker compose cp`.
+      # Keep SQLite on a named volume, not macOS VirtioFS.
       - botdata:/app/data
-      # Nested inside the volume above (docker mounts by path depth, so the
-      # deeper path wins): the volume is now the only live copy of the schedule,
-      # and a copy nobody can see from the host is not much of a backup. The
-      # bot writes one snapshot a day here, so `data/backups` on the Mac holds
-      # the last fortnight. Consistency comes from SQLite's backup API
-       # (`bot.infrastructure.backup`), never from copying the WAL file underneath it.
+      # Host-visible snapshots created through SQLite's backup API.
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
-      # Base personas are still edited as host files. The portal also stores
-      # reusable behaviour plugins under personas/behaviour-plugins/, so this
-      # one narrowly-scoped bind mount is writable while the container root and
-      # config remain read-only.
-      - ./personas:/app/personas
+      # Writable for private identities, behaviours, and portal-managed profiles.
+      - ./config/personas:/app/config/personas
     restart: unless-stopped
-    # Defense-in-depth: member input never reaches a shell or a URL, but if a
-    # parsing dependency ever gave code execution, it lands in a root-immutable,
-    # capability-less, resource-capped container. /app/data stays writable via
-    # the volume; everything else the process needs at runtime is read-only.
+    # Root stays immutable; only mounted data and config/personas are writable.
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 1g
     pids_limit: 256
-    # An extraction call can run 30-120s; the default 10s grace period
-    # SIGKILLs a mid-write shutdown, which is how the DB got corrupted.
+    # Allow in-flight extraction and SQLite writes to finish.
     stop_grace_period: 60s
     healthcheck:
-      # Checks both halves of the process: the tick loop's SQLite heartbeat and
-      # the in-process API answering /healthz.
+      # Checks the SQLite heartbeat and in-process API.
       test: ["CMD", "python", "-m", "bot.health"]
       interval: 60s
       timeout: 10s
@@ -82,41 +47,24 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # TLS front door for the portal, tailnet-only. Cloudflare holds the A record
-  # (the hostname in caddy/Caddyfile -> this host's Tailscale IP, DNS-only) and
-  # the token in .env.caddy lets Caddy pass the ACME DNS-01 challenge, so the
-  # cert is a real Let's Encrypt one with no port ever opened to the internet.
-  # See caddy/Caddyfile.example for setup and why there is no client-IP filter.
+  # Tailnet-only TLS front door; see caddy/Caddyfile.example.
   caddy:
     build: caddy
     container_name: kanade-caddy
-    # Holds CLOUDFLARE_API_TOKEN (Zone.DNS Edit, scoped to the one zone);
-    # untracked via the .env.* gitignore rule.
+    # Holds the zone-scoped CLOUDFLARE_API_TOKEN.
     env_file: .env.caddy
-    # CADDY_BIND_IP (in .env) is the host's Tailscale IP, so 443 is published
-    # on that address alone - Docker's privileged backend can do the
-    # specific-IP low-port bind that an unprivileged host process cannot
-    # (macOS allows non-root <1024 binds only on the wildcard address). If the
-    # IP ever changes (device re-added to the tailnet), update .env AND the
-    # Cloudflare A record. Docker fails the container start if the IP does not
-    # exist yet; `restart: unless-stopped` retries until Tailscale is up. The
-    # loopback default keeps a fresh clone off the network entirely.
+    # Bind only the Tailscale IP; loopback is the safe fresh-clone default.
     ports: ["${CADDY_BIND_IP:-127.0.0.1}:443:443"]
-    # Docker's embedded DNS forwards external lookups through the host's
-    # resolver chain, i.e. MagicDNS, which failed even the Let's Encrypt
-    # directory lookup at issuance time. Service names (`bot`) still resolve
-    # via the embedded DNS; only external queries go to these.
+    # Avoid MagicDNS failures during ACME lookups; service DNS still works.
     dns: [1.1.1.1, 8.8.8.8]
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      # Certificates and ACME account keys. On a named volume so a rebuild
-      # never re-issues (Let's Encrypt rate-limits duplicate certs).
+      # Preserve certificates and ACME account keys across rebuilds.
       - caddydata:/data
       - caddyconfig:/config
     depends_on: [bot]
     restart: unless-stopped
-    # Same posture as the bot: read-only root, no capabilities beyond the one
-    # binding :443 in-container requires, capped resources.
+    # Only the capability required to bind :443 is retained.
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -129,8 +77,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
 volumes:
   botdata:
+    name: kanade_botdata
+    external: true
   caddydata:
+    name: kanade_caddydata
+    external: true
   caddyconfig:
+    name: kanade_caddyconfig
+    external: true

@@ -1,20 +1,4 @@
-"""Loading the persona document and assembling the system prompt.
-
-The persona is deployment flavour text, not code: it is edited far more often
-than anything in this repository, and a real one names a character and a guild's
-in-jokes.  So it lives on the data volume beside the database and only
-``persona.example.md`` -- a placeholder template -- is tracked.
-
-A missing file is a misconfigured deploy, not a dead bot: the template is loaded
-instead and a WARNING says so, which is loud in the logs and invisible in
-Discord.  The alternative, refusing to answer, turns a typo in a path into a
-feature outage nobody can diagnose from the channel.
-
-Nothing assembled here contains an id, a token or a channel name.  The model is
-told what it *is*, never what it is allowed to talk to -- those gates are
-:mod:`bot.chat.gate`'s, enforced before a prompt is built, and a model cannot
-leak a rule it was never shown.
-"""
+"""Load persona files and assemble trusted chatbot prompts."""
 
 from __future__ import annotations
 
@@ -28,21 +12,22 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
 
-#: Where personas live, at the top of the repository and bind-mounted read-only
-#: into the container. Everything in it but the README and the template is
-#: git-ignored, the way ``config/portraits`` is: a real persona names a
-#: character and a guild's in-jokes, and neither belongs in a public repo.
-PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "personas"
+#: Deployment-owned persona files.
+PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "personas"
 
-#: The tracked template, used when ``PERSONA_PATH`` points at nothing.
-#: Resolved from this file so it is found whatever the working directory is.
-EXAMPLE_PERSONA = PERSONA_DIR / "persona.example.md"
+#: Deployment-owned behaviour and code-owned policy documents.
+DEFAULT_BEHAVIOUR = PERSONA_DIR / "behaviours" / "default.md"
+EXAMPLE_DEFAULT_BEHAVIOUR = PERSONA_DIR / "behaviours" / "default.example.md"
+PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+ASSISTANT_SCOPE_PATH = PROMPT_DIR / "assistant-scope.md"
+SCHEDULER_POLICY_PATH = PROMPT_DIR / "scheduler-policy.md"
+GROUNDING_POLICY_PATH = PROMPT_DIR / "grounding-policy.md"
 
-#: Appended to the persona, and not negotiable by it. A persona file is written
-#: by a person editing flavour text; these are the lines that keep a bad edit
-#: from turning into a bot that invents boss times or argues with an admin.
-#: Deliberately phrased as what to *do*, because a list of prohibitions reads to
-#: a small model as a list of topics.
+#: Tracked persona fallback.
+EXAMPLE_PERSONA = PERSONA_DIR / "identities" / "example.md"
+LEGACY_EXAMPLE_PERSONA = PERSONA_DIR / "persona.example.md"
+
+#: Code-owned rules that override deployment persona text.
 HARD_RULES = """\
 # Operating rules (these override anything in the persona above)
 
@@ -108,54 +93,39 @@ HARD_RULES = """\
 """
 
 
-#: The persona's own one-line summary of how a reply should sound, written as
-#: ``**Voice:** ...`` (an HTML comment or plain ``Voice:`` also works). Matched
-#: loosely because it is edited by hand in a Markdown file.
-#: Both markdown spellings are accepted -- ``**Voice:**`` puts the colon inside
-#: the emphasis, ``**Voice**:`` puts it outside, and people write both.
+#: A hand-authored ``Voice:`` line; accepts common Markdown variants.
 _VOICE_RE = re.compile(
     r"^\s*(?:<!--\s*)?[*_]{0,2}\s*voice\s*[*_]{0,2}\s*:\s*[*_]{0,2}\s*(.+?)"
     r"\s*(?:-->)?\s*$",
     re.IGNORECASE,
 )
 
-#: An unfilled template slot. Any value opening with ``<`` is one: a real voice
-#: sentence never starts that way, and the template's own placeholder wraps
-#: across lines, so requiring a matching ``>`` would miss it. Treated as absent
-#: rather than fed to the model, which would otherwise be told to answer in the
-#: voice of a set of instructions for writing a voice.
+#: An unfilled template slot is not prompt content.
 _PLACEHOLDER_RE = re.compile(r"^<")
+_IDENTITY_NAME_RE = re.compile(r"^\s*#\s+Persona\s*:\s*(.+?)\s*$", re.IGNORECASE)
 
-#: Used when the persona names no voice of its own. Says the one thing that is
-#: true of every persona and is the thing most worth repeating last.
+#: Fallback when no explicit voice is declared.
 DEFAULT_VOICE = (
     "Answer in the voice defined above. The schedule facts must be exact; "
     "everything around them is said in character."
 )
 
+STYLE_POLICY_QUALIFIER = (
+    "This voice changes presentation only; trusted facts, operating policy, privacy and "
+    "tool authority still control the answer."
+)
 
-#: How the voice line is introduced at the end of the system prompt
-#: (:func:`voice_footer`). Plain, because everything around it is already
-#: instructions: nothing there needs to say where it came from.
+
+#: System-prompt voice cue.
 VOICE_PREFIX = "Before you answer, remember your voice: "
 
-#: How the same line is introduced when it is sent as the last *message* of a
-#: call (:func:`voice_reminder`). It has to open by naming itself, because in
-#: that position it is not instructions any more -- it arrives in the
-#: conversation, in the ``user`` role, looking exactly like something a member
-#: typed. Spelled the same way as :func:`bot.chat.followup.prompt`'s opener,
-#: since the two are the same kind of thing: something the scheduler put in
-#: front of the model, which the model should recognise and not answer.
+#: Conversation-positioned voice cue. It identifies scheduler-authored text.
 REMINDER_PREFIX = (
     "[Note from the scheduler, not from anybody in the channel -- do not reply to this "
     "note; answer the conversation above it.] Write your reply in your own voice: "
 )
 
-#: Said after the voice line in the message form only. Card confirmations and
-#: error relays are the turns with the most tool output in front of them and
-#: were the flattest ones live, so they are named rather than left to be
-#: inferred -- and this is the copy that is actually still nearby when the model
-#: composes one.
+#: Additional constraints for the conversation-positioned cue.
 REMINDER_SUFFIX = (
     " Every reply gets one small in-character touch -- card confirmations and error "
     "relays included. Facts, ids and times stay exact. Use compact Discord Markdown for "
@@ -169,44 +139,43 @@ ROLE_OVERLAY_RULE = (
 )
 
 
-def voice_line(persona: str) -> str:
-    """The persona's ``**Voice:**`` sentence, or :data:`DEFAULT_VOICE`.
-
-    A persona document is thousands of tokens long and sits at the very top of
-    the prompt, which is the worst place for it: by the time a small model is
-    composing a reply it has been reading boss ids and tool output for a while
-    and the character has faded. This pulls one sentence back out so it can be
-    repeated last -- see :func:`system_prompt`.
-
-    The **first** ``Voice:`` line wins, and an unfilled one falls back rather
-    than sending the search deeper. A persona document contains other prose
-    about voice -- the template's own compressed-prompt block has a ``Voice:``
-    line inside a code fence -- and scavenging the next match down would quietly
-    prefer an example over the slot the author actually filled in.
-    """
-    for line in (persona or "").splitlines():
+def declared_voice(document: str) -> str | None:
+    """Return a document's explicit usable ``Voice:`` line, if it has one."""
+    for line in (document or "").splitlines():
         match = _VOICE_RE.match(line)
         if match is None:
             continue
         found = match.group(1).strip()
-        return DEFAULT_VOICE if not found or _PLACEHOLDER_RE.match(found) else found
-    return DEFAULT_VOICE
+        return None if not found or _PLACEHOLDER_RE.match(found) else found
+    return None
 
 
-#: The worked-example section a persona writes for itself: a `**Good**` heading
-#: followed by one-line quoted examples. Bounded so a `> ` quote elsewhere in the
-#: document -- and the matching `**Bad**` block right underneath -- are not read
-#: as things the bot should sound like.
-#: ``**Good**``, and also ``**Good -- chat-pilot replies (...)**``: a persona
-#: worth writing has more than one kind of good line, and the qualified heading
-#: is how an author says which kind. ``\b`` after "good" keeps ``**Goodbye**``
-#: from matching.
+def voice_line(persona: str) -> str:
+    """Return the first declared voice, or the fallback."""
+    return declared_voice(persona) or DEFAULT_VOICE
+
+
+def effective_voice(default_behaviour: str, active_profile: str = "") -> str:
+    """The active profile's voice, then the default behaviour's voice."""
+    return declared_voice(active_profile) or declared_voice(default_behaviour) or DEFAULT_VOICE
+
+
+def identity_name(identity: str) -> str:
+    """Name declared by ``# Persona: ...``, without baking one into policy."""
+    for line in (identity or "").splitlines():
+        if match := _IDENTITY_NAME_RE.match(line):
+            name = match.group(1).strip()
+            if name and not _PLACEHOLDER_RE.match(name):
+                return name
+    return "The assistant"
+
+
+#: ``Good`` example headings; ``\b`` excludes ``Goodbye``.
 _GOOD_HEADING_RE = re.compile(r"^\s*[*_]{0,2}\s*good\b[^*_]*[*_]{0,2}\s*:?\s*$", re.IGNORECASE)
 _EXAMPLE_RE = re.compile(r"^\s*>\s*`(.+)`\s*$")
 _SECTION_END_RE = re.compile(r"^\s*(?:#{1,6}\s|-{3,}\s*$|\*{3,}\s*$)|^\s*\*\*[^*]+\*\*\s*$")
 
-#: Few-shot lines do more per token than any amount of adjectives, and cost
-#: context that the schedule needs. Both caps are deliberately small.
+#: Bound few-shot prompt content.
 MAX_EXAMPLES = 8
 MAX_EXAMPLE_CHARS = 600
 
@@ -214,25 +183,11 @@ EXAMPLES_HEADING = "Replies that sound right:"
 
 
 def good_examples(persona: str) -> list[str]:
-    """The persona's own "Good" lines, as few-shot examples.
-
-    Read from the document rather than invented here: the examples are the part
-    of a persona file that does the most steering per token, and they are the
-    part an author actually rewrites when the voice is wrong.
-
-    Skips fenced code blocks (the template keeps a whole compressed prompt in
-    one), stops at the next heading -- crucially before the ``**Bad**`` block --
-    and drops unfilled ``<placeholder>`` slots, so the tracked template
-    contributes nothing rather than teaching the bot to speak in angle brackets.
-    """
+    """Return bounded, round-robin ``Good`` examples."""
     sections = good_sections(persona)
     kept: list[str] = []
     spent = 0
-    # Round-robin, not first-come. A persona has more than one kind of good line
-    # -- general voice, then "chat-pilot replies (answering questions and
-    # relaying tool results)" -- and taking them in file order let the first
-    # section spend the whole budget, which is how the section written for
-    # exactly this feature ended up contributing nothing.
+    # Share the budget across ``Good`` sections.
     for row in zip_longest(*sections):
         for example in row:
             if example is None:
@@ -281,38 +236,22 @@ def examples_block(persona: str) -> str:
     return "\n".join([EXAMPLES_HEADING, *(f"- {example}" for example in examples)])
 
 
+def effective_examples_block(default_behaviour: str, active_profile: str = "") -> str:
+    """Promote profile examples when supplied, otherwise the default examples."""
+    profile_examples = good_examples(active_profile)
+    examples = profile_examples or good_examples(default_behaviour)
+    if not examples:
+        return ""
+    return "\n".join([EXAMPLES_HEADING, *(f"- {example}" for example in examples)])
+
+
 def voice_footer(persona: str) -> str:
-    """The voice line as the last thing in the *system prompt*.
-
-    One of two forms, and the difference between them is position rather than
-    taste. This one is read as instructions, among instructions, so it is said
-    plainly: a note explaining that the scheduler wrote it and that it is not to
-    be replied to would be answering a question nobody in that position asks --
-    and its "answer the conversation above it" would point at nothing, because
-    there is no conversation above the system prompt.
-
-    See :func:`voice_reminder` for the form that goes in the conversation.
-    """
+    """Return the final system-prompt voice cue."""
     return VOICE_PREFIX + voice_line(persona)
 
 
 def voice_reminder(persona: str, role_overlay: str = "") -> str:
-    """The same line as the last *message* of a call, which is a different job.
-
-    Sent by :meth:`bot.chat.agent.ChatPilot.voice_reminder` in the ``user`` role
-    -- the only role Ollama's gpt-oss template renders in place at the end -- so
-    on the page it is indistinguishable from something a member typed. Hence the
-    opener: it has to name its own provenance and say it is not to be answered,
-    which :func:`voice_footer` never needs to.
-
-    It also carries :data:`REMINDER_SUFFIX`, because this is the copy that is
-    still nearby when the model composes, and the flat replies it is aimed at
-    (card confirmations, error relays) are the ones furthest from the footer.
-
-    The full stop is added only when the persona's own sentence does not end in
-    one, so a hand-written ``**Voice:**`` line that trails off does not run into
-    the sentence after it.
-    """
+    """Return the final conversation voice cue."""
     line = voice_line(persona).rstrip()
     if not line.endswith((".", "!", "?")):
         line += "."
@@ -323,24 +262,42 @@ def voice_reminder(persona: str, role_overlay: str = "") -> str:
     return reminder
 
 
+def component_voice_footer(
+    default_behaviour: str, active_profile: str = "", identity: str = ""
+) -> str:
+    """A bounded style cue for the component-aware prompt."""
+    voice = (
+        declared_voice(active_profile)
+        or declared_voice(default_behaviour)
+        or declared_voice(identity)
+        or DEFAULT_VOICE
+    )
+    return f"{VOICE_PREFIX}{voice}\n{STYLE_POLICY_QUALIFIER}"
+
+
+def component_voice_reminder(
+    default_behaviour: str, active_profile: str = "", identity: str = ""
+) -> str:
+    """Trailing component-aware cue; never repeats complete profile instructions."""
+    line = (
+        declared_voice(active_profile)
+        or declared_voice(default_behaviour)
+        or declared_voice(identity)
+        or DEFAULT_VOICE
+    ).rstrip()
+    if not line.endswith((".", "!", "?")):
+        line += "."
+    return f"{REMINDER_PREFIX}{line}{REMINDER_SUFFIX} {STYLE_POLICY_QUALIFIER}"
+
+
 @dataclass(frozen=True)
 class Persona:
-    """A loaded persona, and which file it actually came from.
-
-    The second half is why this is a record rather than a string: "the bot is
-    talking in the placeholder voice" is a misconfigured deploy, and it used to
-    be visible only in a WARNING nobody reads. The portal's Config page says it
-    at a glance instead, which it can only do if the loader remembers.
-
-    Also the shape a runtime persona setting would need: name a different file
-    in ``personas/``, read it, and swap the record. Nothing here is per-process
-    state, so a reload is a second call.
-    """
+    """Loaded persona text and source metadata."""
 
     text: str
-    #: The file the text came from, or ``None`` when nothing was readable.
+    #: Source file, or ``None`` when unavailable.
     path: Path | None
-    #: True when ``path`` is the tracked template rather than a real persona.
+    #: Whether the tracked fallback was used.
     fell_back: bool
 
     @property
@@ -349,25 +306,54 @@ class Persona:
         return self.path.name if self.path is not None else ""
 
 
-#: The README documents the directory; it is not a voice. Everything else with
-#: a ``.md`` on it is offered, the tracked template included -- a deployment
-#: that has not written its own yet is legitimately wearing that one.
+@dataclass(frozen=True)
+class PromptComponents:
+    """Trusted prompt components with deliberately separate responsibilities."""
+
+    identity: str
+    default_behaviour: str
+    active_profile: str = ""
+
+
+def _read_required(path: Path) -> str:
+    """Read a code-owned prompt asset or fail with an actionable path."""
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(f"required chatbot prompt is unreadable: {path}: {exc}") from exc
+    if not text:
+        raise RuntimeError(f"required chatbot prompt is empty: {path}")
+    return text
+
+
+def validate_prompt_assets() -> None:
+    """Fail startup/tests early when immutable prompt policy is not packaged."""
+    for path in (ASSISTANT_SCOPE_PATH, SCHEDULER_POLICY_PATH, GROUNDING_POLICY_PATH):
+        _read_required(path)
+
+
+def read_default_behaviour(
+    path: str | Path | None = None,
+    fallback: Path = EXAMPLE_DEFAULT_BEHAVIOUR,
+) -> Persona:
+    """Load deployment default behaviour with the same visible fallback contract."""
+    return read_persona(DEFAULT_BEHAVIOUR if path is None else path, fallback)
+
+
+#: Markdown file excluded from persona choices.
 NOT_A_PERSONA = "README.md"
 
 
 def available(directory: Path | None = None) -> list[str]:
-    """Every persona on offer, by filename, sorted.
+    """Return available persona filenames."""
+    if directory is None:
+        new = _available_personas(PERSONA_DIR / "identities")
+        legacy = _available_personas(PERSONA_DIR)
+        return sorted(set(new) | set(legacy))
+    return _available_personas(directory)
 
-    Enumerated per call rather than cached. The directory is a bind mount: a
-    file can appear between two page loads, and a stale list is both a wrong
-    dropdown and a wrong answer to "is this a real choice". A directory that is
-    not there at all -- a checkout with no personas, a mount that failed --
-    offers nothing rather than raising.
 
-    ``directory`` resolves at call time rather than as a default argument, so
-    :data:`PERSONA_DIR` is read when it is asked for and a test can stage one.
-    """
-    directory = PERSONA_DIR if directory is None else directory
+def _available_personas(directory: Path) -> list[str]:
     try:
         found = [item.name for item in directory.iterdir() if item.is_file()]
     except OSError:
@@ -376,20 +362,15 @@ def available(directory: Path | None = None) -> list[str]:
 
 
 def chosen_path(name: str | None, directory: Path | None = None) -> Path | None:
-    """The file a chosen persona names, or ``None`` if it is not one of them.
-
-    Membership, not sanitising. The submitted string is compared against the
-    real directory listing and only joined to a path once it has matched one,
-    so ``../../etc/passwd``, an absolute path and anything with a separator in
-    it are all simply "not one of these names" -- there is no path to reject
-    because none was ever built. The same reason
-    :meth:`bot.domain.bosses.BossTable.portrait_path` looks its filenames up in the
-    boss table rather than taking them from a URL.
-    """
+    """Return a selected persona path only after directory membership checks."""
     if not name:
         return None
-    directory = PERSONA_DIR if directory is None else directory
-    return directory / name if name in available(directory) else None
+    if directory is not None:
+        return directory / name if name in available(directory) else None
+    identity_dir = PERSONA_DIR / "identities"
+    if name in _available_personas(identity_dir):
+        return identity_dir / name
+    return PERSONA_DIR / name if name in _available_personas(PERSONA_DIR) else None
 
 
 def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> Persona:
@@ -401,7 +382,7 @@ def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> P
         except OSError as exc:
             log.warning(
                 "no persona at %s (%s); falling back to %s - the bot will answer in the "
-                "placeholder voice until the real file is in personas/",
+                "placeholder voice until the real file is in config/personas/",
                 candidate,
                 exc,
                 fallback.name,
@@ -411,12 +392,15 @@ def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> P
                 log.info("loaded the persona from %s (%d characters)", candidate, len(text))
                 return Persona(text=text, path=candidate, fell_back=False)
             log.warning("the persona at %s is empty; falling back to %s", candidate, fallback.name)
+    actual_fallback = fallback
+    if fallback == EXAMPLE_PERSONA and not fallback.exists():
+        actual_fallback = LEGACY_EXAMPLE_PERSONA
     try:
-        text = fallback.read_text(encoding="utf-8").strip()
+        text = actual_fallback.read_text(encoding="utf-8").strip()
     except OSError:  # pragma: no cover - the template is tracked
         log.error("no persona file at all, including the tracked %s", fallback)
         return Persona(text="", path=None, fell_back=True)
-    return Persona(text=text, path=fallback, fell_back=True)
+    return Persona(text=text, path=actual_fallback, fell_back=True)
 
 
 def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:
@@ -425,11 +409,7 @@ def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> s
 
 
 def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
-    """The two facts every answer needs and no tool returns: today, and the week.
-
-    Without this the model has no idea what "tonight" or "tomorrow" means and
-    answers relative questions against its training cutoff.
-    """
+    """Return current local time and boss-week context."""
     local = now.astimezone(tz)
     week_local = week_start.astimezone(tz)
     return (
@@ -439,16 +419,7 @@ def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
     )
 
 
-#: What the bot is actually running on, filled in from ``CHAT_PILOT_MODEL``.
-#: Deliberately *not* in :data:`HARD_RULES`: those are pinned literals shared by
-#: every deployment, and this sentence names one deployment's model.
-#:
-#: Says nothing about *where* the model runs, on purpose: ``CHAT_PILOT_MODEL``
-#: may name a local model or one of Ollama's cloud models proxied through the
-#: same daemon, and "on the machine that hosts the bot" would be a second false
-#: claim in place of the one this exists to remove. It is also scoped to the
-#: runtime alone -- who wrote the bot is the persona document's to answer, and a
-#: line here saying these are the only facts it has would overrule it.
+#: Runtime-model context from ``CHAT_PILOT_MODEL``.
 RUNTIME_LINE = (
     "You are a Discord bot for this guild's boss schedule. You run on {model}, served "
     "through Ollama. If somebody asks what you run on or what model you are, that is "
@@ -456,34 +427,20 @@ RUNTIME_LINE = (
     "training story, and never claim to be anything other than a bot."
 )
 
-#: Used when no model is configured, which is a misconfigured deploy rather than
-#: an invitation to guess: saying nothing here is what let the model make one up.
-#: Substituted for the whole phrase, so the sentence reads either way.
+#: Safe fallback for an unset model name.
 UNNAMED_MODEL = "an unnamed model"
 
 
 def runtime_line(model: str) -> str:
-    """The one paragraph that says what the bot is running on.
-
-    Live, asked "what model are u deployed on", the bot answered "a fine-tuned
-    LLaMA-2" -- a plausible sentence about a model it has never run. Nothing in
-    the prompt told it otherwise, so it answered from training data like any
-    other question it had no tool for. This is the fact, taken from the setting
-    that actually selects the model, so the true answer is the easy one.
-    """
+    """Return runtime-model context from configured data."""
     named = (model or "").strip()
     return RUNTIME_LINE.format(model=f"the `{named}` model" if named else UNNAMED_MODEL)
 
 
-#: How the current-focus line introduces itself. It names the channel because
-#: "the last card" with nothing qualifying it reads as the last card anywhere,
-#: and the pilot answers in more than one place.
+#: Current-card context is channel-scoped.
 FOCUS_PREFIX = "The last card posted in this channel: "
 
-#: Why the line is there at all, said to the model in one sentence. The failure
-#: it is aimed at is a member finishing a three-step job -- create the run, move
-#: it, add people -- where every step after the first says "it", and the card
-#: that "it" means has scrolled out of the remembered conversation.
+#: Resolves unqualified references to the current card.
 FOCUS_SUFFIX = (
     ' If somebody says "it" or "that run" with nothing else to point at, that is what '
     "they mean. It is still only a proposal until somebody reacts ✅ on it."
@@ -491,18 +448,7 @@ FOCUS_SUFFIX = (
 
 
 def focus_line(card: str) -> str:
-    """The last card this channel saw, as one line of context, or ``""``.
-
-    A third fact about the here and now that no tool returns, sitting with
-    :func:`clock_header` and :func:`runtime_line` for that reason: a member's
-    "move it to 22:00" is answerable only if the bot knows what the last "it"
-    was, and no tool call can tell it which card it posted four minutes ago.
-
-    Absent rather than empty when there is nothing to say -- a channel with no
-    recent card, or one whose card has aged out. A placeholder line saying there
-    is no card would be a sentence about nothing at the top of every prompt, and
-    a small model reads sentences about nothing as topics.
-    """
+    """Return current-card context, or an empty string."""
     text = (card or "").strip()
     return f"{FOCUS_PREFIX}{text}.{FOCUS_SUFFIX}" if text else ""
 
@@ -514,27 +460,7 @@ def system_prompt(
     focus: str = "",
     role_overlay: str = "",
 ) -> str:
-    """Persona, hard rules, clock, runtime, focus, few-shot examples, voice reminder.
-
-    The persona goes first because it is what the model should sound like, the
-    rules second because later instructions win when the two disagree, and the
-    clock after them because it is short and load-bearing. ``runtime``
-    (:func:`runtime_line`) and ``focus`` (:func:`focus_line`) sit with the clock:
-    all three are facts about the here and now that no tool returns, and all
-    three exist because a model with no answer invents one. Both are optional so
-    a caller that only cares about the voice -- every test that pins this
-    ordering -- keeps its two-argument call, and a channel with no recent card
-    contributes no line rather than an empty one.
-
-    The examples and the reminder go last, and that placement is the whole point
-    of them: recency is the one lever that reliably moves a small model, and the
-    persona document is the furthest thing from where it composes -- thousands of
-    tokens of character notes, then rules, then a clock, then a transcript, and
-    only then does it write. The voice is repeated a third time as the final
-    *message* of every call (:func:`voice_reminder`), because by composition time
-    even this is behind a stack of tool results -- worded differently there,
-    because a message has to say what it is and a footer does not.
-    """
+    """Assemble the legacy persona-based system prompt."""
     return "\n\n".join(
         part
         for part in (
@@ -555,10 +481,44 @@ def system_prompt(
     )
 
 
+def component_system_prompt(
+    components: PromptComponents,
+    header: str,
+    runtime: str = "",
+    focus: str = "",
+) -> str:
+    """Assemble separated prompt concerns in their explicit precedence order."""
+    assistant_scope = _read_required(ASSISTANT_SCOPE_PATH).replace(
+        "{assistant_name}", identity_name(components.identity)
+    )
+    scheduler_policy = _read_required(SCHEDULER_POLICY_PATH)
+    grounding_policy = _read_required(GROUNDING_POLICY_PATH)
+    return "\n\n".join(
+        part
+        for part in (
+            components.identity.strip(),
+            components.default_behaviour.strip(),
+            components.active_profile.strip(),
+            effective_examples_block(components.default_behaviour, components.active_profile),
+            assistant_scope,
+            scheduler_policy,
+            grounding_policy,
+            header,
+            runtime,
+            focus,
+            component_voice_footer(
+                components.default_behaviour, components.active_profile, components.identity
+            ),
+        )
+        if part
+    )
+
+
 __all__ = [
     "DEFAULT_VOICE",
     "EXAMPLES_HEADING",
     "EXAMPLE_PERSONA",
+    "EXAMPLE_DEFAULT_BEHAVIOUR",
     "FOCUS_PREFIX",
     "FOCUS_SUFFIX",
     "HARD_RULES",
@@ -569,6 +529,7 @@ __all__ = [
     "NOT_A_PERSONA",
     "PERSONA_DIR",
     "Persona",
+    "PromptComponents",
     "available",
     "chosen_path",
     "REMINDER_PREFIX",
@@ -578,14 +539,23 @@ __all__ = [
     "VOICE_PREFIX",
     "clock_header",
     "examples_block",
+    "effective_examples_block",
+    "effective_voice",
     "focus_line",
     "good_examples",
     "good_sections",
+    "identity_name",
     "load_persona",
     "read_persona",
     "runtime_line",
+    "component_system_prompt",
+    "component_voice_footer",
+    "component_voice_reminder",
+    "declared_voice",
+    "read_default_behaviour",
     "system_prompt",
     "voice_footer",
     "voice_line",
     "voice_reminder",
+    "validate_prompt_assets",
 ]

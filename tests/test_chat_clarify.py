@@ -80,7 +80,7 @@ def test_the_rules_are_numbered_once_and_in_order():
 async def test_the_rule_reaches_the_model_in_the_system_prompt(chat_bot, chat_seeded):
     agent = pilot(chat_bot, says("hi"))
     await agent.offer(message(chat_bot))
-    assert "ONE short, specific question" in agent._client.system
+    assert "ask one short question" in agent._client.system
 
 
 # ---------------------------------------------------------------------------
@@ -212,3 +212,63 @@ async def test_a_model_that_guesses_anyway_still_only_makes_a_card(chat_bot, cha
 
     assert len(chat_bot.repo.list_runs()) == before
     assert chat_bot.repo.list_amendments(status="proposed")[0]["status"] == "proposed"
+
+
+async def test_a_clarification_ending_in_a_period_is_not_overwritten(chat_bot, chat_seeded):
+    """Regression: XFA asked Easy/Normal/Hard then added a trailing sentence.
+
+    The old ``endswith("?")`` guard missed the ``?`` mid-reply and overwrote
+    the good question with the raw tool refusal, including the model-only
+    short-form instructions.
+    """
+    clarification = (
+        "Ara ara~ not sure which XFA you mean, darling. "
+        "Is it Easy XFA, Normal XFA, or Hard XFA? "
+        "Just tell me the difficulty and I'll whisk up the proposal for tonight 23:30."
+    )
+    agent = pilot(
+        chat_bot,
+        wants("propose_add", boss="XFAB", when="today 23:30"),
+        says(clarification),
+    )
+    result = (
+        await agent.offer(message(chat_bot, "@bot schedule me a XFA tonight at 2330"))
+    ).answered
+
+    assert result is not None
+    assert result.outcomes[0].outcome == tools.REFUSED
+    assert result.reply == clarification
+    for leaked in (
+        "not posted",
+        "short form",
+        "back to the tool",
+        "for the tool only",
+        "never show them",
+        "propose_add",
+    ):
+        assert leaked.lower() not in result.reply.lower()
+
+
+async def test_a_refused_overwrite_never_shows_tool_instructions(chat_bot, chat_seeded):
+    """A false success claim is corrected without leaking model-only text."""
+    agent = pilot(
+        chat_bot,
+        wants("propose_add", boss="XFAB", when="today 23:30"),
+        says("Card's up — someone ✅ it."),
+    )
+    result = (
+        await agent.offer(message(chat_bot, "@bot schedule me a XFA tonight at 2330"))
+    ).answered
+
+    assert result is not None
+    assert "not posted" in result.reply
+    assert "Card's up" not in result.reply
+    for leaked in (
+        "short form",
+        "back to the tool",
+        "for the tool only",
+        "never show them",
+        "propose_add",
+        "HBellona",
+    ):
+        assert leaked.lower() not in result.reply.lower()

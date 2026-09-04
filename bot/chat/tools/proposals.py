@@ -78,15 +78,28 @@ async def propose(
             "Tell them to check with an admin."
         )
     ctx.posted.extend(posted)
-    card_ids = ", ".join(f"`[{short_id(amendment_id)}]`" for amendment_id in created)
-    return (
-        f"**Card posted:** {card_ids}\n\n"
-        f"{card_text(ctx, kind, amendment, at, run, payload)}. "
-        "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it. "
-        "Tell them the card is up and needs a ✅. The people named above are the whole "
-        "party on it -- name those and nobody else, and never say you are on a run: you "
-        "are a bot and cannot go to one."
+    label, when, party = _card_facts(ctx, kind, amendment, at, run, payload)
+    ids = ", ".join(short_id(amendment_id) for amendment_id in created)
+    facts = [
+        "Card ready -- facts for your reply, not a sentence to copy:",
+        f"- bosses: {label}",
+        f"- party: {party}",
+        f"- cards: {ids}",
+    ]
+    if when:
+        facts.insert(2, f"- when: {when}")
+    facts.extend(
+        [
+            "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it.",
+            "Reply in your own voice saying the card is up and needs a ✅, keeping each "
+            "fact exact. Do not copy the labels or formatting above into your reply, do "
+            'not start with "Card posted:", and do not stick an emoji on a flat sentence '
+            "to sound in-character. The people named above are the whole party on it -- "
+            "name those and nobody else, and never say you are on a run: you are a bot "
+            "and cannot go to one.",
+        ]
     )
+    return "\n".join(facts)
 
 
 def card_when(
@@ -115,6 +128,29 @@ def changed_when(payload: dict) -> str:
     return f"every {was} (same night)"
 
 
+def _card_facts(
+    ctx: ToolContext,
+    kind: str,
+    amendment: Amendment,
+    at: datetime | None,
+    run: dict | None,
+    payload: dict | None,
+) -> tuple[str, str, str]:
+    """Plain boss/when/party facts backing the card line and the tool reply."""
+    data = dict(payload or {})
+    people = list(amendment.participants) or (list(run["participants"]) if run else [])
+    party = names(ctx, people) or "nobody yet"
+    # A card that changes the party says both sides of it, for the same reason
+    # the night is said both ways: the row's own participants are the party as it
+    # stands, and reading that back as "the party on it" would be the old one.
+    joining = (
+        [str(uid) for uid in data.get("participants") or []] if data.get("op") == FIX_EDIT else []
+    )
+    if joining:
+        party = f"{party} → {names(ctx, joining)}"
+    return formatting.boss_labels(amendment.bosses), card_when(ctx, kind, at, run, data), party
+
+
 def card_text(
     ctx: ToolContext,
     kind: str,
@@ -123,22 +159,9 @@ def card_text(
     run: dict | None,
     payload: dict | None,
 ) -> str:
-    """What the card says, so the model's reply can only repeat it."""
-    payload = dict(payload or {})
-    people = list(amendment.participants) or (list(run["participants"]) if run else [])
-    party = names(ctx, people) or "nobody yet"
-    # A card that changes the party says both sides of it, for the same reason
-    # the night is said both ways: the row's own participants are the party as it
-    # stands, and reading that back as "the party on it" would be the old one.
-    joining = (
-        [str(uid) for uid in payload.get("participants") or []]
-        if payload.get("op") == FIX_EDIT
-        else []
-    )
-    if joining:
-        party = f"{party} → {names(ctx, joining)}"
-    when = card_when(ctx, kind, at, run, payload)
-    return f"**{formatting.boss_labels(amendment.bosses)}**{f' *{when}*' if when else ''} — {party}"
+    """What the card says, in the channel's own formatting."""
+    bosses, when, party = _card_facts(ctx, kind, amendment, at, run, payload)
+    return f"**{bosses}**{f' *{when}*' if when else ''} — {party}"
 
 
 def names(ctx: ToolContext, user_ids: Sequence[str]) -> str:

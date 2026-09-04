@@ -13,13 +13,14 @@ import re
 
 import pytest
 
+from bot import behaviour_plugins
 from bot.api import service
 from bot.api.templating import CHAT_TABS, EXTRACTION_TABS, LIMITS_TABS
 from bot.domain.ids import short_id
 from bot.portal_styles import build_stylesheet
 
 from .conftest import kl
-from .fake_bot import add_pilot
+from .fake_bot import FakeGuildMember, FakeGuildRole, add_pilot
 
 #: Every page that is a list of rows, with the id of the region a search swaps.
 TABLES = [
@@ -121,6 +122,57 @@ def test_searching_members_reads_names_nicknames_and_aliases(auth, seeded, fake_
     assert "Priya" in auth.get("/members?q=priya").text
     assert "Priya" in auth.get("/members?q=pri").text
     assert "Priya" not in auth.get("/members?q=alvin").text
+
+
+def test_members_include_chat_staff_saved_and_override_access(fake_bot, seeded):
+    chat_member = add_pilot(fake_bot, 2001, "Chat Member")
+    saved = FakeGuildMember(2002, "Saved Member")
+    saved.guild = fake_bot.guild
+    fake_bot.guild.members.append(saved)
+    fake_bot.repo.upsert_member(saved.id, saved.display_name, None, False)
+    fake_bot.repo.set_reply_style(saved.id, "missing")
+
+    staff = FakeGuildMember(2003, "Staff Member", administrator=True)
+    staff.guild = fake_bot.guild
+    fake_bot.guild.members.append(staff)
+
+    override_role = FakeGuildRole(9001)
+    override = FakeGuildMember(2004, "Override Member")
+    override.guild = fake_bot.guild
+    override.roles = [override_role]
+    fake_bot.guild.members.append(override)
+    fake_bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        '[{"role_id":"9001","plugin":"missing"}]',
+    )
+
+    names = {row["display_name"] for row in service.relevant_style_members(fake_bot)}
+    assert chat_member.display_name in names
+    assert {"Saved Member", "Staff Member", "Override Member"} <= names
+    assert {"Alvin tan", "Priya"} <= names
+
+
+def test_members_show_saved_and_next_reply_styles(auth, fake_bot, seeded, tmp_path, monkeypatch):
+    monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
+    behaviour_plugins.write("public", "PUBLIC")
+    behaviour_plugins.write("override", "OVERRIDE")
+    fake_bot.repo.set_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, '["public"]')
+    fake_bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        '[{"role_id":"9001","plugin":"override"}]',
+    )
+    fake_bot.repo.set_reply_style(1001, "public")
+    member = FakeGuildMember(1001, "Alvin tan")
+    member.guild = fake_bot.guild
+    member.roles = [FakeGuildRole(9001)]
+    fake_bot.guild.members.append(member)
+    fake_bot.guild.roles[9001] = member.roles[0]
+
+    body = auth.get("/members").text
+    row = body[body.index("Alvin tan") : body.index("</tr>", body.index("Alvin tan"))]
+    assert "public" in row
+    assert "override" in row
+    assert "role: 9001" in row
 
 
 def test_searching_fixed_timings_reads_the_boss_the_day_and_the_party(auth, seeded):

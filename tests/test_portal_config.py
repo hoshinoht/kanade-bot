@@ -251,7 +251,7 @@ def plugin_dir(tmp_path, monkeypatch):
 def test_the_chatbot_panel_has_behaviour_plugin_and_role_editors(auth, seeded, plugin_dir):
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert "Behaviour plugins" in panel
+    assert "Reply profiles" in panel
     assert "Role assignments" in panel
     assert 'action="/config/behaviour-plugins"' in panel
     assert 'action="/config/role-plugins"' in panel
@@ -309,6 +309,7 @@ def test_plugins_and_role_assignments_can_be_managed_in_the_portal(
     panel = chatbot_panel(auth.get("/config").text)
     assert role_id in panel
     assert "Use playful, smug banter." in panel
+    assert "private" in panel
     assert f"/config/role-plugins/{role_id}/delete" in panel
 
     auth.post(
@@ -349,6 +350,44 @@ def test_the_portal_renders_multiple_role_plugin_assignments_in_order(
     panel = chatbot_panel(auth.get("/config").text)
 
     assert panel.index("1540491480936751205") < panel.index("1540491480936751206")
+
+
+def test_publication_and_role_priority_are_portal_managed(auth, fake_bot, seeded, plugin_dir):
+    behaviour_plugins.write("first", "FIRST")
+    behaviour_plugins.write("second", "SECOND")
+    first_role = "1540491480936751205"
+    second_role = "1540491480936751206"
+    service.set_role_plugin(fake_bot, first_role, "first")
+    service.set_role_plugin(fake_bot, second_role, "second")
+
+    auth.post(f"/config/role-plugins/{second_role}/move", data={"direction": "up"})
+    assert [item["role_id"] for item in service.get_config(fake_bot)["chat_role_plugins"]] == [
+        second_role,
+        first_role,
+    ]
+
+    auth.post("/config/behaviour-plugins/first/selectable", data={"selectable": "1"})
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first"]
+    blocked = auth.post("/config/behaviour-plugins/first/delete", follow_redirects=False)
+    assert "kind=error" in blocked.headers["location"]
+
+
+def test_broken_role_entries_are_visible_without_hiding_valid_ones(
+    auth, fake_bot, seeded, plugin_dir
+):
+    behaviour_plugins.write("valid", "VALID")
+    fake_bot.repo.set_config(
+        behaviour_plugins.CONFIG_KEY,
+        '[{"role_id":"bad","plugin":"ignored"},'
+        '{"role_id":"1540491480936751205","plugin":"missing"},'
+        '{"role_id":"1540491480936751206","plugin":"valid"}]',
+    )
+
+    panel = chatbot_panel(auth.get("/config").text)
+    assert "1540491480936751206" in panel
+    assert "Skipped configuration" in panel
+    assert "digits only" in panel
+    assert "profile `missing` is unreadable" in panel
 
 
 @pytest.fixture
@@ -428,7 +467,7 @@ def test_a_chosen_voice_that_has_gone_missing_falls_back_and_says_so(
 
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert "fallback: persona.example.md" in panel
+    assert f"fallback: {fake_bot.chat.persona_source().name}" in panel
     assert "status--at_risk" in panel
     assert "kanade.md" in panel  # ...and names the choice that went missing
 
@@ -466,9 +505,9 @@ def test_a_deploy_with_no_persona_of_its_own_says_so(auth, fake_bot, seeded):
 
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert "fallback: persona.example.md" in panel
+    assert "fallback: example.md" in panel
     assert "status--at_risk" in panel
-    assert "personas/" in panel  # ...and where to put a real one
+    assert "config/personas/" in panel  # ...and where to put a real one
 
 
 # --- what .env holds --------------------------------------------------------

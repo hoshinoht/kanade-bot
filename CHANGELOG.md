@@ -2,6 +2,122 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## Unreleased
+
+**Fixed**
+
+- Chat no longer leaks tool refusals into Discord. A clarification that
+  contains a `?` anywhere (not just trailing) is kept as-is on `REFUSED`,
+  unless it falsely claims a card went up. Overwritten refusals are passed
+  through the member-facing filter, which now strips model-only
+  instructions (`short form` / `back to the tool` / `for the tool only` /
+  `never show them`, `propose_*` names).
+
+## 4.1.1
+
+**Added**
+
+- `bossctl guide` — posts the full server guide to a Discord channel.
+  Reads message templates from `config/guide.yaml` and boss entries from
+  `config/guide_bosses.yaml`, attaching portrait thumbnails as embed
+  images with per-boss accent colours. API endpoint `POST /api/guide`
+  added for messages with embeds and file uploads.
+- Guide config files (`guide.yaml`, `guide_bosses.yaml`) are
+  git-ignored with committed examples and a `config/README.md` for
+  setup instructions.
+- Role IDs in guide messages now render as clickable Discord mentions.
+
+**Changed**
+
+- **Personas directory moved** from `personas/` to `config/personas/`. All
+  bind mounts, config defaults, gitignore rules, and documentation updated.
+  Legacy root-level identity files and `behaviour-plugins/` profiles remain
+  readable during migration.
+- Guide "Talk to me" section updated: speech-pilot works anywhere under
+  the bossing category, not a single channel.
+- Guide messages now have vertical spacing between sections.
+- Footer is a standalone message (no `---` divider).
+
+## 4.0.1
+
+**Added**
+
+- `bossctl post-message` — post a Discord message from the CLI with full
+  markdown support. Accepts `--channel`, `--file`, or `--stdin` for longer
+  content. API endpoint `POST /api/say` added alongside it.
+- Members page redesigned as a compact card list with modal detail sheets,
+  replacing the overflowed 8-column table.
+
+**Changed**
+
+- Docker volumes renamed from `kanade-bot_*` to `kanade_*`; old volumes
+  migrated and removed.
+- `get_schedule` now correctly resolves the entire boss week when `day` is
+  omitted or empty, instead of refusing with a validation error.
+- Member list rows show a chevron affordance and tighter spacing.
+
+**Fixed**
+
+- Member list rows now visually indicate clickability.
+- Verbose comments condensed across `get_schedule.py`, `_modal.scss` and
+  `_runsheet.scss`.
+
+## 4.0.0
+
+**Added**
+
+- **Member-selectable reply styles** (`/style` command): members choose from a
+  public catalog of 13 profiles — chuunibyou, concise, gacha-addict, imouto,
+  kouhai, kuudere, mesugaki, ojou-sama, onee-san, raid-leader, sleep-deprived,
+  tsundere, vip-butler — with Discord autocomplete, ephemeral feedback, and
+  `none` to reset to default. Choices are saved per-member in SQLite.
+- **Component prompt system**: the chatbot prompt is assembled from discrete
+  components in explicit precedence — identity, default behaviour, active
+  profile, assistant scope, scheduler policy, grounding policy, runtime
+  context, and voice cue — instead of a single monolithic template.
+- **Dynamic assistant name** extracted from `# Persona: ...` in the identity
+  file; never hard-coded.
+- **Role-based style precedence**: first configured readable matching role
+  silently supersedes a member's saved choice. The member sees the same
+  response style; the mechanism is never disclosed.
+- **Portal style visibility**: Members page shows both the saved style and the
+  style that would apply to the next reply. Config page includes profile
+  publication toggle, role-priority move controls, and broken-entry
+  diagnostics.
+- **Profile deletion guard**: profiles assigned to a role or published cannot
+  be deleted.
+- Code-owned prompt assets: `assistant-scope.md`, `scheduler-policy.md`,
+  `grounding-policy.md` in `bot/chat/prompts/`.
+
+**Changed**
+
+- **Schema v9 → v10**: `members` table gains nullable `reply_style`.
+  Unversioned databases and schemas older than v9 are rejected at startup.
+- Compose project renamed from `kanade-bot` to `kanade`; `bot` and `caddy`
+  services retained, Valkey deferred until multi-process scaling.
+- Persona directory restructured into `identities/`, `behaviours/`, and
+  `behaviours/profiles/`; legacy filenames remain valid with new paths taking
+  precedence.
+- Behaviour-plugins renamed to reply profiles under `behaviours/profiles/`;
+  portal labels updated accordingly.
+- Style resolution uses first-configured-readable-match instead of composing
+  all matching role assignments.
+- `/style` reports a choice was "saved", never "active".
+- Identity template deliberately excludes a `**Voice:**` slot; default
+  behaviour carries the trailing voice cue.
+- `CHAT_PILOT_HISTORY_TTL_S` default reduced to 2700 seconds.
+- Verbose comments condensed across all touched files.
+- Dockerfile copies only tracked fallback templates; live files come from the
+  host bind mount.
+
+**Fixed**
+
+- Profile deletion no longer silently orphans role assignments or public
+  publication flags.
+- Missing persona files fall back to tracked templates with a log warning
+  instead of failing silently.
+- Tool-schema diagnostic logging added for easier troubleshooting.
+
 ## 3.3.0
 
 **Added**

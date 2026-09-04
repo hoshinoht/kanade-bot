@@ -129,10 +129,10 @@ def test_the_first_voice_line_wins():
     assert persona.voice_line(text) == "The real one."
 
 
-def test_the_tracked_template_has_a_slot_that_reads_as_unfilled():
-    text = persona.EXAMPLE_PERSONA.read_text(encoding="utf-8")
+def test_the_tracked_default_template_has_a_usable_voice():
+    text = persona.EXAMPLE_DEFAULT_BEHAVIOUR.read_text(encoding="utf-8")
     assert "**Voice:**" in text
-    assert persona.voice_line(text) == persona.DEFAULT_VOICE
+    assert persona.voice_line(text).startswith("Concise, lightly playful")
 
 
 def test_the_voice_footer_is_the_last_thing_in_the_prompt():
@@ -159,23 +159,27 @@ async def test_the_footer_reaches_the_model_as_the_last_system_line(chat_bot, ch
     agent = pilot(chat_bot, says("ok"))
     await agent.offer(message(chat_bot))
     system = agent._client.system
-    assert system.rstrip().endswith(persona.DEFAULT_VOICE)
+    assert system.rstrip().endswith(persona.STYLE_POLICY_QUALIFIER)
+    assert persona.voice_line(agent.default_behaviour_text()) in system
     assert [m["role"] for m in agent._client.prompts[0]][0] == "system"
 
 
-async def test_a_real_voice_line_reaches_the_model(tmp_path, repo, bosses):
+async def test_a_default_behaviour_voice_line_reaches_the_model(
+    tmp_path, repo, bosses, monkeypatch
+):
     path = tmp_path / "persona.md"
-    path.write_text(
-        "# Persona: Placeholder\n\n**Voice:** Dry, fond of the party, allergic to exclamation "
-        "marks.\n\nlots more text\n",
+    path.write_text("# Persona: Placeholder\n", encoding="utf-8")
+    default = tmp_path / "default.md"
+    default.write_text(
+        "**Voice:** Dry, fond of the party, allergic to exclamation marks.\n",
         encoding="utf-8",
     )
+    monkeypatch.setattr(persona, "DEFAULT_BEHAVIOUR", default)
     bot = build_bot(repo, bosses, persona_path=str(path))
     agent = pilot(bot, says("ok"))
     await agent.offer(message(bot))
-    assert agent._client.system.rstrip().endswith(
-        "Dry, fond of the party, allergic to exclamation marks."
-    )
+    assert "Dry, fond of the party, allergic to exclamation marks." in agent._client.system
+    assert agent._client.system.rstrip().endswith(persona.STYLE_POLICY_QUALIFIER)
 
 
 def test_neither_form_carries_ids_or_secrets(repo, bosses):
@@ -233,12 +237,12 @@ async def test_matching_role_plugin_builds_on_top_of_the_persona(repo, bosses, p
 
     await agent.offer(message(bot, roles=(CHAT_ROLE, PLUGIN_ROLE)))
 
-    assert persona.DEFAULT_VOICE in agent._client.system
-    assert agent._client.system.rstrip().endswith(instructions)
-    assert instructions in agent._client.reminder()["content"]
+    assert instructions in agent._client.system
+    assert agent._client.system.rstrip().endswith(persona.STYLE_POLICY_QUALIFIER)
+    assert instructions not in agent._client.reminder()["content"]
 
 
-async def test_multiple_matching_plugins_compose_in_configured_order(repo, bosses, plugin_dir):
+async def test_first_matching_plugin_wins_in_configured_order(repo, bosses, plugin_dir):
     bot = build_bot(repo, bosses)
     second_role = PLUGIN_ROLE + 1
     behaviour_plugins.write("first", "FIRST PLUGIN")
@@ -256,7 +260,8 @@ async def test_multiple_matching_plugins_compose_in_configured_order(repo, bosse
 
     await agent.offer(message(bot, roles=(CHAT_ROLE, second_role, PLUGIN_ROLE)))
 
-    assert agent._client.system.index("FIRST PLUGIN") < agent._client.system.index("SECOND PLUGIN")
+    assert "FIRST PLUGIN" in agent._client.system
+    assert "SECOND PLUGIN" not in agent._client.system
 
 
 async def test_unmatched_role_plugin_is_not_added(repo, bosses, plugin_dir):
@@ -307,7 +312,7 @@ async def test_the_persona_survives_a_conversation_that_blows_the_budget(chat_bo
 
     assert built[0]["role"] == "system"
     assert whole in system, "the persona document was truncated"
-    assert system.rstrip().endswith(persona.voice_footer(whole))
+    assert system.rstrip().endswith(persona.STYLE_POLICY_QUALIFIER)
     assert len(built) < 122  # turns really were dropped
 
 
