@@ -494,9 +494,9 @@ def test_the_schema_makes_one_time_the_default_and_says_so():
     assert "ONE-TIME" in add["description"]
     assert weekly["type"] == "boolean"
     assert "weekly" not in add["parameters"]["required"]
-    assert "ONLY when they explicitly say" in weekly["description"]
+    assert "ONLY for explicit" in weekly["description"]
     assert "every week" in weekly["description"]
-    assert "one-time" in weekly["description"]
+    assert "one run that day only" in weekly["description"]
 
 
 def test_an_unclear_request_is_told_not_to_ask():
@@ -504,6 +504,5 @@ def test_an_unclear_request_is_told_not_to_ask():
     add = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_add")
     weekly = add["parameters"]["properties"]["weekly"]["description"]
 
-    assert "unclear" in weekly
-    assert "do NOT ask" in weekly
-    assert "safe default" in weekly
+    assert "Unclear wording" in weekly
+    assert "leave it out" in weekly
