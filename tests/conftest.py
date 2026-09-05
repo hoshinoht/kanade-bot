@@ -33,17 +33,17 @@ def repo() -> Repo:
 
 @pytest.fixture(scope="session")
 def bosses(tmp_path_factory: pytest.TempPathFactory) -> BossTable:
-    """The shipped boss table, read from a config directory that has no portraits.
+    """The shipped boss table, read from a boss directory that has no portraits.
 
     Portrait images are git-ignored, so whether a developer has dropped them
-    into `config/portraits/` must not change what the suite asserts. Loading a
+    into `boss/portraits/` must not change what the suite asserts. Loading a
     copy of the yaml from a directory with no images makes "this boss has no
     portrait" true by construction; the portrait-present path is covered
     deterministically by `table_with_portraits` in test_portraits.py.
     """
-    directory = tmp_path_factory.mktemp("config")
+    directory = tmp_path_factory.mktemp("boss")
     path = directory / "bosses.yaml"
-    path.write_bytes((REPO_ROOT / "config" / "bosses.yaml").read_bytes())
+    path.write_bytes((REPO_ROOT / "boss" / "bosses.yaml").read_bytes())
     return BossTable.load(path)
 
 
@@ -143,7 +143,13 @@ def chat_bot(repo: Repo, bosses: BossTable):
     """A stand-in client configured for the chatbot; see `tests/chat_support.py`."""
     from .chat_support import build_bot
 
-    return build_bot(repo, bosses)
+    bot = build_bot(repo, bosses)
+    bot.settings.staging_path = str(
+        REPO_ROOT / "config" / "personas" / "behaviours" / "staging.example.yaml"
+    )
+    bot.settings.staging_profiles_dir = ""
+    bot.chat.reload_staging()
+    return bot
 
 
 @pytest.fixture

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Pre-push hook mirroring CI's slow gate: full test suite minus the local
+# 13 GB Ollama model. Enable once per clone: git config core.hooksPath .githooks
+set -e
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "githooks: uv not found, skipping checks" >&2
+  exit 0
+fi
+
+uv run pytest -q -m "not ollama"

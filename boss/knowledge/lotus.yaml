@@ -1,0 +1,17 @@
+boss: Lotus
+summary: 'Extreme Lotus is a Purge Gauge fight: bait Lotus''s own tracking mechanics into him to drain Purge, break shields, and create safer damage windows.'
+core:
+- Each player has a personal Purge Gauge. It rises over time and from certain hits; when full, Purge Mode activates with extra patterns.
+- In Phase 3, Purge Mode is the default and the gauge must be drained by making specific map attacks hit Lotus.
+- Mechanical Arms and Tracking Lasers lower your Purge Gauge when they hit Lotus, so positioning them into the boss is an intended mechanic.
+- Phase 1's white shield reduces incoming damage by 90%; destroy it within 20 seconds or Lotus heals based on the shield left. Map mechanics can damage the shield.
+danger:
+- Purge Mode adds much denser map pressure; in Phase 3 you do not naturally leave it without draining the gauge.
+- Extreme's large Mechanical Arm hits for 70% HP in Phase 1 and 80% in Phases 2-3.
+- Purge Routine is a lethal laser sequence; respect the barrier/safe-side mechanic rather than trying to tank it.
+tips:
+- Aim tracking lasers and marked Mechanical Arms through Lotus whenever it is safe to do so.
+- In Phase 3, prioritize earning non-Purge windows instead of greeding damage through permanent map pressure.
+- When the Phase 1 shield appears, use both normal damage and boss-hit map mechanics to remove it quickly.
+sources:
+- https://maplestorywiki.net/w/Lotus/Monster

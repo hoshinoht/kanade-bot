@@ -29,6 +29,9 @@ COPY bot ./bot
 # Build CSS before the runtime root becomes read-only.
 RUN python -m bot.portal_styles
 COPY config ./config
+# There is deliberately no .dockerignore rule for boss/: local git-ignored game
+# images remain available in locally built images as they were under config/.
+COPY boss ./boss
 # Copy tracked fallbacks only; private prompts must not enter image layers.
 COPY config/personas/identities/example.md ./config/personas/identities/example.md
 COPY config/personas/behaviours/default.example.md ./config/personas/behaviours/default.example.md

@@ -29,68 +29,18 @@
       "name": "F"
     }
   ],
-  "fixed_runs": [
-    {
-      "id": "f0000001",
-      "bosses": [
-        "HStar",
-        "HFA"
-      ],
-      "weekday": "mon",
-      "time": "21:30",
-      "participants": [
-        "A",
-        "B",
-        "C"
-      ]
-    },
-    {
-      "id": "f0000002",
-      "bosses": [
-        "HCarling",
-        "XKalos"
-      ],
-      "weekday": "tue",
-      "time": "23:00",
-      "participants": [
-        "A",
-        "C",
-        "D",
-        "B",
-        "E"
-      ]
-    }
-  ],
+  "fixed_runs": [],
   "runs": [
     {
-      "id": "a1a1a1a1",
+      "id": "c3c3c3c3",
       "bosses": [
-        "HStar",
-        "HFA"
+        "NCarling"
       ],
-      "at": "2026-08-31 21:30",
+      "at": "2026-09-02 21:30",
       "participants": [
-        "A",
-        "B",
-        "C"
-      ],
-      "fixed": "f0000001"
-    },
-    {
-      "id": "b2b2b2b2",
-      "bosses": [
-        "HCarling",
-        "XKalos"
-      ],
-      "at": "2026-09-01 23:00",
-      "participants": [
-        "A",
         "C",
-        "D",
-        "B",
-        "E"
-      ],
-      "fixed": "f0000002"
+        "D"
+      ]
     }
   ],
   "context": [

@@ -208,18 +208,36 @@
     var next = controls.querySelector("[data-page-next]");
     var status = controls.querySelector("[data-page-status]");
     var key = root.dataset.paginationKey || "list";
+
+    function visibleItems() {
+      var shown = [];
+      for (var i = 0; i < items.length; i++) {
+        if (!items[i].hasAttribute("data-search-hidden")) {
+          shown.push(items[i]);
+        }
+      }
+      return shown;
+    }
+
     var pages = Math.ceil(items.length / pageSize);
     var current = Math.min(storedListPage(key), pages - 1);
 
     function render(page) {
-      current = Math.max(0, Math.min(page, pages - 1));
+      // A search hides rows the query does not match; paging runs over what
+      // is left rather than over the whole list.
+      var shown = visibleItems();
+      var filtered = Math.ceil(shown.length / pageSize) || 1;
+      current = Math.max(0, Math.min(page, filtered - 1));
       for (var i = 0; i < items.length; i++) {
-        items[i].hidden = Math.floor(i / pageSize) !== current;
+        items[i].hidden = true;
+      }
+      for (var j = 0; j < shown.length; j++) {
+        shown[j].hidden = Math.floor(j / pageSize) !== current;
       }
       previous.disabled = current === 0;
-      next.disabled = current === pages - 1;
+      next.disabled = current === filtered - 1;
       status.textContent =
-        "Page " + (current + 1) + " of " + pages + " · " + items.length + " " +
+        "Page " + (current + 1) + " of " + filtered + " · " + shown.length + " " +
         (root.dataset.pageLabel || "items");
       storeListPage(key, current);
     }
@@ -231,6 +249,10 @@
       render(current + 1);
     });
     controls.hidden = false;
+    // A search re-renders through this handle, back at page one.
+    root._renderListPage = function () {
+      render(0);
+    };
     render(current);
   }
 
@@ -238,6 +260,199 @@
     var lists = document.querySelectorAll("[data-paginated-list]");
     for (var i = 0; i < lists.length; i++) {
       paginateList(lists[i]);
+    }
+  }
+
+  // -- search within a behaviour list ----------------------------------------
+  //
+  // The list is fully server-rendered (and paginated above), so filtering is a
+  // client-side enhancement like pagination itself: without JavaScript the
+  // whole list simply stays on screen. A query matches a row's own words plus
+  // its dialog's instructions, since that is where a profile says what it is.
+  function dialogText(item) {
+    var opener = item.querySelector ? item.querySelector("[data-dialog]") : null;
+    var id = opener && opener.getAttribute("data-dialog");
+    var node = id && document.getElementById(id);
+    return node ? node.textContent : "";
+  }
+
+  function filterList(root) {
+    var items = root.querySelectorAll("[data-page-item]");
+    var key = root.getAttribute("data-pagination-key") || "";
+    var search = document.querySelector('[data-search-input="' + key + '"]');
+    var visibility = document.querySelector('[data-visibility-filter="' + key + '"]');
+    var q = search ? search.value.trim().toLowerCase() : "";
+    var vis = visibility ? visibility.value : "all";
+    var shown = 0;
+    for (var i = 0; i < items.length; i++) {
+      var haystack = (items[i].textContent + " " + dialogText(items[i])).toLowerCase();
+      var textHit = !q || haystack.indexOf(q) > -1;
+      var visHit = vis === "all" || items[i].getAttribute("data-visibility") === vis;
+      if (textHit && visHit) {
+        items[i].removeAttribute("data-search-hidden");
+        shown++;
+      } else {
+        items[i].setAttribute("data-search-hidden", "");
+      }
+    }
+    var empty = root.querySelector("[data-search-empty]");
+    if (empty) {
+      empty.hidden = shown !== 0;
+    }
+    if (typeof root._renderListPage === "function") {
+      root._renderListPage();
+    } else {
+      for (var j = 0; j < items.length; j++) {
+        items[j].hidden = items[j].hasAttribute("data-search-hidden");
+      }
+    }
+    if (typeof root._refreshBulk === "function") {
+      root._refreshBulk();
+    }
+  }
+
+  function filterLists() {
+    var inputs = document.querySelectorAll("[data-search-input]");
+    var bound = [];
+    for (var i = 0; i < inputs.length; i++) {
+      (function (input) {
+        var key = input.getAttribute("data-search-input");
+        var root = document.querySelector('[data-pagination-key="' + key + '"]');
+        if (!root || bound.indexOf(key) > -1) {
+          return;
+        }
+        bound.push(key);
+        var row = document.querySelector('[data-filter-row="' + key + '"]');
+        if (row) {
+          row.hidden = false;
+        }
+        input.addEventListener("input", function () {
+          filterList(root);
+        });
+        var visibility = document.querySelector('[data-visibility-filter="' + key + '"]');
+        if (visibility) {
+          visibility.addEventListener("change", function () {
+            filterList(root);
+          });
+        }
+      })(inputs[i]);
+    }
+  }
+
+  // -- bulk selection within a behaviour list ----------------------------------
+  //
+  // The toggle is created here rather than rendered: without JavaScript it
+  // would be a dead control, and every other control on the portal submits a
+  // real form. It walks two stages -- the rows on screen, then every identity
+  // -- and its label always names the next stage, with counts.
+  function bulkBoxes(root) {
+    return root.querySelectorAll('[data-page-item] input[type="checkbox"][name="profiles"]');
+  }
+
+  function boxDisplayed(box) {
+    var row = box.closest("[data-page-item]");
+    return !!row && !row.hidden && !row.hasAttribute("data-search-hidden");
+  }
+
+  function bulkTools() {
+    var toolbars = document.querySelectorAll("[data-bulk-toolbar]");
+    for (var i = 0; i < toolbars.length; i++) {
+      (function (toolbar) {
+        var key = toolbar.getAttribute("data-bulk-toolbar");
+        var root = toolbar.closest("[data-pagination-key]");
+        if (!root || root.getAttribute("data-pagination-key") !== key) {
+          return;
+        }
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "btn";
+        toolbar.insertBefore(toggle, toolbar.firstChild);
+
+        function matchedBoxes() {
+          var boxes = bulkBoxes(root);
+          var out = [];
+          for (var j = 0; j < boxes.length; j++) {
+            var row = boxes[j].closest("[data-page-item]");
+            if (row && !row.hasAttribute("data-search-hidden")) {
+              out.push(boxes[j]);
+            }
+          }
+          return out;
+        }
+
+        function visibilityWord() {
+          var key = toolbar.getAttribute("data-bulk-toolbar");
+          var visibility = document.querySelector('[data-visibility-filter="' + key + '"]');
+          var vis = visibility ? visibility.value : "all";
+          return vis === "all" ? "" : " " + vis;
+        }
+
+        function refresh() {
+          var boxes = bulkBoxes(root);
+          var matched = matchedBoxes();
+          var displayed = 0;
+          var checkedDisplayed = 0;
+          var checkedMatched = 0;
+          var checkedTotal = 0;
+          for (var j = 0; j < boxes.length; j++) {
+            var onScreen = boxDisplayed(boxes[j]);
+            var inFilter = matched.indexOf(boxes[j]) > -1;
+            if (onScreen) {
+              displayed++;
+              if (boxes[j].checked) {
+                checkedDisplayed++;
+              }
+            }
+            if (inFilter && boxes[j].checked) {
+              checkedMatched++;
+            }
+            if (boxes[j].checked) {
+              checkedTotal++;
+            }
+          }
+          if (checkedDisplayed < displayed) {
+            toggle.textContent = "Select page (" + displayed + ")";
+          } else if (checkedMatched < matched.length) {
+            toggle.textContent =
+              "Select all" + visibilityWord() + " (" + matched.length + ")";
+          } else {
+            toggle.textContent = "Clear (" + checkedTotal + ")";
+          }
+          var submits = toolbar.querySelectorAll('button[type="submit"]');
+          for (var k = 0; k < submits.length; k++) {
+            submits[k].disabled = checkedTotal === 0;
+          }
+        }
+
+        toggle.addEventListener("click", function () {
+          var boxes = bulkBoxes(root);
+          var matched = matchedBoxes();
+          var label = toggle.textContent;
+          var mode = label.indexOf("Clear") === 0 ? "clear"
+            : label.indexOf("Select all") === 0 ? "all" : "page";
+          for (var j = 0; j < boxes.length; j++) {
+            if (mode === "clear") {
+              boxes[j].checked = false;
+            } else if (mode === "all") {
+              if (matched.indexOf(boxes[j]) > -1) {
+                boxes[j].checked = true;
+              }
+            } else if (boxDisplayed(boxes[j])) {
+              boxes[j].checked = true;
+            }
+          }
+          refresh();
+        });
+
+        root.addEventListener("change", function (event) {
+          if (event.target && event.target.getAttribute("name") === "profiles") {
+            refresh();
+          }
+        });
+
+        root._refreshBulk = refresh;
+        refresh();
+      })(toolbars[i]);
     }
   }
 
@@ -305,5 +520,7 @@
   onReady(markColorway);
   onReady(markTheme);
   onReady(paginateLists);
+  onReady(filterLists);
+  onReady(bulkTools);
   window.setInterval(tickHeld, 1000);
 })();

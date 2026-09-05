@@ -12,17 +12,17 @@ grows by a pixel, because the picture sits behind the words rather than above
 them.
 
 ```
-config/artwork/entry/Lotus.png      Lotus
-config/artwork/entry/Seren.png      Chosen Seren
-config/artwork/entry/Kalos.png      Gatekeeper Kalos
-config/artwork/entry/FA.png         The First Adversary
-config/artwork/entry/Carling.png    Carling
-config/artwork/entry/BM.png         Black Mage
-config/artwork/entry/Star.png       Radiant Malefic Star
-config/artwork/entry/Bellona.png    Bellona
-config/artwork/entry/Limbo.png      Limbo
-config/artwork/entry/Baldrix.png    Baldrix
-config/artwork/entry/Jupiter.png    Jupiter
+boss/artwork/entry/Lotus.png      Lotus
+boss/artwork/entry/Seren.png      Chosen Seren
+boss/artwork/entry/Kalos.png      Gatekeeper Kalos
+boss/artwork/entry/FA.png         The First Adversary
+boss/artwork/entry/Carling.png    Carling
+boss/artwork/entry/BM.png         Black Mage
+boss/artwork/entry/Star.png       Radiant Malefic Star
+boss/artwork/entry/Bellona.png    Bellona
+boss/artwork/entry/Limbo.png      Limbo
+boss/artwork/entry/Baldrix.png    Baldrix
+boss/artwork/entry/Jupiter.png    Jupiter
 ```
 
 `.png`, `.webp`, `.jpg` and `.jpeg` all work, tried in that order — the same
@@ -58,7 +58,7 @@ Not to be confused with [`../../portraits/`](../../portraits/README.md), which
 is the boss's face: a portrait is drawn as a badge beside a name and attached to
 the bot's Discord cards, and this is the backdrop a whole run card wears.
 
-`config/` is bind-mounted read-only into the container, so adding a file takes
+`boss/` is bind-mounted read-only into the container, so adding a file takes
 effect on the next page load — no rebuild, and no restart for the portal. These
 are wide rather than square (roughly 778×556) and are served straight from disk
 at full size, so keep them to what a backdrop needs.

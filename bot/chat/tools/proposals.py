@@ -90,13 +90,14 @@ async def propose(
         facts.insert(2, f"- when: {when}")
     facts.extend(
         [
-            "Nothing has changed yet: it takes effect only when somebody reacts ✅ on it.",
+            "NOT DONE - nothing has changed yet: it takes effect only when somebody "
+            "reacts ✅ on it.",
             "Reply in your own voice saying the card is up and needs a ✅, keeping each "
             "fact exact. Do not copy the labels or formatting above into your reply, do "
             'not start with "Card posted:", and do not stick an emoji on a flat sentence '
             "to sound in-character. The people named above are the whole party on it -- "
             "name those and nobody else, and never say you are on a run: you are a bot "
-            "and cannot go to one.",
+            "and cannot go to one. Never say it is done, moved, or confirmed.",
         ]
     )
     return "\n".join(facts)

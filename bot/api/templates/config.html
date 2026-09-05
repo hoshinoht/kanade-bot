@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}Config — YuukiSakuna{% endblock %}
 {% block body_class %}framed{% endblock %}
 {% block content %}
@@ -117,36 +118,89 @@
         </p>
         <div class="behaviour-collection" data-paginated-list data-page-size="5"
              data-page-label="plugins" data-pagination-key="behaviour-plugins">
+          <div class="filters behaviour-search" data-filter-row="behaviour-plugins" hidden>
+            <label class="field field--grow"><span>Search profiles</span>
+              <input type="search" placeholder="name or instructions…"
+                     autocomplete="off" spellcheck="false"
+                     data-search-input="behaviour-plugins"
+                     aria-label="Search reply profiles">
+            </label>
+            <label class="field"><span>Show</span>
+              <select data-visibility-filter="behaviour-plugins" aria-label="Filter by visibility">
+                <option value="all">All</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
+            </label>
+          </div>
+          <form id="bulk-profiles" method="post" action="/config/behaviour-plugins/selectable"
+                class="filters behaviour-bulk" data-bulk-toolbar="behaviour-plugins">
+            <span class="behaviour-bulk__buttons">
+              <button class="btn" type="submit" name="selectable" value="1">Publish selected</button>
+              <button class="btn" type="submit" name="selectable" value="0">Make private</button>
+            </span>
+          </form>
+          <p class="empty" data-search-empty hidden>No reply profile matches that search.</p>
           <div class="behaviour-editors">
             {% for plugin in config.behaviour_plugins %}
-            <details class="behaviour-editor" data-page-item>
-              <summary class="behaviour-editor__summary">
+            {# The editor is a dialog, like the member sheet: unfolding it inline
+               pushed every other profile out of sight, and a 16-profile list is
+               read by scanning names first. Without JavaScript the opener is a
+               real fragment link and `dialog:target` opens the same form in
+               place. The checkbox rides outside the link (interactive content
+               cannot nest) and points at the bulk form, so it submits with or
+               without JavaScript. The wrapper carries `data-page-item` rather
+               than the dialog, so pagination and search never hide an open dialog. #}
+            <div class="behaviour-row" data-page-item
+                 data-visibility="{{ "public" if plugin.selectable else "private" }}">
+              <input class="behaviour-row__check" type="checkbox" name="profiles"
+                     value="{{ plugin.name }}" form="bulk-profiles"
+                     aria-label="Select {{ plugin.name }}">
+              <a class="behaviour-editor behaviour-editor__summary" href="#profile-{{ plugin.name }}"
+                 data-dialog="profile-{{ plugin.name }}">
                 <span class="status">Profile</span>
                 <span class="mono">{{ plugin.name }}</span>
                 <span class="chip chip--mono">{{ "public" if plugin.selectable else "private" }}</span>
                 <span class="behaviour-editor__hint">Edit instructions</span>
-              </summary>
-              <form method="post" action="/config/behaviour-plugins"
-                    class="behaviour-editor__body">
-                <input type="hidden" name="name" value="{{ plugin.name }}">
-                <label class="field"><span>Profile instructions</span>
-                  <textarea name="instructions" rows="5" required>{{ plugin.instructions }}</textarea>
-                </label>
-                <div class="behaviour-editor__actions">
-                  <button class="btn btn--primary" type="submit">Save</button>
-                  <button class="btn btn--danger" type="submit"
-                          formaction="/config/behaviour-plugins/{{ plugin.name }}/delete"
-                          hx-confirm="Delete the {{ plugin.name }} reply profile?">Delete</button>
+              </a>
+            </div>
+            <dialog class="modal" id="profile-{{ plugin.name }}"
+                    aria-labelledby="profile-{{ plugin.name }}-title">
+              <div class="modal__panel">
+                <header class="modal__head">
+                  <div>
+                    <p class="eyebrow">Reply profile</p>
+                    <h2 class="modal__title" id="profile-{{ plugin.name }}-title">{{ plugin.name }}</h2>
+                  </div>
+                  <button class="modal__x" type="button" data-dialog-close aria-label="Close">{{ icon("x") }}</button>
+                </header>
+                <div class="modal__body">
+                  <form method="post" action="/config/behaviour-plugins"
+                        class="behaviour-editor__body">
+                    <input type="hidden" name="name" value="{{ plugin.name }}">
+                    <label class="field"><span>Profile instructions</span>
+                      <textarea name="instructions" rows="5" required>{{ plugin.instructions }}</textarea>
+                    </label>
+                    <div class="behaviour-editor__actions">
+                      <button class="btn btn--primary" type="submit">Save</button>
+                      <button class="btn btn--danger" type="submit"
+                              formaction="/config/behaviour-plugins/{{ plugin.name }}/delete"
+                              hx-confirm="Delete the {{ plugin.name }} reply profile?">Delete</button>
+                    </div>
+                  </form>
+                  <form method="post" action="/config/behaviour-plugins/{{ plugin.name }}/selectable"
+                        class="behaviour-editor__body">
+                    <input type="hidden" name="selectable" value="{{ '0' if plugin.selectable else '1' }}">
+                    <button class="btn" type="submit">
+                      {{ "Remove from member choices" if plugin.selectable else "Publish for member choice" }}
+                    </button>
+                  </form>
                 </div>
-              </form>
-              <form method="post" action="/config/behaviour-plugins/{{ plugin.name }}/selectable"
-                    class="behaviour-editor__body">
-                <input type="hidden" name="selectable" value="{{ '0' if plugin.selectable else '1' }}">
-                <button class="btn" type="submit">
-                  {{ "Remove from member choices" if plugin.selectable else "Publish for member choice" }}
-                </button>
-              </form>
-            </details>
+                <footer class="modal__foot">
+                  <button class="btn" type="button" data-dialog-close>Close</button>
+                </footer>
+              </div>
+            </dialog>
             {% else %}
             <p class="empty behaviour-editors__empty">No reply profiles yet.</p>
             {% endfor %}

@@ -14,7 +14,7 @@ MAX_RUNS = 20
 #: call; naming the real tools makes it pick one.
 UNKNOWN_TOOL = (
     "There is no tool called {name}. The tools you have are: {known}. "
-    "Use one of those, or answer from what you already know."
+    "Use one of those when it can answer the request."
 )
 
 #: What a read-only turn tells the model when it reaches for a card anyway.

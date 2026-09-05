@@ -1,0 +1,21 @@
+boss: BM
+summary: 'Black Mage is primarily a curse-management fight: never cross Creative and Destructive curses, execute the Phase 3 full-map checks, then match your Phase 4 affinity to attack color.'
+core:
+- 'Creative (white) and Destructive (black) curses last 6 seconds. Taking the opposite curse while one is active triggers Curse Crossing: lose one life, take extra damage, and get skill-sealed.'
+- Phase 1's two knights share HP but apply opposite curses, so careless contact with both burns lives quickly.
+- 'Phase 3''s Creation/Destruction ultimates use temporary platforms: one requires shelter beneath platforms and the other requires standing on them above the floor hazard.'
+- In Phase 4, Harvest/NPC toggles Creation or Destruction affinity. You ignore attacks matching your current affinity/color and remain vulnerable to the opposite color.
+danger:
+- Curse Crossing can erase lives without a normal death and is dangerous in every phase where both curse types overlap.
+- Phase 3's Creation and Destruction ultimates deal effectively lethal damage when their positioning check is failed.
+- Phase 4 hides party members, so each player must manage their own color/affinity correctly.
+tips:
+- Before intentionally taking a hit, check which curse is already active.
+- In Phase 3, learn the platform tell first; damage is secondary during the full-map check.
+- In Phase 4, switch affinity deliberately rather than spam-toggling Harvest.
+difficulty_notes:
+  x: In Extreme Phase 4, the player's Creation/Destruction affinity is automatically switched every 30 seconds after a warning.
+sources:
+- https://mapletools.app/bosses/blackmage
+- https://maplestory.fandom.com/wiki/Black_Mage/Monster
+- https://dexless.com/guides/black-mage-boss-guide-and-genesis-weapons.366/

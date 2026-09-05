@@ -15,6 +15,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from bot.agent.util import positive_float, positive_int
+from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.weeks import parse_hhmm
 from bot.infrastructure.config import Settings
@@ -73,9 +74,22 @@ class Posted:
 
 
 class FakeMessage:
-    def __init__(self, message_id: int, channel: Any):
+    def __init__(self, message_id: int, channel: Any, bot: Any | None = None):
         self.id = message_id
         self.channel = channel
+        self._bot = bot
+        self.deleted = False
+
+    async def edit(self, content: str | None = None, allowed_mentions: Any = None) -> None:
+        if self._bot is not None:
+            await self._bot._edit_post(self.id, content or "")
+        # allowed_mentions is accepted for discord.py parity; the fake records
+        # mentions on the Posted row, and staging edits are always silent.
+
+    async def delete(self) -> None:
+        if self._bot is not None:
+            await self._bot._delete_post(self.id)
+        self.deleted = True
 
 
 class FakePermissions:
@@ -103,6 +117,18 @@ class FakeChannel:
 
     def permissions_for(self, _member):
         return self.permissions
+
+    def typing(self):  # type: ignore[no-untyped-def]
+        """No-op stand-in for ``discord.abc.Messageable.typing``."""
+
+        class _Typing:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Typing()
 
 
 class FakeMe:
@@ -187,9 +213,16 @@ class FakeExtractor:
 class FakeBot:
     """Everything :mod:`bot.api` reaches for, and nothing else."""
 
-    def __init__(self, repo: Repo, bosses: BossTable, settings: Settings | None = None):
+    def __init__(
+        self,
+        repo: Repo,
+        bosses: BossTable,
+        settings: Settings | None = None,
+        boss_knowledge: BossKnowledgeBase | None = None,
+    ):
         self.repo = repo
         self.bosses = bosses
+        self.boss_knowledge = boss_knowledge
         self.settings = settings or make_settings()
         self.tz: ZoneInfo = self.settings.zoneinfo
         self.extractor = FakeExtractor()
@@ -217,6 +250,7 @@ class FakeBot:
 
         # what the bot was asked to do, in order
         self.posts: list[Posted] = []
+        self.staging_posts: list[Posted] = []
         self.annotations: list[tuple[Any, Any, str]] = []
         self.declines: list[tuple[str, str]] = []
         self.retractions: list[tuple[str, str]] = []
@@ -227,6 +261,8 @@ class FakeBot:
         self.digest_fails = False
         self.digests: list[FakeMessage] = []
         self._next_message_id = 700000000000000000
+        # message id -> index in `posts` for staging edit/delete parity.
+        self._posts_by_id: dict[int, int] = {}
 
     # -- runtime config ----------------------------------------------------
     @property
@@ -358,7 +394,7 @@ class FakeBot:
     # -- discord side effects ---------------------------------------------
     def _message(self, channel) -> FakeMessage:
         self._next_message_id += 1
-        return FakeMessage(self._next_message_id, channel)
+        return FakeMessage(self._next_message_id, channel, bot=self)
 
     async def find_channel(self, channel_id=None):
         """Mirrors :meth:`bot.client.BossBot.find_channel`, including its reasons."""
@@ -409,26 +445,86 @@ class FakeBot:
         return (await self.find_channel(channel_id)).channel
 
     async def post_plain(
-        self, channel, content, mention_users, reference_id=None, mention_roles=None
+        self,
+        channel,
+        content,
+        mention_users,
+        reference_id=None,
+        mention_roles=None,
+        silent: bool = False,
     ):
-        # The same quiet-mode gate the real `post_plain` applies. Without it the
-        # fake would record an allow-list the real bot would have emptied, and a
-        # test asserting "quiet mode notifies nobody" would pass against a fake
-        # that notifies everybody.
         if self.quiet_mode:
             from bot.agent import formatting
 
             content, mention_users, mention_roles = formatting.quiet_line(content), [], []
-        self.posts.append(
-            Posted(
-                getattr(channel, "id", None),
-                content,
-                list(mention_users),
-                "plain",
-                list(mention_roles or []),
-            )
+        if silent:
+            mention_users, mention_roles = [], []
+        message = self._message(channel)
+        posted = Posted(
+            getattr(channel, "id", None),
+            content,
+            list(mention_users),
+            "plain-staging" if silent else "plain",
+            list(mention_roles or []),
         )
-        return self._message(channel)
+        self.posts.append(posted)
+        self._posts_by_id[message.id] = len(self.posts) - 1
+        if silent:
+            self.staging_posts.append(posted)
+        return message
+
+    async def _edit_post(self, message_id: int, content: str) -> None:
+        index = self._posts_by_id.get(int(message_id))
+        if index is None or not 0 <= index < len(self.posts):
+            for post in reversed(self.posts):
+                if post.kind == "plain-staging":
+                    post.content = content
+                    post.mentions = []
+                    post.roles = []
+                    post.kind = "plain"
+                    return
+            return
+        post = self.posts[index]
+        post.content = content
+        post.mentions = []
+        post.roles = []
+        post.kind = "plain"
+
+    async def _delete_post(self, message_id: int) -> None:
+        index = self._posts_by_id.pop(int(message_id), None)
+        if index is not None and 0 <= index < len(self.posts):
+            if self.posts[index].kind == "plain-staging":
+                del self.posts[index]
+                for mid, idx in list(self._posts_by_id.items()):
+                    if idx > index:
+                        self._posts_by_id[mid] = idx - 1
+                return
+            return
+        for idx in range(len(self.posts) - 1, -1, -1):
+            if self.posts[idx].kind == "plain-staging":
+                del self.posts[idx]
+                return
+
+    async def edit_plain(self, placeholder: FakeMessage, content: str) -> bool:
+        if self.quiet_mode:
+            from bot.agent import formatting
+
+            content = formatting.quiet_line(content)
+        try:
+            await placeholder.edit(content=content)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    @staticmethod
+    async def delete_placeholder(placeholder: object) -> None:
+        delete = getattr(placeholder, "delete", None)
+        if delete is None:
+            return
+        try:
+            await delete()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _post(self, channel, card, mention_users=None, react=True):
         wanted = mention_users if mention_users is not None else getattr(card, "mention_users", [])

@@ -604,7 +604,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     scenarios = select_scenarios(args.fixture)
-    table = BossTable.load(REPO_ROOT / "config" / "bosses.yaml")
+    table = BossTable.load(REPO_ROOT / "boss" / "bosses.yaml")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = Path(args.out) if args.out else REPO_ROOT / "data" / "bench" / f"{stamp}.json"

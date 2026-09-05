@@ -19,7 +19,7 @@ from .fake_bot import ADMIN_TOKEN
 
 @pytest.fixture
 def table_with_portraits(tmp_path: Path):
-    """A boss table whose config directory has portraits for three bosses.
+    """A boss table whose catalog directory has portraits for three bosses.
 
     Between the four of them that is every case the size argument has: Star has
     both renders, Bellona has only the full one, Kalos names its full file with
@@ -162,9 +162,9 @@ def test_the_real_table_knows_where_portraits_would_live():
     """The `bosses` fixture is deliberately portrait-free, so ask the real config."""
     from .conftest import REPO_ROOT
 
-    config = REPO_ROOT / "config"
-    assert BossTable.load(config / "bosses.yaml").base_dir == config
-    assert (config / "portraits" / "README.md").is_file()
+    boss = REPO_ROOT / "boss"
+    assert BossTable.load(boss / "bosses.yaml").base_dir == boss
+    assert (boss / "portraits" / "README.md").is_file()
 
 
 # --- the monogram fallback --------------------------------------------------

@@ -4,6 +4,90 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+## 4.5.0
+
+**Added**
+
+- Reply-profile search on the Config page, filtering by name and
+  instructions, plus a public/private visibility filter (client-side,
+  like the existing pagination).
+- Reply-profile editors open as modals instead of inline disclosures,
+  matching the member sheet.
+- Bulk publish / make-private for reply profiles, with a two-stage select
+  toggle (page, then all) that prioritises the active filter.
+- `.githooks` mirroring the CI gates, documented in Development.
+
+**Fixed**
+
+- Updated seven stale tool-schema tests to the deliberately trimmed 4.3.0
+  copy instead of re-adding bulk to the schemas.
+
+## 4.4.0
+
+**Added**
+
+- Persona-aware chatbot staging lines loaded from YAML: defaults in
+  `config/personas/behaviours/staging.yaml` with per-profile overrides in
+  `behaviours/profiles/staging/<profile>.yaml` (partial files inherit the
+  rest from `default`; unknown profiles use `default`; `{boss}` still
+  interpolates the resolved boss).
+- Silent processing indicator for chat answers: a no-ping staging
+  placeholder plus typing indicator while the model works. Success deletes
+  the placeholder and posts the final answer with its single ping; failures
+  edit the placeholder in place. Rejection follow-ups use the active
+  profile's generic line.
+- `silent` option on `post_plain` (`AllowedMentions.none()`) for staging
+  placeholders, plus `edit_plain` / `delete_placeholder` helpers.
+
+**Changed**
+
+- Staging copy is validated at startup: unknown keys and non-string values
+  are reported (falling back to defaults) instead of surfacing mid-request.
+- `bot.__version__` brought back in line with the package version.
+
+## 4.3.0
+
+**Added**
+
+- Separate `CHAT_PILOT_THINK` reasoning for speech, falling back to
+  `OLLAMA_THINK`, with per-call model+think logging.
+- `list_fixed` read-only chat tool for recurring weekly timings.
+- Portal Fixed edit can shift a timing's home channel to another watched
+  channel (live runs follow; unwatched channels rejected).
+- Strategy narrow/clarify replies are rewritten in voice in one no-tools
+  round, falling back to the static meaning on failure.
+
+**Changed**
+
+- Strategy answers rewrite the guide in voice (opener, bullets, closer),
+  copy boss names exactly, and omit source URLs / Sources (no Discord
+  embeds; the tool strips them, the domain keeps them for audit).
+- Scheduler four-sentence limit applies to scheduler replies only;
+  strategy/guides use compact bullets and are exempt.
+- Chat tool schemas trimmed for context budget, with a schema-token guard.
+
+**Fixed**
+
+- `get_schedule` treats blank day/participant/difficulty as omitted and
+  reports bad `scope` with its valid values.
+- Role mentions (`<@&id>`) no longer split multi-boss strategy targets.
+- Proposal cards say NOT DONE until ✅ (no more "move's done").
+
+## 4.2.0
+
+**Added**
+
+- A validated, source-backed boss strategy knowledge base and read-only chat
+  tool. Explicit strategy questions retrieve checked-in mechanics before the
+  bot answers in its configured persona.
+
+**Changed**
+
+- Boss metadata, strategy documents, portraits, icons and entry artwork now
+  live together under `boss/`.
+- `bossctl guide` derives boss entries from the canonical catalog and uploads
+  thumbnails as file data instead of sharing filesystem paths with the bot.
+
 **Fixed**
 
 - Chat no longer leaks tool refusals into Discord. A clarification that

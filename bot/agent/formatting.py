@@ -64,12 +64,12 @@ class Card:
     footer: str | None = None
     colour: int = COLOUR_DAY_OF
     #: An image to attach and use as the embed's thumbnail -- a boss portrait
-    #: from ``config/portraits``. ``None`` (the usual case) means no attachment
+    #: from ``boss/portraits``. ``None`` (the usual case) means no attachment
     #: at all, so a guild that ships no portraits sees exactly what it did before.
     thumbnail_path: Path | None = None
     #: An image to attach and use as the embed's *image* -- the big slot along
     #: the bottom, where the portrait's thumbnail is the small one in the corner.
-    #: The boss's entry splash from ``config/artwork/entry``. Absent on almost
+    #: The boss's entry splash from ``boss/artwork/entry``. Absent on almost
     #: every card: see the note where the day-of builder sets it.
     image_path: Path | None = None
     #: The user ids this card may actually notify, already resolved against the
@@ -122,7 +122,7 @@ def format_bosses(bosses: list[str]) -> str:
 
 
 #: The difficulty prefix spelled out, mirroring ``difficulties:`` in
-#: ``config/bosses.yaml``. Kept here rather than read from the table because
+#: ``boss/bosses.yaml``. Kept here rather than read from the table because
 #: every caller of :func:`boss_label` renders a stored token and has no
 #: :class:`bot.domain.bosses.BossTable` to hand; ``tests/test_boss_labels.py`` fails if
 #: the two ever drift apart.

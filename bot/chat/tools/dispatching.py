@@ -18,10 +18,12 @@ from .contracts import (
     ToolError,
     ToolOutcome,
 )
+from .get_boss_strategy import handle as get_boss_strategy
 from .get_pending import handle as get_pending
 from .get_run import handle as get_run
 from .get_schedule import handle as get_schedule
 from .list_bosses import handle as list_bosses
+from .list_fixed import handle as list_fixed
 from .propose_add import handle as propose_add
 from .propose_cancel import handle as propose_cancel
 from .propose_change_fixed import handle as propose_change_fixed
@@ -36,7 +38,9 @@ _READ = {
     "get_schedule": get_schedule,
     "get_run": get_run,
     "list_bosses": list_bosses,
+    "get_boss_strategy": get_boss_strategy,
     "get_pending": get_pending,
+    "list_fixed": list_fixed,
 }
 
 _WRITE = {
@@ -115,7 +119,7 @@ async def run(ctx: ToolContext, name: str, arguments: Any) -> ToolOutcome:
     except Exception:  # noqa: BLE001 - a tool must never take the answer down
         log.exception("chat: %s failed", name)
         return done(
-            "That lookup failed. Say you could not reach the schedule just now.", False, FAILED
+            "That lookup failed. Say you could not complete that request just now.", False, FAILED
         )
 
 

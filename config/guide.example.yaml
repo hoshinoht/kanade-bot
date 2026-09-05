@@ -6,8 +6,8 @@
 #
 # The special key `bosses: true` in any message marks it as the boss
 # list — the CLI replaces that line with per-boss entries generated
-# from guide_bosses.yaml and attaches portrait PNGs as embed
-# thumbnails from portraits/icon/.
+# from boss/bosses.yaml and attaches the configured portrait files as embed
+# thumbnails.
 #
 # Empty strings post as blank messages for visual spacing.
 

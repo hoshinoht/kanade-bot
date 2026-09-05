@@ -44,32 +44,23 @@ TOOLS: list[dict] = [
                 "type": "string",
                 "enum": ["all", "channel"],
                 "description": (
-                    "Use 'channel' only when they explicitly say 'this channel', 'here', "
-                    "'our runs' or equivalent. A bare date question such as 'what's for "
-                    "tomorrow?' asks about the whole group across all channels: use 'all', "
-                    "which is the default. The @mention used to address the bot is not a "
-                    "channel qualifier. When answering from 'all', say which channel each "
-                    "run is in, or say it is the whole group's schedule."
+                    "Use 'channel' only for explicit 'this channel'/'here'/'our runs'. "
+                    "Bare dates ask the whole group: use 'all' (default). The bot @mention "
+                    "is not a qualifier. When answering from 'all', say each run's channel."
                 ),
             },
             "participant": {
                 "type": "string",
                 "description": (
-                    "Set this only when they explicitly ask 'what's for me', 'my runs', "
-                    "'what am I on', 'my schedule', or name one roster member. A bare date "
-                    "question such as 'what's for tomorrow?' does not ask about the person "
-                    "speaking: omit this field. Never copy the @mention used to address the "
-                    "bot; it is not a participant."
+                    "Set only for explicit 'for me'/'my runs' or a named member. Bare dates "
+                    "are not personal: omit it. Never copy the bot @mention."
                 ),
             },
             "day": {
                 "type": "string",
                 "description": (
-                    "Optional date within the selected boss week: 'today', 'tonight', "
-                    "'tomorrow', or one weekday. Use it whenever the question names a day; "
-                    "omit it only when they ask for the whole boss week. i.e. 'whats this weeks"
-                    "schedule' Choose the boss week that contains the requested date. DO NOT"
-                    "INCLUDE if query asks for entire week!"
+                    "Optional 'today'/'tonight'/'tomorrow'/weekday inside the week. Omit for "
+                    "whole-week asks. Pick the week containing the date."
                 ),
             },
         },
@@ -88,8 +79,31 @@ TOOLS: list[dict] = [
         [],
     ),
     _tool(
+        "get_boss_strategy",
+        "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, "
+        "dangers, and strategy facts; it returns only checked-in guide content.",
+        {
+            "boss": {
+                "type": "string",
+                "description": "A boss alias, full name, or canonical token such as 'HFA'.",
+            },
+            "difficulty": {
+                "type": "string",
+                "description": "Optional difficulty prefix or full name, such as 'h' or 'Hard'.",
+            },
+        },
+        ["boss"],
+    ),
+    _tool(
         "get_pending",
         "Proposal cards that are waiting for somebody to react ✅ or ❌.",
+        {},
+        [],
+    ),
+    _tool(
+        "list_fixed",
+        "Recurring weekly timings: boss, weekday, time and party. Use it to see weeklies "
+        "before changing one, instead of guessing from the schedule.",
         {},
         [],
     ),
@@ -134,33 +148,18 @@ TOOLS: list[dict] = [
             "participants": {
                 "type": "string",
                 "description": (
-                    "Optional. Who the run is for, by name, comma separated. Leave it out "
-                    "for just the person asking -- which is the default. When you do fill "
-                    "it in, the person asking goes in it too whenever they put themselves "
-                    "on the run -- 'for me', 'for us', 'I'll come', 'count me in'. Every "
-                    "line you are shown is labelled with who said it, so their name is one "
-                    "you can write; the word 'me' works as well. 'Schedule a run for me "
-                    "and kanon' is a run for BOTH of them: never leave out the person "
-                    "asking for it."
+                    "Optional comma-separated names. Omit for just the asker. When filled, "
+                    "include the asker too if they are on it ('for me'/'for us'). "
+                    "'me' works; every line is labelled with who said it."
                 ),
             },
             "weekly": {
                 "type": "boolean",
                 "description": (
-                    "Optional, default false, meaning ONE run on that day only. Set it true "
-                    "ONLY when they explicitly say it repeats -- 'weekly', 'every week', "
-                    "'every Tuesday', 'recurring', 'fixed'. A separate sentence about the "
-                    "run they just asked for counts as saying it: 'tonight 1900, this is "
-                    "fixed', 'make it fixed', 'make it weekly' are all true, even though "
-                    "the rest of the line reads one-time. Asking for a run that ALREADY "
-                    "exists to repeat -- 'make this weekly', 'make it run every week' -- is "
-                    "this argument too, not propose_change_fixed: pass the run's boss and "
-                    "the day and time it should keep, and the scheduler folds this week's "
-                    "run into the new weekly instead of leaving a duplicate beside it. "
-                    "'Schedule a run', 'add a run tonight', 'can we do HStar friday' are "
-                    "all one-time: leave it out. If their wording is unclear, do NOT ask "
-                    "which they mean -- leave it out. "
-                    "One-time is the safe default and the card says which one it is."
+                    "Optional, default false = one run that day only. True ONLY for explicit "
+                    "repeats ('weekly'/'every week'/'every Tuesday'/'recurring'/'fixed', even as "
+                    "a second sentence). Existing run asked to repeat uses this too (scheduler "
+                    "folds it into a weekly, no duplicate). Unclear wording: leave it out."
                 ),
             },
         },

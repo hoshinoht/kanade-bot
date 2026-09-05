@@ -22,6 +22,7 @@ PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 ASSISTANT_SCOPE_PATH = PROMPT_DIR / "assistant-scope.md"
 SCHEDULER_POLICY_PATH = PROMPT_DIR / "scheduler-policy.md"
 GROUNDING_POLICY_PATH = PROMPT_DIR / "grounding-policy.md"
+BOSS_KNOWLEDGE_POLICY_PATH = PROMPT_DIR / "boss-knowledge-policy.md"
 
 #: Tracked persona fallback.
 EXAMPLE_PERSONA = PERSONA_DIR / "identities" / "example.md"
@@ -127,8 +128,9 @@ REMINDER_PREFIX = (
 
 #: Additional constraints for the conversation-positioned cue.
 REMINDER_SUFFIX = (
-    " Every reply gets one small in-character touch -- card confirmations and error "
-    "relays included. Facts, ids and times stay exact. Use compact Discord Markdown for "
+    " Every reply gets one small in-character touch -- card confirmations, error "
+    "relays, and strategy/guide answers included. Facts, ids and times stay exact. "
+    "Use compact Discord Markdown for "
     "factual blocks and separate distinct blocks with one blank line."
 )
 
@@ -328,7 +330,12 @@ def _read_required(path: Path) -> str:
 
 def validate_prompt_assets() -> None:
     """Fail startup/tests early when immutable prompt policy is not packaged."""
-    for path in (ASSISTANT_SCOPE_PATH, SCHEDULER_POLICY_PATH, GROUNDING_POLICY_PATH):
+    for path in (
+        ASSISTANT_SCOPE_PATH,
+        SCHEDULER_POLICY_PATH,
+        GROUNDING_POLICY_PATH,
+        BOSS_KNOWLEDGE_POLICY_PATH,
+    ):
         _read_required(path)
 
 
@@ -493,6 +500,7 @@ def component_system_prompt(
     )
     scheduler_policy = _read_required(SCHEDULER_POLICY_PATH)
     grounding_policy = _read_required(GROUNDING_POLICY_PATH)
+    boss_knowledge_policy = _read_required(BOSS_KNOWLEDGE_POLICY_PATH)
     return "\n\n".join(
         part
         for part in (
@@ -503,6 +511,7 @@ def component_system_prompt(
             assistant_scope,
             scheduler_policy,
             grounding_policy,
+            boss_knowledge_policy,
             header,
             runtime,
             focus,

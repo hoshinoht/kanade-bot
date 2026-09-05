@@ -20,6 +20,7 @@ from discord.ext import tasks
 
 from bot.api.server import ApiServer
 from bot.chat import ChatPilot, persona
+from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.timeutil import to_iso, utcnow
 from bot.domain.weeks import current_week_start, next_week_start, parse_hhmm
@@ -55,8 +56,8 @@ POST_ATTEMPTS = 3
 POST_BACKOFF_SECONDS = 1.0
 
 #: What the embed's *image* attachment is called on the wire. A card can carry
-#: two pictures of the same boss -- `config/portraits/Star.png` in the corner
-#: and `config/artwork/entry/Star.png` along the bottom -- and on disk those are
+#: two pictures of the same boss -- `boss/portraits/Star.png` in the corner
+#: and `boss/artwork/entry/Star.png` along the bottom -- and on disk those are
 #: both `Star.png`. Two attachments with one name make `attachment://Star.png`
 #: ambiguous, and Discord resolves it to whichever it likes, which is how a
 #: 550px splash ends up in the thumbnail slot.
@@ -117,7 +118,13 @@ DECLINE_NOTICE_COOLDOWN = timedelta(hours=6)
 class BossBot(discord.Client):
     """discord.py client plus an application-command tree."""
 
-    def __init__(self, settings: Settings, repo: Repo, bosses: BossTable):
+    def __init__(
+        self,
+        settings: Settings,
+        repo: Repo,
+        bosses: BossTable,
+        boss_knowledge: BossKnowledgeBase | None = None,
+    ):
         intents = discord.Intents.default()
         intents.members = True  # roster sync from the bossing role
         intents.message_content = True  # phase 2 extractor reads chat
@@ -128,6 +135,7 @@ class BossBot(discord.Client):
         self.settings = settings
         self.repo = repo
         self.bosses = bosses
+        self.boss_knowledge = boss_knowledge
         self.tz: ZoneInfo = settings.zoneinfo
         self.guild_object = discord.Object(id=settings.guild_id)
         self.tree = discord.app_commands.CommandTree(self)
@@ -1579,6 +1587,7 @@ class BossBot(discord.Client):
         mention_users: list[str],
         reference_id: int | None = None,
         mention_roles: list[str] | None = None,
+        silent: bool = False,
     ) -> discord.Message | None:
         """Send a plain message, notifying exactly the ids the caller lists.
 
@@ -1587,6 +1596,8 @@ class BossBot(discord.Client):
         and a role ping would reach a guild rather than a party. `/say` is the
         one caller that passes any, because an admin writing a role mention by
         hand means it.
+
+        ``silent`` sends with no pings. Placeholders must use it.
         """
         if self.quiet_mode:
             content, mention_users, mention_roles = formatting.quiet_line(content), [], []
@@ -1594,7 +1605,7 @@ class BossBot(discord.Client):
             # See `_post`: `none()` also clears `replied_user`, and this is the
             # path that actually replies to a message.
             discord.AllowedMentions.none()
-            if self.quiet_mode
+            if self.quiet_mode or silent
             else discord.AllowedMentions(
                 # `@everyone` / `@here` is never allowed, from any caller: it is
                 # the one mention nobody can opt out of.
@@ -1623,3 +1634,24 @@ class BossBot(discord.Client):
         except discord.HTTPException:
             log.exception("failed to post decline notice")
             return None
+
+    async def edit_plain(self, placeholder: discord.Message, content: str) -> bool:
+        """Silent edit of a staging placeholder. Never pings."""
+        if self.quiet_mode:
+            content = formatting.quiet_line(content)
+        try:
+            await placeholder.edit(content=content, allowed_mentions=discord.AllowedMentions.none())
+            return True
+        except (discord.HTTPException, OSError, TimeoutError):
+            log.warning("could not edit the staging placeholder", exc_info=True)
+            return False
+
+    @staticmethod
+    async def delete_placeholder(placeholder: object) -> None:
+        delete = getattr(placeholder, "delete", None)
+        if delete is None:
+            return
+        try:
+            await delete()
+        except Exception:  # noqa: BLE001 - a leftover placeholder is cosmetic
+            log.debug("could not delete the staging placeholder", exc_info=True)

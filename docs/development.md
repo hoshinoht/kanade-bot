@@ -7,6 +7,14 @@ uv run ruff check .
 uv run ruff format .
 ```
 
+Enable the git hooks once per clone to catch the CI gates locally —
+pre-commit runs the lockfile check, lint and format autofix; pre-push runs
+the full suite minus the local-only Ollama model:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 If the project directory is ever moved or renamed, run `uv sync --reinstall`
 once: the venv's console scripts (`.venv/bin/pytest` and friends) carry absolute
 shebang paths, and a stale one fails as *bad interpreter* — after which the
@@ -110,9 +118,17 @@ bot/
     templating.py the Jinja environment
     templates/   Jinja pages and partials
     static/      portal.scss (entrypoint), portal/*.scss (partials), generated portal.css
-config/bosses.yaml
+  boss/
+    bosses.yaml     canonical catalog; portraits/ and artwork/ resolve from it
+    knowledge/      strict per-boss chat knowledge plus _meta.yaml
+  config/
+    guide.yaml      deployment-specific guide prose
 tests/
 ```
+
+The catalog and (when chat is configured) knowledge load at startup; restart
+after changing either. Portraits and entry artwork are served directly from
+`boss/`, so asset changes need only a page reload.
 
 The portal stylesheet is split into CSS-compatible SCSS partials under
 `bot/api/static/portal/`, with `bot/api/static/portal.scss` as the ordered entrypoint.

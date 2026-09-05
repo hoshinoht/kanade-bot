@@ -516,13 +516,13 @@ async def audit_page(
 async def portrait(
     request: Request, bot: Bot, short: str, size: Literal["full", "icon"] = "full"
 ) -> Response:
-    """A boss portrait, straight off the bind-mounted config directory.
+    """A boss portrait, straight off the bind-mounted boss directory.
 
     Deliberately unauthenticated, like the stylesheet: it is a picture of a
     game boss, and gating it would mean the browser could not cache it. The
     filename never comes from the URL -- ``short`` is looked up in the boss
     table, and ``size`` is one of two words FastAPI has already refused
-    anything else for -- so this cannot be walked out of ``config/portraits``.
+    anything else for -- so this cannot be walked out of ``boss/portraits``.
 
     ``?size=icon`` is the small render. A query rather than a second route
     because it is one picture at two sizes, and rather than a header because a
@@ -875,6 +875,7 @@ async def web_fixed_edit(request: Request, bot: Bot, caller: Caller, fixed_id: s
         "time": str(form.get("time") or "") or None,
         "note": form.get("note") if form.get("note") is not None else None,
         "participants": people or None,
+        "channel_id": str(form.get("channel_id") or "") or None,
     }
     try:
         row = await service.update_fixed(bot, fixed_id, **changes)
@@ -1021,6 +1022,23 @@ async def web_set_behaviour_plugin_selectable(
     except ApiError as exc:
         return back_to(request, "/config", exc.message, "error", fragment="chatbot")
     return back_to(request, "/config", "Public style catalog updated.", fragment="chatbot")
+
+
+@router.post("/config/behaviour-plugins/selectable")
+async def web_set_behaviour_plugins_selectable(
+    request: Request, bot: Bot, caller: Caller
+) -> Response:
+    form = await request.form()
+    selectable = str(form.get("selectable") or "") == "1"
+    try:
+        result = service.set_behaviour_plugins_selectable(bot, form.getlist("profiles"), selectable)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    if not result["applied"]:
+        return back_to(request, "/config", "No profiles selected.", fragment="chatbot")
+    noun = "profile" if result["applied"] == 1 else "profiles"
+    verb = "Published" if selectable else "Made private"
+    return back_to(request, "/config", f"{verb} {result['applied']} {noun}.", fragment="chatbot")
 
 
 @router.post("/config/role-plugins/{role_id}/move")

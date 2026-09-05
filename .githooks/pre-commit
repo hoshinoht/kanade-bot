@@ -1,0 +1,28 @@
+#!/bin/sh
+# Pre-commit hook mirroring CI's fast gates: lockfile freshness, lint, format.
+# Enable once per clone: git config core.hooksPath .githooks
+set -e
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "githooks: uv not found, skipping checks" >&2
+  exit 0
+fi
+
+uv lock --check >/dev/null 2>&1 || {
+  echo "githooks: uv.lock is stale, run 'uv lock' and re-stage" >&2
+  exit 1
+}
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [ -n "$staged" ]; then
+  # shellcheck disable=SC2086
+  uv run ruff format $staged
+  # shellcheck disable=SC2086
+  git add $staged
+fi
+
+uv run ruff check .
+uv run ruff format --check . >/dev/null || {
+  echo "githooks: formatting still dirty after autofix, re-stage and retry" >&2
+  exit 1
+}

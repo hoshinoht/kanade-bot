@@ -6,7 +6,7 @@ last thing read before somebody commits their evening to a run -- so the card
 says "Extreme Kalos".
 
 :data:`bot.formatting.DIFFICULTY_WORDS` is the one place that mapping lives, and
-it duplicates ``difficulties:`` in ``config/bosses.yaml``. The last test here is
+ it duplicates ``difficulties:`` in ``boss/bosses.yaml``. The last test here is
 what makes that duplication safe.
 """
 
@@ -47,5 +47,5 @@ def test_the_words_match_the_boss_table():
     If a prefix is ever added or renamed in the config, this fails rather than
     letting cards quietly render the raw token again.
     """
-    raw = yaml.safe_load((REPO_ROOT / "config" / "bosses.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load((REPO_ROOT / "boss" / "bosses.yaml").read_text(encoding="utf-8"))
     assert {k.lower(): v for k, v in raw["difficulties"].items()} == DIFFICULTY_WORDS

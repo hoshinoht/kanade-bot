@@ -23,15 +23,17 @@ Both errors list the forms that would have worked.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 import yaml
 
 _NORMALISE_RE = re.compile(r"[^a-z0-9]+")
 _SPLIT_RE = re.compile(r"[,\s/+&]+")
 
-#: Where portraits live, relative to ``bosses.yaml``. The whole ``config/``
+#: Where portraits live, relative to ``boss/bosses.yaml``. The ``boss/``
 #: directory is bind-mounted read-only, so dropping a file in is enough --
 #: no rebuild, no restart.
 PORTRAIT_DIR = "portraits"
@@ -59,6 +61,41 @@ class BossTableError(ValueError):
     """Raised when ``bosses.yaml`` itself is malformed."""
 
 
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    """Safe YAML loader that refuses duplicate keys at every mapping level."""
+
+
+def _construct_unique_mapping(
+    loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[object, object]:
+    mapping: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as exc:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "found an unhashable mapping key",
+                key_node.start_mark,
+            ) from exc
+        if duplicate:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key ({key!r})",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeySafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
 def _normalise(token: str) -> str:
     return _NORMALISE_RE.sub("", token.strip().lower())
 
@@ -76,61 +113,173 @@ class Boss:
     #: An explicit portrait filename from ``bosses.yaml``; otherwise the file is
     #: looked up as ``<short>.png`` and friends.
     portrait: str | None = None
+    #: Optional RGB colour used by the guide surface.
+    guide_colour: int | None = None
 
     def canonical(self, letter: str) -> str:
         return f"{letter.upper()}{self.short}"
 
 
 @dataclass(frozen=True)
-class BossTable:
-    """Immutable boss table loaded from ``config/bosses.yaml``."""
+class BossReference:
+    """A boss named outside the scheduling grammar.
 
-    difficulties: dict[str, str]
-    bosses: dict[str, Boss]
+    ``difficulty`` is a validated prefix when the speaker supplied one, or
+    ``None`` when they named only the boss.  This deliberately does not choose a
+    scheduling difficulty for a bare name.
+    """
+
+    short: str
+    difficulty: str | None
+
+
+@dataclass(frozen=True)
+class BossTable:
+    """Immutable boss table loaded from ``boss/bosses.yaml``."""
+
+    difficulties: Mapping[str, str]
+    bosses: Mapping[str, Boss]
     #: normalised alias -> short name
-    aliases: dict[str, str]
+    aliases: Mapping[str, str]
     #: The directory ``bosses.yaml`` was loaded from; portraits live under it.
     base_dir: Path | None = None
+
+    def __post_init__(self) -> None:
+        """Copy caller-owned mappings before exposing their read-only views."""
+        object.__setattr__(self, "difficulties", MappingProxyType(dict(self.difficulties)))
+        object.__setattr__(self, "bosses", MappingProxyType(dict(self.bosses)))
+        object.__setattr__(self, "aliases", MappingProxyType(dict(self.aliases)))
 
     @classmethod
     def load(cls, path: str | Path) -> BossTable:
         path = Path(path)
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return cls.from_dict(raw, base_dir=path.parent)
+        try:
+            raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeySafeLoader)
+        except (UnicodeError, yaml.YAMLError) as exc:
+            raise BossTableError(f"cannot parse boss catalog {path}: {exc}") from exc
+        try:
+            return cls.from_dict(raw, base_dir=path.parent)
+        except BossTableError as exc:
+            raise BossTableError(f"invalid boss catalog {path}: {exc}") from exc
 
     @classmethod
-    def from_dict(cls, raw: dict, base_dir: Path | None = None) -> BossTable:
-        difficulties = {str(k).lower(): str(v) for k, v in (raw.get("difficulties") or {}).items()}
-        if not difficulties:
-            raise BossTableError("bosses.yaml has no `difficulties:` map")
-        for letter in difficulties:
-            if len(letter) != 1 or not letter.isalpha():
-                raise BossTableError(f"difficulty prefix {letter!r} must be a single letter")
+    def from_dict(cls, raw: object, base_dir: Path | None = None) -> BossTable:
+        if not isinstance(raw, dict):
+            raise BossTableError("bosses.yaml root must be a map")
+        unknown_root = set(raw) - {"difficulties", "bosses"}
+        if unknown_root:
+            keys = ", ".join(sorted(map(str, unknown_root)))
+            raise BossTableError(f"bosses.yaml has unknown root key(s): {keys}")
 
-        raw_bosses = raw.get("bosses") or {}
-        if not raw_bosses:
+        raw_difficulties = raw.get("difficulties")
+        if not isinstance(raw_difficulties, dict) or not raw_difficulties:
+            raise BossTableError("bosses.yaml has no `difficulties:` map")
+        difficulties: dict[str, str] = {}
+        for prefix, name in raw_difficulties.items():
+            if not isinstance(prefix, str) or len(prefix) != 1 or not prefix.isalpha():
+                raise BossTableError(f"difficulty prefix {prefix!r} must be a single letter")
+            if not isinstance(name, str) or not name.strip():
+                raise BossTableError(f"difficulty {prefix!r} must have a non-empty name")
+            letter = prefix.lower()
+            if letter in difficulties:
+                raise BossTableError(f"difficulty prefix {prefix!r} is duplicated")
+            difficulties[letter] = name
+
+        raw_bosses = raw.get("bosses")
+        if not isinstance(raw_bosses, dict) or not raw_bosses:
             raise BossTableError("bosses.yaml has no `bosses:` map")
 
         bosses: dict[str, Boss] = {}
         aliases: dict[str, str] = {}
         for short, spec in raw_bosses.items():
-            spec = spec or {}
-            short = str(short)
-            allowed = tuple(str(d).lower() for d in (spec.get("difficulties") or difficulties))
+            if not isinstance(short, str) or not short.strip():
+                raise BossTableError("boss short name must be a non-empty string")
+            if not isinstance(spec, dict):
+                raise BossTableError(f"{short} must be a map")
+            unknown_spec = set(spec) - {
+                "full",
+                "level",
+                "difficulties",
+                "aliases",
+                "portrait",
+                "guide",
+            }
+            if unknown_spec:
+                keys = ", ".join(sorted(map(str, unknown_spec)))
+                raise BossTableError(f"{short} has unknown key(s): {keys}")
+            if short in bosses:
+                raise BossTableError(f"boss short name {short!r} is duplicated")
+
+            full = spec.get("full", short)
+            if not isinstance(full, str) or not full.strip():
+                raise BossTableError(f"{short}.full must be a non-empty string")
+
+            if "difficulties" in spec:
+                raw_allowed = spec["difficulties"]
+                if not isinstance(raw_allowed, list) or not raw_allowed:
+                    raise BossTableError(f"{short}.difficulties must be a non-empty list")
+                if any(
+                    not isinstance(difficulty, str) or not difficulty.strip()
+                    for difficulty in raw_allowed
+                ):
+                    raise BossTableError(
+                        f"{short}.difficulties must contain only non-empty strings"
+                    )
+                allowed = tuple(difficulty.lower() for difficulty in raw_allowed)
+            else:
+                allowed = tuple(difficulties)
+            if len(set(allowed)) != len(allowed):
+                raise BossTableError(f"{short}.difficulties must not contain duplicates")
             unknown = [d for d in allowed if d not in difficulties]
             if unknown:
                 raise BossTableError(
                     f"{short} lists difficulty prefix(es) {unknown} that are not in `difficulties:`"
                 )
+
             level = spec.get("level")
+            if level is not None and (
+                isinstance(level, bool) or not isinstance(level, int) or level <= 0
+            ):
+                raise BossTableError(f"{short}.level must be a positive integer or null")
+
+            raw_aliases = spec.get("aliases", [])
+            if not isinstance(raw_aliases, list):
+                raise BossTableError(f"{short}.aliases must be a list")
+            if any(not isinstance(alias, str) or not alias.strip() for alias in raw_aliases):
+                raise BossTableError(f"{short}.aliases must contain only non-empty strings")
+
             portrait = spec.get("portrait")
+            if portrait is not None:
+                if (
+                    not isinstance(portrait, str)
+                    or not portrait.strip()
+                    or Path(portrait).name != portrait
+                    or "\\" in portrait
+                ):
+                    raise BossTableError(f"{short}.portrait must be a non-empty basename")
+            guide = spec.get("guide")
+            if guide is not None:
+                if not isinstance(guide, dict):
+                    raise BossTableError(f"{short}.guide must be a map")
+                unknown_guide = set(guide) - {"colour"}
+                if unknown_guide:
+                    keys = ", ".join(sorted(map(str, unknown_guide)))
+                    raise BossTableError(f"{short}.guide has unknown key(s): {keys}")
+                colour = guide.get("colour")
+                if isinstance(colour, bool) or not isinstance(colour, int):
+                    raise BossTableError(f"{short}.guide.colour must be an integer")
+                if not 0 <= colour <= 0xFFFFFF:
+                    raise BossTableError(f"{short}.guide.colour must be between 0 and 0xFFFFFF")
+            else:
+                colour = None
             boss = Boss(
                 short=short,
-                full=str(spec.get("full") or short),
-                level=int(level) if level is not None else None,
+                full=full,
+                level=level,
                 difficulties=allowed,
-                aliases=tuple(str(a) for a in (spec.get("aliases") or [])),
-                portrait=str(portrait) if portrait else None,
+                aliases=tuple(raw_aliases),
+                portrait=portrait,
+                guide_colour=colour,
             )
             bosses[short] = boss
             for name in (short, boss.full, *boss.aliases):
@@ -142,7 +291,12 @@ class BossTable:
                         f"alias {name!r} is claimed by both {aliases[key]!r} and {short!r}"
                     )
                 aliases[key] = short
-        return cls(difficulties=difficulties, bosses=bosses, aliases=aliases, base_dir=base_dir)
+        return cls(
+            difficulties=difficulties,
+            bosses=bosses,
+            aliases=aliases,
+            base_dir=base_dir,
+        )
 
     # -- lookups ----------------------------------------------------------
     @property
@@ -153,6 +307,96 @@ class BossTable:
         """The canonical names this boss actually has, e.g. ``EKalos, NKalos, ...``."""
         boss = self.bosses[short]
         return ", ".join(boss.canonical(letter) for letter in boss.difficulties)
+
+    def _reference_from_key(self, key: str) -> BossReference | None:
+        """Resolve one normalised name, optionally with a token prefix."""
+        short = self.aliases.get(key)
+        if short is not None:
+            return BossReference(short, None)
+        if len(key) > 1 and key[:1] in self.difficulties:
+            letter, alias = key[0], key[1:]
+            short = self.aliases.get(alias)
+            if short is not None:
+                boss = self.bosses[short]
+                if letter not in boss.difficulties:
+                    raise BossParseError(
+                        f"{boss.full} has no {self.difficulties[letter]} difficulty - "
+                        f"did you mean {self.valid_forms(short)}?"
+                    )
+                return BossReference(short, letter)
+        return None
+
+    def _reference_with_stated_difficulty(
+        self, stated: str, embedded: BossReference | None
+    ) -> BossReference | None:
+        """Apply a spelled difficulty to a bare or token-style reference."""
+        if embedded is None:
+            return None
+        if embedded.difficulty is not None and embedded.difficulty != stated:
+            raise BossParseError(
+                f"conflicting difficulties: {self.difficulties[stated]} and "
+                f"{self.difficulties[embedded.difficulty]}"
+            )
+        boss = self.bosses[embedded.short]
+        if stated not in boss.difficulties:
+            raise BossParseError(
+                f"{boss.full} has no {self.difficulties[stated]} difficulty - "
+                f"did you mean {self.valid_forms(boss.short)}?"
+            )
+        return BossReference(boss.short, stated)
+
+    def resolve_reference(self, text: str) -> BossReference:
+        """Resolve exactly one freely written boss reference without guessing.
+
+        Unlike :meth:`parse`, this is for knowledge and guide lookups, where a
+        bare name is useful and does not schedule a run.  It accepts an alias or
+        full name, a canonical token, and a spelled-out difficulty phrase anywhere
+        in a user-like sentence.
+        """
+        words = [word for word in _SPLIT_RE.split(text or "") if word]
+        if not words:
+            raise BossParseError("no boss given")
+
+        # A complete name (including a multi-word full name) is the unambiguous
+        # case.  Check it before looking for individual aliases inside it.
+        whole = _normalise(text)
+        reference = self._reference_from_key(whole)
+        if reference is not None:
+            return reference
+
+        # A free-form input may contain a sentence rather than just a name.  A
+        # single recognised boss is useful; two are not a choice this layer may
+        # make.  Match every contiguous phrase so full names and spelled
+        # difficulty + boss phrases remain intact wherever they occur.
+        difficulty_words = {word.lower(): letter for letter, word in self.difficulties.items()}
+        found: dict[str, set[str]] = {}
+
+        def add(candidate: BossReference | None) -> None:
+            if candidate is not None and candidate.difficulty is not None:
+                found.setdefault(candidate.short, set()).add(candidate.difficulty)
+            elif candidate is not None:
+                found.setdefault(candidate.short, set())
+
+        for start in range(len(words)):
+            for end in range(start + 1, len(words) + 1):
+                key = _normalise(" ".join(words[start:end]))
+                add(self._reference_from_key(key))
+                stated = difficulty_words.get(words[start].lower())
+                if stated is not None and end > start + 1:
+                    embedded = self._reference_from_key(
+                        _normalise(" ".join(words[start + 1 : end]))
+                    )
+                    add(self._reference_with_stated_difficulty(stated, embedded))
+        if not found:
+            raise BossParseError(f"no boss found in `{text}`")
+        if len(found) != 1:
+            names = ", ".join(self.bosses[short].full for short in found)
+            raise BossParseError(f"multiple bosses found: {names}")
+        short, difficulties = next(iter(found.items()))
+        if len(difficulties) > 1:
+            names = ", ".join(self.difficulties[letter] for letter in sorted(difficulties))
+            raise BossParseError(f"conflicting difficulties: {names}")
+        return BossReference(short, next(iter(difficulties), None))
 
     # -- parsing ----------------------------------------------------------
     def parse_token(self, token: str) -> str:
@@ -288,10 +532,10 @@ class BossTable:
     def portrait_path(self, short: str, size: str = "full") -> Path | None:
         """The portrait file for a boss, or ``None`` when there isn't one.
 
-        Portraits are entirely optional: ``config/portraits/Star.png`` (the
+        Portraits are entirely optional: ``boss/portraits/Star.png`` (the
         ``bosses.yaml`` key), or whatever ``portrait:`` names. The filename is
         never taken from user input -- it is resolved from the table -- so this
-        cannot be walked out of the config directory.
+        cannot be walked out of the boss directory.
 
         Two renders of the same boss, and the *caller* chooses. ``full`` is the
         picture in ``portraits/``; ``icon`` is the small one under
@@ -333,11 +577,11 @@ class BossTable:
         """The entry artwork for a boss, or ``None`` when there isn't one.
 
         The same deal as :meth:`portrait_path` one directory along, and just as
-        optional: ``config/artwork/entry/Seren.png``, named after the
+        optional: ``boss/artwork/entry/Seren.png``, named after the
         ``bosses.yaml`` key. There is no ``bosses.yaml`` override to go with it
         -- one splash per boss, named by key, is the whole rule -- and the
         filename is still resolved from the table rather than from anything
-        typed, so this cannot be walked out of the config directory either.
+        typed, so this cannot be walked out of the boss directory either.
         """
         boss = self.bosses.get(short)
         if boss is None or self.base_dir is None:
