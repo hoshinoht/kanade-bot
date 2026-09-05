@@ -138,14 +138,14 @@ async def test_a_run_in_a_channel_the_bot_cannot_see_still_lists(chat_bot, chat_
 async def test_an_unknown_scope_is_refused(chat_bot, chat_seeded):
     answer = await schedule(chat_bot, WATCHED_CHANNEL, scope="mine")
     assert "this channel or all channels" in answer
-    assert "scope" not in answer
+    assert "'all'" in answer and "'channel'" in answer
 
 
 async def test_the_description_steers_the_model(chat_bot):
     schema = next(t for t in tools.TOOLS if t["function"]["name"] == "get_schedule")
     properties = schema["function"]["parameters"]["properties"]
     scope_description = properties["scope"]["description"]
-    for phrase in ("only", "this channel", "here", "our runs", "what's for tomorrow?"):
+    for phrase in ("only", "this channel", "here", "our runs", "Bare dates"):
         assert phrase in scope_description
     assert set(properties["scope"]["enum"]) == {
         "all",
@@ -153,7 +153,7 @@ async def test_the_description_steers_the_model(chat_bot):
     }
     participant = properties["participant"]
     assert "enum" not in participant
-    for phrase in ("what's for me", "roster member", "what's for tomorrow?", "omit this field"):
+    for phrase in ("'for me'", "'my runs'", "named member", "omit it"):
         assert phrase in participant["description"]
     day = properties["day"]
     for phrase in ("'today'", "'tonight'", "'tomorrow'", "weekday"):

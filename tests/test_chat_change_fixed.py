@@ -762,25 +762,25 @@ def test_propose_add_says_the_asker_counts_as_a_participant():
     add = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_add")
     people = add["parameters"]["properties"]["participants"]["description"]
 
-    assert "for me" in people and "count me in" in people
-    assert "never leave out the person asking for it" in people
+    assert "for me" in people and "for us" in people
+    assert "include the asker too" in people
     assert "labelled with who said it" in people
 
 
 def test_propose_add_reads_this_is_fixed_as_a_weekly():
     """Live: "...for tonight 1900, this is fixed" got a one-off card.
 
-    `_TRUTHY` has accepted the word all along -- the gap was that nothing said
-    the phrase belongs in this argument at all, so the model never set it.
+    The trimmed schema names 'fixed' as an explicit repeat, so the model can
+    reach `weekly` without the description spelling out every phrasing.
     """
     add = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_add")
     weekly = add["parameters"]["properties"]["weekly"]["description"]
 
-    assert "this is fixed" in weekly
-    assert "make it weekly" in weekly
-    assert "a separate sentence" in weekly.lower()
-    # Still the safe default: none of the above may soften the one-time rule.
-    assert "One-time is the safe default" in weekly
+    assert "'fixed'" in weekly
+    assert "second sentence" in weekly
+    # Still the safe default: the trimmed wording keeps the one-time rule.
+    assert "default false" in weekly
+    assert "leave it out" in weekly
 
 
 def test_propose_add_says_a_run_that_exists_can_be_made_weekly_here():
@@ -793,8 +793,6 @@ def test_propose_add_says_a_run_that_exists_can_be_made_weekly_here():
     add = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_add")
     weekly = add["parameters"]["properties"]["weekly"]["description"]
 
-    assert "ALREADY" in weekly
-    assert "make it run every week" in weekly
-    assert "not propose_change_fixed" in weekly
-    assert "folds this week's run into the new weekly" in weekly
-    assert "One-time is the safe default" in weekly
+    assert "Existing run asked to repeat" in weekly
+    assert "folds it into a weekly" in weekly
+    assert "no duplicate" in weekly
