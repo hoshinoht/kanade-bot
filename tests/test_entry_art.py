@@ -37,7 +37,7 @@ CSS_RULES = re.sub(r"/\*.*?\*/", "", PAGE_CSS, flags=re.DOTALL)
 def table_with_entry_art(tmp_path: Path):
     """A boss table with entry artwork for three of its four bosses.
 
-    Its own files rather than the repository's `config/artwork/entry/`: that
+    Its own files rather than the repository's `boss/artwork/entry/`: that
     directory is git-ignored, so whether a developer has dropped the real art in
     must not decide what the suite asserts. Same reason the `bosses` fixture
     loads the shipped yaml out of an empty directory.
@@ -146,16 +146,16 @@ def test_a_table_built_without_a_directory_has_no_art():
 
 
 def test_the_real_table_ships_the_directory_and_its_readme():
-    """The `bosses` fixture is deliberately art-free, so ask the real config."""
+    """The `bosses` fixture is deliberately art-free, so ask the real boss directory."""
     from .conftest import REPO_ROOT
 
-    assert (REPO_ROOT / "config" / "artwork" / "entry" / "README.md").is_file()
+    assert (REPO_ROOT / "boss" / "artwork" / "entry" / "README.md").is_file()
 
 
 # --- serving ----------------------------------------------------------------
 
 
-def test_the_art_is_served_off_the_config_directory(client, fake_bot, table_with_entry_art):
+def test_the_art_is_served_off_the_boss_directory(client, fake_bot, table_with_entry_art):
     fake_bot.bosses = table_with_entry_art
     served = client.get("/static/entry/Star")
 

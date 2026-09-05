@@ -8,7 +8,8 @@ services:
       # Ollama stays on the macOS host for Metal support.
       OLLAMA_HOST: http://host.docker.internal:11434
       DB_PATH: /app/data/bot.sqlite
-      BOSSES_PATH: /app/config/bosses.yaml
+      BOSSES_PATH: /app/boss/bosses.yaml
+      BOSS_KNOWLEDGE_PATH: /app/boss/knowledge
       # Private identity on the host bind mount; missing files use the template.
       PERSONA_PATH: /app/config/personas/identities/persona.md
       # Host exposure is restricted by `ports`, not this container bind address.
@@ -22,6 +23,8 @@ services:
       # Host-visible snapshots created through SQLite's backup API.
       - ./data/backups:/app/data/backups
       - ./config:/app/config:ro
+      # Canonical catalog, knowledge, portraits, and entry artwork.
+      - ./boss:/app/boss:ro
       # Writable for private identities, behaviours, and portal-managed profiles.
       - ./config/personas:/app/config/personas
     restart: unless-stopped

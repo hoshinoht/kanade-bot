@@ -21,7 +21,7 @@ def _schedule_participant(ctx: ToolContext, args: dict) -> str | None:
         return None
     value = args["participant"]
     if not isinstance(value, str) or not value.strip():
-        raise ToolError("Ask whose schedule they want: their own, or one roster member's.")
+        return None
     raw = value.strip()
     if raw.lower() == "me":
         return ctx.author_id
@@ -63,7 +63,9 @@ def _schedule_date(
     ctx: ToolContext, args: dict, selected_week: datetime, now: datetime
 ) -> date | None:
     """Resolve an optional day to one local date inside ``selected_week``."""
-    raw_day = args.get("day")
+    if "day" not in args:
+        return None
+    raw_day = args["day"]
     if not isinstance(raw_day, str) or not raw_day.strip():
         return None
     value = raw_day.strip()
@@ -95,16 +97,19 @@ def handle(ctx: ToolContext, args: dict) -> str:
     week = str(args.get("week") or "this").strip().lower()
     if week not in ("this", "next"):
         raise ToolError("Ask whether they mean this boss week or next boss week.")
-    scope = "all" if ctx.force_all_channels else str(args.get("scope") or "all").strip().lower()
+    raw_scope = str(args.get("scope") or "all").strip().lower()
+    scope = "all" if ctx.force_all_channels else raw_scope
     if scope not in ("all", "channel"):
-        raise ToolError("Ask whether they want this channel or all channels.")
+        raise ToolError(
+            f"scope must be 'all' or 'channel' (got '{args.get('scope')}'). "
+            "Ask whether they want this channel or all channels."
+        )
     participant_id = None if ctx.force_group_schedule else _schedule_participant(ctx, args)
     for_me = participant_id is not None and participant_id == str(ctx.author_id)
     participant_name = service.member_name(ctx.bot, participant_id) if participant_id else None
 
     now = utcnow()
-    raw_day = args.get("day")
-    has_day = isinstance(raw_day, str) and raw_day.strip()
+    has_day = isinstance(args.get("day"), str) and bool(args.get("day", "").strip())
     selected_week = (
         (
             next_week_start(

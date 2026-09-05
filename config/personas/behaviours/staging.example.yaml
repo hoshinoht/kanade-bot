@@ -1,0 +1,12 @@
+# Staging defaults for the chatbot processing indicator.
+# Copy to staging.yaml and edit. Placeholders never ping.
+# Keys: schedule, guide, guide_named ({boss} allowed), write, generic.
+# Per-profile overrides live beside each voice in
+# behaviours/profiles/staging/<profile>.yaml and inherit missing keys.
+
+default:
+  schedule: "Checking your runs…"
+  guide: "Reading checked-in notes…"
+  guide_named: "Reading checked-in notes for {boss}…"
+  write: "Drafting the proposal card…"
+  generic: "Thinking…"

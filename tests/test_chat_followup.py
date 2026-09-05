@@ -405,7 +405,14 @@ async def test_the_write_tools_are_not_offered_to_the_follow_up(chat_bot, chat_s
     await reject(agent, chat_bot, [synthetic_card(chat_bot)])
 
     offered = [t["function"]["name"] for t in agent._client.calls[0]["tools"]]
-    assert offered == ["get_schedule", "get_run", "list_bosses", "get_pending"]
+    assert offered == [
+        "get_schedule",
+        "get_run",
+        "list_bosses",
+        "get_boss_strategy",
+        "get_pending",
+        "list_fixed",
+    ]
     assert not any(name.startswith("propose_") for name in offered)
 
 

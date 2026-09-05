@@ -60,7 +60,9 @@ class Settings(BaseSettings):
 
     # --- storage ---------------------------------------------------------
     db_path: str = "data/bot.sqlite"
-    bosses_path: str = "config/bosses.yaml"
+    bosses_path: str = "boss/bosses.yaml"
+    #: Strict local strategy documents required when the chat pilot is enabled.
+    boss_knowledge_path: str = "boss/knowledge"
 
     # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"
@@ -115,8 +117,16 @@ class Settings(BaseSettings):
     chat_pilot_timeout: float = Field(default=60.0, gt=0)
     #: Sampling temperature for chatbot replies.
     chat_pilot_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    #: Reasoning effort for the chat pilot. Empty falls back to ``OLLAMA_THINK``
+    #: so the extractor can stay fast while speech reasons harder.
+    chat_pilot_think: str = ""
     #: Stable identity document on the persona bind mount.
     persona_path: str = "config/personas/identities/persona.md"
+    #: Silent staging copy under the personas ecosystem. Missing file falls back.
+    staging_path: str = "config/personas/behaviours/staging.yaml"
+    #: Per-profile staging overrides beside each voice. Filename must match
+    #: behaviours/profiles/<profile>.md. Partial files inherit from default.
+    staging_profiles_dir: str = "config/personas/behaviours/profiles/staging"
 
     # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Empty refuses every non-health API request.
@@ -199,6 +209,14 @@ class Settings(BaseSettings):
             raise ValueError("OLLAMA_THINK must be low, medium, high or off")
         return key
 
+    @field_validator("chat_pilot_think")
+    @classmethod
+    def _check_chat_think(cls, value: str) -> str:
+        key = value.strip().lower()
+        if key not in ("low", "medium", "high", "off", "false", "none", ""):
+            raise ValueError("CHAT_PILOT_THINK must be low, medium, high or off")
+        return key
+
     @field_validator("countdown_minutes")
     @classmethod
     def _check_countdowns(cls, value: str) -> str:
@@ -260,6 +278,16 @@ class Settings(BaseSettings):
         if level in ("off", "false", "none", "0"):
             return False
         return None
+
+    @property
+    def chat_think(self) -> str | bool | None:
+        """Return the chat pilot ``think`` argument, falling back to ``think``."""
+        level = (self.chat_pilot_think or "").strip().lower()
+        if level in ("low", "medium", "high"):
+            return level
+        if level in ("off", "false", "none", "0"):
+            return False
+        return self.think
 
     @property
     def allowed_login_list(self) -> list[str]:

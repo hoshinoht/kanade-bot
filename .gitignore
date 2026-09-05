@@ -16,18 +16,20 @@ bot/api/static/portal.css
 .DS_Store
 
 # Untracked game assets.
-config/portraits/*
-!config/portraits/README.md
+boss/portraits/*
+!boss/portraits/README.md
 
-config/artwork/*/*
-!config/artwork/*/README.md
+boss/artwork/*/*
+!boss/artwork/*/README.md
 
 # Guide content — editable per deployment, never committed.
 config/guide.yaml
-config/guide_bosses.yaml
 !config/guide.example.yaml
-!config/guide_bosses.example.yaml
 !config/README.md
+
+# Staging presets — same pattern: example tracked, live file private.
+config/presets/staging.yaml
+!config/presets/staging.example.yaml
 
 .claude
 
@@ -44,9 +46,13 @@ config/personas/identities/*
 !config/personas/behaviours/
 config/personas/behaviours/*
 !config/personas/behaviours/default.example.md
+!config/personas/behaviours/staging.example.yaml
 !config/personas/behaviours/profiles/
 config/personas/behaviours/profiles/*
 !config/personas/behaviours/profiles/example.md
+!config/personas/behaviours/profiles/staging/
+config/personas/behaviours/profiles/staging/*
+!config/personas/behaviours/profiles/staging/example.yaml
 
 # Local design notes.
 DESIGN.md

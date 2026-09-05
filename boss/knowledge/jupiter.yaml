@@ -1,0 +1,21 @@
+boss: Jupiter
+summary: Keep Mana Synchronization neutral before Commands and merges; off-center play raises Rupture and creates the harsher Perfection/Destruction merged forms.
+core:
+- Each player has personal Rupture starting at 0; reaching 1000 ejects that player. Death adds 150 Rupture while separated and 200 while combined.
+- While separated, the party shares a 0-1000 Mana Synchronization/Magic Sync gauge starting at 500. Hits on Jupiter's side move it left; hits on Alchemic Matter's side move it right.
+- The neutral band is 400-600. A Command while neutral lowers Rupture; being off-neutral adds Rupture according to how far the gauge has drifted.
+- At merge, neutral creates Jupiter of Balance; left creates Perfection and right creates Destruction. The party can use Ether Warp to change sides and help correct the gauge.
+danger:
+- Commands become more frequent as the fight progresses, and Phase 3 Commands forcibly push the gauge away from center even after the check.
+- Alchemic Matter's Phase 3 Stigma combo becomes lethal at two stacks, where the finisher deals 200% HP.
+- Perfection gains a Phase 3 lock-on bombardment for 200% HP; Destruction gains a Phase 3 tracking crack for 200% HP.
+- Non-Balance merges also worsen the separate Combination Initiative/Rupture economy over the course of the fight.
+tips:
+- Near a Command or merge, correct Mana Sync before greeding damage.
+- Use Ether Warp deliberately when one side is taking too many hits or the gauge needs correction.
+- The Jupiter side is generally steadier for damage uptime, while Alchemic Matter moves more and demands more mobility.
+difficulty_notes:
+  h: Every third combination forces a non-Balance form even if Mana Synchronization is neutral.
+sources:
+- https://mapletools.app/bosses/jupiter
+- https://www.maplesea.com/updates/view/v252_Jupiter/

@@ -169,10 +169,11 @@ def test_members_show_saved_and_next_reply_styles(auth, fake_bot, seeded, tmp_pa
     fake_bot.guild.roles[9001] = member.roles[0]
 
     body = auth.get("/members").text
-    row = body[body.index("Alvin tan") : body.index("</tr>", body.index("Alvin tan"))]
-    assert "public" in row
-    assert "override" in row
-    assert "role: 9001" in row
+    start = body.index('<dialog class="modal membersheet" id="member-1001"')
+    sheet = body[start : body.index("</dialog>", start)]
+    assert "public" in sheet
+    assert "override" in sheet
+    assert "role: 9001" in sheet
 
 
 def test_searching_fixed_timings_reads_the_boss_the_day_and_the_party(auth, seeded):

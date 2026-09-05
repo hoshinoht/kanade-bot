@@ -26,6 +26,12 @@ from .conftest import RESET_TIME, RESET_WEEKDAY, TZ, kl
 NOW = kl(2026, 8, 30, 12, 0)
 
 
+@pytest.fixture(autouse=True)
+def fixed_pipeline_clock(monkeypatch):
+    """Keep rescan windows aligned with this module's fixed August fixtures."""
+    monkeypatch.setattr("bot.extract.pipeline.utcnow", lambda: NOW)
+
+
 # --- windows ----------------------------------------------------------------
 
 

@@ -1,0 +1,18 @@
+boss: Kalos
+summary: Control T-Boy's four interference systems with Kalos's Will; letting all four stay active is the fight's hard fail.
+core:
+- 'T-Boy can activate four weapon systems: Eye of Restraint, Eye of the Abyss, Bombardment Fighter, and Sphere of Odium.'
+- 'Use the Harvest/NPC key for Kalos''s Will: aim and fire it at active systems to step them down until deactivated.'
+- Kalos's Will refills on a short timer while alive; dead players do not recharge it.
+- If all four systems remain active until the interference fail timer expires, the party is forcibly ejected. Deactivating even one stops/resets that fail state.
+danger:
+- Eye of Restraint is particularly dangerous because its laser applies a long stun and can chain into other attacks.
+- Kalos's full-barrage pattern can activate another interference system, accelerating the system-management check.
+- On Chaos and Extreme, three or more active systems switch to enhanced attacks.
+tips:
+- Assign responsibility for Kalos's Will shots instead of having everyone react late.
+- Reduce the number of active systems before committing to long burst windows.
+- If the active count reaches four, treat freeing one system as the immediate priority.
+sources:
+- https://mapletools.app/bosses/kalos
+- https://maplestorywiki.net/w/Kalos/Monster

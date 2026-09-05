@@ -15,6 +15,7 @@ from bot.extract.gate import (
     GateResult,
     canonical_bosses,
     evaluate,
+    explicit_rsvp,
     find_bosses,
     find_days,
     find_mentions,
@@ -250,6 +251,21 @@ def test_answers_are_extracted_only_when_the_channel_was_scheduling(bosses):
     answers = [evaluate("Can", bosses, ROSTER), evaluate("Ok", bosses, ROSTER)]
     assert not should_extract(answers, context_is_scheduling=False)
     assert should_extract(answers, context_is_scheduling=True)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Can", "yes"),
+        ("I think should be okay for wed", "yes"),
+        ("today kenot sry", "no"),
+        ("Today can ah?", None),
+        ("930 can postpone to 11 anot", None),
+        ("I can take", None),
+    ],
+)
+def test_only_explicit_attendance_replies_are_deterministic(text, expected):
+    assert explicit_rsvp(text) == expected
 
 
 def test_one_strong_message_carries_the_whole_burst(bosses):

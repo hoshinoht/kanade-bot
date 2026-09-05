@@ -17,6 +17,7 @@ from bot.domain.ids import short_id
 from .chat_support import message
 
 pytestmark = [pytest.mark.ollama, pytest.mark.anyio]
+LOCAL_HOST = "http://127.0.0.1:11434"
 
 
 @pytest.fixture
@@ -25,13 +26,14 @@ def anyio_backend():
 
 
 @pytest.fixture
-def live(chat_bot):
+async def live(chat_bot):
     """The pilot with a real ollama client, closed afterwards."""
+    chat_bot.settings.ollama_host = LOCAL_HOST
     pilot = ChatPilot(chat_bot)
-    yield pilot
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(pilot.close())
+    try:
+        yield pilot
+    finally:
+        await pilot.close()
 
 
 async def test_it_answers_a_schedule_question_from_the_tools(chat_bot, chat_seeded, live):

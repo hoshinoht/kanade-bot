@@ -1,0 +1,22 @@
+boss: Bellona
+summary: 'Bellona rewards clean pattern execution: build into Insane mode, avoid getting hit there, and use the high-damage Insane window without giving her recovery.'
+core:
+- Bellona has a shared 0-1000 state gauge that changes over time; taking purple or red patterns delays the next Insane state, with red hits causing much larger gauge loss.
+- 'Insane is the important damage state: Bellona takes increased final damage and her attacks can deal self-damage.'
+- If you complete an Insane period without being hit, you can recover death count; getting hit during Insane can undo part of Bellona's self-damage benefit.
+- Her patterns are animation/tell driven. Normal and Hard remove much of the visible range guidance, and Hard executes patterns faster.
+danger:
+- Red attacks are especially costly and can directly consume death count.
+- The common teleport is frequent; the practical response is to crouch as soon as Bellona disappears/reappears for the dangerous red teleport.
+- The Phase 1/2 horizontal-vertical-X sequence demands three different responses; the vertical portion must be dodged on timing rather than pre-dashed.
+- Berserk/Insane weapon sequences become the hardest part of the fight, especially the double-headed-axe sequence.
+tips:
+- Treat entering and surviving Insane cleanly as more important than forcing constant chip damage.
+- When learning, stop attacking during dangerous tells and solve the pattern first; add uptime after the movement is consistent.
+- Use current KMS pattern timing when practicing; Bellona received live-server pattern readability/timing adjustments after test-server versions.
+notes:
+- Bellona mechanics here are based on current KMS live-server sources from August 2026.
+sources:
+- https://maplestorywiki.net/w/Bellona/Monster
+- https://www.inven.co.kr/board/maple/5974/7072345
+- https://www.inven.co.kr/board/maple/2304/48169

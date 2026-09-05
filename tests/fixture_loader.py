@@ -168,7 +168,7 @@ class Actual:
         return " · ".join(parts) + f" ({self.amendment.confidence:.2f})"
 
 
-def realise(extraction, scenario: Scenario, min_confidence: float = 0.0) -> Plan:
+def realise(extraction, scenario: Scenario, min_confidence: float = 0.0, table=None) -> Plan:
     """Run the deterministic stages the live pipeline runs, using the same code.
 
     Deliberately :func:`bot.extract.pipeline.plan_burst` rather than a copy of
@@ -185,6 +185,8 @@ def realise(extraction, scenario: Scenario, min_confidence: float = 0.0) -> Plan
         burst_order=[m.id for m in messages],
         author_ids={m.id: m.author_id for m in messages},
         min_confidence=min_confidence,
+        boss_table=table,
+        burst_messages=scenario.burst,
         # A fixture measures what the bot would have posted *at the time*. Left
         # to the wall clock, `plan_burst` would correctly drop every one of
         # these as "already passed" the day after it was recorded, and the
@@ -263,9 +265,9 @@ class Score:
         return " | ".join(bits)
 
 
-def score(scenario: Scenario, extraction, min_confidence: float = 0.0) -> Score:
+def score(scenario: Scenario, extraction, min_confidence: float = 0.0, table=None) -> Score:
     """Match expected against actual, one-to-one, ignoring order."""
-    plan = realise(extraction, scenario, min_confidence)
+    plan = realise(extraction, scenario, min_confidence, table)
     actuals = [to_actual(entry, scenario) for entry in plan.planned]
     result = Score(
         scenario=scenario,

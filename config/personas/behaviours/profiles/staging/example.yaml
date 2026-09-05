@@ -1,0 +1,5 @@
+# Staging override example for one reply profile.
+# Copy to <profile>.yaml (matching behaviours/profiles/<profile>.md) and edit.
+# Partial file: missing keys fall back to default in staging.yaml.
+
+generic: "Processing request. Stand by."

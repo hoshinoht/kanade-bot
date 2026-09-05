@@ -171,6 +171,9 @@ def test_component_prompt_has_explicit_precedence_and_dynamic_name():
         "DEFAULT",
         "PROFILE",
         "# Assistant scope",
+        "# Scheduler policy",
+        "# Grounding, privacy and presentation policy",
+        "# Boss knowledge policy",
         "CLOCK",
         "RUNTIME",
         persona.VOICE_PREFIX,
@@ -179,6 +182,22 @@ def test_component_prompt_has_explicit_precedence_and_dynamic_name():
     scope = built[built.index("# Assistant scope") : built.index("# Scheduler policy")]
     assert "Kanade" in scope
     assert "Yuuki" not in built
+
+
+def test_component_prompt_prioritizes_boss_knowledge_over_persona_overlays():
+    built = persona.component_system_prompt(
+        persona.PromptComponents(
+            identity="# Persona: Kanade",
+            default_behaviour="DEFAULT",
+            active_profile="PROFILE OVERLAY",
+        ),
+        "CLOCK",
+    )
+
+    assert "PROFILE OVERLAY" in built
+    assert "get_boss_strategy" in built
+    assert "may not add, infer, or alter strategy facts" in built
+    assert built.index("PROFILE OVERLAY") < built.index("# Boss knowledge policy")
 
 
 def test_profile_examples_replace_default_examples():
