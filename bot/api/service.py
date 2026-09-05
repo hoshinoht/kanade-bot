@@ -80,7 +80,7 @@ def _audit(
 
 
 def _bosses_of(run: dict) -> str:
-    """The run's bosses as an audit line says them: `HStar + HFA`."""
+    """The run's bosses as an audit line says them: `HMaleficStar + HFA`."""
     return formatting.format_bosses(run["bosses"])
 
 
@@ -1436,6 +1436,21 @@ def parse_when(bot: BossBot, text: str) -> datetime:
         # dateparser misses ``next <weekday> HH:MM`` -- fall back to the
         # extractor's own resolver, which handles it through _NEXT_RE.
         parsed = _resolve_when(cleaned, now, bot.tz)
+    elif (alt := _resolve_when(cleaned, now, bot.tz)) is not None:
+        # dateparser with ``PREFER_DATES_FROM=future`` never returns today for
+        # ``sat 22:30`` said on a Saturday -- it jumps a week even when tonight
+        # is still ahead. The extractor's resolver gets same-day right, so
+        # prefer it when it lands on the same wall-clock a week earlier and is
+        # still in the future. The wall-clock check keeps bare-hour inputs like
+        # ``sat 10`` on dateparser's reading instead of adopting the chat's
+        # pm-assumption halfway.
+        if (
+            alt > now
+            and alt < parsed
+            and (parsed - alt) >= timedelta(days=6)
+            and alt.astimezone(bot.tz).time() == parsed.astimezone(bot.tz).time()
+        ):
+            parsed = alt
     if parsed is None:
         raise BadRequest(
             f"couldn't read `{text}` as a date - try `wed 21:30` or `2026-09-02 21:30`"
@@ -1454,7 +1469,20 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
     parsed = parse_when(bot, to)
     old_at = run["datetime"]
     ws = week_start(parsed, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
-    bot.repo.set_run_datetime(run["id"], parsed, ws)
+    existing = bot.repo.run_move_conflict(run, ws)
+    if existing is not None:
+        raise BadRequest(
+            f"that weekly already has a run in the week of "
+            f"{formatting.local_day(ws, bot.tz)} "
+            f"(#{short_id(existing['id'])} on "
+            f"{formatting.local_day(existing['datetime'], bot.tz)} "
+            f"{formatting.local_time(existing['datetime'], bot.tz)}). "
+            "Edit that existing run instead, or keep this move within its current boss week."
+        )
+    try:
+        bot.repo.set_run_datetime(run["id"], parsed, ws)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
     if run["status"] in ("confirmed", "at_risk"):
         # Moving a run invalidates the answers people gave about the old slot.
         bot.repo.set_run_status(run["id"], "planned")

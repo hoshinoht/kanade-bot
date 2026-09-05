@@ -110,7 +110,7 @@ def a_run(repo: Repo, participants: list[str] | None = None, at: datetime | None
     at = at or tonight()
     run_id = repo.create_run(
         week_start(at, TZ, RESET_WEEKDAY, RESET_TIME),
-        ["HStar", "HFA"],
+        ["HMaleficStar", "HFA"],
         at,
         participants or PARTICIPANTS,
         channel_id=WATCHED_CHANNEL,
@@ -238,7 +238,7 @@ def test_a_grouped_morning_card_keeps_every_run_on_it(bot, repo, channel):
 
     embed = channel.messages[CARD_ID].edits[-1]["embed"]
     names = "\n".join(field.name for field in embed.fields)
-    assert "HStar" in names and "XKalos" in names
+    assert "HMaleficStar" in names and "XKalos" in names
 
 
 def test_both_of_a_runs_cards_are_refreshed(bot, repo, channel):

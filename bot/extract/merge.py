@@ -116,7 +116,7 @@ def _fold_time_changes_into_adds(
 
     Real bursts read "we doing our nstar and ncarl tonight?" -> "9pm i reach kk early"
     -> "Aiyo amend to 9:45pm", and the model calls the third message a `move`
-    because it is one, grammatically. But there is no NStar run to move: it is
+    because it is one, grammatically. But there is no NMaleficStar run to move: it is
     the same proposal, settling on a time. Folding it here means one card at
     21:45 rather than a new run at 21:00 plus a move nothing can apply to.
 

@@ -56,15 +56,15 @@ POST_ATTEMPTS = 3
 POST_BACKOFF_SECONDS = 1.0
 
 #: What the embed's *image* attachment is called on the wire. A card can carry
-#: two pictures of the same boss -- `boss/portraits/Star.png` in the corner
-#: and `boss/artwork/entry/Star.png` along the bottom -- and on disk those are
-#: both `Star.png`. Two attachments with one name make `attachment://Star.png`
+#: two pictures of the same boss -- `boss/portraits/MaleficStar.png` in the corner
+#: and `boss/artwork/entry/MaleficStar.png` along the bottom -- and on disk those are
+#: both `MaleficStar.png`. Two attachments with one name make `attachment://MaleficStar.png`
 #: ambiguous, and Discord resolves it to whichever it likes, which is how a
 #: 550px splash ends up in the thumbnail slot.
 #:
 #: Only the newcomer is renamed, deliberately. `edit_card` rewrites an embed
 #: without re-uploading anything, so every card already posted still has an
-#: attachment called `Star.png`; prefixing the thumbnail too would point every
+#: attachment called `MaleficStar.png`; prefixing the thumbnail too would point every
 #: future edit at a filename those messages do not have, and break the portrait
 #: on all of them.
 IMAGE_PREFIX = "image-"

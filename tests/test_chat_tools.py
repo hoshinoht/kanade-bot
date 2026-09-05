@@ -135,14 +135,14 @@ def test_tool_schemas_stay_within_context_budget():
 
 async def test_get_schedule_lists_the_week(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
-    assert "Hard Star + Hard FA" in answer
+    assert "Hard MaleficStar + Hard FA" in answer
     assert "Extreme Kalos" in answer
     assert short_id(chat_seeded["star"]) in answer
     star = chat_bot.repo.get_run(chat_seeded["star"])
     line = line_for(answer, chat_seeded["star"])
     assert f"`[{short_id(chat_seeded['star'])}]`" in line
     assert f"*{star['datetime'].astimezone(chat_bot.tz):%a %d %b %H:%M}*" in line
-    assert "**Hard Star + Hard FA**" in line
+    assert "**Hard MaleficStar + Hard FA**" in line
     assert "`planned`" in line and "`0/2 yes`" in line
 
 
@@ -504,10 +504,10 @@ async def test_get_run_by_short_id(chat_bot, chat_seeded):
     answer = await tools.dispatch(
         context(chat_bot), "get_run", {"query": short_id(chat_seeded["star"])}
     )
-    assert "Hard Star + Hard FA" in answer
+    assert "Hard MaleficStar + Hard FA" in answer
     assert "kanon" in answer
     assert f"`[{short_id(chat_seeded['star'])}]`" in answer
-    assert "**Hard Star + Hard FA**" in answer
+    assert "**Hard MaleficStar + Hard FA**" in answer
     assert "`planned`" in answer
 
 
@@ -608,13 +608,13 @@ async def test_get_pending_lists_a_card_the_chatbot_raised(chat_bot, chat_seeded
         context(chat_bot), "propose_cancel", {"run_query": short_id(chat_seeded["star"])}
     )
     answer = await tools.dispatch(context(chat_bot), "get_pending", {})
-    assert "Hard Star + Hard FA" in answer
+    assert "Hard MaleficStar + Hard FA" in answer
 
 
 async def test_list_fixed_shows_weekly_timings(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "list_fixed", {})
     assert "Weekly timings" in answer
-    assert "HStar" in answer or "Hard Star" in answer or "Star" in answer
+    assert "HMaleficStar" in answer or "Hard MaleficStar" in answer or "MaleficStar" in answer
     assert tools.is_write_tool("list_fixed") is False
 
 
@@ -996,7 +996,7 @@ async def test_an_unknown_tool_is_refused_by_name(chat_bot, chat_seeded, name):
 
 async def test_arguments_may_arrive_as_a_json_string(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", '{"week": "this"}')
-    assert "Hard Star + Hard FA" in answer
+    assert "Hard MaleficStar + Hard FA" in answer
 
 
 async def test_unreadable_arguments_do_not_raise(chat_bot, chat_seeded):

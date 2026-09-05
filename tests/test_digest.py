@@ -18,7 +18,9 @@ from .fake_bot import WATCHED_CHANNEL, FakeBot, make_settings
 
 def _week(repo):
     ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, kl(2026, 8, 30, 12, 0))
-    repo.add_fixed_run(1, ["HStar", "HFA"], 0, "21:30", ["1", "2"], channel_id=WATCHED_CHANNEL)
+    repo.add_fixed_run(
+        1, ["HMaleficStar", "HFA"], 0, "21:30", ["1", "2"], channel_id=WATCHED_CHANNEL
+    )
     repo.add_fixed_run(2, ["XKalos"], 1, "23:00", ["2", "3"], channel_id=WATCHED_CHANNEL)
     # As of the reset, not of whenever the suite runs: `materialise_week` skips
     # a slot that has already passed, so against the wall clock this fixture
@@ -107,7 +109,7 @@ def test_a_run_someone_declined_is_marked_apart_from_one_nobody_answered(repo):
     runs = _statuses(repo, ws, "at_risk", "planned")
     lines = {run["bosses"][0]: formatting.digest_line(run, TZ, {}) for run in runs}
 
-    assert lines["HStar"].startswith("❗")
+    assert lines["HMaleficStar"].startswith("❗")
     assert lines["XKalos"].startswith("⚠️")
 
 

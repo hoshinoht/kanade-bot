@@ -61,7 +61,7 @@ SCHEDULE = {
                 {
                     "id": "aaaaaaaa-1111-2222-3333-444444444444",
                     "short_id": "aaaaaaaa",
-                    "bosses": ["HStar", "HFA"],
+                    "bosses": ["HMaleficStar", "HFA"],
                     "local_time": "21:30",
                     "local_day": "Mon 31 Aug",
                     "status": "planned",
@@ -254,7 +254,7 @@ def test_schedule_prints_a_table(api):
     assert result.exit_code == 0
     assert "Boss week of Thu 27 Aug" in result.output
     assert "Mon 31 Aug" in result.output
-    assert "HStar + HFA" in result.output
+    assert "HMaleficStar + HFA" in result.output
     assert "aaaaaaaa" in result.output
 
 
@@ -295,7 +295,7 @@ def test_amend_sends_the_phrase_verbatim(api):
     route = api.post("/api/runs/aaaa/amend").mock(
         return_value=httpx.Response(
             200,
-            json={"bosses": ["HStar"], "local_day": "Wed 02 Sep", "local_time": "21:45"},
+            json={"bosses": ["HMaleficStar"], "local_day": "Wed 02 Sep", "local_time": "21:45"},
         )
     )
     result = run("amend", "aaaa", "--to", "wed 9:45pm")
@@ -306,10 +306,10 @@ def test_amend_sends_the_phrase_verbatim(api):
 
 def test_cancel_and_otot(api):
     api.post("/api/runs/aaaa/cancel").mock(
-        return_value=httpx.Response(200, json={"bosses": ["HStar"]})
+        return_value=httpx.Response(200, json={"bosses": ["HMaleficStar"]})
     )
     api.post("/api/runs/aaaa/otot").mock(
-        return_value=httpx.Response(200, json={"bosses": ["HStar"]})
+        return_value=httpx.Response(200, json={"bosses": ["HMaleficStar"]})
     )
     assert run("cancel", "aaaa").exit_code == 0
     assert "own-time" in run("otot", "aaaa").output
@@ -345,7 +345,7 @@ def test_pending_prints_the_evidence(api):
                 {
                     "short_id": "bbbbbbbb",
                     "kind_label": "move",
-                    "bosses": ["HStar"],
+                    "bosses": ["HMaleficStar"],
                     "confidence": 0.82,
                     "channel_name": "#hstar-party",
                     "channel_id": "1",
@@ -489,7 +489,7 @@ def test_fixed_list_add_edit_and_rm(api):
         "short_id": "cccccccc",
         "weekday_name": "Mon",
         "time": "21:30",
-        "bosses": ["HStar", "HFA"],
+        "bosses": ["HMaleficStar", "HFA"],
         "participants": [{"id": "1", "name": "Alvin"}],
         "channel_name": "#hstar-party",
         "channel_id": "5",
@@ -591,7 +591,7 @@ CHANNEL_RESCAN = {
     "elapsed_ms": 42000,
     "error": None,
     "summary": "",
-    "proposed": [{"kind": "move", "bosses": ["HStar"], "confidence": 0.9, "run_id": None}],
+    "proposed": [{"kind": "move", "bosses": ["HMaleficStar"], "confidence": 0.9, "run_id": None}],
 }
 
 RESCAN = {
@@ -608,7 +608,7 @@ RESCAN = {
     "stale": 2,
     "elapsed_ms": 42000,
     "errors": [],
-    "proposed": [{"kind": "move", "bosses": ["HStar"], "confidence": 0.9, "run_id": None}],
+    "proposed": [{"kind": "move", "bosses": ["HMaleficStar"], "confidence": 0.9, "run_id": None}],
 }
 
 
@@ -774,14 +774,19 @@ def test_extractions_and_one_extraction(api):
                 "prompt": "THE PROMPT",
                 "raw_response": "{}",
                 "amendments": [
-                    {"kind": "move", "bosses": ["HStar"], "when": "Wed 21:30", "status": "proposed"}
+                    {
+                        "kind": "move",
+                        "bosses": ["HMaleficStar"],
+                        "when": "Wed 21:30",
+                        "status": "proposed",
+                    }
                 ],
             },
         )
     )
     result = run("extraction", "dddd")
     assert "THE PROMPT" in result.output
-    assert "move HStar" in result.output
+    assert "move HMaleficStar" in result.output
 
 
 def test_chat_and_one_interaction(api):
@@ -890,7 +895,7 @@ def test_reminders(api):
                     "kind": "day_of",
                     "local_fire_at": "Mon 31 Aug 09:00",
                     "sent_at": None,
-                    "bosses": ["HStar"],
+                    "bosses": ["HMaleficStar"],
                 }
             ],
         )
@@ -954,7 +959,7 @@ def test_every_command_carries_the_bearer_token(api):
 # --- status, restore and access (items 8 and 10) ----------------------------
 
 RUN_RESULT = {
-    "bosses": ["HStar"],
+    "bosses": ["HMaleficStar"],
     "local_day": "Wed 02 Sep",
     "local_time": "21:30",
     "status": "otot",

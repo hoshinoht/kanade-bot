@@ -83,21 +83,21 @@ def test_own_time_beats_a_move_that_never_named_a_day():
 
 
 def test_changes_to_different_runs_all_survive():
-    one = run_row("r1", ["HStar"], NOW + timedelta(days=1))
+    one = run_row("r1", ["HMaleficStar"], NOW + timedelta(days=1))
     two = run_row("r2", ["XKalos"], NOW + timedelta(days=2))
-    kept = one_per_run([entry("otot", ["HStar"], one), entry("otot", ["XKalos"], two)])
+    kept = one_per_run([entry("otot", ["HMaleficStar"], one), entry("otot", ["XKalos"], two)])
     assert len(kept) == 2
 
 
 def test_a_split_is_never_collapsed_away():
     """It changes a run *and* creates another; it is not competing with them."""
-    run = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
-    kept = one_per_run([entry("split", ["HFA"], run), entry("otot", ["HStar"], run)])
+    run = run_row("r1", ["HMaleficStar", "HFA"], NOW + timedelta(days=1))
+    kept = one_per_run([entry("split", ["HFA"], run), entry("otot", ["HMaleficStar"], run)])
     assert {e.kind for e in kept} == {"split", "otot"}
 
 
 def test_a_new_run_is_never_collapsed_against_an_existing_one():
-    kept = one_per_run([entry("add", ["NCarling"]), entry("add", ["NStar"])])
+    kept = one_per_run([entry("add", ["NCarling"]), entry("add", ["NMaleficStar"])])
     assert len(kept) == 2
 
 
@@ -128,8 +128,8 @@ def test_the_card_names_what_else_was_mentioned():
 
 
 def test_a_move_about_bosses_nobody_runs_here_is_not_forced_onto_a_run():
-    """Live: `move · NBaldrix` matched next week's HStar run on participants alone."""
-    hstar = run_row("17d1e8be", ["HStar"], NOW + timedelta(days=7))
+    """Live: `move · NBaldrix` matched next week's HMaleficStar run on participants alone."""
+    hstar = run_row("17d1e8be", ["HMaleficStar"], NOW + timedelta(days=7))
     plan = plan_burst(
         Extraction(
             amendments=[
@@ -153,7 +153,7 @@ def test_a_move_about_bosses_nobody_runs_here_is_not_forced_onto_a_run():
 
 
 def test_with_a_day_and_time_it_becomes_a_new_run_instead():
-    hstar = run_row("17d1e8be", ["HStar"], NOW + timedelta(days=7))
+    hstar = run_row("17d1e8be", ["HMaleficStar"], NOW + timedelta(days=7))
     plan = plan_burst(
         Extraction(
             amendments=[
@@ -182,7 +182,7 @@ def test_with_a_day_and_time_it_becomes_a_new_run_instead():
 
 def test_a_bare_time_change_is_never_promoted_to_a_new_run():
     """ "amend to 9:45" is settling something, not proposing a fresh night."""
-    hstar = run_row("r1", ["HStar"], NOW + timedelta(days=1))
+    hstar = run_row("r1", ["HMaleficStar"], NOW + timedelta(days=1))
     plan = plan_burst(
         Extraction(
             amendments=[
@@ -207,21 +207,21 @@ def test_a_bare_time_change_is_never_promoted_to_a_new_run():
 
 
 def test_a_move_to_the_time_the_run_already_has_is_dropped():
-    """Live: `HStar + HFA: Wed 02 Sep 21:30 -> Wed 02 Sep 21:30`."""
+    """Live: `HMaleficStar + HFA: Wed 02 Sep 21:30 -> Wed 02 Sep 21:30`."""
     at = kl(2026, 9, 2, 21, 30)
-    run = run_row("r1", ["HStar", "HFA"], at)
-    assert is_no_op(entry("move", ["HStar"], run, at=at)) is True
+    run = run_row("r1", ["HMaleficStar", "HFA"], at)
+    assert is_no_op(entry("move", ["HMaleficStar"], run, at=at)) is True
 
 
 def test_a_move_to_a_different_time_is_not_a_no_op():
-    run = run_row("r1", ["HStar"], kl(2026, 9, 2, 21, 30))
-    assert is_no_op(entry("move", ["HStar"], run, at=kl(2026, 9, 2, 22, 0))) is False
+    run = run_row("r1", ["HMaleficStar"], kl(2026, 9, 2, 21, 30))
+    assert is_no_op(entry("move", ["HMaleficStar"], run, at=kl(2026, 9, 2, 22, 0))) is False
 
 
 @pytest.mark.parametrize("kind,status", [("otot", "otot"), ("cancel", "cancelled")])
 def test_setting_the_status_a_run_already_has_is_dropped(kind, status):
-    run = run_row("r1", ["HStar"], NOW + timedelta(days=1), status=status)
-    assert is_no_op(entry(kind, ["HStar"], run)) is True
+    run = run_row("r1", ["HMaleficStar"], NOW + timedelta(days=1), status=status)
+    assert is_no_op(entry(kind, ["HMaleficStar"], run)) is True
 
 
 def test_a_day_only_move_to_the_day_the_run_is_already_on_is_dropped():
@@ -244,19 +244,19 @@ def test_the_day_is_judged_in_the_guild_timezone():
 
 
 def test_adding_a_run_the_channel_already_has_is_a_no_op():
-    run = run_row("r1", ["NStar"], NOW + timedelta(days=1))
-    assert is_no_op(entry("add", ["NStar"], run), TZ) is True
+    run = run_row("r1", ["NMaleficStar"], NOW + timedelta(days=1))
+    assert is_no_op(entry("add", ["NMaleficStar"], run), TZ) is True
 
 
 def test_an_add_for_a_boss_the_channel_already_runs_is_dropped(bosses):
     """The week already has that night; proposing it again is a card about nothing."""
-    existing = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 2, 21, 30))
+    existing = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 9, 2, 21, 30))
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="add",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="thu",
                     time_ref="10pm",
                     confidence=0.9,
@@ -276,13 +276,13 @@ def test_an_add_for_a_boss_the_channel_already_runs_is_dropped(bosses):
 def test_an_add_never_carries_a_run(bosses):
     """`commit` creates a run for an `add`; a run_id on one points it at a night
     it never meant to touch, and makes it supersede that night's other cards."""
-    existing = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 2, 21, 30))
+    existing = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 9, 2, 21, 30))
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="add",
-                    bosses=["NStar"],
+                    bosses=["NMaleficStar"],
                     day_ref="thu",
                     time_ref="10pm",
                     confidence=0.9,
@@ -378,13 +378,13 @@ def test_an_add_with_a_day_but_no_time_still_asks(bosses):
 
 def test_a_no_op_never_reaches_the_card(bosses):
     at = kl(2026, 9, 2, 21, 30)
-    run = run_row("r1", ["HStar"], at)
+    run = run_row("r1", ["HMaleficStar"], at)
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="wed",
                     time_ref="9:30pm",
                     confidence=0.9,
@@ -415,9 +415,9 @@ def test_the_heading_uses_the_matched_runs_bosses_not_the_amendments():
         "day_ref": "wed",
         "time_ref": None,
     }
-    run = run_row("17d1e8be", ["HStar"], NOW)
+    run = run_row("17d1e8be", ["HMaleficStar"], NOW)
     name, _value = formatting.proposal_line(amendment, run, TZ)
-    assert "Hard Star" in name
+    assert "Hard MaleficStar" in name
     assert "NBaldrix" not in name
     assert "#17d1e8be" in name
 
@@ -439,7 +439,7 @@ def test_with_no_run_the_heading_uses_the_amendments_bosses():
 
 def test_a_matched_run_always_shares_a_boss_with_its_amendment():
     """The invariant that makes the heading safe -- assert it, do not assume it."""
-    hstar = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
+    hstar = run_row("r1", ["HMaleficStar", "HFA"], NOW + timedelta(days=1))
     kalos = run_row("r2", ["XKalos"], NOW + timedelta(days=2))
     plan = plan_burst(
         Extraction(
@@ -546,7 +546,7 @@ def test_a_bare_answer_is_still_recorded_when_two_runs_tie():
     opinion, and `apply_reaction` ignores one from somebody who is not on the
     run it landed on.
     """
-    hstar = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
+    hstar = run_row("r1", ["HMaleficStar", "HFA"], NOW + timedelta(days=1))
     kalos = run_row("r2", ["HCarling", "XKalos"], NOW + timedelta(days=2))
     plan = plan_burst(
         Extraction(
@@ -573,7 +573,7 @@ def test_a_bare_answer_is_still_recorded_when_two_runs_tie():
 
 def test_a_coin_toss_move_is_still_dropped():
     """The kinds that change a night do not get to guess."""
-    hstar = run_row("r1", ["HStar", "HFA"], NOW + timedelta(days=1))
+    hstar = run_row("r1", ["HMaleficStar", "HFA"], NOW + timedelta(days=1))
     kalos = run_row("r2", ["HCarling", "XKalos"], NOW + timedelta(days=2))
     plan = plan_burst(
         Extraction(
@@ -603,13 +603,13 @@ def test_a_coin_toss_move_is_still_dropped():
 
 def test_a_move_that_names_only_a_day_keeps_the_runs_time(bosses):
     """Live: three `move` rows with day_ref=wed rendered "→ TBD" on the card."""
-    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    run = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 8, 31, 21, 30))
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="wed",
                     confidence=0.9,
                     evidence_message_ids=["1"],
@@ -629,13 +629,13 @@ def test_a_move_that_names_only_a_day_keeps_the_runs_time(bosses):
 
 def test_a_move_that_names_only_a_time_keeps_the_runs_day(bosses):
     """ "amend to 9:45pm" about Monday's run is about Monday, not about today."""
-    run = run_row("r1", ["HStar", "HFA"], kl(2026, 9, 7, 21, 30))
+    run = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 9, 7, 21, 30))
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     time_ref="9:45pm",
                     confidence=0.9,
                     evidence_message_ids=["1"],
@@ -653,13 +653,13 @@ def test_a_move_that_names_only_a_time_keeps_the_runs_day(bosses):
 
 
 def test_a_move_stating_both_halves_is_left_alone(bosses):
-    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    run = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 8, 31, 21, 30))
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="wed",
                     time_ref="10pm",
                     confidence=0.9,
@@ -679,9 +679,9 @@ def test_only_a_move_inherits(bosses):
     """An `add` has no run to read from and keeps the question-card "when?" path."""
     from bot.extract.pipeline import inherit_from_run
 
-    run = run_row("r1", ["HStar"], kl(2026, 8, 31, 21, 30))
+    run = run_row("r1", ["HMaleficStar"], kl(2026, 8, 31, 21, 30))
     for kind in ("add", "otot", "cancel", "sub"):
-        untouched = entry(kind, ["HStar"], run, day=date(2026, 9, 2))
+        untouched = entry(kind, ["HMaleficStar"], run, day=date(2026, 9, 2))
         assert inherit_from_run(untouched, TZ).at is None, kind
 
 
@@ -713,7 +713,7 @@ def test_a_question_move_now_names_the_night_it_asks_about():
     """It stays a question; it just stops asking "TBD?"."""
     amendment = {
         "kind": "move",
-        "bosses": ["HStar", "HFA"],
+        "bosses": ["HMaleficStar", "HFA"],
         "participants": [],
         "summary": None,
         "new_datetime": kl(2026, 9, 2, 21, 30),
@@ -722,7 +722,7 @@ def test_a_question_move_now_names_the_night_it_asks_about():
         "is_question": True,
         "also_mentioned": [],
     }
-    run = run_row("r1", ["HStar", "HFA"], kl(2026, 8, 31, 21, 30))
+    run = run_row("r1", ["HMaleficStar", "HFA"], kl(2026, 8, 31, 21, 30))
     _name, value = formatting.proposal_line(amendment, run, TZ)
     assert "TBD" not in value
     assert "Wed 02 Sep 21:30" in value
@@ -732,7 +732,7 @@ def test_a_move_with_no_run_still_reads_TBD():
     """Nothing to inherit from means the card must still say so."""
     amendment = {
         "kind": "move",
-        "bosses": ["HStar"],
+        "bosses": ["HMaleficStar"],
         "participants": [],
         "summary": None,
         "new_datetime": None,
@@ -813,16 +813,16 @@ def dated_run(run_id, bosses, at, week, participants=("1001", "1002")):
 
 
 def test_a_move_never_drags_a_later_weeks_run_backwards(bosses):
-    """Live: "move HStar+HFA to Wed" matched next week's freshly-materialised
+    """Live: "move HMaleficStar+HFA to Wed" matched next week's freshly-materialised
     Monday runs and proposed pulling them back to a Wednesday before their week.
     """
-    next_weeks = dated_run("17d1e8be", ["HStar", "HFA"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
+    next_weeks = dated_run("17d1e8be", ["HMaleficStar", "HFA"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar", "HFA"],
+                    bosses=["HMaleficStar", "HFA"],
                     day_ref="wed",
                     confidence=0.9,
                     participants=["1001"],
@@ -842,13 +842,13 @@ def test_a_move_never_drags_a_later_weeks_run_backwards(bosses):
 
 def test_a_move_forward_past_the_reset_is_still_allowed(bosses):
     """ "shift our monday run to next friday" is a real request."""
-    this_weeks = dated_run("a1a1a1a1", ["HStar"], kl(2026, 8, 31, 21, 30), THIS_WEEK)
+    this_weeks = dated_run("a1a1a1a1", ["HMaleficStar"], kl(2026, 8, 31, 21, 30), THIS_WEEK)
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="fri",
                     time_ref="10pm",
                     confidence=0.9,
@@ -868,13 +868,13 @@ def test_a_move_forward_past_the_reset_is_still_allowed(bosses):
 
 def test_a_backwards_move_inside_one_week_is_still_allowed(bosses):
     """Wed -> Mon of the same boss week changes nothing about which week it is."""
-    wednesday = dated_run("a1a1a1a1", ["HStar"], kl(2026, 9, 2, 21, 30), THIS_WEEK)
+    wednesday = dated_run("a1a1a1a1", ["HMaleficStar"], kl(2026, 9, 2, 21, 30), THIS_WEEK)
     plan = plan_burst(
         Extraction(
             amendments=[
                 Amendment(
                     kind="move",
-                    bosses=["HStar"],
+                    bosses=["HMaleficStar"],
                     day_ref="mon",
                     confidence=0.9,
                     evidence_message_ids=["1"],
@@ -921,7 +921,7 @@ def test_a_run_with_no_week_recorded_is_left_alone():
     """Hand-built run dicts say nothing about which week they belong to."""
     from bot.extract.match import reachable, starts_after
 
-    plain = run_row("r1", ["HStar"], kl(2026, 9, 7, 21, 30))
+    plain = run_row("r1", ["HMaleficStar"], kl(2026, 9, 7, 21, 30))
     assert starts_after(plain, date(2026, 9, 2), TZ) is False
     assert reachable([plain], date(2026, 9, 2), TZ) == [plain]
 
@@ -930,5 +930,5 @@ def test_no_target_day_means_no_week_filtering():
     """A bare "change it" names no night, so it cannot be pointed at one."""
     from bot.extract.match import reachable
 
-    later = dated_run("r1", ["HStar"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
+    later = dated_run("r1", ["HMaleficStar"], kl(2026, 9, 7, 21, 30), NEXT_WEEK)
     assert reachable([later], None, TZ) == [later]

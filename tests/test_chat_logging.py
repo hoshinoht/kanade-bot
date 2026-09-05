@@ -261,7 +261,7 @@ async def test_run_reports_what_dispatch_only_summarises(chat_bot, chat_seeded):
     assert outcome.outcome == "ok"
     assert outcome.name == "get_schedule"
     assert outcome.arguments == {"week": "this"}
-    assert "Hard Star + Hard FA" in outcome.output
+    assert "Hard MaleficStar + Hard FA" in outcome.output
     assert outcome.created == []
 
 

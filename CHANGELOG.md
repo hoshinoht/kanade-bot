@@ -4,6 +4,32 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+**Added**
+
+- Repository-specific `AGENTS.md` guidance for setup, focused checks,
+  architecture boundaries, generated assets, migrations, and private files.
+- Spaced full-name boss aliases such as `Hard Black Mage`,
+  `Normal Radiant Malefic Star`, and `Normal The First Adversary` now resolve in
+  commands, extraction, and chatbot run lookups.
+- Chatbot presentation policy now rejects explicit vulgarities and evasive
+  phonetic, abbreviated, or censored spellings of them.
+
+**Changed**
+
+- Renamed the internal `Star` boss key and tokens to `MaleficStar`, including
+  catalog, knowledge, assets, examples, and a v10-to-v11 SQLite migration.
+  Existing `star`, `nstar`, and `hstar` aliases remain accepted.
+- Reminder cards now use the lead boss's catalog colour, with the previous card
+  colours retained as fallbacks when no boss colour is available.
+
+**Fixed**
+
+- Moving a recurring run across the boss-week boundary into a week that already
+  contains that recurring run now returns a clear conflict instead of leaking a
+  SQLite uniqueness error through the portal, slash command, or proposal card.
+- Same-weekday future times such as `sat 22:30` now resolve to later today rather
+  than the same weekday one week later; past times still roll forward.
+
 ## 4.5.0
 
 **Added**

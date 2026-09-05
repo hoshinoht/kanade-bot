@@ -98,7 +98,7 @@ EXTRACTOR_ACTOR = "extractor"
 
 #: How far into the past a proposed time may point before the card is pointless.
 #: A rescan reads a whole boss week, so without this it would cheerfully post
-#: "move HStar to Monday 21:30" on Wednesday. The grace exists because live chat
+#: "move HMaleficStar to Monday 21:30" on Wednesday. The grace exists because live chat
 #: routinely settles a run just after it was due to start ("start now lah") and
 #: that is a real amendment, not a stale one.
 STALE_GRACE = timedelta(hours=3)
@@ -524,7 +524,7 @@ def plan_burst(
         )
         if len(spanned) > 1:
             # One candidate per run, each naming only that run's bosses, so the
-            # card says "stand-in for HStar+HFA" and "for HCarling+XKalos"
+            # card says "stand-in for HMaleficStar+HFA" and "for HCarling+XKalos"
             # instead of one line listing four bosses across two nights.
             for run in spanned:
                 per_run = amendment.model_copy(deep=True)

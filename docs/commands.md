@@ -48,7 +48,7 @@ already post, and it never falls back to another channel.
 **About ids.** Runs and fixed runs are identified by a UUID, shown as its first
 eight characters — `#a1b2c3d4`. You almost never type one: every command that
 takes an id has a **dropdown** listing your runs as
-`HStar + HFA · Mon 21:30 · #hstar-alvin-kanon · a1b2c3d4`. If you do type one,
+`HMaleficStar + HFA · Mon 21:30 · #hmaleficstar-alvin-kanon · a1b2c3d4`. If you do type one,
 any unique prefix of four characters or more works, case-insensitively, with or
 without the `#` — so you can paste `#a1b2c3d4` straight out of `/schedule`. An
 ambiguous prefix comes back with the candidates listed.

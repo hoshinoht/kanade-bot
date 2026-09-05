@@ -45,7 +45,7 @@ def proposals(bot):
 
 
 def star_fixed(bot) -> dict:
-    return next(f for f in bot.repo.list_fixed_runs() if "HStar" in f["bosses"])
+    return next(f for f in bot.repo.list_fixed_runs() if "HMaleficStar" in f["bosses"])
 
 
 def approve(bot, row, actor=1001):
@@ -77,13 +77,17 @@ def test_a_weekly_timing_resolves_by_short_id(chat_bot, chat_seeded):
 
 
 def test_a_day_narrows_between_two_timings_for_one_boss(chat_bot, chat_seeded):
-    chat_bot.repo.add_fixed_run(1001, ["HStar"], 4, "20:00", ["1001"], channel_id=WATCHED_CHANNEL)
+    chat_bot.repo.add_fixed_run(
+        1001, ["HMaleficStar"], 4, "20:00", ["1001"], channel_id=WATCHED_CHANNEL
+    )
     friday = tools.resolve_fixed(chat_bot, "hstar friday")
     assert friday["weekday"] == 4
 
 
 def test_two_timings_for_one_boss_with_no_day_is_refused(chat_bot, chat_seeded):
-    chat_bot.repo.add_fixed_run(1001, ["HStar"], 4, "20:00", ["1001"], channel_id=WATCHED_CHANNEL)
+    chat_bot.repo.add_fixed_run(
+        1001, ["HMaleficStar"], 4, "20:00", ["1001"], channel_id=WATCHED_CHANNEL
+    )
     with pytest.raises(tools.ToolError) as exc:
         tools.resolve_fixed(chat_bot, "hstar")
     assert "more than one weekly timing" in str(exc.value)
@@ -132,7 +136,7 @@ async def test_the_card_says_it_is_the_recurring_one(chat_bot, chat_seeded):
     name, value = formatting.proposal_line(row, None, TZ)
 
     assert "remove weekly" in name
-    assert "Hard Star" in name
+    assert "Hard MaleficStar" in name
     assert "stop scheduling this every week" in value
     assert "future weeks will not be scheduled" in value
     assert "Mon 21:30" in value
@@ -179,7 +183,7 @@ async def test_future_weeks_stop_materialising_it(chat_bot, chat_seeded):
     ws = next_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
     materialise_week(chat_bot.repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
     bosses = [r["bosses"] for r in chat_bot.repo.list_runs(week_start=ws)]
-    assert ["HStar", "HFA"] not in bosses
+    assert ["HMaleficStar", "HFA"] not in bosses
     assert ["XKalos"] in bosses
 
 
