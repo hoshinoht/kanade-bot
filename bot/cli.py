@@ -15,21 +15,25 @@ when a prefix is ambiguous.
 
 from __future__ import annotations
 
+import base64
 import getpass
 import json
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
 import typer
+import yaml
 from dotenv import dotenv_values
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from .domain.bosses import BossTable, BossTableError
 from .infrastructure.audit import HEADER_BOSSCTL
 
 DEFAULT_URL = "http://127.0.0.1:8080"
@@ -57,6 +61,10 @@ STATUS_STYLE = {
 
 class ApiFailed(Exception):
     """The API said no; the message is meant to be printed as-is."""
+
+
+class GuideConfigError(ValueError):
+    """A local guide or boss-catalog file cannot be used."""
 
 
 def os_user() -> str:
@@ -118,6 +126,118 @@ def base_url() -> str:
         if env_file is not None:
             url = _clean(dotenv_values(env_file).get("BOSSCTL_URL"))
     return (url or DEFAULT_URL).rstrip("/")
+
+
+def guide_project_root() -> Path:
+    """The project root shared by the guide config and relative boss paths."""
+    env_file = find_env()
+    return env_file.parent if env_file is not None else Path.cwd().resolve()
+
+
+def resolve_guide_paths(bosses_path: Path | None = None) -> tuple[Path, Path]:
+    """Resolve the boss catalog and guide config without guessing their project.
+
+    An explicit catalog is relative to the caller's working directory. Environment
+    and default catalog paths are relative to the nearest ``.env`` (or that
+    working directory when there is no project ``.env``); ``guide.yaml`` follows
+    that same project root.
+    """
+    root = guide_project_root()
+    if bosses_path is not None:
+        catalog = bosses_path if bosses_path.is_absolute() else Path.cwd() / bosses_path
+    else:
+        configured = _clean(os.environ.get("BOSSES_PATH"))
+        if not configured:
+            env_file = find_env()
+            if env_file is not None:
+                configured = _clean(dotenv_values(env_file).get("BOSSES_PATH"))
+        catalog = Path(configured or "boss/bosses.yaml")
+        if not catalog.is_absolute():
+            catalog = root / catalog
+
+    guide_path = root / "config" / "guide.yaml"
+    catalog = catalog.resolve()
+    guide_path = guide_path.resolve()
+    if not catalog.is_file():
+        raise GuideConfigError(
+            f"boss catalog not found: {catalog}. Pass --bosses PATH or set BOSSES_PATH."
+        )
+    if not guide_path.is_file():
+        raise GuideConfigError(f"guide config not found: {guide_path}. Create config/guide.yaml.")
+    return catalog, guide_path
+
+
+def load_guide_messages(path: Path) -> list[str]:
+    """Load the prose messages, refusing malformed guide files before posting."""
+    try:
+        guide = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise GuideConfigError(f"could not read guide config {path}: {exc}") from exc
+    if not isinstance(guide, dict) or not isinstance(guide.get("messages"), list):
+        raise GuideConfigError(f"invalid guide config {path}: expected a `messages:` list")
+    if not all(isinstance(message, str) for message in guide["messages"]):
+        raise GuideConfigError(f"invalid guide config {path}: every message must be text")
+    return guide["messages"]
+
+
+def load_guide_bosses(path: Path) -> BossTable:
+    """Load the canonical table with a command-oriented error for bad YAML."""
+    try:
+        return BossTable.load(path)
+    except (AttributeError, OSError, TypeError, ValueError, yaml.YAMLError, BossTableError) as exc:
+        raise GuideConfigError(f"invalid boss catalog {path}: {exc}") from exc
+
+
+@dataclass(frozen=True)
+class GuideBoss:
+    """One derived guide embed and its locally selected portrait, if any."""
+
+    embed: dict[str, Any]
+    portrait_path: Path | None
+
+
+def build_guide_bosses(table: BossTable) -> list[GuideBoss]:
+    """Derive guide display data from the canonical catalog in display order."""
+    entries: list[GuideBoss] = []
+    for index, boss in enumerate(table.ordered()):
+        portrait = table.portrait_path(boss.short, "icon")
+        thumbnail_filename = f"boss-{index:02d}{portrait.suffix}" if portrait is not None else None
+        title = f"**{boss.full}**"
+        if boss.level is not None:
+            title += f" · Lv{boss.level}"
+        tokens = " · ".join(boss.canonical(letter).lower() for letter in boss.difficulties)
+        names = " · ".join(table.difficulty_name(letter) for letter in boss.difficulties)
+        entries.append(
+            GuideBoss(
+                embed={
+                    "title": title,
+                    "description": (
+                        f"{names}\n`{tokens}`\nalso answers to: {', '.join(boss.aliases)}"
+                    ),
+                    "colour": boss.guide_colour if boss.guide_colour is not None else 0x98A1B3,
+                    "thumbnail_filename": thumbnail_filename,
+                },
+                portrait_path=portrait,
+            )
+        )
+    return entries
+
+
+def guide_files(entries: list[GuideBoss]) -> dict[str, str]:
+    """Read selected images into the API's filename-to-base64 attachment map."""
+    files: dict[str, str] = {}
+    for entry in entries:
+        filename = entry.embed["thumbnail_filename"]
+        if entry.portrait_path is None or filename is None:
+            continue
+        try:
+            raw = entry.portrait_path.read_bytes()
+        except OSError as exc:
+            raise GuideConfigError(
+                f"could not read guide portrait {entry.portrait_path}: {exc}"
+            ) from exc
+        files[filename] = base64.b64encode(raw).decode("ascii")
+    return files
 
 
 class Api:
@@ -740,46 +860,24 @@ def post_message(
 @app.command()
 def guide(
     channel: str = typer.Option(..., "--channel", "-c", help="Discord channel id."),
+    bosses_path: Path | None = typer.Option(
+        None,
+        "--bosses",
+        help="Canonical boss catalog (relative to the current directory).",
+    ),
 ) -> None:
     """Post the full #sakuna-guide to Discord.
 
-    Reads messages from config/guide.yaml and boss entries from
-    config/guide_bosses.yaml. Portrait PNGs are attached as embed
-    thumbnails from config/portraits/icon/.
+    Reads prose from config/guide.yaml and boss entries from the canonical
+    catalog. Portraits are sent as attachments, so the API never receives local
+    filesystem paths.
     """
-    import yaml
-
-    cfg_dir = Path("config")
-    guide_path = cfg_dir / "guide.yaml"
-    boss_path = cfg_dir / "guide_bosses.yaml"
-    portraits = cfg_dir / "portraits" / "icon"
-
-    if not guide_path.exists():
-        fail(f"guide config not found: {guide_path}")
-
-    guide = yaml.safe_load(guide_path.read_text(encoding="utf-8")) or {}
-    messages = guide.get("messages", [])
-
-    # Load boss entries if the bosses marker is present.
-    boss_entries = []
-    if boss_path.exists():
-        boss_entries = (yaml.safe_load(boss_path.read_text(encoding="utf-8")) or {}).get(
-            "bosses", []
-        )
-
-    # Build boss embeds with portrait thumbnails and per-boss colours.
-    boss_embeds: list[dict] = []
-    for b in boss_entries:
-        tokens = " \u00b7 ".join(b["tokens"])
-        portrait = portraits / f"{b['portrait']}.png"
-        boss_embeds.append(
-            {
-                "title": f"**{b['name']}** \u00b7 Lv{b['level']}",
-                "description": (f"{b['named']}\n`{tokens}`\nalso answers to: {b['aliases']}"),
-                "colour": b.get("colour", 0x98A1B3),
-                "thumbnail_path": str(portrait) if portrait.exists() else None,
-            }
-        )
+    try:
+        catalog_path, guide_path = resolve_guide_paths(bosses_path)
+        messages = load_guide_messages(guide_path)
+        boss_entries = build_guide_bosses(load_guide_bosses(catalog_path))
+    except GuideConfigError as exc:
+        fail(str(exc))
 
     footer_text = "*Powered by kanade \u00b7 <https://github.com/hoshinoht/kanade-bot>*"
 
@@ -788,19 +886,25 @@ def guide(
         # Detect the bosses placeholder and replace with embeds.
         if "bosses: true" in content:
             header = content.replace("bosses: true", "").strip()
-            if boss_embeds:
+            if boss_entries:
                 # Discord caps embeds at 10 per message.
                 chunk_size = 10
                 chunks = [
-                    boss_embeds[i : i + chunk_size] for i in range(0, len(boss_embeds), chunk_size)
+                    boss_entries[i : i + chunk_size]
+                    for i in range(0, len(boss_entries), chunk_size)
                 ]
                 for ci, chunk in enumerate(chunks):
+                    try:
+                        files = guide_files(chunk)
+                    except GuideConfigError as exc:
+                        fail(str(exc))
                     api().post(
                         "/api/guide",
                         {
                             "channel_id": channel,
                             "content": header if ci == 0 else "",
-                            "embeds": chunk,
+                            "embeds": [entry.embed for entry in chunk],
+                            "files": files,
                         },
                     )
                     posted += 1

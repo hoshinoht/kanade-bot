@@ -297,6 +297,10 @@ AGREE_WORDS: frozenset[str] = frozenset(
     }
 )  # fmt: skip
 
+_RSVP_NO = frozenset({"no", "nope", "kenot", "cannot", "cant", "cmi", "bobian"})
+_RSVP_YES = AGREE_WORDS - _RSVP_NO
+_RSVP_OTHER_ACTIONS = frozenset({"cover", "take"})
+
 _HERE_RE = re.compile(r"@(?:here|everyone)\b", re.IGNORECASE)
 #: "lock in" is two words; normalise it so ``lockin`` in SCHEDULE_VERBS catches it.
 _LOCK_IN_RE = re.compile(r"\block\s+in\b", re.IGNORECASE)
@@ -324,6 +328,24 @@ def find_mentions(text: str, roster_ids: Collection[str] = ()) -> list[str]:
         if (not known or uid in known) and uid not in out:
             out.append(uid)
     return out
+
+
+def explicit_rsvp(text: str) -> str | None:
+    """Return a short, unambiguous attendance answer."""
+    tokens = _tokens(_mask(text))
+    if (
+        not tokens
+        or len(tokens) > 8
+        or "?" in (text or "")
+        or "anot" in tokens
+        or set(tokens) & (SCHEDULE_VERBS | _RSVP_OTHER_ACTIONS)
+    ):
+        return None
+    if set(tokens) & _RSVP_NO:
+        return "no"
+    if set(tokens) & _RSVP_YES:
+        return "yes"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +434,7 @@ __all__ = [
     "GateResult",
     "canonical_bosses",
     "evaluate",
+    "explicit_rsvp",
     "find_bosses",
     "find_days",
     "find_mentions",

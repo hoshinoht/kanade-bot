@@ -54,6 +54,19 @@ log = logging.getLogger(__name__)
 PORTAL_APPLIED = "✅ applied via portal"
 PORTAL_REJECTED = "❌ rejected via portal"
 
+#: The guide endpoint is a narrow Discord transport, not a general file-upload
+#: API. Keep its independently supplied payload safely below Discord's limits.
+GUIDE_CONTENT_LIMIT = 2_000
+GUIDE_EMBED_LIMIT = 10
+GUIDE_FILE_LIMIT = 10
+GUIDE_TITLE_LIMIT = 256
+GUIDE_DESCRIPTION_LIMIT = 4_096
+GUIDE_FOOTER_LIMIT = 2_048
+GUIDE_EMBED_TEXT_LIMIT = 6_000
+GUIDE_FILE_BYTES_LIMIT = 1 * 1024 * 1024
+GUIDE_TOTAL_FILE_BYTES_LIMIT = 5 * 1024 * 1024
+_GUIDE_ATTACHMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\Z")
+
 
 def _audit(
     bot: BossBot,
@@ -2501,12 +2514,111 @@ async def post_guide(
     images without sharing a filesystem with the container.
     """
     import base64
+    import binascii
     import io
-    from pathlib import Path
 
     import discord
 
     from bot.agent.util import mentions_in
+
+    def is_plain_filename(filename: str) -> bool:
+        return isinstance(filename, str) and _GUIDE_ATTACHMENT_NAME.fullmatch(filename) is not None
+
+    def bounded_text(data: dict, field: str, limit: int) -> str:
+        value = data.get(field, "")
+        if value is None and field == "footer":
+            return ""
+        if not isinstance(value, str):
+            raise BadRequest(f"guide embed {field} must be text")
+        if len(value) > limit:
+            raise BadRequest(f"guide embed {field} exceeds Discord's {limit:,}-character limit")
+        return value
+
+    embed_data = embed_data or []
+    file_blobs = file_blobs or {}
+    if len(content) > GUIDE_CONTENT_LIMIT:
+        raise BadRequest(
+            f"guide content exceeds Discord's {GUIDE_CONTENT_LIMIT:,}-character message limit"
+        )
+    if len(embed_data) > GUIDE_EMBED_LIMIT:
+        raise BadRequest(f"guide messages may contain at most {GUIDE_EMBED_LIMIT} embeds")
+    if len(file_blobs) > GUIDE_FILE_LIMIT:
+        raise BadRequest(f"guide messages may contain at most {GUIDE_FILE_LIMIT} files")
+
+    files: list[discord.File] = []
+    uploaded_names: set[str] = set()
+    total_bytes = 0
+    for filename, b64data in file_blobs.items():
+        if not is_plain_filename(filename):
+            raise BadRequest(
+                "guide attachment filenames must use ASCII letters, digits, dots, "
+                "underscores, or hyphens"
+            )
+        if not isinstance(b64data, str):
+            raise BadRequest(f"guide attachment {filename!r} must be base64 text")
+        decoded_upper_bound = (len(b64data) // 4) * 3
+        if decoded_upper_bound > GUIDE_FILE_BYTES_LIMIT:
+            raise BadRequest(
+                f"guide attachment {filename!r} exceeds the "
+                f"{GUIDE_FILE_BYTES_LIMIT // 1024:,} KiB limit"
+            )
+        if total_bytes + decoded_upper_bound > GUIDE_TOTAL_FILE_BYTES_LIMIT:
+            raise BadRequest(
+                "guide attachments exceed the "
+                f"{GUIDE_TOTAL_FILE_BYTES_LIMIT // 1024:,} KiB total limit"
+            )
+        try:
+            raw = base64.b64decode(b64data, validate=True)
+        except (binascii.Error, TypeError, ValueError) as exc:
+            raise BadRequest(f"guide attachment {filename!r} is not valid base64") from exc
+        if len(raw) > GUIDE_FILE_BYTES_LIMIT:  # defensive: retain the decoded-size contract
+            raise BadRequest(
+                f"guide attachment {filename!r} exceeds the "
+                f"{GUIDE_FILE_BYTES_LIMIT // 1024:,} KiB limit"
+            )
+        total_bytes += len(raw)
+        if total_bytes > GUIDE_TOTAL_FILE_BYTES_LIMIT:
+            raise BadRequest(
+                "guide attachments exceed the "
+                f"{GUIDE_TOTAL_FILE_BYTES_LIMIT // 1024:,} KiB total limit"
+            )
+        files.append(discord.File(io.BytesIO(raw), filename=filename))
+        uploaded_names.add(filename)
+
+    embeds: list[discord.Embed] = []
+    embed_text_size = 0
+    for data in embed_data:
+        title = bounded_text(data, "title", GUIDE_TITLE_LIMIT)
+        description = bounded_text(data, "description", GUIDE_DESCRIPTION_LIMIT)
+        footer = bounded_text(data, "footer", GUIDE_FOOTER_LIMIT)
+        embed_text_size += len(title) + len(description) + len(footer)
+        if embed_text_size > GUIDE_EMBED_TEXT_LIMIT:
+            raise BadRequest(
+                "guide embed text exceeds Discord's "
+                f"{GUIDE_EMBED_TEXT_LIMIT:,}-character message limit"
+            )
+        colour = data.get("colour")
+        if colour is not None and (
+            isinstance(colour, bool) or not isinstance(colour, int) or not 0 <= colour <= 0xFFFFFF
+        ):
+            raise BadRequest("guide embed colour must be an RGB integer between 0 and 0xFFFFFF")
+        c = discord.Colour(colour) if colour is not None else discord.Colour.default()
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            colour=c,
+        )
+        filename = data.get("thumbnail_filename")
+        if filename is not None and not is_plain_filename(filename):
+            raise BadRequest(
+                "guide thumbnail filenames must use ASCII letters, digits, dots, "
+                "underscores, or hyphens"
+            )
+        if filename in uploaded_names:
+            embed.set_thumbnail(url=f"attachment://{filename}")
+        if footer:
+            embed.set_footer(text=footer)
+        embeds.append(embed)
 
     found = await bot.find_channel(channel_id)
     if found.channel is None:
@@ -2519,39 +2631,19 @@ async def post_guide(
         users=[discord.Object(id=int(uid)) for uid in users],
     )
 
-    embeds: list[discord.Embed] = []
-    files: list[discord.File] = []
-    if embed_data:
-        for data in embed_data:
-            c = discord.Colour(data["colour"]) if data.get("colour") else discord.Colour.default()
-            embed = discord.Embed(
-                title=data.get("title", ""),
-                description=data.get("description", ""),
-                colour=c,
-            )
-            thumb_path = data.get("thumbnail_path")
-            if thumb_path:
-                fname = Path(thumb_path).name
-                embed.set_thumbnail(url=f"attachment://{fname}")
-                try:
-                    files.append(discord.File(thumb_path, filename=fname))
-                except OSError:
-                    log.warning("could not read guide file: %s", thumb_path)
-            if data.get("footer"):
-                embed.set_footer(text=data["footer"])
-            embeds.append(embed)
-
-    if file_blobs:
-        for fname, b64data in file_blobs.items():
-            raw = base64.b64decode(b64data)
-            files.append(discord.File(io.BytesIO(raw), filename=fname))
-
-    message = await found.channel.send(
-        content,
-        embeds=embeds if embeds else None,
-        allowed_mentions=allowed,
-        files=files if files else None,
-    )
+    try:
+        message = await found.channel.send(
+            content,
+            embeds=embeds if embeds else None,
+            allowed_mentions=allowed,
+            files=files if files else None,
+        )
+    except discord.Forbidden as exc:
+        raise BadRequest(
+            "Discord refused the guide message: missing permission to post there"
+        ) from exc
+    except discord.HTTPException as exc:
+        raise BadRequest(f"Discord refused the guide message: {exc}") from exc
     if message is None:
         raise BadRequest("Discord refused the message; check the bot logs")
 

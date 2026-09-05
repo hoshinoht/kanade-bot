@@ -797,7 +797,7 @@ class GuideEmbedIn(Strict):
     title: str
     description: str
     colour: int | None = None
-    thumbnail_path: str | None = None
+    thumbnail_filename: str | None = None
     footer: str | None = None
 
 

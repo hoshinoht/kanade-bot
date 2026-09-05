@@ -1,0 +1,10 @@
+config/personas/*
+!config/personas/identities/
+config/personas/identities/*
+!config/personas/identities/example.md
+!config/personas/behaviours/
+config/personas/behaviours/*
+!config/personas/behaviours/default.example.md
+!config/personas/behaviours/profiles/
+config/personas/behaviours/profiles/*
+!config/personas/behaviours/profiles/example.md

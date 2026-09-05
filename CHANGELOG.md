@@ -4,6 +4,22 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+
+## 4.2.0
+
+**Added**
+
+- A validated, source-backed boss strategy knowledge base and read-only chat
+  tool. Explicit strategy questions retrieve checked-in mechanics before the
+  bot answers in its configured persona.
+
+**Changed**
+
+- Boss metadata, strategy documents, portraits, icons and entry artwork now
+  live together under `boss/`.
+- `bossctl guide` derives boss entries from the canonical catalog and uploads
+  thumbnails as file data instead of sharing filesystem paths with the bot.
+
 **Fixed**
 
 - Chat no longer leaks tool refusals into Discord. A clarification that

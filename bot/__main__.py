@@ -31,6 +31,7 @@ from .agent.client import (
     CFG_RATE_WINDOW,
     BossBot,
 )
+from .domain.boss_knowledge import BossKnowledgeBase, BossKnowledgeError
 from .domain.bosses import BossTable, BossTableError
 from .infrastructure.config import Settings, get_settings
 from .infrastructure.db import Repo
@@ -116,6 +117,46 @@ def build_repo(settings: Settings) -> Repo:
     return repo
 
 
+def load_boss_resources(settings: Settings) -> tuple[BossTable, BossKnowledgeBase | None]:
+    """Load the catalog and the chat pilot's strict local strategy guides.
+
+    The scheduler always needs its catalog.  Strategy documents are deliberately
+    required only when the chat pilot can answer, so scheduler-only deployments
+    do not need to package guide content they cannot expose.
+    """
+    try:
+        bosses = BossTable.load(settings.bosses_path)
+    except (OSError, BossTableError) as exc:
+        log.error(
+            "cannot load boss catalog %s (knowledge path %s): %s",
+            settings.bosses_path,
+            settings.boss_knowledge_path,
+            exc,
+        )
+        raise
+    log.info("loaded %d boss aliases from %s", len(bosses.aliases), settings.bosses_path)
+
+    if not settings.chat_pilot_configured:
+        return bosses, None
+
+    try:
+        knowledge = BossKnowledgeBase.load(settings.boss_knowledge_path, bosses)
+    except (OSError, BossKnowledgeError) as exc:
+        log.error(
+            "cannot load boss catalog %s with knowledge base %s: %s",
+            settings.bosses_path,
+            settings.boss_knowledge_path,
+            exc,
+        )
+        raise
+    log.info(
+        "loaded %d boss strategy guides from %s",
+        len(knowledge.documents),
+        settings.boss_knowledge_path,
+    )
+    return bosses, knowledge
+
+
 async def run() -> int:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -125,11 +166,9 @@ async def run() -> int:
     _install_signal_handlers(stop)
 
     try:
-        bosses = BossTable.load(settings.bosses_path)
-    except (OSError, BossTableError) as exc:
-        log.error("cannot load %s: %s", settings.bosses_path, exc)
+        bosses, boss_knowledge = load_boss_resources(settings)
+    except (OSError, BossTableError, BossKnowledgeError):
         return await _fatal(2, stop)
-    log.info("loaded %d boss aliases from %s", len(bosses.aliases), settings.bosses_path)
 
     repo = build_repo(settings)
     log.info("database ready at %s", settings.db_path)
@@ -137,7 +176,7 @@ async def run() -> int:
     backoff = INITIAL_BACKOFF
     try:
         while not stop.is_set():
-            client = BossBot(settings, repo, bosses)
+            client = BossBot(settings, repo, bosses, boss_knowledge)
             try:
                 start = asyncio.create_task(client.start(settings.discord_token))
                 waiter = asyncio.create_task(stop.wait())

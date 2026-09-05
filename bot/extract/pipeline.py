@@ -32,6 +32,7 @@ from zoneinfo import ZoneInfo
 from bot.agent import formatting, pings
 from bot.agent.materialise import RUN_DONE_AFTER
 from bot.agent.rsvp import apply_reaction
+from bot.domain.bosses import BossParseError
 from bot.domain.timeutil import utcnow
 from bot.domain.weeks import week_end, week_start
 from bot.infrastructure import audit
@@ -430,6 +431,47 @@ def volunteers_for(amendment: Amendment, author_ids: dict[str, str]) -> list[str
     return out
 
 
+def _normalise_extraction(
+    extraction: Extraction, boss_table: Any | None, burst_messages: Sequence[Any]
+) -> Extraction:
+    result = extraction.model_copy(deep=True)
+    if boss_table is not None:
+        for amendment in result.amendments:
+            bosses: list[str] = []
+            for name in amendment.bosses:
+                try:
+                    canonical = boss_table.parse_token(name)
+                except BossParseError:
+                    canonical = name
+                if canonical not in bosses:
+                    bosses.append(canonical)
+            amendment.bosses = bosses
+
+    cited = {
+        message_id
+        for amendment in result.amendments
+        if amendment.kind == "rsvp"
+        for message_id in amendment.evidence_message_ids
+    }
+    for message in burst_messages:
+        message_id = str(message.id)
+        answer = gate.explicit_rsvp(message.content)
+        if answer is None or message_id in cited:
+            continue
+        days = gate.find_days(message.content)
+        result.amendments.append(
+            Amendment(
+                kind="rsvp",
+                day_ref=days[0] if days else None,
+                participants=[str(message.author_id)],
+                rsvp=answer,
+                confidence=0.9,
+                evidence_message_ids=[message_id],
+            )
+        )
+    return result
+
+
 def plan_burst(
     extraction: Extraction,
     *,
@@ -441,6 +483,8 @@ def plan_burst(
     author_ids: dict[str, str] | None = None,
     min_confidence: float = 0.0,
     now: datetime | None = None,
+    boss_table: Any | None = None,
+    burst_messages: Sequence[Any] = (),
 ) -> Plan:
     """Merge, resolve and match one extraction.  No database, no Discord.
 
@@ -451,6 +495,7 @@ def plan_burst(
     """
     author_ids = author_ids or {}
     now = now or utcnow()
+    extraction = _normalise_extraction(extraction, boss_table, burst_messages)
     merged = merge(extraction.amendments, burst_order, [r["bosses"] for r in channel_runs])
     # Bosses the burst is already proposing a new run for, so a `move` about the
     # same ones is that proposal settling rather than a second run.
@@ -1082,6 +1127,8 @@ class Pipeline:
             author_ids={m.id: m.author_id for m in context + burst},
             min_confidence=bot.settings.extract_min_confidence,
             now=utcnow(),
+            boss_table=bot.bosses,
+            burst_messages=burst,
         )
         plan.raw = call.raw
         plan.latency_ms = call.latency_ms

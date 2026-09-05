@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import pytest
 
-from bot.domain.bosses import BossParseError, BossTable, BossTableError
+from bot.domain.bosses import BossParseError, BossReference, BossTable, BossTableError
 
 
 @pytest.mark.parametrize(
@@ -84,8 +86,8 @@ def test_unknown_boss_is_reported(bosses: BossTable):
 
 
 def test_bosses_the_guild_does_not_run_are_not_in_the_table(bosses: BossTable):
-    # The table is deliberately only the ten current bosses (DESIGN.md §10).
-    for token in ("nlotus", "hdamien", "hlucid", "xwill", "cgloom", "hvhilla", "nslime"):
+    # The table is deliberately only the eleven current bosses.
+    for token in ("hdamien", "hlucid", "xwill", "cgloom", "hvhilla", "nslime"):
         with pytest.raises(BossParseError, match="unknown boss"):
             bosses.parse_token(token)
 
@@ -167,7 +169,7 @@ def test_describe_expands_to_the_full_in_game_name(bosses: BossTable):
     assert bosses.describe("HFA") == "The First Adversary (Hard, Lv270)"
     assert bosses.describe("XKalos") == "Gatekeeper Kalos (Extreme, Lv265)"
     assert bosses.describe("NStar") == "Radiant Malefic Star (Normal, Lv280)"
-    assert bosses.describe("HCarling") == "Carling (Hard, Lv275)"
+    assert bosses.describe("HCarling") == "Karling (Hard, Lv275)"
     assert bosses.describe("???") == "???"
 
 
@@ -177,8 +179,9 @@ def test_describe_all(bosses: BossTable):
     )
 
 
-def test_the_shipped_table_is_exactly_the_ten_current_bosses(bosses: BossTable):
+def test_the_shipped_table_is_exactly_the_eleven_current_bosses(bosses: BossTable):
     assert set(bosses.bosses) == {
+        "Lotus",
         "Seren",
         "Kalos",
         "FA",
@@ -191,6 +194,50 @@ def test_the_shipped_table_is_exactly_the_ten_current_bosses(bosses: BossTable):
         "Jupiter",
     }
     assert set(bosses.difficulties) == {"e", "n", "h", "c", "x"}
+
+
+def test_guide_colours_are_loaded_from_the_nested_guide_map(bosses: BossTable):
+    assert bosses.bosses["Lotus"].guide_colour == 0x9B59B6
+    assert bosses.bosses["Jupiter"].guide_colour == 0x2ECC71
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Jupiter", BossReference("Jupiter", None)),
+        ("Chosen Seren", BossReference("Seren", None)),
+        ("HJupiter", BossReference("Jupiter", "h")),
+        ("Hard Jupiter", BossReference("Jupiter", "h")),
+        ("hard hjup", BossReference("Jupiter", "h")),
+        ("please explain Hard Jupiter tonight", BossReference("Jupiter", "h")),
+    ],
+)
+def test_free_form_reference_resolution(bosses: BossTable, raw: str, expected: BossReference):
+    assert bosses.resolve_reference(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ("Jupiter Limbo", "multiple bosses"),
+        ("Hard NJupiter", "conflicting difficulties"),
+        ("Chaos Jupiter", "has no Chaos difficulty"),
+        ("help with Chaos Jupiter mechanics", "has no Chaos difficulty"),
+        ("Normal Jupiter or Hard Jupiter?", "conflicting difficulties"),
+        ("not a boss", "no boss found"),
+    ],
+)
+def test_free_form_reference_resolution_refuses_ambiguity(bosses: BossTable, raw: str, match: str):
+    with pytest.raises(BossParseError, match=match):
+        bosses.resolve_reference(raw)
+
+
+def test_unknown_guide_keys_and_colours_are_rejected():
+    base = {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"difficulties": ["n"]}}}
+    for guide, match in (({"unknown": 1}, "unknown key"), ({"colour": 0x1000000}, "0xFFFFFF")):
+        raw = {**base, "bosses": {"Foo": {"difficulties": ["n"], "guide": guide}}}
+        with pytest.raises(BossTableError, match=match):
+            BossTable.from_dict(raw)
 
 
 def test_duplicate_aliases_are_rejected_at_load():
@@ -215,6 +262,134 @@ def test_table_needs_difficulties_and_bosses():
         BossTable.from_dict({"bosses": {"Foo": {}}})
     with pytest.raises(BossTableError, match="bosses"):
         BossTable.from_dict({"difficulties": {"n": "Normal"}})
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [
+        """\
+difficulties: {n: Normal}
+difficulties: {h: Hard}
+bosses: {Foo: {}}
+""",
+        """\
+difficulties: {n: Normal}
+bosses:
+  Foo:
+    full: Foo
+    full: Other Foo
+""",
+    ],
+)
+def test_yaml_duplicate_keys_are_rejected_at_every_mapping_level(tmp_path, catalog):
+    path = tmp_path / "bosses.yaml"
+    path.write_text(catalog, encoding="utf-8")
+
+    with pytest.raises(BossTableError, match="duplicate key") as exc:
+        BossTable.load(path)
+    assert path.name in str(exc.value)
+
+
+def test_malformed_yaml_is_a_file_specific_table_error(tmp_path):
+    path = tmp_path / "bosses.yaml"
+    path.write_text("difficulties: [n: Normal\nbosses: {}", encoding="utf-8")
+
+    with pytest.raises(BossTableError, match="cannot parse boss catalog") as exc:
+        BossTable.load(path)
+    assert path.name in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ([], "root must be a map"),
+        ({"difficulties": [], "bosses": {"Foo": {}}}, "difficulties"),
+        ({"difficulties": {"n": "Normal"}, "bosses": []}, "bosses"),
+        ({"difficulties": {"n": "Normal"}, "bosses": {"Foo": "nope"}}, "Foo must be a map"),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"difficulties": "n"}}},
+            "difficulties must be a non-empty list",
+        ),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"aliases": "foo"}}},
+            "aliases must be a list",
+        ),
+        ({"difficulties": {"n": 1}, "bosses": {"Foo": {}}}, "non-empty name"),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"full": ["Foo"]}}},
+            "full must be a non-empty string",
+        ),
+    ],
+)
+def test_table_rejects_wrong_root_spec_list_and_scalar_types(raw, match):
+    with pytest.raises(BossTableError, match=match):
+        BossTable.from_dict(raw)
+
+
+@pytest.mark.parametrize(
+    ("raw", "match"),
+    [
+        ({"difficulties": {"n": " "}, "bosses": {"Foo": {}}}, "non-empty name"),
+        ({"difficulties": {"nn": "Normal"}, "bosses": {"Foo": {}}}, "single letter"),
+        ({"difficulties": {"n": "Normal"}, "bosses": {"": {}}}, "short name"),
+        ({"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"full": " "}}}, "full"),
+        ({"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"level": True}}}, "positive integer"),
+        ({"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"level": 0}}}, "positive integer"),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"difficulties": [""]}}},
+            "non-empty strings",
+        ),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"difficulties": ["n", "N"]}}},
+            "duplicates",
+        ),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"aliases": [""]}}},
+            "non-empty strings",
+        ),
+        (
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"portrait": "nested/foo.png"}}},
+            "basename",
+        ),
+    ],
+)
+def test_table_validates_catalog_values(raw, match):
+    with pytest.raises(BossTableError, match=match):
+        BossTable.from_dict(raw)
+
+
+def test_unknown_root_and_boss_keys_are_rejected():
+    with pytest.raises(BossTableError, match="unknown root key"):
+        BossTable.from_dict({"difficulties": {"n": "Normal"}, "bosses": {"Foo": {}}, "typo": 1})
+    with pytest.raises(BossTableError, match="Foo has unknown key"):
+        BossTable.from_dict(
+            {"difficulties": {"n": "Normal"}, "bosses": {"Foo": {"difficutlies": ["n"]}}}
+        )
+
+
+def test_loaded_root_shape_error_names_the_catalog_file(tmp_path):
+    path = tmp_path / "bosses.yaml"
+    path.write_text("- not a catalog", encoding="utf-8")
+
+    with pytest.raises(BossTableError, match="invalid boss catalog") as exc:
+        BossTable.load(path)
+    assert path.name in str(exc.value)
+
+
+def test_omitted_difficulties_default_to_the_catalog_and_table_maps_are_immutable():
+    table = BossTable.from_dict(
+        {"difficulties": {"n": "Normal", "h": "Hard"}, "bosses": {"Foo": {}}}
+    )
+
+    assert table.bosses["Foo"].difficulties == ("n", "h")
+    for mapping, key, value in (
+        (table.difficulties, "x", "Extreme"),
+        (table.bosses, "Bar", table.bosses["Foo"]),
+        (table.aliases, "bar", "Foo"),
+    ):
+        assert isinstance(mapping, Mapping)
+        with pytest.raises(TypeError):
+            mapping[key] = value
 
 
 # -- names_in: "did they say a boss at all" ----------------------------------

@@ -63,15 +63,27 @@ have sensible defaults (`TZ=Asia/Kuala_Lumpur`, reset `Thu 00:00`, morning ping
 `09:00`, countdowns `60,15`).
 
 Boss names, levels, aliases and the difficulties each boss actually has live in
-[`config/bosses.yaml`](../config/bosses.yaml). It is bind-mounted read-only, so you
-can edit it and restart — no rebuild. It ships with the ten bosses parties
-currently run: Chosen Seren, Gatekeeper Kalos, The First Adversary, Carling,
-Radiant Malefic Star, Bellona, Limbo, Baldrix, Jupiter and Black Mage.
+[`boss/bosses.yaml`](../boss/bosses.yaml). The catalog is bind-mounted read-only
+and loaded at startup, so edit it and restart — no rebuild. It ships with the eleven bosses parties
+currently run: Lotus, Chosen Seren, Gatekeeper Kalos, The First Adversary,
+Carling, Radiant Malefic Star, Bellona, Limbo, Baldrix, Jupiter and Black Mage.
 
 **Boss portraits are optional.** Drop `Star.png`, `Kalos.png` and friends into
-[`config/portraits/`](../config/portraits/README.md) and the portal shows them next
+[`boss/portraits/`](../boss/portraits/README.md) and the portal shows them next
 to each boss, and the bot attaches one as the thumbnail on that run's pings. A
 boss with no file gets a coloured monogram instead, so nothing shifts either way.
+Portraits and entry artwork are served from disk, so their changes appear on the
+next page load without a restart.
+
+When the chatbot is configured, `BOSS_KNOWLEDGE_PATH` (default
+`boss/knowledge`) must contain `_meta.yaml` and one lowercase YAML document for
+every catalog boss. The catalog and knowledge are validated together at startup;
+missing, extra, or malformed documents stop the chat-enabled bot until fixed.
+
+**Upgrading from the old layout:** if your `.env` explicitly says
+`BOSSES_PATH=config/bosses.yaml`, change it to `BOSSES_PATH=boss/bosses.yaml`,
+set `BOSS_KNOWLEDGE_PATH=boss/knowledge`, and restart. `docker compose up --build`
+also picks up the new `boss/` image copy.
 
 ## Run
 

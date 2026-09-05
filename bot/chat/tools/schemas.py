@@ -88,6 +88,22 @@ TOOLS: list[dict] = [
         [],
     ),
     _tool(
+        "get_boss_strategy",
+        "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, "
+        "dangers, and strategy facts; it returns only checked-in guide content and sources.",
+        {
+            "boss": {
+                "type": "string",
+                "description": "A boss alias, full name, or canonical token such as 'HFA'.",
+            },
+            "difficulty": {
+                "type": "string",
+                "description": "Optional difficulty prefix or full name, such as 'h' or 'Hard'.",
+            },
+        },
+        ["boss"],
+    ),
+    _tool(
         "get_pending",
         "Proposal cards that are waiting for somebody to react ✅ or ❌.",
         {},

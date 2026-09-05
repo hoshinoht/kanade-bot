@@ -60,7 +60,9 @@ class Settings(BaseSettings):
 
     # --- storage ---------------------------------------------------------
     db_path: str = "data/bot.sqlite"
-    bosses_path: str = "config/bosses.yaml"
+    bosses_path: str = "boss/bosses.yaml"
+    #: Strict local strategy documents required when the chat pilot is enabled.
+    boss_knowledge_path: str = "boss/knowledge"
 
     # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"

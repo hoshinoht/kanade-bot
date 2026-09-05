@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bot.agent.util import is_bot_admin
+from bot.domain.bosses import BossReference
 from bot.domain.timeutil import utcnow
 from bot.domain.weeks import current_week_start
 from bot.infrastructure import events
@@ -30,7 +31,7 @@ from bot.infrastructure.watch import origin_ids
 
 from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages, estimate_tokens, prompt_budget
-from . import followup, gate, persona, tools
+from . import followup, gate, persona, strategy, tools
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -54,7 +55,20 @@ REFERENCE_CACHE = 256
 ANCHOR_CACHE = 64
 
 #: Fallback reply when generation fails.
-FAILURE_REPLY = "Sorry — I couldn't get to the schedule just now. Try me again in a bit."
+FAILURE_REPLY = "Sorry — I couldn't complete that just now. Try me again in a bit."
+
+#: Tokens held back so Ollama has room to complete the reply.
+COMPLETION_RESERVE_TOKENS = 1024
+
+#: A strategy answer is unsafe when its checked-in grounding is unavailable.
+STRATEGY_GROUNDING_FAILURE_REPLY = (
+    "I couldn't load the checked-in strategy notes just now, so I can't safely give mechanics "
+    "advice."
+)
+
+
+class ContextBudgetError(RuntimeError):
+    """The protected current turn cannot fit in the configured model context."""
 
 #: Static rate-limit replies must not invoke the model.
 RATE_LIMITED_REPLY = "That's your {count} answer{plural} for now — ask me again in about {wait}."
@@ -65,10 +79,13 @@ RETRY_SECONDS_UNTIL = 120
 
 __all__ = [
     "ANCHOR_CACHE",
+    "COMPLETION_RESERVE_TOKENS",
+    "ContextBudgetError",
     "MAX_TOOL_ROUNDS",
     "POOL_SPENT_REPLY",
     "RATE_LIMITED_REPLY",
     "SPOOFED_NOTE",
+    "STRATEGY_GROUNDING_FAILURE_REPLY",
     "Anchor",
     "ChatPilot",
     "ChatTurn",
@@ -758,7 +775,16 @@ class ChatPilot:
         )
         overlay = self.reply_overlay(message.author)
         conversation = self.build_conversation(message, channel_id, overlay)
-        result = await self.generate(conversation, context, overlay)
+        intent = strategy.route_strategy_intent(text, self.bot.bosses)
+        if intent.kind == "unresolved":
+            result = Generation(reply=intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY)
+        else:
+            result = await self.generate(
+                conversation,
+                context,
+                overlay,
+                strategy_references=intent.references,
+            )
 
         reply = result.reply or FAILURE_REPLY
         posted = await self._post(message, reply)
@@ -1137,13 +1163,14 @@ class ChatPilot:
         conversation: list[dict[str, str]],
         context: tools.ToolContext,
         role_overlay: str = "",
+        strategy_references: Sequence[BossReference] = (),
     ) -> Generation:
         """Run the tool loop until the model answers in words. Never raises."""
         started = time.monotonic()
         result = Generation()
         try:
             await asyncio.wait_for(
-                self._loop(conversation, context, result, role_overlay),
+                self._loop(conversation, context, result, role_overlay, strategy_references),
                 timeout=self.settings.chat_pilot_timeout,
             )
         except TimeoutError:
@@ -1153,6 +1180,7 @@ class ChatPilot:
             result.error = f"{type(exc).__name__}: {exc}"
             log.exception("chat: the model call failed")
         self._finalize_write_reply(result)
+        self._finalize_strategy_reply(result, strategy_references)
         if result.reply:
             result.reply = self._tidy(_member_facing(result.reply))
         result.created = list(context.created)
@@ -1179,22 +1207,55 @@ class ChatPilot:
                 result.reply = self._tidy(status + (f" {detail}" if detail else ""))
             return
 
+    @staticmethod
+    def _strategy_grounded(result: Generation, references: Sequence[BossReference]) -> bool:
+        """Whether every deterministically required guide was retrieved successfully."""
+        successful = {
+            outcome.arguments.get("boss")
+            for outcome in result.outcomes
+            if outcome.name == "get_boss_strategy" and outcome.ok
+        }
+        return all(reference.short in successful for reference in references)
+
+    def _finalize_strategy_reply(
+        self, result: Generation, references: Sequence[BossReference]
+    ) -> None:
+        """Never let a mechanics answer survive missing checked-in grounding."""
+        if not references:
+            return
+        if not self._strategy_grounded(result, references) or (result.error or "").startswith(
+            "ContextBudgetError:"
+        ):
+            result.reply = STRATEGY_GROUNDING_FAILURE_REPLY
+            result.error = result.error or "strategy grounding unavailable"
+
     async def _loop(
         self,
         conversation: list[dict[str, str]],
         context: tools.ToolContext,
         result: Generation,
         role_overlay: str = "",
+        strategy_references: Sequence[BossReference] = (),
     ) -> None:
         messages: list[dict[str, Any]] = list(conversation)
+        if strategy_references and not await self._prefetch_strategy(
+            messages, context, result, strategy_references
+        ):
+            result.reply = STRATEGY_GROUNDING_FAILURE_REPLY
+            result.error = "strategy grounding unavailable"
+            return
         for round_number in range(1, MAX_TOOL_ROUNDS + 1):
             result.rounds = round_number
-            # Withhold tools on the last round to guarantee a textual answer.
+            # Reserve the round after a posted write for its confirmation.
             last = round_number == MAX_TOOL_ROUNDS
+            posted_write = any(
+                outcome.ok and outcome.posted and tools.is_write_tool(outcome.name)
+                for outcome in result.outcomes
+            )
             asked_at = time.monotonic()
             response = await self._chat(
                 messages,
-                with_tools=not last,
+                with_tools=not last and not posted_write,
                 context=context,
                 role_overlay=role_overlay,
             )
@@ -1252,6 +1313,40 @@ class ChatPilot:
         result.error = "the model kept calling tools"
         log.warning("chat: gave up after %d tool rounds", MAX_TOOL_ROUNDS)
 
+    async def _prefetch_strategy(
+        self,
+        messages: list[dict[str, Any]],
+        context: tools.ToolContext,
+        result: Generation,
+        references: Sequence[BossReference],
+    ) -> bool:
+        """Retrieve canonical guide documents before the first model round."""
+        calls = []
+        for reference in references:
+            arguments = {"boss": reference.short}
+            if reference.difficulty is not None:
+                arguments["difficulty"] = reference.difficulty
+            calls.append({"function": {"name": "get_boss_strategy", "arguments": arguments}})
+        messages.append({"role": "assistant", "content": "", "tool_calls": calls})
+        for call in calls:
+            name, arguments = _call_parts(call)
+            result.tool_calls.append(name)
+            outcome = await tools.run(context, name, arguments)
+            outcome.round = 0
+            result.outcomes.append(outcome)
+            result.tools_ms += outcome.duration_ms
+            log.debug(
+                "chat: round 0 prefetch %s(%s) -> %s in %d ms",
+                name,
+                _brief(outcome.arguments),
+                outcome.outcome,
+                outcome.duration_ms,
+            )
+            messages.append({"role": "tool", "name": name, "content": outcome.output})
+            if not outcome.ok:
+                return False
+        return True
+
     def voice_reminder(self, role_overlay: str = "") -> dict[str, str]:
         """Return the final, scheduler-identified voice cue."""
         return {
@@ -1269,22 +1364,8 @@ class ChatPilot:
         role_overlay: str = "",
     ) -> Any:
         # Tool execution independently rejects writes on read-only turns.
-        offered = tools.read_tools() if context.read_only else tools.TOOLS
-        outgoing = [*messages, self.voice_reminder(role_overlay)]
-        request_tokens = estimate_messages(outgoing)
-        if request_tokens > self.settings.ollama_num_ctx:
-            raise RuntimeError(
-                f"chat request estimate {request_tokens} exceeds context budget "
-                f"{self.settings.ollama_num_ctx}"
-            )
-        if with_tools:
-            schema_tokens = estimate_tokens(json.dumps(offered, ensure_ascii=False, default=str))
-            if request_tokens + schema_tokens > self.settings.ollama_num_ctx:
-                log.debug(
-                    "chat request plus conservative tool estimate is %d tokens for num_ctx %d",
-                    request_tokens + schema_tokens,
-                    self.settings.ollama_num_ctx,
-                )
+        offered = (tools.read_tools() if context.read_only else tools.TOOLS) if with_tools else []
+        outgoing = self._budgeted_messages(messages, offered, role_overlay)
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
             messages=outgoing,
@@ -1297,6 +1378,40 @@ class ChatPilot:
             think=self.settings.think,
             **({"tools": offered} if with_tools else {}),
         )
+
+    def _budgeted_messages(
+        self, messages: list[dict[str, Any]], offered: list[dict], role_overlay: str
+    ) -> list[dict[str, Any]]:
+        """Trim only prior history until the full request and reply reserve fit."""
+        current_user = max(
+            (index for index, item in enumerate(messages) if item.get("role") == "user"), default=1
+        )
+        schemas = json.dumps(offered, ensure_ascii=False, default=str, separators=(",", ":"))
+        schema_tokens = estimate_tokens(schemas)
+        tool_suffix = json.dumps(
+            [item["tool_calls"] for item in messages if item.get("tool_calls")],
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        )
+        reminder = self.voice_reminder(role_overlay)
+        while True:
+            outgoing = [*messages, reminder]
+            # Estimate the rendered turns, tool-call arguments, and schemas as
+            # one request so rounding cannot reject a request by a fraction of a
+            # token at the configured boundary.
+            material = "\n\n".join(item["content"] for item in outgoing)
+            request_tokens = estimate_tokens("\n\n".join((material, tool_suffix))) + schema_tokens
+            total = request_tokens + COMPLETION_RESERVE_TOKENS
+            if total <= self.settings.ollama_num_ctx:
+                return outgoing
+            if current_user <= 1:
+                raise ContextBudgetError(
+                    f"chat request estimate {total} exceeds context budget "
+                    f"{self.settings.ollama_num_ctx} with completion reserve"
+                )
+            messages.pop(1)
+            current_user -= 1
 
     @staticmethod
     def _tidy(content: str) -> str:

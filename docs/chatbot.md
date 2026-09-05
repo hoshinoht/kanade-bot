@@ -98,6 +98,13 @@ $EDITOR config/personas/identities/persona.md config/personas/behaviours/default
 docker compose up -d --build
 ```
 
+The chat pilot also requires the catalog's local strategy knowledge:
+`BOSS_KNOWLEDGE_PATH` defaults to `boss/knowledge`, which must contain
+`_meta.yaml` and exactly one lowercase YAML file for every boss in
+`boss/bosses.yaml`. Catalog and knowledge are loaded and checked together at
+startup, so restart after changing either. Portrait and entry-art files under
+`boss/` are served from disk and need only a page reload.
+
 Reply profiles are managed from **Config → Chatbot** and stored under
 `config/personas/behaviours/profiles/`. Publish profiles that members may choose with
 `/style`; unpublished profiles remain private. Role assignments are ordered,

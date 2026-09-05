@@ -881,7 +881,7 @@ def test_the_bosses_page_ticks_what_the_guild_runs(auth, seeded):
     body = auth.get("/bosses").text
     assert "pill-toggle--on" in body  # HStar, HFA and XKalos have timings
     assert 'class="grid-bosses"' in body
-    assert "10 bosses, 28 difficulties" in body
+    assert "11 bosses, 29 difficulties" in body
     # Guard the count, not the sentence around it -- the blurb is copy, and
     # copy gets edited.
     assert "<strong>3</strong>" in body

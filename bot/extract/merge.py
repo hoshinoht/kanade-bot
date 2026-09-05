@@ -193,6 +193,7 @@ def _carry_time_across_moves(candidates: list[Amendment]) -> list[Amendment]:
         source = stated[0]
         for amendment in missing:
             amendment.time_ref = source.time_ref
+            amendment.is_question = amendment.is_question and source.is_question
             for mid in source.evidence_message_ids:
                 if mid not in amendment.evidence_message_ids:
                     amendment.evidence_message_ids.append(mid)

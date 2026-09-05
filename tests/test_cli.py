@@ -7,7 +7,9 @@ non-zero with the server's message when something is refused.
 
 from __future__ import annotations
 
+import base64
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,6 +17,9 @@ import respx
 from typer.testing import CliRunner
 
 from bot import cli
+from bot.domain.bosses import BossTable
+
+from .conftest import REPO_ROOT
 
 BASE = "http://127.0.0.1:8080"
 TOKEN = "cli-test-token"
@@ -109,6 +114,135 @@ def test_no_token_anywhere_says_how_to_make_one(monkeypatch, tmp_path):
 def test_the_url_defaults_to_loopback(monkeypatch):
     monkeypatch.delenv("BOSSCTL_URL")
     assert cli.base_url() == cli.DEFAULT_URL
+
+
+# --- guide inputs ------------------------------------------------------------
+
+
+def write_guide_project(root: Path, catalog: str = "boss/bosses.yaml") -> Path:
+    """The smallest project a guide command can load."""
+    (root / "config").mkdir(exist_ok=True)
+    (root / "config" / "guide.yaml").write_text("messages: []\n", encoding="utf-8")
+    path = root / catalog
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "difficulties: {x: Extreme}\nbosses: {Lotus: {difficulties: [x]}}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_guide_paths_prefer_an_explicit_cwd_relative_catalog(monkeypatch, tmp_path):
+    catalog = write_guide_project(tmp_path, "custom/catalog.yaml")
+    monkeypatch.setenv("BOSSES_PATH", "ignored.yaml")
+
+    assert cli.resolve_guide_paths(Path("custom/catalog.yaml")) == (
+        catalog.resolve(),
+        (tmp_path / "config" / "guide.yaml").resolve(),
+    )
+
+
+def test_guide_paths_use_the_process_environment_before_dotenv(monkeypatch, tmp_path):
+    catalog = write_guide_project(tmp_path, "from-process.yaml")
+    (tmp_path / ".env").write_text("BOSSES_PATH=from-dotenv.yaml\n", encoding="utf-8")
+    monkeypatch.setenv("BOSSES_PATH", "from-process.yaml")
+
+    assert cli.resolve_guide_paths()[0] == catalog.resolve()
+
+
+def test_guide_paths_use_the_nearest_dotenv_and_its_project_root(monkeypatch, tmp_path):
+    catalog = write_guide_project(tmp_path, "catalog/from-dotenv.yaml")
+    (tmp_path / ".env").write_text("BOSSES_PATH=catalog/from-dotenv.yaml\n", encoding="utf-8")
+    nested = tmp_path / "nested" / "work"
+    nested.mkdir(parents=True)
+    monkeypatch.delenv("BOSSES_PATH", raising=False)
+    monkeypatch.chdir(nested)
+
+    assert cli.resolve_guide_paths() == (
+        catalog.resolve(),
+        (tmp_path / "config" / "guide.yaml").resolve(),
+    )
+
+
+def test_guide_paths_default_to_the_canonical_catalog(monkeypatch, tmp_path):
+    catalog = write_guide_project(tmp_path)
+    monkeypatch.delenv("BOSSES_PATH", raising=False)
+
+    assert cli.resolve_guide_paths()[0] == catalog.resolve()
+
+
+def test_guide_paths_accept_an_absolute_catalog_and_report_missing_files(monkeypatch, tmp_path):
+    catalog = write_guide_project(tmp_path)
+    external = tmp_path.parent / "external-bosses.yaml"
+    external.write_bytes(catalog.read_bytes())
+
+    assert cli.resolve_guide_paths(external)[0] == external.resolve()
+    with pytest.raises(cli.GuideConfigError, match="Pass --bosses PATH"):
+        cli.resolve_guide_paths(tmp_path / "missing.yaml")
+    (tmp_path / "config" / "guide.yaml").unlink()
+    with pytest.raises(cli.GuideConfigError, match="guide config not found"):
+        cli.resolve_guide_paths(external)
+
+
+def test_guide_builder_uses_canonical_fields_fallbacks_and_portrait_fallback(bosses, tmp_path):
+    derived = cli.build_guide_bosses(bosses)
+
+    assert len(derived) == 11
+    assert [entry.embed["title"] for entry in derived[:2]] == [
+        "**Lotus** · Lv260",
+        "**Chosen Seren** · Lv260",
+    ]
+    assert derived[0].embed["description"] == (
+        "Extreme\n`xlotus`\nalso answers to: lotus, lot, suu"
+    )
+
+    (tmp_path / "portraits").mkdir()
+    (tmp_path / "portraits" / "Solo.webp").write_bytes(b"webp")
+    table = BossTable.from_dict(
+        {"difficulties": {"n": "Normal"}, "bosses": {"Solo": {"aliases": ["solo"]}}},
+        base_dir=tmp_path,
+    )
+    entry = cli.build_guide_bosses(table)[0]
+    assert entry.embed["title"] == "**Solo**"
+    assert entry.embed["colour"] == 0x98A1B3
+    assert entry.portrait_path == tmp_path / "portraits" / "Solo.webp"
+    assert entry.embed["thumbnail_filename"] == "boss-00.webp"
+
+
+def test_guide_splits_embeds_and_sends_only_chunk_attachment_payloads(api, monkeypatch, tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "guide.yaml").write_text(
+        "messages:\n  - |\n    # Header\n    bosses: true\n", encoding="utf-8"
+    )
+    (tmp_path / "boss").mkdir()
+    catalog = tmp_path / "boss" / "bosses.yaml"
+    catalog.write_bytes((REPO_ROOT / "boss" / "bosses.yaml").read_bytes())
+    icon_dir = tmp_path / "boss" / "portraits" / "icon"
+    icon_dir.mkdir(parents=True)
+    for short in BossTable.load(catalog).bosses:
+        (icon_dir / f"{short}.png").write_bytes(short.encode())
+    monkeypatch.setattr(cli.time, "sleep", lambda _: None)
+
+    guides = api.post("/api/guide").mock(
+        return_value=httpx.Response(
+            200, json={"posted": True, "channel_id": "5", "message_id": "1"}
+        )
+    )
+    api.post("/api/say").mock(
+        return_value=httpx.Response(
+            200, json={"posted": True, "channel_id": "5", "message_id": "2"}
+        )
+    )
+    result = run("guide", "--channel", "5", "--bosses", str(catalog))
+
+    assert result.exit_code == 0
+    payloads = [json.loads(call.request.content) for call in guides.calls]
+    assert [len(payload["embeds"]) for payload in payloads] == [10, 1]
+    assert [payload["content"] for payload in payloads] == ["# Header", ""]
+    assert [len(payload["files"]) for payload in payloads] == [10, 1]
+    assert all("thumbnail_path" not in json.dumps(payload) for payload in payloads)
+    assert all(str(tmp_path) not in json.dumps(payload) for payload in payloads)
+    assert base64.b64decode(payloads[0]["files"]["boss-00.png"]) == b"Lotus"
 
 
 # --- the happy paths --------------------------------------------------------

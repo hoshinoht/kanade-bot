@@ -1,0 +1,17 @@
+boss: Limbo
+summary: 'Spirit Purification is the fight''s currency: avoid hits so it charges, spend it to control Risk, and never let personal Erosion reach 1000.'
+core:
+- Each player has personal Erosion starting at 0; reaching 1000 ejects that player. A normal death adds 150 Erosion.
+- Spirit Purification charges over time but loses charge whenever you are hit. Use Harvest/NPC when full.
+- In Phases 1 and 3, Risk is personal and remaining Risk converts into Erosion at the space/form transition.
+- In Phase 2, Risk is shared by the party and rises automatically, so the party must coordinate Purification casts.
+danger:
+- Phase 1B gradually destroys platforms; falling adds Erosion, while Purification is the tool that restores nearby platforms.
+- Incidental hits are doubly expensive because they may add Erosion and also delay the Purification needed to remove Risk.
+- In later phases, Purification also clears encounter objects such as contamination zones or Walls of Thought, so missing casts compounds the pressure.
+tips:
+- Use Spirit Purification promptly rather than hoarding it; the fight expects repeated casts before each transition.
+- In Phase 2, stagger party Purifications so the shared Risk gauge stays controlled.
+- Treat chip-damage avoidance as a mechanic, not merely an HP concern.
+sources:
+- https://mapletools.app/bosses/limbo

@@ -1,0 +1,19 @@
+boss: Carling
+summary: Balance the three Peril gauges while protecting the party's shared Mental Strength; a gauge hitting either extreme permanently damages the run.
+core:
+- The party shares 1000 Mental Strength instead of a normal death count; reaching 0 fails the run.
+- Goongi, Dool, and Chaos each have a gauge starting at 500. Taking an element's hit raises that gauge and lowers the counter-clockwise gauge.
+- If any Peril gauge reaches 0 or 1000, it locks there and immediately costs the party 350 Mental Strength.
+- Phase 1 splits the party among the three Perils. Defeating all three without breaking gauge balance restores Mental Strength and can grant their blessings.
+danger:
+- The Four Gracious Plant lasers are a major source of accidental Peril-gauge drift throughout the fight.
+- Repeatedly eating one element can simultaneously max its own gauge and bottom out its neighbour.
+- Deaths also consume shared Mental Strength, so one player's mistakes reduce the entire party's run budget.
+tips:
+- Call Peril gauge values and coordinate room assignments instead of treating each room independently.
+- Avoid unnecessary laser hits even when the HP damage looks small; the gauge movement is the real cost.
+- In Phase 1, finish each Peril with its gauge still inside the valid range to keep the clear bonuses.
+difficulty_notes:
+  x: In Extreme, leaving the 250-750 range also increases damage taken from that Peril's element by 30%.
+sources:
+- https://mapletools.app/bosses/kaling/guide

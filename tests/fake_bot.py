@@ -15,6 +15,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from bot.agent.util import positive_float, positive_int
+from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.weeks import parse_hhmm
 from bot.infrastructure.config import Settings
@@ -187,9 +188,16 @@ class FakeExtractor:
 class FakeBot:
     """Everything :mod:`bot.api` reaches for, and nothing else."""
 
-    def __init__(self, repo: Repo, bosses: BossTable, settings: Settings | None = None):
+    def __init__(
+        self,
+        repo: Repo,
+        bosses: BossTable,
+        settings: Settings | None = None,
+        boss_knowledge: BossKnowledgeBase | None = None,
+    ):
         self.repo = repo
         self.bosses = bosses
+        self.boss_knowledge = boss_knowledge
         self.settings = settings or make_settings()
         self.tz: ZoneInfo = self.settings.zoneinfo
         self.extractor = FakeExtractor()
