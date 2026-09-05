@@ -1,0 +1,20 @@
+boss: Seren
+summary: Avoid filling the Sun Gauge, preserve the Midnight segment, and use Midnight as the cleanest damage window.
+core:
+- Getting hit fills your personal Sun Gauge; filling it locks you out of actions and healing for several seconds.
+- Phase 2 cycles through Noon, Sunset, Midnight, and Dawn.
+- Every Sun Gauge overflow in Phase 2 shrinks the party's Midnight segment; if Midnight disappears completely, the party fails regardless of remaining lives.
+- Midnight attacks do not add Sun Gauge and it is generally the best phase for burst damage.
+danger:
+- 'At each time-of-day transition, Ray of Light is a party check: everyone must reach the single safe ray/spot or the failure hit is effectively lethal.'
+- Sunset has very high-damage sword patterns and heavily reduced potion recovery.
+- Dawn can rebuild Seren's white shield when players are hit, extending the fight.
+tips:
+- If your Sun Gauge is high, stop greeding damage and dodge; preserving Midnight is a party resource.
+- Coordinate the Ray of Light safe spot early because one player's failure can punish the whole party.
+- Plan major burst around Midnight when possible.
+difficulty_notes:
+  x: Extreme keeps the same core day/night system but adds more Sun Gauge pressure, including passive gauge gain.
+sources:
+- https://mapletools.app/bosses/seren
+- https://maplestorywiki.net/w/Seren/Monster

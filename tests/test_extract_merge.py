@@ -75,6 +75,19 @@ def test_different_runs_are_never_folded_together():
     assert len(merged) == 2
 
 
+def test_a_settled_shared_time_settles_every_move_for_that_day():
+    merged = merge(
+        [
+            a("move", bosses=["HStar"], day="wed", time="9:30pm", q=False),
+            a("move", bosses=["HCarling"], day="wed", q=True),
+        ]
+    )
+    assert [(item.time_ref, item.is_question) for item in merged] == [
+        ("9:30pm", False),
+        ("9:30pm", False),
+    ]
+
+
 def test_different_kinds_about_the_same_run_stay_apart():
     merged = merge(
         [

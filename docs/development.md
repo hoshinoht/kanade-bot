@@ -110,9 +110,17 @@ bot/
     templating.py the Jinja environment
     templates/   Jinja pages and partials
     static/      portal.scss (entrypoint), portal/*.scss (partials), generated portal.css
-config/bosses.yaml
+  boss/
+    bosses.yaml     canonical catalog; portraits/ and artwork/ resolve from it
+    knowledge/      strict per-boss chat knowledge plus _meta.yaml
+  config/
+    guide.yaml      deployment-specific guide prose
 tests/
 ```
+
+The catalog and (when chat is configured) knowledge load at startup; restart
+after changing either. Portraits and entry artwork are served directly from
+`boss/`, so asset changes need only a page reload.
 
 The portal stylesheet is split into CSS-compatible SCSS partials under
 `bot/api/static/portal/`, with `bot/api/static/portal.scss` as the ordered entrypoint.

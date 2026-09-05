@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 
+import discord
 import pytest
 
+from bot.api import service
 from bot.api.service import PORTAL_APPLIED, PORTAL_REJECTED
 from bot.domain.ids import short_id
 
@@ -27,6 +30,211 @@ class _AnyHue:
 
 
 ANY_HUE = _AnyHue()
+
+
+# --- guide attachments -------------------------------------------------------
+
+
+def test_guide_uses_only_matching_base64_attachments(auth, fake_bot, monkeypatch):
+    channel = fake_bot.channels[222222222222222222]
+    sent = []
+
+    async def send(content, **kwargs):
+        sent.append((content, kwargs))
+        return fake_bot._message(channel)
+
+    monkeypatch.setattr(channel, "send", send, raising=False)
+    response = auth.post(
+        "/api/guide",
+        json={
+            "channel_id": str(channel.id),
+            "embeds": [
+                {
+                    "title": "Attached",
+                    "description": "yes",
+                    "thumbnail_filename": "boss-00.png",
+                },
+                {
+                    "title": "Missing",
+                    "description": "no",
+                    "thumbnail_filename": "boss-01.png",
+                },
+            ],
+            "files": {"boss-00.png": base64.b64encode(b"portrait").decode("ascii")},
+        },
+    )
+
+    assert response.status_code == 200
+    _, kwargs = sent[0]
+    assert kwargs["files"][0].filename == "boss-00.png"
+    assert kwargs["files"][0].fp.read() == b"portrait"
+    assert kwargs["embeds"][0].thumbnail.url == "attachment://boss-00.png"
+    assert "thumbnail" not in kwargs["embeds"][1].to_dict()
+
+
+def test_guide_accepts_a_ten_entry_cli_chunk(auth, fake_bot, monkeypatch):
+    channel = fake_bot.channels[WATCHED_CHANNEL]
+
+    async def send(*_args, **_kwargs):
+        return fake_bot._message(channel)
+
+    monkeypatch.setattr(channel, "send", send, raising=False)
+    filenames = [f"boss-{index:02d}.png" for index in range(10)]
+    response = auth.post(
+        "/api/guide",
+        json={
+            "channel_id": str(WATCHED_CHANNEL),
+            "embeds": [
+                {"title": "Boss", "description": "description", "thumbnail_filename": name}
+                for name in filenames
+            ],
+            "files": {name: "cG9ydHJhaXQ=" for name in filenames},
+        },
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"files": {"../portrait.png": "cG9ydHJhaXQ="}},
+        {"files": {"portrait.png": "not-base64!"}},
+        {"embeds": [{"title": "x", "description": "x", "thumbnail_filename": "../x.png"}]},
+    ],
+)
+def test_guide_rejects_unsafe_attachment_input(auth, body):
+    response = auth.post("/api/guide", json={"channel_id": "222222222222222222", **body})
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "filename", ["boss 00.png", "boss\n00.png", "boss\x00.png", "é.png", "-boss.png", "a" * 101]
+)
+@pytest.mark.parametrize("field", ["files", "thumbnail_filename"])
+def test_guide_rejects_attachment_names_outside_the_ascii_allowlist(auth, filename, field):
+    if field == "files":
+        body = {"files": {filename: "cG9ydHJhaXQ="}}
+    else:
+        body = {"embeds": [{"title": "x", "description": "x", field: filename}]}
+
+    response = auth.post("/api/guide", json={"channel_id": str(WATCHED_CHANNEL), **body})
+
+    assert response.status_code == 400
+    assert "ASCII letters" in response.json()["error"]
+
+
+def test_guide_rejects_discord_message_and_embed_bounds(auth):
+    embed = {"title": "x", "description": "x"}
+    cases = [
+        ({"content": "x" * (service.GUIDE_CONTENT_LIMIT + 1)}, "message limit"),
+        ({"embeds": [embed] * (service.GUIDE_EMBED_LIMIT + 1)}, "at most 10 embeds"),
+        (
+            {
+                "files": {
+                    f"boss-{index}.png": "cG9ydHJhaXQ="
+                    for index in range(service.GUIDE_FILE_LIMIT + 1)
+                }
+            },
+            "at most 10 files",
+        ),
+        ({"embeds": [{"title": "x" * 257, "description": "x"}]}, "title exceeds"),
+        ({"embeds": [{"title": "x", "description": "x" * 4097}]}, "description exceeds"),
+        ({"embeds": [{"title": "x", "description": "x", "footer": "x" * 2049}]}, "footer exceeds"),
+        ({"embeds": [{"title": "x", "description": "x", "colour": -1}]}, "RGB integer"),
+        ({"embeds": [{"title": "x", "description": "x", "colour": 0x1000000}]}, "RGB integer"),
+        (
+            {"embeds": [{"title": "x", "description": "x" * 4096}] * 2},
+            "embed text exceeds",
+        ),
+    ]
+    for body, message in cases:
+        response = auth.post("/api/guide", json={"channel_id": str(WATCHED_CHANNEL), **body})
+        assert response.status_code == 400
+        assert message in response.json()["error"]
+
+
+def test_guide_rejects_decoded_attachment_size_bounds_before_sending(auth, fake_bot, monkeypatch):
+    channel = fake_bot.channels[WATCHED_CHANNEL]
+    sent = False
+
+    async def send(*_args, **_kwargs):
+        nonlocal sent
+        sent = True
+
+    monkeypatch.setattr(channel, "send", send, raising=False)
+    too_large = base64.b64encode(b"x" * (service.GUIDE_FILE_BYTES_LIMIT + 1)).decode("ascii")
+    response = auth.post(
+        "/api/guide",
+        json={"channel_id": str(WATCHED_CHANNEL), "files": {"boss-00.png": too_large}},
+    )
+
+    assert response.status_code == 400
+    assert "1,024 KiB limit" in response.json()["error"]
+    assert sent is False
+
+
+def test_guide_rejects_total_decoded_attachment_size(auth):
+    nearly_one_mebibyte = base64.b64encode(b"x" * (service.GUIDE_FILE_BYTES_LIMIT - 1)).decode(
+        "ascii"
+    )
+    response = auth.post(
+        "/api/guide",
+        json={
+            "channel_id": str(WATCHED_CHANNEL),
+            "files": {f"boss-{index}.png": nearly_one_mebibyte for index in range(6)},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "5,120 KiB total limit" in response.json()["error"]
+
+
+def test_guide_rejects_malformed_base64_before_sending(auth, fake_bot, monkeypatch):
+    channel = fake_bot.channels[WATCHED_CHANNEL]
+    sent = False
+
+    async def send(*_args, **_kwargs):
+        nonlocal sent
+        sent = True
+
+    monkeypatch.setattr(channel, "send", send, raising=False)
+    response = auth.post(
+        "/api/guide",
+        json={"channel_id": str(WATCHED_CHANNEL), "files": {"boss-00.png": "not-base64!"}},
+    )
+
+    assert response.status_code == 400
+    assert "not valid base64" in response.json()["error"]
+    assert sent is False
+
+
+@pytest.mark.parametrize("error_type", [discord.Forbidden, discord.HTTPException])
+def test_guide_maps_discord_send_failures_to_bad_requests(auth, fake_bot, monkeypatch, error_type):
+    channel = fake_bot.channels[WATCHED_CHANNEL]
+    response = type("DiscordResponse", (), {"status": 403, "reason": "Forbidden"})()
+
+    async def send(*_args, **_kwargs):
+        raise error_type(response, "no permission")
+
+    monkeypatch.setattr(channel, "send", send, raising=False)
+    result = auth.post("/api/guide", json={"channel_id": str(WATCHED_CHANNEL)})
+
+    assert result.status_code == 400
+    assert "Discord refused the guide message" in result.json()["error"]
+
+
+def test_guide_no_longer_accepts_local_thumbnail_paths(auth):
+    response = auth.post(
+        "/api/guide",
+        json={
+            "channel_id": "222222222222222222",
+            "embeds": [{"title": "x", "description": "x", "thumbnail_path": "/secret.png"}],
+        },
+    )
+
+    assert response.status_code == 422
 
 # --- schedule ---------------------------------------------------------------
 

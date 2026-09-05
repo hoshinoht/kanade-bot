@@ -1,0 +1,17 @@
+boss: Baldrix
+summary: Keep all three local room gauges low before each forced rotation; any Magic Encroachment gained is permanent and 1000 ends the run.
+core:
+- The party shares Magic Encroachment from 0-1000. Death adds Encroachment based on party size, and the meter never decreases.
+- Phases 1 and 2 split the party across three maps and force a rotation every 120 seconds.
+- Each map has a 0-1000 local gauge. Occupied rooms naturally drain it, empty rooms fill it, and getting hit adds gauge.
+- At each rotation, every room's local gauge is converted into permanent shared Magic Encroachment; higher gauges add progressively more.
+danger:
+- Above 750 local gauge, each room gains an extra penalty.
+- Baldrix's room penalizes attacking from the wrong direction, the Minion room gains damaging edge zones, and the Ancient God room makes party members share a portion of each other's incoming damage.
+- A bad rotation permanently consumes run budget because shared Encroachment cannot be reduced.
+tips:
+- In a 3-player party, keep one player in each room so all three gauges naturally trend downward.
+- Call local gauge levels before the 120-second rotation and prioritize survival as the timer approaches.
+- Do not chase a little extra damage if taking hits will push a room over the next Encroachment threshold.
+sources:
+- https://mapletools.app/bosses/baldrix

@@ -1,0 +1,18 @@
+boss: FA
+summary: 'The First Adversary is a parry fight: use Indomitable Will correctly to maintain Power of Order and protect your personal Adversary''s Will.'
+core:
+- Each player starts with 1000 Adversary's Will; dying costs 200, and reaching 0 ends that player's run.
+- The party shares Power of Order from 0-1000. It falls from time and certain hits, and rises through correct parries.
+- Harvest/NPC casts Indomitable Will, a 0.5-second nullify/parry. Correct parries greatly shorten its cooldown and raise Power of Order.
+- At each Cycle of Power, having at least 400 Power of Order avoids the additional Adversary's Will penalty; higher stages also grant final damage.
+danger:
+- In Phase 1, only the boss's enhanced/red-glowing attacks count as the rewarding parries.
+- In Phases 2-3, the rewarding parry must match the element assigned to that player.
+- Phase 3 combines the elemental system with earlier melee patterns, making missed parries much more punishing.
+tips:
+- Prioritize reliable correct parries over damage greed; Power of Order is a shared party resource.
+- Call elemental assignments clearly in Phases 2-3.
+- Indomitable Will can still nullify a hit while you are otherwise invincible.
+sources:
+- https://mapletools.app/bosses/first-adversary/guide
+- https://maplestorywiki.net/w/First_Adversary

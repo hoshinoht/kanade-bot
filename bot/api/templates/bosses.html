@@ -7,7 +7,7 @@
   <div>
     <p class="eyebrow">Reference</p>
     <h1>{{ rows|length }} bosses, {{ total }} difficulties</h1>
-    <p class="note">Every boss in <code>config/bosses.yaml</code>, in level order;
+    <p class="note">Every boss in <code>boss/bosses.yaml</code>, in level order;
       <strong>{{ in_use|length }}</strong> are ticked and have a weekly timing.</p>
   </div>
 </div>
@@ -22,7 +22,7 @@
   </div>
   <div class="pane__body">
     {{ boss_grid(rows, readonly=True) }}
-    <p class="note">Edit <code>config/bosses.yaml</code> and restart to change this list — it is
+    <p class="note">Edit <code>boss/bosses.yaml</code> and restart to change this list — it is
       bind-mounted, so no rebuild.</p>
   </div>
 </section>

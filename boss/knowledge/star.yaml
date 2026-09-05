@@ -1,0 +1,18 @@
+boss: Star
+summary: Keep Predation below 1000 by having the Awakener consistently destroy Essences and by controlling Illusion Magic across Illusion/Reality swaps.
+core:
+- Predation is party-wide, starts at 0, and reaching 1000 fails the run.
+- One player is the Awakener; only the Awakener can see/destroy Essence of Illusion and manually swap the party between Illusion and Reality.
+- Destroying an Essence lowers Predation by 40. In Illusion it also lowers Illusion Magic by 200; in Reality it creates a left/right core choice.
+- In Reality, the left core lowers Illusion Magic and final damage; the right core raises both. Higher Illusion Magic adds progressively harsher penalties.
+danger:
+- Missing an Essence increases Illusion Magic in Illusion or directly increases Predation in Reality.
+- At 1000 Illusion Magic in Reality, the swap timer is capped at 40 seconds, Predation rises every second, and the manual escape skill becomes temporarily disabled.
+- Ready to Eat requires players to body-block the incoming minions; letting them reach the boss causes a heavy explosion and follow-up full-map attack.
+tips:
+- The Awakener should stay close enough to the boss for Essence patterns to trigger and be ready for the very short Harvest window.
+- Default to the left Reality core when survival/Predation control matters more than extra damage.
+- Do not linger in Illusion near the forced-swap timer; Predation starts rising during the final minute.
+sources:
+- https://mapletools.app/bosses/maleficstar
+- https://maplestorywiki.net/w/Radiant_Malefic_Star

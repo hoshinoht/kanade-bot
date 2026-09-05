@@ -17,6 +17,7 @@ from bot.agent import formatting
 from bot.extract import gate
 from bot.extract.llm import ExtractionCall
 from bot.extract.pipeline import Pipeline, plan_burst, urgent
+from bot.extract.prompt import Msg
 from bot.extract.schema import Amendment, Extraction
 from bot.infrastructure.config import Settings
 from bot.infrastructure.db import Repo
@@ -172,6 +173,33 @@ def test_a_fix_becomes_a_weekday_and_a_clock_time(runs):
         runs,
     )
     assert result.planned[0].payload == {"weekday": 1, "time": "22:30"}
+
+
+def test_model_boss_tokens_are_canonicalised(bosses):
+    result = plan(
+        Extraction(
+            amendments=[
+                amendment(
+                    "fix", bosses=["HLimbo", "Nbaldrix"], day_ref="tue", time_ref="1030pm"
+                )
+            ]
+        ),
+        [],
+        boss_table=bosses,
+    )
+    assert result.planned[0].amendment.bosses == ["HLimbo", "NBaldrix"]
+
+
+def test_an_omitted_explicit_decline_is_restored(runs):
+    message = Msg("1002", MY, "A", ANCHOR, "today kenot sry")
+    result = plan(
+        Extraction(),
+        runs,
+        burst_messages=[message],
+        burst_order=[message.id],
+        author_ids={message.id: message.author_id},
+    )
+    assert [(entry.kind, entry.amendment.rsvp) for entry in result.planned] == [("rsvp", "no")]
 
 
 def test_a_fix_with_no_time_carries_no_payload_so_the_commit_refuses(runs):

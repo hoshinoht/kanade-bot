@@ -112,6 +112,7 @@ bossctl access                           # per-channel read/post permissions
 bossctl status <run> planned|confirmed|otot|done|cancelled
 bossctl restore <run>
 bossctl digest [--channel <id>] [--week next]
+bossctl guide --channel <id> [--bosses PATH]
 bossctl ping <run> day_of                # posts a 🧪 TEST reminder now
 bossctl extractions [-n 25] | extraction <id> [--no-prompt]
 bossctl export --channel <id> --since 2026-06-01 --out data/exports/party.jsonl
@@ -121,6 +122,11 @@ bossctl config get [key] | config set <key> <value>
 `config set` takes the four runtime settings the portal edits —
 `day_of_ping_time`, `countdown_minutes`, `paused`, `extract_enabled`. Everything
 else is `.env` and a redeploy.
+
+`bossctl guide` reads its prose from `config/guide.yaml`, then derives guide
+entries and optional portrait uploads from the canonical `boss/bosses.yaml`
+catalog. It follows `BOSSES_PATH` by default; use `--bosses PATH` for an
+explicit catalog.
 
 ### The API itself
 

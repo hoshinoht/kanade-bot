@@ -63,9 +63,11 @@ def _schedule_date(
     ctx: ToolContext, args: dict, selected_week: datetime, now: datetime
 ) -> date | None:
     """Resolve an optional day to one local date inside ``selected_week``."""
-    raw_day = args.get("day")
-    if not isinstance(raw_day, str) or not raw_day.strip():
+    if "day" not in args:
         return None
+    raw_day = args["day"]
+    if not isinstance(raw_day, str) or not raw_day.strip():
+        raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
     value = raw_day.strip()
 
     today = now.astimezone(ctx.bot.tz).date()
@@ -103,8 +105,7 @@ def handle(ctx: ToolContext, args: dict) -> str:
     participant_name = service.member_name(ctx.bot, participant_id) if participant_id else None
 
     now = utcnow()
-    raw_day = args.get("day")
-    has_day = isinstance(raw_day, str) and raw_day.strip()
+    has_day = "day" in args
     selected_week = (
         (
             next_week_start(

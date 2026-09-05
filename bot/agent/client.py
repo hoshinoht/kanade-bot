@@ -20,6 +20,7 @@ from discord.ext import tasks
 
 from bot.api.server import ApiServer
 from bot.chat import ChatPilot, persona
+from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.timeutil import to_iso, utcnow
 from bot.domain.weeks import current_week_start, next_week_start, parse_hhmm
@@ -55,8 +56,8 @@ POST_ATTEMPTS = 3
 POST_BACKOFF_SECONDS = 1.0
 
 #: What the embed's *image* attachment is called on the wire. A card can carry
-#: two pictures of the same boss -- `config/portraits/Star.png` in the corner
-#: and `config/artwork/entry/Star.png` along the bottom -- and on disk those are
+#: two pictures of the same boss -- `boss/portraits/Star.png` in the corner
+#: and `boss/artwork/entry/Star.png` along the bottom -- and on disk those are
 #: both `Star.png`. Two attachments with one name make `attachment://Star.png`
 #: ambiguous, and Discord resolves it to whichever it likes, which is how a
 #: 550px splash ends up in the thumbnail slot.
@@ -117,7 +118,13 @@ DECLINE_NOTICE_COOLDOWN = timedelta(hours=6)
 class BossBot(discord.Client):
     """discord.py client plus an application-command tree."""
 
-    def __init__(self, settings: Settings, repo: Repo, bosses: BossTable):
+    def __init__(
+        self,
+        settings: Settings,
+        repo: Repo,
+        bosses: BossTable,
+        boss_knowledge: BossKnowledgeBase | None = None,
+    ):
         intents = discord.Intents.default()
         intents.members = True  # roster sync from the bossing role
         intents.message_content = True  # phase 2 extractor reads chat
@@ -128,6 +135,7 @@ class BossBot(discord.Client):
         self.settings = settings
         self.repo = repo
         self.bosses = bosses
+        self.boss_knowledge = boss_knowledge
         self.tz: ZoneInfo = settings.zoneinfo
         self.guild_object = discord.Object(id=settings.guild_id)
         self.tree = discord.app_commands.CommandTree(self)

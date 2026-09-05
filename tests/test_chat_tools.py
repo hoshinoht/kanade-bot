@@ -13,6 +13,7 @@ from datetime import timedelta
 import pytest
 
 from bot.chat import tools
+from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.ids import short_id
 from bot.domain.weeks import current_week_start
 from bot.extract.commit import commit, may_commit
@@ -63,11 +64,12 @@ def line_for(answer: str, run_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_tool_list_is_exactly_the_documented_ten():
+def test_the_tool_list_is_exactly_the_documented_eleven():
     assert tools.tool_names() == [
         "get_schedule",
         "get_run",
         "list_bosses",
+        "get_boss_strategy",
         "get_pending",
         "propose_move",
         "propose_add",
@@ -88,6 +90,24 @@ def test_every_tool_declares_a_usable_schema():
         # Everything required must actually be declared, or the grammar the
         # model is handed asks for a field it cannot fill.
         assert set(parameters["required"]) <= set(parameters["properties"])
+
+
+def test_boss_strategy_schema_and_read_registry_are_exact():
+    strategy = next(
+        tool["function"] for tool in tools.TOOLS if tool["function"]["name"] == "get_boss_strategy"
+    )
+    assert strategy["parameters"]["required"] == ["boss"]
+    assert set(strategy["parameters"]["properties"]) == {"boss", "difficulty"}
+    assert strategy["parameters"]["properties"]["boss"]["type"] == "string"
+    assert strategy["parameters"]["properties"]["difficulty"]["type"] == "string"
+    assert [tool["function"]["name"] for tool in tools.read_tools()] == [
+        "get_schedule",
+        "get_run",
+        "list_bosses",
+        "get_boss_strategy",
+        "get_pending",
+    ]
+    assert tools.is_write_tool("get_boss_strategy") is False
 
 
 def test_no_tool_can_approve_reject_or_configure_anything():
@@ -484,6 +504,67 @@ async def test_list_bosses_names_the_table(chat_bot):
     assert "**Bosses this guild runs**\n\n" in answer
 
 
+def boss_knowledge(chat_bot):
+    from .conftest import REPO_ROOT
+
+    knowledge = BossKnowledgeBase.load(REPO_ROOT / "boss" / "knowledge", chat_bot.bosses)
+    chat_bot.boss_knowledge = knowledge
+    return knowledge
+
+
+@pytest.mark.parametrize(
+    ("boss", "difficulty", "selected_difficulty"),
+    [
+        ("fa", None, None),
+        ("HFA", None, "h"),
+        ("The First Adversary", None, None),
+        ("fa", "h", "h"),
+        ("fa", "hArD", "h"),
+    ],
+)
+async def test_get_boss_strategy_renders_checked_in_fa_knowledge(
+    chat_bot, boss, difficulty, selected_difficulty
+):
+    knowledge = boss_knowledge(chat_bot)
+    args = {"boss": boss}
+    if difficulty is not None:
+        args["difficulty"] = difficulty
+
+    answer = await tools.dispatch(context(chat_bot), "get_boss_strategy", args)
+
+    assert answer == knowledge.render("FA", selected_difficulty)
+    assert "# The First Adversary (FA)" in answer
+    assert "Researched as of 2026-09-05" in answer
+    assert "https://mapletools.app/bosses/first-adversary/guide" in answer
+    assert "https://maplestorywiki.net/w/First_Adversary" in answer
+    assert "unverified strategy detail" not in answer
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ({"boss": "HFA", "difficulty": "Normal"}, "conflicting difficulties"),
+        ({"boss": "kalos", "difficulty": "Hard"}, "has no Hard difficulty"),
+        ({"boss": "zakum"}, "no boss found"),
+        ({"boss": "fa and kalos"}, "multiple bosses found"),
+    ],
+)
+async def test_get_boss_strategy_refuses_before_returning_content(chat_bot, args, expected):
+    boss_knowledge(chat_bot)
+    answer = await tools.dispatch(context(chat_bot), "get_boss_strategy", args)
+
+    assert expected in answer
+    assert "## Core" not in answer
+
+
+async def test_get_boss_strategy_refuses_when_knowledge_is_unavailable(chat_bot):
+    assert chat_bot.boss_knowledge is None
+
+    answer = await tools.dispatch(context(chat_bot), "get_boss_strategy", {"boss": "fa"})
+
+    assert answer == "Boss strategy knowledge is unavailable right now."
+
+
 async def test_get_pending_is_empty_until_something_is_proposed(chat_bot, chat_seeded):
     assert "no proposal cards" in await tools.dispatch(context(chat_bot), "get_pending", {})
 
@@ -868,6 +949,7 @@ async def test_an_rsvp_card_for_somebody_taken_off_the_run_will_not_apply(chat_b
 async def test_an_unknown_tool_is_refused_by_name(chat_bot, chat_seeded, name):
     answer = await tools.dispatch(context(chat_bot), name, {})
     assert "There is no tool called" in answer
+    assert "answer from what you already know" not in answer
     assert proposals(chat_bot) == []
 
 
@@ -887,7 +969,8 @@ async def test_a_failing_tool_comes_back_as_text(chat_bot, chat_seeded, monkeypa
 
     monkeypatch.setattr(chat_bot.repo, "list_runs", boom)
     answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
-    assert "could not reach the schedule" in answer
+    assert "could not complete that request" in answer
+    assert "schedule" not in answer
 
 
 async def test_a_write_that_cannot_post_its_card_says_so(chat_bot, chat_seeded):

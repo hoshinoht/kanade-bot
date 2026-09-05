@@ -1,30 +1,26 @@
 # Configuration
 
-Game assets and deployment-specific settings live here. This directory is
-bind-mounted into the container read-only, so any file you add or edit takes
-effect on the next page load or command — no rebuild required.
+Deployment-specific guide prose and persona settings live here. The canonical
+boss catalog, game assets, and chat knowledge live in [`../boss/`](../boss/README.md).
 
 ## What's here
 
 | File | Purpose | Committed? |
 |---|---|---|
-| `bosses.yaml` | Boss table — names, levels, difficulties, aliases | Yes |
-| `portraits/` | Boss portrait images (icon + full-size) | Dir only; images git-ignored |
-| `artwork/` | Entry splash art per boss | Dir only; images git-ignored |
 | `guide.yaml` | Messages posted by `bossctl guide` | No — git-ignored |
-| `guide_bosses.yaml` | Boss entries for the guide section | No — git-ignored |
+| `personas/` | Deployment-specific chat identity and behaviour | Templates only |
 
 ## Guide setup
 
-`bossctl guide` reads two YAML files and posts the server's guide channel
-messages to Discord.
+`bossctl guide` reads this directory's prose and derives the boss entries from
+the canonical [`boss/bosses.yaml`](../boss/bosses.yaml) catalog before posting to
+Discord.
 
 ### Quick start
 
 ```bash
 cp config/guide.example.yaml config/guide.yaml
-cp config/guide_bosses.example.yaml config/guide_bosses.yaml
-# edit the copies to match your server
+# edit the copy to match your server
 bossctl guide --channel <channel-id>
 ```
 
@@ -35,8 +31,8 @@ Discord-flavoured markdown: `**bold**`, `` `code` ``, `> blockquotes`,
 `-# spoiler lines`, `<#channel_id>` mentions, and emoji.
 
 The special key `bosses: true` marks the boss list message. The CLI replaces
-that line with per-boss entries generated from `guide_bosses.yaml` and
-attaches portrait PNGs as file uploads.
+that line with per-boss entries generated from `boss/bosses.yaml` and attaches
+available portrait files as uploads.
 
 ```yaml
 messages:
@@ -55,28 +51,15 @@ messages:
     bosses: true
 ```
 
-### `config/guide_bosses.yaml`
-
-Boss display entries for the guide's boss section. Each entry needs:
-
-```yaml
-bosses:
-  - name: Chosen Seren      # display name
-    level: 260              # boss level
-    tokens: [nseren, hseren, xseren]
-    named: Normal · Hard · Extreme   # human-readable difficulties
-    aliases: seren, serene, sereen, chosenseren
-    portrait: Seren          # matches config/portraits/icon/Seren.png
-```
-
-The `portrait` field is the filename stem — the CLI looks for
-`config/portraits/icon/<stem>.png` and attaches it to the Discord message.
-
 ### Adding a new boss
 
-1. Add the portrait to `config/portraits/icon/`
-2. Add an entry to `guide_bosses.yaml`
-3. Run `bossctl guide --channel <id>` to re-post
+1. Add the catalog entry and optional portrait under [`boss/`](../boss/README.md).
+2. If the chatbot is configured, add its required knowledge document too.
+3. Restart the bot so it loads the changed catalog and knowledge, then run
+   `bossctl guide --channel <id>` to re-post.
+
+Use `bossctl guide --bosses PATH` to derive guide entries from an explicit
+catalog instead of `BOSSES_PATH`.
 
 ### Channel mention syntax
 

@@ -73,7 +73,9 @@ RULES
 5. A question is not a decision. "can change to wed?", "This Sunday can anot?",
    "wanna try trio ncarling?", "930 can postpone to 11 anot ah?" -> `is_question:
    true`, and you still emit the amendment. A later "Can", "Ok", "ya", "I ok",
-   "okay for wed" from someone else is a SEPARATE amendment of kind `rsvp`.
+   "okay for wed" from someone else is a SEPARATE amendment of kind `rsvp`. If
+   that reply also settles missing schedule details, emit an updated change with
+   `is_question: false` too.
 6. One amendment per affected run. "mon and tues cannot" with two runs in
    RUNS is two amendments, one per run, each with that run's own bosses.
 7. A reply belongs to the thing it replies to. When someone proposes a run and
@@ -81,6 +83,8 @@ RULES
    "Wed i done with boss so 9:30pm onwards"), that time is the `time_ref` of
    THAT proposal -- do not attach it to a different run in RUNS. If the same
    person also agrees to come, that is an extra `rsvp`.
+   If one proposal moves multiple runs to the same day, an unqualified follow-up
+   time for that day applies to every proposed run.
 8. Always emit an `rsvp` for a message that answers yes or no, even when
    nothing else about the run changes and even when the answer cancels the
    proposal ("Today can ah?" -> "today kenot sry" is one `rsvp` with rsvp="no").
@@ -104,7 +108,8 @@ KINDS -- pick by asking "is this boss already in RUNS?"
          of people different bosses is `split`, not `add` or `move`, even when
          one of the bosses is new. List every boss involved, both groups.
   otot   a run happens on people's own time, no reminders. The words are "otot",
-         "own time", "we do ourselves" ("So Mon/tue we otot do the hcarl").
+         "own time", "we do ourselves". Literal "otot" must be `otot`, never
+         `add`; "we otot do the hcarl" names HCarling only, not its whole run.
   sub    someone is out and a stand-in is wanted ("find temp for this week?",
          "can someone cover for me")
   rsvp   an answer about attending: "Can", "Ok", "I ok", "ya", "confirm",
@@ -115,6 +120,19 @@ KINDS -- pick by asking "is this boss already in RUNS?"
          time": "HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as
          default time?" is `fix`. Those words beat `add` and `move` even when
          the boss has no run yet. Put the recurring day in day_ref.
+
+EDGE CASES
+- With a Monday run and a Tuesday run, "mon and tuesday got things on can change
+  to wed?" affects both. If the reply is "Wed ... 9:30pm onwards can run le",
+  both moves use wed/9:30pm and are no longer questions; also emit that author's
+  RSVP.
+- If HCarling and XKalos share a run, "we otot do the hcarl" produces exactly one
+  `otot` amendment whose bosses are `["HCarling"]`.
+- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is
+  "Can", emit an `rsvp` with `rsvp: "yes"` for the new message's author.
+- "930 can postpone to 11 anot" is a `move` with `is_question: true`.
+- "Today can ah?" followed by "today kenot sry" produces an `rsvp` with
+  `rsvp: "no"` for the second author.
 
 WORKED EXAMPLE
 RUNS:  #a1  HStar + HFA  Mon 21:30  <@11>(A) <@22>(B)

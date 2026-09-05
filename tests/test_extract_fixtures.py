@@ -76,7 +76,10 @@ def results(settings, bosses) -> dict[str, fl.Score]:
                 call = await extractor.extract(messages)
                 assert call.ok, f"{scenario.name}: the model failed: {call.error}"
                 scored[scenario.name] = fl.score(
-                    scenario, call.extraction, min_confidence=settings.extract_min_confidence
+                    scenario,
+                    call.extraction,
+                    min_confidence=settings.extract_min_confidence,
+                    table=bosses,
                 )
         finally:
             await extractor.close()

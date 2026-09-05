@@ -16,17 +16,15 @@ bot/api/static/portal.css
 .DS_Store
 
 # Untracked game assets.
-config/portraits/*
-!config/portraits/README.md
+boss/portraits/*
+!boss/portraits/README.md
 
-config/artwork/*/*
-!config/artwork/*/README.md
+boss/artwork/*/*
+!boss/artwork/*/README.md
 
 # Guide content — editable per deployment, never committed.
 config/guide.yaml
-config/guide_bosses.yaml
 !config/guide.example.yaml
-!config/guide_bosses.example.yaml
 !config/README.md
 
 .claude
