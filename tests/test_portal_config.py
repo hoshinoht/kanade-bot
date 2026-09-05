@@ -272,14 +272,62 @@ def test_behaviour_plugin_editors_collapse_and_paginate_without_hiding_server_ma
     assert panel.count('data-page-size="5"') == 2
     assert panel.count("data-page-previous") == 2
     assert panel.count("data-page-next") == 2
-    assert '<details class="behaviour-editor" data-page-item>' in panel
-    assert '<summary class="behaviour-editor__summary">' in panel
     assert '<details class="behaviour-editor behaviour-editor--new">' in panel
     for number in range(6):
         assert f"style-{number}" in panel
 
     assert 'querySelectorAll("[data-page-item]")' in PAGE_JS
     assert "window.sessionStorage" in PAGE_JS
+
+
+def test_profile_editors_open_as_modals_with_search_and_bulk_selection(auth, seeded, plugin_dir):
+    behaviour_plugins.write("mesugaki", "Use playful, smug banter.")
+    behaviour_plugins.write("concise", "Always answer in short lines.")
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert 'data-search-input="behaviour-plugins"' in panel
+    assert "data-search-empty" in panel
+    assert '<a class="behaviour-editor behaviour-editor__summary"' in panel
+    assert 'data-dialog="profile-mesugaki"' in panel
+    assert 'href="#profile-mesugaki"' in panel
+    assert "data-page-item" in panel
+    assert '<dialog class="modal" id="profile-mesugaki"' in panel
+    assert 'aria-labelledby="profile-mesugaki-title"' in panel
+    assert '<form id="bulk-profiles" method="post"' in panel
+    assert 'action="/config/behaviour-plugins/selectable"' in panel
+    assert 'value="mesugaki"' in panel
+    assert 'form="bulk-profiles"' in panel
+    assert 'form="bulk-profiles"' in panel
+    assert 'name="selectable" value="1"' in panel
+    assert 'name="selectable" value="0"' in panel
+
+    assert "data-search-hidden" in PAGE_JS
+    assert "data-search-input" in PAGE_JS
+    assert "data-bulk-toolbar" in PAGE_JS
+    assert "Select page (" in PAGE_JS
+    assert "visibilityWord" in PAGE_JS
+
+
+def test_profile_list_filters_by_visibility_and_toggle_names_the_filter(auth, seeded, plugin_dir):
+    behaviour_plugins.write("mesugaki", "Use playful, smug banter.")
+    behaviour_plugins.write("concise", "Always answer in short lines.")
+    auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["mesugaki"], "selectable": "1"},
+    )
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert 'data-filter-row="behaviour-plugins" hidden' in panel
+    assert 'data-visibility-filter="behaviour-plugins"' in panel
+    assert '<option value="public">Public</option>' in panel
+    assert '<option value="private">Private</option>' in panel
+    assert 'data-visibility="public"' in panel
+    assert 'data-visibility="private"' in panel
+
+    assert "data-visibility" in PAGE_JS
+    assert '"Select all" + visibilityWord()' in PAGE_JS
 
 
 def test_plugins_and_role_assignments_can_be_managed_in_the_portal(
@@ -370,6 +418,68 @@ def test_publication_and_role_priority_are_portal_managed(auth, fake_bot, seeded
     assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first"]
     blocked = auth.post("/config/behaviour-plugins/first/delete", follow_redirects=False)
     assert "kind=error" in blocked.headers["location"]
+
+
+def test_bulk_publish_and_private(auth, fake_bot, seeded, plugin_dir):
+    behaviour_plugins.write("first", "FIRST")
+    behaviour_plugins.write("second", "SECOND")
+    behaviour_plugins.write("third", "THIRD")
+
+    published = auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["first", "second"], "selectable": "1"},
+        follow_redirects=False,
+    )
+    assert published.status_code == 303
+    assert "Published+2+profiles" in published.headers["location"]
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first", "second"]
+
+    # Publishing again is a no-op rather than a duplicate entry.
+    auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["first"], "selectable": "1"},
+    )
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first", "second"]
+
+    made_private = auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["first"], "selectable": "0"},
+        follow_redirects=False,
+    )
+    assert made_private.status_code == 303
+    assert "Made+private+1+profile" in made_private.headers["location"]
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["second"]
+
+
+def test_bulk_selectable_ignores_nothing_selected_and_unknown_names(
+    auth, fake_bot, seeded, plugin_dir
+):
+    behaviour_plugins.write("first", "FIRST")
+
+    empty = auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"selectable": "1"},
+        follow_redirects=False,
+    )
+    assert empty.status_code == 303
+    assert "No+profiles+selected" in empty.headers["location"]
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == []
+
+    partial = auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["first", "ghost"], "selectable": "1"},
+        follow_redirects=False,
+    )
+    assert partial.status_code == 303
+    assert "Published+1+profile" in partial.headers["location"]
+    assert service.get_config(fake_bot)["chat_selectable_plugins"] == ["first"]
+
+    bad = auth.post(
+        "/config/behaviour-plugins/selectable",
+        data={"profiles": ["Not A Name!"], "selectable": "1"},
+        follow_redirects=False,
+    )
+    assert "kind=error" in bad.headers["location"]
 
 
 def test_broken_role_entries_are_visible_without_hiding_valid_ones(

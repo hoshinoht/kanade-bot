@@ -142,6 +142,42 @@
   border-radius: var(--r-sm);
 }
 
+/* Profile rows are links to their editor dialogs, so they reset to card
+   text rather than wearing link colours. */
+a.behaviour-editor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.behaviour-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.behaviour-row .behaviour-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.behaviour-row__check {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.behaviour-bulk {
+  align-items: end;
+  margin-bottom: 0.45rem;
+}
+
+.behaviour-bulk__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .behaviour-editor--new {
   margin-top: 0.65rem;
   background: var(--surface);

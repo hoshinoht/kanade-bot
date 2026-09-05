@@ -1024,6 +1024,23 @@ async def web_set_behaviour_plugin_selectable(
     return back_to(request, "/config", "Public style catalog updated.", fragment="chatbot")
 
 
+@router.post("/config/behaviour-plugins/selectable")
+async def web_set_behaviour_plugins_selectable(
+    request: Request, bot: Bot, caller: Caller
+) -> Response:
+    form = await request.form()
+    selectable = str(form.get("selectable") or "") == "1"
+    try:
+        result = service.set_behaviour_plugins_selectable(bot, form.getlist("profiles"), selectable)
+    except ApiError as exc:
+        return back_to(request, "/config", exc.message, "error", fragment="chatbot")
+    if not result["applied"]:
+        return back_to(request, "/config", "No profiles selected.", fragment="chatbot")
+    noun = "profile" if result["applied"] == 1 else "profiles"
+    verb = "Published" if selectable else "Made private"
+    return back_to(request, "/config", f"{verb} {result['applied']} {noun}.", fragment="chatbot")
+
+
 @router.post("/config/role-plugins/{role_id}/move")
 async def web_move_role_plugin(
     request: Request, bot: Bot, caller: Caller, role_id: str
