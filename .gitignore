@@ -27,6 +27,10 @@ config/guide.yaml
 !config/guide.example.yaml
 !config/README.md
 
+# Staging presets — same pattern: example tracked, live file private.
+config/presets/staging.yaml
+!config/presets/staging.example.yaml
+
 .claude
 
 # Track templates only; all live prompt content stays private.
@@ -42,9 +46,13 @@ config/personas/identities/*
 !config/personas/behaviours/
 config/personas/behaviours/*
 !config/personas/behaviours/default.example.md
+!config/personas/behaviours/staging.example.yaml
 !config/personas/behaviours/profiles/
 config/personas/behaviours/profiles/*
 !config/personas/behaviours/profiles/example.md
+!config/personas/behaviours/profiles/staging/
+config/personas/behaviours/profiles/staging/*
+!config/personas/behaviours/profiles/staging/example.yaml
 
 # Local design notes.
 DESIGN.md

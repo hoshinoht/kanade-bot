@@ -4,6 +4,29 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+## 4.4.0
+
+**Added**
+
+- Persona-aware chatbot staging lines loaded from YAML: defaults in
+  `config/personas/behaviours/staging.yaml` with per-profile overrides in
+  `behaviours/profiles/staging/<profile>.yaml` (partial files inherit the
+  rest from `default`; unknown profiles use `default`; `{boss}` still
+  interpolates the resolved boss).
+- Silent processing indicator for chat answers: a no-ping staging
+  placeholder plus typing indicator while the model works. Success deletes
+  the placeholder and posts the final answer with its single ping; failures
+  edit the placeholder in place. Rejection follow-ups use the active
+  profile's generic line.
+- `silent` option on `post_plain` (`AllowedMentions.none()`) for staging
+  placeholders, plus `edit_plain` / `delete_placeholder` helpers.
+
+**Changed**
+
+- Staging copy is validated at startup: unknown keys and non-string values
+  are reported (falling back to defaults) instead of surfacing mid-request.
+- `bot.__version__` brought back in line with the package version.
+
 ## 4.3.0
 
 **Added**
