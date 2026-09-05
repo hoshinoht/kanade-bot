@@ -1640,9 +1640,7 @@ class BossBot(discord.Client):
         if self.quiet_mode:
             content = formatting.quiet_line(content)
         try:
-            await placeholder.edit(
-                content=content, allowed_mentions=discord.AllowedMentions.none()
-            )
+            await placeholder.edit(content=content, allowed_mentions=discord.AllowedMentions.none())
             return True
         except (discord.HTTPException, OSError, TimeoutError):
             log.warning("could not edit the staging placeholder", exc_info=True)

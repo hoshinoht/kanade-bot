@@ -70,6 +70,7 @@ STRATEGY_GROUNDING_FAILURE_REPLY = (
 class ContextBudgetError(RuntimeError):
     """The protected current turn cannot fit in the configured model context."""
 
+
 #: Static rate-limit replies must not invoke the model.
 RATE_LIMITED_REPLY = "That's your {count} answer{plural} for now — ask me again in about {wait}."
 POOL_SPENT_REPLY = "The guild's used up its answers for the moment — try me again in about {wait}."
@@ -573,9 +574,7 @@ class ChatPilot:
                 else []
             )
             for staging_dir in dict.fromkeys(str(d) for d in dirs if d):
-                profiles = progress.load_profile_dir(
-                    staging_dir, default, profiles
-                )
+                profiles = progress.load_profile_dir(staging_dir, default, profiles)
             orphans, _ = progress.staging_linkage(profiles, behaviour_plugins.available())
             if orphans:
                 log.warning("staging profiles with no reply profile: %s", ", ".join(orphans))
@@ -866,7 +865,10 @@ class ChatPilot:
         conversation = self.build_conversation(message, channel_id, overlay)
         intent = strategy.route_strategy_intent(text, self.bot.bosses)
         staging = progress.placeholder_for(
-            text, self.bot.bosses, bot_user_id, self_role_id,
+            text,
+            self.bot.bosses,
+            bot_user_id,
+            self_role_id,
             staging=self.staging_table(message.author),
         )
         placeholder = await self._post_placeholder(message, staging)

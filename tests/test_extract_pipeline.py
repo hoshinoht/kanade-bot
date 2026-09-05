@@ -179,9 +179,7 @@ def test_model_boss_tokens_are_canonicalised(bosses):
     result = plan(
         Extraction(
             amendments=[
-                amendment(
-                    "fix", bosses=["HLimbo", "Nbaldrix"], day_ref="tue", time_ref="1030pm"
-                )
+                amendment("fix", bosses=["HLimbo", "Nbaldrix"], day_ref="tue", time_ref="1030pm")
             ]
         ),
         [],

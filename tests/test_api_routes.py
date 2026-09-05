@@ -236,6 +236,7 @@ def test_guide_no_longer_accepts_local_thumbnail_paths(auth):
 
     assert response.status_code == 422
 
+
 # --- schedule ---------------------------------------------------------------
 
 

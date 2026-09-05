@@ -7,6 +7,14 @@ uv run ruff check .
 uv run ruff format .
 ```
 
+Enable the git hooks once per clone to catch the CI gates locally —
+pre-commit runs the lockfile check, lint and format autofix; pre-push runs
+the full suite minus the local-only Ollama model:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 If the project directory is ever moved or renamed, run `uv sync --reinstall`
 once: the venv's console scripts (`.venv/bin/pytest` and friends) carry absolute
 shebang paths, and a stale one fails as *bad interpreter* — after which the

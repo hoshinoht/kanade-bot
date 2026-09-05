@@ -85,8 +85,9 @@ async def test_empty_reply_edits_placeholder_silently(chat_bot, chat_seeded):
 async def test_placeholder_failure_still_posts(chat_bot, chat_seeded):
     orig = chat_bot.post_plain
 
-    async def flaky(channel, content, mention_users, reference_id=None, mention_roles=None,
-                   silent: bool = False):
+    async def flaky(
+        channel, content, mention_users, reference_id=None, mention_roles=None, silent: bool = False
+    ):
         if silent:
             raise RuntimeError("staging failed")
         return await orig(channel, content, mention_users, reference_id, mention_roles)
@@ -135,8 +136,10 @@ def test_full_override():
 
 
 def test_partial_override_inherits_default():
-    config = {"default": {k: f"base-{k}" for k in progress.STAGING_KEYS},
-              "profiles": {"kuudere": {"generic": "Custom thinking"}}}
+    config = {
+        "default": {k: f"base-{k}" for k in progress.STAGING_KEYS},
+        "profiles": {"kuudere": {"generic": "Custom thinking"}},
+    }
     lines = progress.load_profile_staging(config, "kuudere")
     assert lines.generic == "Custom thinking"
     assert lines.schedule == "base-schedule"
@@ -196,9 +199,7 @@ def test_staging_linkage():
     )
     assert orphans == []
     assert missing == ["encik"]
-    orphans, _ = progress.staging_linkage(
-        {"ghost": progress.DEFAULT_LINES}, ["tsundere"]
-    )
+    orphans, _ = progress.staging_linkage({"ghost": progress.DEFAULT_LINES}, ["tsundere"])
     assert orphans == ["ghost"]
 
 
