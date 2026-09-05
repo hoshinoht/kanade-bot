@@ -594,6 +594,30 @@ async def test_unresolved_rewrite_falls_back_to_fixed_on_error(chat_bot, chat_se
     assert "ConnectionError" in (result.error or "")
 
 
+async def test_read_claim_embroidery_is_stripped_from_listings(chat_bot, chat_seeded):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(
+        chat_bot,
+        says("**Weekly timings**\n\n[aaaa] every Mon 22:00 Hard FA\n\nA proposal card is ready!"),
+    )
+    result = (await agent.offer(message(chat_bot, "@bot list weeklies"))).answered
+
+    assert result is not None
+    assert "Weekly timings" in result.reply
+    assert "proposal card is ready" not in result.reply
+
+
+async def test_general_emoji_guidance_survives_on_reads(chat_bot, chat_seeded):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(chat_bot, says("Runs below. Hit ✅ on the old cards if needed."))
+    result = (await agent.offer(message(chat_bot, "@bot list weeklies"))).answered
+
+    assert result is not None
+    assert "✅" in result.reply
+
+
 async def test_tools_are_offered_on_every_round_but_the_last(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[wants("get_schedule", week="this")] * MAX_TOOL_ROUNDS)
     await agent.offer(message(chat_bot))
