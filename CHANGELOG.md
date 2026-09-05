@@ -4,6 +4,24 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+## 4.5.0
+
+**Added**
+
+- Reply-profile search on the Config page, filtering by name and
+  instructions, plus a public/private visibility filter (client-side,
+  like the existing pagination).
+- Reply-profile editors open as modals instead of inline disclosures,
+  matching the member sheet.
+- Bulk publish / make-private for reply profiles, with a two-stage select
+  toggle (page, then all) that prioritises the active filter.
+- `.githooks` mirroring the CI gates, documented in Development.
+
+**Fixed**
+
+- Updated seven stale tool-schema tests to the deliberately trimmed 4.3.0
+  copy instead of re-adding bulk to the schemas.
+
 ## 4.4.0
 
 **Added**

@@ -4,4 +4,4 @@ Phase 1: config, SQLite storage, role-based roster sync, fixed runs, weekly
 materialisation, day-of + countdown reminders with reaction RSVPs, slash commands.
 """
 
-__version__ = "4.4.0"
+__version__ = "4.5.0"

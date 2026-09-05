@@ -2348,6 +2348,33 @@ def set_behaviour_plugin_selectable(bot: BossBot, name: Any, selectable: bool) -
     return set_config(bot, behaviour_plugins.SELECTABLE_CONFIG_KEY, updated)
 
 
+def set_behaviour_plugins_selectable(bot: BossBot, names: Any, selectable: bool) -> dict:
+    """Publish or unpublish several readable profiles in the member catalog."""
+    if isinstance(names, str):
+        names = [names]
+    try:
+        safe = [behaviour_plugins.plugin_name(name) for name in (names or [])]
+    except (TypeError, ValueError) as exc:
+        raise BadRequest(str(exc)) from None
+    current = behaviour_plugins.decode_catalog(
+        bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+    )
+    applied = 0
+    for name in dict.fromkeys(safe):
+        if behaviour_plugins.read(name) is None:
+            continue
+        if selectable and name not in current:
+            current.append(name)
+            applied += 1
+        elif not selectable and name in current:
+            current.remove(name)
+            applied += 1
+    set_config(bot, behaviour_plugins.SELECTABLE_CONFIG_KEY, current)
+    verb = "published" if selectable else "made private"
+    _audit(bot, "config", behaviour_plugins.SELECTABLE_CONFIG_KEY, f"{applied} profile(s) {verb}")
+    return {"applied": applied, "selectable": selectable}
+
+
 def move_role_plugin(bot: BossBot, role_id: Any, direction: str) -> dict:
     """Move a role assignment one position; list order is override priority."""
     configured = behaviour_plugins.decode(bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]"))
