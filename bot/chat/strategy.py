@@ -25,7 +25,7 @@ _HOW_TO_MECHANICS_RE = re.compile(
     r"(?:clear|fight|handle|approach)\b",
     re.IGNORECASE,
 )
-_TARGET_SPLIT_RE = re.compile(r"\s*(?:,|/|&|\+|\band\b)\s*", re.IGNORECASE)
+_TARGET_SPLIT_RE = re.compile(r"\s*(?:,|;|/|&|\+|\||•|\bvs\.?\b|\band\b)\s*", re.IGNORECASE)
 #: Discord markup must not split targets: a role mention `<@&id>` contains `&`.
 _MENTION_RE = re.compile(r"<[@#][&!#]?\d+>|<a?:\w+:\d+>")
 _ACTION_CONTINUATION_RE = re.compile(
@@ -68,12 +68,16 @@ def _coordinated_segments(text: str, table: BossTable) -> list[str] | None:
     """
     cleaned = _MENTION_RE.sub(" ", text)
     pieces = _TARGET_SPLIT_RE.split(cleaned)
-    segments = [piece.strip(" ?!.") for piece in pieces if piece.strip(" ?!.")]
+    segments = [
+        piece.strip(" ?!.'\"`*()[]{}")
+        for piece in pieces
+        if piece.strip(" ?!.'\"`*()[]{}")
+    ]
     if len(segments) < 2:
         return None
     if _POLITE_SUFFIX_RE.fullmatch(segments[-1]):
         segments.pop()
-    if _ACTION_CONTINUATION_RE.match(segments[-1]):
+    while len(segments) > 1 and _ACTION_CONTINUATION_RE.match(segments[-1]):
         segments.pop()
     if len(segments) < 2:
         return None

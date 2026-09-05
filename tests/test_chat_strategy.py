@@ -35,6 +35,18 @@ from bot.domain.bosses import BossReference
             "strategy for HFA + Extreme Kalos",
             (BossReference("FA", "h"), BossReference("Kalos", "x")),
         ),
+        (
+            "guide for FA vs Kalos",
+            (BossReference("FA", None), BossReference("Kalos", None)),
+        ),
+        (
+            "tips for FA; Kalos",
+            (BossReference("FA", None), BossReference("Kalos", None)),
+        ),
+        (
+            'guide for "FA", "Kalos"',
+            (BossReference("FA", None), BossReference("Kalos", None)),
+        ),
     ],
 )
 def test_route_strategy_resolves_aliases_and_preserves_difficulty(bosses, text, expected):
