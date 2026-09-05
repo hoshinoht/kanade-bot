@@ -200,20 +200,6 @@ def test_component_prompt_prioritizes_boss_knowledge_over_persona_overlays():
     assert built.index("PROFILE OVERLAY") < built.index("# Boss knowledge policy")
 
 
-def test_component_prompt_blocks_vulgarity_and_evasive_spellings():
-    built = persona.component_system_prompt(
-        persona.PromptComponents(identity="# Persona: Kanade", default_behaviour="DEFAULT"),
-        "CLOCK",
-    )
-    compact = " ".join(built.split())
-
-    assert "Do not include explicit vulgarities" in compact
-    assert "phonetic, abbreviated, or censored stand-ins" in compact
-    assert "`dih` for `dick`" in compact
-    assert "`bih` for `bitch`" in compact
-    assert "changing the spelling does not make it acceptable" in compact
-
-
 def test_profile_examples_replace_default_examples():
     default = "**Good**\n\n> `default example`"
     profile = "**Good**\n\n> `profile example`"

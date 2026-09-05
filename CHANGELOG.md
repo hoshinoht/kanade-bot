@@ -11,8 +11,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - Spaced full-name boss aliases such as `Hard Black Mage`,
   `Normal Radiant Malefic Star`, and `Normal The First Adversary` now resolve in
   commands, extraction, and chatbot run lookups.
-- Chatbot presentation policy now rejects explicit vulgarities and evasive
-  phonetic, abbreviated, or censored spellings of them.
 
 **Changed**
 
