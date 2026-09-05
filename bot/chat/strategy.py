@@ -69,9 +69,7 @@ def _coordinated_segments(text: str, table: BossTable) -> list[str] | None:
     cleaned = _MENTION_RE.sub(" ", text)
     pieces = _TARGET_SPLIT_RE.split(cleaned)
     segments = [
-        piece.strip(" ?!.'\"`*()[]{}")
-        for piece in pieces
-        if piece.strip(" ?!.'\"`*()[]{}")
+        piece.strip(" ?!.'\"`*()[]{}") for piece in pieces if piece.strip(" ?!.'\"`*()[]{}")
     ]
     if len(segments) < 2:
         return None

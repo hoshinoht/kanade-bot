@@ -445,7 +445,12 @@ class FakeBot:
         return (await self.find_channel(channel_id)).channel
 
     async def post_plain(
-        self, channel, content, mention_users, reference_id=None, mention_roles=None,
+        self,
+        channel,
+        content,
+        mention_users,
+        reference_id=None,
+        mention_roles=None,
         silent: bool = False,
     ):
         if self.quiet_mode:
