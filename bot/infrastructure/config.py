@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     chat_pilot_timeout: float = Field(default=60.0, gt=0)
     #: Sampling temperature for chatbot replies.
     chat_pilot_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    #: Reasoning effort for the chat pilot. Empty falls back to ``OLLAMA_THINK``
+    #: so the extractor can stay fast while speech reasons harder.
+    chat_pilot_think: str = ""
     #: Stable identity document on the persona bind mount.
     persona_path: str = "config/personas/identities/persona.md"
 
@@ -201,6 +204,14 @@ class Settings(BaseSettings):
             raise ValueError("OLLAMA_THINK must be low, medium, high or off")
         return key
 
+    @field_validator("chat_pilot_think")
+    @classmethod
+    def _check_chat_think(cls, value: str) -> str:
+        key = value.strip().lower()
+        if key not in ("low", "medium", "high", "off", "false", "none", ""):
+            raise ValueError("CHAT_PILOT_THINK must be low, medium, high or off")
+        return key
+
     @field_validator("countdown_minutes")
     @classmethod
     def _check_countdowns(cls, value: str) -> str:
@@ -262,6 +273,16 @@ class Settings(BaseSettings):
         if level in ("off", "false", "none", "0"):
             return False
         return None
+
+    @property
+    def chat_think(self) -> str | bool | None:
+        """Return the chat pilot ``think`` argument, falling back to ``think``."""
+        level = (self.chat_pilot_think or "").strip().lower()
+        if level in ("low", "medium", "high"):
+            return level
+        if level in ("off", "false", "none", "0"):
+            return False
+        return self.think
 
     @property
     def allowed_login_list(self) -> list[str]:

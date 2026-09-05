@@ -128,8 +128,9 @@ REMINDER_PREFIX = (
 
 #: Additional constraints for the conversation-positioned cue.
 REMINDER_SUFFIX = (
-    " Every reply gets one small in-character touch -- card confirmations and error "
-    "relays included. Facts, ids and times stay exact. Use compact Discord Markdown for "
+    " Every reply gets one small in-character touch -- card confirmations, error "
+    "relays, and strategy/guide answers included. Facts, ids and times stay exact. "
+    "Use compact Discord Markdown for "
     "factual blocks and separate distinct blocks with one blank line."
 )
 

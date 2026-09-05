@@ -625,6 +625,33 @@ def test_editing_and_removing_a_fixed_timing_from_the_page(auth, fake_bot, seede
     assert fake_bot.repo.get_fixed_run(seeded["fixed_star"]) is None
 
 
+def test_shifting_a_fixed_timing_to_another_channel_from_the_page(auth, fake_bot, seeded):
+    from .fake_bot import OTHER_CHANNEL, UNWATCHED_CHANNEL, WATCHED_CHANNEL
+
+    assert fake_bot.repo.get_fixed_run(seeded["fixed_star"])["channel_id"] == str(WATCHED_CHANNEL)
+    response = auth.post(
+        f"/fixed/{seeded['fixed_star']}/edit",
+        data={"channel_id": str(OTHER_CHANNEL)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert fake_bot.repo.get_fixed_run(seeded["fixed_star"])["channel_id"] == str(OTHER_CHANNEL)
+    for run in fake_bot.repo.list_runs():
+        if run.get("fixed_run_id") == seeded["fixed_star"] and run["status"] not in (
+            "done",
+            "cancelled",
+        ):
+            assert str(run["channel_id"]) == str(OTHER_CHANNEL)
+    bad = auth.post(
+        f"/fixed/{seeded['fixed_star']}/edit",
+        data={"channel_id": str(UNWATCHED_CHANNEL)},
+        follow_redirects=True,
+    )
+    assert "watched" in bad.text
+    assert "flash--error" in bad.text
+    assert fake_bot.repo.get_fixed_run(seeded["fixed_star"])["channel_id"] == str(OTHER_CHANNEL)
+
+
 def test_live_boss_validation_returns_chips_or_the_reason(auth):
     good = auth.post("/validate/bosses", data={"bosses": "hstar hfa"})
     assert 'class="pill pill--h"' in good.text

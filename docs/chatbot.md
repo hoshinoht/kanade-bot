@@ -173,6 +173,11 @@ holds a conversation and a greedy decode reads like a form letter. Warmth is
 safe here because every change it drafts is a card somebody still has to ✅.
 `top_p` is left at the model's default.
 
+Reasoning is split: `OLLAMA_THINK` (default `low`) drives extraction,
+`CHAT_PILOT_THINK` (default empty = fall back to `OLLAMA_THINK`) drives speech.
+Set e.g. `OLLAMA_THINK=low` with `CHAT_PILOT_THINK=medium` to let answers reason
+harder without slowing extractions. Both values are logged per model call.
+
 Put the voice cue in default behaviour and, when needed, in a profile:
 
 ```markdown
@@ -181,8 +186,8 @@ Put the voice cue in default behaviour and, when needed, in a profile:
 
 It is also repeated as the **last message of every model call** — after the
 conversation and after any tool results — because that is where recency actually
-lands. Card confirmations and error relays have the most tool output in front of
-them and were the flattest replies before this. That trailing copy travels as a
+lands. Card confirmations, error relays and strategy/guide answers have the most
+tool output in front of them and were the flattest replies before this. That trailing copy travels as a
 bracketed scheduler note in a `user`-role message, not a `system` one: the
 gpt-oss chat template hoists every system message into the instructions header
 at the top of the prompt, which is exactly the burial the repetition exists to

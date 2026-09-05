@@ -23,6 +23,7 @@ from .get_pending import handle as get_pending
 from .get_run import handle as get_run
 from .get_schedule import handle as get_schedule
 from .list_bosses import handle as list_bosses
+from .list_fixed import handle as list_fixed
 from .propose_add import handle as propose_add
 from .propose_cancel import handle as propose_cancel
 from .propose_change_fixed import handle as propose_change_fixed
@@ -39,6 +40,7 @@ _READ = {
     "list_bosses": list_bosses,
     "get_boss_strategy": get_boss_strategy,
     "get_pending": get_pending,
+    "list_fixed": list_fixed,
 }
 
 _WRITE = {

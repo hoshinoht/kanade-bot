@@ -84,6 +84,13 @@
                   <label class="field"><span>Time</span>
                     <input name="time" value="{{ row.time }}" size="6" class="mono">
                   </label>
+                  <label class="field field--grow"><span>Home channel</span>
+                    <select name="channel_id">
+                      {% for channel in channels %}
+                      <option value="{{ channel.id }}"{% if channel.id|string == row.channel_id|string %} selected{% endif %}>{{ channel.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
                   <label class="field field--grow"><span>Note</span>
                     <input name="note" value="{{ row.note or '' }}">
                   </label>

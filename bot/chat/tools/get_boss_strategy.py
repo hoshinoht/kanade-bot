@@ -13,7 +13,7 @@ def _difficulty(ctx: ToolContext, value: object) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise ToolError("Difficulty must be a prefix or full difficulty name.")
+        return None
     key = value.strip().lower()
     if key in ctx.bot.bosses.difficulties:
         return key
@@ -57,6 +57,6 @@ def handle(ctx: ToolContext, args: dict) -> str:
     if knowledge is None:
         raise ToolError("Boss strategy knowledge is unavailable right now.")
     try:
-        return knowledge.render(BossReference(reference.short, difficulty))
+        return knowledge.render(BossReference(reference.short, difficulty), include_sources=False)
     except BossKnowledgeError:
         raise ToolError(f"No checked-in strategy guide is available for {boss.full}.") from None

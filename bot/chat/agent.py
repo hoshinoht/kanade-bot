@@ -777,7 +777,18 @@ class ChatPilot:
         conversation = self.build_conversation(message, channel_id, overlay)
         intent = strategy.route_strategy_intent(text, self.bot.bosses)
         if intent.kind == "unresolved":
-            result = Generation(reply=intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY)
+            log.info(
+                "chat: strategy intent unresolved for %r (refs=%d) in channel %s",
+                text[:120],
+                len(intent.references),
+                channel_id,
+            )
+            result = await self._rewrite_fixed(
+                conversation,
+                context,
+                overlay,
+                intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY,
+            )
         else:
             result = await self.generate(
                 conversation,
@@ -1188,6 +1199,46 @@ class ChatPilot:
         result.latency_ms = int((time.monotonic() - started) * 1000)
         return result
 
+    async def _rewrite_fixed(
+        self,
+        conversation: list[dict[str, str]],
+        context: tools.ToolContext,
+        role_overlay: str,
+        fixed: str,
+    ) -> Generation:
+        """Say a fixed strategy meaning in voice. Never raises; falls back to fixed."""
+        started = time.monotonic()
+        result = Generation(rounds=1)
+        rewrite = (
+            "Say this in your own voice (identity + default behaviour + active "
+            "reply style), preserving its meaning exactly. You may add one small "
+            f"in-character touch and nothing else: {fixed!r}"
+        )
+        try:
+            response = await asyncio.wait_for(
+                self._chat(
+                    [*conversation, {"role": "user", "content": rewrite}],
+                    False,
+                    context,
+                    role_overlay,
+                ),
+                timeout=self.settings.chat_pilot_timeout,
+            )
+            content, _calls = _message_text(response)
+            result.reply = self._tidy(_member_facing(content)) or fixed
+            prompt, completion = _usage(response)
+            result.add_usage(prompt, completion)
+        except TimeoutError:
+            result.error = f"no answer within {self.settings.chat_pilot_timeout:.0f}s"
+            result.reply = fixed
+            log.warning("chat: fixed rewrite timed out, using static reply")
+        except Exception as exc:  # noqa: BLE001 - chat must never break the bot
+            result.error = f"{type(exc).__name__}: {exc}"
+            result.reply = fixed
+            log.exception("chat: fixed rewrite failed, using static reply")
+        result.latency_ms = int((time.monotonic() - started) * 1000)
+        return result
+
     def _finalize_write_reply(self, result: Generation) -> None:
         """Replace unresolved write claims with the tool's outcome."""
         for outcome in reversed(result.outcomes):
@@ -1366,6 +1417,12 @@ class ChatPilot:
         # Tool execution independently rejects writes on read-only turns.
         offered = (tools.read_tools() if context.read_only else tools.TOOLS) if with_tools else []
         outgoing = self._budgeted_messages(messages, offered, role_overlay)
+        log.debug(
+            "chat: model %s think=%r tools=%d",
+            self.settings.chat_pilot_model,
+            self.settings.chat_think,
+            len(offered),
+        )
         return await self.client().chat(
             model=self.settings.chat_pilot_model,
             messages=outgoing,
@@ -1375,7 +1432,7 @@ class ChatPilot:
                 "temperature": self.settings.chat_pilot_temperature,
             },
             keep_alive=-1,
-            think=self.settings.think,
+            think=self.settings.chat_think,
             **({"tools": offered} if with_tools else {}),
         )
 

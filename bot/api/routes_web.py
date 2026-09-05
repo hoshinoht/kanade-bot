@@ -875,6 +875,7 @@ async def web_fixed_edit(request: Request, bot: Bot, caller: Caller, fixed_id: s
         "time": str(form.get("time") or "") or None,
         "note": form.get("note") if form.get("note") is not None else None,
         "participants": people or None,
+        "channel_id": str(form.get("channel_id") or "") or None,
     }
     try:
         row = await service.update_fixed(bot, fixed_id, **changes)

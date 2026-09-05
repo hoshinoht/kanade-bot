@@ -26,6 +26,8 @@ _HOW_TO_MECHANICS_RE = re.compile(
     re.IGNORECASE,
 )
 _TARGET_SPLIT_RE = re.compile(r"\s*(?:,|/|&|\+|\band\b)\s*", re.IGNORECASE)
+#: Discord markup must not split targets: a role mention `<@&id>` contains `&`.
+_MENTION_RE = re.compile(r"<[@#][&!#]?\d+>|<a?:\w+:\d+>")
 _ACTION_CONTINUATION_RE = re.compile(
     r"^(?:avoid|parry|dodge|survive|handle|deal\s+with|learn|understand|reveal|ignore)\b",
     re.IGNORECASE,
@@ -64,7 +66,8 @@ def _coordinated_segments(text: str, table: BossTable) -> list[str] | None:
     as a target list: partial retrieval is worse than asking the member to
     clarify.
     """
-    pieces = _TARGET_SPLIT_RE.split(text)
+    cleaned = _MENTION_RE.sub(" ", text)
+    pieces = _TARGET_SPLIT_RE.split(cleaned)
     segments = [piece.strip(" ?!.") for piece in pieces if piece.strip(" ?!.")]
     if len(segments) < 2:
         return None

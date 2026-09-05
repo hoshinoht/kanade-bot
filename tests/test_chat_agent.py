@@ -558,6 +558,42 @@ async def test_strategy_context_overflow_blocks_the_model(chat_bot, chat_seeded)
     assert agent._client.calls == []
 
 
+async def test_unresolved_strategy_rewrites_fixed_meaning_in_voice(chat_bot, chat_seeded):
+    agent = pilot(chat_bot, says("Senpai~ which boss do you mean?"))
+
+    result = (await agent.offer(message(chat_bot, "@bot tips for Zakum"))).answered
+
+    assert result is not None
+    assert result.reply == "Senpai~ which boss do you mean?"
+    assert len(agent._client.calls) == 1
+    assert "tools" not in agent._client.calls[0]
+    assert result.tool_calls == []
+    assert result.rounds == 1
+
+
+async def test_unresolved_rewrite_falls_back_to_fixed_on_empty(chat_bot, chat_seeded):
+    from bot.chat.strategy import STRATEGY_CLARIFICATION_REPLY
+
+    agent = pilot(chat_bot, says("   "))
+    result = (await agent.offer(message(chat_bot, "@bot tips for Zakum"))).answered
+
+    assert result is not None
+    assert result.reply == STRATEGY_CLARIFICATION_REPLY
+
+
+async def test_unresolved_rewrite_falls_back_to_fixed_on_error(chat_bot, chat_seeded):
+    from bot.chat.strategy import STRATEGY_NARROW_REPLY
+
+    agent = pilot(chat_bot, ConnectionError("down"))
+    result = (
+        await agent.offer(message(chat_bot, "@bot guide for FA, Kalos, Seren, and Lotus"))
+    ).answered
+
+    assert result is not None
+    assert result.reply == STRATEGY_NARROW_REPLY
+    assert "ConnectionError" in (result.error or "")
+
+
 async def test_tools_are_offered_on_every_round_but_the_last(chat_bot, chat_seeded):
     agent = pilot(chat_bot, *[wants("get_schedule", week="this")] * MAX_TOOL_ROUNDS)
     await agent.offer(message(chat_bot))
@@ -890,7 +926,7 @@ def test_request_budget_trims_only_prior_history_and_counts_schema_and_reserve(c
 
     agent = pilot(chat_bot, says("unused"))
     current = {"role": "user", "content": "kanon: current question"}
-    chat_bot.settings.ollama_num_ctx = 5200
+    chat_bot.settings.ollama_num_ctx = 4800
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "old " * 200},
@@ -903,8 +939,8 @@ def test_request_budget_trims_only_prior_history_and_counts_schema_and_reserve(c
     assert [item["role"] for item in outgoing] == ["system", "user", "user"]
     assert outgoing[1] == current
     schemas = json.dumps(tools.TOOLS, ensure_ascii=False, default=str, separators=(",", ":"))
-    assert estimate_messages(outgoing) + estimate_tokens(schemas) + 1024 <= 5200
-    chat_bot.settings.ollama_num_ctx = 4800
+    assert estimate_messages(outgoing) + estimate_tokens(schemas) + 1024 <= 4800
+    chat_bot.settings.ollama_num_ctx = 4000
     with pytest.raises(ContextBudgetError):
         agent._budgeted_messages(
             [{"role": "system", "content": "system"}, current], tools.TOOLS, ""

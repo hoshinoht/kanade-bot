@@ -67,3 +67,13 @@ def test_route_strategy_requires_a_narrower_list_after_three_bosses(bosses):
 
     assert result.kind == "unresolved"
     assert result.reply == STRATEGY_NARROW_REPLY
+
+
+def test_role_mention_does_not_split_strategy_targets(bosses):
+    """`<@&id>` contains `&`; it must not split the target list."""
+    result = route_strategy_intent(
+        "<@&1543538821671424092>  guide for FA, Kalos, Seren, and Lotus", bosses
+    )
+
+    assert result.kind == "unresolved"
+    assert result.reply == STRATEGY_NARROW_REPLY
