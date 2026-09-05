@@ -120,3 +120,21 @@ def test_a_blank_think_falls_back_to_the_default_level():
     """
     assert make(ollama_think="").think == "low"
     assert make().think == "low"
+
+
+def test_chat_think_falls_back_to_shared_think_by_default():
+    assert make().chat_think == "low"
+    assert make(ollama_think="off").chat_think is False
+    assert make(chat_pilot_think="").chat_think == "low"
+
+
+def test_chat_think_overrides_shared_think_independently():
+    settings = make(ollama_think="low", chat_pilot_think="medium")
+    assert settings.think == "low"
+    assert settings.chat_think == "medium"
+    assert make(ollama_think="low", chat_pilot_think="OFF").chat_think is False
+
+
+def test_bad_chat_think_is_rejected_at_startup():
+    with pytest.raises(ValidationError):
+        make(chat_pilot_think="ultra")

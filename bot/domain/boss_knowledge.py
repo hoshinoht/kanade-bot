@@ -185,7 +185,12 @@ class BossKnowledgeBase:
         except KeyError as exc:
             raise BossKnowledgeError(f"no knowledge document for {short!r}") from exc
 
-    def render(self, reference: BossReference | str, difficulty: str | None = None) -> str:
+    def render(
+        self,
+        reference: BossReference | str,
+        difficulty: str | None = None,
+        include_sources: bool = True,
+    ) -> str:
         """Return local Markdown for one boss, with no generated or fetched facts."""
         if isinstance(reference, BossReference):
             if difficulty is not None and difficulty != reference.difficulty:
@@ -227,7 +232,8 @@ class BossKnowledgeBase:
                 lines.extend((f"### {self.table.difficulty_name(letter)}", note))
         if document.notes:
             lines.extend(("", "## Notes", *(f"- {note}" for note in document.notes)))
-        lines.extend(("", "## Sources", *(f"- {source}" for source in document.sources)))
+        if include_sources:
+            lines.extend(("", "## Sources", *(f"- {source}" for source in document.sources)))
         return "\n".join(lines)
 
     markdown = render

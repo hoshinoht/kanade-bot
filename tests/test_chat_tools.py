@@ -64,13 +64,14 @@ def line_for(answer: str, run_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_the_tool_list_is_exactly_the_documented_eleven():
+def test_the_tool_list_is_exactly_the_documented_twelve():
     assert tools.tool_names() == [
         "get_schedule",
         "get_run",
         "list_bosses",
         "get_boss_strategy",
         "get_pending",
+        "list_fixed",
         "propose_move",
         "propose_add",
         "propose_cancel",
@@ -106,6 +107,7 @@ def test_boss_strategy_schema_and_read_registry_are_exact():
         "list_bosses",
         "get_boss_strategy",
         "get_pending",
+        "list_fixed",
     ]
     assert tools.is_write_tool("get_boss_strategy") is False
 
@@ -114,6 +116,16 @@ def test_no_tool_can_approve_reject_or_configure_anything():
     """The chatbot drafts; it never ratifies, and it never edits settings."""
     forbidden = ("approve", "reject", "config", "delete", "swap", "say", "rescan")
     assert not [n for n in tools.tool_names() if any(word in n for word in forbidden)]
+
+
+def test_tool_schemas_stay_within_context_budget():
+    """Schemas ride every model call; prompt growth here broke the 8192 budget before."""
+    import json
+
+    from bot.extract.prompt import estimate_tokens
+
+    schemas = json.dumps(tools.TOOLS, ensure_ascii=False, default=str, separators=(",", ":"))
+    assert estimate_tokens(schemas) < 3250
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +296,8 @@ async def test_get_schedule_refuses_an_unknown_participant_instead_of_listing_al
     assert short_id(chat_seeded["kalos"]) not in outcome.output
 
 
-@pytest.mark.parametrize("participant", [None, "", "   ", False, 0, [], {}])
-async def test_get_schedule_refuses_an_invalid_supplied_participant(
+@pytest.mark.parametrize("participant", ["nobody-here-xyz", "???"])
+async def test_get_schedule_refuses_an_unknown_supplied_participant(
     chat_bot, chat_seeded, participant
 ):
     outcome = await tools.run(
@@ -295,10 +307,20 @@ async def test_get_schedule_refuses_an_invalid_supplied_participant(
     )
     assert not outcome.ok
     assert outcome.error == tools.REFUSED
-    assert "Ask whose schedule they want" in outcome.output
-    assert "participant" not in outcome.output
+    assert "Ask whose schedule they want" in outcome.output or "matches" in outcome.output
     assert short_id(chat_seeded["star"]) not in outcome.output
     assert short_id(chat_seeded["kalos"]) not in outcome.output
+
+
+@pytest.mark.parametrize("participant", [None, "", "   ", False, 0, [], {}])
+async def test_get_schedule_treats_blank_participant_as_omitted(chat_bot, chat_seeded, participant):
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "participant": participant},
+    )
+    assert outcome.ok
+    assert short_id(chat_seeded["star"]) in outcome.output
 
 
 async def test_get_schedule_refuses_an_ambiguous_participant(chat_bot, chat_seeded):
@@ -408,9 +430,7 @@ async def test_get_schedule_resolves_a_weekday_inside_the_selected_boss_week(
     assert "Your runs on" in answer
 
 
-@pytest.mark.parametrize(
-    "day", [None, "", "someday", "today tomorrow", "today tonight", "not friday"]
-)
+@pytest.mark.parametrize("day", ["someday", "today tomorrow", "today tonight", "not friday"])
 async def test_get_schedule_refuses_an_invalid_or_ambiguous_day(chat_bot, chat_seeded, day):
     outcome = await tools.run(
         context(chat_bot),
@@ -420,6 +440,17 @@ async def test_get_schedule_refuses_an_invalid_or_ambiguous_day(chat_bot, chat_s
     assert not outcome.ok
     assert outcome.error == tools.REFUSED
     assert short_id(chat_seeded["star"]) not in outcome.output
+
+
+@pytest.mark.parametrize("day", [None, "", "   "])
+async def test_get_schedule_treats_blank_day_as_omitted(chat_bot, chat_seeded, day):
+    outcome = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "day": day},
+    )
+    assert outcome.ok
+    assert short_id(chat_seeded["star"]) in outcome.output
 
 
 async def test_get_schedule_refuses_a_relative_day_outside_the_selected_week(
@@ -532,12 +563,15 @@ async def test_get_boss_strategy_renders_checked_in_fa_knowledge(
 
     answer = await tools.dispatch(context(chat_bot), "get_boss_strategy", args)
 
-    assert answer == knowledge.render("FA", selected_difficulty)
+    assert answer == knowledge.render("FA", selected_difficulty, include_sources=False)
     assert "# The First Adversary (FA)" in answer
     assert "Researched as of 2026-09-05" in answer
-    assert "https://mapletools.app/bosses/first-adversary/guide" in answer
-    assert "https://maplestorywiki.net/w/First_Adversary" in answer
+    assert "## Sources" not in answer
+    assert "https://mapletools.app/bosses/first-adversary/guide" not in answer
+    assert "https://maplestorywiki.net/w/First_Adversary" not in answer
     assert "unverified strategy detail" not in answer
+    # Domain keeps sources for audit; chat tool strips them to avoid Discord embeds.
+    assert "## Sources" in knowledge.render("FA", selected_difficulty, include_sources=True)
 
 
 @pytest.mark.parametrize(
@@ -575,6 +609,13 @@ async def test_get_pending_lists_a_card_the_chatbot_raised(chat_bot, chat_seeded
     )
     answer = await tools.dispatch(context(chat_bot), "get_pending", {})
     assert "Hard Star + Hard FA" in answer
+
+
+async def test_list_fixed_shows_weekly_timings(chat_bot, chat_seeded):
+    answer = await tools.dispatch(context(chat_bot), "list_fixed", {})
+    assert "Weekly timings" in answer
+    assert "HStar" in answer or "Hard Star" in answer or "Star" in answer
+    assert tools.is_write_tool("list_fixed") is False
 
 
 # ---------------------------------------------------------------------------

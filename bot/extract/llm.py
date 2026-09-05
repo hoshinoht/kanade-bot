@@ -120,6 +120,11 @@ class Extractor:
             self._client = None
 
     async def _chat(self, messages: list[dict[str, str]]) -> Any:
+        log.debug(
+            "extract: model %s think=%r",
+            self.settings.ollama_model,
+            self.settings.think,
+        )
         return await asyncio.wait_for(
             self.client().chat(
                 model=self.settings.ollama_model,

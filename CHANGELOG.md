@@ -4,6 +4,33 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## Unreleased
 
+## 4.3.0
+
+**Added**
+
+- Separate `CHAT_PILOT_THINK` reasoning for speech, falling back to
+  `OLLAMA_THINK`, with per-call model+think logging.
+- `list_fixed` read-only chat tool for recurring weekly timings.
+- Portal Fixed edit can shift a timing's home channel to another watched
+  channel (live runs follow; unwatched channels rejected).
+- Strategy narrow/clarify replies are rewritten in voice in one no-tools
+  round, falling back to the static meaning on failure.
+
+**Changed**
+
+- Strategy answers rewrite the guide in voice (opener, bullets, closer),
+  copy boss names exactly, and omit source URLs / Sources (no Discord
+  embeds; the tool strips them, the domain keeps them for audit).
+- Scheduler four-sentence limit applies to scheduler replies only;
+  strategy/guides use compact bullets and are exempt.
+- Chat tool schemas trimmed for context budget, with a schema-token guard.
+
+**Fixed**
+
+- `get_schedule` treats blank day/participant/difficulty as omitted and
+  reports bad `scope` with its valid values.
+- Role mentions (`<@&id>`) no longer split multi-boss strategy targets.
+- Proposal cards say NOT DONE until ✅ (no more "move's done").
 
 ## 4.2.0
 
