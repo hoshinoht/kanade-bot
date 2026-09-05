@@ -1587,6 +1587,7 @@ class BossBot(discord.Client):
         mention_users: list[str],
         reference_id: int | None = None,
         mention_roles: list[str] | None = None,
+        silent: bool = False,
     ) -> discord.Message | None:
         """Send a plain message, notifying exactly the ids the caller lists.
 
@@ -1595,6 +1596,8 @@ class BossBot(discord.Client):
         and a role ping would reach a guild rather than a party. `/say` is the
         one caller that passes any, because an admin writing a role mention by
         hand means it.
+
+        ``silent`` sends with no pings. Placeholders must use it.
         """
         if self.quiet_mode:
             content, mention_users, mention_roles = formatting.quiet_line(content), [], []
@@ -1602,7 +1605,7 @@ class BossBot(discord.Client):
             # See `_post`: `none()` also clears `replied_user`, and this is the
             # path that actually replies to a message.
             discord.AllowedMentions.none()
-            if self.quiet_mode
+            if self.quiet_mode or silent
             else discord.AllowedMentions(
                 # `@everyone` / `@here` is never allowed, from any caller: it is
                 # the one mention nobody can opt out of.
@@ -1631,3 +1634,26 @@ class BossBot(discord.Client):
         except discord.HTTPException:
             log.exception("failed to post decline notice")
             return None
+
+    async def edit_plain(self, placeholder: discord.Message, content: str) -> bool:
+        """Silent edit of a staging placeholder. Never pings."""
+        if self.quiet_mode:
+            content = formatting.quiet_line(content)
+        try:
+            await placeholder.edit(
+                content=content, allowed_mentions=discord.AllowedMentions.none()
+            )
+            return True
+        except (discord.HTTPException, OSError, TimeoutError):
+            log.warning("could not edit the staging placeholder", exc_info=True)
+            return False
+
+    @staticmethod
+    async def delete_placeholder(placeholder: object) -> None:
+        delete = getattr(placeholder, "delete", None)
+        if delete is None:
+            return
+        try:
+            await delete()
+        except Exception:  # noqa: BLE001 - a leftover placeholder is cosmetic
+            log.debug("could not delete the staging placeholder", exc_info=True)

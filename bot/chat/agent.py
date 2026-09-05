@@ -31,7 +31,7 @@ from bot.infrastructure.watch import origin_ids
 
 from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages, estimate_tokens, prompt_budget
-from . import followup, gate, persona, strategy, tools
+from . import followup, gate, persona, progress, strategy, tools
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -344,6 +344,21 @@ def _schedule_defaults(
 #: up even though the tool refused to post one.
 _WRITE_CLAIM_RE = re.compile(r"card'?s up|\bposted\b|✅", re.IGNORECASE)
 
+#: A new-card claim on a turn that posted nothing (read tools only): the model
+#: embroidered e.g. "A proposal card is ready" onto a plain listing. Narrow on
+#: purpose: general ✅ guidance ("hit ✅ on the old cards") must survive.
+_READ_FALSE_CLAIM_RE = re.compile(
+    r"proposal card is ready|card (is|’s|'s) (ready|up|posted)|a card (has been )?posted",
+    re.IGNORECASE,
+)
+
+
+def _strip_false_card_claim(text: str) -> str:
+    """Drop lines claiming a new card when none was posted, keeping the facts."""
+    kept = [line for line in (text or "").splitlines() if not _READ_FALSE_CLAIM_RE.search(line)]
+    stripped = "\n".join(kept).strip()
+    return stripped if stripped else (text or "").strip()
+
 
 def _looks_like_clarification(text: str) -> bool:
     """Whether a refused-turn reply already asks the member a question.
@@ -464,28 +479,24 @@ class ChatPilot:
         self.settings = bot.settings
         self._client = client
         self._own_client = client is None
-        #: Shared injectable monotonic clock for expiring context.
         self._clock = clock
         self.limiter = RateLimiter(bot.chat_rate_count, bot.chat_rate_window_s)
-        #: Guild-wide limiter uses one shared key.
         self.global_limiter = RateLimiter(bot.chat_pool_count, bot.chat_pool_window_s)
-        # Load persisted allowances; spent windows remain ephemeral.
         self.apply_limits()
-        #: Prevent concurrent answers within one channel.
         self._busy: set[str] = set()
-        #: Suppress repeated rate-limit messages until each window resets.
         self._told_until: dict[str, float] = {}
-        #: Rate-limit rejection follow-ups per channel.
         self._followed_up_at: dict[str, float] = {}
         self._history: dict[str, deque[ChatTurn]] = {}
-        #: Channel -> the last card its write tools posted. One slot each.
         self._focus: dict[str, Focus] = {}
-        #: Re-anchor expired exchanges when members reply to them.
         self._anchors: dict[str, Anchor] = {}
-        #: Cache referenced-message authors.
         self._replied: dict[str, str | None] = {}
         self._persona: persona.Persona | None = None
         self._default_behaviour: persona.Persona | None = None
+        self._staging: tuple[progress.StagingLines, dict[str, progress.StagingLines]] = (
+            progress.DEFAULT_LINES,
+            {},
+        )
+        self.reload_staging()
 
     # -- wiring ------------------------------------------------------------
     def client(self) -> Any:
@@ -527,6 +538,84 @@ class ChatPilot:
 
     def default_behaviour_text(self) -> str:
         return self.default_behaviour_source().text
+
+    def reload_staging(self) -> None:
+        from pathlib import Path
+
+        candidates: list[str] = []
+        primary = getattr(self.settings, "staging_path", None)
+        if primary:
+            candidates.append(str(primary))
+        candidates.extend(
+            [
+                "config/personas/behaviours/staging.yaml",
+                "config/personas/staging.yaml",
+                "config/staging.yaml",
+                "config/presets/staging.yaml",
+            ]
+        )
+        seen: set[str] = set()
+        for path in candidates:
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            if not Path(path).is_file():
+                continue
+            try:
+                default, profiles = progress.load_staging_config(path)
+            except progress.StagingConfigError:
+                log.warning("ignoring invalid staging config at %s", path, exc_info=True)
+                continue
+            profiles_dir = getattr(self.settings, "staging_profiles_dir", None)
+            dirs = (
+                [profiles_dir, "config/personas/behaviours/profiles/staging"]
+                if profiles_dir
+                else []
+            )
+            for staging_dir in dict.fromkeys(str(d) for d in dirs if d):
+                profiles = progress.load_profile_dir(
+                    staging_dir, default, profiles
+                )
+            orphans, _ = progress.staging_linkage(profiles, behaviour_plugins.available())
+            if orphans:
+                log.warning("staging profiles with no reply profile: %s", ", ".join(orphans))
+            self._staging = (default, profiles)
+            return
+        self._staging = (progress.DEFAULT_LINES, {})
+
+    def active_profile_name(self, author: Any = None, author_id: Any = None) -> str | None:
+        uid = str(getattr(author, "id", author_id or ""))
+        role_ids = [getattr(r, "id", r) for r in (getattr(author, "roles", None) or ())]
+        resolution = behaviour_plugins.resolve(
+            selected=self.bot.repo.get_reply_style(uid) if uid else None,
+            selectable=behaviour_plugins.decode_catalog(
+                self.bot.repo.get_config(behaviour_plugins.SELECTABLE_CONFIG_KEY, "[]")
+            ),
+            assignments=behaviour_plugins.decode(
+                self.bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
+            ),
+            role_ids=role_ids,
+            default_instructions=self.default_behaviour_text(),
+        )
+        if resolution.source == "default" or resolution.effective == "default":
+            return None
+        return resolution.effective
+
+    def staging_lines(self, author: Any = None, author_id: Any = None) -> progress.StagingLines:
+        return progress.load_profile_staging(
+            self._staging, self.active_profile_name(author, author_id)
+        )
+
+    def staging_table(self, author: Any = None) -> dict[str, str]:
+        lines = self.staging_lines(author)
+        return {
+            "schedule": lines.schedule,
+            "guide": lines.guide,
+            "guide_named": lines.guide_named,
+            "guide-named": lines.guide_named,
+            "write": lines.write,
+            "generic": lines.generic,
+        }
 
     def reload_persona(self) -> str:
         self._persona = None
@@ -776,29 +865,39 @@ class ChatPilot:
         overlay = self.reply_overlay(message.author)
         conversation = self.build_conversation(message, channel_id, overlay)
         intent = strategy.route_strategy_intent(text, self.bot.bosses)
-        if intent.kind == "unresolved":
-            log.info(
-                "chat: strategy intent unresolved for %r (refs=%d) in channel %s",
-                text[:120],
-                len(intent.references),
-                channel_id,
-            )
-            result = await self._rewrite_fixed(
-                conversation,
-                context,
-                overlay,
-                intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY,
-            )
-        else:
-            result = await self.generate(
-                conversation,
-                context,
-                overlay,
-                strategy_references=intent.references,
-            )
+        staging = progress.placeholder_for(
+            text, self.bot.bosses, bot_user_id, self_role_id,
+            staging=self.staging_table(message.author),
+        )
+        placeholder = await self._post_placeholder(message, staging)
+        async with self._typing(message.channel):
+            if intent.kind == "unresolved":
+                log.info(
+                    "chat: strategy intent unresolved for %r (refs=%d) in channel %s",
+                    text[:120],
+                    len(intent.references),
+                    channel_id,
+                )
+                result = await self._rewrite_fixed(
+                    conversation,
+                    context,
+                    overlay,
+                    intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY,
+                )
+            else:
+                result = await self.generate(
+                    conversation,
+                    context,
+                    overlay,
+                    strategy_references=intent.references,
+                )
 
         reply = result.reply or FAILURE_REPLY
-        posted = await self._post(message, reply)
+        if result.reply:
+            await self._discard_placeholder(placeholder)
+            posted = await self._post(message, reply)
+        else:
+            posted = await self._fail_placeholder(placeholder, message, reply)
         # Remember only successfully posted conversation.
         asked = ChatTurn("user", self._speaker(author_id, text), str(message.id))
         # The posted id supports re-anchoring and de-duplication.
@@ -919,7 +1018,6 @@ class ChatPilot:
         channel: Any,
         card_message_id: int | str | None,
     ) -> Generation:
-        """Generate and post a read-only clarification question."""
         channel_id = str(origin_ids(channel)[0])
         context = tools.ToolContext(
             bot=self.bot,
@@ -933,11 +1031,13 @@ class ChatPilot:
         get_member = getattr(guild, "get_member", None)
         member = get_member(int(author_id)) if get_member is not None else None
         overlay = self.reply_overlay(member)
-        # gpt-oss hoists system turns, so provenance travels in a synthetic user turn.
         conversation = self.assemble(
             [*self.history(channel_id), ChatTurn("user", question)], channel_id, overlay
         )
-        result = await self.generate(conversation, context, overlay)
+        generic = self.staging_lines(member, author_id).generic
+        placeholder = await self._post_channel_placeholder(channel, card_message_id, generic)
+        async with self._typing(channel):
+            result = await self.generate(conversation, context, overlay)
         log.info(
             "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
             channel_id,
@@ -947,18 +1047,33 @@ class ChatPilot:
             f" [{result.error}]" if result.error else "",
         )
         if result.reply:
+            await self._discard_placeholder(placeholder)
             posted = await self._post_followup(channel, result.reply, author_id, card_message_id)
-            # Keep the note beside its reply so later references retain context.
             note = followup.memory_note(self.bot, amendments)
             posted_id = str(getattr(posted, "id", "") or "") or None
             asked = ChatTurn("user", note)
             answered = ChatTurn("assistant", result.reply, posted_id)
             self.remember(channel_id, asked)
             self.remember(channel_id, answered)
-            # Re-anchor late replies to this clarification.
             self.anchor(posted_id, channel_id, asked, answered)
+        elif placeholder is not None:
+            await self._discard_placeholder(placeholder)
         self._record(card_message_id, channel_id, author_id, question, result.reply, result)
         return result
+
+    async def _post_channel_placeholder(
+        self, channel: Any, ref_id: Any, generic: str | None = None
+    ) -> Any:
+        try:
+            return await self.bot.post_plain(
+                channel,
+                generic or progress.STAGING_GENERIC,
+                [],
+                reference_id=int(ref_id) if ref_id else None,
+                silent=True,
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
     async def _post_followup(
         self,
@@ -967,13 +1082,6 @@ class ChatPilot:
         author_id: str,
         card_message_id: int | str | None,
     ) -> Any:
-        """Post the question as a reply to the card itself. Never raises.
-
-        Through ``post_plain`` like every other chat reply, so the allow-list is
-        the asker and nobody else, ``@everyone`` is impossible, and quiet mode is
-        applied -- though quiet mode has already stopped this in
-        :func:`bot.chat.followup.scope`.
-        """
         try:
             return await self.bot.post_plain(
                 channel,
@@ -981,7 +1089,7 @@ class ChatPilot:
                 [str(author_id)],
                 reference_id=int(card_message_id) if card_message_id else None,
             )
-        except Exception:  # noqa: BLE001 - a failed question is not worth a crash
+        except Exception:  # noqa: BLE001
             log.exception("chat: could not post the rejection follow-up")
             return None
 
@@ -1192,6 +1300,7 @@ class ChatPilot:
             log.exception("chat: the model call failed")
         self._finalize_write_reply(result)
         self._finalize_strategy_reply(result, strategy_references)
+        self._finalize_read_claim(result)
         if result.reply:
             result.reply = self._tidy(_member_facing(result.reply))
         result.created = list(context.created)
@@ -1257,6 +1366,13 @@ class ChatPilot:
                 )
                 result.reply = self._tidy(status + (f" {detail}" if detail else ""))
             return
+
+    def _finalize_read_claim(self, result: Generation) -> None:
+        """Strip new-card embroidery from turns that posted nothing."""
+        if result.posted or any(o.posted for o in result.outcomes):
+            return
+        if result.reply and _READ_FALSE_CLAIM_RE.search(result.reply):
+            result.reply = _strip_false_card_claim(result.reply)
 
     @staticmethod
     def _strategy_grounded(result: Generation, references: Sequence[BossReference]) -> bool:
@@ -1478,7 +1594,6 @@ class ChatPilot:
 
     # -- discord -----------------------------------------------------------
     async def _post(self, message: Any, content: str) -> Any:
-        """Post a reply through the allow-listed plain-message path."""
         try:
             return await self.bot.post_plain(
                 message.channel,
@@ -1486,9 +1601,60 @@ class ChatPilot:
                 [str(message.author.id)],
                 reference_id=getattr(message, "id", None),
             )
-        except Exception:  # noqa: BLE001 - a failed reply is not worth a crash
+        except Exception:  # noqa: BLE001
             log.exception("chat: could not post the reply")
             return None
+
+    async def _post_placeholder(self, message: Any, staging: str) -> Any:
+        try:
+            return await self.bot.post_plain(
+                message.channel,
+                staging,
+                [],
+                reference_id=getattr(message, "id", None),
+                silent=True,
+            )
+        except Exception:  # noqa: BLE001
+            log.debug("chat: could not post the staging placeholder", exc_info=True)
+            return None
+
+    async def _discard_placeholder(self, placeholder: Any) -> None:
+        if placeholder is None:
+            return
+        delete = getattr(self.bot, "delete_placeholder", None)
+        if delete is not None:
+            with contextlib.suppress(Exception):
+                await delete(placeholder)
+                return
+        with contextlib.suppress(Exception):
+            await placeholder.delete()
+
+    async def _fail_placeholder(self, placeholder: Any, message: Any, reply: str) -> Any:
+        if placeholder is not None:
+            edit = getattr(self.bot, "edit_plain", None)
+            if edit is not None:
+                with contextlib.suppress(Exception):
+                    if await edit(placeholder, reply):
+                        return placeholder
+            with contextlib.suppress(Exception):
+                from discord import AllowedMentions
+
+                await placeholder.edit(content=reply, allowed_mentions=AllowedMentions.none())
+                return placeholder
+        return await self._post(message, reply)
+
+    @staticmethod
+    @contextlib.asynccontextmanager
+    async def _typing(channel: Any):
+        typing = getattr(channel, "typing", None)
+        if typing is None:
+            yield
+            return
+        try:
+            async with typing():
+                yield
+        except Exception:  # noqa: BLE001
+            yield
 
     @staticmethod
     async def _react(message: Any, emoji: str) -> None:

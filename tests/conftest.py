@@ -143,7 +143,13 @@ def chat_bot(repo: Repo, bosses: BossTable):
     """A stand-in client configured for the chatbot; see `tests/chat_support.py`."""
     from .chat_support import build_bot
 
-    return build_bot(repo, bosses)
+    bot = build_bot(repo, bosses)
+    bot.settings.staging_path = str(
+        REPO_ROOT / "config" / "personas" / "behaviours" / "staging.example.yaml"
+    )
+    bot.settings.staging_profiles_dir = ""
+    bot.chat.reload_staging()
+    return bot
 
 
 @pytest.fixture
