@@ -137,7 +137,7 @@ def test_without_an_audience_everyone_is_still_rendered_as_a_mention():
 def test_a_card_carries_the_allow_list_it_was_built_with(roster):
     run = {
         "id": "r",
-        "bosses": ["HStar"],
+        "bosses": ["HMaleficStar"],
         "datetime": datetime(2026, 8, 31, 21, 30, tzinfo=TZ),
         "participants": ["1", "2", "3"],
         "status": "planned",
@@ -210,7 +210,7 @@ def test_a_test_ping_looks_real_but_summons_nobody(auth, fake_bot, seeded):
 def test_a_decline_still_summons_the_rest_of_the_run(roster):
     run = {
         "id": "r",
-        "bosses": ["HStar", "HFA"],
+        "bosses": ["HMaleficStar", "HFA"],
         "datetime": datetime(2026, 8, 31, 21, 30, tzinfo=TZ),
         "participants": ["1", "2", "3"],
         "status": "planned",

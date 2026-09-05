@@ -184,7 +184,7 @@ async def test_the_new_and_remove_weekly_cards_are_opposites(chat_bot, chat_seed
     rows = {row["bosses"][0]: row for row in proposals(chat_bot)}
 
     new_name, new_value = formatting.proposal_line(rows["HBellona"], None, TZ)
-    gone_name, gone_value = formatting.proposal_line(rows["HStar"], None, TZ)
+    gone_name, gone_value = formatting.proposal_line(rows["HMaleficStar"], None, TZ)
 
     assert new_name.startswith("new weekly") and gone_name.startswith("remove weekly")
     assert "stop scheduling" not in new_value

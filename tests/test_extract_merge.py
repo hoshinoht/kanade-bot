@@ -40,9 +40,9 @@ def test_the_worked_example_three_messages_are_one_new_run():
     # "we doing our nstar and ncarl tonight?" -> "9pm i reach kk early" -> "amend to 9:45pm"
     merged = merge(
         [
-            a("add", bosses=["NStar", "NCarling"], day="tonight", evidence=["401"], q=True),
-            a("add", bosses=["NStar", "NCarling"], time="9pm", evidence=["402"]),
-            a("add", bosses=["NStar", "NCarling"], time="9:45pm", evidence=["403"]),
+            a("add", bosses=["NMaleficStar", "NCarling"], day="tonight", evidence=["401"], q=True),
+            a("add", bosses=["NMaleficStar", "NCarling"], time="9pm", evidence=["402"]),
+            a("add", bosses=["NMaleficStar", "NCarling"], time="9:45pm", evidence=["403"]),
         ],
         ORDER,
     )
@@ -56,8 +56,8 @@ def test_the_worked_example_three_messages_are_one_new_run():
 def test_a_burst_that_ends_on_a_question_stays_a_question():
     merged = merge(
         [
-            a("move", bosses=["HStar"], day="wed", evidence=["401"]),
-            a("move", bosses=["HStar"], time="9:30pm", evidence=["402"], q=True),
+            a("move", bosses=["HMaleficStar"], day="wed", evidence=["401"]),
+            a("move", bosses=["HMaleficStar"], time="9:30pm", evidence=["402"], q=True),
         ],
         ORDER,
     )
@@ -67,7 +67,7 @@ def test_a_burst_that_ends_on_a_question_stays_a_question():
 def test_different_runs_are_never_folded_together():
     merged = merge(
         [
-            a("move", bosses=["HStar", "HFA"], day="wed", evidence=["401"]),
+            a("move", bosses=["HMaleficStar", "HFA"], day="wed", evidence=["401"]),
             a("move", bosses=["HCarling", "XKalos"], day="wed", evidence=["401"]),
         ],
         ORDER,
@@ -78,7 +78,7 @@ def test_different_runs_are_never_folded_together():
 def test_a_settled_shared_time_settles_every_move_for_that_day():
     merged = merge(
         [
-            a("move", bosses=["HStar"], day="wed", time="9:30pm", q=False),
+            a("move", bosses=["HMaleficStar"], day="wed", time="9:30pm", q=False),
             a("move", bosses=["HCarling"], day="wed", q=True),
         ]
     )
@@ -91,8 +91,8 @@ def test_a_settled_shared_time_settles_every_move_for_that_day():
 def test_different_kinds_about_the_same_run_stay_apart():
     merged = merge(
         [
-            a("move", bosses=["HStar"], day="wed", evidence=["401"]),
-            a("cancel", bosses=["HStar"], evidence=["402"]),
+            a("move", bosses=["HMaleficStar"], day="wed", evidence=["401"]),
+            a("cancel", bosses=["HMaleficStar"], evidence=["402"]),
         ],
         ORDER,
     )
@@ -124,7 +124,7 @@ def test_one_person_changing_their_mind_is_one_answer_the_latest():
 def test_participants_and_bosses_are_unioned():
     merged = merge(
         [
-            a("add", bosses=["NStar"], people=["1"], evidence=["401"]),
+            a("add", bosses=["NMaleficStar"], people=["1"], evidence=["401"]),
             a("add", bosses=["NCarling"], people=["2"], evidence=["402"]),
         ],
         ORDER,
@@ -134,8 +134,8 @@ def test_participants_and_bosses_are_unioned():
 
     same = merge(
         [
-            a("add", bosses=["NStar"], people=["1"], evidence=["401"]),
-            a("add", bosses=["NStar"], people=["2"], evidence=["402"]),
+            a("add", bosses=["NMaleficStar"], people=["1"], evidence=["401"]),
+            a("add", bosses=["NMaleficStar"], people=["2"], evidence=["402"]),
         ],
         ORDER,
     )
@@ -145,8 +145,8 @@ def test_participants_and_bosses_are_unioned():
 def test_a_null_field_never_overwrites_a_stated_one():
     merged = merge(
         [
-            a("move", bosses=["HStar"], day="wed", time="9:30pm", evidence=["401"]),
-            a("move", bosses=["HStar"], evidence=["403"]),
+            a("move", bosses=["HMaleficStar"], day="wed", time="9:30pm", evidence=["401"]),
+            a("move", bosses=["HMaleficStar"], evidence=["403"]),
         ],
         ORDER,
     )
@@ -156,8 +156,8 @@ def test_a_null_field_never_overwrites_a_stated_one():
 def test_the_highest_confidence_in_the_group_is_kept():
     merged = merge(
         [
-            a("move", bosses=["HStar"], day="wed", conf=0.6, evidence=["401"]),
-            a("move", bosses=["HStar"], time="9pm", conf=0.9, evidence=["402"]),
+            a("move", bosses=["HMaleficStar"], day="wed", conf=0.6, evidence=["401"]),
+            a("move", bosses=["HMaleficStar"], time="9pm", conf=0.9, evidence=["402"]),
         ],
         ORDER,
     )
@@ -168,7 +168,7 @@ def test_output_is_ordered_by_when_the_evidence_appeared():
     merged = merge(
         [
             a("cancel", bosses=["XKalos"], evidence=["404"]),
-            a("move", bosses=["HStar"], evidence=["401"]),
+            a("move", bosses=["HMaleficStar"], evidence=["401"]),
         ],
         ORDER,
     )
@@ -181,7 +181,10 @@ def test_merging_nothing_gives_nothing():
 
 def test_merging_without_a_message_order_still_works():
     merged = merge(
-        [a("move", bosses=["HStar"], day="wed"), a("move", bosses=["HStar"], time="9pm")]
+        [
+            a("move", bosses=["HMaleficStar"], day="wed"),
+            a("move", bosses=["HMaleficStar"], time="9pm"),
+        ]
     )
     assert len(merged) == 1 and merged[0].time_ref == "9pm"
 

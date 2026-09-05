@@ -197,7 +197,7 @@ def lead_portrait(bosses: list[str], table: Any | None) -> Path | None:
     """The portrait for the first boss on a card, if the guild has one.
 
     One thumbnail per message, and the first boss is the one the message is
-    named after -- "HStar + HFA" is the star run.
+    named after -- "HMaleficStar + HFA" is the star run.
     """
     if table is None or not bosses:
         return None
@@ -217,6 +217,26 @@ def lead_entry_art(bosses: list[str], table: Any | None) -> Path | None:
         return None
     getter = getattr(table, "entry_art_for", None)
     return getter(bosses[0]) if getter else None
+
+
+def lead_colour(bosses: list[str], table: Any | None, default: int) -> int:
+    """The lead boss's catalog colour for a card stripe, or ``default``.
+
+    The lead-boss rule :func:`lead_portrait` follows: one stripe per message,
+    and the message is named after its first boss. Duck-typed on the table
+    for the same reason -- a caller with no table keeps the old kind colour
+    rather than an error, and so does a boss with no colour in the catalog.
+    """
+    if table is None or not bosses:
+        return default
+    split = getattr(table, "split", None)
+    if split is None:
+        return default
+    parts = split(bosses[0])
+    if parts is None:
+        return default
+    colour = parts[1].guide_colour
+    return colour if colour is not None else default
 
 
 def boss_detail(bosses: list[str], table: Any | None) -> str:
@@ -298,7 +318,7 @@ def day_of_card(
         content=content,
         fields=fields,
         footer=REACT_HINT,
-        colour=COLOUR_DAY_OF,
+        colour=lead_colour(lead["bosses"], table, COLOUR_DAY_OF),
         thumbnail_path=lead_portrait(lead["bosses"], table),
         # The one card that gets the big picture. This is the morning's single
         # "here is tonight" message: it is read once, it is the thing somebody
@@ -350,7 +370,9 @@ def countdown_card(
         content=content,
         description="\n".join(detail),
         footer=REACT_HINT if pending else None,
-        colour=COLOUR_COUNTDOWN if pending or out else COLOUR_ALL_SET,
+        colour=lead_colour(
+            run["bosses"], table, COLOUR_COUNTDOWN if pending or out else COLOUR_ALL_SET
+        ),
         thumbnail_path=lead_portrait(run["bosses"], table),
         mention_users=list(who.mentioned) if who else [],
     )

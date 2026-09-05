@@ -8,14 +8,13 @@ from collections.abc import Sequence
 from datetime import datetime, time
 from typing import TYPE_CHECKING
 
-import dateparser
 import discord
 from discord import app_commands
 
 from bot import behaviour_plugins
 from bot.domain.bosses import BossParseError
 from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
-from bot.domain.timeutil import local_naive, utcnow
+from bot.domain.timeutil import utcnow
 from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
@@ -856,25 +855,34 @@ async def amend(interaction: discord.Interaction, run_id: str, to: str) -> None:
         await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         return
 
-    parsed = dateparser.parse(
-        to,
-        settings={
-            "RELATIVE_BASE": local_naive(utcnow(), bot.tz),
-            "PREFER_DATES_FROM": "future",
-            "TIMEZONE": bot.settings.tz,
-            "RETURN_AS_TIMEZONE_AWARE": True,
-        },
-    )
-    if parsed is None:
-        await interaction.response.send_message(
-            f"❌ Couldn't understand `{to}`. Try `wed 21:30` or `2026-09-02 21:30`.",
-            ephemeral=True,
-        )
+    from bot.api import service as api_service
+    from bot.api.errors import ApiError as ApiParseError
+
+    try:
+        parsed = api_service.parse_when(bot, to)
+    except ApiParseError as exc:
+        await interaction.response.send_message(f"❌ {exc.message}", ephemeral=True)
         return
 
     old_at = run["datetime"]
     new_ws = week_start(parsed, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
-    bot.repo.set_run_datetime(run["id"], parsed, new_ws)
+    existing = bot.repo.run_move_conflict(run, new_ws)
+    if existing is not None:
+        await interaction.response.send_message(
+            f"❌ That weekly already has a run in the week of "
+            f"{formatting.local_day(new_ws, bot.tz)} "
+            f"(`#{short_id(existing['id'])}` on "
+            f"{formatting.local_day(existing['datetime'], bot.tz)} "
+            f"{formatting.local_time(existing['datetime'], bot.tz)}). "
+            "Edit that existing run instead, or keep this move within its current boss week.",
+            ephemeral=True,
+        )
+        return
+    try:
+        bot.repo.set_run_datetime(run["id"], parsed, new_ws)
+    except ValueError as exc:
+        await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        return
     if run["status"] in ("confirmed", "at_risk"):
         # Moving a run invalidates the old attendance answers.
         bot.repo.set_run_status(run["id"], "planned")

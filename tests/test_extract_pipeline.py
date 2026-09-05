@@ -44,7 +44,7 @@ def runs(repo: Repo) -> list[dict]:
     ids = [
         repo.create_run(
             WEEK,
-            ["HStar", "HFA"],
+            ["HMaleficStar", "HFA"],
             kl(2026, 8, 31, 21, 30),
             [MY, ALVIN, PRIYA],
             channel_id=CHANNEL,
@@ -91,7 +91,9 @@ def test_a_move_is_resolved_and_matched(runs):
     result = plan(
         Extraction(
             amendments=[
-                amendment(bosses=["HStar", "HFA"], day_ref="wed", time_ref="9:30pm", confidence=0.9)
+                amendment(
+                    bosses=["HMaleficStar", "HFA"], day_ref="wed", time_ref="9:30pm", confidence=0.9
+                )
             ]
         ),
         runs,
@@ -104,7 +106,7 @@ def test_a_move_is_resolved_and_matched(runs):
 def test_a_day_with_no_time_takes_the_time_the_run_already_has(runs):
     """Nobody proposed changing the time, so it is not TBD -- it is 21:30."""
     result = plan(
-        Extraction(amendments=[amendment(bosses=["HStar"], day_ref="wed", confidence=0.9)]),
+        Extraction(amendments=[amendment(bosses=["HMaleficStar"], day_ref="wed", confidence=0.9)]),
         runs,
     )
     (entry,) = result.planned
@@ -118,7 +120,7 @@ def test_a_day_with_no_time_that_was_asked_stays_a_question(runs):
     result = plan(
         Extraction(
             amendments=[
-                amendment(bosses=["HStar"], day_ref="wed", confidence=0.9, is_question=True)
+                amendment(bosses=["HMaleficStar"], day_ref="wed", confidence=0.9, is_question=True)
             ]
         ),
         runs,
@@ -130,7 +132,7 @@ def test_a_day_with_no_time_that_was_asked_stays_a_question(runs):
 
 def test_anything_below_the_confidence_floor_is_dropped(runs):
     result = plan(
-        Extraction(amendments=[amendment(bosses=["HStar"], day_ref="wed", confidence=0.4)]),
+        Extraction(amendments=[amendment(bosses=["HMaleficStar"], day_ref="wed", confidence=0.4)]),
         runs,
         min_confidence=0.6,
     )
@@ -139,7 +141,7 @@ def test_anything_below_the_confidence_floor_is_dropped(runs):
 
 def test_a_move_that_matches_no_run_is_dropped(runs):
     result = plan(
-        Extraction(amendments=[amendment(bosses=["NStar"], day_ref="wed", confidence=0.9)]),
+        Extraction(amendments=[amendment(bosses=["NMaleficStar"], day_ref="wed", confidence=0.9)]),
         runs,
     )
     assert not result.planned
@@ -151,7 +153,11 @@ def test_an_add_that_matches_no_run_is_kept_it_creates_one(runs):
         Extraction(
             amendments=[
                 amendment(
-                    "add", bosses=["NStar"], day_ref="tonight", time_ref="9:45pm", confidence=0.9
+                    "add",
+                    bosses=["NMaleficStar"],
+                    day_ref="tonight",
+                    time_ref="9:45pm",
+                    confidence=0.9,
                 )
             ]
         ),
@@ -223,7 +229,9 @@ def test_a_split_payload_only_names_bosses_the_run_actually_has(runs):
 def test_a_sub_marks_the_person_asking_as_the_one_dropping_out(runs):
     result = plan(
         Extraction(
-            amendments=[amendment("sub", bosses=["HStar"], participants=[MY], confidence=0.9)]
+            amendments=[
+                amendment("sub", bosses=["HMaleficStar"], participants=[MY], confidence=0.9)
+            ]
         ),
         runs,
     )
@@ -234,9 +242,15 @@ def test_rsvps_and_proposals_are_separated(runs):
     result = plan(
         Extraction(
             amendments=[
-                amendment(bosses=["HStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9),
                 amendment(
-                    "rsvp", bosses=["HStar"], participants=[PRIYA], rsvp="yes", confidence=0.9
+                    bosses=["HMaleficStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9
+                ),
+                amendment(
+                    "rsvp",
+                    bosses=["HMaleficStar"],
+                    participants=[PRIYA],
+                    rsvp="yes",
+                    confidence=0.9,
                 ),
             ]
         ),
@@ -396,7 +410,7 @@ def test_a_proposal_becomes_one_row_and_one_card(wired, repo: Repo, runs):
         Extraction(
             amendments=[
                 amendment(
-                    bosses=["HStar", "HFA"],
+                    bosses=["HMaleficStar", "HFA"],
                     day_ref="wed",
                     time_ref="9:30pm",
                     confidence=0.9,
@@ -429,7 +443,7 @@ def test_one_card_covers_every_amendment_in_the_burst(wired, repo: Repo, runs):
     stub = StubExtractor(
         Extraction(
             amendments=[
-                amendment("cancel", bosses=["HStar", "HFA"], confidence=0.9),
+                amendment("cancel", bosses=["HMaleficStar", "HFA"], confidence=0.9),
                 amendment("cancel", bosses=["HCarling", "XKalos"], confidence=0.9),
             ]
         )
@@ -448,7 +462,7 @@ def test_an_rsvp_is_applied_straight_away_with_no_card(wired, repo: Repo, runs):
             amendments=[
                 amendment(
                     "rsvp",
-                    bosses=["HStar", "HFA"],
+                    bosses=["HMaleficStar", "HFA"],
                     participants=[PRIYA],
                     rsvp="yes",
                     confidence=0.9,
@@ -470,7 +484,11 @@ def test_a_decline_from_chat_tells_the_rest_of_the_party(wired, repo: Repo, runs
         Extraction(
             amendments=[
                 amendment(
-                    "rsvp", bosses=["HStar", "HFA"], participants=[MY], rsvp="no", confidence=0.9
+                    "rsvp",
+                    bosses=["HMaleficStar", "HFA"],
+                    participants=[MY],
+                    rsvp="no",
+                    confidence=0.9,
                 )
             ]
         )
@@ -489,7 +507,7 @@ def test_an_rsvp_from_someone_not_on_the_run_is_ignored(wired, repo: Repo, runs)
             amendments=[
                 amendment(
                     "rsvp",
-                    bosses=["HStar", "HFA"],
+                    bosses=["HMaleficStar", "HFA"],
                     participants=[KANON],
                     rsvp="yes",
                     confidence=0.9,
@@ -504,7 +522,7 @@ def test_an_rsvp_from_someone_not_on_the_run_is_ignored(wired, repo: Repo, runs)
 def test_a_low_confidence_amendment_is_logged_and_never_posted(wired, repo: Repo, runs):
     rows = [store(repo, "101", MY, ANCHOR, "maybe wed?")]
     stub = StubExtractor(
-        Extraction(amendments=[amendment(bosses=["HStar"], day_ref="wed", confidence=0.3)])
+        Extraction(amendments=[amendment(bosses=["HMaleficStar"], day_ref="wed", confidence=0.3)])
     )
     plan = asyncio.run(Pipeline(wired, extractor=stub).extract(CHANNEL, rows))
 
@@ -530,7 +548,7 @@ def test_every_call_lands_in_the_extraction_log(wired, repo: Repo, runs):
     stub = StubExtractor(
         Extraction(
             amendments=[
-                amendment(bosses=["HStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9)
+                amendment(bosses=["HMaleficStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9)
             ]
         )
     )
@@ -548,7 +566,7 @@ def test_the_prompt_carries_this_channels_runs_and_roster(wired, repo: Repo, run
     asyncio.run(Pipeline(wired, extractor=stub).extract(CHANNEL, rows))
 
     (system, user) = stub.calls[0]
-    assert "HStar + HFA" in user["content"]
+    assert "HMaleficStar + HFA" in user["content"]
     assert "<@1> = MY" in user["content"]
     assert "[101]" in user["content"]
     assert "evidence" in system["content"].lower()
@@ -570,7 +588,7 @@ def test_rescan_can_be_asked_not_to_post(wired, repo: Repo, runs):
     stub = StubExtractor(
         Extraction(
             amendments=[
-                amendment(bosses=["HStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9)
+                amendment(bosses=["HMaleficStar"], day_ref="wed", time_ref="9:30pm", confidence=0.9)
             ]
         )
     )
@@ -610,7 +628,7 @@ def move_extraction(time_ref="9:30pm"):
     return Extraction(
         amendments=[
             amendment(
-                bosses=["HStar", "HFA"],
+                bosses=["HMaleficStar", "HFA"],
                 day_ref="wed",
                 time_ref=time_ref,
                 confidence=0.9,
@@ -644,7 +662,7 @@ def test_a_second_card_for_a_new_run_is_keyed_on_its_bosses(wired, repo: Repo, r
             amendments=[
                 amendment(
                     "add",
-                    bosses=["NStar", "NCarling"],
+                    bosses=["NMaleficStar", "NCarling"],
                     day_ref="tonight",
                     time_ref=time_ref,
                     confidence=0.9,
@@ -721,7 +739,7 @@ def test_a_later_time_change_folds_into_the_new_run_it_is_about(runs):
             amendments=[
                 amendment(
                     "add",
-                    bosses=["NStar", "NCarling"],
+                    bosses=["NMaleficStar", "NCarling"],
                     day_ref="tonight",
                     time_ref="9pm",
                     confidence=0.9,
@@ -729,7 +747,7 @@ def test_a_later_time_change_folds_into_the_new_run_it_is_about(runs):
                 ),
                 amendment(
                     "move",
-                    bosses=["NStar", "NCarling"],
+                    bosses=["NMaleficStar", "NCarling"],
                     time_ref="9:45pm",
                     confidence=0.9,
                     evidence_message_ids=["403"],
@@ -751,7 +769,7 @@ def test_a_move_about_a_run_that_does_exist_is_never_folded(runs):
             amendments=[
                 amendment(
                     "add",
-                    bosses=["NStar"],
+                    bosses=["NMaleficStar"],
                     day_ref="tonight",
                     time_ref="9pm",
                     confidence=0.9,
@@ -759,7 +777,7 @@ def test_a_move_about_a_run_that_does_exist_is_never_folded(runs):
                 ),
                 amendment(
                     "move",
-                    bosses=["HStar", "HFA"],
+                    bosses=["HMaleficStar", "HFA"],
                     day_ref="wed",
                     time_ref="9:30pm",
                     confidence=0.9,
@@ -781,14 +799,14 @@ def test_an_earlier_move_is_not_folded_into_a_later_add(runs):
             amendments=[
                 amendment(
                     "move",
-                    bosses=["NStar"],
+                    bosses=["NMaleficStar"],
                     time_ref="9:45pm",
                     confidence=0.9,
                     evidence_message_ids=["401"],
                 ),
                 amendment(
                     "add",
-                    bosses=["NStar"],
+                    bosses=["NMaleficStar"],
                     day_ref="tonight",
                     time_ref="9pm",
                     confidence=0.9,
@@ -815,7 +833,7 @@ def test_a_sub_across_two_runs_becomes_one_candidate_each(runs):
             amendments=[
                 amendment(
                     "sub",
-                    bosses=["HStar", "HFA", "HCarling", "XKalos"],
+                    bosses=["HMaleficStar", "HFA", "HCarling", "XKalos"],
                     participants=[MY],
                     is_question=True,
                     confidence=0.8,
@@ -826,7 +844,7 @@ def test_a_sub_across_two_runs_becomes_one_candidate_each(runs):
     )
     assert len(result.planned) == 2
     assert [e.amendment.bosses for e in result.planned] == [
-        ["HStar", "HFA"],
+        ["HMaleficStar", "HFA"],
         ["HCarling", "XKalos"],
     ]
     assert [e.run["id"] for e in result.planned] == [runs[0]["id"], runs[1]["id"]]
@@ -837,7 +855,7 @@ def test_a_sub_about_one_run_stays_one_candidate(runs):
     result = plan(
         Extraction(
             amendments=[
-                amendment("sub", bosses=["HStar", "HFA"], participants=[MY], confidence=0.8)
+                amendment("sub", bosses=["HMaleficStar", "HFA"], participants=[MY], confidence=0.8)
             ]
         ),
         runs,
@@ -853,7 +871,7 @@ def test_a_sub_only_spans_the_runs_the_author_is_on(runs):
             amendments=[
                 amendment(
                     "sub",
-                    bosses=["HStar", "HFA", "HCarling", "XKalos"],
+                    bosses=["HMaleficStar", "HFA", "HCarling", "XKalos"],
                     participants=[KANON],
                     confidence=0.8,
                     evidence_message_ids=["7"],
@@ -877,7 +895,9 @@ def test_a_cancel_naming_two_runs_worth_of_bosses_cancels_both(runs):
     result = plan(
         Extraction(
             amendments=[
-                amendment("cancel", bosses=["HStar", "HFA", "HCarling", "XKalos"], confidence=0.9)
+                amendment(
+                    "cancel", bosses=["HMaleficStar", "HFA", "HCarling", "XKalos"], confidence=0.9
+                )
             ]
         ),
         runs,
@@ -916,7 +936,7 @@ def test_the_card_names_who_still_has_to_answer(runs):
     amendments = [
         {
             "kind": "move",
-            "bosses": ["HStar", "HFA"],
+            "bosses": ["HMaleficStar", "HFA"],
             "run_id": runs[0]["id"],
             "participants": [MY],
             "is_question": True,

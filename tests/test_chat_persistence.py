@@ -101,7 +101,7 @@ async def test_provider_rounds_and_full_tool_returns_are_preserved(chat_bot, cha
     ]
     (call,) = row["tool_calls"]
     assert call["round"] == 1
-    assert "Hard Star + Hard FA" in call["output"]
+    assert "Hard MaleficStar + Hard FA" in call["output"]
 
 
 async def test_a_refusal_is_recorded_as_a_refusal(chat_bot, chat_seeded):

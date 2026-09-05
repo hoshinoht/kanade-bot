@@ -20,12 +20,18 @@ from .rendering import run_line
 _RELATIVE_DAYS = {"today": 0, "tonight": 0, "tomorrow": 1, "tmr": 1, "tmrw": 1}
 
 
-def _boss_words(bot: Any, token: str) -> list[str]:
-    """The names a person might use for one canonical boss token."""
-    detail = bot.bosses.detail(token)
-    if detail is None:
-        return [token.lower()]
-    return [str(detail["short"]).lower(), str(detail["full"]).lower(), token.lower()]
+def _boss_shorts(bot: Any, tokens) -> set[str]:
+    """The boss keys a list of canonical tokens names, via the alias table.
+
+    Old spellings keep working because the table does: ``hstar`` still names
+    ``MaleficStar`` through the kept ``star`` alias, exactly as ``parse`` reads
+    it. Matching on whole words against the short/full/token strings alone
+    would lose those spellings the moment a key is renamed.
+    """
+    shorts: set[str] = set()
+    for token in tokens:
+        shorts.update(bot.bosses.names_in(token))
+    return shorts
 
 
 def _says(query: str, word: str) -> bool:
@@ -84,10 +90,11 @@ def resolve_run(bot: Any, query: str) -> dict:
         for run in bot.repo.list_runs(week_start=start)
         if run["status"] not in ("cancelled", "done")
     ]
+    named = set(bot.bosses.names_in(low))
     by_boss = [
         run
         for run in candidates
-        if any(_says(low, word) for token in run["bosses"] for word in _boss_words(bot, token))
+        if named and not _boss_shorts(bot, run["bosses"]).isdisjoint(named)
     ]
     named_day = bool(dates)
     if not by_boss and not named_day:
@@ -171,10 +178,11 @@ def resolve_fixed(bot: Any, query: str) -> dict:
 
     low = text.lower()
     candidates = bot.repo.list_fixed_runs()
+    named = set(bot.bosses.names_in(low))
     by_boss = [
         fixed
         for fixed in candidates
-        if any(_says(low, word) for token in fixed["bosses"] for word in _boss_words(bot, token))
+        if named and not _boss_shorts(bot, fixed["bosses"]).isdisjoint(named)
     ]
     if not by_boss:
         _no_weekly_for(bot, text, candidates)

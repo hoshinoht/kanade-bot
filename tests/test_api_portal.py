@@ -77,7 +77,7 @@ def test_every_page_renders_with_data(auth, seeded, path):
 def test_the_week_page_shows_the_rail_the_runs_and_the_tally(auth, seeded):
     body = auth.get("/").text
     assert 'class="rail"' in body
-    assert "HStar" in body and "XKalos" in body
+    assert "HMaleficStar" in body and "XKalos" in body
     assert "1/2 on" in body
     # The state as the portal writes it: its own drawing, then the word. The
     # emoji in front of it is Discord's and stays on Discord's cards.
@@ -101,8 +101,8 @@ def test_the_week_page_filters(auth, seeded):
     body = auth.get(f"/?channel={OTHER_CHANNEL}").text
     listing = body[body.index('<div id="days"') :]
     assert "XKalos" in listing
-    assert "HStar" not in listing
-    assert "HStar" in body  # still a pip on Monday
+    assert "HMaleficStar" not in listing
+    assert "HMaleficStar" in body  # still a pip on Monday
 
 
 def test_next_week_is_reachable_from_the_week_page(auth, seeded):
@@ -906,7 +906,7 @@ def test_the_bosses_page_lists_the_table_in_level_order(auth, seeded):
 
 def test_the_bosses_page_ticks_what_the_guild_runs(auth, seeded):
     body = auth.get("/bosses").text
-    assert "pill-toggle--on" in body  # HStar, HFA and XKalos have timings
+    assert "pill-toggle--on" in body  # HMaleficStar, HFA and XKalos have timings
     assert 'class="grid-bosses"' in body
     assert "11 bosses, 29 difficulties" in body
     # Guard the count, not the sentence around it -- the blurb is copy, and
@@ -932,13 +932,13 @@ def test_a_boss_with_no_hard_difficulty_offers_no_hard_pill(auth):
 
 def test_the_fixed_page_offers_the_grid_as_a_picker(auth, seeded):
     body = auth.get("/fixed").text
-    assert 'name="boss_tokens" value="HStar"' in body
+    assert 'name="boss_tokens" value="HMaleficStar"' in body
     assert "tap the difficulties this party runs" in body
 
 
 def test_the_editor_pre_ticks_the_bosses_a_timing_already_has(auth, seeded):
     body = " ".join(auth.get("/fixed").text.split())
-    assert 'value="HStar" checked' in body
+    assert 'value="HMaleficStar" checked' in body
     assert 'value="XSeren" checked' not in body
 
 
@@ -1064,7 +1064,7 @@ def test_the_inbox_reads_a_mention_as_a_name_not_a_snowflake(auth, fake_bot, see
     amendment = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="move",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         run_id=seeded["run_star"],
         new_datetime=kl(2026, 9, 2, 22, 0),
         participants=["1002"],
@@ -1114,7 +1114,7 @@ def test_a_new_run_has_no_old_time_to_move_away_from(fake_bot, seeded):
     added = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="add",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         run_id=seeded["run_star"],
         participants=["1002"],
         confidence=0.5,
@@ -1134,7 +1134,7 @@ def test_the_inbox_draws_the_arrow_only_for_a_move(auth, fake_bot, seeded):
     added = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="add",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         run_id=seeded["run_star"],
         participants=["1002"],
         confidence=0.5,
@@ -1161,7 +1161,7 @@ def weekly_card(fake_bot, seeded, **payload) -> dict:
     amendment = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="fix",
-        bosses=["HStar", "HFA"],
+        bosses=["HMaleficStar", "HFA"],
         participants=["1001", "1002"],
         confidence=0.8,
         evidence_msg_ids=[],
@@ -1237,7 +1237,7 @@ def test_a_weekly_with_no_night_falls_back_to_what_was_written(fake_bot, seeded)
     amendment = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="fix",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         participants=["1001"],
         confidence=0.4,
         evidence_msg_ids=[],
@@ -1254,7 +1254,7 @@ def test_the_inbox_names_a_weekly_change_for_what_it_is(auth, fake_bot, seeded):
     fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="fix",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         participants=["1001"],
         confidence=0.8,
         evidence_msg_ids=[],
@@ -1280,7 +1280,7 @@ def test_the_cards_one_chat_answer_raised_are_named_the_same_way(fake_bot, seede
     amendment = fake_bot.repo.create_amendment(
         week_start=seeded["week_start"],
         kind="fix",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         participants=["1001"],
         confidence=0.8,
         evidence_msg_ids=[],

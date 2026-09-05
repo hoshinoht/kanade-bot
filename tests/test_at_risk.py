@@ -33,7 +33,7 @@ CARD_ID = 900000000000000777
 def run(repo: Repo) -> dict:
     """A run everyone has ✅'d, with a morning card they reacted on."""
     run_id = repo.create_run(
-        WEEK, ["HStar", "HFA"], RUN_AT, PARTICIPANTS, channel_id=WATCHED_CHANNEL
+        WEEK, ["HMaleficStar", "HFA"], RUN_AT, PARTICIPANTS, channel_id=WATCHED_CHANNEL
     )
     for user_id in PARTICIPANTS:
         apply_reaction(repo, repo.get_run(run_id), user_id, EMOJI_YES, added=True)
@@ -142,7 +142,7 @@ def test_withdrawing_a_tick_is_not_a_retracted_decline(bot, repo, run):
 
 
 def at_risk_run(repo: Repo) -> dict:
-    run_id = repo.create_run(WEEK, ["HStar", "HFA"], RUN_AT, PARTICIPANTS)
+    run_id = repo.create_run(WEEK, ["HMaleficStar", "HFA"], RUN_AT, PARTICIPANTS)
     repo.set_rsvp(run_id, "1002", "no")
     repo.set_run_status(run_id, "at_risk")
     return repo.get_run(run_id)

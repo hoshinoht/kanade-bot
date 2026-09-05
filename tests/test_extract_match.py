@@ -24,7 +24,7 @@ def runs(repo: Repo) -> dict[str, dict]:
     made = {
         "hstar": repo.create_run(
             WEEK,
-            ["HStar", "HFA"],
+            ["HMaleficStar", "HFA"],
             kl(2026, 8, 31, 21, 30),
             [MY, ALVIN, PRIYA],
             channel_id=PARTY_CHANNEL,
@@ -38,7 +38,7 @@ def runs(repo: Repo) -> dict[str, dict]:
         ),
         "nstar": repo.create_run(
             WEEK,
-            ["NStar"],
+            ["NMaleficStar"],
             kl(2026, 9, 2, 22, 0),
             [KANON, NOVA],
             channel_id=OTHER_CHANNEL,
@@ -61,7 +61,7 @@ def amendment(**kwargs) -> Amendment:
 
 def test_named_bosses_pick_the_run_in_this_channel(runs):
     result = match_run(
-        amendment(bosses=["HStar", "HFA"]), channel_runs(runs, PARTY_CHANNEL), author_id=MY
+        amendment(bosses=["HMaleficStar", "HFA"]), channel_runs(runs, PARTY_CHANNEL), author_id=MY
     )
     assert result.run["id"] == runs["hstar"]["id"]
 
@@ -72,9 +72,11 @@ def test_a_partial_boss_overlap_still_matches(runs):
 
 
 def test_another_channels_run_is_never_matched(runs):
-    # "we doing our nstar tonight" said in the HStar channel is not kanon's NStar run.
+    # "we doing our nstar tonight" said in the HMaleficStar channel is not kanon's NMaleficStar run.
     result = match_run(
-        amendment(kind="add", bosses=["NStar"]), channel_runs(runs, PARTY_CHANNEL), author_id=MY
+        amendment(kind="add", bosses=["NMaleficStar"]),
+        channel_runs(runs, PARTY_CHANNEL),
+        author_id=MY,
     )
     assert result.run is None
     assert "bosses" in result.reason
@@ -125,7 +127,7 @@ def test_an_unbreakable_tie_is_reported_as_ambiguous(repo: Repo):
 
 def test_a_channel_with_no_runs_falls_back_to_the_guild(runs):
     result = match_run(
-        amendment(bosses=["NStar"]),
+        amendment(bosses=["NMaleficStar"]),
         channel_runs(runs, GENERAL),
         guild_runs=list(runs.values()),
         author_id=KANON,
@@ -152,12 +154,12 @@ def test_the_models_run_hint_wins_when_it_is_real(runs):
 def test_a_hint_at_a_run_with_none_of_those_bosses_is_refused(runs):
     """The model will happily point a move about one boss at another's run.
 
-    Live: `move · NBaldrix` was hinted at next week's HStar run and followed,
+    Live: `move · NBaldrix` was hinted at next week's HMaleficStar run and followed,
     which renamed somebody else's night. A hint is a hint, not an override.
     """
     hint = short_id(runs["xkalos"]["id"])
     result = match_run(
-        amendment(bosses=["HStar"], target_run_hint=f"#{hint}"),
+        amendment(bosses=["HMaleficStar"], target_run_hint=f"#{hint}"),
         channel_runs(runs, PARTY_CHANNEL),
     )
     assert result.run["id"] == runs["hstar"]["id"], "it falls back to scoring, which is right"
@@ -173,7 +175,7 @@ def test_a_hint_is_still_followed_when_no_bosses_are_named(runs):
 
 def test_a_made_up_run_hint_is_ignored(runs):
     result = match_run(
-        amendment(bosses=["HStar"], target_run_hint="#deadbeef"),
+        amendment(bosses=["HMaleficStar"], target_run_hint="#deadbeef"),
         channel_runs(runs, PARTY_CHANNEL),
     )
     assert result.run["id"] == runs["hstar"]["id"]
@@ -182,12 +184,12 @@ def test_a_made_up_run_hint_is_ignored(runs):
 def test_cancelled_runs_are_never_matched(repo: Repo, runs):
     repo.set_run_status(runs["hstar"]["id"], "cancelled")
     fresh = [repo.get_run(r["id"]) for r in channel_runs(runs, PARTY_CHANNEL)]
-    result = match_run(amendment(bosses=["HStar"]), fresh)
+    result = match_run(amendment(bosses=["HMaleficStar"]), fresh)
     assert result.run is None
 
 
 def test_with_no_runs_at_all_nothing_matches():
-    assert match_run(amendment(bosses=["HStar"]), [], []).run is None
+    assert match_run(amendment(bosses=["HMaleficStar"]), [], []).run is None
 
 
 @pytest.mark.parametrize("kind", ["move", "cancel", "otot", "split", "sub", "rsvp"])

@@ -173,7 +173,7 @@ def test_the_person_asking_is_never_their_own_volunteer():
 def test_a_sub_card_names_both_halves():
     amendment = {
         "kind": "sub",
-        "bosses": ["HStar"],
+        "bosses": ["HMaleficStar"],
         "participants": ["1001"],
         "payload": {"remove": ["1001"], "add": ["1002"]},
         "summary": None,
@@ -190,7 +190,7 @@ def test_a_sub_card_with_nobody_offering_just_proposes_the_removal():
     """No volunteer means the proposal is the "-1 for this week", not a job advert."""
     amendment = {
         "kind": "sub",
-        "bosses": ["HStar"],
+        "bosses": ["HMaleficStar"],
         "participants": ["1001"],
         "payload": {"remove": ["1001"], "add": []},
         "summary": None,
@@ -211,7 +211,7 @@ def test_approving_a_sub_applies_both_halves(repo, bosses):
     from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 
     week = kl(2026, 8, 27, 0, 0)
-    run_id = repo.create_run(week, ["HStar"], kl(2026, 8, 31, 21, 30), ["1001", "1002"])
+    run_id = repo.create_run(week, ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1001", "1002"])
     amendment_id = repo.create_amendment(
         week_start=week,
         kind="sub",
@@ -240,7 +240,7 @@ def test_a_sub_that_would_empty_the_run_is_refused(repo):
     from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 
     week = kl(2026, 8, 27, 0, 0)
-    run_id = repo.create_run(week, ["HStar"], kl(2026, 8, 31, 21, 30), ["1001"])
+    run_id = repo.create_run(week, ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1001"])
     amendment_id = repo.create_amendment(
         week_start=week, kind="sub", run_id=run_id, payload={"remove": ["1001"]}
     )

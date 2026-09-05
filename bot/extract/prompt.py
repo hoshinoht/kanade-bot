@@ -59,7 +59,7 @@ RULES
    `day_ref` / `time_ref`: "weds", "tmr", "tonight", "9:30pm", "930",
    "1030~11+pm", "at 11". If a field was not stated, use null. Never invent one.
 3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical
-   names from the BOSSES table, with their difficulty letter: HStar, XKalos,
+   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,
    NBaldrix. List EXACTLY the bosses the messages name -- if they say "the
    hcarl" and RUNS has HCarling + XKalos together, the amendment is about
    HCarling only. If a message names a boss with no difficulty ("limbo",
@@ -135,22 +135,22 @@ EDGE CASES
   `rsvp: "no"` for the second author.
 
 WORKED EXAMPLE
-RUNS:  #a1  HStar + HFA  Mon 21:30  <@11>(A) <@22>(B)
+RUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)
 [1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?
 [2] [.. Sun] [B <@22>] okay for wed
 [3] [.. Sun] [A <@11>] and we add our nstar tmr 930?
 ->
 {"amendments":[
- {"kind":"move","bosses":["HStar","HFA"],"day_ref":"wed","time_ref":null,
+ {"kind":"move","bosses":["HMaleficStar","HFA"],"day_ref":"wed","time_ref":null,
   "participants":["11"],"rsvp":null,"is_question":true,"confidence":0.8,
   "evidence_message_ids":["1"],"target_run_hint":"#a1"},
  {"kind":"rsvp","bosses":[],"day_ref":"wed","time_ref":null,"participants":["22"],
   "rsvp":"yes","is_question":false,"confidence":0.9,"evidence_message_ids":["2"],
   "target_run_hint":"#a1"},
- {"kind":"add","bosses":["NStar"],"day_ref":"tmr","time_ref":"930",
+ {"kind":"add","bosses":["NMaleficStar"],"day_ref":"tmr","time_ref":"930",
   "participants":["11"],"rsvp":null,"is_question":true,"confidence":0.8,
   "evidence_message_ids":["3"],"target_run_hint":null}],
- "summary":"HStar+HFA proposed for Wed, B agrees; NStar proposed for tomorrow 930"}
+ "summary":"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930"}
 
 `confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it
 was proposed and not yet agreed, below 0.5 when you are unsure it is scheduling

@@ -16,7 +16,7 @@ from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 #: Bound diagnostic chat history.
 CHAT_INTERACTIONS_KEPT = 500
@@ -277,6 +277,71 @@ def _migrate_9_to_10(conn: sqlite3.Connection) -> None:
         log.info("schema v9->v10: members gained reply_style")
 
 
+#: v10 -> v11: the `Star` boss key becomes `MaleficStar`.
+_RENAMED_TOKENS = {"NStar": "NMaleficStar", "HStar": "HMaleficStar"}
+
+
+def _rewrite_tokens(items: list) -> list:
+    return [_RENAMED_TOKENS.get(item, item) for item in items]
+
+
+def _migrate_10_to_11(conn: sqlite3.Connection) -> None:
+    """v10 -> v11: stored `NStar`/`HStar` tokens become `NMaleficStar`/`HMaleficStar`.
+
+    The old spellings keep parsing (``star`` stays an alias), so this only
+    rewrites what is already stored: the ``bosses`` JSON lists on runs, fixed
+    runs and amendments, plus the ``bosses`` array a ``split`` card keeps in
+    its amendment payload. Anything else holding boss text (extraction logs,
+    audit lines, rescan reports) is history and is left alone.
+    """
+    tables = (("runs", "id"), ("fixed_runs", "id"), ("amendments", "id"))
+    existing_tables = {
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )
+    }
+    rewritten = 0
+    for table, key in tables:
+        if table not in existing_tables:
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "bosses" not in columns:
+            continue
+        for row in conn.execute(f"SELECT {key}, bosses FROM {table}"):
+            try:
+                items = json.loads(row["bosses"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(items, list) or not any(item in _RENAMED_TOKENS for item in items):
+                continue
+            conn.execute(
+                f"UPDATE {table} SET bosses = ? WHERE {key} = ?",
+                (json.dumps(_rewrite_tokens(items)), row[key]),
+            )
+            rewritten += 1
+    if "amendments" in existing_tables:
+        for row in conn.execute("SELECT id, payload FROM amendments"):
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            bosses = payload.get("bosses")
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(bosses, list)
+                or not any(item in _RENAMED_TOKENS for item in bosses)
+            ):
+                continue
+            payload["bosses"] = _rewrite_tokens(bosses)
+            conn.execute(
+                "UPDATE amendments SET payload = ? WHERE id = ?",
+                (json.dumps(payload), row["id"]),
+            )
+            rewritten += 1
+    log.info("schema v10->v11: rewrote %d stored boss list(s) to MaleficStar", rewritten)
+
+
 def _json_list(value: str | None) -> list:
     if not value:
         return []
@@ -343,7 +408,7 @@ class Repo:
         if existing_tables and "schema_version" not in existing_tables:
             raise RuntimeError(
                 f"database at {self.path} has no schema version; refusing to treat existing "
-                "application tables as a fresh v10 database"
+                "application tables as a fresh v11 database"
             )
         self._conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
         row = self._conn.execute("SELECT version FROM schema_version").fetchone()
@@ -353,7 +418,7 @@ class Repo:
             if application_tables:
                 raise RuntimeError(
                     f"database at {self.path} has no schema version; refusing to treat existing "
-                    "application tables as a fresh v10 database"
+                    "application tables as a fresh v11 database"
                 )
             self._conn.executescript(SCHEMA_SQL)
             self._conn.execute("DELETE FROM schema_version")
@@ -375,6 +440,11 @@ class Repo:
             log.info("migrating database %s: v9 -> v10", self.path)
             _migrate_9_to_10(self._conn)
             self._conn.execute("UPDATE schema_version SET version = 10")
+            current = 10
+        if current == 10:
+            log.info("migrating database %s: v10 -> v11", self.path)
+            _migrate_10_to_11(self._conn)
+            self._conn.execute("UPDATE schema_version SET version = 11")
         self._conn.executescript(SCHEMA_SQL)
 
     def close(self) -> None:
@@ -735,11 +805,34 @@ class Repo:
         self._conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
         self._run_changed(run_id)
 
+    def run_move_conflict(self, run: dict, week_start: datetime) -> dict | None:
+        """The other run blocking a cross-week move, if any.
+
+        Each weekly timing has at most one run per boss week
+        (``runs_fixed_week``). Moving a run into a week that already holds its
+        weekly's run would violate that, so callers check this first and refuse
+        with a message naming the blocker instead of hitting the database
+        constraint. Standalone runs (``fixed_run_id IS NULL``) never conflict.
+        """
+        fixed_run_id = run.get("fixed_run_id")
+        if not fixed_run_id:
+            return None
+        existing = self.run_for_fixed(str(fixed_run_id), week_start)
+        if existing is not None and existing["id"] != run["id"]:
+            return existing
+        return None
+
     def set_run_datetime(self, run_id: str, run_at: datetime, week_start: datetime) -> None:
-        self._conn.execute(
-            "UPDATE runs SET datetime = ?, week_start = ? WHERE id = ?",
-            (to_iso(run_at), to_iso(week_start), run_id),
-        )
+        try:
+            self._conn.execute(
+                "UPDATE runs SET datetime = ?, week_start = ? WHERE id = ?",
+                (to_iso(run_at), to_iso(week_start), run_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            # Only the (fixed_run_id, week_start) uniqueness can fail here.
+            # Raise a domain error so callers can refuse the move instead of
+            # leaking a 500 with the raw constraint name.
+            raise ValueError("that weekly already has a run in that boss week") from exc
 
     def set_run_channel(self, run_id: str, channel_id: int | str | None) -> None:
         self._conn.execute(

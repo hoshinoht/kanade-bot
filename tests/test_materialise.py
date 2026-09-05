@@ -26,7 +26,7 @@ MON_LATE = kl(2026, 8, 31, 22, 0)
 def add_mon_run(repo: Repo, channel_id: int | None = 900) -> int:
     return repo.add_fixed_run(
         "1",
-        ["HStar", "HFA"],
+        ["HMaleficStar", "HFA"],
         weekday=0,
         time_hhmm="21:30",
         participants=["1", "2", "3"],
@@ -52,7 +52,7 @@ def materialise(repo: Repo, now=None):
 def add_oneoff(
     repo: Repo,
     at=MON_LATE,
-    bosses=("HStar", "HFA"),
+    bosses=("HMaleficStar", "HFA"),
     channel_id: int | None = 900,
     participants=("1", "9"),
     status: str = "planned",
@@ -82,7 +82,7 @@ def test_fixed_runs_become_runs_at_the_right_local_time(repo: Repo):
     assert len(created) == 2
     runs = repo.list_runs(week_start=WEEK)
     assert [r["datetime"] for r in runs] == [MON, TUE]
-    assert runs[0]["bosses"] == ["HStar", "HFA"]
+    assert runs[0]["bosses"] == ["HMaleficStar", "HFA"]
     assert runs[0]["status"] == "planned"
     assert runs[0]["source"] == "fixed"
     assert runs[0]["participants"] == ["1", "2", "3"]
@@ -225,7 +225,7 @@ def test_a_run_whose_night_has_passed_is_not_adopted(repo: Repo):
 
 
 def test_a_different_boss_set_is_not_adopted(repo: Repo):
-    run_id = add_oneoff(repo, bosses=("HStar",))  # the weekly is HStar + HFA
+    run_id = add_oneoff(repo, bosses=("HMaleficStar",))  # the weekly is HMaleficStar + HFA
     add_mon_run(repo)
 
     assert len(materialise(repo)) == 1
@@ -249,7 +249,7 @@ def test_a_run_another_timing_already_produced_is_not_adopted(repo: Repo):
     add_tue_run(repo, channel_id=900)
     repo.update_fixed_run(
         next(f["id"] for f in repo.list_fixed_runs() if "HCarling" in f["bosses"]),
-        bosses=["HStar", "HFA"],
+        bosses=["HMaleficStar", "HFA"],
     )
     created = materialise(repo)
 
@@ -274,7 +274,12 @@ def test_fixed_add_now_adopts_where_it_used_to_duplicate(repo: Repo):
     """
     run_id = add_oneoff(repo)
     fixed_id = repo.add_fixed_run(
-        "1", ["HStar", "HFA"], weekday=0, time_hhmm="21:30", participants=["1", "2"], channel_id=900
+        "1",
+        ["HMaleficStar", "HFA"],
+        weekday=0,
+        time_hhmm="21:30",
+        participants=["1", "2"],
+        channel_id=900,
     )
     materialise(repo)
 

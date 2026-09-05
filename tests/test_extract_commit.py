@@ -27,7 +27,7 @@ MY, ALVIN, PRIYA, KANON = "1", "2", "3", "4"
 def run(repo: Repo) -> dict:
     run_id = repo.create_run(
         WEEK,
-        ["HStar", "HFA"],
+        ["HMaleficStar", "HFA"],
         kl(2026, 8, 31, 21, 30),
         [MY, ALVIN, PRIYA],
         channel_id=CHANNEL,
@@ -95,8 +95,8 @@ def test_a_new_run_naming_nobody_may_be_confirmed_by_a_role_member(repo: Repo):
 @pytest.mark.parametrize(
     ("kind", "fields"),
     [
-        ("add", {"bosses": ["NStar"]}),
-        ("fix", {"bosses": ["NStar"]}),
+        ("add", {"bosses": ["NMaleficStar"]}),
+        ("fix", {"bosses": ["NMaleficStar"]}),
     ],
 )
 def test_a_card_that_names_nobody_still_needs_the_bossing_role(repo: Repo, kind, fields):
@@ -144,6 +144,34 @@ def test_move_into_next_week_updates_the_runs_week(repo: Repo, run):
     assert repo.get_run(run["id"])["week_start"] == kl(2026, 9, 3)
 
 
+def test_move_into_an_occupied_week_refuses(repo: Repo):
+    """A weekly has one run per boss week; moving into an occupied week refuses."""
+    fixed = repo.add_fixed_run(MY, ["HMaleficStar"], 0, "21:30", [MY, ALVIN], channel_id=CHANNEL)
+    this_week, next_week = kl(2026, 8, 27), kl(2026, 9, 3)
+    this_id = repo.create_run(
+        this_week,
+        ["HMaleficStar"],
+        kl(2026, 8, 31, 21, 30),
+        [MY, ALVIN],
+        fixed_run_id=fixed,
+        channel_id=CHANNEL,
+    )
+    repo.create_run(
+        next_week,
+        ["HMaleficStar"],
+        kl(2026, 9, 7, 21, 30),
+        [MY, ALVIN],
+        fixed_run_id=fixed,
+        channel_id=CHANNEL,
+    )
+    amendment = make(repo, "move", run_id=this_id, new_datetime=kl(2026, 9, 7, 22, 30))
+    result = apply(repo, amendment)
+    assert not result.applied and "already has a run" in result.problem
+    assert "edit that existing run instead" in result.problem
+    assert "cancel" not in result.problem
+    assert repo.get_amendment(amendment["id"])["status"] == "proposed"
+
+
 def test_move_without_a_time_refuses_rather_than_guessing(repo: Repo, run):
     amendment = make(repo, "move", run_id=run["id"], day_ref="wed")
     result = apply(repo, amendment)
@@ -166,7 +194,7 @@ def test_add_creates_a_run_with_reminders(repo: Repo):
     amendment = make(
         repo,
         "add",
-        bosses=["NStar", "NCarling"],
+        bosses=["NMaleficStar", "NCarling"],
         new_datetime=kl(2026, 8, 29, 21, 45),
         participants=[KANON, ALVIN, PRIYA],
     )
@@ -174,7 +202,7 @@ def test_add_creates_a_run_with_reminders(repo: Repo):
 
     assert result.applied
     created = repo.get_run(result.run_id)
-    assert created["bosses"] == ["NStar", "NCarling"]
+    assert created["bosses"] == ["NMaleficStar", "NCarling"]
     assert created["participants"] == [KANON, ALVIN, PRIYA]
     assert created["source"] == "amend"
     assert created["channel_id"] == CHANNEL
@@ -184,7 +212,7 @@ def test_add_creates_a_run_with_reminders(repo: Repo):
 
 
 def test_add_falls_back_to_the_person_who_confirmed_it(repo: Repo):
-    amendment = make(repo, "add", bosses=["NStar"], new_datetime=kl(2026, 8, 29, 21, 45))
+    amendment = make(repo, "add", bosses=["NMaleficStar"], new_datetime=kl(2026, 8, 29, 21, 45))
     result = apply(repo, amendment, actor=KANON)
     assert repo.get_run(result.run_id)["participants"] == [KANON]
 
@@ -192,7 +220,7 @@ def test_add_falls_back_to_the_person_who_confirmed_it(repo: Repo):
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
-        ({"bosses": ["NStar"]}, "no day and time"),
+        ({"bosses": ["NMaleficStar"]}, "no day and time"),
         ({"new_datetime": kl(2026, 8, 29, 21, 45)}, "no bosses"),
     ],
 )
@@ -214,7 +242,7 @@ def test_cancel_marks_the_run_and_drops_its_reminders(repo: Repo, run):
 
 
 def test_otot_keeps_the_morning_ping_and_drops_the_countdowns(repo: Repo, run):
-    result = apply(repo, make(repo, "otot", run_id=run["id"], bosses=["HStar"]))
+    result = apply(repo, make(repo, "otot", run_id=run["id"], bosses=["HMaleficStar"]))
     assert result.applied
     assert repo.get_run(run["id"])["status"] == "otot"
     assert kinds_of(repo, run["id"]) == {DAY_OF}
@@ -264,7 +292,7 @@ def test_split_shrinks_the_run_and_creates_a_second_one(repo: Repo, run):
     result = apply(repo, amendment)
 
     assert result.applied
-    assert repo.get_run(run["id"])["bosses"] == ["HStar"]
+    assert repo.get_run(run["id"])["bosses"] == ["HMaleficStar"]
     (split_id,) = result.created_run_ids
     split = repo.get_run(split_id)
     assert split["bosses"] == ["HFA"]
@@ -287,7 +315,7 @@ def test_splitting_off_every_boss_is_really_a_move(repo: Repo, run):
         "split",
         run_id=run["id"],
         new_datetime=kl(2026, 9, 2, 21, 30),
-        payload={"bosses": ["HStar", "HFA"]},
+        payload={"bosses": ["HMaleficStar", "HFA"]},
     )
     result = apply(repo, amendment)
     assert result.applied and not result.created_run_ids
@@ -400,8 +428,8 @@ def test_committing_one_amendment_retires_the_other_cards_for_that_run(repo: Rep
 
 
 def test_a_committed_add_retires_the_other_proposals_for_the_same_new_run(repo: Repo):
-    stale = make(repo, "add", bosses=["NStar"], new_datetime=kl(2026, 8, 29, 21, 0))
-    winner = make(repo, "add", bosses=["NStar"], new_datetime=kl(2026, 8, 29, 21, 45))
+    stale = make(repo, "add", bosses=["NMaleficStar"], new_datetime=kl(2026, 8, 29, 21, 0))
+    winner = make(repo, "add", bosses=["NMaleficStar"], new_datetime=kl(2026, 8, 29, 21, 45))
 
     assert apply(repo, winner).applied
     assert repo.get_amendment(stale["id"])["status"] == "superseded"
@@ -443,11 +471,11 @@ def test_supersede_can_be_called_directly_for_a_run(repo: Repo, run):
 
 
 def test_supersede_matches_a_new_run_on_its_exact_boss_set(repo: Repo):
-    nstar = make(repo, "add", bosses=["NStar"], channel_id=CHANNEL)
-    pair = make(repo, "add", bosses=["NStar", "NCarling"], channel_id=CHANNEL)
-    elsewhere = make(repo, "add", bosses=["NStar"], channel_id="901")
+    nstar = make(repo, "add", bosses=["NMaleficStar"], channel_id=CHANNEL)
+    pair = make(repo, "add", bosses=["NMaleficStar", "NCarling"], channel_id=CHANNEL)
+    elsewhere = make(repo, "add", bosses=["NMaleficStar"], channel_id="901")
 
-    retired = supersede(repo, channel_id=CHANNEL, bosses=["NStar"])
+    retired = supersede(repo, channel_id=CHANNEL, bosses=["NMaleficStar"])
 
     assert [a["id"] for a in retired] == [nstar["id"]]
     assert repo.get_amendment(pair["id"])["status"] == "proposed"
@@ -516,7 +544,7 @@ def test_supersede_names_no_channel_and_retires_everything_for_the_run(repo: Rep
 
 
 def test_supersede_with_nothing_to_key_on_does_nothing(repo: Repo):
-    make(repo, "add", bosses=["NStar"], channel_id=CHANNEL)
+    make(repo, "add", bosses=["NMaleficStar"], channel_id=CHANNEL)
     assert supersede(repo) == []
 
 
@@ -596,7 +624,9 @@ def test_removing_the_last_unanswered_person_settles_the_run(repo: Repo, run):
 
 
 def test_a_sub_that_removes_everybody_is_refused(repo: Repo):
-    run_id = repo.create_run(WEEK, ["HStar"], kl(2026, 8, 31, 21, 30), [MY], channel_id=CHANNEL)
+    run_id = repo.create_run(
+        WEEK, ["HMaleficStar"], kl(2026, 8, 31, 21, 30), [MY], channel_id=CHANNEL
+    )
     amendment = make(
         repo, "sub", run_id=run_id, participants=[MY], payload={"remove": [MY], "add": []}
     )

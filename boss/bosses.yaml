@@ -13,64 +13,64 @@ bosses:
     level: 260
     difficulties: [x]
     aliases: [lotus, lot, suu]
-    guide: {colour: 0x9B59B6}
+    guide: {colour: 0x39BFFF}
   Seren:
     full: Chosen Seren
     level: 260
     difficulties: [n, h, x]
     aliases: [seren, serene, sereen, chosenseren]
-    guide: {colour: 0xE88DB5}
+    guide: {colour: 0xF4D94E}
   Kalos:
     full: Gatekeeper Kalos
     level: 265
     difficulties: [e, n, c, x]
     aliases: [kalos, gatekeeper, gatekeeperkalos]
-    guide: {colour: 0x5B9BD5}
+    guide: {colour: 0xF07825}
   FA:
     full: The First Adversary
     level: 270
     difficulties: [e, n, h, x]
     aliases: [fa, firstadversary, first-adversary, adversary]
-    guide: {colour: 0xC0392B}
+    guide: {colour: 0xA9D8F5}
   Carling:
     full: Karling
     level: 275
     difficulties: [e, n, h, x]
     aliases: [carling, carl, kaling, karling, kalling, caling, carlin, karl]
-    guide: {colour: 0x27AE60}
+    guide: {colour: 0xD020B7}
   BM:
     full: Black Mage
     level: 275
     difficulties: [h, x]
     aliases: [bm, blackmage, black-mage, bmage]
-    guide: {colour: 0x8E44AD}
-  Star:
+    guide: {colour: 0x211C1A}
+  MaleficStar:
     full: Radiant Malefic Star
     level: 280
     difficulties: [n, h]
     aliases: [star, rms, rmc, malefic, hmc, radiantmaleficstar]
-    guide: {colour: 0xF1C40F}
+    guide: {colour: 0xF8DD4A}
   Bellona:
     full: Bellona
     level: 280
     difficulties: [e, n, h]
     aliases: [bellona, bell, bella, belona]
-    guide: {colour: 0x2C3E50}
+    guide: {colour: 0xA51F30}
   Limbo:
     full: Limbo
     level: 285
     difficulties: [n, h]
     aliases: [limbo, limb]
-    guide: {colour: 0x7D3C98}
+    guide: {colour: 0x9226C5}
   Baldrix:
     full: Baldrix
     level: 290
     difficulties: [n, h]
     aliases: [baldrix, baldguy, bald, baldrick, bladrix, baldrx]
-    guide: {colour: 0x1ABC9C}
+    guide: {colour: 0x18B9D1}
   Jupiter:
     full: Jupiter
     level: 295
     difficulties: [n, h]
     aliases: [jupiter, jup]
-    guide: {colour: 0x2ECC71}
+    guide: {colour: 0x21A38F}

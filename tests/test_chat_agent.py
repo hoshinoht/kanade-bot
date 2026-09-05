@@ -71,13 +71,13 @@ def strategy_ready(bot):
 
 
 async def test_it_answers_and_replies_in_the_channel(chat_bot, chat_seeded):
-    agent = pilot(chat_bot, says("Wed 21:30, HStar and HFA."))
+    agent = pilot(chat_bot, says("Wed 21:30, HMaleficStar and HFA."))
     result = (await agent.offer(message(chat_bot))).answered
 
     assert result is not None
-    assert result.reply == "Wed 21:30, HStar and HFA."
+    assert result.reply == "Wed 21:30, HMaleficStar and HFA."
     assert len(replies(chat_bot)) == 1
-    assert replies(chat_bot)[0].content == "Wed 21:30, HStar and HFA."
+    assert replies(chat_bot)[0].content == "Wed 21:30, HMaleficStar and HFA."
     assert replies(chat_bot)[0].channel_id == CHAT_CHANNEL
 
 
@@ -421,7 +421,7 @@ async def test_the_lock_is_held_across_the_tool_rounds_not_round_each_call(
     agent = pilot(
         chat_bot,
         wants("get_schedule", week="this"),
-        says("HStar and HFA on Monday."),
+        says("HMaleficStar and HFA on Monday."),
     )
     held: list[bool] = []
     real_chat = agent._client.chat
@@ -447,7 +447,7 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     agent = pilot(
         chat_bot,
         wants("get_schedule", week="this"),
-        says("HStar and HFA on Monday, Kalos on Tuesday."),
+        says("HMaleficStar and HFA on Monday, Kalos on Tuesday."),
     )
     result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
 
@@ -457,7 +457,7 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     # model answer from real data rather than from memory.
     second_prompt = agent._client.conversation(1)
     assert second_prompt[-1]["role"] == "tool"
-    assert "Hard Star + Hard FA" in second_prompt[-1]["content"]
+    assert "Hard MaleficStar + Hard FA" in second_prompt[-1]["content"]
 
 
 async def test_a_clear_strategy_question_prefetches_canonical_knowledge(chat_bot, chat_seeded):
@@ -505,7 +505,7 @@ async def test_strategy_prefetch_keeps_tools_for_a_mixed_schedule_request(chat_b
     agent = pilot(
         chat_bot,
         wants("get_schedule", week="this"),
-        says("FA guide first; the schedule has HStar and HFA on Monday."),
+        says("FA guide first; the schedule has HMaleficStar and HFA on Monday."),
     )
 
     result = (
@@ -518,7 +518,7 @@ async def test_strategy_prefetch_keeps_tools_for_a_mixed_schedule_request(chat_b
     assert "tools" in agent._client.calls[0]
     synthesis = agent._client.conversation(1)
     assert any("# The First Adversary (FA)" in turn["content"] for turn in synthesis)
-    assert "Hard Star + Hard FA" in synthesis[-1]["content"]
+    assert "Hard MaleficStar + Hard FA" in synthesis[-1]["content"]
 
 
 async def test_strategy_prefetch_never_copies_injection_into_tool_arguments(chat_bot, chat_seeded):
@@ -649,7 +649,7 @@ async def test_a_refused_move_cannot_be_replied_to_as_a_posted_card(chat_bot, ch
     star = chat_bot.repo.get_run(chat_seeded["star"])
     chat_bot.repo.create_run(
         week_start=star["week_start"],
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         run_at=star["datetime"] + timedelta(days=2),
         participants=["1002"],
         status="planned",
@@ -678,7 +678,7 @@ async def test_a_successful_write_retry_supersedes_an_earlier_refusal(chat_bot, 
     star = chat_bot.repo.get_run(chat_seeded["star"])
     chat_bot.repo.create_run(
         week_start=star["week_start"],
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         run_at=star["datetime"] + timedelta(days=2),
         participants=["1002"],
         status="planned",
@@ -761,14 +761,18 @@ async def test_an_essay_is_trimmed(chat_bot, chat_seeded):
 
 
 def test_a_first_bullet_stuck_to_the_header_is_put_on_its_own_line():
-    glued = "This week, all channels: - **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    glued = (
+        "This week, all channels: - **Hard MaleficStar** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    )
     assert unglue_first_bullet(glued) == (
-        "This week, all channels:\n\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+        "This week, all channels:\n\n- **Hard MaleficStar** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
     )
 
 
 def test_a_list_that_was_already_right_is_left_alone():
-    correct = "This week, all channels:\n- **Hard Star** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    correct = (
+        "This week, all channels:\n- **Hard MaleficStar** Mon 21:30\n- **Hard Baldrix** Wed 22:00"
+    )
     assert unglue_first_bullet(correct) == correct
 
 
@@ -779,10 +783,12 @@ def test_prose_that_merely_contains_the_sequence_is_untouched():
 
 
 async def test_tidy_preserves_a_blank_line_between_a_heading_and_list(chat_bot, chat_seeded):
-    agent = pilot(chat_bot, says("This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"))
+    agent = pilot(
+        chat_bot, says("This week:\n\n- **Hard MaleficStar** Mon\n- **Hard Baldrix** Wed")
+    )
     result = (await agent.offer(message(chat_bot))).answered
 
-    assert result.reply == "This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+    assert result.reply == "This week:\n\n- **Hard MaleficStar** Mon\n- **Hard Baldrix** Wed"
 
 
 async def test_schedule_commentary_keeps_a_blank_line_after_the_final_run(chat_bot, chat_seeded):
@@ -815,10 +821,10 @@ async def test_all_generated_output_keeps_markdown_blocks_and_normalises_excess_
 
 async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, chat_seeded):
     """One version of a reply, and it is the one the channel saw."""
-    agent = pilot(chat_bot, says("This week: - **Hard Star** Mon\n- **Hard Baldrix** Wed"))
+    agent = pilot(chat_bot, says("This week: - **Hard MaleficStar** Mon\n- **Hard Baldrix** Wed"))
     await agent.offer(message(chat_bot))
 
-    wanted = "This week:\n\n- **Hard Star** Mon\n- **Hard Baldrix** Wed"
+    wanted = "This week:\n\n- **Hard MaleficStar** Mon\n- **Hard Baldrix** Wed"
     assert replies(chat_bot)[0].content == wanted
     assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == wanted
     assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == wanted
@@ -895,13 +901,13 @@ async def test_channels_do_not_share_a_conversation(chat_bot, chat_seeded):
 
 
 async def test_the_reply_chain_is_included_oldest_first(chat_bot, chat_seeded):
-    earlier = message(chat_bot, "HStar is Monday 21:30.", author_id=BOT_USER_ID, mentions=())
+    earlier = message(chat_bot, "HMaleficStar is Monday 21:30.", author_id=BOT_USER_ID, mentions=())
     asked = message(chat_bot, "who's on it?", mentions=(), reference=FakeReference(earlier))
     agent = pilot(chat_bot, says("You and Alvin."))
     await agent.offer(asked)
 
     prompt = agent._client.prompts[0]
-    assert prompt[1] == {"role": "assistant", "content": "HStar is Monday 21:30."}
+    assert prompt[1] == {"role": "assistant", "content": "HMaleficStar is Monday 21:30."}
     assert "who's on it?" in prompt[2]["content"]
 
 
@@ -975,7 +981,7 @@ async def test_the_schedule_is_not_pre_injected(chat_bot, chat_seeded):
     """It comes from tools; baking it into the prompt would be stale and expensive."""
     agent = pilot(chat_bot, says("ok"))
     await agent.offer(message(chat_bot))
-    assert "HStar" not in agent._client.system
+    assert "HMaleficStar" not in agent._client.system
 
 
 # ---------------------------------------------------------------------------

@@ -111,7 +111,7 @@ async def test_a_refusal_names_nobody_on_the_run(chat_bot, chat_seeded):
 
 
 async def test_the_owner_of_the_weekly_timing_may_still_ask(chat_bot, chat_seeded):
-    """1001 owns the HStar baseline; the run it produced is theirs to change."""
+    """1001 owns the HMaleficStar baseline; the run it produced is theirs to change."""
     star = chat_bot.repo.get_run(chat_seeded["star"])
     chat_bot.repo.set_run_participants(star["id"], ["1002"])
     answer = await tools.dispatch(

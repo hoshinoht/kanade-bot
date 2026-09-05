@@ -1,4 +1,4 @@
-boss: Star
+boss: MaleficStar
 summary: Keep Predation below 1000 by having the Awakener consistently destroy Essences and by controlling Illusion Magic across Illusion/Reality swaps.
 core:
 - Predation is party-wide, starts at 0, and reaching 1000 fails the run.

@@ -207,7 +207,7 @@ def test_the_boss_picker_is_never_narrowed_by_the_search(auth, seeded):
     """
     body = auth.get("/fixed?q=kalos").text
 
-    assert 'name="boss_tokens" value="HStar"' in body
+    assert 'name="boss_tokens" value="HMaleficStar"' in body
     assert "Radiant Malefic Star" in body
 
 

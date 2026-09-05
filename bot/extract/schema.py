@@ -45,7 +45,7 @@ class Amendment(BaseModel):
     kind: Kind = Field(description="what kind of change this is")
     bosses: list[str] = Field(
         default_factory=list,
-        description="canonical boss names from the boss table, e.g. HStar, XKalos",
+        description="canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
     )
     day_ref: str | None = Field(
         default=None, description="the day exactly as written: weds, tmr, tonight, 2026-09-02"

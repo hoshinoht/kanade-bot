@@ -100,7 +100,7 @@ def synthetic_card(
     amendment_id = bot.repo.create_amendment(
         kl(2026, 8, 27),
         "move",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         participants=["1002"],
         channel_id=channel_id,
         summary=summary,

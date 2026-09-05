@@ -71,7 +71,7 @@ def quiet(repo: Repo, on: bool) -> None:
 
 def a_card() -> formatting.Card:
     return formatting.Card(
-        content="HStar + HFA tonight <@1001> <@1002>",
+        content="HMaleficStar + HFA tonight <@1001> <@1002>",
         title="Tonight",
         footer=formatting.REACT_HINT,
         mention_users=list(WHO),

@@ -50,7 +50,7 @@ WORD_PREFIXES: dict[str, str] = {
 
 #: Ordinary words that must never be read as a misspelt boss.  Fuzzy matching is
 #: already restricted to the part *after* a difficulty prefix, which removes most
-#: of the risk (``start`` never becomes ``Star``); this catches the leftovers.
+#: of the risk (``start`` never becomes ``MaleficStar``); this catches the leftovers.
 FUZZY_STOPWORDS = frozenset({"start", "starting", "started", "clear", "chair", "cheap"})
 
 _WORD_RE = re.compile(r"[a-z0-9]+")

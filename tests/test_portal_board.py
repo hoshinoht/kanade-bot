@@ -166,13 +166,13 @@ def test_a_compact_card_names_a_boss_by_its_token(auth, seeded):
     surface too narrow for "Radiant Malefic Star" and a difficulty pill.
 
     The seed's longest name is the one that forced this, so it is the one to
-    check: the card says `HStar`, and the pill beside it still says HARD --
+    check: the card says `HMaleficStar`, and the pill beside it still says HARD --
     redundant with the prefix letter and kept anyway, because the pill is the
     colour a reader learns the tier by.
     """
     card = board_card_of(auth.get("/").text, service.short_id(seeded["run_star"]))
 
-    assert ">HStar<" in card
+    assert ">HMaleficStar<" in card
     assert ">HFA<" in card
     assert '<span class="pill pill--h">HARD</span>' in card
 
@@ -189,7 +189,7 @@ def test_the_full_name_is_still_there_for_anyone_who_needs_it(auth, seeded):
     assert 'title="Radiant Malefic Star (Hard, Lv280)"' in card
     # The token is hidden from the reader who is being read to, and the name is
     # given instead -- not both, which would be "H-Star Radiant Malefic Star".
-    assert '<span class="boss__name" aria-hidden="true">HStar</span>' in card
+    assert '<span class="boss__name" aria-hidden="true">HMaleficStar</span>' in card
     assert '<span class="vh">Radiant Malefic Star</span>' in card
 
 
@@ -234,7 +234,7 @@ def test_the_board_carries_the_runs_the_page_is_showing(auth, seeded):
     """By token, which is what a compact card writes; the full names ride along
     in the tooltips, so it is the tokens that say what is actually on show."""
     board = board_of(auth.get("/").text)
-    assert ">HStar<" in board
+    assert ">HMaleficStar<" in board
     assert ">XKalos<" in board
 
 
@@ -250,7 +250,7 @@ def test_the_rail_still_shows_the_whole_week_when_the_board_is_filtered(auth, se
     """The rail is the shape of the week; a filter narrows what is on it, not it."""
     body = auth.get(f"/?channel={OTHER_CHANNEL}").text
     rail = body[body.index('class="rail"') : body.index("</nav>", body.index('class="rail"'))]
-    assert "HStar" in rail  # a pip is still there for Monday
+    assert "HMaleficStar" in rail  # a pip is still there for Monday
 
 
 def test_a_compact_card_says_the_time_the_bosses_and_the_tally(auth, seeded):
@@ -385,7 +385,7 @@ def test_every_control_in_that_corner_has_a_face(auth, seeded):
 
 def test_a_run_with_two_bosses_gives_each_one_its_own_line(auth, seeded):
     """Inline they wrapped mid-boss, leaving the second one's difficulty pill
-    orphaned under the name it belongs to. The seed runs HStar with HFA."""
+    orphaned under the name it belongs to. The seed runs HMaleficStar with HFA."""
     card = card_for(auth.get("/").text, service.short_id(seeded["run_star"]))
 
     assert '<ul class="bosslist">' in card
@@ -406,9 +406,9 @@ def test_the_boards_cards_keep_their_compact_bosses(auth, seeded):
 
     assert "bosslist" not in board
     assert 'class="runcard__bosses"' in board
-    assert board.count('<span class="boss"') == 3  # HStar + HFA, and XKalos
+    assert board.count('<span class="boss"') == 3  # HMaleficStar + HFA, and XKalos
     # ...and each of the three is written as a token rather than an in-game name.
-    for token in (">HStar<", ">HFA<", ">XKalos<"):
+    for token in (">HMaleficStar<", ">HFA<", ">XKalos<"):
         assert token in board, token
 
 
@@ -451,9 +451,9 @@ def test_the_past_toggle_still_works_on_both(auth, fake_bot, seeded):
     shown = auth.get("/?show_past=1").text
 
     assert "1 past or cancelled run hidden" in hidden
-    assert "HStar" not in board_of(hidden)
+    assert "HMaleficStar" not in board_of(hidden)
     # Shown, it is greyed in its column rather than moved somewhere else.
-    assert "HStar" in board_of(shown)
+    assert "HMaleficStar" in board_of(shown)
     assert "runcard--done" in board_of(shown)
 
 
@@ -498,7 +498,7 @@ def synthetic_run(short: str, hours: float, status: str = "planned", unanswered:
         "datetime": to_iso(utcnow() + timedelta(hours=hours)),
         "local_day": "Mon",
         "local_time": "21:30",
-        "bosses": ["HStar"],
+        "bosses": ["HMaleficStar"],
         "yes": 1,
         "participants": [{"id": "1"}, {"id": "2"}],
         "unanswered": unanswered,

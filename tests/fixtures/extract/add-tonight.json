@@ -33,7 +33,7 @@
     {
       "id": "f0000001",
       "bosses": [
-        "HStar",
+        "HMaleficStar",
         "HFA"
       ],
       "weekday": "mon",
@@ -65,7 +65,7 @@
     {
       "id": "a1a1a1a1",
       "bosses": [
-        "HStar",
+        "HMaleficStar",
         "HFA"
       ],
       "at": "2026-08-31 21:30",
@@ -118,7 +118,7 @@
     {
       "kind": "add",
       "bosses": [
-        "NStar",
+        "NMaleficStar",
         "NCarling"
       ],
       "resolved_local_datetime": "2026-08-29 21:45",
