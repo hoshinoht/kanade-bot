@@ -1,0 +1,17 @@
+schema_version: 1
+default: yuuki-sakuna
+personas:
+  - id: yuuki-sakuna
+    label: Yuuki Sakuna
+    aliases:
+      - persona.md
+    identity: sakuna.md
+    behaviour: sakuna-behaviour.md
+    staging: sakuna-staging.yaml
+  - id: nazupi
+    label: Nazupi
+    aliases:
+      - nazupi.md
+    identity: nazupi.md
+    behaviour: nazupi-behaviour.md
+    staging: nazupi-staging.yaml

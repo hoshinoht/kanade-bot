@@ -184,7 +184,7 @@ def test_a_persona_with_no_good_section_contributes_nothing():
 
 def test_the_tracked_template_contributes_nothing():
     template = persona.read_default_behaviour(persona.EXAMPLE_DEFAULT_BEHAVIOUR).text
-    assert "**Good**" in template
+    assert "**Good**" not in template
     assert persona.good_examples(template) == []
 
 

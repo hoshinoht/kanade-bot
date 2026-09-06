@@ -44,7 +44,7 @@ def make_settings(**overrides: Any) -> Settings:
         "db_path": ":memory:",
         "admin_token": ADMIN_TOKEN,
         "post_channel_id": WATCHED_CHANNEL,
-        "persona_path": "config/personas/identities/example.md",
+        "persona_path": "config/personas/personas/kanade/identity.md",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -298,11 +298,14 @@ class FakeBot:
 
     @staticmethod
     def persona_choices() -> list[str]:
-        # The real directory, as the real client reads it: a fake list here
+        # The real catalog, as the real client reads it: a fake list here
         # would let a test pass against choices the bot could never load.
-        from bot.chat import persona
+        from bot.chat import persona_catalog
 
-        return persona.available()
+        try:
+            return [item.id for item in persona_catalog.load_catalog().choices]
+        except persona_catalog.PersonaCatalogError:
+            return []
 
     # The chatbot's four capacity numbers, read the way the real client reads
     # them -- through the same parsers, so the fake cannot disagree with it

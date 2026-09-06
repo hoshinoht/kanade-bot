@@ -17,7 +17,7 @@ PERSONA_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "person
 
 #: Deployment-owned behaviour and code-owned policy documents.
 DEFAULT_BEHAVIOUR = PERSONA_DIR / "behaviours" / "default.md"
-EXAMPLE_DEFAULT_BEHAVIOUR = PERSONA_DIR / "behaviours" / "default.example.md"
+EXAMPLE_DEFAULT_BEHAVIOUR = PERSONA_DIR / "personas" / "kanade" / "default.md"
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 ASSISTANT_SCOPE_PATH = PROMPT_DIR / "assistant-scope.md"
 SCHEDULER_POLICY_PATH = PROMPT_DIR / "scheduler-policy.md"
@@ -25,8 +25,7 @@ GROUNDING_POLICY_PATH = PROMPT_DIR / "grounding-policy.md"
 BOSS_KNOWLEDGE_POLICY_PATH = PROMPT_DIR / "boss-knowledge-policy.md"
 
 #: Tracked persona fallback.
-EXAMPLE_PERSONA = PERSONA_DIR / "identities" / "example.md"
-LEGACY_EXAMPLE_PERSONA = PERSONA_DIR / "persona.example.md"
+EXAMPLE_PERSONA = PERSONA_DIR / "personas" / "kanade" / "identity.md"
 
 #: Code-owned rules that override deployment persona text.
 HARD_RULES = """\
@@ -399,15 +398,12 @@ def read_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> P
                 log.info("loaded the persona from %s (%d characters)", candidate, len(text))
                 return Persona(text=text, path=candidate, fell_back=False)
             log.warning("the persona at %s is empty; falling back to %s", candidate, fallback.name)
-    actual_fallback = fallback
-    if fallback == EXAMPLE_PERSONA and not fallback.exists():
-        actual_fallback = LEGACY_EXAMPLE_PERSONA
     try:
-        text = actual_fallback.read_text(encoding="utf-8").strip()
+        text = fallback.read_text(encoding="utf-8").strip()
     except OSError:  # pragma: no cover - the template is tracked
         log.error("no persona file at all, including the tracked %s", fallback)
         return Persona(text="", path=None, fell_back=True)
-    return Persona(text=text, path=actual_fallback, fell_back=True)
+    return Persona(text=text, path=fallback, fell_back=True)
 
 
 def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> str:

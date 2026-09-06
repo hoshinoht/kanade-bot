@@ -2,7 +2,37 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## Unreleased
+## 4.7.0
+
+**Added**
+
+- Atomic major persona bundles: one portal selection now swaps identity,
+  default behaviour, and staging copy together from
+  `config/personas/personas/<id>/`, described by the private
+  `config/personas/personas.yaml` manifest (IDs, labels, default, legacy
+  aliases, optional per-bundle filenames). Invalid selections change neither
+  the stored choice nor the active answer; in-flight answers stay pinned to
+  one bundle.
+- Config page **Persona** control with human labels, configured-vs-effective
+  display, and safe recovery guidance that never shows prompt text. The API
+  keeps existing persona fields and adds `persona_labels`,
+  `persona_effective`, `persona_effective_label`, `persona_catalog_mode`,
+  and `persona_issue`; `bossctl config` renders the new mappings safely.
+- The tracked fallback bundle is Kanade-flavoured (`personas/kanade/`): with
+  no configured persona the bot answers in the default Kanade voice instead
+  of a placeholder. Keep bundles compact and run with an `OLLAMA_NUM_CTX`
+  that fits them plus the tool schemas.
+
+**Changed**
+
+- Reply-profile overlays moved up to `config/personas/behaviours/` with
+  staging overrides in `config/personas/behaviours/staging/`; the old
+  `behaviours/profiles/` and `behaviour-plugins/` paths remain readable as
+  legacy fallbacks. The stale `config/personas/identities/` directory is
+  gone; live identities live in the bundles.
+- `PERSONA_PATH` is now a deprecated fresh-database seed only.
+
+## 4.6.0
 
 **Added**
 

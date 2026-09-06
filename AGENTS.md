@@ -25,3 +25,6 @@
 - Boss portraits and entry artwork are intentionally git-ignored deployment assets. Their tests isolate themselves from whatever images happen to exist locally.
 - Treat `.env`, `.env.caddy`, `caddy/Caddyfile`, `data/`, `config/guide.yaml`, and live files under `config/personas/` as deployment-private. Change tracked example/template files unless the task explicitly targets local deployment state.
 - Full Compose startup also expects the externally managed volumes `kanade_botdata`, `kanade_caddydata`, and `kanade_caddyconfig`, plus the private Caddy/env files. Ollama stays on the host and Compose reaches it through `host.docker.internal`.
+
+## Coding Policy
+- Do not use overly verbose comments or docstrings, keep them concise and to the point.

@@ -491,6 +491,11 @@ class ConfigOut(BaseModel):
     #: Configured persona and available choices.
     persona: str = ""
     persona_choices: list[str] = []
+    persona_labels: dict[str, str] = {}
+    persona_effective: str = ""
+    persona_effective_label: str = ""
+    persona_catalog_mode: Literal["manifest", "legacy", "fallback"] = "legacy"
+    persona_issue: str | None = None
     #: Portal-managed behaviour plugins layered over the persona for matching roles.
     chat_role_plugins: list[RolePluginOut] = []
     chat_role_plugin_issues: list[str] = []
@@ -519,7 +524,7 @@ class ConfigIn(Strict):
     extract_enabled: bool | None = None
     quiet_mode: bool | None = None
     chat_mode: bool | None = None
-    #: A persona filename validated against the live directory.
+    #: A canonical persona ID or legacy filename.
     persona: str | None = None
     chat_role_plugins: list[RolePluginIn] | None = None
     chat_selectable_plugins: list[str] | None = None

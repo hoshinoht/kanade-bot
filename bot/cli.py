@@ -1330,7 +1330,14 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
         "config",
         ["setting", "value"],
         [
-            [name, ", ".join(value) if isinstance(value, list) else str(value)]
+            [
+                name,
+                ", ".join(value)
+                if isinstance(value, list) and all(isinstance(item, str) for item in value)
+                else json.dumps(value, sort_keys=True)
+                if isinstance(value, (dict, list))
+                else str(value),
+            ]
             for name, value in values.items()
         ],
     )
@@ -1340,7 +1347,7 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 def config_set(
     key: str = typer.Argument(
         help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
-        "quiet_mode, chat_mode, persona (a filename in config/personas/), or one of "
+        "quiet_mode, chat_mode, persona (a persona ID), or one of "
         "the chat_pilot_*_rate_* numbers."
     ),
     value: str = typer.Argument(help="The new value."),
