@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 2,
+  "id": "atomic-persona-bundles",
+  "kind": "software-engineering",
+  "title": "Atomic major persona bundles",
+  "goal": "Selecting one major persona changes its identity, baseline behaviour, and baseline staging lines together for the next answer, while reply profiles remain orthogonal overlays.",
+  "scope": [
+    "Introduce a manifest-backed, bundle-by-directory persona configuration with fixed component filenames",
+    "Load and swap immutable persona runtime snapshots atomically",
+    "Preserve SQLite, PERSONA_PATH, and legacy filesystem compatibility without a schema migration",
+    "Keep reply-profile behaviour and staging overrides distinct and define same-name Nazupi compatibility",
+    "Update portal/API presentation, tracked templates, migration documentation, and focused tests"
+  ],
+  "nonGoals": [
+    "Changing code-owned scheduler, grounding, privacy, or boss-knowledge policies",
+    "Changing the SQLite schema or rewriting member reply-style rows",
+    "Editing or disclosing live deployment-private prompt contents",
+    "Removing legacy-layout support in the same release",
+    "Changing persona or profile files through the portal"
+  ],
+  "constraints": [
+    "Plan only; implementation is not authorized in this child session",
+    "Live config/personas files are deployment-private; only templates and documentation may be tracked",
+    "Preserve unrelated user changes in AGENTS.md, bot/chat/agent.py, and tests/test_chat_agent.py",
+    "Use Python 3.12 and uv; do not add dependencies"
+  ],
+  "relevantFiles": [
+    "bot/chat/persona_catalog.py",
+    "bot/chat/persona.py",
+    "bot/chat/progress.py",
+    "bot/chat/agent.py",
+    "bot/agent/client.py",
+    "bot/api/service.py",
+    "bot/api/models.py",
+    "bot/api/templates/config.html",
+    "bot/__main__.py",
+    "bot/infrastructure/config.py",
+    "bot/cli.py",
+    "Dockerfile",
+    ".dockerignore",
+    "tests/test_persona_catalog.py",
+    "tests/test_chat_persona.py",
+    "tests/test_chat_progress.py",
+    "tests/test_chat_followup.py",
+    "tests/test_portal_config.py",
+    "tests/test_chat_config.py",
+    "tests/test_cli.py",
+    "tests/test_behaviour_plugins.py",
+    "tests/fake_bot.py",
+    "config/personas/README.md",
+    "config/personas/personas.example.yaml",
+    "config/personas/personas/example/identity.md",
+    "config/personas/personas/example/default.md",
+    "config/personas/personas/example/staging.yaml",
+    ".env.example",
+    ".gitignore",
+    "docs/chatbot.md"
+  ],
+  "planFile": ".opencode/workplan/atomic-persona-bundles.md",
+  "specFiles": [],
+  "phases": [
+    {
+      "id": "catalog-loader",
+      "title": "Persona catalog and bundle loader",
+      "status": "completed",
+      "steps": [
+        {
+          "id": "bundle-schema-loader",
+          "title": "Implement the fixed-layout bundle catalog",
+          "target": "bot/chat/persona_catalog.py, bot/chat/persona.py, bot/chat/progress.py, tests/test_persona_catalog.py, tests/test_chat_persona.py, tests/test_chat_progress.py",
+          "action": "Add strict manifest and bundle models, safe ID/alias resolution, rejection of every symlink bundle directory/component, complete component loading, a full tracked fallback bundle, and legacy-layout adaptation without allowing manifest component paths.",
+          "validation": "uv run pytest -q tests/test_persona_catalog.py tests/test_chat_persona.py tests/test_chat_progress.py; all catalog, path-safety including within-root symlinks, alias, fallback, staging, and prompt tests pass",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "runtime-surfaces",
+      "title": "Atomic runtime and operator surfaces",
+      "status": "completed",
+      "steps": [
+        {
+          "id": "atomic-runtime-swap",
+          "title": "Swap one immutable persona runtime per selection and turn",
+          "target": "bot/chat/agent.py, bot/agent/client.py, bot/api/service.py, bot/api/models.py, bot/api/templates/config.html, bot/__main__.py, tests/test_chat_followup.py, tests/test_portal_config.py, tests/fake_bot.py",
+          "action": "Preload and validate a complete candidate runtime, persist its canonical ID, atomically replace the active snapshot, and pin both _answer and _ask_instead generation flows to one snapshot threaded through overlay resolution, staging, prompt assembly, tool/model rounds, and trailing reminders.",
+          "validation": "uv run pytest -q tests/test_chat_followup.py tests/test_portal_config.py tests/test_chat_persona.py tests/test_chat_progress.py tests/test_behaviour_plugins.py; normal answers and rejection follow-ups stay on their entry snapshot across an induced switch, the next generation uses the new complete bundle, and failed selection changes none",
+          "status": "completed"
+        },
+        {
+          "id": "compatibility-contract",
+          "title": "Preserve DB, environment, API, and CLI compatibility",
+          "target": "bot/__main__.py, bot/infrastructure/config.py, bot/api/service.py, bot/api/models.py, bot/cli.py, tests/test_chat_config.py, tests/test_portal_config.py, tests/test_cli.py",
+          "action": "Resolve stored filename values and PERSONA_PATH basenames through manifest aliases, save canonical IDs only on later successful changes, retain legacy mode when personas.yaml is absent, preserve existing persona API fields exactly, add the specified effective/mode/label/issue fields, and make generic CLI config rendering safe for object lists.",
+          "validation": "uv run pytest -q tests/test_chat_config.py tests/test_portal_config.py tests/test_cli.py; existing persona.md and nazupi.md rows resolve correctly, seeds remain insert-only, additive API field types/semantics hold in manifest/legacy/fallback modes, object lists render safely, bossctl config set persona nazupi sends the canonical string, and no database migration is introduced",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "deployment-migration",
+      "title": "Tracked layout and deployment migration",
+      "status": "completed",
+      "steps": [
+        {
+          "id": "templates-docs-migration",
+          "title": "Publish the new private-config template and migration guide",
+          "target": "config/personas/README.md, config/personas/personas.example.yaml, config/personas/personas/example/identity.md, config/personas/personas/example/default.md, config/personas/personas/example/staging.yaml, .gitignore, .dockerignore, Dockerfile, .env.example, docs/chatbot.md",
+          "action": "Replace tracked major-persona templates with the fixed bundle layout, include all three complete fallback components in the Docker build context/image while excluding private persona data, document compatibility, and give a content-free Yuuki Sakuna/Nazupi migration recipe that preserves the existing Nazupi reply profile.",
+          "validation": "Run Ruff, portal CSS generation, the non-Ollama suite, docker build, and an in-image load of the complete tracked example bundle; all checks pass and the image contains non-empty identity.md, default.md, and staging.yaml without private personas",
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "reviewFindings": [
+    {
+      "severity": "major",
+      "title": "Rejection follow-up snapshot scope was omitted",
+      "detail": "Resolved by requiring both _answer and _ask_instead to capture and thread one runtime through the full generation flow, with a switch-during-await test in tests/test_chat_followup.py.",
+      "source": "plan-checker ses_f8aa70dfaffefcUnzlNjoQU8B0",
+      "status": "resolved"
+    },
+    {
+      "severity": "major",
+      "title": "Container fallback packaging was underspecified",
+      "detail": "Resolved by adding Dockerfile and .dockerignore ownership and requiring all three tracked fallback components in the build context/image plus in-image loader verification.",
+      "source": "plan-checker ses_f8aa70dfaffefcUnzlNjoQU8B0",
+      "status": "resolved"
+    },
+    {
+      "severity": "major",
+      "title": "Additive API and CLI compatibility schema was vague",
+      "detail": "Resolved by fixing exact preserved/new fields and meanings and adding tests/test_cli.py coverage for object-list rendering and persona selection.",
+      "source": "plan-checker ses_f8aa70dfaffefcUnzlNjoQU8B0",
+      "status": "resolved"
+    },
+    {
+      "severity": "major",
+      "title": "Symlink policy allowed multiple interpretations",
+      "detail": "Resolved by rejecting every symlink bundle directory and required component, including links whose resolved targets remain inside the persona root or point across bundles.",
+      "source": "plan-checker ses_f8aa70dfaffefcUnzlNjoQU8B0",
+      "status": "resolved"
+    },
+    {
+      "severity": "note",
+      "title": "Workplan structure validated by parent helper",
+      "detail": "The schemaVersion 2 helper returned valid=true after the parent review; this establishes structural validity only, not readiness or completion.",
+      "source": "parent check-workplan.ts result",
+      "status": "resolved"
+    }
+  ],
+  "notes": [
+    "The catalog YAML names persona IDs, labels, a single default ID, optional legacy aliases, and optional bare bundle filenames (identity/behaviour/staging); it never contains directory paths.",
+    "Manifest mode defaults to personas/<id>/{identity.md,default.md,staging.yaml} with optional per-bundle filename overrides; a complete bundle is the unit of fallback and swap.",
+    "Reply profiles live directly under behaviours/ with partial staging overrides in behaviours/staging/; behaviours/profiles/ and behaviour-plugins/ remain readable as legacy fallbacks.",
+    "The stale empty identities/ directory was removed; live identities live in personas/<id>/ bundles.",
+    "Parent structural validation completed with valid=true; structural validity remains separate from execution readiness and completion.",
+    "Manifest options exposed for selection include only bundles whose three required components validate; invalid profile staging overrides are quarantined separately and do not invalidate the major persona bundle.",
+    "Live verification 2026-09-06: manifest mode, both yuuki-sakuna and nazupi bundles load with no issues; full non-Ollama suite 3113 passed; Ruff, portal CSS, and Docker build all pass.",
+    "Live swap verified in production after restart: Yuuki answers as Yuuki, portal swap to Nazupi answers as Nazupi, swap back answers as Yuuki. Earlier confusion was a rejected swap during the invalid-staging window plus in-memory history drag on self-identity questions.",
+    "Fallback bundle renamed personas/example/ to personas/kanade/ and is Kanade-flavoured as the repo default; chat test fixtures use production-size context (16384) since the shipped bundles plus tool schemas exceed the 8192 default."
+  ],
+  "status": "completed",
+  "createdAt": "2026-09-06T00:00:00Z",
+  "updatedAt": "2026-09-06T07:28:12Z"
+}
