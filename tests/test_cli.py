@@ -573,6 +573,26 @@ def test_config_set_turns_a_flag_into_a_boolean(api):
     assert json.loads(route.calls.last.request.content) == {"extract_enabled": False}
 
 
+def test_config_get_renders_objects_and_mappings_and_sets_persona_id(api):
+    values = {
+        "persona_labels": {"nazupi": "Nazupi"},
+        "behaviour_plugins": [{"name": "short", "selectable": True}],
+        "persona_choices": ["nazupi"],
+    }
+    api.get("/api/config").mock(return_value=httpx.Response(200, json=values))
+    output = run("config", "get").output
+    assert '{"nazupi": "Nazupi"}' in output
+    assert '[{"name": "short", "selectable": true}]' in output
+    assert "nazupi" in output
+
+    route = api.put("/api/config").mock(
+        return_value=httpx.Response(200, json={"persona": "nazupi"})
+    )
+    result = run("config", "set", "persona", "nazupi")
+    assert json.loads(route.calls.last.request.content) == {"persona": "nazupi"}
+    assert "persona = nazupi" in result.output
+
+
 CHANNEL_RESCAN = {
     "channel_id": "5",
     "channel_name": "#hstar-party",

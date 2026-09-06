@@ -19,7 +19,7 @@ import discord
 from discord.ext import tasks
 
 from bot.api.server import ApiServer
-from bot.chat import ChatPilot, persona
+from bot.chat import ChatPilot, persona_catalog
 from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.timeutil import to_iso, utcnow
@@ -221,24 +221,25 @@ class BossBot(discord.Client):
 
     @property
     def persona_name(self) -> str:
-        """The persona file this deployment has chosen, by name, or ``""``.
+        """The configured canonical persona ID or legacy filename, or ``""``.
 
         A name and never a path: what it points at is resolved against the real
-        directory listing (:func:`bot.chat.persona.chosen_path`), so a row
-        hand-edited into something with a slash in it selects nothing rather
-        than reaching anywhere.
+        parsed catalog, so a hand-edited path-shaped row selects nothing.
         """
         return self.repo.get_config(CFG_PERSONA, "") or ""
 
     @staticmethod
     def persona_choices() -> list[str]:
-        """The personas on offer, read off the bind mount every time it is asked.
+        """The safe persona IDs or legacy filenames currently on offer.
 
         On the client rather than in `bot.api.service` because that module is
         imported *by* the chat package (`bot.chat.tools` dispatches over it), so
         reaching the other way would close a circle.
         """
-        return persona.available()
+        try:
+            return [descriptor.id for descriptor in persona_catalog.load_catalog().choices]
+        except persona_catalog.PersonaCatalogError:
+            return []
 
     @property
     def chat_rate_count(self) -> int:

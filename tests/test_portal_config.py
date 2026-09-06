@@ -502,90 +502,224 @@ def test_broken_role_entries_are_visible_without_hiding_valid_ones(
 
 @pytest.fixture
 def staged_personas(tmp_path, monkeypatch):
-    """Two voices on the bind mount, plus a README that is not one."""
+    """Two selectable manifest bundles plus the tracked-style example fallback."""
+    from bot.chat import persona
+    from bot.chat.progress import STAGING_KEYS
+
+    def _bundle(identifier: str, label: str, marker: str) -> None:
+        directory = tmp_path / "personas" / identifier
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "identity.md").write_text(f"You are {marker}.\n", encoding="utf-8")
+        (directory / "default.md").write_text(f"Default {marker}.\n", encoding="utf-8")
+        (directory / "staging.yaml").write_text(
+            "".join(f"{key}: {marker} {key}\n" for key in STAGING_KEYS), encoding="utf-8"
+        )
+
+    _bundle("kanade", "Kanade", "Kanade")
+    _bundle("gruff", "Gruff", "Gruff")
+    _bundle("kanade", "Kanade", "Kanade")
+    (tmp_path / "personas.yaml").write_text(
+        """schema_version: 1
+default: kanade
+personas:
+  - id: kanade
+    label: Kanade
+    aliases: [kanade.md]
+  - id: gruff
+    label: Gruff
+    aliases: [gruff.md]
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("# Personas\n", encoding="utf-8")
+    monkeypatch.setattr(persona, "PERSONA_DIR", tmp_path)
+    monkeypatch.setattr("bot.chat.persona_catalog.PERSONA_ROOT", tmp_path)
+    return tmp_path
+
+
+def _write_portal_bundle(root, identifier: str, label: str) -> None:
+    from bot.chat.progress import STAGING_KEYS
+
+    directory = root / "personas" / identifier
+    directory.mkdir(parents=True)
+    (directory / "identity.md").write_text(
+        f"PRIVATE IDENTITY {label} — never render this prompt text", encoding="utf-8"
+    )
+    (directory / "default.md").write_text(
+        f"PRIVATE BEHAVIOUR {label} — never render this prompt text", encoding="utf-8"
+    )
+    (directory / "staging.yaml").write_text(
+        "".join(f"{key}: {label} staging\n" for key in STAGING_KEYS), encoding="utf-8"
+    )
+
+
+@pytest.fixture
+def manifest_personas(tmp_path, monkeypatch):
     from bot.chat import persona
 
-    (tmp_path / "kanade.md").write_text("You are Kanade, a scheduler bot.\n", encoding="utf-8")
-    (tmp_path / "gruff.md").write_text("You are Gruff, a scheduler bot.\n", encoding="utf-8")
-    (tmp_path / "README.md").write_text("# Personas\n", encoding="utf-8")
+    _write_portal_bundle(tmp_path, "yuuki-sakuna", "Yuuki")
+    _write_portal_bundle(tmp_path, "nazupi", "Nazupi")
+    _write_portal_bundle(tmp_path, "kanade", "Kanade")
+    (tmp_path / "personas.yaml").write_text(
+        """schema_version: 1
+default: yuuki-sakuna
+personas:
+  - id: yuuki-sakuna
+    label: Yuuki Sakuna
+    aliases: [persona.md]
+  - id: nazupi
+    label: Nazupi
+    aliases: [nazupi.md]
+""",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(persona, "PERSONA_DIR", tmp_path)
     return tmp_path
 
 
-def test_the_panel_offers_every_voice_on_the_mount(auth, fake_bot, staged_personas, seeded):
-    """Read off the directory on each render, so a file dropped in is in the
-    list on the next page load rather than after a restart."""
-    fake_bot.repo.set_config("persona", "kanade.md")
+def test_manifest_personas_lead_with_human_labels(auth, fake_bot, manifest_personas, seeded):
+    fake_bot.repo.set_config("persona", "nazupi")
+    fake_bot.chat.reload_persona()
+
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert '<select name="persona">' in panel
-    assert '<option value="kanade.md" selected>kanade.md</option>' in panel
-    assert '<option value="gruff.md">gruff.md</option>' in panel
+    assert '<option value="yuuki-sakuna">Yuuki Sakuna</option>' in panel
+    assert '<option value="nazupi" selected>Nazupi</option>' in panel
+    assert ">yuuki-sakuna</option>" not in panel
+    assert "Changing Persona swaps identity, default behavior, and staging together." in panel
+    assert "Legacy compatibility" not in panel
+
+
+def test_manifest_persona_select_submits_and_marks_the_canonical_id(
+    auth, fake_bot, manifest_personas, seeded
+):
+    fake_bot.repo.set_config("persona", "nazupi")
+    fake_bot.chat.reload_persona()
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert '<select id="persona-select" name="persona" aria-describedby="persona-help"' in panel
+    assert '<option value="nazupi" selected>Nazupi</option>' in panel
+    assert "Use this persona" in panel
+
+
+def test_manifest_fallback_names_configured_and_effective_personas_without_prompt_text(
+    auth, fake_bot, manifest_personas, seeded
+):
+    fake_bot.repo.set_config("persona", "retired-persona")
+    fake_bot.chat.reload_persona()
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert "Persona recovery needed" in panel
+    assert 'Configured: <span class="mono">retired-persona</span>' in panel
+    assert "Effective: <strong>Yuuki Sakuna</strong>" in panel
+    assert "unknown persona selection" in panel
+    assert "PRIVATE IDENTITY" not in panel
+    assert "PRIVATE BEHAVIOUR" not in panel
+
+
+def test_manifest_with_no_loadable_choices_names_the_recovery(
+    auth, fake_bot, manifest_personas, seeded
+):
+    (manifest_personas / "personas.yaml").write_text(
+        """schema_version: 1
+default: unavailable
+personas:
+  - id: unavailable
+    label: Unavailable
+    aliases: []
+""",
+        encoding="utf-8",
+    )
+    fake_bot.repo.set_config("persona", "unavailable")
+    fake_bot.chat.reload_persona()
+
+    panel = chatbot_panel(auth.get("/config").text)
+
+    select = panel[panel.index('<select id="persona-select"') : panel.index("</select>")]
+    assert "disabled" in select
+    assert "No selectable Personas are available" in panel
+    assert "restore a valid manifest and complete bundle" in panel
+    assert "PRIVATE IDENTITY" not in panel
+
+
+def test_the_panel_offers_every_persona_on_the_mount(auth, fake_bot, staged_personas, seeded):
+    """Manifest choices are read live, so a new bundle appears without a restart."""
+    fake_bot.repo.set_config("persona", "kanade")
+    fake_bot.chat.reload_persona()
+    panel = chatbot_panel(auth.get("/config").text)
+
+    assert '<label class="label" for="persona-select">Persona</label>' in panel
+    assert '<select id="persona-select" name="persona" aria-describedby="persona-help"' in panel
+    assert '<option value="kanade" selected>Kanade</option>' in panel
+    assert '<option value="gruff">Gruff</option>' in panel
     assert "README.md" not in panel
+    assert "Use this persona" in panel
+    assert "Legacy compatibility" not in panel
 
 
-def test_choosing_a_voice_takes_effect_on_the_next_answer(auth, fake_bot, staged_personas, seeded):
-    """The whole point of the setting: no restart. The pilot caches the
-    document, so the write has to drop that cache."""
-    fake_bot.repo.set_config("persona", "kanade.md")
+def test_choosing_a_persona_takes_effect_on_the_next_answer(
+    auth, fake_bot, staged_personas, seeded
+):
+    """The selection replaces the whole active bundle without a restart."""
+    fake_bot.repo.set_config("persona", "kanade")
     fake_bot.chat.reload_persona()
     assert "Kanade" in fake_bot.chat.persona_text()
 
-    auth.post("/config", data={"section": "chatbot", "persona": "gruff.md"})
+    auth.post("/config", data={"section": "chatbot", "persona": "gruff"})
 
     assert "Gruff" in fake_bot.chat.persona_text()
-    assert fake_bot.chat.persona_source().name == "gruff.md"
+    assert fake_bot.repo.get_config("persona") == "gruff"
 
 
-def test_a_voice_that_is_not_on_the_mount_is_refused(auth, fake_bot, staged_personas, seeded):
-    """Membership, not sanitising -- and the refusal names filenames only,
-    because a persona's contents are the private half of this."""
+def test_a_persona_that_is_not_on_the_mount_is_refused(auth, fake_bot, staged_personas, seeded):
+    """Membership, not sanitising -- failure names IDs, never private text."""
     from bot.api.errors import ApiError
 
     for attempt in ("../persona.example.md", "/etc/passwd", "README.md", "nope.md"):
         with pytest.raises(ApiError) as raised:
             service.set_config(fake_bot, "persona", attempt)
-        assert "kanade.md" in raised.value.message  # what it offers instead
+        assert "kanade" in raised.value.message  # what it offers instead
         assert "You are" not in raised.value.message  # never the text itself
 
     assert fake_bot.repo.get_config("persona") is None
 
 
-def test_the_change_is_audited_by_filename_and_nothing_else(
+def test_the_persona_change_is_audited_by_id_and_nothing_else(
     auth, fake_bot, staged_personas, seeded
 ):
-    fake_bot.repo.set_config("persona", "kanade.md")
+    fake_bot.repo.set_config("persona", "kanade")
 
-    auth.post("/config", data={"section": "chatbot", "persona": "gruff.md"})
+    auth.post("/config", data={"section": "chatbot", "persona": "gruff"})
 
     row = next(r for r in fake_bot.repo.list_audit() if r["subject"] == "persona")
     assert row["surface"] == "portal"
-    assert "kanade.md -> gruff.md" in row["detail"]
+    assert "kanade -> gruff" in row["detail"]
     # The voice is private: its words never reach the audit trail.
     assert "You are" not in row["detail"]
 
 
-def test_a_chosen_voice_that_has_gone_missing_falls_back_and_says_so(
+def test_a_chosen_persona_that_has_gone_missing_shows_configured_and_effective(
     auth, fake_bot, staged_personas, seeded
 ):
-    """The file was there when it was picked and is not now -- a deleted file,
-    a mount that came up empty. The bot answers in the template rather than in
-    nothing, and the panel says which."""
-    fake_bot.repo.set_config("persona", "kanade.md")
-    (staged_personas / "kanade.md").unlink()
+    """The bundle was there when picked and is not now -- the bot answers from
+    the complete default bundle instead of nothing, and the panel says which."""
+    fake_bot.repo.set_config("persona", "gruff")
+    (staged_personas / "personas" / "gruff" / "identity.md").unlink()
     fake_bot.chat.reload_persona()
 
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert f"fallback: {fake_bot.chat.persona_source().name}" in panel
+    assert "Persona recovery needed" in panel
+    assert 'Configured: <span class="mono">gruff</span>' in panel
+    assert "Effective: <strong>Kanade</strong>" in panel
     assert "status--at_risk" in panel
-    assert "kanade.md" in panel  # ...and names the choice that went missing
 
 
-def test_the_setting_seeds_from_the_configured_path(tmp_path):
-    """A fresh database starts on whatever `PERSONA_PATH` names, by basename --
-    a name, never the path itself. `seed_config` only inserts what is missing,
-    so a voice chosen at 9pm is not undone by the next restart reading `.env`."""
+def test_the_setting_seeds_canonical_ids_without_overwriting(tmp_path, staged_personas):
+    """A fresh database seeds the manifest default (or alias target); `seed_config`
+    only inserts what is missing, so a persona chosen in the portal survives restarts."""
     from bot.__main__ import build_repo
     from bot.agent.client import CFG_PERSONA
 
@@ -596,28 +730,26 @@ def test_the_setting_seeds_from_the_configured_path(tmp_path):
     )
     repo = build_repo(settings)
     try:
-        assert repo.get_config(CFG_PERSONA) == "kanade.md"
-        # Seeding never overwrites: the row is the choice from here on.
-        repo.set_config(CFG_PERSONA, "gruff.md")
+        # `kanade.md` is a legacy alias for the canonical `kanade` bundle.
+        assert repo.get_config(CFG_PERSONA) == "kanade"
+        repo.set_config(CFG_PERSONA, "gruff")
         build_repo(settings).close()
-        assert repo.get_config(CFG_PERSONA) == "gruff.md"
+        assert repo.get_config(CFG_PERSONA) == "gruff"
     finally:
         repo.close()
 
 
-def test_a_deploy_with_no_persona_of_its_own_says_so(auth, fake_bot, seeded):
-    """Falling back to the template means answering in the placeholder voice --
-    a misconfiguration, and one that used to show up only in a startup WARNING.
-    So it is a warn-state on the panel, not a filename that looks like any
-    other."""
+def test_a_deploy_with_no_persona_of_its_own_explains_recovery(auth, fake_bot, seeded):
+    """A tracked fallback is named as a recoverable deployment state."""
     fake_bot.settings.persona_path = ""
     fake_bot.chat.reload_persona()
 
     panel = chatbot_panel(auth.get("/config").text)
 
-    assert "fallback: example.md" in panel
+    assert "Persona recovery needed" in panel
+    assert "Effective: <strong>" in panel
+    assert "Restore or select a complete Persona" in panel
     assert "status--at_risk" in panel
-    assert "config/personas/" in panel  # ...and where to put a real one
 
 
 # --- what .env holds --------------------------------------------------------

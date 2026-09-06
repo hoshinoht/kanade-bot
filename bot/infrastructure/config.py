@@ -120,13 +120,13 @@ class Settings(BaseSettings):
     #: Reasoning effort for the chat pilot. Empty falls back to ``OLLAMA_THINK``
     #: so the extractor can stay fast while speech reasons harder.
     chat_pilot_think: str = ""
-    #: Stable identity document on the persona bind mount.
+    #: Deprecated seed identity path; manifest deployments resolve its basename.
     persona_path: str = "config/personas/identities/persona.md"
-    #: Silent staging copy under the personas ecosystem. Missing file falls back.
+    #: Legacy-only staging path. Manifest bundles carry their own baseline staging.
     staging_path: str = "config/personas/behaviours/staging.yaml"
     #: Per-profile staging overrides beside each voice. Filename must match
-    #: behaviours/profiles/<profile>.md. Partial files inherit from default.
-    staging_profiles_dir: str = "config/personas/behaviours/profiles/staging"
+    #: behaviours/<profile>.md. Partial files inherit from default.
+    staging_profiles_dir: str = "config/personas/behaviours/staging"
 
     # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Empty refuses every non-health API request.

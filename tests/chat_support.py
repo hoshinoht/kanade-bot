@@ -198,7 +198,10 @@ def chat_settings(**overrides: Any):
         "chat_pilot_channel_ids": str(CHAT_CHANNEL),
         "chat_pilot_category_ids": str(CHAT_CATEGORY),
         "admin_role_id": ADMIN_ROLE,
-        "persona_path": "config/personas/identities/example.md",
+        "persona_path": "config/personas/personas/kanade/identity.md",
+        # Production-size context: the shipped bundles plus tool schemas do
+        # not fit the 8192 default. Budget-edge tests set their own value.
+        "ollama_num_ctx": 16384,
     }
     values.update(overrides)
     return make_settings(**values)

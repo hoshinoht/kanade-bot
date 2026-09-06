@@ -25,6 +25,7 @@ from bot.agent.materialise import (
 from bot.agent.pings import audience, normalise_level
 from bot.agent.rsvp import compute_status, recompute_after_roster_change
 from bot.agent.util import is_bot_admin
+from bot.chat import persona_catalog
 from bot.domain.bosses import BossParseError
 from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
 from bot.domain.timeutil import from_iso, local_naive, to_iso, utcnow
@@ -2170,8 +2171,19 @@ def limits(bot: BossBot) -> dict:
 
 
 def get_config(bot: BossBot) -> dict:
-    # Use the pilot's loaded persona state.
-    persona_source = bot.chat.persona_source()
+    runtime = bot.chat.persona_runtime()
+    bundle = runtime.bundle
+    try:
+        catalog = bot.chat.persona_catalog()
+        labels = {item.id: item.label for item in catalog.choices}
+        choices = list(labels)
+        catalog_mode = catalog.mode
+    except persona_catalog.PersonaCatalogError:
+        labels = {}
+        choices = []
+        catalog_mode = "fallback"
+    if bundle.id == persona_catalog.EXAMPLE_ID and bundle.fell_back:
+        catalog_mode = "fallback"
     configured_role_plugins, role_plugin_issues = behaviour_plugins.assignment_diagnostics(
         bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
     )
@@ -2202,13 +2214,18 @@ def get_config(bot: BossBot) -> dict:
         # Which persona file is actually loaded, and whether it is the tracked
         # template. A deploy answering in the placeholder voice is a
         # misconfiguration, and it used to be visible only in a startup WARNING.
-        "persona_file": persona_source.name,
-        "persona_fallback": persona_source.fell_back,
+        "persona_file": bundle.source.identity_path.name,
+        "persona_fallback": bundle.fell_back,
         # The choice, and what there is to choose from. `persona` is what the
         # setting says; `persona_file` above is what the bot actually read, and
         # the two differ exactly when the chosen file has gone missing.
         "persona": bot.persona_name,
-        "persona_choices": bot.persona_choices(),
+        "persona_choices": choices,
+        "persona_labels": labels,
+        "persona_effective": bundle.id,
+        "persona_effective_label": bundle.label,
+        "persona_catalog_mode": catalog_mode,
+        "persona_issue": bundle.issue,
         "chat_role_plugins": [item.as_dict() for item in configured_role_plugins],
         "chat_role_plugin_issues": [issue.message for issue in role_plugin_issues],
         "behaviour_plugins": [
@@ -2275,10 +2292,16 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         for run in bot.repo.list_runs(statuses=LIVE_STATUSES):
             ensure_reminders(bot.repo, run, bot.tz, bot.ping_time, bot.countdowns, now=now)
     elif key == "persona":
-        stored = _persona_choice(bot, value)
+        try:
+            candidate = bot.chat.prepare_persona_runtime(str(value or "").strip())
+        except persona_catalog.PersonaCatalogError as exc:
+            choices = bot.persona_choices()
+            offered = ", ".join(f"`{item}`" for item in choices) or "none"
+            raise BadRequest(f"{exc}; available personas: {offered}") from None
+        stored = candidate.bundle.id
         bot.repo.set_config(key, stored)
-        # Apply persona changes without a restart.
-        bot.chat.reload_persona()
+        # The candidate is fully loaded before persistence. Assignment has no await.
+        bot.chat.activate_persona_runtime(candidate)
     elif key == behaviour_plugins.CONFIG_KEY:
         try:
             stored = behaviour_plugins.encode(value)
@@ -2470,11 +2493,10 @@ def _persona_choice(bot: BossBot, value: Any) -> str:
     half of this feature and never leave the file.
     """
     wanted = str(value or "").strip()
-    choices = bot.persona_choices()
-    if wanted in choices:
-        return wanted
-    offered = ", ".join(f"`{name}`" for name in choices) or "none -- config/personas/ is empty"
-    raise BadRequest(f"`{wanted}` is not a persona in config/personas/ - one of: {offered}")
+    try:
+        return bot.chat.prepare_persona_runtime(wanted).bundle.id
+    except persona_catalog.PersonaCatalogError as exc:
+        raise BadRequest(str(exc)) from None
 
 
 def _whole_number(value: Any, label: str, minimum: int = 1) -> int:

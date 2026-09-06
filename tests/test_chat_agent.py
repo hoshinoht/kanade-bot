@@ -809,6 +809,51 @@ async def test_schedule_commentary_keeps_a_blank_line_after_the_final_run(chat_b
     )
 
 
+async def test_schedule_rows_are_regrounded_after_mispaired_backticks(chat_bot, chat_seeded):
+    star = short_id(chat_seeded["star"])
+    kalos = short_id(chat_seeded["kalos"])
+    malformed = (
+        "Kanade's got it!\n\n"
+        "**This boss week, ALL channels**\n"
+        f"\\`[{star}]` *Mon 21:30* **Hard MaleficStar + Hard FA** (`confirmed`, `1/2 yes`)\n"
+        f"`[{kalos}]\\` *Tue 23:00* **Extreme Kalos** (`confirmed`, `0/2 yes`)\n\n"
+        "Good luck, everyone~"
+    )
+    agent = pilot(chat_bot, wants("get_schedule", scope="all", week="this"), says(malformed))
+
+    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+
+    assert result is not None
+    canonical = result.outcomes[0].output
+    assert result.reply == f"Kanade's got it!\n\n{canonical}\n\nGood luck, everyone~"
+    assert "\\`" not in result.reply
+    assert result.reply.count("\n`[") == 2
+    assert replies(chat_bot)[0].content == result.reply
+
+
+async def test_schedule_paraphrase_with_bare_ids_is_regrounded(chat_bot, chat_seeded):
+    star = short_id(chat_seeded["star"])
+    kalos = short_id(chat_seeded["kalos"])
+    opener = "Ara ara~ you're checking today's lineup, huh?"
+    closer = "Don't forget to smash that ✅ on the cards!"
+    malformed = (
+        f"{opener}\n\n"
+        f"Hard Limbo - 20:30 - [#1545829202547445791] - run ID \\{star}' (1/2)\n"
+        f"**Hard Baldrix** - 22:00 - [#1540675738674536538] - run ID '{kalos}' (0/2)\n\n"
+        f"{closer}"
+    )
+    agent = pilot(chat_bot, wants("get_schedule", scope="all", week="this"), says(malformed))
+
+    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+
+    assert result is not None
+    canonical = result.outcomes[0].output
+    assert result.reply == f"{opener}\n\n{canonical}\n\n{closer}"
+    assert "run ID" not in result.reply
+    assert result.reply.count("\n`[") == 2
+    assert replies(chat_bot)[0].content == result.reply
+
+
 async def test_all_generated_output_keeps_markdown_blocks_and_normalises_excess_space(
     chat_bot, chat_seeded
 ):

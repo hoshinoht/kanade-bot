@@ -145,7 +145,7 @@ def chat_bot(repo: Repo, bosses: BossTable):
 
     bot = build_bot(repo, bosses)
     bot.settings.staging_path = str(
-        REPO_ROOT / "config" / "personas" / "behaviours" / "staging.example.yaml"
+        REPO_ROOT / "config" / "personas" / "personas" / "kanade" / "staging.yaml"
     )
     bot.settings.staging_profiles_dir = ""
     bot.chat.reload_staging()

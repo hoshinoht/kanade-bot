@@ -12,9 +12,12 @@ from typing import Any
 CONFIG_KEY = "chat_role_plugins"
 SELECTABLE_CONFIG_KEY = "chat_selectable_plugins"
 PERSONA_ROOT = Path(__file__).resolve().parent.parent / "config" / "personas"
-DEFAULT_PLUGIN_DIR = PERSONA_ROOT / "behaviours" / "profiles"
+DEFAULT_PLUGIN_DIR = PERSONA_ROOT / "behaviours"
 PLUGIN_DIR = DEFAULT_PLUGIN_DIR
-LEGACY_PLUGIN_DIR = PERSONA_ROOT / "behaviour-plugins"
+LEGACY_PLUGIN_DIRS = (
+    PERSONA_ROOT / "behaviours" / "profiles",
+    PERSONA_ROOT / "behaviour-plugins",
+)
 MAX_ROLE_PLUGINS = 20
 MAX_PLUGINS = 30
 MAX_INSTRUCTIONS_CHARS = 4000
@@ -100,7 +103,8 @@ def available(directory: Path | None = None) -> list[str]:
     if directory is None:
         names = set(_available_in(PLUGIN_DIR))
         if PLUGIN_DIR == DEFAULT_PLUGIN_DIR:
-            names.update(_available_in(LEGACY_PLUGIN_DIR))
+            for legacy in LEGACY_PLUGIN_DIRS:
+                names.update(_available_in(legacy))
         return sorted(names)
     return _available_in(directory)
 
@@ -125,7 +129,7 @@ def read(name: str, directory: Path | None = None) -> Plugin | None:
         return None
     directories = [directory] if directory is not None else [PLUGIN_DIR]
     if directory is None and PLUGIN_DIR == DEFAULT_PLUGIN_DIR:
-        directories.append(LEGACY_PLUGIN_DIR)
+        directories.extend(LEGACY_PLUGIN_DIRS)
     for source in directories:
         if safe not in _available_in(source):
             continue
