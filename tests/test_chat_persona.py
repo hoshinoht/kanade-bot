@@ -426,3 +426,16 @@ async def test_answer_pins_manifest_runtime_while_model_awaits(
     assert "Nazupi" in agent._client.prompts[-1][0]["content"]
     assert "voice: Nazupi" in agent._client.reminder(-1)["content"]
     assert [item["role"] for item in agent._client.conversation(-1)] == ["system", "user"]
+
+
+def test_tracked_kanade_bundle_enforces_english_and_sunday_only_monday():
+    """Kanade answered a persona question in Japanese with a Monday joke on Monday."""
+    identity = persona.EXAMPLE_PERSONA.read_text(encoding="utf-8")
+    behaviour = persona.EXAMPLE_DEFAULT_BEHAVIOUR.read_text(encoding="utf-8")
+    assert "Reply in English" in identity
+    assert "Never reply entirely in Japanese" in identity
+    assert "OtonoseKanade in voice" in identity
+    assert "Reply in English" in behaviour
+    assert "only when the clock header weekday is Sunday" in behaviour
+    assert "Never claim tomorrow is Monday on any other weekday" in behaviour
+    assert "Only say" in identity and "clock header weekday is Sunday" in identity
