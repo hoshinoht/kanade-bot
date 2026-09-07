@@ -624,7 +624,9 @@ class BossBot(discord.Client):
         for channel_id, entries in day_of.items():
             await self._send_day_of(channel_id, entries)
 
-    async def find_channel(self, channel_id: int | str | None = None) -> ChannelLookup:
+    async def find_channel(
+        self, channel_id: int | str | None = None, *, allow_fallback: bool = True
+    ) -> ChannelLookup:
         """Resolve somewhere to post, and say why if there is nowhere.
 
         The home channel can disappear (deleted, or the bot loses access), so
@@ -632,9 +634,16 @@ class BossBot(discord.Client):
         both fail the *reason* matters far more than the failure: "no access"
         and "no such channel" need completely different fixes, and a bare
         "couldn't post" sends the owner hunting.
+
+        Pass ``allow_fallback=False`` when the caller named an explicit
+        channel ("post this in #here"): falling back to the digest channel
+        would post somewhere the operator did not ask for.
         """
         problems: list[str] = []
-        for candidate in (channel_id, self.settings.post_channel_id):
+        candidates = (
+            (channel_id, self.settings.post_channel_id) if allow_fallback else (channel_id,)
+        )
+        for candidate in candidates:
             if candidate is None:
                 continue
             try:
@@ -698,10 +707,10 @@ class BossBot(discord.Client):
         return bool(permissions.view_channel and permissions.send_messages)
 
     async def post_channel(
-        self, channel_id: int | str | None = None
+        self, channel_id: int | str | None = None, *, allow_fallback: bool = True
     ) -> discord.abc.Messageable | None:
         """Just the channel, for callers that have nothing useful to say about failure."""
-        return (await self.find_channel(channel_id)).channel
+        return (await self.find_channel(channel_id, allow_fallback=allow_fallback)).channel
 
     def access_report(self) -> list[dict]:
         """Every channel the bot is meant to use, and what it may do there.
@@ -1369,7 +1378,8 @@ class BossBot(discord.Client):
 
         Goes to ``channel_id`` if given, else ``POST_CHANNEL_ID``. It names
         people rather than mentioning them: a guild-wide post must not notify
-        thirty bossers about every party's run.
+        thirty bossers about every party's run. An explicit channel never
+        falls back elsewhere.
         """
         now = utcnow()
         ws = (
@@ -1380,7 +1390,7 @@ class BossBot(discord.Client):
             )
         )
         runs = self.repo.list_runs(week_start=ws)
-        channel = await self.post_channel(channel_id)
+        channel = await self.post_channel(channel_id, allow_fallback=channel_id is None)
         if channel is None:
             log.error("no channel available for the weekly digest")
             return None

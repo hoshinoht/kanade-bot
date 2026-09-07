@@ -12,7 +12,7 @@ of which is the LLM, and a human ends every one of them.
 **1. Gate (Python, no model).** Every message is scored for a boss alias, a clock
 time, a weekday or relative day, a scheduling verb, an `@here`, a mention of a
 roster member, or an agreement ("Can", "Ok", "kenot"). Banter is dropped here, so
-a 13 GB model is never woken for "botter again sigh". Boss tokens tolerate the group's
+an 8 GB model is never woken for "botter again sigh". Boss tokens tolerate the group's
 spelling — `hlimb`, `nbald`, `bladrix`, `hkarling`, `exkalos`, `hstarr` — but
 `start` never becomes `Star` and `cc9`/`ch7` is a map channel, not a time. Bare
 answers ("Can") only trigger a call if the channel was scheduling in the last 6 h.

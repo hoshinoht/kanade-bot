@@ -1153,7 +1153,7 @@ def test_config_reports_runtime_and_deployment_values(auth, seeded):
     assert body["extract_enabled"] is True
     assert body["timezone"] == "Asia/Kuala_Lumpur"
     assert body["reset"] == "Thu 00:00"
-    assert body["model"] == "gpt-oss:20b"
+    assert body["model"] == "gemma4:12b"
 
 
 def test_setting_the_ping_time_re_places_the_pending_morning_pings(auth, fake_bot, seeded):
@@ -1306,6 +1306,41 @@ def test_digest_says_when_the_channel_does_not_exist(auth, fake_bot, seeded):
     response = auth.post("/api/digest", json={"channel_id": "424242"})
     assert response.status_code == 400
     assert "does not exist" in response.json()["error"]
+
+
+def test_an_explicit_channel_never_falls_back_to_the_digest_channel(auth, fake_bot, seeded):
+    """`bossctl guide --channel <id>` posting in the wrong channel.
+
+    `find_channel` falls back to POST_CHANNEL_ID for reminders that must land
+    somewhere; an explicit operator request must instead fail when that
+    channel is gone.
+    """
+    # The fallback is available and different from the requested channel.
+    assert str(fake_bot.settings.post_channel_id) == str(WATCHED_CHANNEL)
+
+    response = auth.post("/api/digest", json={"channel_id": "424242"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+    assert fake_bot.digests == []
+
+    response = auth.post("/api/say", json={"channel_id": "424242", "content": "hello"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+    assert fake_bot.posts == []
+
+    response = auth.post("/api/guide", json={"channel_id": "424242", "content": "hello"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+
+    fake_bot.channels[OTHER_CHANNEL].permissions.send_messages = False
+    response = auth.post("/api/say", json={"channel_id": str(OTHER_CHANNEL), "content": "hi"})
+    assert response.status_code == 400
+    assert "no access" in response.json()["error"]
+    assert fake_bot.posts == []
+
+    response = auth.post("/api/guide", json={"channel_id": str(OTHER_CHANNEL), "content": "hi"})
+    assert response.status_code == 400
+    assert "no access" in response.json()["error"]
 
 
 def test_a_rejected_message_is_reported_separately(auth, fake_bot, seeded):

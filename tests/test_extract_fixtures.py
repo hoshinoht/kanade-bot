@@ -1,4 +1,4 @@
-"""The fixture suite: the real ``gpt-oss:20b`` against the guild's own chat.
+"""The fixture suite: the real ``gemma4:12b`` against the guild's own chat.
 
     uv run pytest -m ollama -v
 
@@ -63,7 +63,7 @@ def results(settings, bosses) -> dict[str, fl.Score]:
     All of them run inside a single :func:`asyncio.run`, because the underlying
     httpx client belongs to the loop it was created on -- closing it from a
     second loop raises. The calls are made once for the whole session because
-    each is seconds long and the model is 13 GB.
+    each is seconds long and the model is ~8 GB.
     """
 
     async def run_all():

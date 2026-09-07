@@ -77,7 +77,7 @@ def test_the_defaults_are_the_documented_ones():
     assert settings.chat_pilot_global_rate_count == 12
     assert settings.chat_pilot_global_rate_window_s == 900.0
     assert settings.chat_pilot_lock_wait_s == 2.0
-    assert settings.chat_pilot_model == "gpt-oss:20b"
+    assert settings.chat_pilot_model == "gemma4:12b"
     assert settings.chat_pilot_timeout == 60.0
     assert settings.persona_path == "config/personas/personas/kanade/identity.md"
     assert Settings.model_fields["persona_path"].default == "config/personas/identities/persona.md"
@@ -256,7 +256,7 @@ def test_get_config_reports_how_the_pilot_is_set_up(chat_bot):
     assert values["chat_configured"] is True
     assert values["chat_channels"] == [str(CHAT_CHANNEL)]
     assert values["chat_categories"] == [str(CHAT_CATEGORY)]
-    assert values["chat_model"] == "gpt-oss:20b"
+    assert values["chat_model"] == "gemma4:12b"
 
 
 def test_the_chat_role_id_is_never_exposed_by_the_api(chat_bot):
@@ -306,7 +306,7 @@ def test_debug_status_names_the_chatbot_without_printing_its_ids(chat_bot):
 
     line = _chat_state(chat_bot)
     assert "on" in line
-    assert "gpt-oss:20b" in line
+    assert "gemma4:12b" in line
     assert "1 channel(s), 1 categor" in line
     for secret in (str(CHAT_ROLE), str(CHAT_CHANNEL), str(CHAT_CATEGORY)):
         assert secret not in line

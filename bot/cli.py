@@ -40,8 +40,8 @@ DEFAULT_URL = "http://127.0.0.1:8080"
 #: Ordinary calls are local and instant; the read budget covers a `digest` or a
 #: `ping` waiting on Discord.
 TIMEOUT = httpx.Timeout(10.0, read=60.0)
-#: A week-wide rescan is one model call per conversation, and `gpt-oss:20b`
-#: takes 10-40 s each on the host. Ten minutes is deliberately generous -- the
+#: A week-wide rescan is one model call per conversation, and `gemma4:12b`
+#: takes ~10-40 s each on the host. Ten minutes is deliberately generous -- the
 #: alternative is the CLI giving up on work the bot then finishes anyway.
 RESCAN_TIMEOUT = httpx.Timeout(10.0, read=900.0)
 

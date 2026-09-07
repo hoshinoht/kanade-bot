@@ -162,7 +162,7 @@ def digest_bot(bot, channel) -> None:
     bot.settings = make_settings()
     bot.tz = bot.settings.zoneinfo
 
-    async def post_channel(channel_id=None):
+    async def post_channel(channel_id=None, *args, **kwargs):
         return channel
 
     bot.post_channel = post_channel
