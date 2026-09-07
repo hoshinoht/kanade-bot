@@ -510,7 +510,7 @@ def test_the_reminders_page_separates_queued_from_sent(auth, fake_bot, seeded):
 
 def test_the_config_page_shows_the_read_only_deployment_values(auth, seeded):
     body = auth.get("/config").text
-    assert "gpt-oss:20b" in body
+    assert "gemma4:12b" in body
     assert "Thu 00:00" in body
     assert "Pause watching" in body
 

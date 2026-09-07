@@ -342,7 +342,7 @@ class FakeBot:
     def get_channel(self, _id):
         return self.channel
 
-    async def post_channel(self, _channel_id=None):
+    async def post_channel(self, _channel_id=None, *args, **kwargs):
         return self.channel
 
     async def _post(self, channel, card, mention_users=None):

@@ -66,13 +66,15 @@ class Settings(BaseSettings):
 
     # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"
-    ollama_model: str = "gpt-oss:20b"
-    #: Seconds to wait for one extraction call. `gpt-oss:20b` on an M4 Pro takes
-    #: roughly 10-40 s for a ~3k-token prompt; the first call after a cold start
-    #: also pays for loading 13 GB of weights.
+    ollama_model: str = "gemma4:12b"
+    #: Seconds to wait for one extraction call. `gemma4:12b` takes roughly
+    #: 10-40 s for a ~3k-token prompt; the first call after a cold start
+    #: also pays for loading ~8 GB of weights.
     ollama_timeout: float = Field(default=120.0, gt=0)
-    #: `think` for gpt-oss-style reasoning models: low/medium/high, or "off".
-    ollama_think: str = "low"
+    #: `think` for reasoning models: low/medium/high, or "off". Off by
+    #: default: gemma4 reasons unless told not to, and a thinking burst costs
+    #: minutes, not seconds (see `scripts/bench_extract.py`).
+    ollama_think: str = "off"
     #: Context window handed to the model.
     ollama_num_ctx: int = Field(default=8192, ge=2048)
 
@@ -112,7 +114,7 @@ class Settings(BaseSettings):
     chat_pilot_history_ttl_s: float = Field(default=2700.0, gt=0)
     #: The model that answers. Separate from ``OLLAMA_MODEL`` so the extractor's
     #: model can be changed without silently changing the bot's voice.
-    chat_pilot_model: str = "gpt-oss:20b"
+    chat_pilot_model: str = "gemma4:12b"
     #: Seconds for one whole answer, tool rounds included.
     chat_pilot_timeout: float = Field(default=60.0, gt=0)
     #: Sampling temperature for chatbot replies.

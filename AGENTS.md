@@ -5,7 +5,7 @@
 - Use Python 3.12 only (`pyproject.toml` rejects 3.13) and manage the environment with `uv`.
 - Set up with `uv sync`; CI uses `uv sync --locked`, so run `uv lock` only when intentionally changing dependencies.
 - A focused test is `uv run pytest -q tests/test_<area>.py::test_<case>`.
-- `uv run pytest` excludes the `ollama` marker through pytest config and needs neither Discord nor a model. `uv run pytest -m ollama -v` hits the real local model (about 13 GB, slow); extractor fixtures skip if Ollama is unavailable, and the chatbot smoke test can be narrowed with `-k chat_live`.
+- `uv run pytest` excludes the `ollama` marker through pytest config and needs neither Discord nor a model. `uv run pytest -m ollama -v` hits the real local model (about 8 GB, slow); extractor fixtures skip if Ollama is unavailable, and the chatbot smoke test can be narrowed with `-k chat_live`.
 - Match CI with `uv run ruff check .`, `uv run ruff format --check .`, `uv run python -m bot.portal_styles --output /tmp/portal.css`, and `uv run pytest -q -m "not ollama"`. CI also runs `docker build .` independently.
 - Optional local hooks are enabled with `git config core.hooksPath .githooks`; pre-commit may format and re-stage Python files, while pre-push runs the non-Ollama suite.
 - If the repository moves and `.venv` commands report a bad interpreter, repair their absolute shebangs with `uv sync --reinstall`.

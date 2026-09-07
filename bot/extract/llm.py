@@ -1,6 +1,6 @@
 """One guarded call to the local model.
 
-``gpt-oss:20b`` is 13 GB and lives on the host's GPU, so exactly one call runs at
+``gemma4:12b`` is ~8 GB and lives on the host's GPU, so exactly one call runs at
 a time (:data:`MODEL_LOCK`) and ``keep_alive=-1`` keeps it resident between
 bursts -- otherwise every call pays to reload the weights.
 

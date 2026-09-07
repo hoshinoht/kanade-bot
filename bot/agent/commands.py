@@ -1480,9 +1480,9 @@ async def say(
         return
 
     target_id = getattr(target, "id", None)
-    lookup = await bot.find_channel(target_id)
+    lookup = await bot.find_channel(target_id, allow_fallback=False)
     # ``/say`` must not fall back to the digest channel.
-    if lookup.channel is None or getattr(lookup.channel, "id", None) != target_id:
+    if lookup.channel is None:
         # Report access to the requested channel.
         problem = lookup.problem or bot.no_access(target_id, target)
         await interaction.response.send_message(f"❌ {problem}", ephemeral=True)

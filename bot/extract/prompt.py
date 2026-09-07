@@ -111,7 +111,9 @@ KINDS -- pick by asking "is this boss already in RUNS?"
          "own time", "we do ourselves". Literal "otot" must be `otot`, never
          `add`; "we otot do the hcarl" names HCarling only, not its whole run.
   sub    someone is out and a stand-in is wanted ("find temp for this week?",
-         "can someone cover for me")
+         "can someone cover for me"). `participants` is the author asking
+         for cover -- "for me" means that message's author, never empty.
+         A bare request with no answer yet is a question (`is_question: true`).
   rsvp   an answer about attending: "Can", "Ok", "I ok", "ya", "confirm",
          "kenot", "cannot", "cmi", "not free". Set `rsvp` to yes/no/maybe
          and `participants` to just that author's id.

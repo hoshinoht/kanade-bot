@@ -2528,7 +2528,9 @@ async def post_digest(
     bot: BossBot, channel_id: int | str | None = None, week: str = "this"
 ) -> dict:
     week_for(bot, week)  # validates
-    found = await bot.find_channel(channel_id)
+    # An explicit channel must not fall back to POST_CHANNEL_ID: "post this in
+    # #here" landing in the digest channel is a wrong-channel post.
+    found = await bot.find_channel(channel_id, allow_fallback=channel_id is None)
     if found.channel is None:
         raise BadRequest(f"couldn't post the digest: {found.problem}")
     message = await bot.post_digest(channel_id, week=week)
@@ -2556,7 +2558,7 @@ async def post_say(bot: BossBot, channel_id: str, content: str) -> dict:
     """Post a plain-text message to a channel, notifying nobody."""
     from bot.agent.util import mentions_in
 
-    found = await bot.find_channel(channel_id)
+    found = await bot.find_channel(channel_id, allow_fallback=False)
     if found.channel is None:
         raise BadRequest(f"couldn't post: {found.problem}")
     users, roles = mentions_in(content)
@@ -2697,7 +2699,7 @@ async def post_guide(
             embed.set_footer(text=footer)
         embeds.append(embed)
 
-    found = await bot.find_channel(channel_id)
+    found = await bot.find_channel(channel_id, allow_fallback=False)
     if found.channel is None:
         raise BadRequest(f"couldn't post: {found.problem}")
 
