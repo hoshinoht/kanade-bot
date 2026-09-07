@@ -14,7 +14,7 @@ import pytest
 
 from bot.api import service
 from bot.chat import persona
-from bot.chat.agent import ChatPilot
+from bot.chat.agent import ChatPilot, ChatTurn
 
 from .chat_support import ADMIN_ROLE, CHAT_CHANNEL, CHAT_ROLE, FakeOllama, build_bot, message, says
 from .test_persona_catalog import _bundle, _manifest
@@ -377,6 +377,21 @@ def test_the_persona_is_read_once_and_reloadable(tmp_path, repo, bosses):
     assert pilot.reload_persona() == "second"
 
 
+def test_reloading_a_changed_identity_invalidates_old_history(tmp_path, repo, bosses):
+    path = tmp_path / "persona.md"
+    path.write_text("first", encoding="utf-8")
+    pilot = ChatPilot(build_bot(repo, bosses, persona_path=str(path)), client=object())
+    pilot.remember(str(CHAT_CHANNEL), ChatTurn("assistant", "an answer in the old voice", "1"))
+    old_answer = pilot.history(str(CHAT_CHANNEL))[0]
+    pilot.anchor("1", str(CHAT_CHANNEL), ChatTurn("user", "hello"), old_answer)
+
+    path.write_text("second", encoding="utf-8")
+    pilot.reload_persona()
+
+    assert list(pilot.history(str(CHAT_CHANNEL))) == []
+    assert pilot._anchors == {}
+
+
 @pytest.mark.anyio
 async def test_answer_pins_manifest_runtime_while_model_awaits(
     catalog_root, monkeypatch, repo, bosses
@@ -406,6 +421,8 @@ async def test_answer_pins_manifest_runtime_while_model_awaits(
     assert "Yuuki" in agent._client.prompts[0][0]["content"]
     assert "voice: Yuuki" in agent._client.reminder(0)["content"]
     assert bot.staging_posts[0].content == "Yuuki-generic"
+    assert list(agent.history(str(CHAT_CHANNEL))) == []
     await agent._answer(message(bot, "@bot again"), str(CHAT_CHANNEL))
     assert "Nazupi" in agent._client.prompts[-1][0]["content"]
     assert "voice: Nazupi" in agent._client.reminder(-1)["content"]
+    assert [item["role"] for item in agent._client.conversation(-1)] == ["system", "user"]

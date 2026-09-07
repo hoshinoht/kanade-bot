@@ -557,6 +557,7 @@ class ChatPilot:
         self._anchors: dict[str, Anchor] = {}
         self._replied: dict[str, str | None] = {}
         self._persona_runtime = self._load_configured_persona_runtime()
+        self._identity_revision = 0
 
     # -- wiring ------------------------------------------------------------
     def client(self) -> Any:
@@ -739,7 +740,7 @@ class ChatPilot:
         }
 
     def reload_persona(self) -> str:
-        self._persona_runtime = self._load_configured_persona_runtime()
+        self.activate_persona_runtime(self._load_configured_persona_runtime())
         return self.persona_text()
 
     def prepare_persona_runtime(self, selection: str) -> persona_catalog.PersonaRuntime:
@@ -752,8 +753,13 @@ class ChatPilot:
         )
 
     def activate_persona_runtime(self, runtime: persona_catalog.PersonaRuntime) -> None:
-        """Synchronously publish a preloaded complete runtime."""
+        """Publish a preloaded runtime, dropping history after an identity change."""
+        previous = self._persona_runtime.bundle
         self._persona_runtime = runtime
+        if (previous.id, previous.identity) != (runtime.bundle.id, runtime.bundle.identity):
+            self._identity_revision += 1
+            self._history.clear()
+            self._anchors.clear()
 
     def answering(self) -> list[str]:
         """Return sorted channels with an answer in flight."""
@@ -982,6 +988,7 @@ class ChatPilot:
         self_role_id: str | None = None,
     ) -> Generation:
         runtime = self.persona_runtime()
+        identity_revision = self._identity_revision
         author_id = str(message.author.id)
         text = (message.content or "").strip()
         force_all_channels, force_group_schedule = _schedule_defaults(
@@ -1043,9 +1050,10 @@ class ChatPilot:
         asked = ChatTurn("user", self._speaker(author_id, text), str(message.id))
         # The posted id supports re-anchoring and de-duplication.
         answered = ChatTurn("assistant", reply, str(getattr(posted, "id", "") or "") or None)
-        self.remember(channel_id, asked)
-        self.remember(channel_id, answered)
-        self.anchor(answered.message_id, channel_id, asked, answered)
+        if identity_revision == self._identity_revision:
+            self.remember(channel_id, asked)
+            self.remember(channel_id, answered)
+            self.anchor(answered.message_id, channel_id, asked, answered)
         # Summary only; DEBUG logs tool arguments.
         log.info(
             "chat: answered %s in channel %s in %d ms (%d round(s), %d tool call(s)%s)%s%s",
@@ -1160,6 +1168,7 @@ class ChatPilot:
         card_message_id: int | str | None,
     ) -> Generation:
         runtime = self.persona_runtime()
+        identity_revision = self._identity_revision
         channel_id = str(origin_ids(channel)[0])
         context = tools.ToolContext(
             bot=self.bot,
@@ -1195,9 +1204,10 @@ class ChatPilot:
             posted_id = str(getattr(posted, "id", "") or "") or None
             asked = ChatTurn("user", note)
             answered = ChatTurn("assistant", result.reply, posted_id)
-            self.remember(channel_id, asked)
-            self.remember(channel_id, answered)
-            self.anchor(posted_id, channel_id, asked, answered)
+            if identity_revision == self._identity_revision:
+                self.remember(channel_id, asked)
+                self.remember(channel_id, answered)
+                self.anchor(posted_id, channel_id, asked, answered)
         elif placeholder is not None:
             await self._discard_placeholder(placeholder)
         self._record(card_message_id, channel_id, author_id, question, result.reply, result)
