@@ -748,7 +748,7 @@ def test_a_deploy_with_no_persona_of_its_own_explains_recovery(auth, fake_bot, s
 
     assert "Persona recovery needed" in panel
     assert "Effective: <strong>" in panel
-    assert "Restore or select a complete Persona" in panel
+    assert "Configured:" in panel
     assert "status--at_risk" in panel
 
 
