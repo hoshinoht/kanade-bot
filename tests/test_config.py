@@ -116,16 +116,17 @@ def test_a_blank_think_falls_back_to_the_default_level():
 
     `_tidy_env_values` drops every blank so the field default speaks -- that is
     what makes `ADMIN_ROLE_ID=   # optional` read as unset -- so an empty value
-    is `low`, not `None`. The `None` arm of `Settings.think` is defensive only.
+    is `False` (the default), not `None`. The `None` arm of `Settings.think`
+    is defensive only.
     """
-    assert make(ollama_think="").think == "low"
-    assert make().think == "low"
+    assert make(ollama_think="").think is False
+    assert make().think is False
 
 
 def test_chat_think_falls_back_to_shared_think_by_default():
-    assert make().chat_think == "low"
+    assert make().chat_think is False
     assert make(ollama_think="off").chat_think is False
-    assert make(chat_pilot_think="").chat_think == "low"
+    assert make(chat_pilot_think="").chat_think is False
 
 
 def test_chat_think_overrides_shared_think_independently():

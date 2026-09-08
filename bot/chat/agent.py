@@ -11,7 +11,8 @@ import re
 import time
 from collections import deque
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from bot.agent.util import is_bot_admin
@@ -31,7 +32,7 @@ from bot.infrastructure.watch import origin_ids
 
 from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages, estimate_tokens, prompt_budget
-from . import followup, gate, persona, progress, strategy, tools
+from . import followup, gate, persona, persona_catalog, progress, strategy, tools
 from .ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -276,6 +277,15 @@ GLUED_BULLET = ": - "
 
 
 _SCHEDULE_RUN_LINE_RE = re.compile(r"^\s*(?:[-*]\s*)?`?\[[0-9a-fA-F]{8}\]`?\s+\S")
+_SCHEDULE_RUN_ID_RE = re.compile(r"\[([0-9a-fA-F]{8})\]")
+_SCHEDULE_HEADING_RE = re.compile(
+    r"\b(?:runs|boss week|scheduled|all channels|this channel)\b", re.IGNORECASE
+)
+_SCHEDULE_TITLE_RE = re.compile(r"\b(?:boss week|all channels|this channel)\b", re.IGNORECASE)
+_RUN_ID_WORD_RE = re.compile(r"\brun\s*ids?\b", re.IGNORECASE)
+_CHANNEL_DUMP_RE = re.compile(r"\[#\d+\]|<#\d+>")
+_TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\b")
+_TALLY_RE = re.compile(r"\b\d+/\d+\s*(?:yes)?\b", re.IGNORECASE)
 
 
 def _tidy_blank_lines(text: str) -> str:
@@ -440,6 +450,61 @@ def _member_facing(text: str) -> str:
     return re.sub(r"\bget_schedule\b", "the schedule lookup", cleaned, flags=re.I)
 
 
+def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) -> str:
+    """Keep listed schedule facts in the successful tool's canonical rendering."""
+    schedule = next(
+        (
+            outcome.output
+            for outcome in reversed(outcomes)
+            if outcome.name == "get_schedule"
+            and outcome.ok
+            and any(_SCHEDULE_RUN_LINE_RE.match(line) for line in outcome.output.splitlines())
+        ),
+        None,
+    )
+    if schedule is None:
+        return reply
+
+    run_ids = set(_SCHEDULE_RUN_ID_RE.findall(schedule))
+    lowered_ids = {rid.lower() for rid in run_ids}
+    lines = reply.splitlines()
+
+    def is_row(index: int) -> bool:
+        line = lines[index]
+        if run_ids.intersection(_SCHEDULE_RUN_ID_RE.findall(line)):
+            return True
+        lowered = line.lower()
+        return any(rid in lowered for rid in lowered_ids)
+
+    row_indexes = [index for index in range(len(lines)) if is_row(index)]
+    if row_indexes:
+        before = lines[: row_indexes[0]]
+        while before and not before[-1].strip():
+            before.pop()
+        if before and _SCHEDULE_HEADING_RE.search(before[-1]):
+            before.pop()
+        after = lines[row_indexes[-1] + 1 :]
+        parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
+        return "\n\n".join(part for part in parts if part)
+
+    def is_hint(line: str) -> bool:
+        return bool(
+            _SCHEDULE_TITLE_RE.search(line)
+            or _RUN_ID_WORD_RE.search(line)
+            or _CHANNEL_DUMP_RE.search(line)
+            or _TIME_RE.search(line)
+            or _TALLY_RE.search(line)
+        )
+
+    hint_indexes = [index for index, line in enumerate(lines) if is_hint(line)]
+    if hint_indexes:
+        before = lines[: hint_indexes[0]]
+        after = lines[hint_indexes[-1] + 1 :]
+        parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
+        return "\n\n".join(part for part in parts if part)
+    return reply
+
+
 def unglue_first_bullet(text: str) -> str:
     """Repair a first list item glued to its heading."""
     return text.replace(GLUED_BULLET, ":\n\n- ") if "\n- " in text else text
@@ -491,13 +556,8 @@ class ChatPilot:
         self._focus: dict[str, Focus] = {}
         self._anchors: dict[str, Anchor] = {}
         self._replied: dict[str, str | None] = {}
-        self._persona: persona.Persona | None = None
-        self._default_behaviour: persona.Persona | None = None
-        self._staging: tuple[progress.StagingLines, dict[str, progress.StagingLines]] = (
-            progress.DEFAULT_LINES,
-            {},
-        )
-        self.reload_staging()
+        self._persona_runtime = self._load_configured_persona_runtime()
+        self._identity_revision = 0
 
     # -- wiring ------------------------------------------------------------
     def client(self) -> Any:
@@ -517,72 +577,124 @@ class ChatPilot:
         """The runtime kill switch, seeded from whether the feature is configured."""
         return bool(getattr(self.bot, "chat_mode", False))
 
+    def _load_configured_persona_runtime(self) -> persona_catalog.PersonaRuntime:
+        selected_name = getattr(self.bot, "persona_name", "")
+        explicit = Path(self.settings.persona_path) if self.settings.persona_path else None
+        if not selected_name and explicit is not None:
+            try:
+                if not explicit.is_symlink() and explicit.is_file():
+                    identity = persona.read_persona(explicit)
+                    if identity.text:
+                        behaviour = persona.read_default_behaviour()
+                        staging, profiles = progress.load_staging_split(
+                            getattr(self.settings, "staging_path", None),
+                            getattr(self.settings, "staging_profiles_dir", None),
+                        )
+                        bundle = persona_catalog.PersonaBundle(
+                            explicit.name,
+                            explicit.name,
+                            identity.text,
+                            behaviour.text,
+                            staging,
+                            persona_catalog.PersonaBundleSource(
+                                explicit.name,
+                                identity.path or explicit,
+                                behaviour.path,
+                                Path(getattr(self.settings, "staging_path", None) or ""),
+                            ),
+                            identity.fell_back,
+                        )
+                        return persona_catalog.PersonaRuntime(bundle, profiles)
+            except (OSError, UnicodeError, progress.StagingConfigError):
+                pass
+        selected = selected_name or (explicit.name if explicit is not None else "")
+        return persona_catalog.load_configured_runtime(
+            persona.PERSONA_DIR,
+            selected,
+            legacy_identity_path=self.settings.persona_path,
+            legacy_staging_path=getattr(self.settings, "staging_path", None),
+            legacy_profiles_dir=getattr(self.settings, "staging_profiles_dir", None),
+        )
+
+    def persona_runtime(self) -> persona_catalog.PersonaRuntime:
+        """The one immutable major-persona bundle currently active."""
+        return self._persona_runtime
+
+    def persona_catalog(self) -> persona_catalog.PersonaCatalog:
+        return persona_catalog.load_catalog(persona.PERSONA_DIR)
+
+    @property
+    def _staging(self) -> tuple[progress.StagingLines, dict[str, progress.StagingLines]]:
+        """Compatibility view; staging remains stored inside the runtime."""
+        runtime = self.persona_runtime()
+        return runtime.bundle.staging, dict(runtime.profile_staging)
+
+    @_staging.setter
+    def _staging(
+        self, value: tuple[progress.StagingLines, dict[str, progress.StagingLines]]
+    ) -> None:
+        default, profiles = value
+        runtime = self.persona_runtime()
+        self._persona_runtime = replace(
+            runtime, bundle=replace(runtime.bundle, staging=default), profile_staging=profiles
+        )
+
     def persona_source(self) -> persona.Persona:
-        """Return the cached persona and its source metadata."""
-        if self._persona is None:
-            selected = getattr(self.bot, "persona_name", "")
-            chosen = persona.chosen_path(selected)
-            self._persona = persona.read_persona(
-                None if selected and chosen is None else chosen or self.settings.persona_path
-            )
-        return self._persona
+        """Compatibility projection of the active identity source."""
+        bundle = self.persona_runtime().bundle
+        return persona.Persona(
+            bundle.identity,
+            bundle.source.identity_path,
+            bundle.fell_back,
+        )
 
     def persona_text(self) -> str:
         """Just the words, which is all the prompt builders want."""
-        return self.persona_source().text
+        return self.persona_runtime().bundle.identity
 
     def default_behaviour_source(self) -> persona.Persona:
         """Deployment default behaviour, cached and reloaded with the identity."""
-        if self._default_behaviour is None:
-            self._default_behaviour = persona.read_default_behaviour()
-        return self._default_behaviour
+        bundle = self.persona_runtime().bundle
+        return persona.Persona(
+            bundle.default_behaviour,
+            bundle.source.default_behaviour_path,
+            bundle.fell_back,
+        )
 
     def default_behaviour_text(self) -> str:
         return self.default_behaviour_source().text
 
     def reload_staging(self) -> None:
-        from pathlib import Path
-
-        candidates: list[str] = []
-        primary = getattr(self.settings, "staging_path", None)
-        if primary:
-            candidates.append(str(primary))
-        candidates.extend(
-            [
-                "config/personas/behaviours/staging.yaml",
-                "config/personas/staging.yaml",
-                "config/staging.yaml",
-                "config/presets/staging.yaml",
-            ]
-        )
-        seen: set[str] = set()
-        for path in candidates:
-            if not path or path in seen:
-                continue
-            seen.add(path)
-            if not Path(path).is_file():
-                continue
-            try:
-                default, profiles = progress.load_staging_config(path)
-            except progress.StagingConfigError:
-                log.warning("ignoring invalid staging config at %s", path, exc_info=True)
-                continue
-            profiles_dir = getattr(self.settings, "staging_profiles_dir", None)
-            dirs = (
-                [profiles_dir, "config/personas/behaviours/profiles/staging"]
-                if profiles_dir
-                else []
+        """Legacy compatibility reload; manifest staging remains bundle-owned."""
+        try:
+            runtime = self.persona_runtime()
+            if not runtime.bundle.source.identity_path.is_relative_to(persona.PERSONA_DIR):
+                return
+            catalog = self.persona_catalog()
+            if catalog.mode != "legacy":
+                return
+            default, profiles = progress.load_staging_split(
+                getattr(self.settings, "staging_path", None),
+                getattr(self.settings, "staging_profiles_dir", None),
             )
-            for staging_dir in dict.fromkeys(str(d) for d in dirs if d):
-                profiles = progress.load_profile_dir(staging_dir, default, profiles)
-            orphans, _ = progress.staging_linkage(profiles, behaviour_plugins.available())
-            if orphans:
-                log.warning("staging profiles with no reply profile: %s", ", ".join(orphans))
-            self._staging = (default, profiles)
+        except (OSError, UnicodeError, progress.StagingConfigError) as exc:
+            log.warning("ignoring invalid legacy staging reload (%s)", type(exc).__name__)
             return
-        self._staging = (progress.DEFAULT_LINES, {})
+        except persona_catalog.PersonaCatalogError as exc:
+            log.warning("ignoring invalid persona catalog (%s)", type(exc).__name__)
+            return
+        self._persona_runtime = replace(
+            runtime,
+            bundle=replace(runtime.bundle, staging=default),
+            profile_staging=profiles,
+        )
 
-    def active_profile_name(self, author: Any = None, author_id: Any = None) -> str | None:
+    def active_profile_name(
+        self,
+        author: Any = None,
+        author_id: Any = None,
+        runtime: persona_catalog.PersonaRuntime | None = None,
+    ) -> str | None:
         uid = str(getattr(author, "id", author_id or ""))
         role_ids = [getattr(r, "id", r) for r in (getattr(author, "roles", None) or ())]
         resolution = behaviour_plugins.resolve(
@@ -594,19 +706,30 @@ class ChatPilot:
                 self.bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
             ),
             role_ids=role_ids,
-            default_instructions=self.default_behaviour_text(),
+            default_instructions=(runtime or self.persona_runtime()).bundle.default_behaviour,
         )
         if resolution.source == "default" or resolution.effective == "default":
             return None
         return resolution.effective
 
-    def staging_lines(self, author: Any = None, author_id: Any = None) -> progress.StagingLines:
-        return progress.load_profile_staging(
-            self._staging, self.active_profile_name(author, author_id)
+    def staging_lines(
+        self,
+        author: Any = None,
+        author_id: Any = None,
+        runtime: persona_catalog.PersonaRuntime | None = None,
+    ) -> progress.StagingLines:
+        current = runtime or self.persona_runtime()
+        name = self.active_profile_name(author, author_id, current)
+        return (
+            current.profile_staging.get(name, current.bundle.staging)
+            if name
+            else current.bundle.staging
         )
 
-    def staging_table(self, author: Any = None) -> dict[str, str]:
-        lines = self.staging_lines(author)
+    def staging_table(
+        self, author: Any = None, runtime: persona_catalog.PersonaRuntime | None = None
+    ) -> dict[str, str]:
+        lines = self.staging_lines(author, runtime=runtime)
         return {
             "schedule": lines.schedule,
             "guide": lines.guide,
@@ -617,9 +740,26 @@ class ChatPilot:
         }
 
     def reload_persona(self) -> str:
-        self._persona = None
-        self._default_behaviour = None
+        self.activate_persona_runtime(self._load_configured_persona_runtime())
         return self.persona_text()
+
+    def prepare_persona_runtime(self, selection: str) -> persona_catalog.PersonaRuntime:
+        """Build a strict candidate without changing the active runtime."""
+        return persona_catalog.prepare_runtime(
+            self.persona_catalog(),
+            selection,
+            getattr(self.settings, "staging_path", None),
+            getattr(self.settings, "staging_profiles_dir", None),
+        )
+
+    def activate_persona_runtime(self, runtime: persona_catalog.PersonaRuntime) -> None:
+        """Publish a preloaded runtime, dropping history after an identity change."""
+        previous = self._persona_runtime.bundle
+        self._persona_runtime = runtime
+        if (previous.id, previous.identity) != (runtime.bundle.id, runtime.bundle.identity):
+            self._identity_revision += 1
+            self._history.clear()
+            self._anchors.clear()
 
     def answering(self) -> list[str]:
         """Return sorted channels with an answer in flight."""
@@ -818,7 +958,9 @@ class ChatPilot:
             self.settings.admin_role_id,
         )
 
-    def reply_overlay(self, author: Any) -> str:
+    def reply_overlay(
+        self, author: Any, runtime: persona_catalog.PersonaRuntime | None = None
+    ) -> str:
         """Effective non-default profile instructions for an authorized asker."""
         role_ids = [getattr(role, "id", role) for role in (getattr(author, "roles", None) or ())]
         configured = behaviour_plugins.decode(
@@ -832,7 +974,7 @@ class ChatPilot:
             selectable=selectable,
             assignments=configured,
             role_ids=role_ids,
-            default_instructions=self.default_behaviour_text(),
+            default_instructions=(runtime or self.persona_runtime()).bundle.default_behaviour,
         )
         return "" if resolution.source == "default" else resolution.prompt_instructions()
 
@@ -845,6 +987,8 @@ class ChatPilot:
         bot_user_id: str | None = None,
         self_role_id: str | None = None,
     ) -> Generation:
+        runtime = self.persona_runtime()
+        identity_revision = self._identity_revision
         author_id = str(message.author.id)
         text = (message.content or "").strip()
         force_all_channels, force_group_schedule = _schedule_defaults(
@@ -861,15 +1005,15 @@ class ChatPilot:
             force_group_schedule=force_group_schedule,
             is_admin=is_admin,
         )
-        overlay = self.reply_overlay(message.author)
-        conversation = self.build_conversation(message, channel_id, overlay)
+        overlay = self.reply_overlay(message.author, runtime)
+        conversation = self.build_conversation(message, channel_id, overlay, runtime)
         intent = strategy.route_strategy_intent(text, self.bot.bosses)
         staging = progress.placeholder_for(
             text,
             self.bot.bosses,
             bot_user_id,
             self_role_id,
-            staging=self.staging_table(message.author),
+            staging=self.staging_table(message.author, runtime),
         )
         placeholder = await self._post_placeholder(message, staging)
         async with self._typing(message.channel):
@@ -885,6 +1029,7 @@ class ChatPilot:
                     context,
                     overlay,
                     intent.reply or strategy.STRATEGY_CLARIFICATION_REPLY,
+                    runtime,
                 )
             else:
                 result = await self.generate(
@@ -892,6 +1037,7 @@ class ChatPilot:
                     context,
                     overlay,
                     strategy_references=intent.references,
+                    runtime=runtime,
                 )
 
         reply = result.reply or FAILURE_REPLY
@@ -904,9 +1050,10 @@ class ChatPilot:
         asked = ChatTurn("user", self._speaker(author_id, text), str(message.id))
         # The posted id supports re-anchoring and de-duplication.
         answered = ChatTurn("assistant", reply, str(getattr(posted, "id", "") or "") or None)
-        self.remember(channel_id, asked)
-        self.remember(channel_id, answered)
-        self.anchor(answered.message_id, channel_id, asked, answered)
+        if identity_revision == self._identity_revision:
+            self.remember(channel_id, asked)
+            self.remember(channel_id, answered)
+            self.anchor(answered.message_id, channel_id, asked, answered)
         # Summary only; DEBUG logs tool arguments.
         log.info(
             "chat: answered %s in channel %s in %d ms (%d round(s), %d tool call(s)%s)%s%s",
@@ -1020,6 +1167,8 @@ class ChatPilot:
         channel: Any,
         card_message_id: int | str | None,
     ) -> Generation:
+        runtime = self.persona_runtime()
+        identity_revision = self._identity_revision
         channel_id = str(origin_ids(channel)[0])
         context = tools.ToolContext(
             bot=self.bot,
@@ -1032,14 +1181,14 @@ class ChatPilot:
         guild = getattr(channel, "guild", None)
         get_member = getattr(guild, "get_member", None)
         member = get_member(int(author_id)) if get_member is not None else None
-        overlay = self.reply_overlay(member)
+        overlay = self.reply_overlay(member, runtime)
         conversation = self.assemble(
-            [*self.history(channel_id), ChatTurn("user", question)], channel_id, overlay
+            [*self.history(channel_id), ChatTurn("user", question)], channel_id, overlay, runtime
         )
-        generic = self.staging_lines(member, author_id).generic
+        generic = self.staging_lines(member, author_id, runtime).generic
         placeholder = await self._post_channel_placeholder(channel, card_message_id, generic)
         async with self._typing(channel):
-            result = await self.generate(conversation, context, overlay)
+            result = await self.generate(conversation, context, overlay, runtime=runtime)
         log.info(
             "chat: followed up on a rejected card in channel %s in %d ms (%d round(s)%s)%s",
             channel_id,
@@ -1055,9 +1204,10 @@ class ChatPilot:
             posted_id = str(getattr(posted, "id", "") or "") or None
             asked = ChatTurn("user", note)
             answered = ChatTurn("assistant", result.reply, posted_id)
-            self.remember(channel_id, asked)
-            self.remember(channel_id, answered)
-            self.anchor(posted_id, channel_id, asked, answered)
+            if identity_revision == self._identity_revision:
+                self.remember(channel_id, asked)
+                self.remember(channel_id, answered)
+                self.anchor(posted_id, channel_id, asked, answered)
         elif placeholder is not None:
             await self._discard_placeholder(placeholder)
         self._record(card_message_id, channel_id, author_id, question, result.reply, result)
@@ -1231,7 +1381,11 @@ class ChatPilot:
         return chain
 
     def build_conversation(
-        self, message: Any, channel_id: str, role_overlay: str = ""
+        self,
+        message: Any,
+        channel_id: str,
+        role_overlay: str = "",
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> list[dict[str, str]]:
         """Build a prompt from anchored, live, and reply-chain context."""
         live = self.history(channel_id)
@@ -1243,23 +1397,25 @@ class ChatPilot:
         question = ChatTurn(
             "user", self._speaker(str(message.author.id), (message.content or "").strip())
         )
-        return self.assemble([*earlier, question], channel_id, role_overlay)
+        return self.assemble([*earlier, question], channel_id, role_overlay, runtime)
 
     def assemble(
         self,
         turns: Sequence[ChatTurn],
         channel_id: str | None = None,
         role_overlay: str = "",
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> list[dict[str, str]]:
         """Assemble a system prompt and budgeted conversation turns."""
         now = utcnow()
         week = current_week_start(
             self.bot.tz, self.settings.reset_weekday, self.settings.reset_time, now
         )
+        current = runtime or self.persona_runtime()
         system = persona.component_system_prompt(
             persona.PromptComponents(
-                identity=self.persona_text(),
-                default_behaviour=self.default_behaviour_text(),
+                identity=current.bundle.identity,
+                default_behaviour=current.bundle.default_behaviour,
                 active_profile=role_overlay,
             ),
             persona.clock_header(now, self.bot.tz, week),
@@ -1285,13 +1441,21 @@ class ChatPilot:
         context: tools.ToolContext,
         role_overlay: str = "",
         strategy_references: Sequence[BossReference] = (),
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> Generation:
         """Run the tool loop until the model answers in words. Never raises."""
         started = time.monotonic()
         result = Generation()
         try:
             await asyncio.wait_for(
-                self._loop(conversation, context, result, role_overlay, strategy_references),
+                self._loop(
+                    conversation,
+                    context,
+                    result,
+                    role_overlay,
+                    strategy_references,
+                    runtime or self.persona_runtime(),
+                ),
                 timeout=self.settings.chat_pilot_timeout,
             )
         except TimeoutError:
@@ -1304,7 +1468,8 @@ class ChatPilot:
         self._finalize_strategy_reply(result, strategy_references)
         self._finalize_read_claim(result)
         if result.reply:
-            result.reply = self._tidy(_member_facing(result.reply))
+            grounded = _ground_schedule_reply(result.reply, result.outcomes)
+            result.reply = self._tidy(_member_facing(grounded))
         result.created = list(context.created)
         result.posted = list(context.posted)
         result.latency_ms = int((time.monotonic() - started) * 1000)
@@ -1316,6 +1481,7 @@ class ChatPilot:
         context: tools.ToolContext,
         role_overlay: str,
         fixed: str,
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> Generation:
         """Say a fixed strategy meaning in voice. Never raises; falls back to fixed."""
         started = time.monotonic()
@@ -1332,6 +1498,7 @@ class ChatPilot:
                     False,
                     context,
                     role_overlay,
+                    runtime or self.persona_runtime(),
                 ),
                 timeout=self.settings.chat_pilot_timeout,
             )
@@ -1405,6 +1572,7 @@ class ChatPilot:
         result: Generation,
         role_overlay: str = "",
         strategy_references: Sequence[BossReference] = (),
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> None:
         messages: list[dict[str, Any]] = list(conversation)
         if strategy_references and not await self._prefetch_strategy(
@@ -1427,6 +1595,7 @@ class ChatPilot:
                 with_tools=not last and not posted_write,
                 context=context,
                 role_overlay=role_overlay,
+                runtime=runtime,
             )
             raw_content, thinking, calls = _message_parts(response)
             content = (raw_content or "").strip()
@@ -1516,12 +1685,18 @@ class ChatPilot:
                 return False
         return True
 
-    def voice_reminder(self, role_overlay: str = "") -> dict[str, str]:
+    def voice_reminder(
+        self,
+        role_overlay: str = "",
+        runtime: persona_catalog.PersonaRuntime | None = None,
+    ) -> dict[str, str]:
         """Return the final, scheduler-identified voice cue."""
         return {
             "role": "user",
             "content": persona.component_voice_reminder(
-                self.default_behaviour_text(), role_overlay, self.persona_text()
+                (runtime or self.persona_runtime()).bundle.default_behaviour,
+                role_overlay,
+                (runtime or self.persona_runtime()).bundle.identity,
             ),
         }
 
@@ -1531,10 +1706,11 @@ class ChatPilot:
         with_tools: bool,
         context: tools.ToolContext,
         role_overlay: str = "",
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> Any:
         # Tool execution independently rejects writes on read-only turns.
         offered = (tools.read_tools() if context.read_only else tools.TOOLS) if with_tools else []
-        outgoing = self._budgeted_messages(messages, offered, role_overlay)
+        outgoing = self._budgeted_messages(messages, offered, role_overlay, runtime)
         log.debug(
             "chat: model %s think=%r tools=%d",
             self.settings.chat_pilot_model,
@@ -1555,7 +1731,11 @@ class ChatPilot:
         )
 
     def _budgeted_messages(
-        self, messages: list[dict[str, Any]], offered: list[dict], role_overlay: str
+        self,
+        messages: list[dict[str, Any]],
+        offered: list[dict],
+        role_overlay: str,
+        runtime: persona_catalog.PersonaRuntime | None = None,
     ) -> list[dict[str, Any]]:
         """Trim only prior history until the full request and reply reserve fit."""
         current_user = max(
@@ -1569,7 +1749,7 @@ class ChatPilot:
             default=str,
             separators=(",", ":"),
         )
-        reminder = self.voice_reminder(role_overlay)
+        reminder = self.voice_reminder(role_overlay, runtime)
         while True:
             outgoing = [*messages, reminder]
             # Estimate the rendered turns, tool-call arguments, and schemas as

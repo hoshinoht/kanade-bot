@@ -148,6 +148,22 @@ def test_partial_override_inherits_default():
     assert lines.write == "base-write"
 
 
+def test_complete_persona_baseline_requires_every_flat_key():
+    values = {key: f"base-{key}" for key in progress.STAGING_KEYS}
+    assert progress.parse_complete_staging(values).generic == "base-generic"
+    with pytest.raises(progress.StagingConfigError):
+        progress.parse_complete_staging({"generic": "only"})
+
+
+def test_profile_staging_helper_merges_a_partial_flat_mapping():
+    baseline = progress.parse_complete_staging(
+        {key: f"base-{key}" for key in progress.STAGING_KEYS}
+    )
+    merged = progress.parse_profile_staging({"generic": "profile"}, baseline)
+    assert merged.generic == "profile"
+    assert merged.schedule == "base-schedule"
+
+
 def test_unknown_profile_uses_default():
     config = {"default": {k: f"base-{k}" for k in progress.STAGING_KEYS}}
     assert progress.load_profile_staging(config, "does-not-exist").schedule == "base-schedule"

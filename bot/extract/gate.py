@@ -1,7 +1,7 @@
 """The deterministic keyword gate (DESIGN.md §2.1).
 
 Every watched message is scored here *before* any LLM call.  Banter is dropped,
-so a 13 GB model is only woken for messages that could plausibly change the
+so an 8 GB model is only woken for messages that could plausibly change the
 schedule.  Nothing in this module talks to Discord, Ollama or the database.
 
 Signals
@@ -50,7 +50,7 @@ WORD_PREFIXES: dict[str, str] = {
 
 #: Ordinary words that must never be read as a misspelt boss.  Fuzzy matching is
 #: already restricted to the part *after* a difficulty prefix, which removes most
-#: of the risk (``start`` never becomes ``Star``); this catches the leftovers.
+#: of the risk (``start`` never becomes ``MaleficStar``); this catches the leftovers.
 FUZZY_STOPWORDS = frozenset({"start", "starting", "started", "clear", "chair", "cheap"})
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -417,7 +417,7 @@ def should_extract(burst: Collection[GateResult], context_is_scheduling: bool = 
 
     Yes when any message in it is a strong hit.  A burst of nothing but answers
     ("Can", "Ok", "kenot") is worth a call *only* if the channel was talking
-    about scheduling recently -- otherwise "ok" alone would wake a 13 GB model.
+    about scheduling recently -- otherwise "ok" alone would wake an 8 GB model.
     """
     results = list(burst)
     if any(r.strong for r in results):

@@ -71,7 +71,7 @@ def quiet(repo: Repo, on: bool) -> None:
 
 def a_card() -> formatting.Card:
     return formatting.Card(
-        content="HStar + HFA tonight <@1001> <@1002>",
+        content="HMaleficStar + HFA tonight <@1001> <@1002>",
         title="Tonight",
         footer=formatting.REACT_HINT,
         mention_users=list(WHO),
@@ -162,7 +162,7 @@ def digest_bot(bot, channel) -> None:
     bot.settings = make_settings()
     bot.tz = bot.settings.zoneinfo
 
-    async def post_channel(channel_id=None):
+    async def post_channel(channel_id=None, *args, **kwargs):
         return channel
 
     bot.post_channel = post_channel

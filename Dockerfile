@@ -32,10 +32,13 @@ COPY config ./config
 # There is deliberately no .dockerignore rule for boss/: local git-ignored game
 # images remain available in locally built images as they were under config/.
 COPY boss ./boss
-# Copy tracked fallbacks only; private prompts must not enter image layers.
-COPY config/personas/identities/example.md ./config/personas/identities/example.md
-COPY config/personas/behaviours/default.example.md ./config/personas/behaviours/default.example.md
-COPY config/personas/behaviours/profiles/example.md ./config/personas/behaviours/profiles/example.md
+# Copy tracked fallback and profile templates only; private prompts must not enter image layers.
+COPY config/personas/personas.example.yaml ./config/personas/personas.example.yaml
+COPY config/personas/personas/kanade/identity.md ./config/personas/personas/kanade/identity.md
+COPY config/personas/personas/kanade/default.md ./config/personas/personas/kanade/default.md
+COPY config/personas/personas/kanade/staging.yaml ./config/personas/personas/kanade/staging.yaml
+COPY config/personas/behaviours/example.md ./config/personas/behaviours/example.md
+COPY config/personas/behaviours/staging/example.yaml ./config/personas/behaviours/staging/example.yaml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 

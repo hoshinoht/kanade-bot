@@ -145,7 +145,7 @@ def chat_bot(repo: Repo, bosses: BossTable):
 
     bot = build_bot(repo, bosses)
     bot.settings.staging_path = str(
-        REPO_ROOT / "config" / "personas" / "behaviours" / "staging.example.yaml"
+        REPO_ROOT / "config" / "personas" / "personas" / "kanade" / "staging.yaml"
     )
     bot.settings.staging_profiles_dir = ""
     bot.chat.reload_staging()
@@ -183,14 +183,14 @@ def seeded(fake_bot):
 
     ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
     star = repo.add_fixed_run(
-        1001, ["HStar", "HFA"], 0, "21:30", ["1001", "1002"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar", "HFA"], 0, "21:30", ["1001", "1002"], channel_id=WATCHED_CHANNEL
     )
     kalos = repo.add_fixed_run(
         1002, ["XKalos"], 1, "23:00", ["1002", "1003"], channel_id=OTHER_CHANNEL
     )
     materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
     runs = repo.list_runs(week_start=ws)
-    star_run = next(r for r in runs if "HStar" in r["bosses"])
+    star_run = next(r for r in runs if "HMaleficStar" in r["bosses"])
     kalos_run = next(r for r in runs if "XKalos" in r["bosses"])
     repo.set_rsvp(star_run["id"], 1001, "yes")
 
@@ -200,7 +200,7 @@ def seeded(fake_bot):
     amendment = repo.create_amendment(
         week_start=ws,
         kind="move",
-        bosses=["HStar", "HFA"],
+        bosses=["HMaleficStar", "HFA"],
         run_id=star_run["id"],
         new_datetime=kl(2026, 9, 2, 21, 30),
         participants=["1002"],

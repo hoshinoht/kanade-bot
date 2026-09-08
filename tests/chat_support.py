@@ -198,7 +198,10 @@ def chat_settings(**overrides: Any):
         "chat_pilot_channel_ids": str(CHAT_CHANNEL),
         "chat_pilot_category_ids": str(CHAT_CATEGORY),
         "admin_role_id": ADMIN_ROLE,
-        "persona_path": "config/personas/identities/example.md",
+        "persona_path": "config/personas/personas/kanade/identity.md",
+        # Production-size context: the shipped bundles plus tool schemas do
+        # not fit the 8192 default. Budget-edge tests set their own value.
+        "ollama_num_ctx": 16384,
     }
     values.update(overrides)
     return make_settings(**values)
@@ -287,12 +290,12 @@ def seed(bot: FakeBot) -> dict:
 
     ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
     repo.add_fixed_run(
-        1001, ["HStar", "HFA"], 0, "21:30", ["1001", "1002"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar", "HFA"], 0, "21:30", ["1001", "1002"], channel_id=WATCHED_CHANNEL
     )
     repo.add_fixed_run(1002, ["XKalos"], 1, "23:00", ["1002", "1003"], channel_id=OTHER_CHANNEL)
     materialise_week(repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
     runs = repo.list_runs(week_start=ws)
-    star = next(r for r in runs if "HStar" in r["bosses"])
+    star = next(r for r in runs if "HMaleficStar" in r["bosses"])
     kalos = next(r for r in runs if "XKalos" in r["bosses"])
     return {"week_start": ws, "star": star["id"], "kalos": kalos["id"]}
 

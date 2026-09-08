@@ -38,13 +38,16 @@ def test_mentions_are_reduced_to_bare_ids():
 
 
 def test_a_bare_string_is_accepted_where_a_list_belongs():
-    amendment = Amendment(kind="move", bosses="HStar, HFA", evidence_message_ids="101")
-    assert amendment.bosses == ["HStar", "HFA"]
+    amendment = Amendment(kind="move", bosses="HMaleficStar, HFA", evidence_message_ids="101")
+    assert amendment.bosses == ["HMaleficStar", "HFA"]
     assert amendment.evidence_message_ids == ["101"]
 
 
 def test_duplicates_are_dropped_preserving_order():
-    assert Amendment(kind="move", bosses=["HFA", "HStar", "HFA"]).bosses == ["HFA", "HStar"]
+    assert Amendment(kind="move", bosses=["HFA", "HMaleficStar", "HFA"]).bosses == [
+        "HFA",
+        "HMaleficStar",
+    ]
 
 
 @pytest.mark.parametrize("nullish", ["", "null", "none", "N/A", "TBD", "-", "?"])
@@ -112,7 +115,7 @@ def test_the_kind_enum_in_the_schema_matches_the_documented_kinds():
 
 def test_a_real_response_parses():
     raw = (
-        '{"amendments":[{"kind":"move","bosses":["HStar","HFA"],"day_ref":"wed",'
+        '{"amendments":[{"kind":"move","bosses":["HMaleficStar","HFA"],"day_ref":"wed",'
         '"time_ref":null,"participants":["<@1>"],"rsvp":null,"is_question":true,'
         '"confidence":0.8,"evidence_message_ids":["101"],"target_run_hint":"#a1a1a1a1"}],'
         '"summary":"proposed for wed"}'

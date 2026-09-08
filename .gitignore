@@ -14,6 +14,7 @@ bot/api/static/portal.css
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+.opencode/*
 
 # Untracked game assets.
 boss/portraits/*
@@ -36,23 +37,22 @@ config/presets/staging.yaml
 # Track templates only; all live prompt content stays private.
 config/personas/*
 !config/personas/README.md
-!config/personas/persona.example.md
+!config/personas/personas.example.yaml
+!config/personas/personas/
+config/personas/personas/*
+!config/personas/personas/kanade/
+!config/personas/personas/kanade/identity.md
+!config/personas/personas/kanade/default.md
+!config/personas/personas/kanade/staging.yaml
 !config/personas/behaviour-plugins/
 config/personas/behaviour-plugins/*
 !config/personas/behaviour-plugins/example.md
-!config/personas/identities/
-config/personas/identities/*
-!config/personas/identities/example.md
 !config/personas/behaviours/
 config/personas/behaviours/*
-!config/personas/behaviours/default.example.md
-!config/personas/behaviours/staging.example.yaml
-!config/personas/behaviours/profiles/
-config/personas/behaviours/profiles/*
-!config/personas/behaviours/profiles/example.md
-!config/personas/behaviours/profiles/staging/
-config/personas/behaviours/profiles/staging/*
-!config/personas/behaviours/profiles/staging/example.yaml
+!config/personas/behaviours/example.md
+!config/personas/behaviours/staging/
+config/personas/behaviours/staging/*
+!config/personas/behaviours/staging/example.yaml
 
 # Local design notes.
 DESIGN.md

@@ -262,7 +262,15 @@ def _move(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, c
     result.run_id = run["id"]
     result.old_datetime = run["datetime"]
     ws = week_start(new_at, ctx.tz, ctx.reset_weekday, ctx.reset_time)
-    repo.set_run_datetime(run["id"], new_at, ws)
+    if repo.run_move_conflict(run, ws) is not None:
+        return (
+            "that weekly already has a run in that boss week - "
+            "edit that existing run instead or keep this move within its current boss week"
+        )
+    try:
+        repo.set_run_datetime(run["id"], new_at, ws)
+    except ValueError as exc:
+        return str(exc)
     # A move invalidates the answers people gave about the old slot.
     repo.set_run_status(run["id"], "planned")
     refresh_run_reminders(repo, run["id"], ctx.tz, ctx.ping_time, ctx.countdowns)

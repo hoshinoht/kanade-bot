@@ -101,7 +101,7 @@ def test_a_snapshot_is_a_database_you_can_read_back(bot):
 def test_the_snapshot_holds_writes_the_wal_had_not_checkpointed(bot):
     """Why the backup API and not `cp`: in WAL mode the .sqlite file alone is
     only whatever was last checkpointed."""
-    run = bot.repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
+    run = bot.repo.create_run(kl(2026, 8, 27), ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1"])
     path = bot.back_up(kl(2026, 8, 31, 4, 0))
 
     copy = Repo(path)

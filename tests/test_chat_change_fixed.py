@@ -53,8 +53,8 @@ def proposals(bot):
 
 
 def star_fixed(bot) -> dict:
-    """The seeded HStar + HFA weekly: Mon 21:30, owned by 1001, with 1001 and 1002."""
-    return next(f for f in bot.repo.list_fixed_runs() if "HStar" in f["bosses"])
+    """The seeded HMaleficStar + HFA weekly: Mon 21:30, owned by 1001, with 1001 and 1002."""
+    return next(f for f in bot.repo.list_fixed_runs() if "HMaleficStar" in f["bosses"])
 
 
 def materialise_both_weeks(bot) -> None:
@@ -103,7 +103,7 @@ async def test_a_boss_with_one_weekly_timing_needs_no_day(chat_bot, chat_seeded)
 async def test_two_timings_for_one_boss_end_in_a_question(chat_bot, chat_seeded):
     """Same boss, two nights: 'hstar' could mean either, so it must ask."""
     chat_bot.repo.add_fixed_run(
-        1001, ["HStar"], 4, "20:00", ["1001", "1003"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar"], 4, "20:00", ["1001", "1003"], channel_id=WATCHED_CHANNEL
     )
     answer = await ask(chat_bot, query="hstar", time="23:30")
 
@@ -117,22 +117,22 @@ async def test_two_timings_for_one_boss_end_in_a_question(chat_bot, chat_seeded)
 async def test_the_candidates_are_named_well_enough_to_choose_between(chat_bot, chat_seeded):
     """Boss, night and party -- 'the Friday one with Priya' has to be answerable."""
     chat_bot.repo.add_fixed_run(
-        1001, ["HStar"], 4, "20:00", ["1001", "1003"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar"], 4, "20:00", ["1001", "1003"], channel_id=WATCHED_CHANNEL
     )
     answer = await ask(chat_bot, query="hstar", time="23:30")
     friday = next(line for line in answer.split("; ") if "Fri" in line)
 
-    assert "Hard Star" in friday
+    assert "Hard MaleficStar" in friday
     assert "Priya" in friday
     for fixed in chat_bot.repo.list_fixed_runs():
-        if "HStar" in fixed["bosses"]:
+        if "HMaleficStar" in fixed["bosses"]:
             assert short_id(fixed["id"]) in answer
 
 
 async def test_the_same_boss_on_the_same_day_still_ends_in_a_question(chat_bot, chat_seeded):
     """Only the time tells these two apart, and the query does not carry one."""
     chat_bot.repo.add_fixed_run(
-        1001, ["HStar"], 0, "23:30", ["1001", "1003"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar"], 0, "23:30", ["1001", "1003"], channel_id=WATCHED_CHANNEL
     )
     answer = await ask(chat_bot, query="hstar monday", day="wednesday")
 
@@ -144,7 +144,7 @@ async def test_the_same_boss_on_the_same_day_still_ends_in_a_question(chat_bot, 
 async def test_the_short_id_ends_the_ambiguity(chat_bot, chat_seeded):
     """What the refusal tells the model to come back with."""
     chat_bot.repo.add_fixed_run(
-        1001, ["HStar"], 0, "23:30", ["1001", "1003"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar"], 0, "23:30", ["1001", "1003"], channel_id=WATCHED_CHANNEL
     )
     fixed = star_fixed(chat_bot)
     answer = await ask(chat_bot, query=short_id(fixed["id"]), day="wednesday")
@@ -168,7 +168,7 @@ async def test_a_day_that_two_bosses_share_ends_in_a_question(chat_bot, chat_see
     answer = await ask(chat_bot, query="monday", time="23:30")
 
     assert "more than one weekly timing" in answer
-    assert "Hard Star" in answer and "Hard Bellona" in answer
+    assert "Hard MaleficStar" in answer and "Hard Bellona" in answer
     assert proposals(chat_bot) == []
 
 
@@ -216,15 +216,15 @@ async def test_every_spelling_of_the_missing_boss_is_recognised(chat_bot, chat_s
 async def test_a_boss_that_does_have_a_weekly_never_gets_that_refusal(chat_bot, chat_seeded):
     """The guard is about absence, and `hlimb` is how the guild says Limbo.
 
-    The boss search below it does not know the table's aliases, so this query
-    finds nothing either -- but "no weekly timing for Limbo exists" would be
-    flatly untrue, and the vaguer refusal is the honest one.
+    The boss search resolves that spelling through the table's aliases, so the
+    query reaches the Limbo weekly -- where the authority check answers, not
+    the absence guard. "No weekly timing for Limbo exists" would be flatly
+    untrue either way.
     """
     chat_bot.repo.add_fixed_run(1001, ["HLimbo"], 2, "22:00", ["1001"], channel_id=CHAT_CHANNEL)
     answer = await ask(chat_bot, query="hlimb", time="23:00")
 
     assert "No weekly timing for Limbo exists" not in answer
-    assert "No weekly timing matches" in answer
     assert proposals(chat_bot) == []
 
 
@@ -240,7 +240,7 @@ async def test_a_day_only_query_still_disambiguates(chat_bot, chat_seeded):
 
 async def test_a_boss_and_a_day_together_still_resolve(chat_bot, chat_seeded):
     chat_bot.repo.add_fixed_run(
-        1001, ["HStar"], 4, "20:00", ["1001", "1002"], channel_id=WATCHED_CHANNEL
+        1001, ["HMaleficStar"], 4, "20:00", ["1001", "1002"], channel_id=WATCHED_CHANNEL
     )
     answer = await ask(chat_bot, query="hstar friday", time="23:30")
 
@@ -326,7 +326,7 @@ async def test_the_trigger_mention_is_not_a_new_party(chat_bot, chat_seeded):
 async def test_the_tool_result_reads_back_both_sides_of_the_change(chat_bot, chat_seeded):
     answer = await ask(chat_bot, query="hstar", time="23:30", participants="kanon, Priya")
 
-    assert "Hard Star + Hard FA" in answer
+    assert "Hard MaleficStar + Hard FA" in answer
     assert "every Mon 21:30 → every Mon 23:30" in answer
     assert "Alvin tan, kanon → kanon, Priya" in answer
 
@@ -455,7 +455,7 @@ async def test_the_card_says_it_changes_the_weekly(chat_bot, chat_seeded):
     name, value = formatting.proposal_line(proposals(chat_bot)[0], None, TZ)
 
     assert "change weekly" in name
-    assert "Hard Star + Hard FA" in name
+    assert "Hard MaleficStar + Hard FA" in name
     assert "~~every Mon 21:30~~ → **every Mon 23:30**" in value
     assert "every week from now on" in value
     assert "this week's run moves with it" in value
@@ -486,7 +486,7 @@ async def test_the_three_weekly_cards_are_told_apart(chat_bot, chat_seeded):
         row["bosses"][0]: formatting.proposal_line(row, None, TZ)[0] for row in proposals(chat_bot)
     }
 
-    assert names["HStar"].startswith("change weekly")
+    assert names["HMaleficStar"].startswith("change weekly")
     assert names["XKalos"].startswith("remove weekly")
     assert names["HBellona"].startswith("new weekly")
 
@@ -512,7 +512,7 @@ async def test_a_confirmed_card_changes_the_same_baseline(chat_bot, chat_seeded)
     assert updated["time"] == "23:30"
     assert updated["weekday"] == 0
     assert updated["participants"] == ["1001", "1002"]
-    assert updated["bosses"] == ["HStar", "HFA"]
+    assert updated["bosses"] == ["HMaleficStar", "HFA"]
 
 
 async def test_this_weeks_run_moves_and_keeps_its_id(chat_bot, chat_seeded):
@@ -559,7 +559,7 @@ async def test_next_week_materialises_at_the_new_time(chat_bot, chat_seeded):
 
     ws = next_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
     materialise_week(chat_bot.repo, ws, TZ, PING_TIME, COUNTDOWNS, now=ws)
-    runs = [r for r in chat_bot.repo.list_runs(week_start=ws) if "HStar" in r["bosses"]]
+    runs = [r for r in chat_bot.repo.list_runs(week_start=ws) if "HMaleficStar" in r["bosses"]]
 
     assert len(runs) == 1
     assert runs[0]["datetime"].astimezone(TZ).strftime("%a %H:%M") == "Wed 23:30"

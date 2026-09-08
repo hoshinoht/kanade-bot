@@ -3,12 +3,16 @@
 Chat and slash-command input names bosses as ``nstar``, ``HFA``, ``xkalos``,
 ``hcarl``.  A token is a single-letter difficulty prefix (``e/n/h/c/x``) followed
 by a boss alias; the canonical form the bot stores is the uppercased prefix plus
-the boss's short name, e.g. ``HStar``, ``HFA``, ``XKalos``, ``NCarling``.
+the boss's short name, e.g. ``HMaleficStar``, ``HFA``, ``XKalos``, ``NCarling``.  Alias
+matches ignore spacing and punctuation, so "black mage", "gatekeeper kalos" and
+"the first adversary" meet the same keys as ``blackmage`` and friends.
 
 The difficulty may also be spelled out as a word in front of the boss --
-``Hard Baldrix``, ``Extreme Kalos`` -- which is how members say it out loud and
-how the chatbot repeats it back.  Such a pair is folded into the prefixed form
-before anything is resolved, so both spellings meet the same two refusals.
+``Hard Baldrix``, ``Extreme Kalos``, ``Normal Black Mage`` -- which is how
+members say it out loud and how the chatbot repeats it back.  Such a pair is
+folded into the prefixed form before anything is resolved, so both spellings
+meet the same two refusals.  The boss half may itself contain spaces
+(``Hard Gatekeeper Kalos``), resolved greedily longest-first.
 
 Two things are rejected rather than guessed:
 
@@ -32,6 +36,14 @@ import yaml
 
 _NORMALISE_RE = re.compile(r"[^a-z0-9]+")
 _SPLIT_RE = re.compile(r"[,\s/+&]+")
+#: Hard separators between bosses in a scheduling list. Spaces are *not* hard
+#: separators: multi-word names like "black mage" or "the first adversary"
+#: contain them, so spaces are resolved greedily word by word instead.
+_LIST_SEP_RE = re.compile(r"[,/+&]+")
+#: Longest word run ever joined against the alias table. The longest full name
+#: is three words ("Radiant Malefic Star"); five leaves room for a difficulty
+#: word plus a spaced alias without unbounded backtracking.
+_MAX_PHRASE_WORDS = 5
 
 #: Where portraits live, relative to ``boss/bosses.yaml``. The ``boss/``
 #: directory is bind-mounted read-only, so dropping a file in is enough --
@@ -421,51 +433,97 @@ class BossTable:
             return boss.canonical(letter)
         raise BossParseError(f"unknown boss `{token}`")
 
-    def _fold_difficulty_words(self, tokens: list[str]) -> list[str]:
-        """``["Hard", "Baldrix"]`` -> ``["hBaldrix"]``, left to right.
+    def _longest_alias(self, words: list[str], start: int) -> tuple[str, int] | None:
+        """Longest alias phrase at ``words[start:]`` as ``(short, word_count)``.
 
-        Members say the difficulty out loud, and the chatbot says it back to
-        them: live, "schedule a Hard Baldrix run tonight" was refused as a bare
-        boss name, so the bot asked which difficulty it should be after being
-        told. A word is folded only when a boss alias actually follows it, which
-        leaves a stray "hard" an unknown boss rather than a silent prefix.
+        Words are joined with a single space before normalising, so a spaced
+        name ("black mage") meets the same key as its concatenated alias
+        ("blackmage"). Longest first so "the first adversary" wins over "the".
         """
-        letters = {word.lower(): letter for letter, word in self.difficulties.items()}
-        out: list[str] = []
-        index = 0
-        while index < len(tokens):
-            token = tokens[index]
-            letter = letters.get(token.lower())
-            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
-            if letter and nxt is not None and _normalise(nxt) in self.aliases:
-                # The prefixed form, not the resolved boss: `parse_token` still
-                # has to reject "Chaos Seren", exactly as it rejects `cseren`.
-                out.append(letter + nxt)
-                index += 2
-                continue
-            out.append(token)
-            index += 1
-        return out
+        top = min(len(words), start + _MAX_PHRASE_WORDS)
+        for end in range(top, start, -1):
+            short = self.aliases.get(_normalise(" ".join(words[start:end])))
+            if short is not None:
+                return short, end - start
+        return None
 
     def parse(self, text: str) -> list[str]:
-        """Parse a comma/space separated list of tokens, preserving order.
+        """Parse a comma/space separated list of bosses, preserving order.
+
+        Boss names may contain spaces ("black mage", "the first adversary",
+        "radiant malefic star"): words are matched greedily against the alias
+        table, with a leading spelled-out difficulty ("Normal black mage")
+        folding into the prefix exactly as "Hard Baldrix" always did.
 
         Every bad token is reported at once so the user can fix them in one go.
         """
-        tokens = [t for t in _SPLIT_RE.split(text or "") if t]
-        if not tokens:
+        chunks = [c for c in _LIST_SEP_RE.split(text or "") if c.strip()]
+        if not chunks:
             raise BossParseError("no bosses given")
-        tokens = self._fold_difficulty_words(tokens)
+        letters = {word.lower(): letter for letter, word in self.difficulties.items()}
         out: list[str] = []
         problems: list[str] = []
-        for token in tokens:
-            try:
-                canonical = self.parse_token(token)
-            except BossParseError as exc:
-                problems.append(str(exc))
-                continue
-            if canonical not in out:
-                out.append(canonical)
+
+        def _missing_difficulty(token: str, short: str) -> str:
+            return (
+                f"`{token}` is missing a difficulty prefix "
+                f"({self.prefixes}) - try {self.valid_forms(short)}"
+            )
+
+        def _wrong_difficulty(letter: str, short: str) -> str:
+            boss = self.bosses[short]
+            return (
+                f"{boss.full} has no {self.difficulties[letter]} difficulty - "
+                f"did you mean {self.valid_forms(short)}?"
+            )
+
+        for chunk in chunks:
+            words = chunk.split()
+            index = 0
+            while index < len(words):
+                letter = letters.get(words[index].lower())
+                if letter is not None:
+                    # Members say the difficulty out loud ("Hard Black Mage"):
+                    # fold it only when a boss alias actually follows, leaving
+                    # a stray "hard" an unknown boss rather than a silent prefix.
+                    found = self._longest_alias(words, index + 1)
+                    if found is not None:
+                        short, length = found
+                        if letter not in self.bosses[short].difficulties:
+                            problems.append(_wrong_difficulty(letter, short))
+                        else:
+                            canonical = self.bosses[short].canonical(letter)
+                            if canonical not in out:
+                                out.append(canonical)
+                        index += 1 + length
+                        continue
+                    try:
+                        canonical = self.parse_token(words[index])
+                    except BossParseError as exc:
+                        problems.append(str(exc))
+                        index += 1
+                        continue
+                    if canonical not in out:
+                        out.append(canonical)
+                    index += 1
+                    continue
+                found = self._longest_alias(words, index)
+                if found is not None:
+                    short, length = found
+                    problems.append(
+                        _missing_difficulty(" ".join(words[index : index + length]), short)
+                    )
+                    index += length
+                    continue
+                try:
+                    canonical = self.parse_token(words[index])
+                except BossParseError as exc:
+                    problems.append(str(exc))
+                    index += 1
+                    continue
+                if canonical not in out:
+                    out.append(canonical)
+                index += 1
         if problems:
             raise BossParseError("; ".join(problems))
         return out
@@ -477,7 +535,8 @@ class BossTable:
         the question is a different one: not "which run did they mean" but "did
         they name a boss at all". So ``hard jupiter tue``, ``hjup`` and
         ``jupiter`` all name Jupiter, and a weekday, a stray word or a run id
-        names nothing.
+        names nothing. Multi-word names ("black mage", "gatekeeper kalos")
+        match as one phrase so neither half names anything on its own.
 
         What it exists for: a search that finds no weekly timing has to tell a
         query that named a boss with none (say so, and stop) from one that named
@@ -485,16 +544,26 @@ class BossTable:
         in the first case listed three other parties' Tuesday nights back to a
         member who had asked about Jupiter.
         """
+        words = [w for w in re.split(r"[^A-Za-z0-9]+", text or "") if w]
         out: list[str] = []
-        for token in _SPLIT_RE.split(text or ""):
-            key = _normalise(token)
-            if not key:
+        index = 0
+        while index < len(words):
+            found = self._longest_alias(words, index)
+            if found is not None:
+                short, length = found
+                if short not in out:
+                    out.append(short)
+                index += length
                 continue
-            short = self.aliases.get(key)
-            if short is None and key[:1] in self.difficulties:
+            key = _normalise(words[index])
+            if key[:1] in self.difficulties:
                 short = self.aliases.get(key[1:])
-            if short is not None and short not in out:
-                out.append(short)
+                if short is not None:
+                    if short not in out:
+                        out.append(short)
+                    index += 1
+                    continue
+            index += 1
         return out
 
     # -- display ----------------------------------------------------------
@@ -532,7 +601,7 @@ class BossTable:
     def portrait_path(self, short: str, size: str = "full") -> Path | None:
         """The portrait file for a boss, or ``None`` when there isn't one.
 
-        Portraits are entirely optional: ``boss/portraits/Star.png`` (the
+        Portraits are entirely optional: ``boss/portraits/MaleficStar.png`` (the
         ``bosses.yaml`` key), or whatever ``portrait:`` names. The filename is
         never taken from user input -- it is resolved from the table -- so this
         cannot be walked out of the boss directory.
@@ -564,7 +633,7 @@ class BossTable:
         return self._named_file(directory, boss.short)
 
     def portrait_for(self, canonical: str) -> Path | None:
-        """The portrait for a canonical name like ``"HStar"``, at full size.
+        """The portrait for a canonical name like ``"HMaleficStar"``, at full size.
 
         Which is what a card in Discord attaches. Nothing reaches the small
         render through here: the portal asks :meth:`portrait_path` for the size
@@ -589,7 +658,7 @@ class BossTable:
         return self._named_file(self.base_dir / ENTRY_ART_DIR, boss.short)
 
     def entry_art_for(self, canonical: str) -> Path | None:
-        """The entry artwork for a canonical name like ``"HStar"``."""
+        """The entry artwork for a canonical name like ``"HMaleficStar"``."""
         parts = self.split(canonical)
         return self.entry_art_path(parts[1].short) if parts else None
 
@@ -608,7 +677,7 @@ class BossTable:
     def detail(self, canonical: str) -> dict | None:
         """The parts of a canonical name, for anything that renders it richly.
 
-        ``"HStar"`` -> full name, the difficulty as a word, the level and the
+        ``"HMaleficStar"`` -> full name, the difficulty as a word, the level and the
         prefix letter -- what the difficulty pill and the boss grid need, rather
         than the single pre-formatted string :meth:`describe` returns.
         """

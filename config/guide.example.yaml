@@ -99,6 +99,6 @@ messages:
     ## 📖 The bosses
     Everything I schedule, lowest level first. Call one by its token —
     difficulty letter + name, like `hstar` — or say it in words,
-    "Hard Star". Nicknames in small print work too.
+    "Hard MaleficStar". Nicknames in small print work too.
 
     bosses: true

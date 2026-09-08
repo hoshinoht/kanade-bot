@@ -27,17 +27,17 @@ def table_with_portraits(tmp_path: Path):
     picture at all.
     """
     (tmp_path / "portraits").mkdir()
-    (tmp_path / "portraits" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
+    (tmp_path / "portraits" / "MaleficStar.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
     (tmp_path / "portraits" / "Bellona.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
     (tmp_path / "portraits" / "kalos-art.webp").write_bytes(b"RIFF fake")
     (tmp_path / "portraits" / "icon").mkdir()
-    (tmp_path / "portraits" / "icon" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n small")
+    (tmp_path / "portraits" / "icon" / "MaleficStar.png").write_bytes(b"\x89PNG\r\n\x1a\n small")
     (tmp_path / "portraits" / "icon" / "kalos-art.webp").write_bytes(b"RIFF small")
     (tmp_path / "bosses.yaml").write_text(
         """
 difficulties: {n: Normal, h: Hard, x: Extreme}
 bosses:
-  Star:
+  MaleficStar:
     full: Radiant Malefic Star
     level: 280
     difficulties: [n, h]
@@ -68,8 +68,8 @@ bosses:
 
 
 def test_a_portrait_is_found_by_the_boss_key(table_with_portraits):
-    path = table_with_portraits.portrait_path("Star")
-    assert path is not None and path.name == "Star.png"
+    path = table_with_portraits.portrait_path("MaleficStar")
+    assert path is not None and path.name == "MaleficStar.png"
 
 
 def test_an_explicit_filename_wins(table_with_portraits):
@@ -86,8 +86,8 @@ def test_an_unknown_boss_has_no_portrait(table_with_portraits):
 
 def test_a_canonical_name_resolves_to_its_boss_portrait(table_with_portraits):
     """Every difficulty shares one image; the pill carries the difficulty."""
-    assert table_with_portraits.portrait_for("HStar").name == "Star.png"
-    assert table_with_portraits.portrait_for("NStar").name == "Star.png"
+    assert table_with_portraits.portrait_for("HMaleficStar").name == "MaleficStar.png"
+    assert table_with_portraits.portrait_for("NMaleficStar").name == "MaleficStar.png"
     assert table_with_portraits.portrait_for("nonsense") is None
 
 
@@ -97,14 +97,14 @@ def test_an_explicit_filename_that_does_not_exist_is_not_invented(tmp_path: Path
         " aliases: [star]}\n",
         encoding="utf-8",
     )
-    assert BossTable.load(tmp_path / "bosses.yaml").portrait_path("Star") is None
+    assert BossTable.load(tmp_path / "bosses.yaml").portrait_path("MaleficStar") is None
 
 
 def test_a_table_built_without_a_directory_has_no_portraits(bosses):
     assert (
-        BossTable.from_dict({"difficulties": {"h": "Hard"}, "bosses": {"Star": {}}}).portrait_path(
-            "Star"
-        )
+        BossTable.from_dict(
+            {"difficulties": {"h": "Hard"}, "bosses": {"MaleficStar": {}}}
+        ).portrait_path("MaleficStar")
         is None
     )
 
@@ -114,9 +114,9 @@ def test_a_table_built_without_a_directory_has_no_portraits(bosses):
 
 def test_the_small_render_comes_out_of_the_icon_directory(table_with_portraits):
     """Same filename, one directory down -- so the directory is what to assert."""
-    icon = table_with_portraits.portrait_path("Star", "icon")
+    icon = table_with_portraits.portrait_path("MaleficStar", "icon")
 
-    assert icon.name == "Star.png"
+    assert icon.name == "MaleficStar.png"
     assert icon.parent.name == "icon"
     assert icon.read_bytes().endswith(b"small")
 
@@ -124,10 +124,10 @@ def test_the_small_render_comes_out_of_the_icon_directory(table_with_portraits):
 def test_the_full_render_never_looks_inside_icon(table_with_portraits):
     """Asking for the big one cannot quietly serve the small one to something
     that needed the detail -- Discord's card thumbnail, for instance."""
-    full = table_with_portraits.portrait_path("Star")
+    full = table_with_portraits.portrait_path("MaleficStar")
 
     assert full.parent.name == "portraits"
-    assert table_with_portraits.portrait_path("Star", "full") == full
+    assert table_with_portraits.portrait_path("MaleficStar", "full") == full
 
 
 def test_an_icon_that_is_not_there_falls_back_to_the_full_picture(table_with_portraits):
@@ -209,11 +209,11 @@ def test_the_portal_links_the_portrait_when_there_is_one(fake_bot, table_with_po
     from bot.api import create_app
 
     fake_bot.bosses = table_with_portraits
-    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HStar"])
+    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HMaleficStar"])
     with TestClient(create_app(fake_bot)) as client:
         client.headers["Authorization"] = f"Bearer {ADMIN_TOKEN}"
-        assert 'src="/static/portraits/Star?size=icon"' in client.get("/").text
-        served = client.get("/static/portraits/Star", params={"size": "icon"})
+        assert 'src="/static/portraits/MaleficStar?size=icon"' in client.get("/").text
+        served = client.get("/static/portraits/MaleficStar", params={"size": "icon"})
         assert served.status_code == 200
         assert served.content.endswith(b"small")
         assert "max-age" in served.headers["cache-control"]
@@ -228,14 +228,17 @@ def test_the_two_sizes_are_two_urls_serving_two_files(fake_bot, table_with_portr
 
     fake_bot.bosses = table_with_portraits
     with TestClient(create_app(fake_bot)) as client:
-        full = client.get("/static/portraits/Star")
-        icon = client.get("/static/portraits/Star", params={"size": "icon"})
+        full = client.get("/static/portraits/MaleficStar")
+        icon = client.get("/static/portraits/MaleficStar", params={"size": "icon"})
 
         assert full.content.endswith(b"fake")
         assert icon.content.endswith(b"small")
         # No query and `?size=full` are the same request; the portal writes the
         # short form, and nothing has to normalise anything.
-        assert client.get("/static/portraits/Star", params={"size": "full"}).content == full.content
+        assert (
+            client.get("/static/portraits/MaleficStar", params={"size": "full"}).content
+            == full.content
+        )
 
 
 def test_a_size_that_is_not_one_of_the_two_is_refused(fake_bot, table_with_portraits):
@@ -246,8 +249,11 @@ def test_a_size_that_is_not_one_of_the_two_is_refused(fake_bot, table_with_portr
 
     fake_bot.bosses = table_with_portraits
     with TestClient(create_app(fake_bot)) as client:
-        assert client.get("/static/portraits/Star", params={"size": "../icon"}).status_code == 422
-        assert client.get("/static/portraits/Star", params={"size": "64"}).status_code == 422
+        assert (
+            client.get("/static/portraits/MaleficStar", params={"size": "../icon"}).status_code
+            == 422
+        )
+        assert client.get("/static/portraits/MaleficStar", params={"size": "64"}).status_code == 422
 
 
 def test_an_unknown_portrait_is_a_404_not_a_traversal(fake_bot, table_with_portraits):
@@ -265,7 +271,7 @@ def test_an_unknown_portrait_is_a_404_not_a_traversal(fake_bot, table_with_portr
 def test_portraits_do_not_need_a_session(client, fake_bot, table_with_portraits):
     """Like the stylesheet: a picture of a boss, and the browser has to cache it."""
     fake_bot.bosses = table_with_portraits
-    assert client.get("/static/portraits/Star").status_code == 200
+    assert client.get("/static/portraits/MaleficStar").status_code == 200
 
 
 # --- Discord ----------------------------------------------------------------
@@ -285,9 +291,9 @@ def run_row(bosses, at):
 def test_a_card_carries_the_first_bosss_portrait(table_with_portraits):
     from .conftest import TZ, kl
 
-    run = run_row(["HStar", "HLimbo"], kl(2026, 9, 2, 21, 30))
+    run = run_row(["HMaleficStar", "HLimbo"], kl(2026, 9, 2, 21, 30))
     card = formatting.day_of_card([run], TZ, {}, table=table_with_portraits)
-    assert card.thumbnail_path.name == "Star.png"
+    assert card.thumbnail_path.name == "MaleficStar.png"
 
 
 def test_a_countdown_carries_it_too(table_with_portraits):
@@ -301,7 +307,7 @@ def test_a_countdown_carries_it_too(table_with_portraits):
 def test_no_portrait_means_no_attachment(bosses):
     from .conftest import TZ, kl
 
-    run = run_row(["HStar"], kl(2026, 9, 2, 21, 30))
+    run = run_row(["HMaleficStar"], kl(2026, 9, 2, 21, 30))
     card = formatting.day_of_card([run], TZ, {}, table=bosses)
     assert card.thumbnail_path is None
 
@@ -309,17 +315,19 @@ def test_no_portrait_means_no_attachment(bosses):
 def test_a_card_with_no_table_asks_for_nothing():
     from .conftest import TZ, kl
 
-    assert formatting.lead_portrait(["HStar"], None) is None
-    run = run_row(["HStar"], kl(2026, 9, 2, 21, 30))
+    assert formatting.lead_portrait(["HMaleficStar"], None) is None
+    run = run_row(["HMaleficStar"], kl(2026, 9, 2, 21, 30))
     assert formatting.day_of_card([run], TZ, {}).thumbnail_path is None
 
 
 def test_the_embed_points_at_the_attachment(table_with_portraits):
     from bot.agent.client import BossBot
 
-    card = formatting.Card(content="hi", thumbnail_path=table_with_portraits.portrait_path("Star"))
+    card = formatting.Card(
+        content="hi", thumbnail_path=table_with_portraits.portrait_path("MaleficStar")
+    )
     embed = BossBot._embed(card)
-    assert embed.thumbnail.url == "attachment://Star.png"
+    assert embed.thumbnail.url == "attachment://MaleficStar.png"
 
 
 def test_an_embedless_card_stays_embedless():
@@ -333,7 +341,9 @@ def BossBotEmbed(card):
 
 
 def test_a_thumbnail_alone_is_enough_to_warrant_an_embed(table_with_portraits):
-    card = formatting.Card(content="hi", thumbnail_path=table_with_portraits.portrait_path("Star"))
+    card = formatting.Card(
+        content="hi", thumbnail_path=table_with_portraits.portrait_path("MaleficStar")
+    )
     assert card.has_embed is True
 
 

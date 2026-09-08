@@ -48,7 +48,7 @@ def table_with_entry_art(tmp_path: Path):
     """
     art = tmp_path / "artwork" / "entry"
     art.mkdir(parents=True)
-    (art / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
+    (art / "MaleficStar.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
     (art / "FA.webp").write_bytes(b"RIFF fake")
     (art / "BM.png").write_bytes(b"\x89PNG\r\n\x1a\n fake")
     (art / "kalos-art.webp").write_bytes(b"RIFF fake")
@@ -56,7 +56,7 @@ def table_with_entry_art(tmp_path: Path):
         """
 difficulties: {n: Normal, h: Hard, x: Extreme}
 bosses:
-  Star:
+  MaleficStar:
     full: Radiant Malefic Star
     level: 280
     difficulties: [n, h]
@@ -105,8 +105,8 @@ def board_card_for(body: str, short: str) -> str:
 
 
 def test_the_art_is_found_by_the_boss_key(table_with_entry_art):
-    path = table_with_entry_art.entry_art_path("Star")
-    assert path is not None and path.name == "Star.png"
+    path = table_with_entry_art.entry_art_path("MaleficStar")
+    assert path is not None and path.name == "MaleficStar.png"
 
 
 def test_the_extension_fallback_is_the_portraits_one(table_with_entry_art):
@@ -135,14 +135,14 @@ def test_an_unknown_boss_has_no_art(table_with_entry_art):
 
 def test_a_canonical_name_resolves_to_its_bosss_art(table_with_entry_art):
     """Every difficulty shares one splash, exactly as they share one portrait."""
-    assert table_with_entry_art.entry_art_for("HStar").name == "Star.png"
-    assert table_with_entry_art.entry_art_for("NStar").name == "Star.png"
+    assert table_with_entry_art.entry_art_for("HMaleficStar").name == "MaleficStar.png"
+    assert table_with_entry_art.entry_art_for("NMaleficStar").name == "MaleficStar.png"
     assert table_with_entry_art.entry_art_for("nonsense") is None
 
 
 def test_a_table_built_without_a_directory_has_no_art():
-    table = BossTable.from_dict({"difficulties": {"h": "Hard"}, "bosses": {"Star": {}}})
-    assert table.entry_art_path("Star") is None
+    table = BossTable.from_dict({"difficulties": {"h": "Hard"}, "bosses": {"MaleficStar": {}}})
+    assert table.entry_art_path("MaleficStar") is None
 
 
 def test_the_real_table_ships_the_directory_and_its_readme():
@@ -157,7 +157,7 @@ def test_the_real_table_ships_the_directory_and_its_readme():
 
 def test_the_art_is_served_off_the_boss_directory(client, fake_bot, table_with_entry_art):
     fake_bot.bosses = table_with_entry_art
-    served = client.get("/static/entry/Star")
+    served = client.get("/static/entry/MaleficStar")
 
     assert served.status_code == 200
     assert served.content.startswith(b"\x89PNG")
@@ -168,7 +168,7 @@ def test_the_art_is_served_off_the_boss_directory(client, fake_bot, table_with_e
 def test_art_does_not_need_a_session(client, fake_bot, table_with_entry_art):
     """Like the stylesheet and the portraits: a picture, and the browser caches it."""
     fake_bot.bosses = table_with_entry_art
-    assert client.get("/static/entry/Star").status_code == 200
+    assert client.get("/static/entry/MaleficStar").status_code == 200
 
 
 def test_an_unknown_boss_is_a_404_not_a_traversal(client, fake_bot, table_with_entry_art):
@@ -178,7 +178,7 @@ def test_an_unknown_boss_is_a_404_not_a_traversal(client, fake_bot, table_with_e
     # The name is looked up in the boss table, so this is simply not a boss --
     # the filename on disk never comes from the URL.
     assert client.get("/static/entry/..%2F..%2Fbosses.yaml").status_code == 404
-    assert client.get("/static/entry/..%2Fportraits%2FStar.png").status_code == 404
+    assert client.get("/static/entry/..%2Fportraits%2FMaleficStar.png").status_code == 404
 
 
 # --- which artwork, and in what order ---------------------------------------
@@ -189,13 +189,13 @@ def test_a_run_lists_its_bosses_artwork_lead_first(fake_bot, table_with_entry_ar
     shows the boss the run is named after."""
     fake_bot.bosses = table_with_entry_art
 
-    assert service.run_entry_art(fake_bot, ["HStar", "HFA"]) == [
-        "/static/entry/Star",
+    assert service.run_entry_art(fake_bot, ["HMaleficStar", "HFA"]) == [
+        "/static/entry/MaleficStar",
         "/static/entry/FA",
     ]
-    assert service.run_entry_art(fake_bot, ["HFA", "HStar"]) == [
+    assert service.run_entry_art(fake_bot, ["HFA", "HMaleficStar"]) == [
         "/static/entry/FA",
-        "/static/entry/Star",
+        "/static/entry/MaleficStar",
     ]
 
 
@@ -205,8 +205,12 @@ def test_a_boss_with_no_file_is_absent_rather_than_a_gap(fake_bot, table_with_en
     fake_bot.bosses = table_with_entry_art
 
     assert service.run_entry_art(fake_bot, ["XKalos"]) == []
-    assert service.run_entry_art(fake_bot, ["XKalos", "HStar"]) == ["/static/entry/Star"]
-    assert service.run_entry_art(fake_bot, ["HStar", "XKalos"]) == ["/static/entry/Star"]
+    assert service.run_entry_art(fake_bot, ["XKalos", "HMaleficStar"]) == [
+        "/static/entry/MaleficStar"
+    ]
+    assert service.run_entry_art(fake_bot, ["HMaleficStar", "XKalos"]) == [
+        "/static/entry/MaleficStar"
+    ]
     assert service.run_entry_art(fake_bot, []) == []
     assert service.run_entry_art(fake_bot, ["HGollux"]) == []
 
@@ -215,9 +219,9 @@ def test_a_third_boss_is_not_represented(fake_bot, table_with_entry_art):
     """The sheet splits one edge between two corners; a third has nowhere to be."""
     fake_bot.bosses = table_with_entry_art
 
-    art = service.run_entry_art(fake_bot, ["HStar", "HFA", "HBM"])
+    art = service.run_entry_art(fake_bot, ["HMaleficStar", "HFA", "HBM"])
 
-    assert art == ["/static/entry/Star", "/static/entry/FA"]
+    assert art == ["/static/entry/MaleficStar", "/static/entry/FA"]
     assert len(art) == service.MAX_ENTRY_ART
 
 
@@ -227,7 +231,7 @@ def test_a_third_boss_is_not_represented(fake_bot, table_with_entry_art):
 def test_a_two_boss_run_splits_the_sheets_edge_between_them(
     auth, fake_bot, table_with_entry_art, seeded
 ):
-    """The seed's HStar + HFA. Two layers, and each says which corner it takes --
+    """The seed's HMaleficStar + HFA. Two layers, and each says which corner it takes --
     the server names it, because how many layers there are is a fact about the
     run and a stylesheet cannot count."""
     fake_bot.bosses = table_with_entry_art
@@ -239,7 +243,7 @@ def test_a_two_boss_run_splits_the_sheets_edge_between_them(
     assert 'class="run__art run__art--lead"' in card
     assert 'class="run__art run__art--second"' in card
     # The lead is written first, and the lead is the run's first boss.
-    assert card.index("/static/entry/Star") < card.index("/static/entry/FA")
+    assert card.index("/static/entry/MaleficStar") < card.index("/static/entry/FA")
     # Decorative, hence the empty alt: both bosses are named, in full, on top.
     assert card.count('alt=""') == 2
 
@@ -254,13 +258,13 @@ def test_the_compact_card_takes_the_lead_bosss_art_and_only_that(
 
     compact = board_card_for(auth.get("/").text, short)
     assert compact.count('class="runcard__art"') == 1
-    assert 'src="/static/entry/Star"' in compact
+    assert 'src="/static/entry/MaleficStar"' in compact
     assert "/static/entry/FA" not in compact
 
-    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HFA", "HStar"])
+    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HFA", "HMaleficStar"])
     compact = board_card_for(auth.get("/").text, short)
     assert 'src="/static/entry/FA"' in compact
-    assert "/static/entry/Star" not in compact
+    assert "/static/entry/MaleficStar" not in compact
 
 
 def test_one_boss_gets_one_layer_and_no_corner_to_share(
@@ -269,7 +273,7 @@ def test_one_boss_gets_one_layer_and_no_corner_to_share(
     """Nothing to split the edge with, so the layer is the plain side vignette --
     which is what the bare class draws, hence no modifier on it at all."""
     fake_bot.bosses = table_with_entry_art
-    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HStar"])
+    fake_bot.repo.set_run_bosses(seeded["run_star"], ["HMaleficStar"])
     short = service.short_id(seeded["run_star"])
 
     card = sheet_card_for(auth.get("/").text, short)
@@ -306,7 +310,7 @@ def test_the_veil_survives_an_htmx_swap(auth, fake_bot, table_with_entry_art, se
     )
 
     assert response.text.strip().startswith('<article class="run run--cancelled"')
-    assert 'src="/static/entry/Star"' in response.text
+    assert 'src="/static/entry/MaleficStar"' in response.text
 
 
 # --- the stylesheet ---------------------------------------------------------
@@ -428,19 +432,19 @@ def table_with_both(tmp_path: Path):
     """A boss table with a portrait *and* entry artwork for the same boss.
 
     The same filename in two directories, which is exactly the case a day-of
-    card has to survive: `Star.png` in the embed's corner and `Star.png` along
+    card has to survive: `MaleficStar.png` in the embed's corner and `MaleficStar.png` along
     its bottom, on one message.
     """
     (tmp_path / "portraits").mkdir()
-    (tmp_path / "portraits" / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n portrait")
+    (tmp_path / "portraits" / "MaleficStar.png").write_bytes(b"\x89PNG\r\n\x1a\n portrait")
     art = tmp_path / "artwork" / "entry"
     art.mkdir(parents=True)
-    (art / "Star.png").write_bytes(b"\x89PNG\r\n\x1a\n splash")
+    (art / "MaleficStar.png").write_bytes(b"\x89PNG\r\n\x1a\n splash")
     (tmp_path / "bosses.yaml").write_text(
         """
 difficulties: {n: Normal, h: Hard}
 bosses:
-  Star:
+  MaleficStar:
     full: Radiant Malefic Star
     level: 280
     difficulties: [n, h]
@@ -474,9 +478,11 @@ def test_the_day_of_card_carries_the_lead_bosss_splash(table_with_both):
     """The lead-boss rule the thumbnail already follows, one slot down."""
     from .conftest import TZ
 
-    card = formatting.day_of_card([day_run(["HStar", "HLimbo"])], TZ, {}, table=table_with_both)
+    card = formatting.day_of_card(
+        [day_run(["HMaleficStar", "HLimbo"])], TZ, {}, table=table_with_both
+    )
 
-    assert card.image_path.name == "Star.png"
+    assert card.image_path.name == "MaleficStar.png"
     assert card.image_path.parent.name == "entry"
 
 
@@ -485,13 +491,13 @@ def test_a_boss_with_no_splash_gets_no_image(bosses):
     card is exactly the card it was before this existed."""
     from .conftest import TZ
 
-    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=bosses)
+    card = formatting.day_of_card([day_run(["HMaleficStar"])], TZ, {}, table=bosses)
 
     assert card.image_path is None
 
 
 def test_a_card_with_no_table_asks_for_no_splash():
-    assert formatting.lead_entry_art(["HStar"], None) is None
+    assert formatting.lead_entry_art(["HMaleficStar"], None) is None
     assert formatting.lead_entry_art([], object()) is None
 
 
@@ -501,27 +507,29 @@ def test_only_the_morning_ping_gets_one(table_with_both):
     still rides on both, because a corner portrait costs nothing."""
     from .conftest import TZ
 
-    countdown = formatting.countdown_card(day_run(["HStar"]), 60, TZ, {}, table=table_with_both)
+    countdown = formatting.countdown_card(
+        day_run(["HMaleficStar"]), 60, TZ, {}, table=table_with_both
+    )
 
     assert countdown.image_path is None
     assert countdown.thumbnail_path is not None
 
 
 def test_both_pictures_ride_one_message_under_different_names(table_with_both):
-    """On disk they are both `Star.png`. Two attachments with one name make
-    `attachment://Star.png` ambiguous, and Discord picks one -- which is how a
+    """On disk they are both `MaleficStar.png`. Two attachments with one name make
+    `attachment://MaleficStar.png` ambiguous, and Discord picks one -- which is how a
     550px splash lands in the thumbnail slot."""
     from bot.agent.client import IMAGE_PREFIX, BossBot
 
     from .conftest import TZ
 
-    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=table_with_both)
+    card = formatting.day_of_card([day_run(["HMaleficStar"])], TZ, {}, table=table_with_both)
     files = BossBot._attachments(card)
     embed = BossBot._embed(card)
 
     assert len({item.filename for item in files}) == len(files) == 2
-    assert embed.thumbnail.url == "attachment://Star.png"
-    assert embed.image.url == f"attachment://{IMAGE_PREFIX}Star.png"
+    assert embed.thumbnail.url == "attachment://MaleficStar.png"
+    assert embed.image.url == f"attachment://{IMAGE_PREFIX}MaleficStar.png"
     # ...and each url names an attachment that is actually on the message.
     for url in (embed.thumbnail.url, embed.image.url):
         assert url.removeprefix("attachment://") in {item.filename for item in files}
@@ -529,22 +537,24 @@ def test_both_pictures_ride_one_message_under_different_names(table_with_both):
 
 def test_the_thumbnails_own_name_is_left_alone(table_with_both):
     """`edit_card` rewrites an embed without re-uploading anything, so every
-    card already in the channel has an attachment called `Star.png`. Renaming
+    card already in the channel has an attachment called `MaleficStar.png`. Renaming
     that one would point every future edit at a name those messages lack."""
     from bot.agent.client import BossBot
 
-    card = formatting.Card(content="hi", thumbnail_path=table_with_both.portrait_path("Star"))
+    card = formatting.Card(
+        content="hi", thumbnail_path=table_with_both.portrait_path("MaleficStar")
+    )
 
-    assert BossBot._embed(card).thumbnail.url == "attachment://Star.png"
-    assert BossBot._attachments(card)[0].filename == "Star.png"
+    assert BossBot._embed(card).thumbnail.url == "attachment://MaleficStar.png"
+    assert BossBot._attachments(card)[0].filename == "MaleficStar.png"
 
 
 def test_an_image_alone_is_enough_to_warrant_an_embed(table_with_both):
-    card = formatting.Card(content="hi", image_path=table_with_both.entry_art_path("Star"))
+    card = formatting.Card(content="hi", image_path=table_with_both.entry_art_path("MaleficStar"))
 
     assert card.has_embed is True
     # The literal, once, so the name that goes on the wire is pinned somewhere.
-    assert BossBotEmbed(card).image.url == "attachment://image-Star.png"
+    assert BossBotEmbed(card).image.url == "attachment://image-MaleficStar.png"
 
 
 def BossBotEmbed(card):
@@ -559,7 +569,7 @@ def test_quiet_mode_keeps_the_picture_and_still_notifies_nobody(table_with_both)
     emptied."""
     from .conftest import TZ
 
-    card = formatting.day_of_card([day_run(["HStar"])], TZ, {}, table=table_with_both)
+    card = formatting.day_of_card([day_run(["HMaleficStar"])], TZ, {}, table=table_with_both)
     quiet = formatting.quieted(card)
 
     assert quiet.image_path == card.image_path

@@ -244,7 +244,7 @@ def test_schedule_groups_by_day_and_counts_rsvps(auth, fake_bot, seeded):
     body = auth.get("/api/schedule").json()
     assert body["count"] == 2
     assert body["timezone"] == "Asia/Kuala_Lumpur"
-    star = next(r for r in body["runs"] if "HStar" in r["bosses"])
+    star = next(r for r in body["runs"] if "HMaleficStar" in r["bosses"])
     assert star["local_time"] == "21:30"
     assert star["yes"] == 1
     assert star["unanswered"] == 1
@@ -259,10 +259,10 @@ def test_schedule_groups_by_day_and_counts_rsvps(auth, fake_bot, seeded):
 
 def test_schedule_boss_detail_carries_the_full_in_game_name(auth, seeded):
     body = auth.get("/api/schedule").json()
-    star = next(r for r in body["runs"] if "HStar" in r["bosses"])
+    star = next(r for r in body["runs"] if "HMaleficStar" in r["bosses"])
     assert star["boss_detail"][0] == {
-        "token": "HStar",
-        "short": "Star",
+        "token": "HMaleficStar",
+        "short": "MaleficStar",
         "full": "Radiant Malefic Star",
         "level": 280,
         "letter": "H",
@@ -429,7 +429,7 @@ def test_deleting_a_fixed_run_cancels_its_upcoming_runs(auth, fake_bot, seeded):
 def test_boss_validation_endpoint_reports_both_outcomes(auth):
     ok = auth.post("/api/validate/bosses", json={"text": "hstar, hfa"}).json()
     assert ok["ok"] is True
-    assert [b["token"] for b in ok["bosses"]] == ["HStar", "HFA"]
+    assert [b["token"] for b in ok["bosses"]] == ["HMaleficStar", "HFA"]
     bad = auth.post("/api/validate/bosses", json={"text": "hkalos"}).json()
     assert bad["ok"] is False
     assert "no Hard difficulty" in bad["error"]
@@ -482,6 +482,33 @@ def test_an_unreadable_date_says_what_would_work(auth, seeded):
     response = auth.post(f"/api/runs/{seeded['run_star']}/amend", json={"to": "sometime soon-ish"})
     assert response.status_code == 400
     assert "wed 21:30" in response.json()["error"]
+
+
+def test_amend_into_an_occupied_week_is_refused(auth, fake_bot, seeded):
+    """Moving a weekly into a week its timing already fills is a 400, not a 500."""
+    from datetime import timedelta
+
+    from bot.agent.materialise import materialise_week
+
+    ws_next = seeded["week_start"] + timedelta(days=7)
+    materialise_week(
+        fake_bot.repo,
+        ws_next,
+        fake_bot.tz,
+        fake_bot.ping_time,
+        fake_bot.countdowns,
+        now=seeded["week_start"],
+    )
+    other = fake_bot.repo.run_for_fixed(seeded["fixed_star"], ws_next)
+    assert other is not None
+    target = other["datetime"] + timedelta(hours=1)
+    to = target.astimezone(fake_bot.tz).strftime("%Y-%m-%d %H:%M")
+    response = auth.post(f"/api/runs/{seeded['run_star']}/amend", json={"to": to})
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert "already has a run" in error
+    assert "Edit that existing run instead" in error
+    assert "cancel" not in error.lower()
 
 
 def test_cancel_sets_the_status_and_tells_the_channel(auth, fake_bot, seeded):
@@ -1126,7 +1153,7 @@ def test_config_reports_runtime_and_deployment_values(auth, seeded):
     assert body["extract_enabled"] is True
     assert body["timezone"] == "Asia/Kuala_Lumpur"
     assert body["reset"] == "Thu 00:00"
-    assert body["model"] == "gpt-oss:20b"
+    assert body["model"] == "gemma4:12b"
 
 
 def test_setting_the_ping_time_re_places_the_pending_morning_pings(auth, fake_bot, seeded):
@@ -1279,6 +1306,41 @@ def test_digest_says_when_the_channel_does_not_exist(auth, fake_bot, seeded):
     response = auth.post("/api/digest", json={"channel_id": "424242"})
     assert response.status_code == 400
     assert "does not exist" in response.json()["error"]
+
+
+def test_an_explicit_channel_never_falls_back_to_the_digest_channel(auth, fake_bot, seeded):
+    """`bossctl guide --channel <id>` posting in the wrong channel.
+
+    `find_channel` falls back to POST_CHANNEL_ID for reminders that must land
+    somewhere; an explicit operator request must instead fail when that
+    channel is gone.
+    """
+    # The fallback is available and different from the requested channel.
+    assert str(fake_bot.settings.post_channel_id) == str(WATCHED_CHANNEL)
+
+    response = auth.post("/api/digest", json={"channel_id": "424242"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+    assert fake_bot.digests == []
+
+    response = auth.post("/api/say", json={"channel_id": "424242", "content": "hello"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+    assert fake_bot.posts == []
+
+    response = auth.post("/api/guide", json={"channel_id": "424242", "content": "hello"})
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["error"]
+
+    fake_bot.channels[OTHER_CHANNEL].permissions.send_messages = False
+    response = auth.post("/api/say", json={"channel_id": str(OTHER_CHANNEL), "content": "hi"})
+    assert response.status_code == 400
+    assert "no access" in response.json()["error"]
+    assert fake_bot.posts == []
+
+    response = auth.post("/api/guide", json={"channel_id": str(OTHER_CHANNEL), "content": "hi"})
+    assert response.status_code == 400
+    assert "no access" in response.json()["error"]
 
 
 def test_a_rejected_message_is_reported_separately(auth, fake_bot, seeded):
@@ -1516,7 +1578,7 @@ def test_the_schedule_hides_runs_that_have_already_happened(auth, fake_bot, seed
     assert body["count"] == 1
     assert body["hidden"] == 1
     assert body["show_past"] is False
-    assert all("HStar" not in r["bosses"] for r in body["runs"])
+    assert all("HMaleficStar" not in r["bosses"] for r in body["runs"])
 
 
 def test_show_past_brings_them_back(auth, fake_bot, seeded):
@@ -1533,7 +1595,7 @@ def test_cancelled_runs_are_hidden_by_the_same_rule(auth, fake_bot, seeded):
 
 
 def test_user_filter_counts_runs_you_own_as_well_as_ones_you_are_on(auth, fake_bot, seeded):
-    """1001 owns the HStar timing and is on it; 1002 owns XKalos but is also on it."""
+    """1001 owns the HMaleficStar timing and is on it; 1002 owns XKalos but is also on it."""
     fake_bot.repo.update_fixed_run(seeded["fixed_star"], participants=["1002"])
     fake_bot.repo.set_run_participants(seeded["run_star"], ["1002"])
     body = auth.get("/api/schedule?user=1001").json()

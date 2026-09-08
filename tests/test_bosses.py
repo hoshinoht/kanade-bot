@@ -12,10 +12,11 @@ from bot.domain.bosses import BossParseError, BossReference, BossTable, BossTabl
 @pytest.mark.parametrize(
     ("token", "expected"),
     [
-        ("nstar", "NStar"),
-        ("HStar", "HStar"),
-        ("hrms", "HStar"),
-        ("nmalefic", "NStar"),
+        ("nstar", "NMaleficStar"),
+        ("hstar", "HMaleficStar"),
+        ("HMaleficStar", "HMaleficStar"),
+        ("hrms", "HMaleficStar"),
+        ("nmalefic", "NMaleficStar"),
         ("hfa", "HFA"),
         ("HFA", "HFA"),
         ("eadversary", "EFA"),
@@ -35,7 +36,7 @@ from bot.domain.bosses import BossParseError, BossReference, BossTable, BossTabl
         ("xblackmage", "XBM"),
         ("nseren", "NSeren"),
         ("xchosenseren", "XSeren"),
-        ("n-star", "NStar"),
+        ("n-star", "NMaleficStar"),
         ("  Xkalos  ", "XKalos"),
     ],
 )
@@ -58,7 +59,7 @@ def test_bare_boss_name_demands_a_difficulty(bosses: BossTable):
     [
         ("hkalos", "EKalos, NKalos, CKalos, XKalos"),  # Kalos has no Hard
         ("nbm", "HBM, XBM"),  # Black Mage is Hard/Extreme only
-        ("cstar", "NStar, HStar"),
+        ("cstar", "NMaleficStar, HMaleficStar"),
         ("xlimbo", "NLimbo, HLimbo"),
     ],
 )
@@ -95,11 +96,11 @@ def test_bosses_the_guild_does_not_run_are_not_in_the_table(bosses: BossTable):
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("hstar, hfa", ["HStar", "HFA"]),
-        ("hstar hfa", ["HStar", "HFA"]),
-        ("HStar + HFA", ["HStar", "HFA"]),
+        ("hstar, hfa", ["HMaleficStar", "HFA"]),
+        ("hstar hfa", ["HMaleficStar", "HFA"]),
+        ("HMaleficStar + HFA", ["HMaleficStar", "HFA"]),
         ("xkalos/hcarl", ["XKalos", "HCarling"]),
-        ("nstar, nstar", ["NStar"]),  # de-duplicated, order preserved
+        ("nstar, nstar", ["NMaleficStar"]),  # de-duplicated, order preserved
     ],
 )
 def test_parse_list(bosses: BossTable, text, expected):
@@ -115,12 +116,68 @@ def test_parse_list(bosses: BossTable, text, expected):
         ("hard bald", ["HBaldrix"]),  # a word in front of an alias, not just the short
         ("Easy Carling", ["ECarling"]),
         ("Chaos Kalos", ["CKalos"]),
-        ("hard star hard fa", ["HStar", "HFA"]),
-        ("HBellona, hard star", ["HBellona", "HStar"]),  # the two spellings mix
+        ("hard star hard fa", ["HMaleficStar", "HFA"]),
+        ("hard maleficstar", ["HMaleficStar"]),
+        ("HBellona, hard star", ["HBellona", "HMaleficStar"]),  # the two spellings mix
     ],
 )
 def test_a_spelled_out_difficulty_is_folded_into_the_prefix(bosses: BossTable, text, expected):
     assert bosses.parse(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Hard Black Mage", ["HBM"]),
+        ("Extreme Black Mage", ["XBM"]),
+        ("Extreme Gatekeeper Kalos", ["XKalos"]),
+        ("Normal Gatekeeper Kalos", ["NKalos"]),
+        ("Normal Radiant Malefic Star", ["NMaleficStar"]),
+        ("Hard Radiant Malefic Star", ["HMaleficStar"]),
+        ("Normal The First Adversary", ["NFA"]),
+        ("normal first adversary", ["NFA"]),
+        ("Hard Black Mage, Normal MaleficStar", ["HBM", "NMaleficStar"]),
+    ],
+)
+def test_a_spelled_out_difficulty_folds_onto_a_spaced_name(bosses: BossTable, text, expected):
+    assert bosses.parse(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_valid"),
+    [
+        ("Normal Black Mage", "HBM, XBM"),  # Black Mage is Hard/Extreme only
+        ("Hard Gatekeeper Kalos", "EKalos, NKalos, CKalos, XKalos"),
+    ],
+)
+def test_a_spelled_out_difficulty_on_a_spaced_name_is_still_rejected(
+    bosses: BossTable, text, expected_valid
+):
+    with pytest.raises(BossParseError) as exc:
+        bosses.parse(text)
+    message = str(exc.value)
+    assert "difficulty" in message
+    assert expected_valid in message
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_valid"),
+    [
+        ("black mage", "HBM, XBM"),
+        ("radiant malefic star", "NMaleficStar, HMaleficStar"),
+        ("gatekeeper kalos", "EKalos, NKalos, CKalos, XKalos"),
+        ("the first adversary", "EFA, NFA, HFA, XFA"),
+        ("first adversary", "EFA, NFA, HFA, XFA"),
+    ],
+)
+def test_a_spaced_name_without_a_difficulty_names_its_forms(
+    bosses: BossTable, text, expected_valid
+):
+    with pytest.raises(BossParseError) as exc:
+        bosses.parse(text)
+    message = str(exc.value)
+    assert "missing a difficulty prefix" in message
+    assert expected_valid in message
 
 
 @pytest.mark.parametrize(
@@ -168,13 +225,13 @@ def test_parse_rejects_empty_input(bosses: BossTable):
 def test_describe_expands_to_the_full_in_game_name(bosses: BossTable):
     assert bosses.describe("HFA") == "The First Adversary (Hard, Lv270)"
     assert bosses.describe("XKalos") == "Gatekeeper Kalos (Extreme, Lv265)"
-    assert bosses.describe("NStar") == "Radiant Malefic Star (Normal, Lv280)"
+    assert bosses.describe("NMaleficStar") == "Radiant Malefic Star (Normal, Lv280)"
     assert bosses.describe("HCarling") == "Karling (Hard, Lv275)"
     assert bosses.describe("???") == "???"
 
 
 def test_describe_all(bosses: BossTable):
-    assert bosses.describe_all(["HStar", "HFA"]) == (
+    assert bosses.describe_all(["HMaleficStar", "HFA"]) == (
         "Radiant Malefic Star (Hard, Lv280) · The First Adversary (Hard, Lv270)"
     )
 
@@ -187,7 +244,7 @@ def test_the_shipped_table_is_exactly_the_eleven_current_bosses(bosses: BossTabl
         "FA",
         "Carling",
         "BM",
-        "Star",
+        "MaleficStar",
         "Bellona",
         "Limbo",
         "Baldrix",
@@ -197,8 +254,8 @@ def test_the_shipped_table_is_exactly_the_eleven_current_bosses(bosses: BossTabl
 
 
 def test_guide_colours_are_loaded_from_the_nested_guide_map(bosses: BossTable):
-    assert bosses.bosses["Lotus"].guide_colour == 0x9B59B6
-    assert bosses.bosses["Jupiter"].guide_colour == 0x2ECC71
+    assert bosses.bosses["Lotus"].guide_colour == 0x39BFFF
+    assert bosses.bosses["Jupiter"].guide_colour == 0x21A38F
 
 
 @pytest.mark.parametrize(
@@ -404,8 +461,14 @@ def test_omitted_difficulties_default_to_the_catalog_and_table_maps_are_immutabl
         ("jup", ["Jupiter"]),
         ("hlimb", ["Limbo"]),
         ("chosen seren", ["Seren"]),
-        ("hstar and xkalos", ["Star", "Kalos"]),
-        ("hstar hstar", ["Star"]),
+        ("hstar and xkalos", ["MaleficStar", "Kalos"]),
+        ("hstar hstar", ["MaleficStar"]),
+        ("black mage", ["BM"]),
+        ("Hard Black Mage tonight", ["BM"]),
+        ("gatekeeper kalos", ["Kalos"]),
+        ("the first adversary", ["FA"]),
+        ("first adversary", ["FA"]),
+        ("radiant malefic star", ["MaleficStar"]),
     ],
 )
 def test_a_loose_sentence_gives_up_the_bosses_it_names(bosses: BossTable, text, expected):

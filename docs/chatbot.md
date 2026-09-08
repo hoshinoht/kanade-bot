@@ -89,10 +89,8 @@ CHAT_ROLE_PLUGINS=...            # optional initial ROLE_ID=plugin assignments
 CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
-# 2. Create private identity and default-behaviour files.
-cp config/personas/identities/example.md config/personas/identities/persona.md
-cp config/personas/behaviours/default.example.md config/personas/behaviours/default.md
-$EDITOR config/personas/identities/persona.md config/personas/behaviours/default.md
+# 2. Follow config/personas/README.md to create private complete persona bundles
+#    and write config/personas/personas.yaml last.
 
 # 3. Rebuild, then mention it in the channel.
 docker compose up -d --build
@@ -106,19 +104,21 @@ startup, so restart after changing either. Portrait and entry-art files under
 `boss/` are served from disk and need only a page reload.
 
 Reply profiles are managed from **Config → Chatbot** and stored under
-`config/personas/behaviours/profiles/`. Publish profiles that members may choose with
+`config/personas/behaviours/` (staging overrides in `config/personas/behaviours/staging/`).
+Older `behaviours/profiles/` and `behaviour-plugins/` files remain readable during
+migration. Publish profiles that members may choose with
 `/style`; unpublished profiles remain private. Role assignments are ordered,
 and the first readable matching role profile supersedes the saved member choice.
 Assignments never grant access. `CHAT_ROLE_PLUGINS` seeds only a fresh database.
 
-A missing persona file falls back to the tracked template and logs a WARNING, so
-a wrong `PERSONA_PATH` is obvious rather than being an outage — and the Config
-page's Chatbot panel names the file it actually loaded, marked as a fallback
-when it is the template.
+A missing or invalid selected bundle falls back as a complete unit to the
+manifest default, then to the tracked example bundle if necessary. Config shows
+the configured and effective personas without showing prompt text.
 
-**Switching identities does not need a restart.** Keep identity files under
-`config/personas/identities/` and select one in the portal. `PERSONA_PATH` only seeds a
-fresh database. Legacy root-level identity files remain readable.
+**Switching personas does not need a restart.** Select a complete bundle in the
+portal; the next answer uses its identity, default behaviour, and staging copy.
+`PERSONA_PATH` is a deprecated fresh-database seed. Legacy identity/default/
+staging paths remain readable during the compatibility release.
 
 Members use `/style` to inspect or save a public reply profile. The response is
 ephemeral and says only what was saved. The Members portal page separately shows

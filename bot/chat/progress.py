@@ -79,6 +79,25 @@ def _validate_lines(mapping: Any, where: str) -> dict[str, str]:
     return out
 
 
+def parse_complete_staging(mapping: Any, where: str = "staging") -> StagingLines:
+    """Parse one complete flat persona staging mapping."""
+    values = _validate_lines(mapping, where)
+    missing = [key for key in STAGING_KEYS if key not in values]
+    if missing:
+        raise StagingConfigError(f"{where} is missing staging keys: {missing}")
+    return StagingLines(**{key: values[key] for key in STAGING_KEYS})
+
+
+def parse_profile_staging(
+    mapping: Any, default: StagingLines, where: str = "profile staging"
+) -> StagingLines:
+    """Parse a partial flat profile override against one persona baseline."""
+    override = _validate_lines(mapping, where)
+    values = {key: getattr(default, key) for key in STAGING_KEYS}
+    values.update(override)
+    return StagingLines(**values)
+
+
 def parse_staging_config(data: Any) -> tuple[StagingLines, dict[str, StagingLines]]:
     if not isinstance(data, dict):
         raise StagingConfigError("staging config must be a mapping")
@@ -87,11 +106,7 @@ def parse_staging_config(data: Any) -> tuple[StagingLines, dict[str, StagingLine
         raise StagingConfigError(f"unknown top-level keys: {sorted(unknown)}")
     if "default" not in data:
         raise StagingConfigError("staging config needs a 'default' mapping")
-    default_values = _validate_lines(data["default"], "default")
-    missing = [k for k in STAGING_KEYS if k not in default_values]
-    if missing:
-        raise StagingConfigError(f"default is missing staging keys: {missing}")
-    default = StagingLines(**{k: default_values[k] for k in STAGING_KEYS})
+    default = parse_complete_staging(data["default"], "default")
     profiles: dict[str, StagingLines] = {}
     raw_profiles = data.get("profiles", {})
     if raw_profiles is None:
@@ -101,8 +116,7 @@ def parse_staging_config(data: Any) -> tuple[StagingLines, dict[str, StagingLine
     for name, override in raw_profiles.items():
         if not isinstance(name, str) or not name.strip():
             raise StagingConfigError("profile names must be non-empty strings")
-        merged = {**default_values, **_validate_lines(override, f"profiles.{name}")}
-        profiles[name.strip()] = StagingLines(**{k: merged[k] for k in STAGING_KEYS})
+        profiles[name.strip()] = parse_profile_staging(override, default, f"profiles.{name}")
     return default, profiles
 
 
@@ -113,6 +127,8 @@ def load_staging_config(path: str | Path | None) -> tuple[StagingLines, dict[str
         text = Path(path).read_text(encoding="utf-8")
     except OSError:
         return DEFAULT_LINES, {}
+    except UnicodeError as exc:
+        raise StagingConfigError(f"invalid staging YAML at {path}") from exc
     try:
         import yaml
     except ImportError:
@@ -120,13 +136,11 @@ def load_staging_config(path: str | Path | None) -> tuple[StagingLines, dict[str
     try:
         data = yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001
-        raise StagingConfigError(f"invalid staging YAML at {path}: {exc}") from exc
+        raise StagingConfigError(f"invalid staging YAML at {path}") from exc
     if data is None:
         return DEFAULT_LINES, {}
     if isinstance(data, dict) and "default" not in data and "profiles" not in data:
-        base = {k: getattr(DEFAULT_LINES, k) for k in STAGING_KEYS}
-        base.update(_validate_lines(data, "default"))
-        default = StagingLines(**{k: base[k] for k in STAGING_KEYS})
+        default = parse_profile_staging(data, DEFAULT_LINES, "default")
         return default, {}
     return parse_staging_config(data)
 
@@ -147,7 +161,6 @@ def load_profile_dir(
         import yaml
     except ImportError:
         return merged
-    base = {k: getattr(default, k) for k in STAGING_KEYS}
     for entry in entries:
         if not entry.is_file() or entry.suffix not in {".yaml", ".yml"}:
             continue
@@ -156,10 +169,8 @@ def load_profile_dir(
         try:
             data = yaml.safe_load(entry.read_text(encoding="utf-8")) or {}
         except Exception as exc:  # noqa: BLE001
-            raise StagingConfigError(f"invalid staging YAML at {entry}: {exc}") from exc
-        override = _validate_lines(data, f"profiles.{entry.stem}")
-        values = {**base, **override}
-        merged[entry.stem] = StagingLines(**{k: values[k] for k in STAGING_KEYS})
+            raise StagingConfigError(f"invalid staging YAML at {entry.name}") from exc
+        merged[entry.stem] = parse_profile_staging(data, default, f"profiles.{entry.stem}")
     return merged
 
 
@@ -255,6 +266,8 @@ __all__ = [
     "load_staging_file",
     "load_staging_split",
     "parse_staging_config",
+    "parse_complete_staging",
+    "parse_profile_staging",
     "placeholder_for",
     "staging_linkage",
 ]

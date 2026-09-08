@@ -3,7 +3,7 @@
 The bot is guild-wide and has no concept of "the" party, so an amendment is
 matched to a run by **bosses ∩ participants**, scoped to the channel it was said
 in.  "we doing our nstar tonight" in ``#nstar-kanon-nova`` resolves to that
-channel's NStar run, not to somebody else's.
+channel's NMaleficStar run, not to somebody else's.
 
 Only the general channel -- one with no runs of its own -- falls back to
 guild-wide matching, and there the participant overlap has to carry the decision
@@ -52,7 +52,7 @@ def reachable(runs: Sequence[dict], day: date | None, tz: ZoneInfo) -> list[dict
     The rule is deliberately one-directional. Moving a run *forward* past the
     reset is ordinary -- "shift our monday run to next friday" is a real request,
     and ``_record`` files the row under the week the new time lands in. Reaching
-    *backwards* is not: it is how "move HStar+HFA to Wed" ended up proposing to
+    *backwards* is not: it is how "move HMaleficStar+HFA to Wed" ended up proposing to
     drag next week's freshly-materialised Monday runs back to a Wednesday that
     belongs to the week before them. The thread never mentioned those runs; they
     merely had the right bosses and the right people on them.
@@ -100,7 +100,7 @@ def _hinted(hint: str | None, runs: Sequence[dict], bosses: set[str]) -> dict | 
 
     A hint is still only a hint. It is refused when the amendment names bosses
     the hinted run does not have: a 20B model will happily point a `move` about
-    NBaldrix at an HStar run it saw in the prompt, and following that renames
+    NBaldrix at an HMaleficStar run it saw in the prompt, and following that renames
     somebody else's night.
     """
     if not hint:

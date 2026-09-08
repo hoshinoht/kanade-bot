@@ -44,7 +44,7 @@ def make_settings(**overrides: Any) -> Settings:
         "db_path": ":memory:",
         "admin_token": ADMIN_TOKEN,
         "post_channel_id": WATCHED_CHANNEL,
-        "persona_path": "config/personas/identities/example.md",
+        "persona_path": "config/personas/personas/kanade/identity.md",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -298,11 +298,14 @@ class FakeBot:
 
     @staticmethod
     def persona_choices() -> list[str]:
-        # The real directory, as the real client reads it: a fake list here
+        # The real catalog, as the real client reads it: a fake list here
         # would let a test pass against choices the bot could never load.
-        from bot.chat import persona
+        from bot.chat import persona_catalog
 
-        return persona.available()
+        try:
+            return [item.id for item in persona_catalog.load_catalog().choices]
+        except persona_catalog.PersonaCatalogError:
+            return []
 
     # The chatbot's four capacity numbers, read the way the real client reads
     # them -- through the same parsers, so the fake cannot disagree with it
@@ -396,12 +399,16 @@ class FakeBot:
         self._next_message_id += 1
         return FakeMessage(self._next_message_id, channel, bot=self)
 
-    async def find_channel(self, channel_id=None):
+    async def find_channel(self, channel_id=None, *, allow_fallback: bool = True):
         """Mirrors :meth:`bot.client.BossBot.find_channel`, including its reasons."""
         from bot.agent.client import ChannelLookup
 
         problems = []
-        for candidate in (channel_id, self.settings.post_channel_id):
+        if allow_fallback:
+            candidates = (channel_id, self.settings.post_channel_id)
+        else:
+            candidates = (channel_id,)
+        for candidate in candidates:
             if candidate is None:
                 continue
             channel = self.get_channel(candidate)
@@ -441,8 +448,8 @@ class FakeBot:
 
         return BossBot.missing_manage_messages(self)
 
-    async def post_channel(self, channel_id=None):
-        return (await self.find_channel(channel_id)).channel
+    async def post_channel(self, channel_id=None, *, allow_fallback: bool = True):
+        return (await self.find_channel(channel_id, allow_fallback=allow_fallback)).channel
 
     async def post_plain(
         self,
@@ -565,7 +572,7 @@ class FakeBot:
         self.digest_channel = channel_id
         if self.digest_fails:
             return None
-        channel = await self.post_channel(channel_id)
+        channel = await self.post_channel(channel_id, allow_fallback=channel_id is None)
         if channel is None:
             return None
         message = self._message(channel)
