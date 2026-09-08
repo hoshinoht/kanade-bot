@@ -29,7 +29,7 @@ dependencies = [
 bossctl = "bot.cli:main"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "ruff==0.16.5", "respx==0.23.1"]
+dev = ["pytest==9.1.1", "ruff==0.16.6", "respx==0.23.1"]
 
 [build-system]
 requires = ["hatchling"]
