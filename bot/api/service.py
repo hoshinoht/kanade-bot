@@ -25,6 +25,7 @@ from bot.agent.materialise import (
 from bot.agent.pings import audience, normalise_level
 from bot.agent.rsvp import compute_status, recompute_after_roster_change
 from bot.agent.util import is_bot_admin
+from bot.chat import persona_catalog
 from bot.domain.bosses import BossParseError
 from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
 from bot.domain.timeutil import from_iso, local_naive, to_iso, utcnow
@@ -80,7 +81,7 @@ def _audit(
 
 
 def _bosses_of(run: dict) -> str:
-    """The run's bosses as an audit line says them: `HStar + HFA`."""
+    """The run's bosses as an audit line says them: `HMaleficStar + HFA`."""
     return formatting.format_bosses(run["bosses"])
 
 
@@ -1436,6 +1437,21 @@ def parse_when(bot: BossBot, text: str) -> datetime:
         # dateparser misses ``next <weekday> HH:MM`` -- fall back to the
         # extractor's own resolver, which handles it through _NEXT_RE.
         parsed = _resolve_when(cleaned, now, bot.tz)
+    elif (alt := _resolve_when(cleaned, now, bot.tz)) is not None:
+        # dateparser with ``PREFER_DATES_FROM=future`` never returns today for
+        # ``sat 22:30`` said on a Saturday -- it jumps a week even when tonight
+        # is still ahead. The extractor's resolver gets same-day right, so
+        # prefer it when it lands on the same wall-clock a week earlier and is
+        # still in the future. The wall-clock check keeps bare-hour inputs like
+        # ``sat 10`` on dateparser's reading instead of adopting the chat's
+        # pm-assumption halfway.
+        if (
+            alt > now
+            and alt < parsed
+            and (parsed - alt) >= timedelta(days=6)
+            and alt.astimezone(bot.tz).time() == parsed.astimezone(bot.tz).time()
+        ):
+            parsed = alt
     if parsed is None:
         raise BadRequest(
             f"couldn't read `{text}` as a date - try `wed 21:30` or `2026-09-02 21:30`"
@@ -1454,7 +1470,20 @@ async def amend_run(bot: BossBot, run_id: str, to: str) -> dict:
     parsed = parse_when(bot, to)
     old_at = run["datetime"]
     ws = week_start(parsed, bot.tz, bot.settings.reset_weekday, bot.settings.reset_time)
-    bot.repo.set_run_datetime(run["id"], parsed, ws)
+    existing = bot.repo.run_move_conflict(run, ws)
+    if existing is not None:
+        raise BadRequest(
+            f"that weekly already has a run in the week of "
+            f"{formatting.local_day(ws, bot.tz)} "
+            f"(#{short_id(existing['id'])} on "
+            f"{formatting.local_day(existing['datetime'], bot.tz)} "
+            f"{formatting.local_time(existing['datetime'], bot.tz)}). "
+            "Edit that existing run instead, or keep this move within its current boss week."
+        )
+    try:
+        bot.repo.set_run_datetime(run["id"], parsed, ws)
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
     if run["status"] in ("confirmed", "at_risk"):
         # Moving a run invalidates the answers people gave about the old slot.
         bot.repo.set_run_status(run["id"], "planned")
@@ -2142,8 +2171,19 @@ def limits(bot: BossBot) -> dict:
 
 
 def get_config(bot: BossBot) -> dict:
-    # Use the pilot's loaded persona state.
-    persona_source = bot.chat.persona_source()
+    runtime = bot.chat.persona_runtime()
+    bundle = runtime.bundle
+    try:
+        catalog = bot.chat.persona_catalog()
+        labels = {item.id: item.label for item in catalog.choices}
+        choices = list(labels)
+        catalog_mode = catalog.mode
+    except persona_catalog.PersonaCatalogError:
+        labels = {}
+        choices = []
+        catalog_mode = "fallback"
+    if bundle.id == persona_catalog.EXAMPLE_ID and bundle.fell_back:
+        catalog_mode = "fallback"
     configured_role_plugins, role_plugin_issues = behaviour_plugins.assignment_diagnostics(
         bot.repo.get_config(behaviour_plugins.CONFIG_KEY, "[]")
     )
@@ -2174,13 +2214,18 @@ def get_config(bot: BossBot) -> dict:
         # Which persona file is actually loaded, and whether it is the tracked
         # template. A deploy answering in the placeholder voice is a
         # misconfiguration, and it used to be visible only in a startup WARNING.
-        "persona_file": persona_source.name,
-        "persona_fallback": persona_source.fell_back,
+        "persona_file": bundle.source.identity_path.name,
+        "persona_fallback": bundle.fell_back,
         # The choice, and what there is to choose from. `persona` is what the
         # setting says; `persona_file` above is what the bot actually read, and
         # the two differ exactly when the chosen file has gone missing.
         "persona": bot.persona_name,
-        "persona_choices": bot.persona_choices(),
+        "persona_choices": choices,
+        "persona_labels": labels,
+        "persona_effective": bundle.id,
+        "persona_effective_label": bundle.label,
+        "persona_catalog_mode": catalog_mode,
+        "persona_issue": bundle.issue,
         "chat_role_plugins": [item.as_dict() for item in configured_role_plugins],
         "chat_role_plugin_issues": [issue.message for issue in role_plugin_issues],
         "behaviour_plugins": [
@@ -2247,10 +2292,16 @@ def set_config(bot: BossBot, key: str, value: Any) -> dict:
         for run in bot.repo.list_runs(statuses=LIVE_STATUSES):
             ensure_reminders(bot.repo, run, bot.tz, bot.ping_time, bot.countdowns, now=now)
     elif key == "persona":
-        stored = _persona_choice(bot, value)
+        try:
+            candidate = bot.chat.prepare_persona_runtime(str(value or "").strip())
+        except persona_catalog.PersonaCatalogError as exc:
+            choices = bot.persona_choices()
+            offered = ", ".join(f"`{item}`" for item in choices) or "none"
+            raise BadRequest(f"{exc}; available personas: {offered}") from None
+        stored = candidate.bundle.id
         bot.repo.set_config(key, stored)
-        # Apply persona changes without a restart.
-        bot.chat.reload_persona()
+        # The candidate is fully loaded before persistence. Assignment has no await.
+        bot.chat.activate_persona_runtime(candidate)
     elif key == behaviour_plugins.CONFIG_KEY:
         try:
             stored = behaviour_plugins.encode(value)
@@ -2442,11 +2493,10 @@ def _persona_choice(bot: BossBot, value: Any) -> str:
     half of this feature and never leave the file.
     """
     wanted = str(value or "").strip()
-    choices = bot.persona_choices()
-    if wanted in choices:
-        return wanted
-    offered = ", ".join(f"`{name}`" for name in choices) or "none -- config/personas/ is empty"
-    raise BadRequest(f"`{wanted}` is not a persona in config/personas/ - one of: {offered}")
+    try:
+        return bot.chat.prepare_persona_runtime(wanted).bundle.id
+    except persona_catalog.PersonaCatalogError as exc:
+        raise BadRequest(str(exc)) from None
 
 
 def _whole_number(value: Any, label: str, minimum: int = 1) -> int:
@@ -2478,7 +2528,9 @@ async def post_digest(
     bot: BossBot, channel_id: int | str | None = None, week: str = "this"
 ) -> dict:
     week_for(bot, week)  # validates
-    found = await bot.find_channel(channel_id)
+    # An explicit channel must not fall back to POST_CHANNEL_ID: "post this in
+    # #here" landing in the digest channel is a wrong-channel post.
+    found = await bot.find_channel(channel_id, allow_fallback=channel_id is None)
     if found.channel is None:
         raise BadRequest(f"couldn't post the digest: {found.problem}")
     message = await bot.post_digest(channel_id, week=week)
@@ -2506,7 +2558,7 @@ async def post_say(bot: BossBot, channel_id: str, content: str) -> dict:
     """Post a plain-text message to a channel, notifying nobody."""
     from bot.agent.util import mentions_in
 
-    found = await bot.find_channel(channel_id)
+    found = await bot.find_channel(channel_id, allow_fallback=False)
     if found.channel is None:
         raise BadRequest(f"couldn't post: {found.problem}")
     users, roles = mentions_in(content)
@@ -2647,7 +2699,7 @@ async def post_guide(
             embed.set_footer(text=footer)
         embeds.append(embed)
 
-    found = await bot.find_channel(channel_id)
+    found = await bot.find_channel(channel_id, allow_fallback=False)
     if found.channel is None:
         raise BadRequest(f"couldn't post: {found.problem}")
 

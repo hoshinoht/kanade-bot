@@ -7,14 +7,29 @@ taking the bot down. The prompt's job is to carry no ids and no secrets.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
 
+from bot.api import service
 from bot.chat import persona
-from bot.chat.agent import ChatPilot
+from bot.chat.agent import ChatPilot, ChatTurn
 
-from .chat_support import ADMIN_ROLE, CHAT_CHANNEL, CHAT_ROLE, build_bot
+from .chat_support import ADMIN_ROLE, CHAT_CHANNEL, CHAT_ROLE, FakeOllama, build_bot, message, says
+from .test_persona_catalog import _bundle, _manifest
+
+
+@pytest.fixture
+def catalog_root(tmp_path):
+    _bundle(tmp_path, "yuuki-sakuna", "Yuuki")
+    _bundle(tmp_path, "nazupi", "Nazupi")
+    _bundle(tmp_path, "kanade", "Kanade")
+    _manifest(
+        tmp_path,
+        [("yuuki-sakuna", "Yuuki Sakuna", ["persona.md"]), ("nazupi", "Nazupi", ["nazupi.md"])],
+    )
+    return tmp_path
 
 
 def test_persona_path_is_read_verbatim(tmp_path):
@@ -27,7 +42,7 @@ def test_a_missing_file_falls_back_and_warns(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="bot.chat.persona"):
         text = persona.load_persona(tmp_path / "nope.md")
     assert text
-    assert "example.md" in caplog.text
+    assert "identity.md" in caplog.text
     assert "falling back" in caplog.text
 
 
@@ -50,12 +65,12 @@ def test_no_path_at_all_falls_back(caplog):
 def test_the_tracked_example_is_present_and_usable():
     assert persona.EXAMPLE_PERSONA.exists()
     text = persona.load_persona(None)
-    assert "scheduler" in text.lower()
-    assert len(text) > 500
+    assert "schedule" in text.lower()
+    assert len(text) > 400
 
 
 def test_personas_live_in_their_own_directory():
-    assert persona.EXAMPLE_PERSONA.parent == persona.PERSONA_DIR / "identities"
+    assert persona.EXAMPLE_PERSONA.parent == persona.PERSONA_DIR / "personas" / "kanade"
     assert persona.PERSONA_DIR.name == "personas"
     assert (persona.PERSONA_DIR / "README.md").is_file()
 
@@ -79,7 +94,7 @@ def test_a_fall_back_says_so_and_names_the_template(tmp_path):
     fallen = persona.read_persona(tmp_path / "nope.md")
 
     assert fallen.fell_back is True
-    assert fallen.name == "example.md"
+    assert fallen.name == "identity.md"
     assert fallen.text
 
 
@@ -136,11 +151,11 @@ def test_nothing_shaped_like_a_path_ever_resolves(staged_personas, attempt):
     assert persona.chosen_path(attempt) is None
 
 
-def test_the_tracked_example_names_nobody_real():
-    """It is a template: placeholders, never a real character or member."""
+def test_the_tracked_example_is_the_default_voice():
+    """The fallback bundle is Kanade-flavoured, never another character."""
     text = persona.EXAMPLE_PERSONA.read_text(encoding="utf-8")
-    assert "<BotName>" in text
-    for leaked in ("Yuuki", "Sakuna", "Aqua", "Minato", "Nanahoshi"):
+    assert "Kanade" in text
+    for leaked in ("Yuuki", "Sakuna", "Aqua", "Minato", "Nanahoshi", "Nazuna"):
         assert leaked.lower() not in text.lower()
 
 
@@ -360,3 +375,67 @@ def test_the_persona_is_read_once_and_reloadable(tmp_path, repo, bosses):
     path.write_text("second", encoding="utf-8")
     assert pilot.persona_text() == "first"  # cached; a deploy restarts the bot
     assert pilot.reload_persona() == "second"
+
+
+def test_reloading_a_changed_identity_invalidates_old_history(tmp_path, repo, bosses):
+    path = tmp_path / "persona.md"
+    path.write_text("first", encoding="utf-8")
+    pilot = ChatPilot(build_bot(repo, bosses, persona_path=str(path)), client=object())
+    pilot.remember(str(CHAT_CHANNEL), ChatTurn("assistant", "an answer in the old voice", "1"))
+    old_answer = pilot.history(str(CHAT_CHANNEL))[0]
+    pilot.anchor("1", str(CHAT_CHANNEL), ChatTurn("user", "hello"), old_answer)
+
+    path.write_text("second", encoding="utf-8")
+    pilot.reload_persona()
+
+    assert list(pilot.history(str(CHAT_CHANNEL))) == []
+    assert pilot._anchors == {}
+
+
+@pytest.mark.anyio
+async def test_answer_pins_manifest_runtime_while_model_awaits(
+    catalog_root, monkeypatch, repo, bosses
+):
+    monkeypatch.setattr(persona, "PERSONA_DIR", catalog_root)
+    bot = build_bot(repo, bosses)
+    service.set_config(bot, "persona", "yuuki-sakuna")
+    agent = bot.chat
+    agent._client = FakeOllama(says("old"), says("new"))
+    agent._own_client = False
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+    real_chat = agent._client.chat
+
+    async def slow(**kwargs):
+        waiting.set()
+        await release.wait()
+        return await real_chat(**kwargs)
+
+    agent._client.chat = slow
+    first = asyncio.create_task(agent._answer(message(bot, "@bot hi"), str(CHAT_CHANNEL)))
+    await waiting.wait()
+    service.set_config(bot, "persona", "nazupi")
+    release.set()
+    await first
+
+    assert "Yuuki" in agent._client.prompts[0][0]["content"]
+    assert "voice: Yuuki" in agent._client.reminder(0)["content"]
+    assert bot.staging_posts[0].content == "Yuuki-generic"
+    assert list(agent.history(str(CHAT_CHANNEL))) == []
+    await agent._answer(message(bot, "@bot again"), str(CHAT_CHANNEL))
+    assert "Nazupi" in agent._client.prompts[-1][0]["content"]
+    assert "voice: Nazupi" in agent._client.reminder(-1)["content"]
+    assert [item["role"] for item in agent._client.conversation(-1)] == ["system", "user"]
+
+
+def test_tracked_kanade_bundle_enforces_english_and_sunday_only_monday():
+    """Kanade answered a persona question in Japanese with a Monday joke on Monday."""
+    identity = persona.EXAMPLE_PERSONA.read_text(encoding="utf-8")
+    behaviour = persona.EXAMPLE_DEFAULT_BEHAVIOUR.read_text(encoding="utf-8")
+    assert "Reply in English" in identity
+    assert "Never reply entirely in Japanese" in identity
+    assert "OtonoseKanade in voice" in identity
+    assert "Reply in English" in behaviour
+    assert "only when the clock header weekday is Sunday" in behaviour
+    assert "Never claim tomorrow is Monday on any other weekday" in behaviour
+    assert "Only say" in identity and "clock header weekday is Sunday" in identity

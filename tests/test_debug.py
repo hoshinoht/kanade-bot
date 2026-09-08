@@ -150,7 +150,7 @@ def test_format_uptime(seconds, expected):
 
 
 def test_a_debug_message_maps_back_to_its_run(repo: Repo):
-    run_id = repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
+    run_id = repo.create_run(kl(2026, 8, 27), ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1"])
     repo.add_debug_message(4242, run_id, 900, "day_of")
     rows = repo.debug_messages_for(4242)
     assert [r["run_id"] for r in rows] == [run_id]
@@ -158,14 +158,14 @@ def test_a_debug_message_maps_back_to_its_run(repo: Repo):
 
 def test_a_debug_message_is_not_a_reminder(repo: Repo):
     # The scheduled ping must still fire: /debug ping must not satisfy it.
-    run_id = repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
+    run_id = repo.create_run(kl(2026, 8, 27), ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1"])
     repo.add_debug_message(4242, run_id, 900, "day_of")
     assert repo.list_reminders(run_id) == []
     assert repo.reminders_by_message(4242) == []
 
 
 def test_recent_debug_messages_are_scoped_by_channel_and_age(repo: Repo):
-    run_id = repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
+    run_id = repo.create_run(kl(2026, 8, 27), ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1"])
     repo.add_debug_message(1, run_id, 900, "day_of")
     repo.add_debug_message(2, run_id, 901, "day_of")
     from bot.domain.timeutil import utcnow
@@ -177,7 +177,7 @@ def test_recent_debug_messages_are_scoped_by_channel_and_age(repo: Repo):
 
 
 def test_deleting_a_debug_message_row(repo: Repo):
-    run_id = repo.create_run(kl(2026, 8, 27), ["HStar"], kl(2026, 8, 31, 21, 30), ["1"])
+    run_id = repo.create_run(kl(2026, 8, 27), ["HMaleficStar"], kl(2026, 8, 31, 21, 30), ["1"])
     repo.add_debug_message(4242, run_id, 900, "day_of")
     repo.delete_debug_message(4242)
     assert repo.debug_messages_for(4242) == []

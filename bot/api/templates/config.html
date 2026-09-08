@@ -97,24 +97,52 @@
           </label>
           <button class="btn btn--primary" type="submit">Save</button>
         </form>
-        {# Choices come from the live persona directory. #}
+        {# A Persona is a complete identity, baseline behaviour, and staging bundle. #}
         <form method="post" action="/config" class="filters">
           <input type="hidden" name="section" value="chatbot">
-          <label class="field"><span>Identity</span>
-            <select name="persona">
+          <div class="field">
+            <label class="label" for="persona-select">Persona</label>
+            <select id="persona-select" name="persona" aria-describedby="persona-help"
+                    {{ "disabled" if not config.persona_choices }}>
               {% for name in config.persona_choices %}
-              <option value="{{ name }}"{% if name == config.persona %} selected{% endif %}>{{ name }}</option>
+              {% set label = config.persona_labels.get(name, name) %}
+              <option value="{{ name }}"{% if name == config.persona_effective %} selected{% endif %}>{{ label }}{% if config.persona_labels.values() | select("equalto", label) | list | length > 1 %} — {{ name }}{% endif %}</option>
               {% endfor %}
             </select>
-          </label>
+          </div>
           <button class="btn btn--primary" type="submit"
-                  {{ "disabled" if not config.persona_choices }}>Use this identity</button>
+                  {{ "disabled" if not config.persona_choices }}>Use this persona</button>
         </form>
+        <p class="note" id="persona-help">Changing Persona swaps identity, default behavior, and staging together.</p>
+        {% if config.persona_fallback %}
+        <p class="note" id="persona-recovery" role="status">
+          <span class="status status--at_risk">Persona recovery needed</span>
+          Configured: <span class="mono">{{ config.persona or "none" }}</span>.
+          Effective: <strong>{{ config.persona_effective_label or "Kanade" }}</strong>
+          {% if config.persona_effective %}<span class="mono">({{ config.persona_effective }})</span>{% endif %}.
+          {% if config.persona_issue %}{{ config.persona_issue }}. {% endif %}
+          {% if config.persona_choices %}
+          Restore or select a complete Persona, then use this control to apply it.
+          {% else %}
+          No selectable Personas are available; restore a valid manifest and complete bundle, then reload this page.
+          {% endif %}
+        </p>
+        {% elif config.persona_catalog_mode == "legacy" %}
+        <p class="note" id="persona-recovery">
+          <span class="status status--at_risk">Legacy compatibility</span>
+          This deployment still selects identity files. Publish a manifest and complete Persona bundles to switch identity, default behavior, and staging together.
+        </p>
+        {% elif not config.persona_choices %}
+        <p class="note" id="persona-recovery" role="status">
+          <span class="status status--at_risk">No selectable Personas</span>
+          Restore or validate a complete Persona bundle and manifest, then reload this page.
+        </p>
+        {% endif %}
         <h3 class="settings__subtitle">Reply profiles</h3>
         <p class="note">
           Profiles change reply delivery without changing scheduler policy. Publish a profile
           for member selection or assign it to a Discord role. Files live under
-          <span class="mono">config/personas/behaviours/profiles/</span> and apply immediately.
+          <span class="mono">config/personas/behaviours/</span> and apply immediately.
         </p>
         <div class="behaviour-collection" data-paginated-list data-page-size="5"
              data-page-label="plugins" data-pagination-key="behaviour-plugins">
@@ -299,21 +327,6 @@
                     {{ "disabled" if not config.behaviour_plugins }}>Assign plugin</button>
           </form>
         </details>
-        {# Warn when the configured persona is unavailable. #}
-        {% if config.persona_fallback %}
-        <p class="note">
-          <span class="status status--at_risk">fallback: {{ config.persona_file }}</span>
-          {% if config.persona %}
-          <span class="mono">{{ config.persona }}</span> is chosen but is not in
-          <span class="mono">config/personas/identities/</span> any more, so it is using the
-          template identity.
-          {% else %}
-          No identity of its own, so it is using the template identity.
-          {% endif %}
-          Drop one in <span class="mono">config/personas/identities/</span> — see the personas README — and
-          pick it here. No restart.
-        </p>
-        {% endif %}
         <p class="note">
           {% if config.chat_configured %}
             The chatbot is <strong>{{ "on" if config.chat_mode else "off" }}</strong>,

@@ -23,7 +23,7 @@ from .conftest import TZ, kl
 MY, ALVIN, PRIYA = "1", "2", "3"
 RUN = {
     "id": "a1a1a1a1-0000-0000-0000-000000000001",
-    "bosses": ["HStar", "HFA"],
+    "bosses": ["HMaleficStar", "HFA"],
     "datetime": kl(2026, 8, 31, 21, 30),
     "participants": [MY, ALVIN, PRIYA],
     "status": "planned",
@@ -87,19 +87,21 @@ def test_a_move_shows_the_old_time_struck_through():
     name, value = proposal_line(
         amendment(
             "move",
-            bosses=["HStar", "HFA"],
+            bosses=["HMaleficStar", "HFA"],
             run_id=RUN["id"],
             new_datetime=kl(2026, 9, 2, 21, 30),
         ),
         RUN,
         TZ,
     )
-    assert "Hard Star + Hard FA" in name and short_id(RUN["id"]) in name
+    assert "Hard MaleficStar + Hard FA" in name and short_id(RUN["id"]) in name
     assert "~~Mon 31 Aug 21:30~~" in value and "Wed 02 Sep 21:30" in value
 
 
 def test_a_cancel_does_not_pretend_to_have_a_time():
-    _name, value = proposal_line(amendment("cancel", bosses=["HStar"], run_id=RUN["id"]), RUN, TZ)
+    _name, value = proposal_line(
+        amendment("cancel", bosses=["HMaleficStar"], run_id=RUN["id"]), RUN, TZ
+    )
     assert "off this week" in value and TBD not in value
 
 
@@ -115,12 +117,12 @@ def test_a_sub_names_the_person_dropping_out():
 
 def test_a_new_run_falls_back_to_the_runs_bosses_when_none_were_named():
     name, _value = proposal_line(amendment("add", run_id=RUN["id"]), RUN, TZ)
-    assert "Hard Star + Hard FA" in name
+    assert "Hard MaleficStar + Hard FA" in name
 
 
 def test_the_model_summary_is_shown_when_there_is_one():
     _name, value = proposal_line(
-        amendment("move", bosses=["HStar"], summary="A proposes Wed"), None, TZ
+        amendment("move", bosses=["HMaleficStar"], summary="A proposes Wed"), None, TZ
     )
     assert "_A proposes Wed_" in value
 
@@ -163,7 +165,7 @@ def test_a_proposal_card_pings_the_run_and_asks_for_a_reaction():
         [
             amendment(
                 "move",
-                bosses=["HStar", "HFA"],
+                bosses=["HMaleficStar", "HFA"],
                 run_id=RUN["id"],
                 new_datetime=kl(2026, 9, 2, 21, 30),
             )
@@ -181,7 +183,11 @@ def test_a_proposal_card_pings_the_run_and_asks_for_a_reaction():
 
 def test_a_suggestion_card_names_who_has_not_answered():
     card = proposal_card(
-        [amendment("move", bosses=["HStar"], run_id=RUN["id"], day_ref="wed", participants=[MY])],
+        [
+            amendment(
+                "move", bosses=["HMaleficStar"], run_id=RUN["id"], day_ref="wed", participants=[MY]
+            )
+        ],
         {RUN["id"]: RUN},
         TZ,
         unanswered=[ALVIN, PRIYA],
@@ -205,7 +211,7 @@ def test_a_fix_card_is_pinned_and_purple():
 def test_one_card_carries_every_amendment_in_the_burst():
     card = proposal_card(
         [
-            amendment("cancel", bosses=["HStar", "HFA"], run_id=RUN["id"]),
+            amendment("cancel", bosses=["HMaleficStar", "HFA"], run_id=RUN["id"]),
             amendment("cancel", bosses=["HCarling", "XKalos"]),
         ],
         {RUN["id"]: RUN},
@@ -226,5 +232,5 @@ def test_the_card_reports_the_lowest_confidence_on_it():
 
 @pytest.mark.parametrize("kind", ["move", "add", "cancel", "otot", "sub", "split", "fix"])
 def test_every_kind_renders_without_a_run(kind):
-    card = proposal_card([amendment(kind, bosses=["HStar"])], {}, TZ)
+    card = proposal_card([amendment(kind, bosses=["HMaleficStar"])], {}, TZ)
     assert card.has_embed and card.fields

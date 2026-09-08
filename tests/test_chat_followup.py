@@ -25,7 +25,8 @@ import pytest
 
 from bot.agent.client import BossBot
 from bot.agent.rsvp import EMOJI_NO, EMOJI_YES
-from bot.chat import followup, tools
+from bot.api import service
+from bot.chat import followup, persona, tools
 from bot.chat.agent import ChatPilot
 from bot.domain.ids import short_id
 from bot.extract.commit import CommitResult
@@ -39,8 +40,22 @@ from .chat_support import (
     says,
     wants,
 )
+from .test_persona_catalog import _bundle, _manifest
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def catalog_root(tmp_path):
+    _bundle(tmp_path, "yuuki-sakuna", "Yuuki")
+    _bundle(tmp_path, "nazupi", "Nazupi")
+    _bundle(tmp_path, "kanade", "Kanade")
+    _manifest(
+        tmp_path,
+        [("yuuki-sakuna", "Yuuki Sakuna", ["persona.md"]), ("nazupi", "Nazupi", ["nazupi.md"])],
+    )
+    return tmp_path
+
 
 #: The card's own message in the channel -- what a ❌ actually lands on.
 CARD_MESSAGE = 960000000000000123
@@ -100,7 +115,7 @@ def synthetic_card(
     amendment_id = bot.repo.create_amendment(
         kl(2026, 8, 27),
         "move",
-        bosses=["HStar"],
+        bosses=["HMaleficStar"],
         participants=["1002"],
         channel_id=channel_id,
         summary=summary,
@@ -188,6 +203,43 @@ async def test_the_question_is_generated_in_persona_with_the_voice_reminder(chat
     assert "# Scheduler policy" in agent._client.system
     assert "# Grounding, privacy and presentation policy" in agent._client.system
     assert agent._client.reminder()["content"].startswith(persona.REMINDER_PREFIX)
+
+
+async def test_followup_pins_manifest_runtime_while_model_awaits(
+    catalog_root, monkeypatch, repo, bosses, chat_seeded
+):
+    from .chat_support import build_bot
+
+    monkeypatch.setattr(persona, "PERSONA_DIR", catalog_root)
+    bot = build_bot(repo, bosses)
+    service.set_config(bot, "persona", "yuuki-sakuna")
+    agent = bot.chat
+    agent._client = FakeOllama(says("old"), says("new"))
+    agent._own_client = False
+    card = synthetic_card(bot)
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+    real_chat = agent._client.chat
+
+    async def slow(**kwargs):
+        waiting.set()
+        await release.wait()
+        return await real_chat(**kwargs)
+
+    agent._client.chat = slow
+    first = asyncio.create_task(reject(agent, bot, [card]))
+    await waiting.wait()
+    service.set_config(bot, "persona", "nazupi")
+    release.set()
+    await first
+
+    assert bot.staging_posts[0].content == "Yuuki-generic"
+    assert "Yuuki" in agent._client.prompts[0][0]["content"]
+    assert "voice: Yuuki" in agent._client.reminder(0)["content"]
+    agent._followed_up_at.clear()
+    await reject(agent, bot, [synthetic_card(bot)])
+    assert "Nazupi" in agent._client.prompts[-1][0]["content"]
+    assert "voice: Nazupi" in agent._client.reminder(-1)["content"]
 
 
 async def test_a_model_that_fails_says_nothing_at_all(chat_bot, chat_seeded):

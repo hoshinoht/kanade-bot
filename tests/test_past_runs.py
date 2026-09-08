@@ -48,7 +48,7 @@ def test_a_future_run_is_never_past():
 
 def test_materialising_mid_week_skips_slots_that_have_already_passed(repo: Repo):
     """Adding a Friday timing on Sunday must not conjure last Friday's run."""
-    repo.add_fixed_run(1, ["HStar"], 4, "23:00", ["1"])  # Fri, already gone
+    repo.add_fixed_run(1, ["HMaleficStar"], 4, "23:00", ["1"])  # Fri, already gone
     repo.add_fixed_run(1, ["XKalos"], 1, "23:00", ["1"])  # Tue, still to come
     created = materialise_week(repo, WEEK, TZ, PING_TIME, COUNTDOWNS, now=NOW)
     assert len(created) == 1
@@ -56,13 +56,13 @@ def test_materialising_mid_week_skips_slots_that_have_already_passed(repo: Repo)
 
 
 def test_a_slot_inside_the_grace_is_still_created(repo: Repo):
-    repo.add_fixed_run(1, ["HStar"], 6, "11:00", ["1"])  # Sunday 11:00, an hour ago
+    repo.add_fixed_run(1, ["HMaleficStar"], 6, "11:00", ["1"])  # Sunday 11:00, an hour ago
     assert len(materialise_week(repo, WEEK, TZ, PING_TIME, COUNTDOWNS, now=NOW)) == 1
 
 
 def test_materialising_a_whole_week_ahead_is_unchanged(repo: Repo):
     """The normal case -- materialising at the reset -- must not lose anything."""
-    repo.add_fixed_run(1, ["HStar"], 4, "23:00", ["1"])
+    repo.add_fixed_run(1, ["HMaleficStar"], 4, "23:00", ["1"])
     repo.add_fixed_run(1, ["XKalos"], 1, "23:00", ["1"])
     at_reset = WEEK + timedelta(minutes=1)
     assert len(materialise_week(repo, WEEK, TZ, PING_TIME, COUNTDOWNS, now=at_reset)) == 2
@@ -72,7 +72,7 @@ def test_materialising_a_whole_week_ahead_is_unchanged(repo: Repo):
 
 
 def make_run(repo: Repo, at, status="planned"):
-    return repo.create_run(WEEK, ["HStar"], at, ["1"], status=status)
+    return repo.create_run(WEEK, ["HMaleficStar"], at, ["1"], status=status)
 
 
 def test_a_run_whose_night_has_passed_is_marked_done(repo: Repo):
@@ -128,7 +128,7 @@ def test_marking_done_is_idempotent(repo: Repo):
 def test_a_timing_you_own_but_are_not_on_is_still_yours(repo: Repo):
     """`/fixed add` does not add the invoker, so this is the pilot's own run."""
     owned = repo.add_fixed_run(
-        owner_id=1, bosses=["HStar"], weekday=0, time_hhmm="21:30", participants=["2", "3"]
+        owner_id=1, bosses=["HMaleficStar"], weekday=0, time_hhmm="21:30", participants=["2", "3"]
     )
     assert [f["id"] for f in repo.list_fixed_runs(involving=1)] == [owned]
     assert repo.list_fixed_runs(participant="1") == []
@@ -157,7 +157,7 @@ def test_an_id_is_matched_whole_not_as_a_substring(repo: Repo):
 
 def test_the_same_rule_reaches_the_runs_a_timing_produced(repo: Repo):
     fixed = repo.add_fixed_run(
-        owner_id=1, bosses=["HStar"], weekday=1, time_hhmm="23:00", participants=["2"]
+        owner_id=1, bosses=["HMaleficStar"], weekday=1, time_hhmm="23:00", participants=["2"]
     )
     materialise_week(repo, WEEK, TZ, PING_TIME, COUNTDOWNS, now=WEEK + timedelta(minutes=1))
     run = repo.list_runs()[0]

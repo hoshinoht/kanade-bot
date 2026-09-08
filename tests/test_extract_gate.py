@@ -45,15 +45,15 @@ def sig(text: str, table) -> set[str]:
             ["HFA", "HLimbo", "NBaldrix", "HCarling"],
         ),
         ("then weds we do xkalos and u 3 the nbaldrix", ["XKalos", "NBaldrix"]),
-        ("we doing our nstar and ncarl tonight?", ["NStar", "NCarling"]),
+        ("we doing our nstar and ncarl tonight?", ["NMaleficStar", "NCarling"]),
         ("then alvin and i can duo hlimbo again this week", ["HLimbo"]),
-        ("i carry them hstar hfa", ["HStar", "HFA"]),
+        ("i carry them hstar hfa", ["HMaleficStar", "HFA"]),
         ("wanna do xserene", ["XSeren"]),
         ("exkalos when", ["XKalos"]),
         ("We try duo hkaling boss room", ["HCarling"]),
-        ("u free for hstarr later", ["HStar"]),  # typo -> fuzzy, prefix present
+        ("u free for hstarr later", ["HMaleficStar"]),  # typo -> fuzzy, prefix present
         ("nbald and hlimb later tonight", ["NBaldrix", "HLimbo"]),
-        ("ch7 hstar map", ["HStar"]),
+        ("ch7 hstar map", ["HMaleficStar"]),
     ],
 )
 def test_canonical_boss_tokens_from_real_lines(text, expected, bosses):
@@ -64,7 +64,7 @@ def test_canonical_boss_tokens_from_real_lines(text, expected, bosses):
     ("text", "short"),
     [
         ("limbo cleared already", "Limbo"),
-        ("rmc means malefic?", "Star"),
+        ("rmc means malefic?", "MaleficStar"),
         ("Join us for hcarling", "Carling"),  # h+carling is canonical, but 'carling' alone too
         ("baldguy first", "Baldrix"),
         ("bladrix pt", "Baldrix"),
@@ -209,7 +209,7 @@ def test_mentions_are_filtered_to_the_roster():
         "Tmr 11pm ckalos ya then the other boss",
         "can i suggest we shift our hstar run to sunday pls",
         "930 can postpone to 11 anot boss ask me go makan ltr 😭",
-        "we do HStar when ah? Tuesday evening?",
+        "we do HMaleficStar when ah? Tuesday evening?",
         "9:30pm onward ya",
         "i can do 11 to 1145pm max",
         "hi all can do monday?",

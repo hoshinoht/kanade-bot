@@ -55,7 +55,7 @@ the browser and never sent to the bot.
 | **Reminders**       | One grouped day-of message per party channel each morning, plus countdown pings at T-1h and T-15m. Reminder state lives in SQLite, so restarts never lose or replay a ping.          |
 | **RSVPs**           | ✅/❌ reactions on every reminder. All-✅ confirms the run; a ❌ marks it at-risk and tags the rest to reschedule.                                                                       |
 | **Changes**         | `/amend`, `/status`, `/swap`, `/rsvp` and friends; every change made outside Discord is announced in the run's home channel.                                                         |
-| **Chat extraction** | A local `gpt-oss:20b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                            |
+| **Chat extraction** | A local `gemma4:12b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                            |
 | **Chatbot**         | Mention-gated, role-gated, rate-limited, in its own channel, with a persona. Read tools answer directly; write tools post the same ✅/❌ cards — it never writes to the schedule.      |
 | **Portal & CLI**    | Week view, fixed-timing editor, proposal inbox, extraction log, chat analytics and config — one API inside the bot process, loopback only, tailnet via the bundled Caddy front door. |
 

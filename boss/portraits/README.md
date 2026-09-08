@@ -12,7 +12,7 @@ boss/portraits/Kalos.png      Gatekeeper Kalos
 boss/portraits/FA.png         The First Adversary
 boss/portraits/Carling.png    Carling
 boss/portraits/BM.png         Black Mage
-boss/portraits/Star.png       Radiant Malefic Star
+boss/portraits/MaleficStar.png       Radiant Malefic Star
 boss/portraits/Bellona.png    Bellona
 boss/portraits/Limbo.png      Limbo
 boss/portraits/Baldrix.png    Baldrix
@@ -24,15 +24,15 @@ boss, shared by every difficulty — the difficulty is shown as a pill next to i
 
 ## Two sizes
 
-`boss/portraits/icon/Star.png` is the **small render** — the 64×64 files the
+`boss/portraits/icon/MaleficStar.png` is the **small render** — the 64×64 files the
 portal drew before the pictures above became full-size art. Everything the
 portal draws is a badge (26px beside a boss's name, 38px in the boss grid), so
 it asks for these; the full picture is what the bot attaches to a card in
 Discord, and what `/static/portraits/<key>` still serves without `?size=icon`.
 
 ```
-boss/portraits/Star.png       the full picture — Discord's card thumbnail
-boss/portraits/icon/Star.png  the badge the portal draws
+boss/portraits/MaleficStar.png       the full picture — Discord's card thumbnail
+boss/portraits/icon/MaleficStar.png  the badge the portal draws
 ```
 
 A missing icon falls back to the full picture, so a boss added today looks right
@@ -44,7 +44,7 @@ the full picture and has no counterpart for the small one.
 To use a different filename for the full picture, name it in `bosses.yaml`:
 
 ```yaml
-  Star:
+  MaleficStar:
     full: Radiant Malefic Star
     portrait: radiant-malefic-star.webp
 ```

@@ -130,7 +130,13 @@ def planned(at=None, run=None):
 
 
 def run_row(at, status="planned"):
-    return {"id": "r1", "datetime": at, "status": status, "bosses": ["HStar"], "participants": []}
+    return {
+        "id": "r1",
+        "datetime": at,
+        "status": status,
+        "bosses": ["HMaleficStar"],
+        "participants": [],
+    }
 
 
 def test_a_change_pointing_well_into_the_past_is_dropped():
@@ -179,7 +185,7 @@ def test_plan_burst_drops_a_stale_move_with_a_reason(bosses):
         amendments=[
             Amendment(
                 kind="move",
-                bosses=["HStar"],
+                bosses=["HMaleficStar"],
                 day_ref="mon",
                 time_ref="9:30pm",
                 confidence=0.9,
@@ -477,15 +483,15 @@ def test_the_latest_burst_wins_for_the_same_run():
     from bot.extract.pipeline import consolidate
 
     run = run_row(NOW + timedelta(days=2))
-    sunday = planned_for("move", ["HStar"], run, NOW + timedelta(days=2))
-    monday = planned_for("move", ["HStar"], run, NOW + timedelta(days=3))
+    sunday = planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=2))
+    monday = planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=3))
     assert consolidate([sunday, monday]) == [monday]
 
 
 def test_different_runs_both_survive():
     from bot.extract.pipeline import consolidate
 
-    star = planned_for("move", ["HStar"], {**run_row(NOW), "id": "r1"})
+    star = planned_for("move", ["HMaleficStar"], {**run_row(NOW), "id": "r1"})
     kalos = planned_for("move", ["XKalos"], {**run_row(NOW), "id": "r2"})
     assert len(consolidate([star, kalos])) == 2
 
@@ -505,8 +511,8 @@ def test_one_run_gets_one_change_with_the_rest_noted():
 def test_a_new_run_is_keyed_on_its_bosses():
     from bot.extract.pipeline import consolidate
 
-    first = planned_for("add", ["NStar", "NCarling"])
-    second = planned_for("add", ["NCarling", "NStar"])  # same set, said again later
+    first = planned_for("add", ["NMaleficStar", "NCarling"])
+    second = planned_for("add", ["NCarling", "NMaleficStar"])  # same set, said again later
     assert consolidate([first, second]) == [second]
 
 
@@ -529,9 +535,9 @@ def test_a_rescan_posts_one_card_for_the_whole_window(fake_bot):
     pipeline = build_pipeline(
         fake_bot,
         [
-            StubPlan(planned=[planned_for("move", ["HStar"], run)]),
-            StubPlan(planned=[planned_for("move", ["HStar"], run)]),
-            StubPlan(planned=[planned_for("move", ["HStar"], run)]),
+            StubPlan(planned=[planned_for("move", ["HMaleficStar"], run)]),
+            StubPlan(planned=[planned_for("move", ["HMaleficStar"], run)]),
+            StubPlan(planned=[planned_for("move", ["HMaleficStar"], run)]),
         ],
     )
     applied: list[list] = []
@@ -553,7 +559,9 @@ def test_a_dry_run_posts_nothing_at_all(fake_bot):
 
     seed_chat(fake_bot.repo, WATCHED_CHANNEL, [kl(2026, 8, 30, 20, 0)])
     run = run_row(kl(2026, 9, 2, 21, 30))
-    pipeline = build_pipeline(fake_bot, [StubPlan(planned=[planned_for("move", ["HStar"], run)])])
+    pipeline = build_pipeline(
+        fake_bot, [StubPlan(planned=[planned_for("move", ["HMaleficStar"], run)])]
+    )
     called = []
     pipeline.apply_plan = lambda *a, **k: called.append(a)
     report = asyncio.run(pipeline.rescan_window(WATCHED_CHANNEL, post=False))
@@ -567,7 +575,7 @@ def test_a_dry_run_posts_nothing_at_all(fake_bot):
 def test_a_proposal_for_a_past_day_with_no_time_is_dropped():
     """ "we doing our nstar tonight?" read back two days later is about a gone night."""
     entry = Planned(
-        amendment=Amendment(kind="add", bosses=["NStar"], confidence=0.9),
+        amendment=Amendment(kind="add", bosses=["NMaleficStar"], confidence=0.9),
         resolved=Resolved(day=(NOW - timedelta(days=1)).date()),
     )
     assert already_passed(entry, NOW, TZ) is True
@@ -575,7 +583,7 @@ def test_a_proposal_for_a_past_day_with_no_time_is_dropped():
 
 def test_a_proposal_for_today_with_no_time_is_kept():
     entry = Planned(
-        amendment=Amendment(kind="add", bosses=["NStar"], confidence=0.9),
+        amendment=Amendment(kind="add", bosses=["NMaleficStar"], confidence=0.9),
         resolved=Resolved(day=NOW.astimezone(TZ).date()),
     )
     assert already_passed(entry, NOW, TZ) is False
@@ -583,7 +591,7 @@ def test_a_proposal_for_today_with_no_time_is_kept():
 
 def test_a_proposal_for_a_future_day_is_kept():
     entry = Planned(
-        amendment=Amendment(kind="add", bosses=["NStar"], confidence=0.9),
+        amendment=Amendment(kind="add", bosses=["NMaleficStar"], confidence=0.9),
         resolved=Resolved(day=(NOW + timedelta(days=2)).date()),
     )
     assert already_passed(entry, NOW, TZ) is False
@@ -616,13 +624,13 @@ def test_a_single_time_for_a_day_carries_to_the_other_move():
 
     merged = merge(
         [
-            move(["HStar", "HFA"], "wed", evidence=["101"]),
+            move(["HMaleficStar", "HFA"], "wed", evidence=["101"]),
             move(["HCarling", "XKalos"], "wed", "9:30pm", evidence=["103"]),
         ],
         message_order=["101", "103"],
     )
     times = {tuple(a.bosses): a.time_ref for a in merged}
-    assert times[("HStar", "HFA")] == "9:30pm"
+    assert times[("HMaleficStar", "HFA")] == "9:30pm"
     assert times[("HCarling", "XKalos")] == "9:30pm"
 
 
@@ -630,10 +638,13 @@ def test_the_borrowed_time_cites_the_message_it_came_from():
     from bot.extract.merge import merge
 
     merged = merge(
-        [move(["HStar"], "wed", evidence=["101"]), move(["XKalos"], "wed", "9:30pm", ["103"])],
+        [
+            move(["HMaleficStar"], "wed", evidence=["101"]),
+            move(["XKalos"], "wed", "9:30pm", ["103"]),
+        ],
         message_order=["101", "103"],
     )
-    borrower = next(a for a in merged if a.bosses == ["HStar"])
+    borrower = next(a for a in merged if a.bosses == ["HMaleficStar"])
     assert "103" in borrower.evidence_message_ids
 
 
@@ -643,7 +654,7 @@ def test_two_different_times_for_a_day_carry_nothing():
 
     merged = merge(
         [
-            move(["HStar"], "wed", "9pm", ["101"]),
+            move(["HMaleficStar"], "wed", "9pm", ["101"]),
             move(["XKalos"], "wed", "11pm", ["102"]),
             move(["HFA"], "wed", evidence=["103"]),
         ],
@@ -656,7 +667,10 @@ def test_a_time_does_not_cross_to_another_day():
     from bot.extract.merge import merge
 
     merged = merge(
-        [move(["HStar"], "wed", "9:30pm", ["101"]), move(["XKalos"], "thu", evidence=["102"])],
+        [
+            move(["HMaleficStar"], "wed", "9:30pm", ["101"]),
+            move(["XKalos"], "thu", evidence=["102"]),
+        ],
         message_order=["101", "102"],
     )
     assert next(a for a in merged if a.bosses == ["XKalos"]).time_ref is None
@@ -666,10 +680,13 @@ def test_a_move_that_already_has_a_time_keeps_it():
     from bot.extract.merge import merge
 
     merged = merge(
-        [move(["HStar"], "wed", "10pm", ["101"]), move(["XKalos"], "wed", "9:30pm", ["102"])],
+        [
+            move(["HMaleficStar"], "wed", "10pm", ["101"]),
+            move(["XKalos"], "wed", "9:30pm", ["102"]),
+        ],
         message_order=["101", "102"],
     )
-    assert next(a for a in merged if a.bosses == ["HStar"]).time_ref == "10pm"
+    assert next(a for a in merged if a.bosses == ["HMaleficStar"]).time_ref == "10pm"
 
 
 # --- what reaches the database and the channel ------------------------------
@@ -685,7 +702,7 @@ def effects_pipeline(fake_bot):
     return pipeline
 
 
-def seeded_run(repo, channel_id, bosses=("HStar", "HFA")):
+def seeded_run(repo, channel_id, bosses=("HMaleficStar", "HFA")):
     run_id = repo.create_run(
         kl(2026, 8, 27), list(bosses), NOW + timedelta(days=3), ["1001"], channel_id=channel_id
     )
@@ -704,7 +721,10 @@ def test_two_changes_for_one_run_are_both_still_pressable(fake_bot):
     run = seeded_run(repo, WATCHED_CHANNEL)
     pipeline = effects_pipeline(fake_bot)
     ids, _retired = pipeline._record(
-        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4)), planned_for("sub", [], run)],
+        [
+            planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=4)),
+            planned_for("sub", [], run),
+        ],
         str(WATCHED_CHANNEL),
         kl(2026, 8, 27),
         "",
@@ -724,7 +744,7 @@ def test_an_older_card_for_the_same_run_is_still_retired(fake_bot):
     )
     pipeline = effects_pipeline(fake_bot)
     ids, retired = pipeline._record(
-        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+        [planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=4))],
         str(WATCHED_CHANNEL),
         kl(2026, 8, 27),
         "",
@@ -751,7 +771,7 @@ def test_a_draft_read_elsewhere_leaves_a_partys_own_card_alone(fake_bot):
     )
     pipeline = effects_pipeline(fake_bot)
     ids, retired = pipeline._record(
-        [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+        [planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=4))],
         str(WATCHED_CHANNEL),
         kl(2026, 8, 27),
         "",
@@ -767,17 +787,17 @@ def test_each_row_carries_its_own_bursts_summary(fake_bot):
 
     repo = fake_bot.repo
     run = seeded_run(repo, WATCHED_CHANNEL)
-    first = planned_for("move", ["HStar"], run, NOW + timedelta(days=4))
-    first.summary = "Sunday: HStar moved to Wed"
-    second = planned_for("add", ["NStar"], None, NOW + timedelta(days=5))
-    second.summary = "Monday: NStar proposed for Thu"
+    first = planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=4))
+    first.summary = "Sunday: HMaleficStar moved to Wed"
+    second = planned_for("add", ["NMaleficStar"], None, NOW + timedelta(days=5))
+    second.summary = "Monday: NMaleficStar proposed for Thu"
     pipeline = effects_pipeline(fake_bot)
     ids, _retired = pipeline._record(
         [first, second], str(WATCHED_CHANNEL), kl(2026, 8, 27), "the first burst only"
     )
     assert [repo.get_amendment(i)["summary"] for i in ids] == [
-        "Sunday: HStar moved to Wed",
-        "Monday: NStar proposed for Thu",
+        "Sunday: HMaleficStar moved to Wed",
+        "Monday: NMaleficStar proposed for Thu",
     ]
 
 
@@ -787,7 +807,7 @@ def test_a_row_with_no_summary_of_its_own_falls_back(fake_bot):
     repo = fake_bot.repo
     pipeline = effects_pipeline(fake_bot)
     ids, _retired = pipeline._record(
-        [planned_for("add", ["NStar"], None, NOW + timedelta(days=5))],
+        [planned_for("add", ["NMaleficStar"], None, NOW + timedelta(days=5))],
         str(WATCHED_CHANNEL),
         kl(2026, 8, 27),
         "whatever the window said",
@@ -806,7 +826,7 @@ def test_rows_left_without_a_card_get_one_on_the_next_pass(fake_bot):
     stranded = repo.create_amendment(
         week_start=kl(2026, 8, 27),
         kind="add",
-        bosses=["NStar"],
+        bosses=["NMaleficStar"],
         channel_id=str(WATCHED_CHANNEL),
         confidence=0.9,
     )
@@ -824,7 +844,7 @@ def test_a_row_that_already_has_a_card_is_not_posted_again(fake_bot):
     posted = repo.create_amendment(
         week_start=kl(2026, 8, 27),
         kind="add",
-        bosses=["NStar"],
+        bosses=["NMaleficStar"],
         channel_id=str(WATCHED_CHANNEL),
         confidence=0.9,
     )
@@ -852,7 +872,7 @@ def test_a_card_that_cannot_be_posted_is_reported(fake_bot):
         pipeline.apply_plan(
             str(WATCHED_CHANNEL),
             [],
-            [planned_for("move", ["HStar"], run, NOW + timedelta(days=4))],
+            [planned_for("move", ["HMaleficStar"], run, NOW + timedelta(days=4))],
             kl(2026, 8, 27),
             "",
             report=report,

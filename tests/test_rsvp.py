@@ -16,7 +16,7 @@ WEEK = kl(2026, 8, 27)
 
 @pytest.fixture
 def run(repo: Repo) -> dict:
-    run_id = repo.create_run(WEEK, ["HStar", "HFA"], RUN_AT, PARTICIPANTS)
+    run_id = repo.create_run(WEEK, ["HMaleficStar", "HFA"], RUN_AT, PARTICIPANTS)
     return repo.get_run(run_id)
 
 
@@ -89,7 +89,7 @@ def test_a_cross_puts_the_run_at_risk_and_flags_a_decline(repo: Repo, run: dict)
 
 
 def test_switching_from_no_to_yes_recovers_the_run(repo: Repo):
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     for user_id in ("1", "2"):
         apply_reaction(repo, repo.get_run(run_id), user_id, EMOJI_YES, added=True)
     assert repo.get_run(run_id)["status"] == "confirmed"
@@ -115,7 +115,7 @@ def test_unrelated_emoji_does_nothing(repo: Repo, run: dict):
 
 def test_removing_a_reaction_clears_that_rsvp(repo: Repo):
     """The answer goes; the run stays confirmed until somebody actually declines."""
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     for user_id in ("1", "2"):
         apply_reaction(repo, repo.get_run(run_id), user_id, EMOJI_YES, added=True)
     assert repo.get_run(run_id)["status"] == "confirmed"
@@ -127,7 +127,7 @@ def test_removing_a_reaction_clears_that_rsvp(repo: Repo):
 
 def test_a_decline_after_a_confirm_still_puts_the_run_at_risk(repo: Repo):
     """Withdrawing an answer is silence; saying no is an argument."""
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     for user_id in ("1", "2"):
         apply_reaction(repo, repo.get_run(run_id), user_id, EMOJI_YES, added=True)
     apply_reaction(repo, repo.get_run(run_id), "2", EMOJI_NO, added=True)
@@ -185,7 +185,7 @@ def test_at_risk_is_not_sticky_the_way_confirmed_is():
 
 def test_a_chat_rsvp_onto_a_confirmed_run_keeps_it_confirmed(repo: Repo):
     """The exact live path: `apply_reaction` is what a chat "Can" goes through."""
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2", "3", "4"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2", "3", "4"])
     repo.set_run_status(run_id, "confirmed")
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_YES, added=True)
     assert repo.get_run(run_id)["status"] == "confirmed"
@@ -195,7 +195,7 @@ def test_a_chat_rsvp_onto_a_confirmed_run_keeps_it_confirmed(repo: Repo):
 
 def test_re_applying_an_rsvp_that_already_existed_keeps_it_confirmed(repo: Repo):
     """A rescan re-reads chat it has already read; that must not demote anything."""
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2", "3", "4"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2", "3", "4"])
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_YES, added=True)
     repo.set_run_status(run_id, "confirmed")
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_YES, added=True)
@@ -204,7 +204,7 @@ def test_re_applying_an_rsvp_that_already_existed_keeps_it_confirmed(repo: Repo)
 
 @pytest.mark.parametrize("status", ["cancelled", "otot", "done"])
 def test_the_sticky_statuses_are_still_untouchable(repo: Repo, status):
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     repo.set_run_status(run_id, status)
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_NO, added=True)
     assert repo.get_run(run_id)["status"] == status
@@ -217,7 +217,7 @@ def test_a_roster_change_takes_a_confirmed_run_back_to_the_tally(repo: Repo):
     """The stand-in never agreed to anything, so the confirm no longer holds."""
     from bot.agent.rsvp import recompute_after_roster_change
 
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     repo.set_run_status(run_id, "confirmed")
     repo.set_run_participants(run_id, ["1", "9"])
     assert recompute_after_roster_change(repo, run_id) == "planned"
@@ -228,7 +228,7 @@ def test_a_roster_change_that_leaves_a_full_tally_stays_confirmed(repo: Repo):
     """Losing the one person who had not answered settles the run, not unsettles it."""
     from bot.agent.rsvp import recompute_after_roster_change
 
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     apply_reaction(repo, repo.get_run(run_id), "1", EMOJI_YES, added=True)
     repo.set_run_status(run_id, "confirmed")
     repo.set_run_participants(run_id, ["1"])
@@ -238,7 +238,7 @@ def test_a_roster_change_that_leaves_a_full_tally_stays_confirmed(repo: Repo):
 def test_a_roster_change_never_revives_a_cancelled_run(repo: Repo):
     from bot.agent.rsvp import recompute_after_roster_change
 
-    run_id = repo.create_run(WEEK, ["HStar"], RUN_AT, ["1", "2"])
+    run_id = repo.create_run(WEEK, ["HMaleficStar"], RUN_AT, ["1", "2"])
     repo.set_run_status(run_id, "cancelled")
     repo.set_run_participants(run_id, ["1", "9"])
     assert recompute_after_roster_change(repo, run_id) == "cancelled"

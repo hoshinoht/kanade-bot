@@ -62,7 +62,7 @@ def test_a_pre_v9_database_requires_the_previous_release(tmp_path):
     path = tmp_path / "v6.sqlite"
     repo = Repo(path)
     repo.upsert_member(7, "harbour4417", "MY", True)
-    repo.add_fixed_run(7, ["HStar"], 0, "21:30", ["7"], channel_id=900)
+    repo.add_fixed_run(7, ["HMaleficStar"], 0, "21:30", ["7"], channel_id=900)
     repo._conn.execute("DROP TABLE audit")
     repo._conn.execute("UPDATE schema_version SET version = 6")
     repo.close()
@@ -247,7 +247,7 @@ def test_a_card_the_extractor_raised_is_recorded_against_chat(fake_bot, seeded):
         pipeline.apply_plan(
             str(WATCHED_CHANNEL),
             [],
-            [planned("move", ["HStar"], run, NOW + timedelta(days=4))],
+            [planned("move", ["HMaleficStar"], run, NOW + timedelta(days=4))],
             kl(2026, 8, 27),
             "",
         )
@@ -267,7 +267,7 @@ def test_a_card_raised_on_somebodys_behalf_names_them(fake_bot, seeded):
         pipeline.apply_plan(
             str(WATCHED_CHANNEL),
             [],
-            [planned("move", ["HStar"], run, NOW + timedelta(days=4))],
+            [planned("move", ["HMaleficStar"], run, NOW + timedelta(days=4))],
             kl(2026, 8, 27),
             "",
             actor="1002",

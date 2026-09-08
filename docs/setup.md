@@ -68,7 +68,7 @@ and loaded at startup, so edit it and restart — no rebuild. It ships with the 
 currently run: Lotus, Chosen Seren, Gatekeeper Kalos, The First Adversary,
 Carling, Radiant Malefic Star, Bellona, Limbo, Baldrix, Jupiter and Black Mage.
 
-**Boss portraits are optional.** Drop `Star.png`, `Kalos.png` and friends into
+**Boss portraits are optional.** Drop `MaleficStar.png`, `Kalos.png` and friends into
 [`boss/portraits/`](../boss/portraits/README.md) and the portal shows them next
 to each boss, and the bot attaches one as the thumbnail on that run's pings. A
 boss with no file gets a coloured monogram instead, so nothing shifts either way.

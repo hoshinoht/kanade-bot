@@ -300,7 +300,7 @@ async def test_an_answer_is_remembered_by_the_id_it_went_out_as(chat_bot, chat_s
 
 async def test_a_reply_to_an_aged_out_answer_puts_the_exchange_back(chat_bot, chat_seeded):
     """Somebody replying to a message has said which exchange they mean."""
-    agent, clock = pilot(chat_bot, says("Monday 21:30, HStar."), says("You and Alvin."))
+    agent, clock = pilot(chat_bot, says("Monday 21:30, HMaleficStar."), says("You and Alvin."))
     await agent.offer(message(chat_bot, "@bot when is hstar?"))
     answer_id = last_answer_id(agent)
 
@@ -312,34 +312,34 @@ async def test_a_reply_to_an_aged_out_answer_puts_the_exchange_back(chat_bot, ch
     prompt = agent._client.conversation(1)
     assert [m["role"] for m in prompt] == ["system", "user", "assistant", "user"]
     assert "when is hstar?" in prompt[1]["content"]
-    assert prompt[2]["content"] == "Monday 21:30, HStar."
+    assert prompt[2]["content"] == "Monday 21:30, HMaleficStar."
     assert "who's on it?" in prompt[3]["content"]
 
 
 async def test_a_reply_to_a_live_exchange_does_not_repeat_it(chat_bot, chat_seeded):
-    agent, _clock = pilot(chat_bot, says("Monday 21:30, HStar."), says("You and Alvin."))
+    agent, _clock = pilot(chat_bot, says("Monday 21:30, HMaleficStar."), says("You and Alvin."))
     await agent.offer(message(chat_bot, "@bot when is hstar?"))
     await agent.offer(reply_to(chat_bot, last_answer_id(agent)))
 
     contents = [m["content"] for m in agent._client.prompts[1]]
     assert sum(1 for c in contents if "when is hstar?" in c) == 1
-    assert sum(1 for c in contents if c == "Monday 21:30, HStar.") == 1
+    assert sum(1 for c in contents if c == "Monday 21:30, HMaleficStar.") == 1
 
 
 async def test_a_resolved_parent_and_its_anchor_are_not_both_said(chat_bot, chat_seeded):
     """The two can reach the same message from opposite ends; it is said once."""
-    agent, clock = pilot(chat_bot, says("Monday 21:30, HStar."), says("Alvin and you."))
+    agent, clock = pilot(chat_bot, says("Monday 21:30, HMaleficStar."), says("Alvin and you."))
     await agent.offer(message(chat_bot, "@bot when is hstar?"))
     answer_id = last_answer_id(agent)
 
     clock.advance(TTL + 1)
     # Discord resolved the parent for us, so the reply chain has it too.
-    parent = message(chat_bot, "Monday 21:30, HStar.", author_id=BOT_USER_ID, mentions=())
+    parent = message(chat_bot, "Monday 21:30, HMaleficStar.", author_id=BOT_USER_ID, mentions=())
     parent.id = int(answer_id)
     await agent.offer(message(chat_bot, "@bot who's on it?", reference=FakeReference(parent)))
 
     contents = [m["content"] for m in agent._client.conversation(1)]
-    assert contents.count("Monday 21:30, HStar.") == 1
+    assert contents.count("Monday 21:30, HMaleficStar.") == 1
 
 
 async def test_a_reply_to_a_message_the_bot_has_forgotten_just_proceeds(chat_bot, chat_seeded):
@@ -353,7 +353,11 @@ async def test_a_reply_to_a_message_the_bot_has_forgotten_just_proceeds(chat_bot
 
 async def test_the_re_anchored_exchange_goes_in_front_of_the_live_history(chat_bot, chat_seeded):
     """It is older than everything else in the prompt, so it sits where it belongs."""
-    answers = (says("Monday 21:30, HStar."), says("Kalos is Tuesday."), says("Alvin and you."))
+    answers = (
+        says("Monday 21:30, HMaleficStar."),
+        says("Kalos is Tuesday."),
+        says("Alvin and you."),
+    )
     agent, clock = pilot(chat_bot, *answers)
     await agent.offer(message(chat_bot, "@bot when is hstar?"))
     answer_id = last_answer_id(agent)
@@ -363,7 +367,7 @@ async def test_the_re_anchored_exchange_goes_in_front_of_the_live_history(chat_b
     await agent.offer(reply_to(chat_bot, answer_id))
 
     contents = [m["content"] for m in agent._client.conversation(2)]
-    assert contents.index("Monday 21:30, HStar.") < contents.index("Kalos is Tuesday.")
+    assert contents.index("Monday 21:30, HMaleficStar.") < contents.index("Kalos is Tuesday.")
 
 
 async def test_an_answer_that_never_posted_is_anchored_to_nothing(chat_bot, chat_seeded):

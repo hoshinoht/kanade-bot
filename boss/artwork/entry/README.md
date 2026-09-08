@@ -18,7 +18,7 @@ boss/artwork/entry/Kalos.png      Gatekeeper Kalos
 boss/artwork/entry/FA.png         The First Adversary
 boss/artwork/entry/Carling.png    Carling
 boss/artwork/entry/BM.png         Black Mage
-boss/artwork/entry/Star.png       Radiant Malefic Star
+boss/artwork/entry/MaleficStar.png       Radiant Malefic Star
 boss/artwork/entry/Bellona.png    Bellona
 boss/artwork/entry/Limbo.png      Limbo
 boss/artwork/entry/Baldrix.png    Baldrix
@@ -42,7 +42,7 @@ be found.
 
 **Three of these are animated in game.** The First Adversary, Jupiter and
 Radiant Malefic Star play a webm behind their entry prompt rather than showing a
-still; `FA.png`, `Jupiter.png` and `Star.png` are poster frames pulled out of
+still; `FA.png`, `Jupiter.png` and `MaleficStar.png` are poster frames pulled out of
 those. Replacing one means extracting a new frame, not converting the video.
 
 **Most of them have a name plate across the top.** The portal's crop opens below

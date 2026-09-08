@@ -1,6 +1,6 @@
 #!/bin/sh
 # Pre-push hook mirroring CI's slow gate: full test suite minus the local
-# 13 GB Ollama model. Enable once per clone: git config core.hooksPath .githooks
+# 8 GB Ollama model. Enable once per clone: git config core.hooksPath .githooks
 set -e
 
 if ! command -v uv >/dev/null 2>&1; then

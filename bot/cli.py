@@ -40,8 +40,8 @@ DEFAULT_URL = "http://127.0.0.1:8080"
 #: Ordinary calls are local and instant; the read budget covers a `digest` or a
 #: `ping` waiting on Discord.
 TIMEOUT = httpx.Timeout(10.0, read=60.0)
-#: A week-wide rescan is one model call per conversation, and `gpt-oss:20b`
-#: takes 10-40 s each on the host. Ten minutes is deliberately generous -- the
+#: A week-wide rescan is one model call per conversation, and `gemma4:12b`
+#: takes ~10-40 s each on the host. Ten minutes is deliberately generous -- the
 #: alternative is the CLI giving up on work the bot then finishes anyway.
 RESCAN_TIMEOUT = httpx.Timeout(10.0, read=900.0)
 
@@ -1330,7 +1330,14 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
         "config",
         ["setting", "value"],
         [
-            [name, ", ".join(value) if isinstance(value, list) else str(value)]
+            [
+                name,
+                ", ".join(value)
+                if isinstance(value, list) and all(isinstance(item, str) for item in value)
+                else json.dumps(value, sort_keys=True)
+                if isinstance(value, (dict, list))
+                else str(value),
+            ]
             for name, value in values.items()
         ],
     )
@@ -1340,7 +1347,7 @@ def config_get(key: str | None = typer.Argument(None, help="One setting, or all 
 def config_set(
     key: str = typer.Argument(
         help="day_of_ping_time, countdown_minutes, paused, extract_enabled, "
-        "quiet_mode, chat_mode, persona (a filename in config/personas/), or one of "
+        "quiet_mode, chat_mode, persona (a persona ID), or one of "
         "the chat_pilot_*_rate_* numbers."
     ),
     value: str = typer.Argument(help="The new value."),

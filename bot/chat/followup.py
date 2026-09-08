@@ -1,6 +1,6 @@
 """What the bot says when somebody ❌s a card it asked for.
 
-A member says "move HStar to Friday", the pilot posts a card, and the member
+A member says "move HMaleficStar to Friday", the pilot posts a card, and the member
 reacts ❌ -- which used to be the end of it. The card is dead, the bot never
 mentions it again, and the member has to start the whole request over. So the
 pilot asks: the card said *this*, what should it be instead? Their answer

@@ -1,6 +1,6 @@
 """One model, one call at a time, whoever the caller is.
 
-``gpt-oss:20b`` is 13 GB on a 24 GB host, so exactly one copy is resident and the
+``gemma4:12b`` is ~8 GB on a 24 GB host, so exactly one copy is resident and the
 machine can push exactly one generation through it at a time. Two callers who
 both start one do not get half the speed each -- they get two calls that each
 take about as long as both together, which is how a 60-second chat answer, an

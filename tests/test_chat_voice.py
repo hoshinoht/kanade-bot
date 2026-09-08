@@ -129,10 +129,11 @@ def test_the_first_voice_line_wins():
     assert persona.voice_line(text) == "The real one."
 
 
-def test_the_tracked_default_template_has_a_usable_voice():
+def test_the_tracked_default_carries_voice_in_prose():
+    """Kanade's default has no `Voice:` slot; the loader falls back."""
     text = persona.EXAMPLE_DEFAULT_BEHAVIOUR.read_text(encoding="utf-8")
-    assert "**Voice:**" in text
-    assert persona.voice_line(text).startswith("Concise, lightly playful")
+    assert "Kanade" in text
+    assert persona.voice_line(text) == persona.DEFAULT_VOICE
 
 
 def test_the_voice_footer_is_the_last_thing_in_the_prompt():

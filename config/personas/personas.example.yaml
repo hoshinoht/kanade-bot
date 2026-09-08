@@ -1,0 +1,9 @@
+schema_version: 1
+default: yuuki-sakuna
+personas:
+  - id: kanade
+    label: Kanade
+    aliases: []
+    identity: identity.md
+    behaviour: default.md
+    staging: staging.yaml

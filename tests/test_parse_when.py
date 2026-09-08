@@ -118,6 +118,18 @@ def test_a_bare_clock_still_to_come_stays_today(bot, text):
     assert when(bot, text) == kl(2026, 9, 1, 22, 30)
 
 
+@pytest.mark.parametrize("text", ["sat 22:30", "saturday 22:30", "sat 2230"])
+def test_same_weekday_still_to_come_stays_today(fake_bot, monkeypatch, text):
+    """Live: `sat 22:30` said on Sat evening proposed next Saturday's card."""
+    monkeypatch.setattr(service, "utcnow", lambda: kl(2026, 9, 5, 20, 0))
+    assert when(fake_bot, text) == kl(2026, 9, 5, 22, 30)
+
+
+def test_same_weekday_already_passed_goes_to_next_week(fake_bot, monkeypatch):
+    monkeypatch.setattr(service, "utcnow", lambda: kl(2026, 9, 5, 20, 0))
+    assert when(fake_bot, "sat 19:00") == kl(2026, 9, 12, 19, 0)
+
+
 # ---------------------------------------------------------------------------
 # the horizon guard
 # ---------------------------------------------------------------------------

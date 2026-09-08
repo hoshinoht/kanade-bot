@@ -19,7 +19,7 @@ WS = datetime(2026, 8, 27, 0, 0, tzinfo=TZ)
 def _run(repo: Repo, at: datetime, participants=("1", "2", "3"), status="planned") -> dict:
     run_id = repo.create_run(
         week_start=WS,
-        bosses=["HStar", "HFA"],
+        bosses=["HMaleficStar", "HFA"],
         run_at=at,
         participants=list(participants),
         status=status,
@@ -163,9 +163,45 @@ def test_a_countdown_nobody_is_left_to_answer_still_says_who_is_out():
     assert card.colour == formatting.COLOUR_COUNTDOWN
 
 
+def test_reminder_cards_wear_the_lead_boss_colors(bosses):
+    """Day-of and countdown stripes come from the catalog, lead boss first."""
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    second_first = {**run, "bosses": ["HFA", "HMaleficStar"]}
+
+    morning = formatting.day_of_card([run], TZ, {run["id"]: {}}, table=bosses)
+    assert morning.colour == 0xF8DD4A  # MaleficStar leads HMaleficStar + HFA
+    swapped = formatting.day_of_card([second_first], TZ, {run["id"]: {}}, table=bosses)
+    assert swapped.colour == 0xA9D8F5  # FA leads this time
+
+    pending = formatting.countdown_card(run, 60, TZ, {"1": "yes"}, table=bosses)
+    assert pending.colour == 0xF8DD4A  # boss color, not countdown yellow
+    settled = formatting.countdown_card(
+        run, 60, TZ, {"1": "yes", "2": "yes", "3": "yes"}, table=bosses
+    )
+    assert settled.colour == 0xF8DD4A  # boss color, not all-set green
+
+
+def test_reminder_cards_without_a_table_keep_their_kind_colors():
+    """No table (or no colour, or an unknown token) keeps the old semantics."""
+    repo = Repo(":memory:")
+    run = _run(repo, datetime(2026, 8, 31, 21, 30, tzinfo=TZ))
+    everyone = {"1": "yes", "2": "yes", "3": "yes"}
+
+    assert formatting.day_of_card([run], TZ, {}).colour == formatting.COLOUR_DAY_OF
+    assert formatting.day_of_card([run], TZ, {}, table=_Table()).colour == (
+        formatting.COLOUR_DAY_OF
+    )
+    assert formatting.countdown_card(run, 60, TZ, everyone).colour == (formatting.COLOUR_ALL_SET)
+    ghost = {**run, "bosses": ["???"]}
+    assert formatting.countdown_card(ghost, 60, TZ, {}, table=_Table()).colour == (
+        formatting.COLOUR_COUNTDOWN
+    )
+
+
 class _Table:
     def describe(self, name):
-        return {"HStar": "Radiant Malefic Star (Hard, Lv280)"}.get(name, name)
+        return {"HMaleficStar": "Radiant Malefic Star (Hard, Lv280)"}.get(name, name)
 
 
 def test_day_of_card_has_mentions_in_content_and_detail_in_fields():
@@ -176,7 +212,7 @@ def test_day_of_card_has_mentions_in_content_and_detail_in_fields():
     assert all(f"<@{uid}>" in card.content for uid in ("1", "2", "3"))
     assert len(card.fields) == 1
     name, value = card.fields[0]
-    assert "21:30" in name and "HStar + HFA" in name
+    assert "21:30" in name and "HMaleficStar + HFA" in name
     assert "Radiant Malefic Star (Hard, Lv280)" in value
     assert "1/3 ✅" in value
     assert card.has_embed

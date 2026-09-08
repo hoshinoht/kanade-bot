@@ -1,57 +1,74 @@
 # Personas
 
-Prompt content is split by responsibility:
+A major persona is one complete private bundle:
 
 ```text
-identities/example.md                 tracked identity template
-identities/persona.md                 live identity, git-ignored
-behaviours/default.example.md         tracked default-behaviour template
-behaviours/default.md                 live default behaviour, git-ignored
-behaviours/profiles/example.md        tracked reply-profile template
-behaviours/profiles/<name>.md         live profiles, git-ignored
+personas.yaml                              live manifest, git-ignored
+personas/<id>/<identity>.md                identity
+personas/<id>/<behaviour>.md               baseline behaviour
+personas/<id>/<staging>.yaml               complete baseline staging copy
+personas/kanade/{identity.md,default.md,staging.yaml}  tracked default fallback
+behaviours/<name>.md                       optional reply-profile overlay
+behaviours/staging/<name>.yaml             optional partial staging overlay
 ```
 
-Create the live files and restart:
+`personas.example.yaml` is the strict manifest template. A live manifest has
+exactly `schema_version: 1`, `default`, and `personas`. Every descriptor has
+`id`, non-empty `label`, and `aliases`, plus optional `identity`, `behaviour`,
+and `staging` bare filenames (defaults `identity.md`, `default.md`,
+`staging.yaml`). IDs are lowercase slugs and aliases are legacy filename
+tokens, not paths. Filenames must stay inside their bundle directory: no
+slashes, no parent references, no symlinks. Each bundle staging file is a flat
+mapping with non-empty `schedule`, `guide`, `guide_named`, `write`, and
+`generic` values. Bundles share context with the tool schemas and reply
+reserve, so keep them compact and run deployments with an `OLLAMA_NUM_CTX`
+that fits the bundles in use.
 
-```sh
-cp config/personas/identities/example.md config/personas/identities/persona.md
-cp config/personas/behaviours/default.example.md config/personas/behaviours/default.md
-docker compose restart bot
-```
+The selected bundle loads as a whole. An invalid selection uses the manifest
+default as a whole, then the tracked `example` bundle if needed; components are
+never combined across personas. Aliases such as `persona.md` preserve existing
+database and seed values until a successful portal selection saves a canonical
+ID.
 
-The directory is bind-mounted at `/app/config/personas`. `PERSONA_PATH` seeds the
-identity filename for a fresh database; later identity choices are stored in
-SQLite and can be changed from **Config → Chatbot** without restarting. New
-paths take precedence, but legacy root identities and `behaviour-plugins/`
-profiles remain readable during migration.
+## Migrate Yuuki Sakuna and Nazupi
 
-Identity says who the assistant is. Default behaviour defines normal delivery.
-Profiles replace that delivery for one reply. Code-owned files under
-`bot/chat/prompts/` define assistant scope, scheduler authority, grounding, and
-privacy; deployment files cannot override them.
+Back up the private persona tree and SQLite database. The `identities/`
+directory is now stale and empty: live identities already live in
+`personas/<id>/`, so it can be removed once the manifest verifies.
 
-Put a one-line `**Voice:** ...` cue and any `**Good**` worked examples in the
-default behaviour or profile. An active profile's examples replace the default
-examples rather than combining with them.
+1. Create `personas/yuuki-sakuna/` and `personas/nazupi/` without removing old files.
+2. Yuuki Sakuna is `sakuna.md` (identity), `sakuna-behaviour.md` (baseline),
+   and `sakuna-staging.yaml` (complete flat staging).
+3. Nazupi is `nazupi.md`, `nazupi-behaviour.md`, and `nazupi-staging.yaml`.
+   Keep the matching reply-profile overlay files under `behaviours/` for
+   existing profile users; the bundle and the overlay share words but serve
+   different roles.
+4. Copy `personas.example.yaml` to `personas.yaml`, then write it last using a
+   temporary file and rename. Its Yuuki and Nazupi aliases preserve existing
+   `persona.md` and `nazupi.md` database or environment tokens.
+5. Restart the bot. In **Config → Chatbot**, verify the configured and effective
+   personas, then hot-switch both directions and verify identity, default
+   behaviour, and staging copy change together.
+
+Do not delete legacy files until rollback is no longer needed. `PERSONA_PATH`
+is a deprecated insert-only seed: in manifest mode its basename resolves as an
+ID or alias, otherwise the manifest default is seeded. When no manifest exists,
+the legacy identity/default/staging layout remains supported with a deprecation
+warning.
 
 ## Reply profiles
 
-Create and edit profiles in **Config → Chatbot**. Publishing adds a profile to
-the `/style` catalog. Members can save only published, readable profiles, and
-`/style default` clears their choice.
+Major personas define the baseline; reply profiles are orthogonal overlays.
+Profiles are managed in **Config → Chatbot** and published profiles appear in
+`/style`. Precedence is the first matching readable role assignment, then a
+member's saved profile, then the persona default. Profile Markdown follows the
+selected default behaviour; profile staging is a partial override merged over
+that persona's baseline. Role assignments never grant chatbot access.
 
-Role assignments are ordered. The first readable profile whose Discord role the
-member currently holds applies to the next reply; otherwise the saved choice or
-default behaviour applies. Role assignments never grant chatbot access.
+Only this README, the manifest example, the complete example bundle, and profile
+examples are tracked. Keep live manifests, bundles, profiles, and notes private.
 
-The portal shows both the saved choice and the style that would apply next.
-Member-facing replies describe a choice only as saved and do not reveal role
-assignment metadata.
-
-Only templates and this README are tracked. Keep live identities, behaviours,
-profiles, and maintainer reference notes private.
-
-# Designing an Identity File
+# Designing a Default Behaviour File
 
 `default.md` defines the bot's baseline conversational behaviour. Profiles layer
 on top of it for individual replies, so the default should be compact, strong,

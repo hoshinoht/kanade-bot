@@ -42,7 +42,7 @@ def setup(repo: Repo, week):
     """A Mon 21:30 fixed run, materialised into the current week."""
     fixed_id = repo.add_fixed_run(
         "1",
-        ["HStar", "HFA"],
+        ["HMaleficStar", "HFA"],
         weekday=0,
         time_hhmm="21:30",
         participants=["1", "2", "3"],
@@ -91,11 +91,11 @@ def test_editing_bosses_updates_only_the_bosses(setup, repo, week):
     bot, fixed_id, run_id = setup
     moved = _move_to_wednesday(repo, run_id, week)
 
-    repo.update_fixed_run(fixed_id, bosses=["HStar"])
+    repo.update_fixed_run(fixed_id, bosses=["HMaleficStar"])
     _apply_fixed_to_runs(bot, fixed_id, {"bosses"})
 
     run = repo.get_run(run_id)
-    assert run["bosses"] == ["HStar"]
+    assert run["bosses"] == ["HMaleficStar"]
     assert run["datetime"] == moved
 
 
