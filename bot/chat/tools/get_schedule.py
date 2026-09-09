@@ -165,7 +165,7 @@ def handle(ctx: ToolContext, args: dict) -> str:
     period_week = week.removesuffix("_boss") if week != "auto" else "this"
     week_label = f"{period_week}{' boss week' if basis == 'boss' else ' week'}"
     raw_scope = str(args.get("scope") or "all").strip().lower()
-    scope = "all" if ctx.force_all_channels else raw_scope
+    scope = "channel" if ctx.force_channel_scope else "all" if ctx.force_all_channels else raw_scope
     if scope not in ("all", "channel"):
         raise ToolError(
             f"scope must be 'all' or 'channel' (got '{args.get('scope')}'). "
@@ -251,15 +251,20 @@ def handle(ctx: ToolContext, args: dict) -> str:
                     and participant_id in [str(p) for p in run["participants"]]
                     and not is_over(run)
                 ]
+                if matching_runs and all(is_over(run) for run in matching_runs):
+                    answer += (
+                        " Your matching scheduled runs are already done."
+                        if for_me
+                        else " Their matching scheduled runs are already done."
+                    )
                 if elsewhere and scope == "channel":
                     count = len(elsewhere)
+                    subject_with_verb = "You have" if for_me else subject.capitalize() + " has"
                     answer += (
-                        f" {subject.capitalize()} has {count} upcoming "
+                        f" {subject_with_verb} {count} upcoming "
                         f"{'run' if count == 1 else 'runs'} in "
                         f"{'another channel' if count == 1 else 'other channels'}."
                     )
-                elif matching_runs and all(is_over(run) for run in matching_runs):
-                    answer += " Their matching scheduled runs are already done."
                 return answer
             if scope == "channel":
                 answer = f"**No upcoming runs in this channel {period}.**"
@@ -268,14 +273,14 @@ def handle(ctx: ToolContext, args: dict) -> str:
                     for run in dated
                     if str(run["channel_id"]) != str(ctx.channel_id) and not is_over(run)
                 ]
+                if matching_runs and all(is_over(run) for run in matching_runs):
+                    answer += " The runs scheduled here are already done."
                 if elsewhere:
                     count = len(elsewhere)
                     answer += (
                         f" The group has {count} upcoming {'run' if count == 1 else 'runs'} "
                         f"in {'another channel' if count == 1 else 'other channels'}."
                     )
-                elif matching_runs and all(is_over(run) for run in matching_runs):
-                    answer += " The runs scheduled here are already done."
                 return answer
             if matching_runs and all(is_over(run) for run in matching_runs):
                 return (
