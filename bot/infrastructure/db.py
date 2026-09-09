@@ -18,10 +18,8 @@ log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 11
 
-#: Bound diagnostic chat history.
 CHAT_INTERACTIONS_KEPT = 500
 
-#: Bound audit history.
 AUDIT_KEPT = 2000
 
 #: Known audit sources; logging intentionally accepts unknown sources.
@@ -396,7 +394,6 @@ class Repo:
         self._conn.execute("PRAGMA foreign_keys=ON")
         self.migrate()
 
-    # -- lifecycle --------------------------------------------------------
     def migrate(self) -> None:
         """Create or upgrade the database to the supported schema version."""
         existing_tables = {
@@ -463,7 +460,6 @@ class Repo:
         for sibling in (f"{path}-wal", f"{path}-shm"):
             Path(sibling).unlink(missing_ok=True)
 
-    # -- config -----------------------------------------------------------
     def get_config(self, key: str, default: str | None = None) -> str | None:
         row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
@@ -485,7 +481,6 @@ class Repo:
     def heartbeat(self, now: datetime | None = None) -> None:
         self.set_config("heartbeat", to_iso(now or utcnow()))
 
-    # -- members ----------------------------------------------------------
     def upsert_member(
         self,
         user_id: int | str,
@@ -591,7 +586,6 @@ class Repo:
         data["reply_style"] = data.get("reply_style") or None
         return data
 
-    # -- chatbot allowances ------------------------------------------------
     def set_rate_limit(self, user_id: int | str, count: int, window_s: float) -> None:
         """Give one member their own chatbot allowance, replacing any it had."""
         self._conn.execute(
@@ -624,7 +618,6 @@ class Repo:
             for row in rows
         ]
 
-    # -- fixed runs -------------------------------------------------------
     def add_fixed_run(
         self,
         owner_id: int | str,
@@ -708,7 +701,6 @@ class Repo:
         data["participants"] = _json_list(data["participants"])
         return data
 
-    # -- runs -------------------------------------------------------------
     def create_run(
         self,
         week_start: datetime,
@@ -863,7 +855,6 @@ class Repo:
         data["week_start"] = from_iso(data["week_start"])
         return data
 
-    # -- rsvps ------------------------------------------------------------
     def set_rsvp(
         self, run_id: str, user_id: int | str, state: str, source: str = "reaction"
     ) -> None:
@@ -889,7 +880,6 @@ class Repo:
         rows = self._conn.execute("SELECT user_id, state FROM rsvps WHERE run_id = ?", (run_id,))
         return {r["user_id"]: r["state"] for r in rows}
 
-    # -- reminders --------------------------------------------------------
     def add_reminder(
         self, run_id: str, kind: str, fire_at: datetime, sent_at: datetime | None = None
     ) -> str | None:
@@ -990,7 +980,6 @@ class Repo:
         data["sent_at"] = from_iso(data["sent_at"]) if data["sent_at"] else None
         return data
 
-    # -- debug test messages ----------------------------------------------
     def add_debug_message(
         self, message_id: int | str, run_id: str, channel_id: int | str | None, kind: str
     ) -> None:
@@ -1035,8 +1024,6 @@ class Repo:
     def delete_debug_message(self, message_id: int | str) -> None:
         self._conn.execute("DELETE FROM debug_messages WHERE message_id = ?", (str(message_id),))
 
-    # -- messages (phase 2 groundwork) ------------------------------------
-    # -- decline notices ---------------------------------------------------
     def get_decline_notice(self, run_id: str, user_id: int | str) -> dict | None:
         row = self._conn.execute(
             "SELECT * FROM decline_notices WHERE run_id = ? AND user_id = ?",
@@ -1141,7 +1128,6 @@ class Repo:
         data["processed_at"] = from_iso(data["processed_at"]) if data["processed_at"] else None
         return data
 
-    # -- amendments (the chat extractor's proposals) -----------------------
     def create_amendment(
         self,
         week_start: datetime,
@@ -1320,7 +1306,6 @@ class Repo:
         data["new_datetime"] = from_iso(data["new_datetime"]) if data["new_datetime"] else None
         return data
 
-    # -- extraction log ----------------------------------------------------
     def log_extraction(
         self,
         model: str,
@@ -1358,7 +1343,6 @@ class Repo:
             (_dump(amendment_ids), extraction_id),
         )
 
-    # -- rescan jobs -------------------------------------------------------
     def create_rescan_job(
         self,
         job_id: str,
@@ -1471,7 +1455,6 @@ class Repo:
         data["amendment_ids"] = _json_list(data["amendment_ids"])
         return data
 
-    # -- chat interactions -------------------------------------------------
     def log_chat_interaction(
         self,
         *,
@@ -1644,7 +1627,6 @@ class Repo:
         data["model_rounds"] = json.loads(data["model_rounds"] or "[]")
         return data
 
-    # -- audit trail -------------------------------------------------------
     def log_audit(
         self,
         *,

@@ -172,11 +172,6 @@ async def _require_admin(interaction: discord.Interaction) -> bool:
     raise NotAnAdmin()
 
 
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
-
 def _resolve_participants(
     bot: BossBot,
     raw: str | None,
@@ -430,11 +425,6 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
             bot.repo.set_run_datetime(run["id"], run_at, ws)
             # Only the time moved, so only the reminders need re-placing.
             _sync_run_reminders(bot, run["id"])
-
-
-# ---------------------------------------------------------------------------
-# /fixed
-# ---------------------------------------------------------------------------
 
 
 class FixedGroup(app_commands.Group):
@@ -709,11 +699,6 @@ class FixedGroup(app_commands.Group):
         )
 
 
-# ---------------------------------------------------------------------------
-# /bot
-# ---------------------------------------------------------------------------
-
-
 class BotGroup(app_commands.Group):
     """Bot-level switches.  Phase 1 only stores the flag; the extractor reads it."""
 
@@ -740,11 +725,6 @@ class BotGroup(app_commands.Group):
         repo.set_config("paused", "0")
         _record_config(interaction, "paused", before, "0")
         await interaction.response.send_message("▶️ Chat watching resumed.", ephemeral=True)
-
-
-# ---------------------------------------------------------------------------
-# top-level commands
-# ---------------------------------------------------------------------------
 
 
 @app_commands.command(name="schedule", description="Show the boss schedule for a week")
@@ -1516,11 +1496,6 @@ async def say(
     await interaction.response.send_message(
         f"✅ Posted in <#{target_id}> ({notified}).", ephemeral=True
     )
-
-
-# ---------------------------------------------------------------------------
-# registration + error handling
-# ---------------------------------------------------------------------------
 
 
 async def on_app_command_error(

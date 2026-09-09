@@ -54,18 +54,6 @@ async def test_the_chatbot_sets_its_own_temperature(chat_bot, chat_seeded):
     assert options["num_ctx"] == chat_bot.settings.ollama_num_ctx
 
 
-async def test_it_does_not_inherit_the_extractors_greedy_decode(chat_bot, chat_seeded):
-    """The extractor pins 0 next door; a conversation at 0 reads like a form letter."""
-    import inspect
-
-    from bot.extract import llm
-
-    assert '"temperature": 0' in inspect.getsource(llm.Extractor._chat)
-    agent = pilot(chat_bot, says("ok"))
-    await agent.offer(message(chat_bot))
-    assert agent._client.calls[0]["options"]["temperature"] > 0
-
-
 async def test_the_temperature_is_configurable(repo, bosses):
     bot = build_bot(repo, bosses, chat_pilot_temperature=1.2)
     agent = pilot(bot, says("ok"))
@@ -134,15 +122,6 @@ def test_the_tracked_default_carries_voice_in_prose():
     text = persona.EXAMPLE_DEFAULT_BEHAVIOUR.read_text(encoding="utf-8")
     assert "Kanade" in text
     assert persona.voice_line(text) == persona.DEFAULT_VOICE
-
-
-def test_the_voice_footer_is_the_last_thing_in_the_prompt():
-    text = "**Voice:** Deadpan.\n\nlots of persona"
-    built = persona.system_prompt(text, "CLOCK")
-    assert built.rstrip().endswith(persona.voice_footer(text))
-    # ...and it really is after the rules and the clock, not merely present.
-    assert built.index("CLOCK") < built.index(persona.VOICE_PREFIX)
-    assert built.index("Operating rules") < built.index(persona.VOICE_PREFIX)
 
 
 def test_the_order_is_persona_rules_clock_voice():

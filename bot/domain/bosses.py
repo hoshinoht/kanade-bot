@@ -310,7 +310,6 @@ class BossTable:
             base_dir=base_dir,
         )
 
-    # -- lookups ----------------------------------------------------------
     @property
     def prefixes(self) -> str:
         return "/".join(self.difficulties)
@@ -410,7 +409,6 @@ class BossTable:
             raise BossParseError(f"conflicting difficulties: {names}")
         return BossReference(short, next(iter(difficulties), None))
 
-    # -- parsing ----------------------------------------------------------
     def parse_token(self, token: str) -> str:
         """Resolve a single token, e.g. ``ncarling`` -> ``NCarling``."""
         key = _normalise(token)
@@ -566,7 +564,6 @@ class BossTable:
             index += 1
         return out
 
-    # -- display ----------------------------------------------------------
     def split(self, canonical: str) -> tuple[str, Boss] | None:
         """``"HFA"`` -> ``("h", <Boss FA>)``, or ``None`` if it is not ours."""
         letter, short = canonical[:1].lower(), canonical[1:]

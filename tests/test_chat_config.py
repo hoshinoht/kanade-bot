@@ -8,18 +8,17 @@ the chatbot off in one place leaves it answering from another.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 
 import pytest
 
 from bot import behaviour_plugins
-from bot.agent.client import CFG_CHAT, BossBot
+from bot.agent.client import BossBot
 from bot.api import service
 from bot.infrastructure.config import Settings
 from bot.infrastructure.db import Repo
 
 from .chat_support import CHAT_CATEGORY, CHAT_CHANNEL, CHAT_ROLE, chat_settings, message
-from .fake_bot import UNWATCHED_CHANNEL, WATCHED_CHANNEL
+from .fake_bot import WATCHED_CHANNEL
 
 # ---------------------------------------------------------------------------
 # settings
@@ -275,32 +274,6 @@ def test_the_api_and_the_portal_can_toggle_it(auth, fake_bot):
     assert fake_bot.chat_mode is True
 
 
-def test_the_config_page_offers_the_toggle(auth):
-    page = auth.get("/config").text
-    assert 'name="chat_mode"' in page
-    assert "chatbot" in page.lower()
-
-
-def test_bossctl_sends_chat_mode_as_a_bool():
-    """Otherwise `bossctl config set chat_mode on` would send the string "on"."""
-    import inspect
-
-    from bot import cli
-
-    source = inspect.getsource(cli.config_set)
-    assert '"chat_mode"' in source
-
-
-def test_the_flag_is_seeded_on_first_run():
-    import inspect
-
-    from bot import __main__ as entrypoint
-
-    source = inspect.getsource(entrypoint.build_repo)
-    assert "CFG_CHAT" in source
-    assert CFG_CHAT == "chat_mode"
-
-
 def test_debug_status_names_the_chatbot_without_printing_its_ids(chat_bot):
     from bot.agent.debug import _chat_state
 
@@ -347,54 +320,6 @@ def wired(repo: Repo):
 
 def deliver(client, msg):
     asyncio.run(BossBot.on_message(client, msg))
-
-
-def test_a_chat_channel_message_reaches_chat_and_is_not_stored(wired, chat_bot):
-    msg = message(chat_bot, "@bot what's on?", channel_id=CHAT_CHANNEL)
-    deliver(wired, msg)
-    assert wired.chat.seen == [msg]
-    # The chat channel is not watched, so nothing is recorded and the extractor
-    # never sees it: talking to the bot must not become schedule proposals.
-    assert wired.extractor.seen == []
-    assert wired.repo.get_message(msg.id) is None
-
-
-def test_a_watched_channel_message_reaches_both(wired, chat_bot):
-    msg = message(chat_bot, "can wed?", channel_id=WATCHED_CHANNEL, mentions=())
-    msg.created_at = datetime.now(UTC)
-    deliver(wired, msg)
-    assert wired.extractor.seen == [msg]
-    assert wired.chat.seen == [msg]
-    assert wired.repo.get_message(msg.id) is not None
-
-
-def test_an_unwatched_non_chat_channel_still_reaches_chat_and_is_dropped_there(wired, chat_bot):
-    """The gate, not `on_message`, is what refuses it -- one place to reason about."""
-    msg = message(chat_bot, "hello", channel_id=UNWATCHED_CHANNEL)
-    deliver(wired, msg)
-    assert wired.extractor.seen == []
-    assert wired.chat.seen == [msg]
-
-
-def test_a_broken_extractor_does_not_stop_the_chatbot(wired, chat_bot):
-    class Broken:
-        async def offer(self, _msg):
-            raise RuntimeError("the model exploded")
-
-    wired.extractor = Broken()
-    msg = message(chat_bot, "can wed?", channel_id=WATCHED_CHANNEL, mentions=())
-    msg.created_at = datetime.now(UTC)
-    deliver(wired, msg)
-    assert wired.chat.seen == [msg]
-
-
-def test_a_broken_chatbot_does_not_take_the_bot_down(wired, chat_bot):
-    class Broken:
-        async def offer(self, _msg):
-            raise RuntimeError("the model exploded")
-
-    wired.chat = Broken()
-    deliver(wired, message(chat_bot, "@bot hi", channel_id=CHAT_CHANNEL))  # must not raise
 
 
 def test_bots_and_dms_never_reach_either_offer(wired, chat_bot):

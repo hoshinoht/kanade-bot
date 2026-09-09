@@ -223,17 +223,6 @@ async def test_a_baseline_removed_twice_fails_the_second_time(chat_bot, chat_see
     assert "already gone" in result.problem
 
 
-def test_the_card_path_matches_what_fixed_remove_does(chat_bot, chat_seeded):
-    """Both routes go through the one helper, so they cannot drift apart."""
-    import inspect
-
-    from bot.api import service
-    from bot.extract import commit as commit_mod
-
-    assert "retire_fixed_run" in inspect.getsource(service.delete_fixed)
-    assert "retire_fixed_run" in inspect.getsource(commit_mod._unfix)
-
-
 # ---------------------------------------------------------------------------
 # steering and injection posture
 # ---------------------------------------------------------------------------

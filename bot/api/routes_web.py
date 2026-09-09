@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -34,13 +33,7 @@ from .errors import ApiError, NotConfigured, NotFound
 from .models import Week
 from .templating import STATUS_WORDS, read_section
 
-log = logging.getLogger(__name__)
-
 router = APIRouter(include_in_schema=False)
-
-# ---------------------------------------------------------------------------
-# rendering
-# ---------------------------------------------------------------------------
 
 
 def _templates(request: Request):
@@ -142,11 +135,6 @@ def watched_channels(bot) -> list[dict]:
     return [{"id": cid, "name": name} for cid, name in sorted(found.items(), key=lambda p: p[1])]
 
 
-# ---------------------------------------------------------------------------
-# sign in
-# ---------------------------------------------------------------------------
-
-
 @router.get("/login")
 async def login_form(request: Request, next: str = "/") -> Response:
     bot = get_bot(request)
@@ -195,11 +183,6 @@ async def logout() -> Response:
     return response
 
 
-# ---------------------------------------------------------------------------
-# the bot's own artwork
-# ---------------------------------------------------------------------------
-
-
 def _identity_image(bot, name: str) -> Response:
     path = identity.cached(bot.settings.db_path, name)
     if path is None:
@@ -222,11 +205,6 @@ async def identity_avatar(request: Request, bot: Bot) -> Response:
 async def identity_banner(request: Request, bot: Bot) -> Response:
     """The bot's profile banner -- the login window's hero strip. See above."""
     return _identity_image(bot, identity.BANNER_NAME)
-
-
-# ---------------------------------------------------------------------------
-# pages
-# ---------------------------------------------------------------------------
 
 
 @router.get("/")
@@ -632,11 +610,6 @@ async def config_page(request: Request, bot: Bot, caller: Caller) -> Response:
     )
 
 
-# ---------------------------------------------------------------------------
-# run actions
-# ---------------------------------------------------------------------------
-
-
 #: The status control's buttons, in the order a night actually goes.
 STATUS_CHOICES = [
     ("planned", "Planned"),
@@ -807,11 +780,6 @@ async def web_ping(
     )
 
 
-# ---------------------------------------------------------------------------
-# fixed timings
-# ---------------------------------------------------------------------------
-
-
 @router.post("/validate/bosses")
 async def web_validate_bosses(request: Request, bot: Bot, caller: Caller) -> HTMLResponse:
     """Live feedback while someone types boss tokens; saves nothing."""
@@ -897,11 +865,6 @@ async def web_fixed_delete(request: Request, bot: Bot, caller: Caller, fixed_id:
     )
 
 
-# ---------------------------------------------------------------------------
-# inbox
-# ---------------------------------------------------------------------------
-
-
 @router.post("/inbox/{amendment_id}/approve")
 async def web_approve(request: Request, bot: Bot, caller: Caller, amendment_id: str) -> Response:
     form = await request.form()
@@ -925,11 +888,6 @@ async def web_reject(request: Request, bot: Bot, caller: Caller, amendment_id: s
     except ApiError as exc:
         return back_to(request, "/inbox", exc.message, "error")
     return back_to(request, "/inbox", "Rejected.")
-
-
-# ---------------------------------------------------------------------------
-# members, config, actions
-# ---------------------------------------------------------------------------
 
 
 @router.post("/members/{user_id}/nick")

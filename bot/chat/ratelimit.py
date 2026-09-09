@@ -34,7 +34,6 @@ class RateLimiter:
         #: is on the shared pair above.
         self._overrides: dict[str, tuple[int, float]] = {}
 
-    # -- per-key allowances -------------------------------------------------
     def limit_for(self, user_id: int | str) -> tuple[int, float]:
         """The ``(count, window)`` this key actually runs on.
 
@@ -73,7 +72,6 @@ class RateLimiter:
         """
         self._overrides = {str(key): (int(c), float(w)) for key, (c, w) in overrides.items()}
 
-    # -- the window ---------------------------------------------------------
     def allow(self, user_id: int | str, exempt: bool = False) -> bool:
         """Record an answer for ``user_id`` and say whether it may go out.
 

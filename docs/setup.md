@@ -1,8 +1,5 @@
 # Setup
 
-Everything to get the bot from zero to running: the Discord developer
-portal, `.env`, and the container.
-
 ## Discord developer portal setup
 
 1. Go to <https://discord.com/developers/applications> → **New Application**.

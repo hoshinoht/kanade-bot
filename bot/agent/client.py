@@ -173,7 +173,6 @@ class BossBot(discord.Client):
         self.rescans = RescanWorker(self)
         self.tick.change_interval(seconds=settings.tick_seconds)
 
-    # -- runtime config (DB-backed, seeded from env on first run) ----------
     @property
     def ping_time(self) -> time:
         return parse_hhmm(self.repo.get_config(CFG_PING_TIME, self.settings.day_of_ping_time))
@@ -307,7 +306,6 @@ class BossBot(discord.Client):
             return any(role.id == self.settings.bossing_role_id for role in roles)
         return self.repo.has_role(user.id)
 
-    # -- lifecycle --------------------------------------------------------
     async def setup_hook(self) -> None:
         from .commands import register_commands
 
@@ -365,7 +363,6 @@ class BossBot(discord.Client):
         if written:
             log.info("cached the bot's %s", " and ".join(name[:-4] for name in written))
 
-    # -- history ----------------------------------------------------------
     def watched_text_channels(self) -> list[discord.abc.GuildChannel]:
         """Every text channel the bot watches, resolved from the live guild.
 
@@ -441,7 +438,6 @@ class BossBot(discord.Client):
             log.info("backfilled #%s: %d message(s) since %s", channel.name, count, since.date())
         return total
 
-    # -- roster -----------------------------------------------------------
     async def sync_roster(self) -> None:
         guild = self.get_guild(self.settings.guild_id)
         if guild is None:
@@ -478,7 +474,6 @@ class BossBot(discord.Client):
         has_role = any(r.id == self.settings.bossing_role_id for r in member.roles)
         self.repo.upsert_member(member.id, member.display_name, member.nick, has_role)
 
-    # -- chat ---------------------------------------------------------------
     async def on_message(self, message: discord.Message) -> None:
         """Store watched messages, then offer them to the chatbot and the extractor.
 
@@ -534,7 +529,6 @@ class BossBot(discord.Client):
             except Exception:  # pragma: no cover - chat must never break the bot
                 log.exception("extractor rejected a message")
 
-    # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
         """Materialise the current and next two boss weeks; safe to call repeatedly."""
         now = utcnow()
@@ -567,7 +561,6 @@ class BossBot(discord.Client):
         )
         return self.repo.get_config(CFG_LAST_WEEK) != current
 
-    # -- the tick ---------------------------------------------------------
     @tasks.loop(seconds=30)
     async def tick(self) -> None:
         now = utcnow()
@@ -776,8 +769,6 @@ class BossBot(discord.Client):
             if row["watched"] and not row["unknown"] and not row["manage_messages"]
         ]
 
-    # -- building the reminder cards --------------------------------------
-    #
     # Both builders read the run and its answers out of the database every
     # time, so the same call that first posts a card can re-render it later
     # (:meth:`refresh_run_cards`) and get wording identical to the original
@@ -804,7 +795,6 @@ class BossBot(discord.Client):
         )
         return formatting.countdown_card(run, minutes, self.tz, rsvps, table=self.bosses, who=who)
 
-    # -- keeping posted cards in step -------------------------------------
     def card_needs_refresh(self, run_id: str) -> None:
         """A run changed; queue its posted cards for a re-render.
 
@@ -1114,7 +1104,6 @@ class BossBot(discord.Client):
             log.warning("posted the card but could not add its reactions", exc_info=True)
         return message
 
-    # -- reactions --------------------------------------------------------
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
         await self._handle_reaction(payload, added=True)
 
@@ -1184,7 +1173,6 @@ class BossBot(discord.Client):
                     reference_id=payload.message_id,
                 )
 
-    # -- proposal cards ---------------------------------------------------
     async def _handle_proposal_reaction(
         self, payload: discord.RawReactionActionEvent, proposals: list[dict], emoji: str
     ) -> None:
@@ -1374,7 +1362,6 @@ class BossBot(discord.Client):
                 amendment.get("channel_id"), message_id, formatting.SUPERSEDED_NOTICE
             )
 
-    # -- weekly digest ----------------------------------------------------
     async def post_digest(
         self, channel_id: int | str | None = None, week: str = "this"
     ) -> discord.Message | None:
@@ -1446,7 +1433,6 @@ class BossBot(discord.Client):
         log.info("posted the weekly digest for the boss week starting %s", current)
         return message
 
-    # -- daily backup -----------------------------------------------------
     def back_up(self, now: datetime) -> Path | None:
         """Snapshot the database once a local day; returns the file if it wrote one.
 
@@ -1474,7 +1460,6 @@ class BossBot(discord.Client):
             log.info("pruned old backup %s", stale.name)
         return path
 
-    # -- deleted cards ----------------------------------------------------
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
         self.withdraw_card(payload.message_id)
 

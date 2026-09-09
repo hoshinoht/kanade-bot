@@ -20,9 +20,6 @@ class ErrorOut(BaseModel):
     error: str
 
 
-# --- schedule ---------------------------------------------------------------
-
-
 class MonogramOut(BaseModel):
     """The stand-in badge shown when a boss has no portrait file."""
 
@@ -109,9 +106,6 @@ class ScheduleOut(BaseModel):
     count: int
 
 
-# --- fixed runs -------------------------------------------------------------
-
-
 class FixedOut(BaseModel):
     id: str
     short_id: str
@@ -154,9 +148,6 @@ class DeletedOut(BaseModel):
     cancelled_runs: int
 
 
-# --- run actions ------------------------------------------------------------
-
-
 class AmendIn(Strict):
     to: str = Field(description="e.g. `wed 21:30`, `tomorrow 9:45pm`")
 
@@ -195,9 +186,6 @@ class RosterChangeOut(BaseModel):
     changed: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
-
-
-# --- the inbox --------------------------------------------------------------
 
 
 class EvidenceOut(BaseModel):
@@ -266,9 +254,6 @@ class RejectOut(BaseModel):
     status: str
 
 
-# --- extraction log ---------------------------------------------------------
-
-
 class ExtractionOut(BaseModel):
     id: str
     short_id: str
@@ -285,9 +270,6 @@ class ExtractionDetailOut(ExtractionOut):
     raw_response: str
     messages: list[EvidenceOut]
     amendments: list[AmendmentOut]
-
-
-# --- chat interactions ------------------------------------------------------
 
 
 class ChatInteractionOut(BaseModel):
@@ -380,9 +362,6 @@ class ChatSummaryOut(BaseModel):
     completion_tokens: int
 
 
-# --- the audit trail --------------------------------------------------------
-
-
 class AuditOut(BaseModel):
     """One recorded change: when, from where, who, and what."""
 
@@ -398,9 +377,6 @@ class AuditOut(BaseModel):
     subject: str | None
     short_subject: str | None
     detail: str
-
-
-# --- members, reminders -----------------------------------------------------
 
 
 class MemberOut(BaseModel):
@@ -448,9 +424,6 @@ class ReminderOut(BaseModel):
     boss_detail: list[BossOut] = []
     run_local: str | None
     status: str | None
-
-
-# --- config and actions -----------------------------------------------------
 
 
 class RolePluginOut(BaseModel):
@@ -664,9 +637,6 @@ class AccessOut(BaseModel):
     manage_messages: bool = True
     #: True when the bot is not connected, so nothing could be checked.
     unknown: bool
-
-
-# --- capacity: the one model, the two windows, and what is queued -----------
 
 
 class ModelLockOut(BaseModel):

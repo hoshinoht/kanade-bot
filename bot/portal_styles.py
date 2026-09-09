@@ -44,7 +44,7 @@ def build_stylesheet(entrypoint: Path = ENTRYPOINT) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    _ = parser.add_argument(
+    parser.add_argument(
         "--output",
         type=Path,
         default=OUTPUT,
@@ -52,7 +52,7 @@ def main() -> int:
     )
     args = parser.parse_args(namespace=Arguments())
     output = args.output
-    _ = output.write_text(build_stylesheet(), encoding="utf-8")
+    output.write_text(build_stylesheet(), encoding="utf-8")
     return 0
 
 

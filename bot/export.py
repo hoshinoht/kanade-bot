@@ -45,11 +45,6 @@ REACTION_USER_CAP = 50
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-# ---------------------------------------------------------------------------
-# pure helpers (unit tested)
-# ---------------------------------------------------------------------------
-
-
 def slugify(name: str) -> str:
     return _SLUG_RE.sub("-", (name or "channel").strip().lower()).strip("-") or "channel"
 
@@ -156,11 +151,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="output file; only valid when exactly one channel is selected",
     )
     return parser
-
-
-# ---------------------------------------------------------------------------
-# Discord side
-# ---------------------------------------------------------------------------
 
 
 def _resolve_channels(

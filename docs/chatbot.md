@@ -1,8 +1,5 @@
 # The chatbot
 
-A mention-gated, persona-driven chatbot that answers scheduling questions
-and drafts changes as the same ✅/❌ cards everything else uses.
-
 A chatbot with a persona, answering in one channel, through the same Ollama
 daemon as the extractor. `CHAT_PILOT_MODEL` defaults to the extractor's local
 model, and then nothing it is told leaves the machine; point it at one of
