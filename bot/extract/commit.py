@@ -23,7 +23,8 @@ from bot.agent.materialise import (
     retire_fixed_run,
 )
 from bot.agent.rsvp import compute_status, recompute_after_roster_change
-from bot.domain.weeks import current_week_start, next_week_start, week_start
+from bot.domain.timeutil import utcnow
+from bot.domain.weeks import materialised_week_starts, week_start
 from bot.infrastructure.db import Repo
 
 log = logging.getLogger(__name__)
@@ -479,9 +480,10 @@ def _note_adoption(repo: Repo, fixed_id: str, result: CommitResult, ctx: Context
     lands in next week whenever the reset falls in between; saying "this week's"
     about that one would be the same lie in a smaller way.
     """
-    for label, week in (
-        ("this week", current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
-        ("next week", next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time)),
+    for label, week in zip(
+        ("this week", "next week", "the week after"),
+        materialised_week_starts(ctx.tz, ctx.reset_weekday, ctx.reset_time, utcnow()),
+        strict=True,
     ):
         run = repo.run_for_fixed(fixed_id, week)
         if run is not None and run["source"] != "fixed":
@@ -502,10 +504,7 @@ def _unfix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
     fixed = repo.get_fixed_run(str(fixed_id))
     if fixed is None:
         return "that weekly timing has already gone"
-    weeks = [
-        current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
-        next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
-    ]
+    weeks = materialised_week_starts(ctx.tz, ctx.reset_weekday, ctx.reset_time, utcnow())
     cancelled = retire_fixed_run(repo, str(fixed_id), weeks, ctx.tz, ctx.ping_time, ctx.countdowns)
     result.fixed_run_id = str(fixed_id)
     result.notes.append(f"cancelled {cancelled} scheduled run(s)")
@@ -550,10 +549,7 @@ def _refix(repo: Repo, payload: dict, result: CommitResult, ctx: Context):
         repo,
         str(fixed_id),
         set(fields),
-        [
-            current_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
-            next_week_start(ctx.tz, ctx.reset_weekday, ctx.reset_time),
-        ],
+        materialised_week_starts(ctx.tz, ctx.reset_weekday, ctx.reset_time, utcnow()),
         ctx.tz,
         ctx.ping_time,
         ctx.countdowns,

@@ -28,3 +28,7 @@
 
 ## Coding Policy
 - Do not use overly verbose comments or docstrings, keep them concise and to the point.
+
+<!-- recall:lessons:begin -->
+- Keep chatbot schedule language distinct from storage boundaries: unqualified `this`/`next week` is calendar Monday–Sunday, explicit `boss week` uses the configured reset interval, and bare weekdays resolve forward; calendar/date reads may therefore merge multiple boss-week buckets while API/CLI/write paths retain boss-week semantics.
+<!-- recall:lessons:end -->

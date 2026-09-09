@@ -8,18 +8,21 @@ existing ✅ path is run over the row the tool created.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from bot.agent.materialise import materialise_week
 from bot.chat import tools
+from bot.chat.tools.get_schedule import _bounded_schedule
 from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.ids import short_id
-from bot.domain.weeks import current_week_start
+from bot.domain.weeks import current_week_start, materialised_week_starts
 from bot.extract.commit import commit, may_commit
 
 from .chat_support import CHAT_CHANNEL
-from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
+from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ, kl
 from .fake_bot import WATCHED_CHANNEL
 
 pytestmark = pytest.mark.anyio
@@ -55,8 +58,10 @@ def proposals(bot):
 
 
 def line_for(answer: str, run_id: str) -> str:
-    """The one line of a listing that is about ``run_id``."""
-    return next(line for line in answer.splitlines() if short_id(run_id) in line)
+    """The two-line listing record that is about ``run_id``."""
+    lines = answer.splitlines()
+    index = next(index for index, line in enumerate(lines) if short_id(run_id) in line)
+    return "\n".join(lines[index : index + 2])
 
 
 # ---------------------------------------------------------------------------
@@ -134,14 +139,17 @@ def test_tool_schemas_stay_within_context_budget():
 
 
 async def test_get_schedule_lists_the_week(chat_bot, chat_seeded):
-    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss"}
+    )
     assert "Hard MaleficStar + Hard FA" in answer
     assert "Extreme Kalos" in answer
     assert short_id(chat_seeded["star"]) in answer
     star = chat_bot.repo.get_run(chat_seeded["star"])
     line = line_for(answer, chat_seeded["star"])
     assert f"`[{short_id(chat_seeded['star'])}]`" in line
-    assert f"*{star['datetime'].astimezone(chat_bot.tz):%a %d %b %H:%M}*" in line
+    assert f"*{star['datetime'].astimezone(chat_bot.tz):%a %d %b} · " in line
+    assert f"{star['datetime'].astimezone(chat_bot.tz):%H:%M}*" in line
     assert "**Hard MaleficStar + Hard FA**" in line
     assert "`planned`" in line and "`0/2 yes`" in line
 
@@ -151,22 +159,417 @@ async def test_get_schedule_says_so_when_a_week_is_empty(chat_bot, chat_seeded):
     assert "Nothing is scheduled" in answer
 
 
+async def test_calendar_and_boss_weeks_select_different_fridays(chat_bot, chat_seeded, monkeypatch):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    friday = chat_bot.repo.add_fixed_run(
+        1001, ["HCarling"], 4, "21:00", ["1001"], channel_id=CHAT_CHANNEL
+    )
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    for start in starts:
+        materialise_week(chat_bot.repo, start, TZ, PING_TIME, COUNTDOWNS, now=starts[0])
+    first = chat_bot.repo.run_for_fixed(friday, starts[0])
+    second = chat_bot.repo.run_for_fixed(friday, starts[1])
+
+    calendar = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "calendar", "day": "fri"}
+    )
+    boss = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss", "day": "fri"}
+    )
+
+    assert short_id(second["id"]) in calendar and short_id(first["id"]) not in calendar
+    assert short_id(first["id"]) in boss and short_id(second["id"]) not in boss
+
+
+async def test_next_calendar_week_reads_the_third_materialised_bucket(
+    chat_bot, chat_seeded, monkeypatch
+):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    fixed_ids = [
+        chat_bot.repo.add_fixed_run(
+            1001, bosses, weekday, "21:00", ["1001"], channel_id=CHAT_CHANNEL
+        )
+        for bosses, weekday in ((["HCarling"], 4), (["HBellona"], 5), (["HLimbo"], 6))
+    ]
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    for start in starts:
+        materialise_week(chat_bot.repo, start, TZ, PING_TIME, COUNTDOWNS, now=starts[0])
+
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "next", "week_basis": "calendar"}
+    )
+    assert all(
+        short_id(chat_bot.repo.run_for_fixed(fixed_id, starts[2])["id"]) in answer
+        for fixed_id in fixed_ids
+    )
+
+
+async def test_calendar_reset_day_combines_buckets_but_boss_day_does_not_leak(
+    chat_bot, chat_seeded, monkeypatch
+):
+    chat_bot.settings.boss_week_reset_time = "18:00"
+    now = kl(2026, 9, 10, 10)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before, after, _third = materialised_week_starts(
+        TZ, RESET_WEEKDAY, chat_bot.settings.reset_time, now
+    )
+    pre_id = chat_bot.repo.create_run(
+        before,
+        ["HCarling"],
+        kl(2026, 9, 10, 17),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    post_id = chat_bot.repo.create_run(
+        after,
+        ["HBellona"],
+        kl(2026, 9, 10, 19),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    calendar = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "calendar", "day": "thu"}
+    )
+    boss = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss", "day": "thu"}
+    )
+
+    assert short_id(pre_id) in calendar and short_id(post_id) in calendar
+    assert short_id(pre_id) in boss and short_id(post_id) not in boss
+
+
+async def test_auto_friday_uses_the_next_occurrence_and_next_storage_bucket(
+    chat_bot, chat_seeded, monkeypatch
+):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    next_bucket = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[1]
+    run_id = chat_bot.repo.create_run(
+        next_bucket,
+        ["HCarling"],
+        kl(2026, 9, 11, 21),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "auto", "day": "fri"})
+
+    assert short_id(run_id) in answer
+    assert "Fri 11 Sep" in answer
+
+
+async def test_calendar_qualified_past_friday_and_auto_today_are_distinct(
+    chat_bot, chat_seeded, monkeypatch
+):
+    now = kl(2026, 9, 11, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    bucket = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[0]
+    run_id = chat_bot.repo.create_run(
+        bucket,
+        ["HCarling"],
+        kl(2026, 9, 11, 9),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    qualified = await tools.dispatch(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "this", "week_basis": "calendar", "day": "friday"},
+    )
+    bare = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "auto", "day": "friday"}
+    )
+
+    assert short_id(run_id) in qualified
+    assert short_id(run_id) in bare
+
+
+async def test_calendar_week_merges_buckets_and_orders_runs_globally(
+    chat_bot, chat_seeded, monkeypatch
+):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before, after, _ = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    earlier = chat_bot.repo.create_run(
+        before,
+        ["HCarling"],
+        kl(2026, 9, 9, 20),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    later = chat_bot.repo.create_run(
+        after,
+        ["HBellona"],
+        kl(2026, 9, 10, 20),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "calendar"}
+    )
+
+    assert short_id(earlier) in answer and short_id(later) in answer
+    assert answer.index(short_id(earlier)) < answer.index(short_id(later))
+
+
+async def test_relative_tomorrow_crosses_a_reset_into_the_next_bucket(
+    chat_bot, chat_seeded, monkeypatch
+):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    next_bucket = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[1]
+    run_id = chat_bot.repo.create_run(
+        next_bucket,
+        ["HCarling"],
+        kl(2026, 9, 10, 12),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    outcome = await tools.run(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss", "day": "tomorrow"}
+    )
+
+    assert outcome.ok
+    assert short_id(run_id) in outcome.output
+
+
+async def test_non_midnight_reset_date_reads_both_bucket_portions(
+    chat_bot, chat_seeded, monkeypatch
+):
+    chat_bot.settings.boss_week_reset_time = "18:00"
+    now = kl(2026, 9, 10, 10)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before, after, _ = materialised_week_starts(
+        TZ, RESET_WEEKDAY, chat_bot.settings.reset_time, now
+    )
+    pre_id = chat_bot.repo.create_run(
+        before,
+        ["HCarling"],
+        kl(2026, 9, 10, 17),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    post_id = chat_bot.repo.create_run(
+        after,
+        ["HBellona"],
+        kl(2026, 9, 10, 19),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "auto", "day": "today"}
+    )
+
+    assert short_id(pre_id) in answer and short_id(post_id) in answer
+
+
+async def test_explicit_boss_periods_clip_at_reset_boundaries(chat_bot, chat_seeded, monkeypatch):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    _current, following, _ = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    next_id = chat_bot.repo.create_run(
+        following, ["HCarling"], following, ["1002"], "planned", "amend", channel_id=CHAT_CHANNEL
+    )
+
+    this_boss = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this_boss"})
+    next_boss = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "next_boss"})
+
+    assert short_id(next_id) not in this_boss
+    assert short_id(next_id) in next_boss
+
+
+async def test_get_schedule_defaults_whitespace_week_to_current_calendar_week(
+    chat_bot, chat_seeded
+):
+    explicit = await tools.run(context(chat_bot), "get_schedule", {"week": "this"})
+    blank = await tools.run(context(chat_bot), "get_schedule", {"week": " \t "})
+
+    assert blank.ok
+    assert blank.output == explicit.output
+
+
+async def test_get_schedule_keeps_spring_forward_day_boundaries_across_reset_buckets(
+    chat_bot, chat_seeded, monkeypatch
+):
+    ny = ZoneInfo("America/New_York")
+    chat_bot.tz = ny
+    chat_bot.settings.boss_week_reset_weekday = "sun"
+    chat_bot.settings.boss_week_reset_time = "12:00"
+    now = datetime(2026, 3, 8, 1, 30, tzinfo=ny)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before, after, _ = materialised_week_starts(
+        ny, chat_bot.settings.reset_weekday, chat_bot.settings.reset_time, now
+    )
+    start_id = chat_bot.repo.create_run(
+        before,
+        ["HCarling"],
+        datetime(2026, 3, 8, 0, 0, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    post_reset_id = chat_bot.repo.create_run(
+        after,
+        ["HBellona"],
+        datetime(2026, 3, 8, 23, 59, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    next_day_id = chat_bot.repo.create_run(
+        after,
+        ["HLimbo"],
+        datetime(2026, 3, 9, 0, 0, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "auto", "day": "today"}
+    )
+
+    assert short_id(start_id) in answer
+    assert short_id(post_reset_id) in answer
+    assert short_id(next_day_id) not in answer
+
+
+async def test_get_schedule_keeps_fall_back_day_boundaries_across_reset_buckets(
+    chat_bot, chat_seeded, monkeypatch
+):
+    ny = ZoneInfo("America/New_York")
+    chat_bot.tz = ny
+    chat_bot.settings.boss_week_reset_weekday = "sun"
+    chat_bot.settings.boss_week_reset_time = "12:00"
+    now = datetime(2026, 11, 1, 0, 30, tzinfo=ny)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    before, after, _ = materialised_week_starts(
+        ny, chat_bot.settings.reset_weekday, chat_bot.settings.reset_time, now
+    )
+    start_id = chat_bot.repo.create_run(
+        before,
+        ["HCarling"],
+        datetime(2026, 11, 1, 0, 0, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    repeated_hour_id = chat_bot.repo.create_run(
+        before,
+        ["HBellona"],
+        datetime(2026, 11, 1, 1, 30, tzinfo=ny, fold=1),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    post_reset_id = chat_bot.repo.create_run(
+        after,
+        ["HLimbo"],
+        datetime(2026, 11, 1, 23, 59, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    next_day_id = chat_bot.repo.create_run(
+        after,
+        ["HCarling"],
+        datetime(2026, 11, 2, 0, 0, tzinfo=ny),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "auto", "day": "today"}
+    )
+
+    assert short_id(start_id) in answer
+    assert short_id(repeated_hour_id) in answer
+    assert short_id(post_reset_id) in answer
+    assert short_id(next_day_id) not in answer
+
+
+async def test_calendar_weeks_are_half_open_at_monday_midnight(chat_bot, chat_seeded, monkeypatch):
+    now = kl(2026, 9, 13, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    bucket = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[1]
+    run_id = chat_bot.repo.create_run(
+        bucket, ["HCarling"], kl(2026, 9, 14), ["1002"], "planned", "amend", channel_id=CHAT_CHANNEL
+    )
+
+    this_week = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "calendar"}
+    )
+    next_week = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "next", "week_basis": "calendar"}
+    )
+    assert short_id(run_id) not in this_week
+    assert short_id(run_id) in next_week
+
+
 async def test_get_schedule_rejects_a_week_it_does_not_have(chat_bot, chat_seeded):
     answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "last"})
     assert "this" in answer and "next" in answer
 
 
+async def test_get_schedule_defaults_missing_basis_to_calendar_and_refuses_bad_basis(
+    chat_bot, chat_seeded
+):
+    defaulted = await tools.run(context(chat_bot), "get_schedule", {"week": "this"})
+    invalid = await tools.run(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "lunar"}
+    )
+    assert defaulted.ok and "boss week" not in defaulted.output
+    assert not invalid.ok and "calendar week or a boss week" in invalid.output
+
+
 async def test_get_schedule_marks_a_run_that_has_already_happened(
     chat_bot, chat_seeded, monkeypatch
 ):
-    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=7))
-    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=6))
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss"}
+    )
     assert "already happened" in line_for(answer, chat_seeded["star"])
 
 
 async def test_get_schedule_leaves_an_upcoming_run_unmarked(chat_bot, chat_seeded, monkeypatch):
     monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"])
-    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss"}
+    )
     assert "already happened" not in line_for(answer, chat_seeded["star"])
 
 
@@ -176,14 +579,18 @@ async def test_get_schedule_marks_a_done_run_whose_time_has_not_come(
     """`done` is over whatever the clock says -- a run can be finished early."""
     monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"])
     chat_bot.repo.set_run_status(chat_seeded["kalos"], "done")
-    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss"}
+    )
     assert "already happened" in line_for(answer, chat_seeded["kalos"])
     assert "already happened" not in line_for(answer, chat_seeded["star"])
 
 
 async def test_get_schedule_says_when_nothing_upcoming_is_left(chat_bot, chat_seeded, monkeypatch):
-    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=7))
-    answer = await tools.dispatch(context(chat_bot), "get_schedule", {"week": "this"})
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=6))
+    answer = await tools.dispatch(
+        context(chat_bot), "get_schedule", {"week": "this", "week_basis": "boss"}
+    )
     assert "nothing upcoming is left" in answer
 
 
@@ -200,6 +607,139 @@ async def test_get_schedule_stays_quiet_while_one_run_is_still_to_come(
     assert "nothing upcoming" not in answer
 
 
+async def test_get_schedule_upcoming_only_excludes_done_and_past_runs(
+    chat_bot, chat_seeded, monkeypatch
+):
+    monkeypatch.setattr(
+        tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=4, hours=22)
+    )
+
+    tool_context = context(chat_bot)
+    tool_context.upcoming_only = True
+    answer = await tools.dispatch(tool_context, "get_schedule", {"week": "this_boss"})
+
+    assert short_id(chat_seeded["star"]) not in answer
+    assert short_id(chat_seeded["kalos"]) in answer
+    assert "**1 run left this boss week · All channels**" in answer
+    assert "already happened" not in answer
+
+
+async def test_get_schedule_upcoming_only_has_a_useful_empty_state(
+    chat_bot, chat_seeded, monkeypatch
+):
+    monkeypatch.setattr(tools, "utcnow", lambda: chat_seeded["week_start"] + timedelta(days=6))
+
+    tool_context = context(chat_bot)
+    tool_context.upcoming_only = True
+    answer = await tools.dispatch(tool_context, "get_schedule", {"week": "this_boss"})
+
+    assert answer == (
+        "**No runs left this boss week · All channels**\n\n"
+        "Everything scheduled in this period is already done."
+    )
+
+
+async def test_get_schedule_upcoming_only_participant_empty_does_not_hide_future_runs_for_others(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=4, hours=22))
+    other_run = chat_bot.repo.create_run(
+        week,
+        ["HCarling"],
+        week + timedelta(days=5, hours=21),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    tool_context = context(chat_bot)
+    tool_context.upcoming_only = True
+    answer = await tools.dispatch(
+        tool_context, "get_schedule", {"week": "this_boss", "participant": "Alvin"}
+    )
+
+    assert "No upcoming runs for" in answer
+    assert short_id(other_run) not in answer
+    assert "Everything scheduled" not in answer
+
+
+async def test_get_schedule_upcoming_only_channel_empty_reports_future_runs_elsewhere(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=4, hours=22))
+
+    tool_context = context(chat_bot)
+    tool_context.channel_id = str(WATCHED_CHANNEL)
+    tool_context.upcoming_only = True
+    answer = await tools.dispatch(
+        tool_context,
+        "get_schedule",
+        {"week": "this_boss", "scope": "channel"},
+    )
+
+    assert "No upcoming runs in this channel" in answer
+    assert "1 upcoming run in another channel" in answer
+    assert "Everything scheduled" not in answer
+
+
+async def test_get_schedule_bounds_long_lists_between_complete_records(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    chat_bot.channels[CHAT_CHANNEL].name = "scheduled-raids-with-an-intentionally-long-channel-name"
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=4, hours=12))
+    run_ids = [
+        chat_bot.repo.create_run(
+            week,
+            ["HCarling"],
+            week + timedelta(days=5, hours=21, minutes=index),
+            ["1002"],
+            "planned",
+            "amend",
+            channel_id=CHAT_CHANNEL,
+        )
+        for index in range(13)
+    ]
+
+    tool_context = context(chat_bot)
+    tool_context.upcoming_only = True
+    answer = await tools.dispatch(tool_context, "get_schedule", {"week": "this_boss"})
+
+    assert len(answer) <= 1200
+    assert chat_bot.channels[CHAT_CHANNEL].name not in answer
+    assert f"<#{CHAT_CHANNEL}>" in answer
+    assert "*(and " in answer and " more)*" in answer
+    shown = [run_id for run_id in run_ids if short_id(run_id) in answer]
+    assert shown and len(shown) < len(run_ids)
+    for run_id in shown:
+        primary = next(line for line in answer.splitlines() if short_id(run_id) in line)
+        secondary = answer.splitlines()[answer.splitlines().index(primary) + 1]
+        assert primary.startswith("`[") and secondary.startswith("*")
+
+
+def test_bounded_schedule_omits_an_individually_unrenderable_record():
+    record = f"**Tue 08 Sep · 00:00 — {'Hard MaleficStar ' * 100}**\n`[9004eab0]`"
+
+    answer = _bounded_schedule("**1 run this week · All channels**", [record])
+
+    assert len(answer) <= 1200
+    assert "Schedule omitted" in answer and "safely" in answer
+    assert "9004eab0" not in answer
+    assert "Hard MaleficStar" not in answer
+
+
+def test_bounded_schedule_applies_the_run_limit_before_the_character_budget():
+    records = [f"`[{index:08x}]` **Boss**\n*Tue 08 Sep · 21:00*" for index in range(22)]
+
+    answer = _bounded_schedule("**22 runs this week · All channels**", records)
+
+    assert answer.count("`[") == 20
+    assert "*(and 2 more)*" in answer
+
+
 # participant="me" -- the bug: "what's for me" returned the entire schedule
 
 
@@ -210,7 +750,7 @@ async def test_get_schedule_for_me_returns_only_the_askers_runs(chat_bot, chat_s
     )
     assert short_id(chat_seeded["star"]) in answer
     assert short_id(chat_seeded["kalos"]) in answer
-    assert "Your runs" in answer
+    assert "**Your 2 runs this week · All channels**" in answer
 
 
 async def test_get_schedule_for_me_excludes_runs_the_asker_is_not_on(chat_bot, chat_seeded):
@@ -240,7 +780,7 @@ async def test_get_schedule_treats_copied_bot_triggers_as_the_asker(chat_bot, ch
             "get_schedule",
             {"week": "this", "participant": participant},
         )
-        assert "Your runs" in answer
+        assert "**Your 1 run this week · All channels**" in answer
         assert short_id(chat_seeded["star"]) in answer
         assert short_id(chat_seeded["kalos"]) not in answer
 
@@ -267,7 +807,7 @@ async def test_get_schedule_accepts_askers_name_when_model_ignores_enum(chat_bot
     )
     assert short_id(chat_seeded["star"]) in answer
     assert short_id(chat_seeded["kalos"]) not in answer
-    assert "Your runs" in answer
+    assert "**Your 1 run this week · All channels**" in answer
 
 
 async def test_get_schedule_can_filter_to_a_named_member(chat_bot, chat_seeded):
@@ -278,7 +818,7 @@ async def test_get_schedule_can_filter_to_a_named_member(chat_bot, chat_seeded):
     )
     assert short_id(chat_seeded["star"]) not in answer
     assert short_id(chat_seeded["kalos"]) in answer
-    assert "Priya's runs" in answer
+    assert "**Priya's 1 run this week · All channels**" in answer
 
 
 async def test_get_schedule_refuses_an_unknown_participant_instead_of_listing_all(
@@ -370,7 +910,7 @@ async def test_get_schedule_filters_to_today_for_the_asker_in_this_channel(
         },
     )
 
-    assert "Your runs on" in answer
+    assert "**Your 1 run Thu 03 Sep · This channel**" in answer
     assert short_id(today) in answer
     assert short_id(later) not in answer
 
@@ -427,7 +967,7 @@ async def test_get_schedule_resolves_a_weekday_inside_the_selected_boss_week(
     )
 
     assert short_id(next_friday) in answer
-    assert "Your runs on" in answer
+    assert "**Your 1 run Fri 11 Sep · All channels**" in answer
 
 
 @pytest.mark.parametrize("day", ["someday", "today tomorrow", "today tonight", "not friday"])
@@ -453,22 +993,31 @@ async def test_get_schedule_treats_blank_day_as_omitted(chat_bot, chat_seeded, d
     assert short_id(chat_seeded["star"]) in outcome.output
 
 
-async def test_get_schedule_refuses_a_relative_day_outside_the_selected_week(
+async def test_get_schedule_allows_a_relative_day_to_cross_the_selected_boss_week(
     chat_bot, chat_seeded, monkeypatch
 ):
     week = chat_seeded["week_start"]
     monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=6, hours=12))
 
+    now = week + timedelta(days=6, hours=12)
+    next_bucket = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[1]
+    run_id = chat_bot.repo.create_run(
+        next_bucket,
+        ["HCarling"],
+        kl(2026, 9, 10, 12),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
     outcome = await tools.run(
         context(chat_bot),
         "get_schedule",
-        {"week": "this", "day": "tomorrow"},
+        {"week": "this", "week_basis": "boss", "day": "tomorrow"},
     )
 
-    assert not outcome.ok
-    assert "not in the requested boss week" in outcome.output
-    assert "next boss week" in outcome.output
-    assert "week=" not in outcome.output
+    assert outcome.ok
+    assert short_id(run_id) in outcome.output
 
 
 async def test_get_schedule_accepts_today_before_a_non_midnight_reset(
@@ -497,7 +1046,7 @@ async def test_get_schedule_accepts_today_before_a_non_midnight_reset(
     )
 
     assert short_id(before_reset) in answer
-    assert "Your runs on" in answer
+    assert "**Your 1 run Thu 03 Sep · This channel**" in answer
 
 
 async def test_get_run_by_short_id(chat_bot, chat_seeded):
@@ -627,6 +1176,24 @@ def test_resolve_run_narrows_by_day(chat_bot, chat_seeded):
     star = chat_bot.repo.get_run(chat_seeded["star"])
     day = star["datetime"].astimezone(TZ).strftime("%A").lower()
     assert tools.resolve_run(chat_bot, f"hstar {day}")["id"] == chat_seeded["star"]
+
+
+def test_resolve_run_reaches_an_unambiguous_third_week_run(chat_bot, chat_seeded, monkeypatch):
+    now = kl(2026, 9, 9, 12)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    third = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)[2]
+    run_id = chat_bot.repo.create_run(
+        third,
+        ["HBellona"],
+        kl(2026, 9, 20, 21),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+
+    assert tools.resolve_run(chat_bot, run_id)["id"] == run_id
+    assert tools.resolve_run(chat_bot, "hbellona")["id"] == run_id
 
 
 def test_resolve_run_weekday_picks_the_nearest_concrete_date(chat_bot, chat_seeded, monkeypatch):

@@ -34,6 +34,7 @@ from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages, estimate_tokens, prompt_budget
 from . import followup, gate, persona, persona_catalog, progress, strategy, tools
 from .ratelimit import RateLimiter
+from .tools.contracts import MAX_MEMBER_REPLY
 
 log = logging.getLogger(__name__)
 
@@ -277,9 +278,11 @@ GLUED_BULLET = ": - "
 
 
 _SCHEDULE_RUN_LINE_RE = re.compile(r"^\s*(?:[-*]\s*)?`?\[[0-9a-fA-F]{8}\]`?\s+\S")
+_SCHEDULE_RECORD_ID_RE = re.compile(r"`?\[[0-9a-fA-F]{8}\]`?")
+_SCHEDULE_PRIMARY_LINE_RE = re.compile(r"^\s*(?:[-*]\s+)?\*\*.+ — .+\*\*$")
 _SCHEDULE_RUN_ID_RE = re.compile(r"\[([0-9a-fA-F]{8})\]")
 _SCHEDULE_HEADING_RE = re.compile(
-    r"\b(?:runs|boss week|scheduled|all channels|this channel)\b", re.IGNORECASE
+    r"\b(?:runs|boss week|schedule(?:d)?|all channels|this channel)\b", re.IGNORECASE
 )
 _SCHEDULE_TITLE_RE = re.compile(r"\b(?:boss week|all channels|this channel)\b", re.IGNORECASE)
 _RUN_ID_WORD_RE = re.compile(r"\brun\s*ids?\b", re.IGNORECASE)
@@ -309,12 +312,13 @@ def _tidy_blank_lines(text: str) -> str:
 _EMPTY_PLACEHOLDER_RE = re.compile(r"`?<\s*none\s*>`?", re.IGNORECASE)
 _SCHEDULE_CALL_RE = re.compile(r"`?\bget_schedule\s*\([^)]*\)`?", re.IGNORECASE | re.DOTALL)
 _SCHEDULE_ARGUMENT_RE = re.compile(
-    r"`?(?:\b(?P<assigned>participant|scope|week|day)\s*=|"
-    r"['\"](?P<json>participant|scope|week|day)['\"]\s*:)\s*"
+    r"`?(?:\b(?P<assigned>participant|scope|week|week_basis|day)\s*=|"
+    r"['\"](?P<json>participant|scope|week|week_basis|day)['\"]\s*:)\s*"
     r"(?:(?P<quote>['\"])(?P<quoted>[^'\"]+)(?P=quote)|"
     r"(?P<bare><@(?:[!&])?\d+>|[\w-]+))`?",
     re.IGNORECASE,
 )
+_INTERNAL_WEEK_MODE_RE = re.compile(r"(?<![\w<#@&])(this_boss|next_boss|auto)(?!\w)", re.IGNORECASE)
 _BARE_SCHEDULE_RE = re.compile(
     r"what(?:'s|s| is)\s+(?:on|for)\s+"
     r"(?:today|tonight|tomorrow|tmr|tmrw|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|"
@@ -327,11 +331,16 @@ _PERSON_QUALIFIER_RE = re.compile(
     r"\b(?:for me|my runs|my schedule|am i|do i|i am|i'm|myself)\b|<@!?\d+>",
     re.IGNORECASE,
 )
+_UPCOMING_SCHEDULE_RE = re.compile(
+    r"\b(?:what(?:'s|’s| is)\s+left|runs?\s+left|remaining\s+runs?|"
+    r"upcoming\s+runs?|next\s+runs?)\b",
+    re.IGNORECASE,
+)
 
 
 def _schedule_defaults(
     text: str, bot_user_id: str | None, self_role_id: str | None
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, bool]:
     """Return trusted schedule-scope defaults for a complete question."""
     cleaned = text or ""
     if bot_user_id:
@@ -348,7 +357,7 @@ def _schedule_defaults(
     force_group = _BARE_SCHEDULE_RE.fullmatch(cleaned) is not None or (
         bool(whole_group) and not explicit_person
     )
-    return force_all, force_group
+    return force_all, force_group, _UPCOMING_SCHEDULE_RE.search(cleaned) is not None
 
 
 #: A write claim that must never survive a refusal: the model said a card went
@@ -440,30 +449,36 @@ def _member_facing(text: str) -> str:
             ("participant", "me"): "your own runs",
             ("scope", "channel"): "this channel",
             ("scope", "all"): "all channels",
-            ("week", "this"): "this boss week",
-            ("week", "next"): "next boss week",
+            ("week", "this"): "this week",
+            ("week", "next"): "next week",
+            ("week", "this_boss"): "this boss week",
+            ("week", "next_boss"): "next boss week",
+            ("week", "auto"): "the relevant week",
+            ("week_basis", "calendar"): "calendar week",
+            ("week_basis", "boss"): "boss week",
         }.get((name, value.lower()), value)
         return natural
 
     cleaned = _SCHEDULE_ARGUMENT_RE.sub(natural_argument, cleaned)
+    cleaned = _INTERNAL_WEEK_MODE_RE.sub(
+        lambda match: {
+            "this_boss": "this boss week",
+            "next_boss": "next boss week",
+            "auto": "the relevant week",
+        }[match.group(1).lower()],
+        cleaned,
+    )
     cleaned = re.sub(r"\b(?:call|use)\s+get_schedule\b", "check the schedule", cleaned, flags=re.I)
     return re.sub(r"\bget_schedule\b", "the schedule lookup", cleaned, flags=re.I)
 
 
 def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) -> str:
     """Keep listed schedule facts in the successful tool's canonical rendering."""
-    schedule = next(
-        (
-            outcome.output
-            for outcome in reversed(outcomes)
-            if outcome.name == "get_schedule"
-            and outcome.ok
-            and any(_SCHEDULE_RUN_LINE_RE.match(line) for line in outcome.output.splitlines())
-        ),
-        None,
-    )
+    schedule = _canonical_schedule_output(outcomes)
     if schedule is None:
         return reply
+    if reply.strip() == schedule.strip():
+        return schedule
 
     run_ids = set(_SCHEDULE_RUN_ID_RE.findall(schedule))
     lowered_ids = {rid.lower() for rid in run_ids}
@@ -478,12 +493,35 @@ def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) ->
 
     row_indexes = [index for index in range(len(lines)) if is_row(index)]
     if row_indexes:
-        before = lines[: row_indexes[0]]
+        start = row_indexes[0]
+        if start and _SCHEDULE_PRIMARY_LINE_RE.match(lines[start - 1]):
+            start -= 1
+            heading = start - 1
+            while heading >= 0 and not lines[heading].strip():
+                heading -= 1
+            if heading >= 0 and _SCHEDULE_HEADING_RE.search(lines[heading]):
+                start = heading
+        else:
+            heading = start - 1
+            while heading >= 0 and not lines[heading].strip():
+                heading -= 1
+            if heading >= 0 and _SCHEDULE_HEADING_RE.search(lines[heading]):
+                start = heading
+        before = lines[:start]
         while before and not before[-1].strip():
             before.pop()
-        if before and _SCHEDULE_HEADING_RE.search(before[-1]):
-            before.pop()
-        after = lines[row_indexes[-1] + 1 :]
+        # A canonical record starts with its id and owns the following detail line.
+        end = min(row_indexes[-1] + 2, len(lines))
+        schedule_lines = schedule.splitlines()
+        canonical_last_id = max(
+            index
+            for index, line in enumerate(schedule_lines)
+            if _SCHEDULE_RECORD_ID_RE.search(line)
+        )
+        footer = schedule_lines[canonical_last_id + 2 :]
+        if footer and lines[end : end + len(footer)] == footer:
+            end += len(footer)
+        after = lines[end:]
         parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
         return "\n\n".join(part for part in parts if part)
 
@@ -503,6 +541,20 @@ def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) ->
         parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
         return "\n\n".join(part for part in parts if part)
     return reply
+
+
+def _canonical_schedule_output(outcomes: Sequence[tools.ToolOutcome]) -> str | None:
+    """Return the latest successful canonical schedule listing, if any."""
+    return next(
+        (
+            outcome.output
+            for outcome in reversed(outcomes)
+            if outcome.name == "get_schedule"
+            and outcome.ok
+            and any(_SCHEDULE_RECORD_ID_RE.search(line) for line in outcome.output.splitlines())
+        ),
+        None,
+    )
 
 
 def unglue_first_bullet(text: str) -> str:
@@ -991,7 +1043,7 @@ class ChatPilot:
         identity_revision = self._identity_revision
         author_id = str(message.author.id)
         text = (message.content or "").strip()
-        force_all_channels, force_group_schedule = _schedule_defaults(
+        force_all_channels, force_group_schedule, upcoming_only = _schedule_defaults(
             text, bot_user_id, self_role_id
         )
         context = tools.ToolContext(
@@ -1003,6 +1055,7 @@ class ChatPilot:
             self_role_id=self_role_id,
             force_all_channels=force_all_channels,
             force_group_schedule=force_group_schedule,
+            upcoming_only=upcoming_only,
             is_admin=is_admin,
         )
         overlay = self.reply_overlay(message.author, runtime)
@@ -1469,7 +1522,15 @@ class ChatPilot:
         self._finalize_read_claim(result)
         if result.reply:
             grounded = _ground_schedule_reply(result.reply, result.outcomes)
-            result.reply = self._tidy(_member_facing(grounded))
+            canonical_schedule = _canonical_schedule_output(result.outcomes)
+            result.reply = self._tidy(
+                _member_facing(grounded),
+                protected=(
+                    canonical_schedule
+                    if canonical_schedule is not None and canonical_schedule in grounded
+                    else None
+                ),
+            )
         result.created = list(context.created)
         result.posted = list(context.posted)
         result.latency_ms = int((time.monotonic() - started) * 1000)
@@ -1619,7 +1680,8 @@ class ChatPilot:
                 "" if not last else ", tools withheld on the last round",
             )
             if not calls:
-                result.reply = self._tidy(content)
+                # Grounding needs the full model reply to find schedule records.
+                result.reply = content
                 return
             messages.append({"role": "assistant", "content": content, "tool_calls": calls})
             for call in calls:
@@ -1769,10 +1831,21 @@ class ChatPilot:
             current_user -= 1
 
     @staticmethod
-    def _tidy(content: str) -> str:
+    def _tidy(content: str, protected: str | None = None) -> str:
         """Normalize and bound a member-facing reply."""
         text = _tidy_blank_lines(content or "").strip()
-        return unglue_first_bullet(text)[:1200].strip()
+        text = unglue_first_bullet(text)
+        if protected and protected in text:
+            before, after = text.split(protected, 1)
+            parts = [protected]
+            prefix = before.strip()
+            suffix = after.strip()
+            if prefix and len(prefix) + len(protected) + 2 <= MAX_MEMBER_REPLY:
+                parts.insert(0, prefix)
+            if suffix and len("\n\n".join(parts)) + len(suffix) + 2 <= MAX_MEMBER_REPLY:
+                parts.append(suffix)
+            return "\n\n".join(parts)
+        return text[:MAX_MEMBER_REPLY].strip()
 
     # -- discord -----------------------------------------------------------
     async def _post(self, message: Any, content: str) -> Any:

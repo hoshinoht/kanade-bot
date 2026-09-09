@@ -401,6 +401,37 @@ def test_editing_the_time_moves_the_already_materialised_run(auth, fake_bot, see
     assert run["datetime"].astimezone(fake_bot.tz).strftime("%H:%M") == "22:15"
 
 
+def test_editing_a_fixed_run_updates_three_materialised_instances(auth, fake_bot, seeded):
+    from bot.agent.materialise import materialise_week
+    from bot.domain.timeutil import utcnow
+    from bot.domain.weeks import materialised_week_starts
+
+    now = utcnow()
+    starts = materialised_week_starts(
+        fake_bot.tz, fake_bot.settings.reset_weekday, fake_bot.settings.reset_time, now
+    )
+    for start in starts[1:]:
+        materialise_week(
+            fake_bot.repo,
+            start,
+            fake_bot.tz,
+            fake_bot.ping_time,
+            fake_bot.countdowns,
+            now=now,
+        )
+
+    response = auth.patch(f"/api/fixed/{short_id(seeded['fixed_star'])}", json={"time": "22:15"})
+
+    assert response.status_code == 200
+    times = [
+        fake_bot.repo.run_for_fixed(seeded["fixed_star"], start)["datetime"]
+        .astimezone(fake_bot.tz)
+        .strftime("%H:%M")
+        for start in starts
+    ]
+    assert times == ["22:15", "22:15", "22:15"]
+
+
 def test_editing_only_the_note_leaves_the_run_where_it_is(auth, fake_bot, seeded):
     before = fake_bot.repo.get_run(seeded["run_star"])["datetime"]
     auth.patch(f"/api/fixed/{short_id(seeded['fixed_star'])}", json={"note": "ring fee split"})

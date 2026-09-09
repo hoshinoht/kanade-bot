@@ -8,7 +8,7 @@ from typing import Any
 
 from bot.agent import formatting
 from bot.domain.ids import short_id
-from bot.domain.weeks import WEEKDAY_NAMES, current_week_start, next_week_start
+from bot.domain.weeks import WEEKDAY_NAMES, materialised_week_starts
 
 from ...api import service
 from ...api.errors import BadRequest, NotFound
@@ -61,7 +61,7 @@ def _names_a_day(query: str) -> bool:
 
 
 def _listing(bot: Any, runs: list[dict], lead: str) -> str:
-    return lead + " " + "; ".join(run_line(bot, run) for run in runs[:MAX_RUNS])
+    return lead + "\n\n" + "\n\n".join(run_line(bot, run) for run in runs[:MAX_RUNS])
 
 
 def resolve_run(bot: Any, query: str) -> dict:
@@ -83,9 +83,8 @@ def resolve_run(bot: Any, query: str) -> dict:
         )
     candidates = [
         run
-        for start in (
-            current_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now),
-            next_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now),
+        for start in materialised_week_starts(
+            bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now
         )
         for run in bot.repo.list_runs(week_start=start)
         if run["status"] not in ("cancelled", "done")
@@ -111,6 +110,17 @@ def resolve_run(bot: Any, query: str) -> dict:
         if narrowed:
             matches = narrowed
         elif by_boss:
+            same_weekday = [
+                run
+                for run in by_boss
+                if any(
+                    _says(low, word)
+                    for word, weekday in WEEKDAY_ALIASES.items()
+                    if weekday == run["datetime"].astimezone(bot.tz).weekday()
+                )
+            ]
+            if len(same_weekday) == 1:
+                return same_weekday[0]
             # The boss is real and the day is not one it runs on. Saying so beats
             # silently answering about a different night.
             raise ToolError(
