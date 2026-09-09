@@ -681,8 +681,29 @@ async def test_get_schedule_upcoming_only_channel_empty_reports_future_runs_else
     )
 
     assert "No upcoming runs in this channel" in answer
+    assert "The runs scheduled here are already done" in answer
     assert "1 upcoming run in another channel" in answer
     assert "Everything scheduled" not in answer
+
+
+async def test_get_schedule_upcoming_participant_reports_done_here_and_future_elsewhere(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    monkeypatch.setattr(tools, "utcnow", lambda: week + timedelta(days=4, hours=22))
+    tool_context = context(chat_bot)
+    tool_context.channel_id = str(WATCHED_CHANNEL)
+    tool_context.upcoming_only = True
+
+    answer = await tools.dispatch(
+        tool_context,
+        "get_schedule",
+        {"week": "this_boss", "scope": "channel", "participant": "me"},
+    )
+
+    assert "No upcoming runs for you in this channel" in answer
+    assert "Your matching scheduled runs are already done" in answer
+    assert "You have 1 upcoming run in another channel" in answer
 
 
 async def test_get_schedule_bounds_long_lists_between_complete_records(
@@ -1252,6 +1273,18 @@ def test_resolve_run_refuses_a_query_matching_two_nights(chat_bot, chat_seeded):
     with pytest.raises(tools.ToolError) as exc:
         tools.resolve_run(chat_bot, "kalos")
     assert "more than one run" in str(exc.value)
+
+
+def test_resolve_fixed_lists_candidates_on_separate_lines(chat_bot, chat_seeded):
+    chat_bot.repo.add_fixed_run(
+        1001, ["HMaleficStar"], 2, "21:30", ["1001"], channel_id=CHAT_CHANNEL
+    )
+
+    with pytest.raises(tools.ToolError) as exc:
+        tools.resolve_fixed(chat_bot, "hstar")
+
+    assert "; " not in str(exc.value)
+    assert "clearer:\n[" in str(exc.value)
 
 
 def test_a_query_that_locates_nothing_is_refused_outright(chat_bot, chat_seeded):

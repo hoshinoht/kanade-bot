@@ -289,6 +289,8 @@ _RUN_ID_WORD_RE = re.compile(r"\brun\s*ids?\b", re.IGNORECASE)
 _CHANNEL_DUMP_RE = re.compile(r"\[#\d+\]|<#\d+>")
 _TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\b")
 _TALLY_RE = re.compile(r"\b\d+/\d+\s*(?:yes)?\b", re.IGNORECASE)
+_SCHEDULE_OMISSION_RE = re.compile(r"^\s*\*?\(and \d+ more\)\*?\s*$", re.IGNORECASE)
+_SCHEDULE_FOOTER_RE = re.compile(r"^\s*\*?Every run listed has already happened", re.IGNORECASE)
 
 
 def _tidy_blank_lines(text: str) -> str:
@@ -331,6 +333,12 @@ _PERSON_QUALIFIER_RE = re.compile(
     r"\b(?:for me|my runs|my schedule|am i|do i|i am|i'm|myself)\b|<@!?\d+>",
     re.IGNORECASE,
 )
+_NAMED_PERSON_QUALIFIER_RE = re.compile(
+    r"\bfor\s+(?!this\b|next\b|today\b|tonight\b|tomorrow\b|tmr\b|tmrw\b|"
+    r"mon(?:day)?\b|tue(?:sday)?\b|wed(?:nesday)?\b|thu(?:rsday)?\b|fri(?:day)?\b|"
+    r"sat(?:urday)?\b|sun(?:day)?\b)(?:<@!?\d+>|[a-z])",
+    re.IGNORECASE,
+)
 _UPCOMING_SCHEDULE_RE = re.compile(
     r"\b(?:what(?:'s|’s| is)\s+left|runs?\s+left|remaining\s+runs?|"
     r"upcoming\s+runs?|next\s+runs?)\b",
@@ -340,7 +348,7 @@ _UPCOMING_SCHEDULE_RE = re.compile(
 
 def _schedule_defaults(
     text: str, bot_user_id: str | None, self_role_id: str | None
-) -> tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool]:
     """Return trusted schedule-scope defaults for a complete question."""
     cleaned = text or ""
     if bot_user_id:
@@ -352,12 +360,14 @@ def _schedule_defaults(
     whole_group = re.search(r"\b(?:whole group|everyone)\b", cleaned, re.I)
     complete_question = _SCHEDULE_QUESTION_RE.fullmatch(cleaned) is not None
     explicit_channel = _CHANNEL_QUALIFIER_RE.search(cleaned) is not None
-    explicit_person = _PERSON_QUALIFIER_RE.search(cleaned) is not None
-    force_all = bool(all_channels or whole_group) or (complete_question and not explicit_channel)
-    force_group = _BARE_SCHEDULE_RE.fullmatch(cleaned) is not None or (
-        bool(whole_group) and not explicit_person
+    explicit_person = (
+        _PERSON_QUALIFIER_RE.search(cleaned) is not None
+        or _NAMED_PERSON_QUALIFIER_RE.search(cleaned) is not None
     )
-    return force_all, force_group, _UPCOMING_SCHEDULE_RE.search(cleaned) is not None
+    force_all = bool(all_channels or whole_group) or (complete_question and not explicit_channel)
+    force_channel = complete_question and explicit_channel
+    force_group = (complete_question or bool(whole_group)) and not explicit_person
+    return force_all, force_channel, force_group, _UPCOMING_SCHEDULE_RE.search(cleaned) is not None
 
 
 #: A write claim that must never survive a refusal: the model said a card went
@@ -481,49 +491,76 @@ def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) ->
         return schedule
 
     run_ids = set(_SCHEDULE_RUN_ID_RE.findall(schedule))
-    lowered_ids = {rid.lower() for rid in run_ids}
     lines = reply.splitlines()
 
-    def is_row(index: int) -> bool:
-        line = lines[index]
-        if run_ids.intersection(_SCHEDULE_RUN_ID_RE.findall(line)):
-            return True
+    def has_known_id(line: str) -> bool:
         lowered = line.lower()
-        return any(rid in lowered for rid in lowered_ids)
-
-    row_indexes = [index for index in range(len(lines)) if is_row(index)]
-    if row_indexes:
-        start = row_indexes[0]
-        if start and _SCHEDULE_PRIMARY_LINE_RE.match(lines[start - 1]):
-            start -= 1
-            heading = start - 1
-            while heading >= 0 and not lines[heading].strip():
-                heading -= 1
-            if heading >= 0 and _SCHEDULE_HEADING_RE.search(lines[heading]):
-                start = heading
-        else:
-            heading = start - 1
-            while heading >= 0 and not lines[heading].strip():
-                heading -= 1
-            if heading >= 0 and _SCHEDULE_HEADING_RE.search(lines[heading]):
-                start = heading
-        before = lines[:start]
-        while before and not before[-1].strip():
-            before.pop()
-        # A canonical record starts with its id and owns the following detail line.
-        end = min(row_indexes[-1] + 2, len(lines))
-        schedule_lines = schedule.splitlines()
-        canonical_last_id = max(
-            index
-            for index, line in enumerate(schedule_lines)
-            if _SCHEDULE_RECORD_ID_RE.search(line)
+        return any(
+            re.search(rf"(?<![0-9a-f]){rid.lower()}(?![0-9a-f])", lowered) for rid in run_ids
         )
-        footer = schedule_lines[canonical_last_id + 2 :]
-        if footer and lines[end : end + len(footer)] == footer:
-            end += len(footer)
-        after = lines[end:]
-        parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
-        return "\n\n".join(part for part in parts if part)
+
+    def has_schedule_facts(line: str) -> bool:
+        return bool(
+            _TIME_RE.search(line) or _TALLY_RE.search(line) or _CHANNEL_DUMP_RE.search(line)
+        )
+
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if (
+            has_known_id(line)
+            and _SCHEDULE_RUN_LINE_RE.match(line)
+            and "**" in line
+            and index + 1 < len(lines)
+            and has_schedule_facts(lines[index + 1])
+        ):
+            spans.append((index, index + 2))
+            index += 2
+        elif (
+            _SCHEDULE_PRIMARY_LINE_RE.match(line)
+            and index + 1 < len(lines)
+            and has_known_id(lines[index + 1])
+            and has_schedule_facts(lines[index + 1])
+        ):
+            spans.append((index, index + 2))
+            index += 2
+        elif has_known_id(line) and has_schedule_facts(line):
+            spans.append((index, index + 1))
+            index += 1
+        else:
+            index += 1
+
+    if spans:
+        blocks: list[list[int]] = []
+        for start, end in spans:
+            if blocks and not any(lines[item].strip() for item in range(blocks[-1][1], start)):
+                blocks[-1][1] = end
+            else:
+                blocks.append([start, end])
+        for block in blocks:
+            heading = block[0] - 1
+            while heading >= 0 and not lines[heading].strip():
+                heading -= 1
+            if heading >= 0 and _SCHEDULE_HEADING_RE.search(lines[heading]):
+                block[0] = heading
+            marker = block[1]
+            while marker < len(lines) and not lines[marker].strip():
+                marker += 1
+            if marker < len(lines) and (
+                _SCHEDULE_OMISSION_RE.match(lines[marker])
+                or _SCHEDULE_FOOTER_RE.match(lines[marker])
+            ):
+                block[1] = marker + 1
+        rebuilt: list[str] = []
+        cursor = 0
+        for number, (start, end) in enumerate(blocks):
+            rebuilt.extend(lines[cursor:start])
+            if number == 0:
+                rebuilt.extend(schedule.splitlines())
+            cursor = end
+        rebuilt.extend(lines[cursor:])
+        return "\n".join(rebuilt).strip()
 
     def is_hint(line: str) -> bool:
         return bool(
@@ -540,7 +577,7 @@ def _ground_schedule_reply(reply: str, outcomes: Sequence[tools.ToolOutcome]) ->
         after = lines[hint_indexes[-1] + 1 :]
         parts = ["\n".join(before).strip(), schedule.strip(), "\n".join(after).strip()]
         return "\n\n".join(part for part in parts if part)
-    return reply
+    return schedule
 
 
 def _canonical_schedule_output(outcomes: Sequence[tools.ToolOutcome]) -> str | None:
@@ -611,7 +648,6 @@ class ChatPilot:
         self._persona_runtime = self._load_configured_persona_runtime()
         self._identity_revision = 0
 
-    # -- wiring ------------------------------------------------------------
     def client(self) -> Any:
         if self._client is None:
             self._client = _client(self.settings)
@@ -817,7 +853,6 @@ class ChatPilot:
         """Return sorted channels with an answer in flight."""
         return sorted(self._busy)
 
-    # -- intake ------------------------------------------------------------
     async def offer(self, message: Any) -> Handling:
         """Handle one guild message after evaluating the gate exactly once."""
         bot_user_id = getattr(getattr(self.bot, "user", None), "id", None)
@@ -1043,8 +1078,8 @@ class ChatPilot:
         identity_revision = self._identity_revision
         author_id = str(message.author.id)
         text = (message.content or "").strip()
-        force_all_channels, force_group_schedule, upcoming_only = _schedule_defaults(
-            text, bot_user_id, self_role_id
+        force_all_channels, force_channel_scope, force_group_schedule, upcoming_only = (
+            _schedule_defaults(text, bot_user_id, self_role_id)
         )
         context = tools.ToolContext(
             bot=self.bot,
@@ -1054,6 +1089,7 @@ class ChatPilot:
             bot_user_id=bot_user_id,
             self_role_id=self_role_id,
             force_all_channels=force_all_channels,
+            force_channel_scope=force_channel_scope,
             force_group_schedule=force_group_schedule,
             upcoming_only=upcoming_only,
             is_admin=is_admin,
@@ -1154,7 +1190,6 @@ class ChatPilot:
         except Exception:  # noqa: BLE001 - analytics must never cost an answer
             log.exception("chat: could not record the interaction")
 
-    # -- rejections --------------------------------------------------------
     async def on_rejection(
         self,
         amendments: Sequence[dict],
@@ -1298,7 +1333,6 @@ class ChatPilot:
             log.exception("chat: could not post the rejection follow-up")
             return None
 
-    # -- context assembly --------------------------------------------------
     def _speaker(self, user_id: str, text: str) -> str:
         """Render roster-derived speaker identity and defused member text."""
         from ..api import service
@@ -1332,7 +1366,6 @@ class ChatPilot:
         for message_id in [mid for mid, a in self._anchors.items() if a.channel_id == key]:
             del self._anchors[message_id]
 
-    # -- the current focus -------------------------------------------------
     def note_card(self, channel_id: str, amendment_id: str) -> None:
         """Record the most recently posted card for a channel."""
         summary = self._card_summary(amendment_id)
@@ -1367,7 +1400,6 @@ class ChatPilot:
             return ""
         return entry.card
 
-    # -- re-anchoring a reply ----------------------------------------------
     def anchor(
         self, message_id: str | None, channel_id: str, question: ChatTurn, answer: ChatTurn
     ) -> None:
@@ -1487,7 +1519,6 @@ class ChatPilot:
             rendered.pop(0)
         return [{"role": "system", "content": system}, *rendered]
 
-    # -- the model ---------------------------------------------------------
     async def generate(
         self,
         conversation: list[dict[str, str]],
@@ -1847,7 +1878,6 @@ class ChatPilot:
             return "\n\n".join(parts)
         return text[:MAX_MEMBER_REPLY].strip()
 
-    # -- discord -----------------------------------------------------------
     async def _post(self, message: Any, content: str) -> Any:
         try:
             return await self.bot.post_plain(

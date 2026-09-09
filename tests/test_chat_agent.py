@@ -43,6 +43,7 @@ from .chat_support import (
     says,
     wants,
 )
+from .fake_bot import OTHER_CHANNEL
 
 pytestmark = pytest.mark.anyio
 
@@ -70,7 +71,7 @@ def pilot(bot, *responses) -> ChatPilot:
     ],
 )
 def test_schedule_relevance_is_derived_from_the_original_message(text, upcoming):
-    assert _schedule_defaults(text, None, None)[2] is upcoming
+    assert _schedule_defaults(text, None, None)[3] is upcoming
 
 
 def replies(bot):
@@ -469,7 +470,9 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
         wants("get_schedule", week="this"),
         says("HMaleficStar and HFA on Monday, Kalos on Tuesday."),
     )
-    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+    result = (
+        await agent.offer(message(chat_bot, f"<@{chat_bot.user.id}> what's on this week?"))
+    ).answered
 
     assert result.tool_calls == ["get_schedule"]
     assert result.rounds == 2
@@ -478,6 +481,55 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     second_prompt = agent._client.conversation(1)
     assert second_prompt[-1]["role"] == "tool"
     assert "Hard MaleficStar + Hard FA" in second_prompt[-1]["content"]
+
+
+async def test_bare_week_question_ignores_a_model_supplied_participant(chat_bot, chat_seeded):
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this", participant="Priya"),
+        says("The schedule is listed."),
+    )
+
+    result = (
+        await agent.offer(message(chat_bot, f"<@{chat_bot.user.id}> what's on this week?"))
+    ).answered
+
+    assert result is not None
+    assert short_id(chat_seeded["star"]) in result.outcomes[0].output
+    assert short_id(chat_seeded["kalos"]) in result.outcomes[0].output
+    assert "Priya's" not in result.outcomes[0].output
+
+
+async def test_explicit_channel_question_ignores_a_model_supplied_all_scope(chat_bot, chat_seeded):
+    local = chat_bot.repo.create_run(
+        chat_seeded["week_start"],
+        ["HCarling"],
+        chat_seeded["week_start"] + timedelta(days=4, hours=22),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this", scope="all"),
+        says("The schedule is listed."),
+    )
+
+    result = (
+        await agent.offer(
+            message(
+                chat_bot,
+                f"<@{chat_bot.user.id}> what's on this week in this channel?",
+            )
+        )
+    ).answered
+
+    assert result is not None
+    assert short_id(local) in result.outcomes[0].output
+    assert short_id(chat_seeded["star"]) not in result.outcomes[0].output
+    assert short_id(chat_seeded["kalos"]) not in result.outcomes[0].output
+    assert f"<#{OTHER_CHANNEL}>" not in result.outcomes[0].output
 
 
 async def test_a_clear_strategy_question_prefetches_canonical_knowledge(chat_bot, chat_seeded):
@@ -880,6 +932,45 @@ async def test_schedule_grounding_happens_before_long_model_commentary_is_bounde
     assert "commentary" not in result.reply
 
 
+async def test_schedule_grounding_replaces_generic_upcoming_prose_everywhere(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    now = week + timedelta(days=4, hours=22)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    past_ids = [chat_seeded["star"]]
+    for minute in range(11):
+        past_ids.append(
+            chat_bot.repo.create_run(
+                week,
+                ["HCarling"],
+                week + timedelta(days=1, hours=20, minutes=minute),
+                ["1002"],
+                "done",
+                "amend",
+                channel_id=CHAT_CHANNEL,
+            )
+        )
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this_boss"),
+        says("There is one run left."),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot what's left for this boss week?"))).answered
+
+    assert result is not None
+    canonical = result.outcomes[0].output
+    assert result.outcomes[0].arguments == {"week": "this_boss"}
+    assert result.reply == canonical
+    assert short_id(chat_seeded["kalos"]) in result.reply
+    assert all(short_id(run_id) not in result.reply for run_id in past_ids)
+    assert len(result.reply) <= 1200
+    assert replies(chat_bot)[0].content == canonical
+    assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == canonical
+    assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == canonical
+
+
 def test_schedule_grounding_keeps_a_verbatim_two_line_canonical_reply():
     canonical = (
         "**1 run left this week · All channels**\n\n"
@@ -908,6 +999,60 @@ def test_schedule_grounding_replaces_bulleted_two_line_records_with_the_canonica
     outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
 
     assert _ground_schedule_reply(bulleted, [outcome]) == canonical
+
+
+def test_schedule_grounding_removes_a_stale_omission_marker():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes` · <#1520976698743717979>"
+    )
+    reply = canonical + "\n\n*(and 10 more)*"
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    assert _ground_schedule_reply(reply, [outcome]) == canonical
+
+
+def test_schedule_grounding_preserves_id_bearing_commentary_around_records():
+    canonical = (
+        "**1 run this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    reply = (
+        "I saved 9004eab0 for later.\n\n"
+        "`[9004eab0]` **Wrong Boss**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "9004eab0 is still the reference for the card."
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    grounded = _ground_schedule_reply(reply, [outcome])
+
+    assert grounded == (
+        "I saved 9004eab0 for later.\n\n"
+        f"{canonical}\n\n9004eab0 is still the reference for the card."
+    )
+
+
+def test_schedule_grounding_preserves_intervening_id_commentary_between_record_blocks():
+    canonical = (
+        "**2 runs this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "`[9004eab1]` **Extreme Kalos**\n"
+        "*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    reply = (
+        "`[9004eab0]` **Wrong Boss**\n*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "Keep 9004eab0 handy for the proposal card.\n\n"
+        "`[9004eab1]` **Wrong Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    grounded = _ground_schedule_reply(reply, [outcome])
+
+    assert grounded == f"{canonical}\n\nKeep 9004eab0 handy for the proposal card."
 
 
 def test_tidy_drops_near_budget_markdown_commentary_without_splitting_schedule():

@@ -217,11 +217,11 @@ def resolve_fixed(bot: Any, query: str) -> dict:
     if not matches:
         raise ToolError(f"No weekly timing matches `{text}`.")
     if len(matches) > 1:
-        listed = "; ".join(_fixed_line(bot, fixed) for fixed in matches[:MAX_RUNS])
+        listed = "\n".join(_fixed_line(bot, fixed) for fixed in matches[:MAX_RUNS])
         raise ToolError(
             f"`{text}` matches more than one weekly timing. Ask which one they mean -- name "
             "the boss and the night each one is on, and do not pick one yourself. Their "
             "answer comes back as a normal message and you can try again then, "
-            f"with the short id in brackets if that is clearer: {listed}"
+            f"with the short id in brackets if that is clearer:\n{listed}"
         )
     return matches[0]

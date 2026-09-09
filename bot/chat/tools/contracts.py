@@ -86,6 +86,8 @@ class ToolContext:
     #: Kept separate because "my runs across all channels" is global in one
     #: dimension and explicitly personal in the other.
     force_all_channels: bool = False
+    #: Explicit channel wording is a trusted constraint, not a model preference.
+    force_channel_scope: bool = False
     force_group_schedule: bool = False
     #: Trusted relevance intent derived from the original Discord message.
     upcoming_only: bool = False
