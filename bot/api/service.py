@@ -108,11 +108,6 @@ COUNT_KEYS = ("chat_pilot_rate_count", "chat_pilot_global_rate_count")
 WINDOW_KEYS = ("chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s")
 
 
-# ---------------------------------------------------------------------------
-# weeks and ids
-# ---------------------------------------------------------------------------
-
-
 def week_for(bot: BossBot, which: str = "this") -> datetime:
     """``"this"`` / ``"next"`` -> that boss week's start instant."""
     which = (which or "this").lower()
@@ -166,11 +161,6 @@ def load_extraction(bot: BossBot, extraction_id: str) -> dict:
     if extraction is None:  # pragma: no cover
         raise NotFound(f"no extraction `{extraction_id}`")
     return extraction
-
-
-# ---------------------------------------------------------------------------
-# naming things
-# ---------------------------------------------------------------------------
 
 
 def member_name(bot: BossBot, user_id: int | str) -> str:
@@ -286,11 +276,6 @@ def channel_is_watched(bot: BossBot, channel_id: int | str) -> bool:
     if channel is not None:
         return bot.is_watched(channel)
     return cid in bot.settings.chat_channel_id_list
-
-
-# ---------------------------------------------------------------------------
-# views: the JSON shapes both `routes_api` and the templates render
-# ---------------------------------------------------------------------------
 
 
 def monogram(name: str) -> dict:
@@ -755,9 +740,7 @@ def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
     return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
 
 
-# -- table listings ----------------------------------------------------------
 # Logs search in SQL; rendered rows search here for derived names.
-
 #: Rows per log page.
 PAGE_SIZE = 20
 
@@ -928,11 +911,6 @@ def reminder_view(bot: BossBot, reminder: dict, run: dict | None) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# schedule
-# ---------------------------------------------------------------------------
-
-
 def schedule(
     bot: BossBot,
     week: str = "this",
@@ -1001,11 +979,6 @@ def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
             }
         )
     return days
-
-
-# ---------------------------------------------------------------------------
-# the week, as a board
-# ---------------------------------------------------------------------------
 
 
 #: Grid width for an empty day.
@@ -1098,11 +1071,6 @@ def week_now(bot: BossBot, runs: Sequence[dict]) -> dict:
         "model_busy": model["busy"],
         "model_holder": model["holder"],
     }
-
-
-# ---------------------------------------------------------------------------
-# fixed runs
-# ---------------------------------------------------------------------------
 
 
 def validate_bosses(bot: BossBot, text: str) -> list[str]:
@@ -1291,11 +1259,6 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
         bot, formatting.fixed_notice(fixed, "removed", who), who.mentioned, fixed["channel_id"]
     )
     return {"id": fixed["id"], "short_id": short_id(fixed["id"]), "cancelled_runs": cancelled}
-
-
-# ---------------------------------------------------------------------------
-# run mutations
-# ---------------------------------------------------------------------------
 
 
 #: Reject dateparser mistakes such as reading ``2300`` as a year.
@@ -1754,11 +1717,6 @@ async def _announce(
     )
 
 
-# ---------------------------------------------------------------------------
-# the inbox: approving and rejecting what the extractor proposed
-# ---------------------------------------------------------------------------
-
-
 def pending(bot: BossBot, channel_id: int | str | None = None) -> list[dict]:
     return [
         amendment_view(bot, a)
@@ -1840,11 +1798,6 @@ async def reject_amendment(bot: BossBot, amendment_id: str) -> dict:
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_REJECTED
     )
     return {"id": amendment["id"], "short_id": short_id(amendment["id"]), "status": "rejected"}
-
-
-# ---------------------------------------------------------------------------
-# members, reminders, config
-# ---------------------------------------------------------------------------
 
 
 def _run_counts(bot: BossBot) -> dict[str, int]:
@@ -2521,11 +2474,6 @@ def _seconds(value: Any, label: str) -> float:
     if parsed <= 0:
         raise BadRequest(f"{label} must be more than zero seconds")
     return parsed
-
-
-# ---------------------------------------------------------------------------
-# things that talk to Discord or the model
-# ---------------------------------------------------------------------------
 
 
 async def post_digest(

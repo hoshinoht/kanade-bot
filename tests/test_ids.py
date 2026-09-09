@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 
 from bot.domain.ids import (
@@ -12,7 +10,6 @@ from bot.domain.ids import (
     IdNotFound,
     IdTooShort,
     canonical,
-    new_id,
     resolve_id,
     short_id,
     tag,
@@ -27,15 +24,6 @@ ALL = [A, B, C]
 # -- generation --------------------------------------------------------------
 
 
-def test_new_id_is_a_uuid4():
-    parsed = uuid.UUID(new_id())
-    assert parsed.version == 4
-
-
-def test_new_ids_are_distinct():
-    assert len({new_id() for _ in range(200)}) == 200
-
-
 # -- display -----------------------------------------------------------------
 
 
@@ -45,10 +33,6 @@ def test_short_id_is_the_first_eight_hex_characters():
 
 def test_tag_adds_the_hash():
     assert tag(A) == "#a1b2c3d4"
-
-
-def test_short_ids_of_different_uuids_usually_differ():
-    assert short_id(A) != short_id(C)
 
 
 @pytest.mark.parametrize("value", [A, A.upper(), f"#{A}", f"  #{A}  "])

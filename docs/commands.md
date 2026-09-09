@@ -1,8 +1,5 @@
 # Commands
 
-The slash commands, how ids and boss tokens work, and the `/debug` group
-for testing the whole flow on demand.
-
 ```
 /fixed add bosses:hstar, hfa day:Mon time:21:30 member1:@Alvin member2:@Priya
                                 # run this in your party's channel - that becomes

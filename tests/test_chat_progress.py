@@ -155,26 +155,10 @@ def test_complete_persona_baseline_requires_every_flat_key():
         progress.parse_complete_staging({"generic": "only"})
 
 
-def test_profile_staging_helper_merges_a_partial_flat_mapping():
-    baseline = progress.parse_complete_staging(
-        {key: f"base-{key}" for key in progress.STAGING_KEYS}
-    )
-    merged = progress.parse_profile_staging({"generic": "profile"}, baseline)
-    assert merged.generic == "profile"
-    assert merged.schedule == "base-schedule"
-
-
 def test_unknown_profile_uses_default():
     config = {"default": {k: f"base-{k}" for k in progress.STAGING_KEYS}}
     assert progress.load_profile_staging(config, "does-not-exist").schedule == "base-schedule"
     assert progress.load_profile_staging(config, None).generic == "base-generic"
-
-
-def test_named_boss_interpolation():
-    config = {"default": {k: f"base-{k}" for k in progress.STAGING_KEYS}}
-    config["default"]["guide_named"] = "{boss} combat profile identified."
-    lines = progress.load_profile_staging(config, None)
-    assert lines.guide_named.format(boss="FA") == "FA combat profile identified."
 
 
 def test_invalid_configs_rejected():

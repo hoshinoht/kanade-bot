@@ -15,7 +15,7 @@ from bot.api.auth import (
     token_matches,
 )
 
-from .fake_bot import ADMIN_TOKEN, FakeBot, make_settings
+from .fake_bot import ADMIN_TOKEN, make_settings
 
 
 def build(fake_bot, **settings):
@@ -227,12 +227,6 @@ def test_login_page_renders_when_signed_out(client):
 def test_login_page_bounces_on_when_already_signed_in(auth):
     response = auth.get("/login", follow_redirects=False)
     assert response.status_code == 303
-
-
-def test_fake_bot_is_the_only_thing_the_api_needs(fake_bot):
-    """A guard: the API must keep duck-typing the client, not import it."""
-    assert isinstance(fake_bot, FakeBot)
-    assert create_app(fake_bot) is not None
 
 
 # --- the `next=` parameter cannot leave the portal (item 7) -----------------

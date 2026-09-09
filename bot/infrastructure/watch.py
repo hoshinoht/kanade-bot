@@ -43,7 +43,6 @@ def is_watched(channel: Any, channel_ids: Collection[int], category_ids: Collect
         return False
     if _matches(channel, channel_ids, category_ids):
         return True
-    # discord.Thread carries the text channel it lives in as `.parent`.
     parent = getattr(channel, "parent", None)
     return parent is not None and _matches(parent, channel_ids, category_ids)
 

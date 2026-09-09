@@ -71,11 +71,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-# ---------------------------------------------------------------------------
-# reading the export
-# ---------------------------------------------------------------------------
-
-
 def read_jsonl(path: Path) -> list[dict]:
     rows = []
     with path.open(encoding="utf-8") as handle:
@@ -129,11 +124,6 @@ def roster_from(rows: list[dict]) -> list[dict]:
         {"user_id": uid, "display_name": name, "nickname": None, "aliases": [], "has_role": True}
         for uid, name in seen.items()
     ]
-
-
-# ---------------------------------------------------------------------------
-# the run
-# ---------------------------------------------------------------------------
 
 
 async def run(args: argparse.Namespace, settings: Settings, table: BossTable) -> int:

@@ -48,7 +48,6 @@ RESCAN_TIMEOUT = httpx.Timeout(10.0, read=900.0)
 console = Console()
 err = Console(stderr=True)
 
-#: Run status -> how it reads in a terminal.
 STATUS_STYLE = {
     "planned": "yellow",
     "confirmed": "green",
@@ -81,11 +80,6 @@ def os_user() -> str:
         return getpass.getuser()[:64]
     except Exception:  # noqa: BLE001 - never fail a command over a log label
         return "unknown"
-
-
-# ---------------------------------------------------------------------------
-# configuration
-# ---------------------------------------------------------------------------
 
 
 def find_env(start: Path | None = None) -> Path | None:
@@ -316,11 +310,6 @@ def api() -> Api:
     return Api()
 
 
-# ---------------------------------------------------------------------------
-# rendering
-# ---------------------------------------------------------------------------
-
-
 def status_text(status: str, label: str | None = None) -> Text:
     return Text(label or status, style=STATUS_STYLE.get(status, ""))
 
@@ -372,10 +361,6 @@ def fail(message: str) -> None:
     err.print(f"[red]✗[/red] {message}")
     raise typer.Exit(code=1)
 
-
-# ---------------------------------------------------------------------------
-# the app
-# ---------------------------------------------------------------------------
 
 app = typer.Typer(
     help="Control the boss-scheduler bot over its local HTTP API.",
@@ -883,7 +868,6 @@ def guide(
 
     posted = 0
     for content in messages:
-        # Detect the bosses placeholder and replace with embeds.
         if "bosses: true" in content:
             header = content.replace("bosses: true", "").strip()
             if boss_entries:
@@ -915,7 +899,6 @@ def guide(
                     )
                     time.sleep(1)
 
-            # Footer as its own message.
             api().post(
                 "/api/say",
                 {"channel_id": channel, "content": footer_text},
@@ -1219,9 +1202,6 @@ def export(
     console.print(f"[green]✓[/green] {count} message(s) → {out}")
 
 
-# --- bossctl fixed ----------------------------------------------------------
-
-
 @fixed_app.command("list")
 def fixed_list(user: str | None = typer.Option(None, "--user", help="Only this member's.")) -> None:
     """The weekly baseline timings."""
@@ -1314,9 +1294,6 @@ def fixed_rm(fixed_id: str = typer.Argument(help="Timing id, or any unique prefi
     )
 
 
-# --- bossctl config ---------------------------------------------------------
-
-
 @config_app.command("get")
 def config_get(key: str | None = typer.Argument(None, help="One setting, or all of them.")) -> None:
     """Show the runtime settings (and the read-only deployment ones)."""
@@ -1369,11 +1346,6 @@ def config_set(
         parsed = value
     values = api().request("PUT", "/api/config", json={key: parsed})
     console.print(f"[green]✓[/green] {key} = {values.get(key)}")
-
-
-# ---------------------------------------------------------------------------
-# entry point
-# ---------------------------------------------------------------------------
 
 
 def main() -> int:

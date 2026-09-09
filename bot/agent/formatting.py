@@ -559,10 +559,6 @@ def fixed_run_line(fixed: dict, table: object | None = None) -> str:
     return line
 
 
-# ---------------------------------------------------------------------------
-# extractor proposal cards (DESIGN.md §2.3, §2b.3)
-# ---------------------------------------------------------------------------
-
 COLOUR_PROPOSAL = 0xEB459E  # fuchsia
 COLOUR_SUGGESTION = 0xFAA61A  # orange -- something is still unanswered
 COLOUR_FIXED = 0x9B59B6  # purple -- a recurring timing
@@ -838,10 +834,6 @@ def applied_notice(display_name: str) -> str:
 def rejected_notice(display_name: str) -> str:
     return f"❌ rejected by {display_name}"
 
-
-# ---------------------------------------------------------------------------
-# weekly digest (DESIGN.md §3, posted at reset; the portal can post it on demand)
-# ---------------------------------------------------------------------------
 
 COLOUR_DIGEST = 0x5865F2
 

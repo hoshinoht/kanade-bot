@@ -249,11 +249,6 @@ class Context:
     on_fixed_created: Callable[[str], None] | None = None
 
 
-# ---------------------------------------------------------------------------
-# one function per kind
-# ---------------------------------------------------------------------------
-
-
 def _move(repo: Repo, amendment: dict, run: dict | None, result: CommitResult, ctx: Context):
     if run is None:
         return "that run has gone"

@@ -1,10 +1,3 @@
-/* ── the theme picker ───────────────────────────────────────────────────────
- *
- * Five radio buttons wearing their own palette: the ground each one paints the
- * desktop, and the accent it puts on a link. A real radio inside a real form,
- * so choosing one is a POST that sets a cookie -- there is nothing here that
- * needs a script. */
-
 .swatches {
   display: flex;
   flex-wrap: wrap;

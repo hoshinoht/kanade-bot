@@ -31,4 +31,5 @@
 
 <!-- recall:lessons:begin -->
 - Keep chatbot schedule language distinct from storage boundaries: unqualified `this`/`next week` is calendar Monday–Sunday, explicit `boss week` uses the configured reset interval, and bare weekdays resolve forward; calendar/date reads may therefore merge multiple boss-week buckets while API/CLI/write paths retain boss-week semantics.
+- Keep seeded chatbot tests on one fixture-scoped aware clock: pass the same instant into week materialization and patch each imported clock seam used by tools, commits, API service, and test helpers so reset-day rollovers cannot change the suite.
 <!-- recall:lessons:end -->

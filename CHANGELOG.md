@@ -2,6 +2,15 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 4.8.1
+
+**Changed**
+
+- Removed unused helpers and logger scaffolding, stale generated comments, and
+  repeated documentation introductions without changing runtime behavior.
+- Pruned redundant implementation-detail tests and made shared chatbot fixtures
+  deterministic across boss-week reset boundaries.
+
 ## 4.8.0
 
 **Added**

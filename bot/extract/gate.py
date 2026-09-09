@@ -33,10 +33,6 @@ from typing import Any
 #: Signals that are enough, on their own, to run an extraction.
 STRONG_SIGNALS = frozenset({"boss", "time", "day", "verb", "here"})
 
-# ---------------------------------------------------------------------------
-# bosses
-# ---------------------------------------------------------------------------
-
 #: Difficulty spelled out, as it turns up in chat: ``exkalos``, ``hardstar``.
 WORD_PREFIXES: dict[str, str] = {
     "easy": "e",
@@ -184,10 +180,6 @@ def canonical_bosses(hits: Collection[BossHit]) -> list[str]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# times
-# ---------------------------------------------------------------------------
-
 #: ``cc9``, ``cc 6``, ``ch3``, ``ch7`` -- MapleStory channel numbers, not times.
 #: Masked out before the time scan so "ch7 hstar" is a boss, never a 7 o'clock.
 _CHANNEL_REF_RE = re.compile(r"\b(?:cc|ch|c)\s?\d{1,2}\b", re.IGNORECASE)
@@ -255,10 +247,6 @@ def find_times(text: str) -> list[str]:
     spans.sort()
     return [text_ for _, _, text_ in spans]
 
-
-# ---------------------------------------------------------------------------
-# days, verbs, answers
-# ---------------------------------------------------------------------------
 
 DAY_WORDS: frozenset[str] = frozenset(
     {
@@ -346,11 +334,6 @@ def explicit_rsvp(text: str) -> str | None:
     if set(tokens) & _RSVP_YES:
         return "yes"
     return None
-
-
-# ---------------------------------------------------------------------------
-# the gate itself
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
