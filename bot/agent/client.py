@@ -23,7 +23,12 @@ from bot.chat import ChatPilot, persona_catalog
 from bot.domain.boss_knowledge import BossKnowledgeBase
 from bot.domain.bosses import BossTable
 from bot.domain.timeutil import to_iso, utcnow
-from bot.domain.weeks import current_week_start, next_week_start, parse_hhmm
+from bot.domain.weeks import (
+    current_week_start,
+    materialised_week_starts,
+    next_week_start,
+    parse_hhmm,
+)
 from bot.extract.commit import CommitResult, commit, expire_stale, may_commit, reject
 from bot.extract.pipeline import Pipeline
 from bot.infrastructure import audit, backup, identity
@@ -531,12 +536,11 @@ class BossBot(discord.Client):
 
     # -- materialisation --------------------------------------------------
     def materialise_weeks(self) -> None:
-        """Materialise the current and next boss week; safe to call repeatedly."""
+        """Materialise the current and next two boss weeks; safe to call repeatedly."""
         now = utcnow()
         ping_time, countdowns = self.ping_time, self.countdowns
-        for week in (
-            current_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now),
-            next_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now),
+        for week in materialised_week_starts(
+            self.tz, self.settings.reset_weekday, self.settings.reset_time, now
         ):
             created = materialise_week(self.repo, week, self.tz, ping_time, countdowns, now=now)
             if created:

@@ -28,20 +28,26 @@ def channel_reference(bot: Any, channel_id: Any) -> str | None:
 
 
 def run_line(bot: Any, run: dict, with_channel: bool = False) -> str:
-    """Render one compact schedule line."""
+    """Render one two-line schedule record for narrow Discord layouts."""
     local = run["datetime"].astimezone(bot.tz)
     rsvps = bot.repo.get_rsvps(run["id"])
     yes = sum(1 for uid in run["participants"] if rsvps.get(uid) == "yes")
     # Only on a guild-wide listing, and only when the bot can actually see the
     # channel. An unresolved `<#id>` would be worse than saying nothing.
     where = channel_reference(bot, run["channel_id"]) if with_channel else None
-    return (
-        f"`[{short_id(run['id'])}]` *{local.strftime('%a %d %b %H:%M')}* "
-        f"**{formatting.boss_labels(run['bosses'])}** "
-        f"(`{run['status']}`, `{yes}/{len(run['participants'])} yes`)"
-        + (f" · {where}" if where else "")
-        + (" — *already happened*" if is_over(run) else "")
+    primary = f"`[{short_id(run['id'])}]` **{formatting.boss_labels(run['bosses'])}**"
+    secondary = " · ".join(
+        part
+        for part in (
+            f"*{local.strftime('%a %d %b')} · {local.strftime('%H:%M')}*",
+            f"`{run['status']}`",
+            f"`{yes}/{len(run['participants'])} yes`",
+            where,
+            "*already happened*" if is_over(run) else None,
+        )
+        if part
     )
+    return f"{primary}\n{secondary}"
 
 
 def run_detail(bot: Any, run: dict) -> str:

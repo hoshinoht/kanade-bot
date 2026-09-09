@@ -56,7 +56,7 @@ async def test_channel_scope_from_the_other_channel_sees_the_other_run(chat_bot,
 
 
 async def test_channel_scope_says_it_is_channel_only(chat_bot, chat_seeded):
-    assert "in this channel only" in await schedule(chat_bot, WATCHED_CHANNEL, scope="channel")
+    assert "This channel" in await schedule(chat_bot, WATCHED_CHANNEL, scope="channel")
 
 
 async def test_a_thread_asks_on_behalf_of_its_parent_channel(chat_bot, chat_seeded):
@@ -114,7 +114,7 @@ async def test_all_scope_links_the_channel_each_run_lives_in(chat_bot, chat_seed
 
 
 async def test_all_scope_labels_itself_as_every_channel(chat_bot, chat_seeded):
-    assert "ALL channels" in await schedule(chat_bot, WATCHED_CHANNEL, scope="all")
+    assert "All channels" in await schedule(chat_bot, WATCHED_CHANNEL, scope="all")
 
 
 async def test_channel_scope_does_not_repeat_the_channel_on_every_line(chat_bot, chat_seeded):
@@ -156,7 +156,10 @@ async def test_the_description_steers_the_model(chat_bot):
     for phrase in ("'for me'", "'my runs'", "named member", "omit it"):
         assert phrase in participant["description"]
     day = properties["day"]
-    for phrase in ("'today'", "'tonight'", "'tomorrow'", "weekday"):
+    for phrase in ("'today'", "'tonight'", "'tomorrow'", "weekday", "next upcoming"):
         assert phrase in day["description"]
-    # `week` stays required; `scope` is optional and defaults to today's behaviour.
+    assert properties["week"]["enum"] == ["this", "next", "this_boss", "next_boss", "auto"]
+    for phrase in ("calendar Monday-Sunday", "explicitly says boss week", "bare weekday"):
+        assert phrase in properties["week"]["description"]
+    # `week` is required; the basis is a legacy optional qualifier for this/next.
     assert schema["function"]["parameters"]["required"] == ["week"]

@@ -17,6 +17,7 @@ from bot.agent import formatting
 from bot.agent.materialise import materialise_week
 from bot.chat import tools
 from bot.domain.ids import short_id
+from bot.domain.weeks import materialised_week_starts
 from bot.extract.commit import FIX_REMOVE, commit, may_commit
 
 from .chat_support import CHAT_CHANNEL
@@ -171,6 +172,29 @@ async def test_a_confirmed_card_removes_the_baseline_and_this_weeks_run(chat_bot
     assert chat_bot.repo.get_run(chat_seeded["star"])["status"] == "cancelled"
     # The other party's timing is untouched.
     assert chat_bot.repo.get_run(chat_seeded["kalos"])["status"] != "cancelled"
+
+
+async def test_a_confirmed_card_cancels_all_three_materialised_instances(
+    chat_bot, chat_seeded, monkeypatch
+):
+    from bot.domain.timeutil import utcnow
+    from bot.extract import commit as commit_mod
+
+    now = utcnow()
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    fixed = star_fixed(chat_bot)
+    for start in starts[1:]:
+        materialise_week(chat_bot.repo, start, TZ, PING_TIME, COUNTDOWNS, now=now)
+    monkeypatch.setattr(commit_mod, "utcnow", lambda: now)
+
+    await tools.dispatch(context(chat_bot), "propose_remove_fixed", {"query": "hstar"})
+    approve(chat_bot, proposals(chat_bot)[0])
+
+    assert [chat_bot.repo.run_for_fixed(fixed["id"], start)["status"] for start in starts] == [
+        "cancelled",
+        "cancelled",
+        "cancelled",
+    ]
 
 
 async def test_future_weeks_stop_materialising_it(chat_bot, chat_seeded):

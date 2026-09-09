@@ -2,7 +2,7 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## 4.7.0
+## 4.8.0
 
 **Added**
 
@@ -25,6 +25,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Chat schedule lookups now treat unqualified weeks as guild-local calendar
+  weeks, while explicit boss-week lookups retain reset-to-reset semantics.
+- Chat schedule replies now use bounded two-line records; trusted requests for
+  runs left, remaining, upcoming, or next exclude completed runs without giving
+  the model a filtering option.
 - Reply-profile overlays moved up to `config/personas/behaviours/` with
   staging overrides in `config/personas/behaviours/staging/`; the old
   `behaviours/profiles/` and `behaviour-plugins/` paths remain readable as

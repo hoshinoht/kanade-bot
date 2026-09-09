@@ -149,7 +149,7 @@ async def test_role_mention_schedule_for_me_today_does_not_ask_who(
     assert outcome.ok
     assert short_id(run_id) in outcome.output
     assert short_id(somebody_elses_run) not in outcome.output
-    assert "Your runs on" in outcome.output
+    assert "**Your 1 run" in outcome.output
     assert "Ask them who" not in outcome.output
 
 
@@ -203,7 +203,7 @@ async def test_bare_tomorrow_question_ignores_an_over_scoped_model_call(
     assert outcome.arguments["participant"] == "me"
     assert short_id(elsewhere) in outcome.output
     assert short_id(somebody_elses_run) in outcome.output
-    assert "ALL channels" in outcome.output
+    assert "All channels" in outcome.output
     assert short_id(elsewhere) in handling.answered.reply
     assert short_id(somebody_elses_run) in handling.answered.reply
     assert "<none>" not in handling.answered.reply
@@ -254,8 +254,8 @@ async def test_personal_all_channel_question_keeps_the_person_filter(
 
     assert short_id(mine) in outcome.output
     assert short_id(not_mine) not in outcome.output
-    assert "Your runs" in outcome.output
-    assert "all channels" in outcome.output
+    assert "**Your 1 run" in outcome.output
+    assert "All channels" in outcome.output
 
 
 @pytest.mark.parametrize(
@@ -307,8 +307,8 @@ async def test_named_member_remains_a_person_filter(
 
     assert short_id(priya) in outcome.output
     assert short_id(mine) not in outcome.output
-    assert "Priya's runs" in outcome.output
-    assert "all channels" in outcome.output
+    assert "**Priya's 1 run" in outcome.output
+    assert "All channels" in outcome.output
 
 
 async def test_explicit_channel_question_keeps_channel_scope_but_not_person_scope(
@@ -352,7 +352,7 @@ async def test_explicit_channel_question_keeps_channel_scope_but_not_person_scop
 
     assert short_id(local) in outcome.output
     assert short_id(elsewhere) not in outcome.output
-    assert "in this channel only" in outcome.output
+    assert "This channel" in outcome.output
     assert "Your runs" not in outcome.output
 
 

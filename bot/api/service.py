@@ -32,6 +32,7 @@ from bot.domain.timeutil import from_iso, local_naive, to_iso, utcnow
 from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
+    materialised_week_starts,
     next_week_start,
     parse_hhmm,
     parse_weekday,
@@ -1245,8 +1246,9 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
     if fixed is None or not changed:
         return
     reschedule = bool(changed & {"weekday", "time"})
-    for which in ("this", "next"):
-        ws = week_for(bot, which)
+    for ws in materialised_week_starts(
+        bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, utcnow()
+    ):
         run = bot.repo.run_for_fixed(fixed_id, ws)
         if run is None or run["status"] in ("done", "cancelled"):
             continue
@@ -1269,7 +1271,9 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
     cancelled = retire_fixed_run(
         bot.repo,
         fixed["id"],
-        [week_for(bot, which) for which in ("this", "next")],
+        materialised_week_starts(
+            bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, utcnow()
+        ),
         bot.tz,
         bot.ping_time,
         bot.countdowns,

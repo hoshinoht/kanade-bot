@@ -14,7 +14,7 @@ from datetime import timedelta
 
 import pytest
 
-from bot.chat import gate
+from bot.chat import gate, tools
 from bot.chat.agent import (
     FAILURE_REPLY,
     MAX_TOOL_ROUNDS,
@@ -22,6 +22,9 @@ from bot.chat.agent import (
     ChatPilot,
     ChatTurn,
     ContextBudgetError,
+    _ground_schedule_reply,
+    _member_facing,
+    _schedule_defaults,
     retry_note,
     unglue_first_bullet,
 )
@@ -51,6 +54,23 @@ def anyio_backend():
 
 def pilot(bot, *responses) -> ChatPilot:
     return ChatPilot(bot, client=FakeOllama(*responses))
+
+
+@pytest.mark.parametrize(
+    ("text", "upcoming"),
+    [
+        ("what's left for this week", True),
+        ("what’s left for this week", True),
+        ("runs left", True),
+        ("remaining run", True),
+        ("upcoming runs", True),
+        ("next run", True),
+        ("what's on this week", False),
+        ("what's on next week", False),
+    ],
+)
+def test_schedule_relevance_is_derived_from_the_original_message(text, upcoming):
+    assert _schedule_defaults(text, None, None)[2] is upcoming
 
 
 def replies(bot):
@@ -827,8 +847,80 @@ async def test_schedule_rows_are_regrounded_after_mispaired_backticks(chat_bot, 
     canonical = result.outcomes[0].output
     assert result.reply == f"Kanade's got it!\n\n{canonical}\n\nGood luck, everyone~"
     assert "\\`" not in result.reply
-    assert result.reply.count("\n`[") == 2
+    assert result.reply.count("`[") == 2
     assert replies(chat_bot)[0].content == result.reply
+
+
+async def test_schedule_grounding_happens_before_long_model_commentary_is_bounded(
+    chat_bot, chat_seeded
+):
+    canonical = await tools.dispatch(
+        tools.ToolContext(
+            bot=chat_bot,
+            author_id="1002",
+            channel_id=str(CHAT_CHANNEL),
+            message_id="950000000000000123",
+            bot_user_id=str(chat_bot.user.id),
+        ),
+        "get_schedule",
+        {"scope": "all", "week": "this"},
+    )
+    commentary = f"**{'commentary ' * 130}**"
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", scope="all", week="this"),
+        says(f"{commentary}\n\n{canonical}"),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+
+    assert result is not None
+    assert result.reply == result.outcomes[0].output
+    assert len(result.reply) <= 1200
+    assert "commentary" not in result.reply
+
+
+def test_schedule_grounding_keeps_a_verbatim_two_line_canonical_reply():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "<#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+    final = ChatPilot._tidy(
+        _member_facing(_ground_schedule_reply(canonical, [outcome])), protected=canonical
+    )
+
+    assert final == canonical
+
+
+def test_schedule_grounding_replaces_bulleted_two_line_records_with_the_canonical_block():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "<#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    bulleted = (
+        "**Stale schedule heading**\n\n"
+        "- **Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "- <#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    assert _ground_schedule_reply(bulleted, [outcome]) == canonical
+
+
+def test_tidy_drops_near_budget_markdown_commentary_without_splitting_schedule():
+    records = [
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        f"<#1520976698743717979> · 2/3 yes · planned · `[{index:08x}]`"
+        for index in range(11)
+    ]
+    schedule = "**11 runs this week · All channels**\n\n" + "\n\n".join(records)
+    reply = f"**{'intro ' * 20}**\n\n{schedule}\n\n*{'outro ' * 20}*"
+
+    assert len(schedule) <= 1200 < len(reply)
+    assert ChatPilot._tidy(reply, protected=schedule) == schedule
 
 
 async def test_schedule_paraphrase_with_bare_ids_is_regrounded(chat_bot, chat_seeded):
@@ -850,7 +942,7 @@ async def test_schedule_paraphrase_with_bare_ids_is_regrounded(chat_bot, chat_se
     canonical = result.outcomes[0].output
     assert result.reply == f"{opener}\n\n{canonical}\n\n{closer}"
     assert "run ID" not in result.reply
-    assert result.reply.count("\n`[") == 2
+    assert result.reply.count("`[") == 2
     assert replies(chat_bot)[0].content == result.reply
 
 
@@ -878,6 +970,8 @@ async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, c
 async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bot, chat_seeded):
     raw = (
         'Try `get_schedule(\n{"scope": "all"}\n)` or participant="Alvin Tan"; '
+        'week_basis="boss"; {"week_basis": "calendar"}; '
+        'week="this_boss"; week="next_boss"; week="auto"; '
         f"participant=<@1003>; participant=<@&1234>. `<none>` See <#{CHAT_CHANNEL}>."
     )
     agent = pilot(chat_bot, says(raw))
@@ -891,8 +985,13 @@ async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bo
     for internal in (
         "<none>",
         "participant=",
+        "week_basis=",
+        '"week_basis"',
         '"scope"',
         "get_schedule",
+        "this_boss",
+        "next_boss",
+        "auto",
         "<@1003>",
         "<@&1234>",
     ):
@@ -900,6 +999,15 @@ async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bo
         assert internal not in replies(chat_bot)[0].content
         assert internal not in chat_bot.repo.recent_chat_interactions()[0]["reply"]
     assert result.model_rounds[0]["content"] == raw
+
+
+def test_member_facing_rewrites_standalone_week_modes_only():
+    raw = "this_boss next_boss auto automatic automation auto_farm this_bossy <#123> <@123>"
+
+    assert _member_facing(raw) == (
+        "this boss week next boss week the relevant week automatic automation auto_farm "
+        "this_bossy <#123> <@123>"
+    )
 
 
 # ---------------------------------------------------------------------------

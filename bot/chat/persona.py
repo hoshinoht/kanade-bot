@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -412,13 +412,19 @@ def load_persona(path: str | Path | None, fallback: Path = EXAMPLE_PERSONA) -> s
 
 
 def clock_header(now: datetime, tz: ZoneInfo, week_start: datetime) -> str:
-    """Return current local time and boss-week context."""
+    """Return current local time plus calendar and boss-week context."""
     local = now.astimezone(tz)
     week_local = week_start.astimezone(tz)
+    calendar_start = local.date() - timedelta(days=local.weekday())
+    calendar_end = calendar_start + timedelta(days=6)
+    reset_end = week_local + timedelta(days=7)
     return (
         f"Right now it is {local.strftime('%A %d %B %Y, %H:%M')} ({tz.key}). "
-        f"The current boss week began {week_local.strftime('%A %d %B')} and runs until the "
-        "next reset. 'This week' means that week; 'next week' means the one after it."
+        f"The calendar week is {calendar_start.strftime('%A %d %B')} to "
+        f"{calendar_end.strftime('%A %d %B')}. The current boss week runs from "
+        f"{week_local.strftime('%A %d %B %H:%M')} to "
+        f"{reset_end.strftime('%A %d %B %H:%M')}. Unqualified 'this week' and "
+        "'next week' mean calendar weeks."
     )
 
 

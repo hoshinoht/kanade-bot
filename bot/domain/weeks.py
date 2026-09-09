@@ -138,6 +138,28 @@ def next_week_start(
     return week_end(current_week_start(tz, reset_weekday, reset_time, now), tz)
 
 
+def materialised_week_starts(
+    tz: ZoneInfo, reset_weekday: int, reset_time: time, now: datetime
+) -> tuple[datetime, datetime, datetime]:
+    """The current and next two boss-week starts from one captured clock."""
+    current = week_start(now, tz, reset_weekday, reset_time)
+    following = week_end(current, tz)
+    return current, following, week_end(following, tz)
+
+
+def calendar_week_start(dt: datetime, tz: ZoneInfo) -> datetime:
+    """Guild-local Monday midnight at or before ``dt``."""
+    if dt.tzinfo is None:
+        raise ValueError("calendar_week_start() needs an aware datetime")
+    local = dt.astimezone(tz)
+    return _localise(datetime.combine(local.date() - timedelta(days=local.weekday()), time()), tz)
+
+
+def calendar_week_end(start: datetime, tz: ZoneInfo) -> datetime:
+    """The exclusive Monday midnight ending the calendar week at ``start``."""
+    return _localise(start.astimezone(tz).replace(tzinfo=None) + timedelta(days=7), tz)
+
+
 def slot_in_week(ws: datetime, tz: ZoneInfo, weekday: int, at: time) -> datetime:
     """The instant inside the week ``ws`` matching ``weekday`` at ``at``.
 

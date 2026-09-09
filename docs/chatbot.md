@@ -62,6 +62,11 @@ itself — and neither is `propose_add`, which would leave a second weekly besid
 the first. Ask it "what's on in this channel?" and it filters to that channel;
 ask without that and it names which channel each run lives in.
 
+Schedule listings use compact two-line records with a run id, boss, local time,
+status and RSVP tally. Asking for runs "left", "remaining", "upcoming", or the
+next run excludes completed entries; ordinary "what's on" listings still include
+the full selected period.
+
 **It asks rather than guesses.** When a write is missing something — no time, a
 boss with no difficulty ("bellona" is three different fights), a name that could
 be two people — the tool refuses with the valid options and the bot asks one

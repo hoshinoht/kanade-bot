@@ -18,6 +18,7 @@ from bot.domain.timeutil import utcnow
 from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
+    materialised_week_starts,
     next_week_start,
     parse_hhmm,
     parse_weekday,
@@ -248,10 +249,8 @@ def _resolve(bot: BossBot, raw: str, candidates: list[str], noun: str) -> str:
 def _visible_runs(bot: BossBot, interaction: discord.Interaction) -> list[dict]:
     """Return actionable runs visible to the invoker."""
     runs: list[dict] = []
-    for which in ("this", "next"):
-        runs.extend(
-            bot.repo.list_runs(week_start=_week_for(bot, which), statuses=ACTIONABLE_STATUSES)
-        )
+    for bucket_start in _materialised_week_starts(bot):
+        runs.extend(bot.repo.list_runs(week_start=bucket_start, statuses=ACTIONABLE_STATUSES))
     if bot.is_admin(interaction.user):
         return runs
     mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
@@ -323,8 +322,8 @@ async def any_run_autocomplete(
     try:
         bot = _bot(interaction)
         runs: list[dict] = []
-        for which in ("this", "next"):
-            runs.extend(bot.repo.list_runs(week_start=_week_for(bot, which)))
+        for bucket_start in _materialised_week_starts(bot):
+            runs.extend(bot.repo.list_runs(week_start=bucket_start))
         if not bot.is_admin(interaction.user):
             mine = {r["id"] for r in bot.repo.list_runs(involving=interaction.user.id)}
             runs = [r for r in runs if r["id"] in mine]
@@ -361,6 +360,12 @@ def _week_for(bot: BossBot, which: str) -> datetime:
     if which == "next":
         return next_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now)
     return current_week_start(bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, now)
+
+
+def _materialised_week_starts(bot: BossBot) -> tuple[datetime, datetime, datetime]:
+    return materialised_week_starts(
+        bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, utcnow()
+    )
 
 
 def _owner_of(bot: BossBot, run: dict) -> str | None:
@@ -409,8 +414,7 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
     if fixed is None or not changed:
         return
     reschedule = bool(changed & {"weekday", "time"})
-    for which in ("this", "next"):
-        ws = _week_for(bot, which)
+    for ws in _materialised_week_starts(bot):
         run = bot.repo.run_for_fixed(fixed_id, ws)
         if run is None or run["status"] in ("done", "cancelled"):
             continue
@@ -684,8 +688,8 @@ class FixedGroup(app_commands.Group):
             )
             return
         cancelled = 0
-        for which in ("this", "next"):
-            run = bot.repo.run_for_fixed(id, _week_for(bot, which))
+        for bucket_start in _materialised_week_starts(bot):
+            run = bot.repo.run_for_fixed(id, bucket_start)
             if run is not None and run["status"] not in ("done", "cancelled"):
                 bot.repo.set_run_status(run["id"], "cancelled")
                 _sync_run_reminders(bot, run["id"])
