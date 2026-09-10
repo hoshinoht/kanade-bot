@@ -21,7 +21,7 @@ import pytest
 from bot.agent import formatting
 from bot.agent.materialise import materialise_week
 from bot.chat import tools
-from bot.domain.timeutil import utcnow
+from bot.domain import timeutil
 from bot.domain.weeks import WEEKDAY_NAMES, current_week_start, week_end, week_start
 from bot.extract.commit import commit, may_commit
 
@@ -52,7 +52,7 @@ def proposals(bot):
 def tomorrow(hhmm: str = "21:30") -> datetime:
     """Tomorrow at ``hhmm``, guild-local -- always ahead of now, never today."""
     hour, minute = (int(part) for part in hhmm.split(":"))
-    local = utcnow().astimezone(TZ) + timedelta(days=1)
+    local = timeutil.utcnow().astimezone(TZ) + timedelta(days=1)
     return local.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
@@ -62,7 +62,7 @@ def spoken(hhmm: str = "21:30") -> str:
 
 def materialise_both_weeks(bot, now: datetime | None = None) -> None:
     """What ``BossBot.materialise_weeks`` does, without the live client."""
-    now = now or utcnow()
+    now = now or timeutil.utcnow()
     this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, now)
     for ws in (this_week, week_end(this_week, TZ)):
         materialise_week(bot.repo, ws, TZ, PING_TIME, COUNTDOWNS, now=now)
@@ -284,7 +284,7 @@ def adoption_note(hhmm: str = "23:00") -> str:
     Tomorrow is next boss week whenever the reset falls in between, and the suite
     runs on every day of the week.
     """
-    this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
+    this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, timeutil.utcnow())
     return f"adopted {'this' if bellona_week(hhmm) == this_week else 'next'} week's run"
 
 

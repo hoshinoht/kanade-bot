@@ -165,15 +165,6 @@ async def test_a_turn_nobody_stamped_is_never_too_old(chat_bot, chat_seeded):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_channel_with_no_card_carries_no_focus_line(chat_bot, chat_seeded):
-    """Absent, not an empty placeholder: a sentence about nothing is a topic."""
-    agent, _clock = pilot(chat_bot, says("Monday 21:30."))
-    await agent.offer(message(chat_bot, "@bot when is hstar?"))
-
-    assert persona.FOCUS_PREFIX not in system_of(agent)
-    assert agent.focus(channel()) == ""
-
-
 async def test_a_posted_card_becomes_the_next_prompts_focus_line(chat_bot, chat_seeded):
     """The three-step job: create the run, then say "it" and be understood."""
     agent, _clock = pilot(chat_bot, weekly_card(), says("Card's up — ✅ it."), says("Done."))

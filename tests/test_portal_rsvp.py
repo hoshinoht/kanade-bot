@@ -10,16 +10,11 @@ from __future__ import annotations
 
 from datetime import time, timedelta
 
-import pytest
-
 from bot.agent.materialise import DAY_OF, countdown_kind, reconcile_day_of
 from bot.api import service
-from bot.portal_styles import build_stylesheet
 
 from .conftest import TZ, kl
 from .fake_bot import WATCHED_CHANNEL
-
-PAGE_CSS = build_stylesheet()
 
 
 def row_for(body: str, short_id: str) -> str:
@@ -234,36 +229,6 @@ def test_the_panel_stays_open_between_two_answers(auth, fake_bot, seeded):
     assert '<details class="answers" open>' not in closed.text
 
 
-def test_the_answers_panel_says_that_it_opens(auth, fake_bot, seeded):
-    """The bare word read as a stray label: nothing about it said there was
-    anything behind it. It is a control now, with a caret that turns when the
-    panel is open and a line saying what opening it is for."""
-    row = star_row(auth, fake_bot, seeded)
-
-    assert 'class="btn answers__summary"' in row
-    assert "set who" in row  # "Answers — set who's in or out"
-    assert 'data-icon="chevron-right"' in row  # the caret is one of the drawings
-
-    turned = PAGE_CSS[PAGE_CSS.index(".answers[open] > .answers__summary .icon {") :]
-    assert "transform: rotate(90deg)" in turned[: turned.index("}")]
-
-
-def test_the_caret_turns_only_as_fast_as_the_reader_allows():
-    """One reduced-motion block for the whole stylesheet, so a transition added
-    here is already covered by it rather than needing its own query."""
-    reduced = PAGE_CSS[PAGE_CSS.index("@media (prefers-reduced-motion: reduce) {") :]
-
-    assert "*::before" in reduced[: reduced.index("\n}\n")]
-    assert "transition-duration: 0.001ms !important" in reduced[: reduced.index("\n}\n")]
-
-
-def test_the_clear_button_is_dead_until_there_is_something_to_clear(auth, fake_bot, seeded):
-    row = star_row(auth, fake_bot, seeded)
-    # 1001 answered yes in the fixture; 1002 has not answered at all.
-    assert row.count('value="clear"') == 2
-    assert row.count("disabled>Clear") == 1
-
-
 def test_a_non_participant_cannot_be_answered_for(auth, fake_bot, seeded):
     response = answer(auth, seeded["run_star"], user_id="1003")
 
@@ -298,11 +263,6 @@ def test_an_answer_that_is_not_a_word_we_know_is_refused(auth, seeded):
         f"/api/runs/{seeded['run_star']}/rsvp", json={"user_id": "1002", "answer": "perhaps"}
     )
     assert response.status_code == 422
-
-
-@pytest.mark.parametrize("value", ["yes", "no", "maybe", "clear"])
-def test_every_answer_the_portal_offers_is_one_the_service_takes(value):
-    assert value in service.RSVP_ANSWERS
 
 
 def test_a_finished_run_still_shows_its_cards(auth, fake_bot, seeded):

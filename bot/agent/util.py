@@ -77,10 +77,6 @@ def mention(user_id: int | str) -> str:
     return f"<@{user_id}>"
 
 
-def mentions(user_ids: list[str]) -> str:
-    return " ".join(mention(uid) for uid in user_ids)
-
-
 def parse_mentions(text: str | None) -> list[str]:
     """Pull user ids out of a free-text field of ``@mentions``.
 

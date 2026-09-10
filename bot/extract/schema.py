@@ -66,7 +66,6 @@ class Amendment(BaseModel):
         default=None, description="the short run id from the RUNS list, if one clearly matches"
     )
 
-    # -- coercions ---------------------------------------------------------
     @field_validator("bosses", "participants", "evidence_message_ids", mode="before")
     @classmethod
     def _as_list(cls, value: Any) -> list[str]:

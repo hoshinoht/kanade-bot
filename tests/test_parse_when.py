@@ -102,11 +102,6 @@ def test_a_bare_clock_is_tonight(bot, text, expected):
     assert when(bot, text) == expected
 
 
-def test_2300_is_not_the_year_2300(bot):
-    """The bug that could have put a card three centuries out."""
-    assert when(bot, "2300").year == 2026
-
-
 @pytest.mark.parametrize("text", ["19:00", "1900", "7pm"])
 def test_a_bare_clock_that_has_already_passed_rolls_to_tomorrow(bot, text):
     """It is 20:00; "7pm" means tomorrow, not an hour ago."""

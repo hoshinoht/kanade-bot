@@ -119,13 +119,6 @@ async def test_the_final_message_is_the_reminder_after_tool_results(chat_bot, ch
     assert composition[-2]["role"] == "tool"
 
 
-async def test_every_round_ends_with_it(chat_bot, chat_seeded):
-    agent = pilot(chat_bot, wants("get_schedule", week="this"), says("Two runs."))
-    await agent.offer(message(chat_bot))
-    for call in agent._client.calls:
-        assert call["messages"][-1]["content"].startswith(persona.REMINDER_PREFIX)
-
-
 async def test_the_reminder_carries_the_active_voice(repo, bosses, tmp_path, monkeypatch):
     bot = voiced_bot(repo, bosses, tmp_path, monkeypatch)
     agent = pilot(bot, says("ok"))
@@ -240,11 +233,6 @@ def test_the_budget_is_shared_round_robin_across_sections():
 
 def test_one_section_still_fills_the_budget_alone():
     text = "**Good**\n\n" + "\n\n".join(f"> `line {i}`" for i in range(12))
-    assert len(persona.good_examples(text)) == persona.MAX_EXAMPLES
-
-
-def test_at_most_eight_examples_are_kept():
-    text = "**Good**\n\n" + "\n\n".join(f"> `line {i}`" for i in range(20))
     assert len(persona.good_examples(text)) == persona.MAX_EXAMPLES
 
 

@@ -197,6 +197,14 @@ def test_component_prompt_has_explicit_precedence_and_dynamic_name():
     scope = built[built.index("# Assistant scope") : built.index("# Scheduler policy")]
     assert "Kanade" in scope
     assert "Yuuki" not in built
+    for guidance in (
+        "calendar Monday-Sunday weeks",
+        "explicitly asks for a boss week",
+        "bare weekday means its next occurrence",
+        "today/tonight/tomorrow mean",
+        "the corresponding local dates",
+    ):
+        assert guidance in built
 
 
 def test_component_prompt_prioritizes_boss_knowledge_over_persona_overlays():
@@ -267,7 +275,9 @@ def test_the_clock_header_says_today_and_the_boss_week(chat_bot):
     header = persona.clock_header(now, chat_bot.tz, week)
     assert now.astimezone(chat_bot.tz).strftime("%A") in header
     assert "Asia/Kuala_Lumpur" in header
+    assert "calendar week" in header
     assert "boss week" in header
+    assert "Unqualified 'this week' and 'next week' mean calendar weeks" in header
 
 
 def test_the_prompt_carries_no_ids_and_no_secrets(repo, bosses):

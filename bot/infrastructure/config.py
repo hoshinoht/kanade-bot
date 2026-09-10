@@ -13,7 +13,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from bot.domain.weeks import parse_hhmm, parse_weekday
 
-#: Match trailing ``.env`` comments before validation.
 _INLINE_COMMENT_RE = re.compile(r"(?:^|\s)#.*$", re.DOTALL)
 
 #: Secrets are not comment-stripped.
@@ -34,7 +33,6 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # --- Discord ---------------------------------------------------------
     discord_token: str
     guild_id: int
     #: Watched channels: explicit ids, and/or every text channel under these
@@ -51,20 +49,17 @@ class Settings(BaseSettings):
     #: ADMIN_ROLE_ID members.
     debug_user_ids: str = ""
 
-    # --- scheduling ------------------------------------------------------
     tz: str = "Asia/Kuala_Lumpur"
     boss_week_reset_weekday: str = "thu"
     boss_week_reset_time: str = "00:00"
     day_of_ping_time: str = "09:00"
     countdown_minutes: str = "60,15"
 
-    # --- storage ---------------------------------------------------------
     db_path: str = "data/bot.sqlite"
     bosses_path: str = "boss/bosses.yaml"
     #: Strict local strategy documents required when the chat pilot is enabled.
     boss_knowledge_path: str = "boss/knowledge"
 
-    # --- phase 2: the chat extractor -------------------------------------
     ollama_host: str = "http://host.docker.internal:11434"
     ollama_model: str = "gemma4:12b"
     #: Seconds to wait for one extraction call. `gemma4:12b` takes roughly
@@ -91,7 +86,6 @@ class Settings(BaseSettings):
     #: card's evidence links) still works after the database has been reset.
     backfill_on_start: bool = True
 
-    # --- phase 4: the speech pilot ---------------------------------------
     #: Role permitted to use the chatbot; unset disables it.
     chat_pilot_role_id: int | None = None
     #: Initial role-to-behaviour-plugin assignments as ``ROLE_ID=plugin`` pairs.
@@ -122,6 +116,9 @@ class Settings(BaseSettings):
     #: Reasoning effort for the chat pilot. Empty falls back to ``OLLAMA_THINK``
     #: so the extractor can stay fast while speech reasons harder.
     chat_pilot_think: str = ""
+
+    #: Governed typed preference memory is deliberately opt-in.
+    chat_memory_enabled: bool = False
     #: Deprecated seed identity path; manifest deployments resolve its basename.
     persona_path: str = "config/personas/identities/persona.md"
     #: Legacy-only staging path. Manifest bundles carry their own baseline staging.
@@ -130,7 +127,6 @@ class Settings(BaseSettings):
     #: behaviours/<profile>.md. Partial files inherit from default.
     staging_profiles_dir: str = "config/personas/behaviours/staging"
 
-    # --- phase 3: the portal + `bossctl` ---------------------------------
     #: Empty refuses every non-health API request.
     admin_token: str = ""
     #: Tailscale logins allowed through `tailscale serve`, comma separated.
@@ -150,7 +146,6 @@ class Settings(BaseSettings):
     #: seconds between reminder-loop ticks
     tick_seconds: int = Field(default=30, ge=5, le=600)
 
-    # --- validation ------------------------------------------------------
     @model_validator(mode="before")
     @classmethod
     def _tidy_env_values(cls, values: Any) -> Any:
@@ -227,7 +222,6 @@ class Settings(BaseSettings):
             raise ValueError("COUNTDOWN_MINUTES must be positive whole minutes")
         return value
 
-    # --- derived ---------------------------------------------------------
     @property
     def zoneinfo(self) -> ZoneInfo:
         return ZoneInfo(self.tz)

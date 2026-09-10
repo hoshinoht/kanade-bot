@@ -103,10 +103,6 @@ class Resolved:
         return self.day is not None or self.clock is not None
 
 
-# ---------------------------------------------------------------------------
-# clock times
-# ---------------------------------------------------------------------------
-
 _RANGE_RE = re.compile(r"^\s*(\d{1,2}(?:[:.]?\d{2})?)\s*\+?\s*[~\-]\s*\d{1,4}\s*\+?\s*(.*)$")
 _RANGE_SPLIT_RE = re.compile(r"[~\-–—]|\bto\b|\btill\b|\buntil\b", re.IGNORECASE)
 _HHMM_RE = re.compile(r"^(\d{1,2})[:.](\d{2})$")
@@ -175,11 +171,6 @@ def parse_clock(time_ref: str | None) -> tuple[time, bool] | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# days
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class _DayRef:
     day: date
@@ -228,11 +219,6 @@ def _parse_day(day_ref: str | None, anchor: datetime) -> _DayRef | None:
         # today; the caller rolls it a week on if the clock time has passed.
         return _DayRef(anchor.date() + timedelta(days=ahead), ahead != 0)
     return None
-
-
-# ---------------------------------------------------------------------------
-# the public entry point
-# ---------------------------------------------------------------------------
 
 
 def resolve(

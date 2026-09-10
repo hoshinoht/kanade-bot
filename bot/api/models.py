@@ -20,9 +20,6 @@ class ErrorOut(BaseModel):
     error: str
 
 
-# --- schedule ---------------------------------------------------------------
-
-
 class MonogramOut(BaseModel):
     """The stand-in badge shown when a boss has no portrait file."""
 
@@ -109,9 +106,6 @@ class ScheduleOut(BaseModel):
     count: int
 
 
-# --- fixed runs -------------------------------------------------------------
-
-
 class FixedOut(BaseModel):
     id: str
     short_id: str
@@ -154,9 +148,6 @@ class DeletedOut(BaseModel):
     cancelled_runs: int
 
 
-# --- run actions ------------------------------------------------------------
-
-
 class AmendIn(Strict):
     to: str = Field(description="e.g. `wed 21:30`, `tomorrow 9:45pm`")
 
@@ -195,9 +186,6 @@ class RosterChangeOut(BaseModel):
     changed: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
-
-
-# --- the inbox --------------------------------------------------------------
 
 
 class EvidenceOut(BaseModel):
@@ -266,9 +254,6 @@ class RejectOut(BaseModel):
     status: str
 
 
-# --- extraction log ---------------------------------------------------------
-
-
 class ExtractionOut(BaseModel):
     id: str
     short_id: str
@@ -285,9 +270,6 @@ class ExtractionDetailOut(ExtractionOut):
     raw_response: str
     messages: list[EvidenceOut]
     amendments: list[AmendmentOut]
-
-
-# --- chat interactions ------------------------------------------------------
 
 
 class ChatInteractionOut(BaseModel):
@@ -380,9 +362,6 @@ class ChatSummaryOut(BaseModel):
     completion_tokens: int
 
 
-# --- the audit trail --------------------------------------------------------
-
-
 class AuditOut(BaseModel):
     """One recorded change: when, from where, who, and what."""
 
@@ -398,9 +377,6 @@ class AuditOut(BaseModel):
     subject: str | None
     short_subject: str | None
     detail: str
-
-
-# --- members, reminders -----------------------------------------------------
 
 
 class MemberOut(BaseModel):
@@ -448,9 +424,6 @@ class ReminderOut(BaseModel):
     boss_detail: list[BossOut] = []
     run_local: str | None
     status: str | None
-
-
-# --- config and actions -----------------------------------------------------
 
 
 class RolePluginOut(BaseModel):
@@ -666,9 +639,6 @@ class AccessOut(BaseModel):
     unknown: bool
 
 
-# --- capacity: the one model, the two windows, and what is queued -----------
-
-
 class ModelLockOut(BaseModel):
     """Who has the host's one model, and for how long."""
 
@@ -820,6 +790,145 @@ class GuideOut(BaseModel):
     url: str | None
 
 
+MemoryEnrollmentState = Literal["disabled", "pending_notice", "active", "opted_out"]
+MemoryLifecycle = Literal["proposed", "active", "superseded", "rejected", "revoked", "expired"]
+MemorySlot = Literal["answer_detail", "answer_format", "strategy_disclosure", "strategy_emphasis"]
+
+
+class MemoryEnrollmentOut(BaseModel):
+    state: MemoryEnrollmentState
+    policy_version: str
+    notice_attempted_at: str | None
+    notice_sent_at: str | None
+    opt_out_at: str | None
+    created_at: str
+    updated_at: str
+
+
+class MemoryOut(BaseModel):
+    id: str
+    slot: MemorySlot
+    value: str
+    boss: str | None
+    lifecycle: MemoryLifecycle
+    created_at: str
+    reviewed_at: str | None
+    expires_at: str
+    state_at: str
+
+
+class MemoryDetailOut(MemoryOut):
+    source_message_id: str | None
+    source_channel_id: str | None
+    source_message_url: str | None
+    proposer_id: str | None
+    proposer_name: str | None
+    reviewer_id: str | None
+    reviewer_name: str | None
+
+
+class MemoryEventOut(BaseModel):
+    id: str
+    actor_id: str | None
+    action: str
+    reason: str
+    memory_id: str | None
+    at: str
+
+
+class MemoryRetrievalOut(BaseModel):
+    id: str
+    selected_memory_ids: list[str]
+    reason: str
+    latency_ms: int | None
+    result_count: int
+    at: str
+
+
+class MemorySubjectOut(BaseModel):
+    user_id: str
+    display_name: str | None
+    name: str
+    enrollment: MemoryEnrollmentOut | None
+    memories: list[MemoryOut]
+
+
+class MemorySubjectDetailOut(MemorySubjectOut):
+    memories: list[MemoryDetailOut]
+    events: list[MemoryEventOut]
+    retrievals: list[MemoryRetrievalOut]
+
+
+class MemoryListingOut(BaseModel):
+    rows: list[MemorySubjectOut]
+    q: str
+    page: int
+    pages: int
+    total: int
+    offset: int
+    per_page: int
+    prev: int | None
+    next: int | None
+
+
+class MemoryEnrollmentResultOut(BaseModel):
+    user_id: str
+    state: MemoryEnrollmentState
+    active: bool
+    message: str | None
+
+
+class _MemorySetBase(Strict):
+    boss: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class MemorySetAnswerDetail(_MemorySetBase):
+    slot: Literal["answer_detail"]
+    value: Literal["concise", "standard", "detailed"]
+    boss: None = None
+
+
+class MemorySetAnswerFormat(_MemorySetBase):
+    slot: Literal["answer_format"]
+    value: Literal["prose", "bullets", "steps"]
+    boss: None = None
+
+
+class MemorySetStrategyDisclosure(_MemorySetBase):
+    slot: Literal["strategy_disclosure"]
+    value: Literal["none", "hints", "full"]
+
+
+class MemorySetStrategyEmphasis(_MemorySetBase):
+    slot: Literal["strategy_emphasis"]
+    value: Literal["mechanics", "survival", "party_roles"]
+
+
+MemorySetIn = (
+    MemorySetAnswerDetail
+    | MemorySetAnswerFormat
+    | MemorySetStrategyDisclosure
+    | MemorySetStrategyEmphasis
+)
+
+
+class MemoryDeletedOut(BaseModel):
+    id: str
+    deleted: bool
+
+
+class BossKnowledgeOut(BaseModel):
+    short: str
+    full: str
+    difficulty: str | None
+    canonical: str
+    researched_as_of: str
+    path: str
+    meta_hash: str
+    document_hash: str
+    sources: list[str]
+
+
 __all__ = [
     "AccessOut",
     "AmendIn",
@@ -827,6 +936,7 @@ __all__ = [
     "ApproveIn",
     "ApproveOut",
     "AuditOut",
+    "BossKnowledgeOut",
     "BossOut",
     "ConfigIn",
     "ConfigOut",
@@ -859,6 +969,20 @@ __all__ = [
     "UserWindowOut",
     "MemberOut",
     "MemberUpdate",
+    "MemoryDeletedOut",
+    "MemoryDetailOut",
+    "MemoryEnrollmentOut",
+    "MemoryEnrollmentResultOut",
+    "MemoryEnrollmentState",
+    "MemoryEventOut",
+    "MemoryLifecycle",
+    "MemoryListingOut",
+    "MemoryOut",
+    "MemoryRetrievalOut",
+    "MemorySetIn",
+    "MemorySlot",
+    "MemorySubjectDetailOut",
+    "MemorySubjectOut",
     "MonogramOut",
     "NickIn",
     "NickOut",

@@ -49,11 +49,12 @@ def only_row(bot) -> dict:
 async def test_an_answered_question_lands_one_row(chat_bot, chat_seeded):
     agent = pilot(chat_bot, wants("get_schedule", week="this"), says("Two runs this week."))
     asked = message(chat_bot, "@bot what's on?")
-    await agent.offer(asked)
+    result = (await agent.offer(asked)).answered
 
     row = only_row(chat_bot)
     assert row["question"] == "@bot what's on?"
-    assert row["reply"] == "Two runs this week."
+    assert result is not None
+    assert row["reply"] == result.reply == result.outcomes[0].output
     assert row["outcome"] == "answered"
     assert row["error"] is None
     assert row["rounds"] == 2

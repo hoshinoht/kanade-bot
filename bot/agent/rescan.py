@@ -109,7 +109,6 @@ class RescanWorker:
         self._task: asyncio.Task | None = None
         self.current: RescanJob | None = None
 
-    # -- lifecycle ---------------------------------------------------------
     async def start(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._drain(), name="rescan-worker")
@@ -140,7 +139,6 @@ class RescanWorker:
         """
         return self._queue.qsize()
 
-    # -- the queue ---------------------------------------------------------
     def get(self, job_id: str) -> RescanJob | None:
         return self._jobs.get(job_id)
 
@@ -247,7 +245,6 @@ class RescanWorker:
             error=error,
         )
 
-    # -- the loop ----------------------------------------------------------
     async def _drain(self) -> None:
         while True:
             job_id = await self._queue.get()

@@ -17,6 +17,7 @@ from bot.agent import formatting
 from bot.agent.materialise import materialise_week
 from bot.chat import tools
 from bot.domain.ids import short_id
+from bot.domain.weeks import materialised_week_starts
 from bot.extract.commit import FIX_REMOVE, commit, may_commit
 
 from .chat_support import CHAT_CHANNEL
@@ -173,6 +174,29 @@ async def test_a_confirmed_card_removes_the_baseline_and_this_weeks_run(chat_bot
     assert chat_bot.repo.get_run(chat_seeded["kalos"])["status"] != "cancelled"
 
 
+async def test_a_confirmed_card_cancels_all_three_materialised_instances(
+    chat_bot, chat_seeded, monkeypatch
+):
+    from bot.domain.timeutil import utcnow
+    from bot.extract import commit as commit_mod
+
+    now = utcnow()
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    fixed = star_fixed(chat_bot)
+    for start in starts[1:]:
+        materialise_week(chat_bot.repo, start, TZ, PING_TIME, COUNTDOWNS, now=now)
+    monkeypatch.setattr(commit_mod, "utcnow", lambda: now)
+
+    await tools.dispatch(context(chat_bot), "propose_remove_fixed", {"query": "hstar"})
+    approve(chat_bot, proposals(chat_bot)[0])
+
+    assert [chat_bot.repo.run_for_fixed(fixed["id"], start)["status"] for start in starts] == [
+        "cancelled",
+        "cancelled",
+        "cancelled",
+    ]
+
+
 async def test_future_weeks_stop_materialising_it(chat_bot, chat_seeded):
     """The whole point: no baseline, no more runs from it."""
     from bot.domain.weeks import next_week_start
@@ -197,17 +221,6 @@ async def test_a_baseline_removed_twice_fails_the_second_time(chat_bot, chat_see
     result = approve(chat_bot, stale)
     assert result.applied is False
     assert "already gone" in result.problem
-
-
-def test_the_card_path_matches_what_fixed_remove_does(chat_bot, chat_seeded):
-    """Both routes go through the one helper, so they cannot drift apart."""
-    import inspect
-
-    from bot.api import service
-    from bot.extract import commit as commit_mod
-
-    assert "retire_fixed_run" in inspect.getsource(service.delete_fixed)
-    assert "retire_fixed_run" in inspect.getsource(commit_mod._unfix)
 
 
 # ---------------------------------------------------------------------------

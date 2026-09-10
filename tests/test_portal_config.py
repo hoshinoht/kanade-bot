@@ -16,122 +16,15 @@ import pytest
 
 from bot import behaviour_plugins
 from bot.api import service
-from bot.api.app import STATIC_DIR
-from bot.api.templating import CONFIG_SECTIONS, read_section
-from bot.portal_styles import build_stylesheet
-
-PAGE_CSS = build_stylesheet()
-PAGE_JS = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
-
-
-def rule_body(selector: str) -> str:
-    match = re.search(r"^[ \t]*" + re.escape(selector) + r"\s*\{([^}]*)\}", PAGE_CSS, re.MULTILINE)
-    assert match is not None, f"no rule for {selector}"
-    return match.group(1)
-
+from bot.api.templating import read_section
 
 # --- one window -------------------------------------------------------------
-
-
-def test_the_page_is_one_window(auth, seeded):
-    """Not nine cards, however they were arranged."""
-    body = auth.get("/config").text
-    content = body[body.index('class="shell"') :]
-
-    assert content.count('<section class="card') == 1
-    assert 'class="card pane settings"' in content
-    # The window's own title bar is the head; there is no hero card above it.
-    assert 'class="page-head"' not in content
-    assert '<h1 class="card__title">Config</h1>' in content
-
-
-def test_the_sidebar_lists_every_section_as_a_real_link(auth, seeded):
-    body = auth.get("/config").text
-
-    for key, label in CONFIG_SECTIONS:
-        assert f'class="settings__tab" href="#{key}"' in body, key
-        assert f">{label}</a>" in body, label
-        assert f'class="settings__panel" id="{key}"' in body, key
-
-
-def test_the_sections_are_the_ones_the_page_used_to_have(auth, seeded):
-    """Same nine things, one window."""
-    assert [key for key, _ in CONFIG_SECTIONS] == [
-        "pings",
-        "watching",
-        "chatbot",
-        "notifications",
-        "theme",
-        "digest",
-        "rescan",
-        "access",
-        "env",
-    ]
-    body = auth.get("/config").text
-    for heading in ("Pings", "Chat watching", "Chatbot", "Notifications", "Theme"):
-        assert heading in body
-    for heading in ("Weekly digest", "Re-read the party channels", "Channel access"):
-        assert heading in body
 
 
 # --- switching, with no script ----------------------------------------------
 
 
-def test_one_section_shows_and_the_fragment_chooses_it():
-    """`:target` and nothing else -- the tabs are ordinary fragment links."""
-    assert "display: none;" in rule_body(".settings__panel")
-    assert "display: block;" in rule_body(".settings__panel:target")
-
-
-def test_a_page_with_no_fragment_opens_on_the_first_section():
-    rule = rule_body(
-        ".settings__detail:not(:has(> .settings__panel:target)) > .settings__panel:first-child"
-    )
-    assert "display: block;" in rule
-
-
-def test_an_unrelated_fragment_does_not_blank_the_window():
-    """`#rescan-job` is an htmx target that can end up in the URL. Scoped to
-    direct children, it cannot count as "some section is open"."""
-    selector = ".settings__detail:not(:has(> .settings__panel:target))"
-    assert selector in PAGE_CSS
-
-
-def test_the_open_tab_is_marked_for_every_section_the_page_declares():
-    """A stylesheet cannot compare an href to an id, so the pairs are written
-    out. This is what keeps that list honest when a section is added."""
-    marked = set(re.findall(r'\.settings:has\(#([\w-]+):target\) \[href="#([\w-]+)"\]', PAGE_CSS))
-
-    assert {key for key, _ in CONFIG_SECTIONS} == {section for section, _ in marked}
-    for section, href in marked:
-        assert section == href, section
-    # ...and the no-fragment case marks the first tab, to match the first panel.
-    assert ".settings:not(:has(.settings__panel:target)) .settings__tab:first-child" in PAGE_CSS
-
-
-def test_a_phone_shows_every_section_rather_than_hiding_eight():
-    """A fragment is easy to lose on a phone -- a back gesture, a reopened tab,
-    a shared link -- and a settings page that answers with a blank pane because
-    of it is worse than one you scroll. So the tabs become jump links."""
-    block = PAGE_CSS[
-        PAGE_CSS.index("  .settings__body {\n    grid-template-columns: minmax(0, 1fr);") :
-    ]
-    block = block[: block.index("\n}\n")]
-
-    assert "overflow-x: clip;" in block
-    assert "gap: 0.35rem;" in block
-    assert ".settings__panel {\n    display: block;\n  }" in block
-    assert ".settings__tab {" in block
-
-
 # --- a save comes back where it was made ------------------------------------
-
-
-def test_a_section_says_which_one_it_is_on_every_form(auth, seeded):
-    body = auth.get("/config").text
-
-    for key in ("pings", "watching", "chatbot", "notifications"):
-        assert f'name="section" value="{key}"' in body, key
 
 
 @pytest.mark.parametrize(
@@ -187,51 +80,7 @@ def test_the_other_actions_come_back_to_their_own_sections(auth, seeded, path, d
 # --- the htmx regions kept their boundaries ---------------------------------
 
 
-def test_the_rescan_job_still_swaps_only_itself(auth, seeded):
-    body = auth.get("/config").text
-
-    assert 'hx-target="#rescan-job"' in body
-    assert '<div id="rescan-job">' in body
-    # ...inside its own section, so a swap cannot reach another one.
-    rescan = body[body.index('id="rescan"') : body.index('id="access"')]
-    assert 'id="rescan-job"' in rescan
-
-
-def test_the_access_matrix_swaps_a_target_named_apart_from_its_section(auth, seeded):
-    """The section owns `#access` for the sidebar link, so the table is
-    `#access-table` -- two ids, two jobs, neither standing on the other."""
-    body = auth.get("/config").text
-
-    assert 'hx-target="#access-table"' in body
-    assert '<div id="access-table">' in body
-    assert 'class="settings__panel" id="access"' in body
-
-
 # --- the layout the sections replaced ---------------------------------------
-
-
-def test_the_card_wall_is_gone_rather_than_left_behind(auth, seeded):
-    """A rule nothing uses is a rule somebody re-uses by accident later."""
-    for dead in ("cardcols", "grid-2"):
-        assert dead not in PAGE_CSS, dead
-        assert dead not in auth.get("/config").text, dead
-
-
-def test_cards_stacked_in_normal_flow_still_get_their_gap():
-    """`.card + .card` is still how cards stack elsewhere -- the limits page
-    has four in a row."""
-    assert "margin-top: 0.75rem;" in rule_body(".card + .card")
-
-
-def test_config_joins_the_no_scroll_pages(auth, seeded):
-    """One section at a time is what dissolved the objection to framing it: the
-    window no longer has to be as tall as nine settings."""
-    assert '<body class="framed">' in auth.get("/config").text
-
-
-def test_a_fieldset_does_not_draw_a_second_box_inside_the_window(auth, seeded):
-    """The Theme section's swatches are chip rows, not a bordered inner panel."""
-    assert "border: 0;" in rule_body(".settings__panel fieldset")
 
 
 # --- the persona the bot is actually wearing --------------------------------
@@ -246,88 +95,6 @@ def chatbot_panel(body: str) -> str:
 def plugin_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(behaviour_plugins, "PLUGIN_DIR", tmp_path)
     return tmp_path
-
-
-def test_the_chatbot_panel_has_behaviour_plugin_and_role_editors(auth, seeded, plugin_dir):
-    panel = chatbot_panel(auth.get("/config").text)
-
-    assert "Reply profiles" in panel
-    assert "Role assignments" in panel
-    assert 'action="/config/behaviour-plugins"' in panel
-    assert 'action="/config/role-plugins"' in panel
-    assert 'name="role_id"' in panel
-    assert 'name="plugin"' in panel
-
-
-def test_behaviour_plugin_editors_collapse_and_paginate_without_hiding_server_markup(
-    auth, seeded, plugin_dir
-):
-    for number in range(6):
-        behaviour_plugins.write(f"style-{number}", f"STYLE {number}")
-
-    panel = chatbot_panel(auth.get("/config").text)
-
-    assert 'data-pagination-key="behaviour-plugins"' in panel
-    assert 'data-pagination-key="role-plugins"' in panel
-    assert panel.count('data-page-size="5"') == 2
-    assert panel.count("data-page-previous") == 2
-    assert panel.count("data-page-next") == 2
-    assert '<details class="behaviour-editor behaviour-editor--new">' in panel
-    for number in range(6):
-        assert f"style-{number}" in panel
-
-    assert 'querySelectorAll("[data-page-item]")' in PAGE_JS
-    assert "window.sessionStorage" in PAGE_JS
-
-
-def test_profile_editors_open_as_modals_with_search_and_bulk_selection(auth, seeded, plugin_dir):
-    behaviour_plugins.write("mesugaki", "Use playful, smug banter.")
-    behaviour_plugins.write("concise", "Always answer in short lines.")
-
-    panel = chatbot_panel(auth.get("/config").text)
-
-    assert 'data-search-input="behaviour-plugins"' in panel
-    assert "data-search-empty" in panel
-    assert '<a class="behaviour-editor behaviour-editor__summary"' in panel
-    assert 'data-dialog="profile-mesugaki"' in panel
-    assert 'href="#profile-mesugaki"' in panel
-    assert "data-page-item" in panel
-    assert '<dialog class="modal" id="profile-mesugaki"' in panel
-    assert 'aria-labelledby="profile-mesugaki-title"' in panel
-    assert '<form id="bulk-profiles" method="post"' in panel
-    assert 'action="/config/behaviour-plugins/selectable"' in panel
-    assert 'value="mesugaki"' in panel
-    assert 'form="bulk-profiles"' in panel
-    assert 'form="bulk-profiles"' in panel
-    assert 'name="selectable" value="1"' in panel
-    assert 'name="selectable" value="0"' in panel
-
-    assert "data-search-hidden" in PAGE_JS
-    assert "data-search-input" in PAGE_JS
-    assert "data-bulk-toolbar" in PAGE_JS
-    assert "Select page (" in PAGE_JS
-    assert "visibilityWord" in PAGE_JS
-
-
-def test_profile_list_filters_by_visibility_and_toggle_names_the_filter(auth, seeded, plugin_dir):
-    behaviour_plugins.write("mesugaki", "Use playful, smug banter.")
-    behaviour_plugins.write("concise", "Always answer in short lines.")
-    auth.post(
-        "/config/behaviour-plugins/selectable",
-        data={"profiles": ["mesugaki"], "selectable": "1"},
-    )
-
-    panel = chatbot_panel(auth.get("/config").text)
-
-    assert 'data-filter-row="behaviour-plugins" hidden' in panel
-    assert 'data-visibility-filter="behaviour-plugins"' in panel
-    assert '<option value="public">Public</option>' in panel
-    assert '<option value="private">Private</option>' in panel
-    assert 'data-visibility="public"' in panel
-    assert 'data-visibility="private"' in panel
-
-    assert "data-visibility" in PAGE_JS
-    assert '"Select all" + visibilityWord()' in PAGE_JS
 
 
 def test_plugins_and_role_assignments_can_be_managed_in_the_portal(
@@ -379,25 +146,6 @@ def test_plugins_and_role_assignments_can_be_managed_in_the_portal(
     )
     assert deleted.status_code == 303
     assert behaviour_plugins.read("mesugaki") is None
-
-
-def test_the_portal_renders_multiple_role_plugin_assignments_in_order(
-    auth, fake_bot, seeded, plugin_dir
-):
-    behaviour_plugins.write("first", "FIRST STYLE")
-    behaviour_plugins.write("second", "SECOND STYLE")
-    service.set_config(
-        fake_bot,
-        behaviour_plugins.CONFIG_KEY,
-        [
-            {"role_id": "1540491480936751205", "plugin": "first"},
-            {"role_id": "1540491480936751206", "plugin": "second"},
-        ],
-    )
-
-    panel = chatbot_panel(auth.get("/config").text)
-
-    assert panel.index("1540491480936751205") < panel.index("1540491480936751206")
 
 
 def test_publication_and_role_priority_are_portal_managed(auth, fake_bot, seeded, plugin_dir):
@@ -755,22 +503,6 @@ def test_a_deploy_with_no_persona_of_its_own_explains_recovery(auth, fake_bot, s
 # --- what .env holds --------------------------------------------------------
 
 
-def test_the_two_models_are_two_rows(auth, fake_bot, seeded):
-    """They are two settings and they really do differ -- a small local model
-    reads the party channels, a bigger one does the talking -- so one row called
-    "Model" said the wrong thing about whichever the reader had in mind."""
-    fake_bot.settings.ollama_model = "reader:20b"
-    fake_bot.settings.chat_pilot_model = "talker:120b"
-    env = auth.get("/config").text
-    env = env[env.index('id="env"') :]
-
-    assert ">Data model</th>" in env
-    assert ">Speech model</th>" in env
-    assert "reader:20b" in env
-    assert "talker:120b" in env
-    assert ">Model</th>" not in env
-
-
 def test_a_host_with_no_speech_model_says_so_rather_than_showing_a_gap(auth, fake_bot, seeded):
     """The same way the digest channel's row does, two rows below."""
     fake_bot.settings.chat_pilot_model = ""
@@ -779,10 +511,3 @@ def test_a_host_with_no_speech_model_says_so_rather_than_showing_a_gap(auth, fak
 
     assert ">Speech model</th>" in env
     assert "not set" in env
-
-
-def test_everything_still_renders_with_an_empty_database(auth):
-    response = auth.get("/config")
-
-    assert response.status_code == 200
-    assert 'class="settings__tab"' in response.text

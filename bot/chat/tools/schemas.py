@@ -30,15 +30,17 @@ _RUN_QUERY = {
 TOOLS: list[dict] = [
     _tool(
         "get_schedule",
-        "Runs for a boss week: day, time, bosses, status and how many people have "
-        "answered. Call this for any question about what is on. Runs marked 'already "
-        "happened' are in the past: never offer one as the next or upcoming run. If "
-        "nothing upcoming is left, say so plainly instead of reaching for a past run.",
+        "Runs for a calendar or boss week: day, time, bosses, status and RSVP count. "
+        "Use for schedule questions; never offer past runs as next or upcoming.",
         {
             "week": {
                 "type": "string",
-                "enum": ["this", "next"],
-                "description": "'this' for the current boss week, 'next' for the one after.",
+                "enum": ["this", "next", "this_boss", "next_boss", "auto"],
+                "description": (
+                    "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' "
+                    "or 'next_boss' only when the member explicitly says boss week. Use 'auto' "
+                    "for a bare weekday or today, tonight, or tomorrow."
+                ),
             },
             "scope": {
                 "type": "string",
@@ -59,8 +61,9 @@ TOOLS: list[dict] = [
             "day": {
                 "type": "string",
                 "description": (
-                    "Optional 'today'/'tonight'/'tomorrow'/weekday inside the week. Omit for "
-                    "whole-week asks. Pick the week containing the date."
+                    "Optional 'today'/'tonight'/'tomorrow'/weekday. A bare weekday means the "
+                    "next upcoming occurrence; a period-qualified weekday means that weekday "
+                    "inside the requested calendar or boss week. Omit for whole-week asks."
                 ),
             },
         },

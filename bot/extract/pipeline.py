@@ -104,11 +104,6 @@ EXTRACTOR_ACTOR = "extractor"
 STALE_GRACE = timedelta(hours=3)
 
 
-# ---------------------------------------------------------------------------
-# the deterministic half (pure, unit tested)
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class Planned:
     """One merged amendment, resolved and matched, ready to become a row."""
@@ -639,11 +634,6 @@ def relevant_weeks(
     return this, week_end(this, tz)
 
 
-# ---------------------------------------------------------------------------
-# the buffering half
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class RescanReport:
     """What one `/rescan` did, in the terms the ephemeral reply reports."""
@@ -722,7 +712,6 @@ class Pipeline:
         self.extractor = extractor or Extractor(bot.settings)
         self._bursts: dict[str, Burst] = {}
 
-    # -- intake ------------------------------------------------------------
     @property
     def enabled(self) -> bool:
         # `extract_enabled` is the DB-backed runtime flag (seeded from the env
@@ -778,7 +767,6 @@ class Pipeline:
             await self._cancel_timer(burst)
         await self.extractor.close()
 
-    # -- the flow ----------------------------------------------------------
     async def flush(self, channel_id: str) -> Plan | None:
         """Extract from the buffered burst in one channel."""
         burst = self._bursts.pop(str(channel_id), None)
@@ -1166,7 +1154,6 @@ class Pipeline:
         channel = self.bot.get_channel(int(channel_id)) if str(channel_id).isdigit() else None
         return getattr(channel, "name", "") or ""
 
-    # -- effects -----------------------------------------------------------
     async def apply_plan(
         self,
         channel_id: str,

@@ -1,0 +1,205 @@
+{% if message %}
+<p class="flash flash--{{ kind }}" role="status">{{ message }}</p>
+{% endif %}
+
+{% set enrollment = subject.enrollment %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Governed memory member</p>
+    <h1>{{ subject.name }}</h1>
+    <p class="note mono">Discord ID {{ subject.user_id }}</p>
+  </div>
+</div>
+
+{% set tab_counts = {
+     "memory-records": subject.memories|length,
+     "memory-activity": (subject.events|length) + (subject.retrievals|length),
+   } %}
+<section class="card tabs memory-tabs" role="region" aria-label="Memory governance panels" tabindex="0">
+  <div class="card__head tabs__strip">
+    <nav class="tabs__tabs" aria-label="Sections of this member's memory governance">
+      {% for key, label in memory_tabs %}
+      <a class="tabs__tab" href="#{{ key }}">{{ label }}{% if key in tab_counts %}
+        <span class="tabs__count">{{ tab_counts[key] }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <section class="tabs__panel tabs__panel--first" id="memory-enrollment">
+    <div class="memory-enrollment">
+    <p>
+      {% if not memory_enabled %}<strong>Memory is disabled globally.</strong> {% endif %}
+      {% if not enrollment %}
+        This member has no enrollment notice or preference record.
+      {% elif enrollment.state == 'pending_notice' %}
+        Notice is pending{% if enrollment.notice_attempted_at and not enrollment.notice_sent_at %}; the DM did not complete, so retry the individual notice.{% else %}.{% endif %}
+      {% elif enrollment.state in ['disabled', 'opted_out'] %}
+        Enrollment is {{ enrollment.state|replace('_', ' ') }}. Existing records remain available for governance actions.
+      {% else %}
+        Enrollment is active. A typed preference may be created or replaced below.
+      {% endif %}
+    </p>
+    {% if memory_enabled and (not enrollment or enrollment.state == 'pending_notice') %}
+    <form method="post" action="/memory/{{ subject.user_id }}/enroll"
+          hx-post="/memory/{{ subject.user_id }}/enroll" hx-target="#memory-subject" hx-swap="innerHTML">
+      <button class="btn btn--primary" type="submit">
+        {% if enrollment %}Retry individual notice{% else %}Enroll this member{% endif %}
+      </button>
+    </form>
+    {% endif %}
+    {% if enrollment and enrollment.state not in ['disabled', 'opted_out'] %}
+    <form method="post" action="/memory/{{ subject.user_id }}/disable"
+          hx-post="/memory/{{ subject.user_id }}/disable" hx-target="#memory-subject" hx-swap="innerHTML">
+      <button class="btn" type="submit">Disable enrollment</button>
+    </form>
+    {% endif %}
+    </div>
+  </section>
+
+  <section class="tabs__panel" id="memory-preference">
+  {% if memory_enabled and enrollment and enrollment.state == 'active' %}
+  <form class="filters" method="post" action="/memory/{{ subject.user_id }}/memories"
+        hx-post="/memory/{{ subject.user_id }}/memories" hx-target="#memory-subject" hx-swap="innerHTML">
+    <label class="field">
+      <span>Preference</span>
+      <select name="preference" required>
+        <optgroup label="Answer detail">
+          <option value="answer_detail:concise">Concise</option>
+          <option value="answer_detail:standard">Standard</option>
+          <option value="answer_detail:detailed">Detailed</option>
+        </optgroup>
+        <optgroup label="Answer format">
+          <option value="answer_format:prose">Prose</option>
+          <option value="answer_format:bullets">Bullets</option>
+          <option value="answer_format:steps">Steps</option>
+        </optgroup>
+        <optgroup label="Strategy disclosure">
+          <option value="strategy_disclosure:none">No strategy details</option>
+          <option value="strategy_disclosure:hints">Hints</option>
+          <option value="strategy_disclosure:full">Full strategy</option>
+        </optgroup>
+        <optgroup label="Strategy emphasis">
+          <option value="strategy_emphasis:mechanics">Mechanics</option>
+          <option value="strategy_emphasis:survival">Survival</option>
+          <option value="strategy_emphasis:party_roles">Party roles</option>
+        </optgroup>
+      </select>
+    </label>
+    <label class="field">
+      <span>Strategy-only boss scope (optional)</span>
+      <input name="boss" placeholder="e.g. hstar">
+    </label>
+    <button class="btn btn--primary" type="submit">Save preference</button>
+  </form>
+  {% elif not memory_enabled %}
+  <p class="note"><strong>Memory is disabled globally.</strong> Typed preferences cannot be created or replaced until it is enabled.</p>
+  {% elif not enrollment %}
+  <p class="note">This member needs an active enrollment before a typed preference can be created or replaced.</p>
+  {% else %}
+  <p class="note">Enrollment is {{ enrollment.state|replace('_', ' ') }}. Typed preferences can be created or replaced only while enrollment is active.</p>
+  {% endif %}
+  </section>
+
+  <section class="tabs__panel" id="memory-records">
+  <div class="table-wrap">
+    {% if subject.memories %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Preference</th>
+          <th scope="col">Lifecycle</th>
+          <th scope="col">Record timing and provenance</th>
+          <th scope="col">Governance actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for memory in subject.memories %}
+        <tr>
+          <th scope="row">
+            <strong>{{ memory.slot }}={{ memory.value }}</strong>
+            {% if memory.boss %}<br><span class="chip chip--mono">{{ memory.boss }}</span>{% endif %}
+            <details>
+              <summary class="note">Record metadata</summary>
+              <dl>
+                <div><dt>Record ID</dt><dd class="id mono">{{ memory.id }}</dd></div>
+                <div>
+                  <dt>Source</dt>
+                  <dd>
+                    {% if memory.source_channel_id or memory.source_message_id %}
+                      Channel ID <span class="mono">{{ memory.source_channel_id or 'not recorded' }}</span>
+                      · Message ID <span class="mono">{{ memory.source_message_id or 'not recorded' }}</span>
+                      {% if memory.source_message_url %}<br><a href="{{ memory.source_message_url }}">Open Discord message</a>{% endif %}
+                    {% else %}
+                      not recorded
+                    {% endif %}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Review</dt>
+                  <dd>
+                    Proposed by {% if memory.proposer_id %}{% if memory.proposer_name %}{{ memory.proposer_name }} · {% endif %}ID <span class="mono">{{ memory.proposer_id }}</span>{% else %}not recorded{% endif %}<br>
+                    Reviewed by {% if memory.reviewer_id %}{% if memory.reviewer_name %}{{ memory.reviewer_name }} · {% endif %}ID <span class="mono">{{ memory.reviewer_id }}</span>{% else %}not recorded{% endif %}<br>
+                    Reviewed at {% if memory.reviewed_at %}{{ memory.reviewed_at|local_dt }}{% else %}not recorded{% endif %}
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          </th>
+          <td>{{ memory.lifecycle }}<br><span class="note">{{ memory.state_at|local_dt }}</span></td>
+          <td>
+            Expires {{ memory.expires_at|local_dt }}
+            {% if memory.reviewed_at %}<br><span class="note">Reviewed {{ memory.reviewed_at|local_dt }}</span>{% endif %}
+          </td>
+          <td class="memory-actions">
+            <form method="post" action="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/revoke"
+                  hx-post="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/revoke" hx-target="#memory-subject" hx-swap="innerHTML">
+              <button class="btn" type="submit">Revoke</button>
+            </form>
+            <form method="post" action="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/expire"
+                  hx-post="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/expire" hx-target="#memory-subject" hx-swap="innerHTML">
+              <button class="btn" type="submit">Expire</button>
+            </form>
+            <form method="post" action="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/delete"
+                  hx-post="/memory/{{ subject.user_id }}/memories/{{ memory.id }}/delete" hx-target="#memory-subject" hx-swap="innerHTML">
+              <button class="btn btn--danger" type="submit">Delete record</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      <strong>No typed preferences.</strong>
+      {% if enrollment and enrollment.state == 'active' %}Create the first explicit preference above.{% else %}Records remain reviewable when enrollment changes.{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <p class="note">Delete permanently removes this live preference from memory and retrieval. Related Discord, log, WAL, or backup copies may remain.</p>
+  </section>
+
+  <section class="tabs__panel" id="memory-activity">
+  <div class="memory-ledger">
+    <div>
+      <h3>Events</h3>
+      {% if subject.events %}
+      <ol>
+        {% for event in subject.events %}
+        <li><strong>{{ event.action }}</strong><br><span class="note">{{ event.at|local_dt }} · record {{ event.memory_id|short_id if event.memory_id else '—' }}</span></li>
+        {% endfor %}
+      </ol>
+      {% else %}<p class="note">No memory events recorded.</p>{% endif %}
+    </div>
+    <div>
+      <h3>Retrieval diagnostics</h3>
+      {% if subject.retrievals %}
+      <ol>
+        {% for item in subject.retrievals %}
+        <li><strong>{{ item.result_count }} record{{ '' if item.result_count == 1 else 's' }} selected</strong><br><span class="note">{{ item.at|local_dt }} · {{ item.latency_ms|duration }}</span></li>
+        {% endfor %}
+      </ol>
+      {% else %}<p class="note">No retrieval diagnostics recorded.</p>{% endif %}
+    </div>
+  </div>
+  </section>
+</section>

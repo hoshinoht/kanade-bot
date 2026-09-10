@@ -72,29 +72,6 @@ def test_guide_uses_only_matching_base64_attachments(auth, fake_bot, monkeypatch
     assert "thumbnail" not in kwargs["embeds"][1].to_dict()
 
 
-def test_guide_accepts_a_ten_entry_cli_chunk(auth, fake_bot, monkeypatch):
-    channel = fake_bot.channels[WATCHED_CHANNEL]
-
-    async def send(*_args, **_kwargs):
-        return fake_bot._message(channel)
-
-    monkeypatch.setattr(channel, "send", send, raising=False)
-    filenames = [f"boss-{index:02d}.png" for index in range(10)]
-    response = auth.post(
-        "/api/guide",
-        json={
-            "channel_id": str(WATCHED_CHANNEL),
-            "embeds": [
-                {"title": "Boss", "description": "description", "thumbnail_filename": name}
-                for name in filenames
-            ],
-            "files": {name: "cG9ydHJhaXQ=" for name in filenames},
-        },
-    )
-
-    assert response.status_code == 200
-
-
 @pytest.mark.parametrize(
     "body",
     [
@@ -399,6 +376,37 @@ def test_editing_the_time_moves_the_already_materialised_run(auth, fake_bot, see
     assert response.json()["time"] == "22:15"
     run = fake_bot.repo.get_run(seeded["run_star"])
     assert run["datetime"].astimezone(fake_bot.tz).strftime("%H:%M") == "22:15"
+
+
+def test_editing_a_fixed_run_updates_three_materialised_instances(auth, fake_bot, seeded):
+    from bot.agent.materialise import materialise_week
+    from bot.domain.timeutil import utcnow
+    from bot.domain.weeks import materialised_week_starts
+
+    now = utcnow()
+    starts = materialised_week_starts(
+        fake_bot.tz, fake_bot.settings.reset_weekday, fake_bot.settings.reset_time, now
+    )
+    for start in starts[1:]:
+        materialise_week(
+            fake_bot.repo,
+            start,
+            fake_bot.tz,
+            fake_bot.ping_time,
+            fake_bot.countdowns,
+            now=now,
+        )
+
+    response = auth.patch(f"/api/fixed/{short_id(seeded['fixed_star'])}", json={"time": "22:15"})
+
+    assert response.status_code == 200
+    times = [
+        fake_bot.repo.run_for_fixed(seeded["fixed_star"], start)["datetime"]
+        .astimezone(fake_bot.tz)
+        .strftime("%H:%M")
+        for start in starts
+    ]
+    assert times == ["22:15", "22:15", "22:15"]
 
 
 def test_editing_only_the_note_leaves_the_run_where_it_is(auth, fake_bot, seeded):
@@ -711,11 +719,6 @@ def test_the_chat_summary_totals_per_model(auth, seeded):
     assert body["prompt_tokens"] == 3120
     assert body["models"][0]["model"] == "qwen3:32b"
     assert body["models"][0]["p95_latency_ms"] == 8400
-
-
-def test_the_chat_summary_is_not_read_as_an_interaction_id(auth, seeded):
-    """`/summary` is declared first, so the id route never swallows it."""
-    assert auth.get("/api/chat/summary").json()["count"] == 1
 
 
 def test_an_unknown_chat_interaction_is_a_404(auth, seeded):

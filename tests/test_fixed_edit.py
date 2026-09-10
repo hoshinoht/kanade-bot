@@ -11,9 +11,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from bot.agent import commands
 from bot.agent.commands import _apply_fixed_to_runs, _resolve_participants
 from bot.agent.materialise import materialise_week
-from bot.domain.weeks import current_week_start, slot_in_week
+from bot.domain.weeks import current_week_start, materialised_week_starts, slot_in_week
 from bot.infrastructure.db import Repo
 
 from .conftest import COUNTDOWNS, PING_TIME, RESET_TIME, RESET_WEEKDAY, TZ
@@ -131,6 +132,22 @@ def test_editing_the_time_reschedules_too(setup, repo, week):
     repo.update_fixed_run(fixed_id, time="22:30")
     _apply_fixed_to_runs(bot, fixed_id, {"time"})
     assert repo.get_run(run_id)["datetime"] == slot_in_week(week, TZ, 0, time(22, 30))
+
+
+def test_editing_a_fixed_run_updates_all_three_materialised_weeks(setup, repo, week, monkeypatch):
+    bot, fixed_id, _run_id = setup
+    monkeypatch.setattr(commands, "utcnow", lambda: week)
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, week)
+    for start in starts[1:]:
+        materialise_week(repo, start, TZ, PING_TIME, COUNTDOWNS, now=week)
+
+    repo.update_fixed_run(fixed_id, time="22:30")
+    _apply_fixed_to_runs(bot, fixed_id, {"time"})
+
+    hours = [
+        repo.run_for_fixed(fixed_id, start)["datetime"].astimezone(TZ).hour for start in starts
+    ]
+    assert hours == [22, 22, 22]
 
 
 def test_a_cancelled_run_is_left_alone(setup, repo, week):

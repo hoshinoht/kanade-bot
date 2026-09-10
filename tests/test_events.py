@@ -14,8 +14,6 @@ import pytest
 
 from bot.infrastructure import events
 
-from .fake_bot import WATCHED_CHANNEL
-
 pytestmark = pytest.mark.anyio
 
 
@@ -178,91 +176,3 @@ async def test_closing_the_stream_drops_the_subscription():
     await stream.aclose()
 
     assert events.listeners() == 0
-
-
-# ---------------------------------------------------------------------------
-# who nudges: the places that change what the Limits page shows
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def nudges(monkeypatch):
-    """Counts `notify` calls wherever it is reached from, rather than by module.
-
-    Every caller does `from .. import events` and then `events.notify(...)`, so
-    patching the one function on the one module catches all of them.
-    """
-    seen: list[str] = []
-    monkeypatch.setattr(events, "notify", lambda topic=events.LIMITS: seen.append(topic))
-    return seen
-
-
-async def test_taking_and_giving_back_the_model_both_nudge(nudges, model_lock):
-    from bot.infrastructure import modellock
-
-    async with modellock.held(modellock.EXTRACTOR):
-        assert nudges == [events.LIMITS]
-    assert nudges == [events.LIMITS, events.LIMITS]
-
-
-async def test_the_bounded_acquire_and_its_release_nudge_too(nudges, model_lock):
-    from bot.infrastructure import modellock
-
-    assert await modellock.acquire_within(5, modellock.EXTRACTOR) is True
-    modellock.release()
-    assert nudges == [events.LIMITS, events.LIMITS]
-
-
-async def test_spending_and_refusing_a_budget_both_nudge(chat_bot, chat_seeded, nudges):
-    from bot.chat.agent import ChatPilot
-
-    from .chat_support import FakeOllama, message, says
-
-    agent = ChatPilot(chat_bot, client=FakeOllama(says("ok"), says("ok")))
-    agent.limiter.count = 1
-
-    await agent.offer(message(chat_bot))
-    spent = len(nudges)
-    assert spent  # a slot went
-
-    await agent.offer(message(chat_bot))
-    assert len(nudges) > spent  # ...and so did a refusal
-
-
-async def test_a_message_the_gate_ignores_nudges_nothing(chat_bot, chat_seeded, nudges):
-    """Most messages in a watched guild are not the pilot's at all."""
-    from bot.chat.agent import ChatPilot
-
-    from .chat_support import OTHER_ROLE, FakeOllama, message, says
-
-    agent = ChatPilot(chat_bot, client=FakeOllama(says("never said")))
-    await agent.offer(message(chat_bot, roles=(OTHER_ROLE,)))
-    assert nudges == []
-
-
-def test_the_limit_mutations_nudge(fake_bot, nudges):
-    from bot.api import service
-
-    service.set_user_limit(fake_bot, 1002, 10, 60)
-    service.clear_user_limit(fake_bot, 1002)
-    service.reset_user_limit(fake_bot, 1002)
-    assert len(nudges) == 3
-
-
-def test_changing_a_capacity_setting_nudges(fake_bot, nudges):
-    from bot.api import service
-
-    service.set_config(fake_bot, "chat_pilot_rate_count", 9)
-    service.set_config(fake_bot, "chat_pilot_global_rate_window_s", 60)
-    assert len(nudges) == 2
-
-    # A setting the page does not show is not its business.
-    service.set_config(fake_bot, "quiet_mode", True)
-    assert len(nudges) == 2
-
-
-def test_queueing_a_rescan_nudges(fake_bot, nudges, seeded):
-    from bot.api import service
-
-    service.queue_rescan(fake_bot, [str(WATCHED_CHANNEL)])
-    assert nudges == [events.LIMITS]

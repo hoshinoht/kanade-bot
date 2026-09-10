@@ -1,4 +1,4 @@
-"""Supported database creation and the deployment's v9 -> v11 migrations."""
+"""Supported database creation and the deployment's v9 -> v12 migrations."""
 
 from __future__ import annotations
 
@@ -36,22 +36,27 @@ def v9_database(path) -> None:
     conn.close()
 
 
-def test_a_fresh_database_starts_at_v11_with_reply_styles(tmp_path):
+def test_a_fresh_database_starts_at_v12_with_empty_memory_storage(tmp_path):
     repo = Repo(tmp_path / "fresh.sqlite")
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 11
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
+    assert "proposal_message_id" in {
+        row[1] for row in repo._conn.execute("PRAGMA table_info(chat_memories)")
+    }
     repo.upsert_member(7, "harbour4417", "MY", True)
     assert repo.get_reply_style(7) is None
     repo.close()
 
 
-def test_v9_migrates_to_v11_without_losing_member_state(tmp_path):
+def test_v9_migrates_to_v12_without_losing_member_state_or_backfilling_memory(tmp_path):
     path = tmp_path / "v9.sqlite"
     v9_database(path)
 
     repo = Repo(path)
 
-    assert SCHEMA_VERSION == 11
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 11
+    assert SCHEMA_VERSION == 12
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
     member = repo.get_member(7)
     assert member["display_name"] == "harbour4417"
     assert member["aliases"] == ["MY"]
@@ -73,7 +78,7 @@ def test_reply_style_survives_reopening(tmp_path):
     reopened.close()
 
 
-def test_v9_to_v11_is_idempotent(tmp_path):
+def test_v9_to_v12_is_idempotent(tmp_path):
     path = tmp_path / "v9.sqlite"
     v9_database(path)
     Repo(path).close()
@@ -98,7 +103,7 @@ def test_pre_v9_database_is_refused_with_upgrade_direction(tmp_path):
         Repo(path)
 
 
-def test_unversioned_existing_database_is_not_mislabeled_v11(tmp_path):
+def test_unversioned_existing_database_is_not_mislabeled_v12(tmp_path):
     path = tmp_path / "unversioned.sqlite"
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE members (user_id TEXT PRIMARY KEY)")
@@ -217,7 +222,7 @@ def test_v10_rewrites_stored_star_tokens_to_maleficstar(tmp_path):
     v10_database_with_star_tokens(path)
 
     repo = Repo(path)
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 11
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
 
     def bosses(table: str, row_id: str) -> list:
         return json.loads(
@@ -242,8 +247,68 @@ def test_v10_star_rewrite_is_idempotent(tmp_path):
     Repo(path).close()
 
     conn = sqlite3.connect(path)
-    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == 11
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
     assert conn.execute("SELECT bosses FROM runs WHERE id = 'r1'").fetchone()[0] == (
         '["HMaleficStar", "HFA"]'
     )
     conn.close()
+
+
+def test_v11_migrates_to_v12_without_enrolling_legacy_rows(tmp_path):
+    path = tmp_path / "v11.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version VALUES (11);
+        CREATE TABLE members (user_id TEXT PRIMARY KEY, display_name TEXT NOT NULL);
+        INSERT INTO members VALUES ('7', 'legacy member');
+        CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT NOT NULL);
+        INSERT INTO messages VALUES ('message-1', 'remember everything');
+        """
+    )
+    conn.close()
+
+    repo = Repo(path)
+
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
+    assert repo._conn.execute("SELECT COUNT(*) FROM chat_memories").fetchone()[0] == 0
+    assert repo._conn.execute("SELECT content FROM messages WHERE id = 'message-1'").fetchone()[
+        0
+    ] == ("remember everything")
+    repo.close()
+
+
+def test_pre_card_v12_gains_binding_column_before_index_creation(tmp_path):
+    path = tmp_path / "pre-card-v12.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version VALUES (12);
+        CREATE TABLE chat_memories (
+            id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+            slot TEXT NOT NULL, value TEXT NOT NULL, boss_token TEXT, state TEXT NOT NULL,
+            source_message_id TEXT, source_channel_id TEXT, proposer_id TEXT, reviewer_id TEXT,
+            created_at TEXT NOT NULL, reviewed_at TEXT, expires_at TEXT NOT NULL,
+            state_at TEXT NOT NULL
+        );
+        INSERT INTO chat_memories VALUES
+            ('kept', 'g', 'u', 'answer_detail', 'concise', NULL, 'proposed', NULL, NULL,
+             NULL, NULL, 'now', NULL, 'later', 'now');
+        """
+    )
+    conn.close()
+
+    repo = Repo(path)
+
+    columns = {row[1] for row in repo._conn.execute("PRAGMA table_info(chat_memories)")}
+    indexes = {row[1] for row in repo._conn.execute("PRAGMA index_list(chat_memories)")}
+    assert "proposal_message_id" in columns
+    assert "chat_memories_proposal_message" in indexes
+    assert (
+        repo._conn.execute("SELECT value FROM chat_memories WHERE id = 'kept'").fetchone()[0]
+        == "concise"
+    )
+    repo.close()

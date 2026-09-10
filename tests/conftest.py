@@ -24,6 +24,9 @@ def kl(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datet
     return datetime(year, month, day, hour, minute, tzinfo=TZ)
 
 
+CHAT_NOW = kl(2026, 9, 9, 12)
+
+
 @pytest.fixture
 def repo() -> Repo:
     r = Repo(":memory:")
@@ -153,11 +156,18 @@ def chat_bot(repo: Repo, bosses: BossTable):
 
 
 @pytest.fixture
-def chat_seeded(chat_bot):
+def chat_seeded(chat_bot, monkeypatch):
     """`chat_bot` with two parties and a materialised week; returns their ids."""
+    from bot.api import service
+    from bot.chat import tools
+    from bot.domain import timeutil
+    from bot.extract import commit as commit_mod
+
     from .chat_support import seed
 
-    return seed(chat_bot)
+    for module in (tools, timeutil, commit_mod, service):
+        monkeypatch.setattr(module, "utcnow", lambda: CHAT_NOW)
+    return seed(chat_bot, now=CHAT_NOW)
 
 
 @pytest.fixture

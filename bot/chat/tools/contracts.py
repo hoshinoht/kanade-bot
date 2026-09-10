@@ -9,6 +9,10 @@ from typing import Any
 #: ten-ish runs; a model handed fifty lines starts summarising them wrongly.
 MAX_RUNS = 20
 
+#: Member replies stay comfortably below Discord's message ceiling. Schedule
+#: renderers use this to retain whole records rather than relying on final slicing.
+MAX_MEMBER_REPLY = 1200
+
 #: What the model is told when it asks for something that is not a tool. Phrased
 #: as an instruction because a bare "error" makes a small model retry the same
 #: call; naming the real tools makes it pick one.
@@ -82,7 +86,11 @@ class ToolContext:
     #: Kept separate because "my runs across all channels" is global in one
     #: dimension and explicitly personal in the other.
     force_all_channels: bool = False
+    #: Explicit channel wording is a trusted constraint, not a model preference.
+    force_channel_scope: bool = False
     force_group_schedule: bool = False
+    #: Trusted relevance intent derived from the original Discord message.
+    upcoming_only: bool = False
 
     def __post_init__(self) -> None:
         if self.created is None:

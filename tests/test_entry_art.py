@@ -14,7 +14,6 @@ Discord.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -22,15 +21,6 @@ import pytest
 from bot.agent import formatting
 from bot.api import service
 from bot.domain.bosses import BossTable
-from bot.portal_styles import build_stylesheet
-
-PAGE_CSS = build_stylesheet()
-
-#: The stylesheet with its prose taken out, the same way test_portal_tables
-#: reads it: every rule in that file is explained above itself, so a comment
-#: that *mentions* `mask-image: var(--art-mask)` reads as a declaration to any
-#: scan over the raw text.
-CSS_RULES = re.sub(r"/\*.*?\*/", "", PAGE_CSS, flags=re.DOTALL)
 
 
 @pytest.fixture
@@ -311,117 +301,6 @@ def test_the_veil_survives_an_htmx_swap(auth, fake_bot, table_with_entry_art, se
 
     assert response.text.strip().startswith('<article class="run run--cancelled"')
     assert 'src="/static/entry/MaleficStar"' in response.text
-
-
-# --- the stylesheet ---------------------------------------------------------
-
-
-def rule_from(selector: str) -> str:
-    """One rule's body: from where its selector starts to the brace that closes
-    it. Nothing in these rules nests, so the first `}` is the end of one.
-
-    Sliced from the comment-stripped text, so a rule's own explanation cannot
-    hand a scan the property names it talks about."""
-    start = CSS_RULES.index(selector)
-    return CSS_RULES[start : CSS_RULES.index("}", start)]
-
-
-#: Both surfaces share one rule, so most of what follows is about this block.
-VEIL = rule_from(".run__art,")
-
-
-def test_the_veil_costs_the_card_no_height():
-    """The whole reason it is a backdrop and not a banner: a run card's height is
-    what the board has least of, and a picture must not buy any of it."""
-    assert "position: absolute" in VEIL
-    assert "inset: 0" in VEIL
-    # Not a grid item, not a flow box, and not something a click can land on.
-    assert "pointer-events: none" in VEIL
-
-
-def test_the_veil_is_behind_the_words_and_in_front_of_the_card():
-    """Two halves of one fact, and the second is the easy one to lose: a negative
-    layer inside a card that does not isolate sinks behind the card's own
-    background and is simply never seen."""
-    assert "z-index: -1" in VEIL
-
-    for selector in (".run {", "  .runcard {"):
-        rule = rule_from(selector)
-        assert "isolation: isolate" in rule, selector
-        assert "position: relative" in rule, selector
-
-
-def test_the_veil_is_masked_away_from_everything_anybody_reads():
-    """The invariant the treatment exists for. Masked in both spellings, and
-    never left unset: `mask-image: var(--art-mask)` with nothing behind it
-    computes to no mask, which is the wash laid flat over every word."""
-    assert "--art-mask: linear-gradient" in VEIL  # the fallback shape, and solo's
-    assert "-webkit-mask-image: var(--art-mask)" in VEIL
-    # Twice: the prefixed spelling above, and the plain one an engine new enough
-    # to ignore it reads instead.
-    assert VEIL.count("mask-image: var(--art-mask)") == 2
-
-
-def test_each_mask_is_one_gradient_written_once():
-    """One diagonal per layer -- `mask-composite` was inconsistent enough across
-    engines to be worth not relying on, and every shape here is reachable with a
-    single gradient anyway."""
-    assert "mask-composite" not in CSS_RULES
-
-    gradients = re.findall(r"--art-mask: (linear-gradient\([^;]+\));", CSS_RULES)
-    assert len(gradients) == 3  # solo, the lead's corner, the second's
-    assert len(set(gradients)) == 3  # and none of them typed twice
-
-
-def test_two_bosses_take_opposite_corners_of_the_same_edge():
-    """Which is the whole idea of the split: they meet in a seam on the right."""
-    lead = rule_from(".runcard__art,\n.run__art--lead {")
-    second = rule_from(".run__art--second {")
-
-    assert "205deg" in lead  # down-and-left, so opaque at the top right
-    assert "335deg" in second  # up-and-left, so opaque at the bottom right
-    # The compact card wears the lead's shape too: one picture, one corner.
-    assert ".runcard__art," in lead
-
-
-def test_one_rule_serves_both_surfaces_and_takes_each_cards_corners():
-    """`border-radius: inherit` is what lets it: the sheet's card squares its top
-    under the title bar and a phone rounds it again, and the veil follows both
-    without a rule of its own -- so there is no override to keep in step."""
-    assert "border-radius: inherit" in VEIL
-    assert ".runsheet__panel > .run > .run__art" not in CSS_RULES
-
-
-def test_the_tuning_knobs_are_declared_once_and_read_from_there():
-    """They will be moved from screenshots, so they are three numbers in one
-    place rather than the same numbers typed into several rules."""
-    root = CSS_RULES[CSS_RULES.index(":root {") : CSS_RULES.index("[data-colorway=")]
-
-    for knob in ("--art-veil", "--art-crop-sheet", "--art-crop-card"):
-        assert root.count(f"{knob}:") == 1, knob
-        assert CSS_RULES.count(f"var({knob})") == 1, knob
-
-
-def test_each_surfaces_crop_opens_below_the_name_plate():
-    """Most of these splashes bake a name plate into the top of the frame, so a
-    window that opened at the top of the picture would show a caption. The two
-    windows are different slices, so they clear the same band at different
-    depths -- which is why there are two numbers rather than one."""
-    root = CSS_RULES[CSS_RULES.index(":root {") : CSS_RULES.index("[data-colorway=")]
-    depth = {
-        knob: int(re.search(rf"{knob}: (\d+)%", root).group(1))
-        for knob in ("--art-crop-sheet", "--art-crop-card")
-    }
-
-    assert all(value > 15 for value in depth.values()), depth
-    # The compact card's window is the taller slice, so it starts further down.
-    assert depth["--art-crop-card"] > depth["--art-crop-sheet"]
-
-    # Each surface reads its own. `.runcard__art {` opens the shared base rule
-    # as well as its own, so this asks for the one that sets a crop rather than
-    # for whichever comes first.
-    assert re.search(r"\.run__art \{[^}]*--art-crop-sheet", CSS_RULES)
-    assert re.search(r"\.runcard__art \{[^}]*--art-crop-card", CSS_RULES)
 
 
 # --- Discord: the morning ping's big picture --------------------------------

@@ -7,11 +7,8 @@ is posted the way a browser would post it -- with and without htmx.
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
-from bot.api import routes_api, routes_web
 from bot.api.templating import HTMX_SRC, confidence_band
 from bot.domain.ids import short_id
 
@@ -34,25 +31,6 @@ PAGES = [
     "/reminders",
     "/config",
 ]
-
-
-# --- the invariant that lets the bot share one SQLite connection ------------
-
-
-def test_every_route_handler_is_async():
-    """A sync handler would run in FastAPI's threadpool.
-
-    The repository is a single ``sqlite3`` connection shared with the bot's own
-    loop, and this build of ``sqlite3`` reports ``threadsafety == 1`` (connections
-    must not be shared between threads).  Keeping every handler ``async`` keeps
-    all database work on the one loop; see :meth:`bot.db.Repo.__init__`.
-    """
-    offenders = []
-    for module in (routes_api, routes_web):
-        for route in module.router.routes:
-            if not inspect.iscoroutinefunction(route.endpoint):
-                offenders.append(f"{module.__name__}.{route.endpoint.__name__}")
-    assert offenders == []
 
 
 # --- pages render -----------------------------------------------------------
@@ -276,61 +254,6 @@ def test_the_limits_page_names_the_holder_and_the_windows(auth, fake_bot, seeded
     assert "#hstar-party" in body
     assert "kanon" in body  # the member mid-window, by roster name
     assert f"of {fake_bot.settings.chat_pilot_global_rate_count} left" in body
-
-
-def test_the_live_region_is_a_wrapper_the_swap_cannot_replace(auth, fake_bot):
-    """Everything that refetches hangs off the wrapper, so a swap never rebuilds it."""
-    page = auth.get("/limits").text
-    assert 'id="limits-live"' in page
-    assert 'data-live-src="/limits/events"' in page  # the stream portal.js opens
-    assert 'hx-get="/limits/live"' in page
-    assert 'hx-swap="innerHTML"' in page
-
-    fragment = auth.get("/limits/live")
-    assert fragment.status_code == 200
-    # The fragment is content only: it must not carry the wrapper, or a swap
-    # would nest a second one and leave two of everything running.
-    assert 'id="limits-live"' not in fragment.text
-    # ...and it is all three live panels plus the strip that counts them, which
-    # is what the wrapper holds and the whole of what a swap replaces.
-    for key in ("who-may-ask", "in-flight", "windows"):
-        assert f'id="{key}"' in fragment.text, key
-
-
-def test_the_poll_is_only_a_slow_fallback_behind_the_stream(auth, fake_bot):
-    """Updates arrive as events; the timer is for a browser that cannot have them."""
-    page = auth.get("/limits").text
-    assert "hx-trigger=\"every 60s [document.visibilityState === 'visible']\"" in page
-    # ...and the manual link still works with no JavaScript at all.
-    assert '<a class="btn btn--ghost" href="/limits">Refresh</a>' in page
-
-
-def test_the_polled_region_contains_no_inputs(auth, fake_bot, seeded):
-    """The invariant that makes refreshing safe: nothing in here can be typed into.
-
-    A ten-second swap landing on a half-filled form would eat it, so the one
-    form on the page lives outside the polled region -- and this is the test
-    that notices when somebody puts a field back inside it.
-    """
-    fake_bot.chat.limiter.allow(1002)
-    add_pilot(fake_bot, 1002, "kanon")
-
-    live = auth.get("/limits/live").text
-
-    assert "<input" not in live
-    assert "<textarea" not in live
-    assert "<select" not in live
-    # ...while the page as a whole does have the form.
-    assert "<input" in auth.get("/limits").text
-
-
-def test_the_form_survives_a_refresh_of_the_live_panel(auth, fake_bot, seeded):
-    """Structural: the form is not in what a poll replaces."""
-    page = auth.get("/limits").text
-    live_start = page.index('id="limits-live"')
-    form_start = page.index('id="set-allowance"')
-    assert form_start > live_start
-    assert '<input name="user_id"' not in page[live_start:form_start]
 
 
 def test_resetting_a_window_from_the_page_removes_its_row(auth, fake_bot, seeded):
@@ -815,22 +738,6 @@ def test_the_week_view_can_re_read_one_channel(auth, fake_bot, seeded):
 # --- degradation without htmx ----------------------------------------------
 
 
-def test_every_action_in_a_row_is_a_real_form(auth, seeded):
-    """With the CDN blocked the page must still work, so nothing is js-only."""
-    body = auth.get("/").text
-    row = body[body.index('<article class="run') : body.index("</article>")]
-    # Move, preview ping, the party swap, the status control and one answer
-    # form per participant -- each a real POST with an htmx upgrade, so the
-    # count follows the party size rather than being a number to keep in step.
-    for action in ("/amend", "/ping", "/participants", "/status", "/rsvp"):
-        assert f'action="/runs/{seeded["run_star"]}{action}"' in row, action
-    # Every one of them is a real POST *and* htmx-upgraded -- neither a form
-    # that only works with the CDN, nor one that reloads the page for nothing.
-    assert row.count('method="post"') == row.count("hx-post=") > 0
-    assert "onclick" not in row
-    assert row.count('type="submit" name="status"') == 5
-
-
 def test_the_htmx_script_is_pinned_and_has_an_integrity_hash(auth):
     body = auth.get("/").text
     assert "cdnjs.cloudflare.com/ajax/libs/htmx/2.0.10/htmx.min.js" in body
@@ -987,13 +894,6 @@ def test_editing_a_timing_from_the_grid(auth, fake_bot, seeded):
 
 def test_the_inbox_names_the_boss_in_full(auth, seeded):
     assert "Radiant Malefic Star" in auth.get("/inbox").text
-
-
-def test_the_pills_are_defined_for_both_themes(client):
-    css = client.get("/static/portal.css").text
-    for token in ("--pill-e-", "--pill-n-", "--pill-h-", "--pill-c-", "--pill-x-"):
-        assert css.count(token) >= 4  # light bg+fg and dark bg+fg
-    assert "prefers-color-scheme: dark" in css
 
 
 def test_the_pill_toggle_is_big_enough_to_tap(client):

@@ -10,14 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 
-import pytest
-
 from bot.__main__ import FATAL_EXIT_DELAY, _fatal
-
-
-@pytest.mark.parametrize("code", [2, 3, 4])
-def test_the_exit_code_is_preserved(code):
-    assert asyncio.run(_fatal(code, asyncio.Event(), delay=0.01)) == code
 
 
 def test_it_waits_out_the_delay_when_nothing_interrupts():

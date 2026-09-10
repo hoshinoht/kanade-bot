@@ -9,7 +9,6 @@ implementation of "cancel a run", not two.
 from __future__ import annotations
 
 import json
-import logging
 
 from fastapi import APIRouter, Body, Query
 from fastapi.responses import StreamingResponse
@@ -24,6 +23,7 @@ from .models import (
     ApproveIn,
     ApproveOut,
     AuditOut,
+    BossKnowledgeOut,
     ChatInteractionDetailOut,
     ChatInteractionOut,
     ChatSummaryOut,
@@ -45,6 +45,16 @@ from .models import (
     LimitsOut,
     MemberOut,
     MemberUpdate,
+    MemoryDeletedOut,
+    MemoryEnrollmentResultOut,
+    MemoryEnrollmentState,
+    MemoryLifecycle,
+    MemoryListingOut,
+    MemoryOut,
+    MemorySetIn,
+    MemorySlot,
+    MemorySubjectDetailOut,
+    MemorySubjectOut,
     NickIn,
     NickOut,
     PingIn,
@@ -65,14 +75,7 @@ from .models import (
     Week,
 )
 
-log = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/api", tags=["api"])
-
-
-# ---------------------------------------------------------------------------
-# schedule
-# ---------------------------------------------------------------------------
 
 
 @router.get("/schedule", response_model=ScheduleOut, summary="One boss week's runs")
@@ -88,11 +91,6 @@ async def get_schedule(
     return service.schedule(
         bot, week=week, channel_id=channel, user_id=user, boss=boss, show_past=show_past
     )
-
-
-# ---------------------------------------------------------------------------
-# fixed runs
-# ---------------------------------------------------------------------------
 
 
 @router.get("/fixed", response_model=list[FixedOut], summary="The weekly baseline timings")
@@ -137,11 +135,6 @@ async def validate_bosses(bot: Bot, caller: Caller, text: str = Body(embed=True)
     except BadRequest as exc:
         return {"ok": False, "error": exc.message, "bosses": []}
     return {"ok": True, "error": None, "bosses": [service.boss_view(bot, t) for t in tokens]}
-
-
-# ---------------------------------------------------------------------------
-# runs
-# ---------------------------------------------------------------------------
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
@@ -201,11 +194,6 @@ async def get_reminders(
     return service.reminders(bot, run_id=run_id, limit=limit)
 
 
-# ---------------------------------------------------------------------------
-# the inbox
-# ---------------------------------------------------------------------------
-
-
 @router.get("/pending", response_model=list[AmendmentOut], summary="Proposals awaiting a decision")
 async def get_pending(bot: Bot, caller: Caller, channel: str | None = None) -> list[dict]:
     return service.pending(bot, channel_id=channel)
@@ -228,11 +216,6 @@ async def post_reject(bot: Bot, caller: Caller, amendment_id: str) -> dict:
     return await service.reject_amendment(bot, amendment_id)
 
 
-# ---------------------------------------------------------------------------
-# the extraction log -- the prompt-tuning tool (DESIGN.md §5)
-# ---------------------------------------------------------------------------
-
-
 @router.get("/extractions", response_model=list[ExtractionOut])
 async def get_extractions(
     bot: Bot, caller: Caller, limit: int = Query(default=25, ge=1, le=200)
@@ -243,11 +226,6 @@ async def get_extractions(
 @router.get("/extractions/{extraction_id}", response_model=ExtractionDetailOut)
 async def get_extraction(bot: Bot, caller: Caller, extraction_id: str) -> dict:
     return service.extraction_view(bot, service.load_extraction(bot, extraction_id), detail=True)
-
-
-# ---------------------------------------------------------------------------
-# the chat log -- what the speech pilot was asked, and what it cost
-# ---------------------------------------------------------------------------
 
 
 @router.get("/chat", response_model=list[ChatInteractionOut])
@@ -269,22 +247,12 @@ async def get_chat_interaction(bot: Bot, caller: Caller, interaction_id: str) ->
     )
 
 
-# ---------------------------------------------------------------------------
-# the audit trail -- who changed the schedule, and from where
-# ---------------------------------------------------------------------------
-
-
 @router.get("/audit", response_model=list[AuditOut], summary="Recent changes and who made them")
 async def get_audit(
     bot: Bot, caller: Caller, limit: int = Query(default=200, ge=1, le=2000)
 ) -> list[dict]:
     """Newest first. Read-only: nothing writes here but the changes themselves."""
     return service.audit_log(bot, limit)
-
-
-# ---------------------------------------------------------------------------
-# members
-# ---------------------------------------------------------------------------
 
 
 @router.get("/members", response_model=list[MemberOut])
@@ -302,9 +270,69 @@ async def post_nick(bot: Bot, caller: Caller, user_id: str, body: NickIn) -> dic
     return service.set_nick(bot, user_id, body.alias)
 
 
-# ---------------------------------------------------------------------------
-# config and actions
-# ---------------------------------------------------------------------------
+@router.get("/memory", response_model=MemoryListingOut, summary="Governed-memory members")
+async def get_memory_listing(
+    bot: Bot,
+    caller: Caller,
+    page: int = Query(default=1, ge=1),
+    q: str = "",
+    enrollment: MemoryEnrollmentState | None = None,
+    lifecycle: MemoryLifecycle | None = None,
+    slot: MemorySlot | None = None,
+    boss: str | None = None,
+    expires_before: str | None = None,
+) -> dict:
+    expiry = service.parse_since(bot, expires_before, "expires_before") if expires_before else None
+    return service.memory_listing(
+        bot,
+        page=page,
+        q=q,
+        enrollment=enrollment,
+        lifecycle=lifecycle,
+        slot=slot,
+        boss=boss,
+        expires_before=expiry,
+    )
+
+
+@router.get("/memory/{user_id}", response_model=MemorySubjectDetailOut)
+async def get_memory_subject(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return service.memory_subject(bot, user_id)
+
+
+@router.post("/memory/{user_id}/enroll", response_model=MemoryEnrollmentResultOut)
+async def post_memory_enroll(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return await service.enroll_memory_member(bot, user_id)
+
+
+@router.post("/memory/{user_id}/disable", response_model=MemorySubjectOut)
+async def post_memory_disable(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return service.disable_memory_member(bot, user_id)
+
+
+@router.put("/memory/{user_id}/memories", response_model=MemoryOut)
+async def put_memory(bot: Bot, caller: Caller, user_id: str, body: MemorySetIn) -> dict:
+    return service.set_memory(bot, user_id, **body.model_dump())
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/revoke", response_model=MemoryOut)
+async def post_memory_revoke(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.revoke_memory(bot, user_id, memory_id)
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/expire", response_model=MemoryOut)
+async def post_memory_expire(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.expire_memory(bot, user_id, memory_id)
+
+
+@router.delete("/memory/{user_id}/memories/{memory_id}", response_model=MemoryDeletedOut)
+async def remove_memory(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.delete_memory(bot, user_id, memory_id)
+
+
+@router.get("/bosses/{boss}/knowledge", response_model=BossKnowledgeOut)
+async def get_boss_knowledge(bot: Bot, caller: Caller, boss: str) -> dict:
+    return service.boss_knowledge_detail(bot, boss)
 
 
 @router.get("/config", response_model=ConfigOut)
@@ -456,11 +484,6 @@ async def list_rescans(bot: Bot, caller: Caller, limit: int = 5) -> list[dict]:
 @router.post("/debug/ping", response_model=PingOut, summary="Post one test reminder now")
 async def post_debug_ping(bot: Bot, caller: Caller, body: PingIn) -> dict:
     return await service.debug_ping(bot, body.run_id, body.kind)
-
-
-# ---------------------------------------------------------------------------
-# message export (DESIGN.md §5, "Message export")
-# ---------------------------------------------------------------------------
 
 
 @router.get("/messages", summary="Stream a watched channel's messages as JSONL")

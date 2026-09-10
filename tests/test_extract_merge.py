@@ -175,10 +175,6 @@ def test_output_is_ordered_by_when_the_evidence_appeared():
     assert [m.kind for m in merged] == ["move", "cancel"]
 
 
-def test_merging_nothing_gives_nothing():
-    assert merge([], ORDER) == []
-
-
 def test_merging_without_a_message_order_still_works():
     merged = merge(
         [

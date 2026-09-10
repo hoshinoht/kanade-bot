@@ -1,27 +1,74 @@
 """SQLite-backed application storage."""
 
+# ruff: noqa: E501 -- SQL schemas and statements remain readable as complete clauses.
+
 from __future__ import annotations
 
 import json
 import logging
 import math
 import sqlite3
+import uuid
 from collections.abc import Callable, Iterable, Sequence
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from bot.domain.bosses import BossParseError, BossTable
 from bot.domain.ids import new_id
 from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
-#: Bound diagnostic chat history.
 CHAT_INTERACTIONS_KEPT = 500
 
-#: Bound audit history.
+MEMORY_SLOTS = (
+    "answer_detail",
+    "answer_format",
+    "strategy_disclosure",
+    "strategy_emphasis",
+)
+MEMORY_STATES = ("proposed", "active", "superseded", "rejected", "revoked", "expired")
+MEMORY_ENROLLMENT_STATES = ("disabled", "pending_notice", "active", "opted_out")
+MEMORY_EVENT_ACTIONS = (
+    "enrollment_started",
+    "notice_attempted",
+    "enrollment_activated",
+    "enrollment_disabled",
+    "opted_out",
+    "proposed",
+    "approved",
+    "rejected",
+    "replaced",
+    "revoked",
+    "expired",
+    "deleted",
+    "forgot_all",
+)
+MEMORY_EVENT_REASONS = (
+    "enroll",
+    "notice",
+    "opt_out",
+    "proposal",
+    "approval",
+    "rejection",
+    "replace",
+    "disable",
+    "expiry",
+    "delete",
+    "forget_all",
+)
+MEMORY_RETRIEVAL_REASONS = ("matched", "no_match", "inactive_enrollment", "unavailable")
+MEMORY_PROPOSAL_TTL = timedelta(days=7)
+MEMORY_ACTIVE_TTL = timedelta(days=180)
+MEMORY_INACTIVE_RETENTION = timedelta(days=30)
+MEMORY_EVENT_RETENTION = timedelta(days=365)
+MEMORY_RETRIEVAL_RETENTION = timedelta(days=30)
+MEMORY_RETRIEVAL_KEPT = 500
+
 AUDIT_KEPT = 2000
 
 #: Known audit sources; logging intentionally accepts unknown sources.
@@ -266,6 +313,88 @@ CREATE TABLE IF NOT EXISTS chat_rate_limits (
     window_s   REAL NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_memory_enrollments (
+    guild_id            TEXT NOT NULL,
+    user_id             TEXT NOT NULL,
+    state               TEXT NOT NULL CHECK (state IN ('disabled', 'pending_notice', 'active', 'opted_out')),
+    admin_actor_id      TEXT,
+    policy_version      TEXT NOT NULL,
+    notice_attempted_at TEXT,
+    notice_message_id   TEXT,
+    notice_sent_at      TEXT,
+    opt_out_at          TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS chat_memory_enrollments_active
+    ON chat_memory_enrollments (guild_id, user_id) WHERE state = 'active';
+
+CREATE TABLE IF NOT EXISTS chat_memories (
+    id                TEXT PRIMARY KEY,
+    guild_id          TEXT NOT NULL,
+    user_id           TEXT NOT NULL,
+    slot              TEXT NOT NULL CHECK (slot IN ('answer_detail', 'answer_format', 'strategy_disclosure', 'strategy_emphasis')),
+    value             TEXT NOT NULL,
+    boss_token        TEXT,
+    state             TEXT NOT NULL CHECK (state IN ('proposed', 'active', 'superseded', 'rejected', 'revoked', 'expired')),
+    source_message_id TEXT,
+    source_channel_id TEXT,
+    proposer_id       TEXT,
+    proposal_message_id TEXT,
+    reviewer_id       TEXT,
+    created_at        TEXT NOT NULL,
+    reviewed_at       TEXT,
+    expires_at        TEXT NOT NULL,
+    state_at          TEXT NOT NULL,
+    CHECK (
+        (slot = 'answer_detail' AND value IN ('concise', 'standard', 'detailed')) OR
+        (slot = 'answer_format' AND value IN ('prose', 'bullets', 'steps')) OR
+        (slot = 'strategy_disclosure' AND value IN ('none', 'hints', 'full')) OR
+        (slot = 'strategy_emphasis' AND value IN ('mechanics', 'survival', 'party_roles'))
+    ),
+    CHECK (boss_token IS NULL OR slot IN ('strategy_disclosure', 'strategy_emphasis')),
+    CHECK (boss_token IS NULL OR (length(boss_token) BETWEEN 2 AND 64 AND substr(boss_token, 1, 1) GLOB '[A-Za-z]' AND boss_token NOT GLOB '*[^A-Za-z0-9]*'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS chat_memories_one_active_scope
+    ON chat_memories (guild_id, user_id, slot, COALESCE(boss_token, ''))
+    WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS chat_memories_retrieval
+    ON chat_memories (guild_id, user_id, state, expires_at, slot, boss_token);
+CREATE INDEX IF NOT EXISTS chat_memories_inactive_purge
+    ON chat_memories (state, state_at);
+CREATE INDEX IF NOT EXISTS chat_memories_proposal_message
+    ON chat_memories (proposal_message_id);
+
+CREATE TABLE IF NOT EXISTS chat_memory_events (
+    id                 TEXT PRIMARY KEY,
+    guild_id           TEXT NOT NULL,
+    user_id            TEXT NOT NULL,
+    actor_id           TEXT,
+    action             TEXT NOT NULL CHECK (action IN ('enrollment_started', 'notice_attempted', 'enrollment_activated', 'enrollment_disabled', 'opted_out', 'proposed', 'approved', 'rejected', 'replaced', 'revoked', 'expired', 'deleted', 'forgot_all')),
+    memory_id          TEXT,
+    enrollment_guild_id TEXT,
+    enrollment_user_id TEXT,
+    reason             TEXT NOT NULL CHECK (reason IN ('enroll', 'notice', 'opt_out', 'proposal', 'approval', 'rejection', 'replace', 'disable', 'expiry', 'delete', 'forget_all')),
+    at                 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chat_memory_events_recent ON chat_memory_events (at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS chat_memory_events_subject ON chat_memory_events (guild_id, user_id, at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_memory_retrievals (
+    id                  TEXT PRIMARY KEY,
+    guild_id            TEXT NOT NULL,
+    user_id             TEXT NOT NULL,
+    selected_memory_ids TEXT NOT NULL DEFAULT '[]' CHECK (length(selected_memory_ids) <= 4096),
+    reason              TEXT NOT NULL CHECK (reason IN ('matched', 'no_match', 'inactive_enrollment', 'unavailable')),
+    latency_ms          INTEGER,
+    result_count        INTEGER NOT NULL CHECK (result_count >= 0 AND result_count <= 4),
+    at                  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chat_memory_retrievals_recent ON chat_memory_retrievals (at DESC, id DESC);
 """
 
 
@@ -342,6 +471,11 @@ def _migrate_10_to_11(conn: sqlite3.Connection) -> None:
     log.info("schema v10->v11: rewrote %d stored boss list(s) to MaleficStar", rewritten)
 
 
+def _migrate_11_to_12(conn: sqlite3.Connection) -> None:
+    """v11 -> v12: add empty governed-memory storage without backfilling data."""
+    del conn
+
+
 def _json_list(value: str | None) -> list:
     if not value:
         return []
@@ -354,6 +488,56 @@ def _dump(value: Iterable[Any]) -> str:
 
 def _int_or_none(value: Any) -> int | None:
     return int(value) if value is not None else None
+
+
+def _memory_time(value: datetime | None = None) -> datetime:
+    value = utcnow() if value is None else value
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("memory timestamps must be timezone-aware")
+    return value.astimezone(UTC)
+
+
+def _stored_memory_time(value: object) -> datetime | None:
+    """Parse only aware ISO storage values; damaged rows are unavailable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(UTC)
+    except (TypeError, ValueError):
+        return None
+
+
+def _memory_preference(
+    slot: str, value: str, boss_token: str | None, boss_table: BossTable | None = None
+) -> tuple[str, str, str | None]:
+    slot = str(slot).strip().lower()
+    value = str(value).strip().lower()
+    allowed = {
+        "answer_detail": {"concise", "standard", "detailed"},
+        "answer_format": {"prose", "bullets", "steps"},
+        "strategy_disclosure": {"none", "hints", "full"},
+        "strategy_emphasis": {"mechanics", "survival", "party_roles"},
+    }
+    if value not in allowed.get(slot, set()):
+        raise ValueError("invalid governed-memory slot or value")
+    token = str(boss_token).strip() if boss_token is not None else None
+    if token is not None and (slot not in {"strategy_disclosure", "strategy_emphasis"}):
+        raise ValueError("boss scope is valid only for strategy preferences")
+    if token is not None:
+        if not isinstance(boss_table, BossTable):
+            raise ValueError("a BossTable is required for a boss-scoped preference")
+        if not token.isascii():
+            raise ValueError("boss token must be ASCII")
+        try:
+            token = boss_table.parse_token(token)
+        except BossParseError as exc:
+            raise ValueError("invalid canonical boss token") from exc
+        if not token.isascii():
+            raise ValueError("canonical boss token must be ASCII")
+    return slot, value, token
 
 
 def _like_escape(term: str) -> str:
@@ -394,9 +578,9 @@ class Repo:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        self._memory_savepoint = 0
         self.migrate()
 
-    # -- lifecycle --------------------------------------------------------
     def migrate(self) -> None:
         """Create or upgrade the database to the supported schema version."""
         existing_tables = {
@@ -408,7 +592,7 @@ class Repo:
         if existing_tables and "schema_version" not in existing_tables:
             raise RuntimeError(
                 f"database at {self.path} has no schema version; refusing to treat existing "
-                "application tables as a fresh v11 database"
+                f"application tables as a fresh v{SCHEMA_VERSION} database"
             )
         self._conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
         row = self._conn.execute("SELECT version FROM schema_version").fetchone()
@@ -418,7 +602,7 @@ class Repo:
             if application_tables:
                 raise RuntimeError(
                     f"database at {self.path} has no schema version; refusing to treat existing "
-                    "application tables as a fresh v11 database"
+                    f"application tables as a fresh v{SCHEMA_VERSION} database"
                 )
             self._conn.executescript(SCHEMA_SQL)
             self._conn.execute("DELETE FROM schema_version")
@@ -445,10 +629,49 @@ class Repo:
             log.info("migrating database %s: v10 -> v11", self.path)
             _migrate_10_to_11(self._conn)
             self._conn.execute("UPDATE schema_version SET version = 11")
+            current = 11
+        if current == 11:
+            log.info("migrating database %s: v11 -> v12", self.path)
+            _migrate_11_to_12(self._conn)
+            self._conn.execute("UPDATE schema_version SET version = 12")
+        # Some unreleased v12 databases predate the card binding column.  Add it
+        # before SCHEMA_SQL creates its index, otherwise SQLite rejects startup.
+        if "chat_memories" in existing_tables:
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(chat_memories)")}
+            if "proposal_message_id" not in columns:
+                self._conn.execute("ALTER TABLE chat_memories ADD COLUMN proposal_message_id TEXT")
         self._conn.executescript(SCHEMA_SQL)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS chat_memories_proposal_message ON chat_memories (proposal_message_id)"
+        )
 
     def close(self) -> None:
         self._conn.close()
+
+    @contextmanager
+    def _memory_transaction(self):
+        """Serialize a governed-memory lifecycle transition on the owned connection."""
+        if self._conn.in_transaction:
+            self._memory_savepoint += 1
+            savepoint = f"memory_{self._memory_savepoint}"
+            self._conn.execute(f"SAVEPOINT {savepoint}")  # noqa: S608 - generated counter only
+            try:
+                yield
+            except Exception:
+                self._conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")  # noqa: S608
+                self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")  # noqa: S608
+                raise
+            else:
+                self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")  # noqa: S608
+            return
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        else:
+            self._conn.execute("COMMIT")
 
     def backup_to(self, path: str | Path) -> None:
         """Write a consistent, self-contained database snapshot."""
@@ -463,7 +686,6 @@ class Repo:
         for sibling in (f"{path}-wal", f"{path}-shm"):
             Path(sibling).unlink(missing_ok=True)
 
-    # -- config -----------------------------------------------------------
     def get_config(self, key: str, default: str | None = None) -> str | None:
         row = self._conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
@@ -485,7 +707,6 @@ class Repo:
     def heartbeat(self, now: datetime | None = None) -> None:
         self.set_config("heartbeat", to_iso(now or utcnow()))
 
-    # -- members ----------------------------------------------------------
     def upsert_member(
         self,
         user_id: int | str,
@@ -591,7 +812,6 @@ class Repo:
         data["reply_style"] = data.get("reply_style") or None
         return data
 
-    # -- chatbot allowances ------------------------------------------------
     def set_rate_limit(self, user_id: int | str, count: int, window_s: float) -> None:
         """Give one member their own chatbot allowance, replacing any it had."""
         self._conn.execute(
@@ -624,7 +844,6 @@ class Repo:
             for row in rows
         ]
 
-    # -- fixed runs -------------------------------------------------------
     def add_fixed_run(
         self,
         owner_id: int | str,
@@ -708,7 +927,6 @@ class Repo:
         data["participants"] = _json_list(data["participants"])
         return data
 
-    # -- runs -------------------------------------------------------------
     def create_run(
         self,
         week_start: datetime,
@@ -863,7 +1081,6 @@ class Repo:
         data["week_start"] = from_iso(data["week_start"])
         return data
 
-    # -- rsvps ------------------------------------------------------------
     def set_rsvp(
         self, run_id: str, user_id: int | str, state: str, source: str = "reaction"
     ) -> None:
@@ -889,7 +1106,6 @@ class Repo:
         rows = self._conn.execute("SELECT user_id, state FROM rsvps WHERE run_id = ?", (run_id,))
         return {r["user_id"]: r["state"] for r in rows}
 
-    # -- reminders --------------------------------------------------------
     def add_reminder(
         self, run_id: str, kind: str, fire_at: datetime, sent_at: datetime | None = None
     ) -> str | None:
@@ -990,7 +1206,6 @@ class Repo:
         data["sent_at"] = from_iso(data["sent_at"]) if data["sent_at"] else None
         return data
 
-    # -- debug test messages ----------------------------------------------
     def add_debug_message(
         self, message_id: int | str, run_id: str, channel_id: int | str | None, kind: str
     ) -> None:
@@ -1035,8 +1250,6 @@ class Repo:
     def delete_debug_message(self, message_id: int | str) -> None:
         self._conn.execute("DELETE FROM debug_messages WHERE message_id = ?", (str(message_id),))
 
-    # -- messages (phase 2 groundwork) ------------------------------------
-    # -- decline notices ---------------------------------------------------
     def get_decline_notice(self, run_id: str, user_id: int | str) -> dict | None:
         row = self._conn.execute(
             "SELECT * FROM decline_notices WHERE run_id = ? AND user_id = ?",
@@ -1141,7 +1354,6 @@ class Repo:
         data["processed_at"] = from_iso(data["processed_at"]) if data["processed_at"] else None
         return data
 
-    # -- amendments (the chat extractor's proposals) -----------------------
     def create_amendment(
         self,
         week_start: datetime,
@@ -1320,7 +1532,6 @@ class Repo:
         data["new_datetime"] = from_iso(data["new_datetime"]) if data["new_datetime"] else None
         return data
 
-    # -- extraction log ----------------------------------------------------
     def log_extraction(
         self,
         model: str,
@@ -1352,13 +1563,933 @@ class Repo:
         )
         return extraction_id
 
+    def _memory_event(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        *,
+        actor_id: int | str | None,
+        action: str,
+        reason: str,
+        memory_id: str | None = None,
+        at: datetime,
+    ) -> str:
+        if action not in MEMORY_EVENT_ACTIONS or reason not in MEMORY_EVENT_REASONS:
+            raise ValueError("invalid governed-memory event")
+        event_id = new_id()
+        self._conn.execute(
+            "INSERT INTO chat_memory_events "
+            "(id, guild_id, user_id, actor_id, action, memory_id, enrollment_guild_id, "
+            "enrollment_user_id, reason, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                str(guild_id),
+                str(user_id),
+                str(actor_id) if actor_id is not None else None,
+                action,
+                memory_id,
+                str(guild_id),
+                str(user_id),
+                reason,
+                to_iso(at),
+            ),
+        )
+        return event_id
+
+    def begin_memory_enrollment(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        admin_actor_id: int | str,
+        policy_version: str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Start one notification-first enrollment; active members are unchanged."""
+        stamp = _memory_time(now)
+        if not str(policy_version).strip():
+            raise ValueError("policy version is required")
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "INSERT INTO chat_memory_enrollments "
+                "(guild_id, user_id, state, admin_actor_id, policy_version, created_at, updated_at) "
+                "VALUES (?, ?, 'pending_notice', ?, ?, ?, ?) "
+                "ON CONFLICT(guild_id, user_id) DO UPDATE SET state = 'pending_notice', "
+                "admin_actor_id = excluded.admin_actor_id, policy_version = excluded.policy_version, "
+                "notice_attempted_at = NULL, notice_message_id = NULL, notice_sent_at = NULL, "
+                "opt_out_at = NULL, updated_at = excluded.updated_at "
+                "WHERE chat_memory_enrollments.state != 'active'",
+                (
+                    str(guild_id),
+                    str(user_id),
+                    str(admin_actor_id),
+                    str(policy_version),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                ),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=admin_actor_id,
+                action="enrollment_started",
+                reason="enroll",
+                at=stamp,
+            )
+            return True
+
+    def record_memory_notice_attempt(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Audit an explicit notice delivery attempt while the member is ineligible."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "UPDATE chat_memory_enrollments SET notice_attempted_at = ?, updated_at = ? "
+                "WHERE guild_id = ? AND user_id = ? AND state = 'pending_notice'",
+                (to_iso(stamp), to_iso(stamp), str(guild_id), str(user_id)),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="notice_attempted",
+                reason="notice",
+                at=stamp,
+            )
+            return True
+
+    def activate_memory_enrollment(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        actor_id: int | str,
+        notice_message_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """CAS a successfully delivered notice from pending to active."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "UPDATE chat_memory_enrollments SET state = 'active', notice_attempted_at = ?, "
+                "notice_message_id = ?, notice_sent_at = ?, updated_at = ? "
+                "WHERE guild_id = ? AND user_id = ? AND state = 'pending_notice'",
+                (
+                    to_iso(stamp),
+                    str(notice_message_id),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    str(guild_id),
+                    str(user_id),
+                ),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="enrollment_activated",
+                reason="notice",
+                at=stamp,
+            )
+            return True
+
+    def memory_enrollment_active(self, guild_id: int | str, user_id: int | str) -> bool:
+        return bool(
+            self._conn.execute(
+                "SELECT 1 FROM chat_memory_enrollments WHERE guild_id = ? AND user_id = ? AND state = 'active'",
+                (str(guild_id), str(user_id)),
+            ).fetchone()
+        )
+
+    def get_memory_enrollment(self, guild_id: int | str, user_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM chat_memory_enrollments WHERE guild_id = ? AND user_id = ?",
+            (str(guild_id), str(user_id)),
+        ).fetchone()
+        return self._memory_enrollment(row) if row else None
+
+    @staticmethod
+    def _memory_enrollment(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        for key in (
+            "notice_attempted_at",
+            "notice_sent_at",
+            "opt_out_at",
+            "created_at",
+            "updated_at",
+        ):
+            data[key] = _stored_memory_time(data[key])
+        return data
+
+    def opt_out_memory(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Make a member ineligible and revoke live content in the same transaction."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            self._conn.execute(
+                "INSERT INTO chat_memory_enrollments (guild_id, user_id, state, admin_actor_id, policy_version, opt_out_at, created_at, updated_at) "
+                "VALUES (?, ?, 'opted_out', ?, '', ?, ?, ?) ON CONFLICT(guild_id, user_id) DO UPDATE SET "
+                "state = 'opted_out', opt_out_at = excluded.opt_out_at, updated_at = excluded.updated_at",
+                (
+                    str(guild_id),
+                    str(user_id),
+                    str(actor_id),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                ),
+            )
+            rows = list(
+                self._conn.execute(
+                    "SELECT id FROM chat_memories WHERE guild_id = ? AND user_id = ? AND state IN ('proposed', 'active')",
+                    (str(guild_id), str(user_id)),
+                )
+            )
+            self._conn.execute(
+                "UPDATE chat_memories SET state = 'revoked', state_at = ?, reviewed_at = COALESCE(reviewed_at, ?), reviewer_id = COALESCE(reviewer_id, ?) WHERE guild_id = ? AND user_id = ? AND state IN ('proposed', 'active')",
+                (to_iso(stamp), to_iso(stamp), str(actor_id), str(guild_id), str(user_id)),
+            )
+            self._memory_event(
+                guild_id, user_id, actor_id=actor_id, action="opted_out", reason="opt_out", at=stamp
+            )
+            for row in rows:
+                self._memory_event(
+                    guild_id,
+                    user_id,
+                    actor_id=actor_id,
+                    action="revoked",
+                    reason="opt_out",
+                    memory_id=row["id"],
+                    at=stamp,
+                )
+            return True
+
+    def disable_memory_enrollment(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        admin_actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Disable one enrollment and revoke its live content without deleting it."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "UPDATE chat_memory_enrollments SET state = 'disabled', admin_actor_id = ?, "
+                "updated_at = ? WHERE guild_id = ? AND user_id = ? AND state != 'disabled'",
+                (str(admin_actor_id), to_iso(stamp), str(guild_id), str(user_id)),
+            )
+            if not cursor.rowcount:
+                return False
+            rows = list(
+                self._conn.execute(
+                    "SELECT id FROM chat_memories WHERE guild_id = ? AND user_id = ? "
+                    "AND state IN ('proposed', 'active')",
+                    (str(guild_id), str(user_id)),
+                )
+            )
+            self._conn.execute(
+                "UPDATE chat_memories SET state = 'revoked', state_at = ?, "
+                "reviewed_at = COALESCE(reviewed_at, ?), reviewer_id = COALESCE(reviewer_id, ?) "
+                "WHERE guild_id = ? AND user_id = ? AND state IN ('proposed', 'active')",
+                (to_iso(stamp), to_iso(stamp), str(admin_actor_id), str(guild_id), str(user_id)),
+            )
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=admin_actor_id,
+                action="enrollment_disabled",
+                reason="disable",
+                at=stamp,
+            )
+            for row in rows:
+                self._memory_event(
+                    guild_id,
+                    user_id,
+                    actor_id=admin_actor_id,
+                    action="revoked",
+                    reason="disable",
+                    memory_id=row["id"],
+                    at=stamp,
+                )
+            return True
+
+    def create_memory_proposal(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        slot: str,
+        value: str,
+        *,
+        boss_token: str | None = None,
+        boss_table: BossTable | None = None,
+        source_message_id: int | str | None = None,
+        source_channel_id: int | str | None = None,
+        proposer_id: int | str | None = None,
+        now: datetime | None = None,
+    ) -> str | None:
+        """Store a seven-day proposal only while its exact subject is active."""
+        slot, value, boss_token = _memory_preference(slot, value, boss_token, boss_table)
+        stamp = _memory_time(now)
+        memory_id = new_id()
+        with self._memory_transaction():
+            if not self.memory_enrollment_active(guild_id, user_id):
+                return None
+            self._conn.execute(
+                "INSERT INTO chat_memories (id, guild_id, user_id, slot, value, boss_token, state, source_message_id, source_channel_id, proposer_id, created_at, expires_at, state_at) VALUES (?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?, ?, ?)",
+                (
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                    slot,
+                    value,
+                    boss_token,
+                    str(source_message_id) if source_message_id is not None else None,
+                    str(source_channel_id) if source_channel_id is not None else None,
+                    str(proposer_id) if proposer_id is not None else None,
+                    to_iso(stamp),
+                    to_iso(stamp + MEMORY_PROPOSAL_TTL),
+                    to_iso(stamp),
+                ),
+            )
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=proposer_id,
+                action="proposed",
+                reason="proposal",
+                memory_id=memory_id,
+                at=stamp,
+            )
+        return memory_id
+
+    def bind_memory_proposal_message(
+        self, guild_id: int | str, user_id: int | str, memory_id: str, message_id: int | str
+    ) -> bool:
+        """Bind one posted card to its still-pending proposal."""
+        with self._memory_transaction():
+            return bool(
+                self._conn.execute(
+                    "UPDATE chat_memories SET proposal_message_id = ? WHERE id = ? AND guild_id = ? "
+                    "AND user_id = ? AND state = 'proposed' AND proposal_message_id IS NULL",
+                    (str(message_id), memory_id, str(guild_id), str(user_id)),
+                ).rowcount
+            )
+
+    def memory_proposal_by_message(self, message_id: int | str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM chat_memories WHERE proposal_message_id = ?", (str(message_id),)
+        ).fetchone()
+        return self._memory(row) if row else None
+
+    def discard_memory_proposal(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Remove only an unbound proposal whose review card was never made usable."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "DELETE FROM chat_memories WHERE id = ? AND guild_id = ? AND user_id = ? "
+                "AND state = 'proposed' AND proposal_message_id IS NULL",
+                (memory_id, str(guild_id), str(user_id)),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=None,
+                action="deleted",
+                reason="delete",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def approve_memory_proposal(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        reviewer_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """CAS an unexpired proposal, superseding the matching active scope atomically."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            proposal = self._conn.execute(
+                "SELECT slot, boss_token, expires_at FROM chat_memories WHERE id = ? "
+                "AND guild_id = ? AND user_id = ? AND state = 'proposed'",
+                (memory_id, str(guild_id), str(user_id)),
+            ).fetchone()
+            if (
+                proposal is None
+                or (expires_at := _stored_memory_time(proposal["expires_at"])) is None
+                or expires_at <= stamp
+                or not self.memory_enrollment_active(guild_id, user_id)
+            ):
+                return False
+            active = list(
+                self._conn.execute(
+                    "SELECT id FROM chat_memories WHERE guild_id = ? AND user_id = ? AND slot = ? AND COALESCE(boss_token, '') = COALESCE(?, '') AND state = 'active'",
+                    (str(guild_id), str(user_id), proposal["slot"], proposal["boss_token"]),
+                )
+            )
+            self._conn.execute(
+                "UPDATE chat_memories SET state = 'superseded', state_at = ?, reviewed_at = ?, reviewer_id = ? WHERE guild_id = ? AND user_id = ? AND slot = ? AND COALESCE(boss_token, '') = COALESCE(?, '') AND state = 'active'",
+                (
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    str(reviewer_id),
+                    str(guild_id),
+                    str(user_id),
+                    proposal["slot"],
+                    proposal["boss_token"],
+                ),
+            )
+            cursor = self._conn.execute(
+                "UPDATE chat_memories SET state = 'active', reviewed_at = ?, reviewer_id = ?, "
+                "expires_at = ?, state_at = ? WHERE id = ? AND guild_id = ? AND user_id = ? "
+                "AND state = 'proposed'",
+                (
+                    to_iso(stamp),
+                    str(reviewer_id),
+                    to_iso(stamp + MEMORY_ACTIVE_TTL),
+                    to_iso(stamp),
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                ),
+            )
+            if not cursor.rowcount:
+                raise RuntimeError("memory proposal changed during approval")
+            for row in active:
+                self._memory_event(
+                    guild_id,
+                    user_id,
+                    actor_id=reviewer_id,
+                    action="replaced",
+                    reason="replace",
+                    memory_id=row["id"],
+                    at=stamp,
+                )
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=reviewer_id,
+                action="approved",
+                reason="approval",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def reject_memory_proposal(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        reviewer_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            candidate = self._conn.execute(
+                "SELECT expires_at FROM chat_memories WHERE id = ? AND guild_id = ? AND user_id = ? "
+                "AND state = 'proposed'",
+                (memory_id, str(guild_id), str(user_id)),
+            ).fetchone()
+            if (
+                candidate is None
+                or (expires_at := _stored_memory_time(candidate["expires_at"])) is None
+            ):
+                return False
+            if expires_at <= stamp:
+                return False
+            cursor = self._conn.execute(
+                "UPDATE chat_memories SET state = 'rejected', reviewer_id = ?, reviewed_at = ?, "
+                "state_at = ? WHERE id = ? AND guild_id = ? AND user_id = ? AND state = 'proposed'",
+                (
+                    str(reviewer_id),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                ),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=reviewer_id,
+                action="rejected",
+                reason="rejection",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def replace_memory(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        slot: str,
+        value: str,
+        admin_actor_id: int | str,
+        *,
+        boss_token: str | None = None,
+        boss_table: BossTable | None = None,
+        now: datetime | None = None,
+    ) -> str | None:
+        """Create an immediately active administrative value for an active member."""
+        slot, value, boss_token = _memory_preference(slot, value, boss_token, boss_table)
+        stamp = _memory_time(now)
+        memory_id = new_id()
+        with self._memory_transaction():
+            if not self.memory_enrollment_active(guild_id, user_id):
+                return None
+            old = list(
+                self._conn.execute(
+                    "SELECT id FROM chat_memories WHERE guild_id = ? AND user_id = ? AND slot = ? AND COALESCE(boss_token, '') = COALESCE(?, '') AND state = 'active'",
+                    (str(guild_id), str(user_id), slot, boss_token),
+                )
+            )
+            self._conn.execute(
+                "UPDATE chat_memories SET state = 'superseded', state_at = ?, reviewed_at = ?, reviewer_id = ? WHERE guild_id = ? AND user_id = ? AND slot = ? AND COALESCE(boss_token, '') = COALESCE(?, '') AND state = 'active'",
+                (
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    str(admin_actor_id),
+                    str(guild_id),
+                    str(user_id),
+                    slot,
+                    boss_token,
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO chat_memories (id, guild_id, user_id, slot, value, boss_token, state, proposer_id, reviewer_id, created_at, reviewed_at, expires_at, state_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)",
+                (
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                    slot,
+                    value,
+                    boss_token,
+                    str(admin_actor_id),
+                    str(admin_actor_id),
+                    to_iso(stamp),
+                    to_iso(stamp),
+                    to_iso(stamp + MEMORY_ACTIVE_TTL),
+                    to_iso(stamp),
+                ),
+            )
+            for row in old:
+                self._memory_event(
+                    guild_id,
+                    user_id,
+                    actor_id=admin_actor_id,
+                    action="replaced",
+                    reason="replace",
+                    memory_id=row["id"],
+                    at=stamp,
+                )
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=admin_actor_id,
+                action="approved",
+                reason="replace",
+                memory_id=memory_id,
+                at=stamp,
+            )
+        return memory_id
+
+    def list_memories(self, guild_id: int | str, user_id: int | str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM chat_memories WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC",
+            (str(guild_id), str(user_id)),
+        )
+        return [self._memory(row) for row in rows]
+
+    def list_memory_subjects(
+        self,
+        guild_id: int | str,
+        *,
+        enrollment_state: str | None = None,
+        lifecycle: str | None = None,
+        slot: str | None = None,
+        boss_token: str | None = None,
+        expires_before: datetime | None = None,
+    ) -> list[dict]:
+        """List exact-guild memory subjects with their enrollment and typed rows."""
+        if enrollment_state is not None and enrollment_state not in MEMORY_ENROLLMENT_STATES:
+            raise ValueError("invalid memory enrollment state")
+        if lifecycle is not None and lifecycle not in MEMORY_STATES:
+            raise ValueError("invalid memory lifecycle")
+        if slot is not None and slot not in MEMORY_SLOTS:
+            raise ValueError("invalid memory slot")
+        subjects = self._conn.execute(
+            "SELECT user_id FROM chat_memory_enrollments WHERE guild_id = ? "
+            "UNION SELECT user_id FROM chat_memories WHERE guild_id = ? ORDER BY user_id",
+            (str(guild_id), str(guild_id)),
+        )
+        output = []
+        for subject in subjects:
+            user_id = subject["user_id"]
+            enrollment = self.get_memory_enrollment(guild_id, user_id)
+            rows = self.list_memories(guild_id, user_id)
+            if enrollment_state is not None and (enrollment or {}).get("state") != enrollment_state:
+                continue
+            filtered = [
+                row
+                for row in rows
+                if (lifecycle is None or row["state"] == lifecycle)
+                and (slot is None or row["slot"] == slot)
+                and (boss_token is None or row["boss_token"] == boss_token)
+                and (
+                    expires_before is None
+                    or (row["expires_at"] is not None and row["expires_at"] <= expires_before)
+                )
+            ]
+            if (
+                lifecycle is not None
+                or slot is not None
+                or boss_token is not None
+                or expires_before is not None
+            ) and not filtered:
+                continue
+            output.append({"user_id": user_id, "enrollment": enrollment, "memories": filtered})
+        return output
+
+    def get_memory(self, guild_id: int | str, user_id: int | str, memory_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM chat_memories WHERE id = ? AND guild_id = ? AND user_id = ?",
+            (memory_id, str(guild_id), str(user_id)),
+        ).fetchone()
+        return self._memory(row) if row else None
+
+    @staticmethod
+    def _memory(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        for key in ("created_at", "reviewed_at", "expires_at", "state_at"):
+            data[key] = _stored_memory_time(data[key])
+        return data
+
+    def delete_memory(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Physically remove a preference without requiring present consent."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "DELETE FROM chat_memories WHERE id = ? AND guild_id = ? AND user_id = ?",
+                (memory_id, str(guild_id), str(user_id)),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="deleted",
+                reason="delete",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def revoke_memory(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Revoke one still-live exact-scope memory and record a bounded event."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "UPDATE chat_memories SET state = 'revoked', state_at = ?, reviewer_id = COALESCE(reviewer_id, ?), "
+                "reviewed_at = COALESCE(reviewed_at, ?) WHERE id = ? AND guild_id = ? AND user_id = ? "
+                "AND state IN ('proposed', 'active')",
+                (
+                    to_iso(stamp),
+                    str(actor_id),
+                    to_iso(stamp),
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                ),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="revoked",
+                reason="disable",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def expire_memory(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        memory_id: str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Expire one still-live exact-scope memory before its scheduled expiry."""
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "UPDATE chat_memories SET state = 'expired', state_at = ?, reviewer_id = COALESCE(reviewer_id, ?), "
+                "reviewed_at = COALESCE(reviewed_at, ?) WHERE id = ? AND guild_id = ? AND user_id = ? "
+                "AND state IN ('proposed', 'active')",
+                (
+                    to_iso(stamp),
+                    str(actor_id),
+                    to_iso(stamp),
+                    memory_id,
+                    str(guild_id),
+                    str(user_id),
+                ),
+            )
+            if not cursor.rowcount:
+                return False
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="expired",
+                reason="expiry",
+                memory_id=memory_id,
+                at=stamp,
+            )
+            return True
+
+    def forget_all_memories(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        actor_id: int | str,
+        *,
+        now: datetime | None = None,
+    ) -> int:
+        stamp = _memory_time(now)
+        with self._memory_transaction():
+            cursor = self._conn.execute(
+                "DELETE FROM chat_memories WHERE guild_id = ? AND user_id = ?",
+                (str(guild_id), str(user_id)),
+            )
+            self._memory_event(
+                guild_id,
+                user_id,
+                actor_id=actor_id,
+                action="forgot_all",
+                reason="forget_all",
+                at=stamp,
+            )
+            return max(cursor.rowcount, 0)
+
+    def list_memory_events(self, guild_id: int | str, user_id: int | str) -> list[dict]:
+        """Content-free lifecycle metadata for an exact member scope."""
+        rows = self._conn.execute(
+            "SELECT * FROM chat_memory_events WHERE guild_id = ? AND user_id = ? ORDER BY at DESC, id DESC",
+            (str(guild_id), str(user_id)),
+        )
+        return [self._memory_event_row(row) for row in rows]
+
+    @staticmethod
+    def _memory_event_row(row: sqlite3.Row) -> dict:
+        data = dict(row)
+        data["at"] = _stored_memory_time(data["at"])
+        return data
+
+    def retrieve_memories(
+        self, guild_id: int | str, user_id: int | str, *, now: datetime | None = None
+    ) -> list[dict]:
+        """Return only exact-scope active, unexpired preferences for an active member."""
+        stamp = _memory_time(now)
+        rows = self._conn.execute(
+            "SELECT m.* FROM chat_memories AS m WHERE m.guild_id = ? AND m.user_id = ? "
+            "AND m.state = 'active' AND EXISTS (SELECT 1 FROM "
+            "chat_memory_enrollments AS e WHERE e.guild_id = m.guild_id AND e.user_id = m.user_id "
+            "AND e.state = 'active') ORDER BY m.reviewed_at DESC, m.id DESC",
+            (str(guild_id), str(user_id)),
+        )
+        return [
+            self._memory(row)
+            for row in rows
+            if (expires_at := _stored_memory_time(row["expires_at"])) is not None
+            and expires_at > stamp
+        ]
+
+    def log_memory_retrieval(
+        self,
+        guild_id: int | str,
+        user_id: int | str,
+        selected_memory_ids: Sequence[str],
+        reason: str,
+        *,
+        latency_ms: int | None = None,
+        now: datetime | None = None,
+    ) -> str:
+        """Store bounded, content-free retrieval diagnostics and prune them on insert."""
+        if reason not in MEMORY_RETRIEVAL_REASONS:
+            raise ValueError("invalid memory retrieval reason")
+        selected = list(selected_memory_ids)
+        if len(selected) > 4 or len(set(selected)) != len(selected):
+            raise ValueError("invalid selected memory ids")
+        for memory_id in selected:
+            try:
+                parsed = uuid.UUID(memory_id)
+            except (AttributeError, ValueError) as exc:
+                raise ValueError("invalid selected memory ids") from exc
+            if parsed.version != 4 or str(parsed) != memory_id:
+                raise ValueError("invalid selected memory ids")
+        stamp = _memory_time(now)
+        retrieval_id = new_id()
+        with self._memory_transaction():
+            for memory_id in selected:
+                if not self._conn.execute(
+                    "SELECT 1 FROM chat_memories WHERE id = ? AND guild_id = ? AND user_id = ?",
+                    (memory_id, str(guild_id), str(user_id)),
+                ).fetchone():
+                    raise ValueError("selected memory ids must belong to this member")
+            self._conn.execute(
+                "INSERT INTO chat_memory_retrievals (id, guild_id, user_id, selected_memory_ids, reason, latency_ms, result_count, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    retrieval_id,
+                    str(guild_id),
+                    str(user_id),
+                    json.dumps(selected),
+                    reason,
+                    _int_or_none(latency_ms),
+                    len(selected),
+                    to_iso(stamp),
+                ),
+            )
+            self._conn.execute(
+                "DELETE FROM chat_memory_retrievals WHERE at < ?",
+                (to_iso(stamp - MEMORY_RETRIEVAL_RETENTION),),
+            )
+            self._conn.execute(
+                "DELETE FROM chat_memory_retrievals WHERE id NOT IN (SELECT id FROM chat_memory_retrievals ORDER BY at DESC, id DESC LIMIT ?)",
+                (MEMORY_RETRIEVAL_KEPT,),
+            )
+        return retrieval_id
+
+    def list_memory_retrievals(self, guild_id: int | str, user_id: int | str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM chat_memory_retrievals WHERE guild_id = ? AND user_id = ? "
+            "ORDER BY at DESC, id DESC",
+            (str(guild_id), str(user_id)),
+        )
+        output = []
+        for row in rows:
+            data = dict(row)
+            data["selected_memory_ids"] = _json_list(data["selected_memory_ids"])
+            data["at"] = _stored_memory_time(data["at"])
+            output.append(data)
+        return output
+
+    def cleanup_memories(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Expire eligible rows and prune governed-memory retention windows."""
+        stamp = _memory_time(now)
+        expired = purged = 0
+        with self._memory_transaction():
+            rows = list(
+                self._conn.execute(
+                    "SELECT id, guild_id, user_id, expires_at FROM chat_memories "
+                    "WHERE state IN ('proposed', 'active')"
+                )
+            )
+            for row in rows:
+                expires_at = _stored_memory_time(row["expires_at"])
+                if expires_at is not None and expires_at > stamp:
+                    continue
+                cursor = self._conn.execute(
+                    "UPDATE chat_memories SET state = 'expired', state_at = ? WHERE id = ? "
+                    "AND state IN ('proposed', 'active')",
+                    (to_iso(stamp), row["id"]),
+                )
+                if cursor.rowcount:
+                    expired += 1
+                    self._memory_event(
+                        row["guild_id"],
+                        row["user_id"],
+                        actor_id=None,
+                        action="expired",
+                        reason="expiry",
+                        memory_id=row["id"],
+                        at=stamp,
+                    )
+            cursor = self._conn.execute(
+                "DELETE FROM chat_memories WHERE state NOT IN ('proposed', 'active') AND state_at < ?",
+                (to_iso(stamp - MEMORY_INACTIVE_RETENTION),),
+            )
+            purged = max(cursor.rowcount, 0)
+            self._conn.execute(
+                "DELETE FROM chat_memory_retrievals WHERE at < ?",
+                (to_iso(stamp - MEMORY_RETRIEVAL_RETENTION),),
+            )
+            self._conn.execute(
+                "DELETE FROM chat_memory_retrievals WHERE id NOT IN (SELECT id FROM chat_memory_retrievals ORDER BY at DESC, id DESC LIMIT ?)",
+                (MEMORY_RETRIEVAL_KEPT,),
+            )
+            self._conn.execute(
+                "DELETE FROM chat_memory_events WHERE at < ?",
+                (to_iso(stamp - MEMORY_EVENT_RETENTION),),
+            )
+        return {"expired": expired, "purged": purged}
+
     def set_extraction_amendments(self, extraction_id: str, amendment_ids: Sequence[str]) -> None:
         self._conn.execute(
             "UPDATE extractions SET amendment_ids = ? WHERE id = ?",
             (_dump(amendment_ids), extraction_id),
         )
 
-    # -- rescan jobs -------------------------------------------------------
     def create_rescan_job(
         self,
         job_id: str,
@@ -1471,7 +2602,6 @@ class Repo:
         data["amendment_ids"] = _json_list(data["amendment_ids"])
         return data
 
-    # -- chat interactions -------------------------------------------------
     def log_chat_interaction(
         self,
         *,
@@ -1644,7 +2774,6 @@ class Repo:
         data["model_rounds"] = json.loads(data["model_rounds"] or "[]")
         return data
 
-    # -- audit trail -------------------------------------------------------
     def log_audit(
         self,
         *,

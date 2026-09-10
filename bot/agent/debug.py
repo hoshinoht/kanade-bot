@@ -45,11 +45,6 @@ class DebugNotAllowed(app_commands.CheckFailure):
     """Raised when someone without debug access uses /debug."""
 
 
-# ---------------------------------------------------------------------------
-# pure helpers (unit tested)
-# ---------------------------------------------------------------------------
-
-
 def may_debug(
     user_id: int | str,
     role_ids: list[int],
@@ -161,10 +156,6 @@ def manage_messages_lines(access: list[dict]) -> list[str]:
     return [f"{header} · " + " · ".join(rows)]
 
 
-# ---------------------------------------------------------------------------
-# the group
-# ---------------------------------------------------------------------------
-
 KIND_CHOICES = [
     app_commands.Choice(name=n, value=n)
     for n in ("day_of", "countdown_60", "countdown_15", "amend", "decline")
@@ -239,7 +230,6 @@ class DebugGroup(app_commands.Group):
             return True
         raise DebugNotAllowed()
 
-    # -- ping -------------------------------------------------------------
     @app_commands.command(name="ping", description="Post a test reminder for a run right now")
     @app_commands.describe(
         run_id="Pick from the dropdown, or paste an id like `a1b2c3d4`",
@@ -326,7 +316,6 @@ class DebugGroup(app_commands.Group):
             )
         return None
 
-    # -- reminders ---------------------------------------------------------
     @app_commands.command(name="reminders", description="List reminder rows")
     @app_commands.describe(run_id="Limit to one run (optional)")
     @app_commands.autocomplete(run_id=_run_autocomplete)
@@ -349,7 +338,6 @@ class DebugGroup(app_commands.Group):
             render_reminder_rows(rows, bot.tz)[:1900], ephemeral=True
         )
 
-    # -- tick --------------------------------------------------------------
     @app_commands.command(name="tick", description="Run the reminder tick immediately")
     async def tick(self, interaction: discord.Interaction) -> None:
         bot = _bot(interaction)
@@ -365,7 +353,6 @@ class DebugGroup(app_commands.Group):
             f"Dispatched {len(sent)} reminder(s):\n" + "\n".join(sent[:20]), ephemeral=True
         )
 
-    # -- materialise -------------------------------------------------------
     @app_commands.command(name="materialise", description="Force materialisation of both weeks")
     async def materialise(self, interaction: discord.Interaction) -> None:
         bot = _bot(interaction)
@@ -387,7 +374,6 @@ class DebugGroup(app_commands.Group):
             f"Created {len(created)} run(s):\n" + "\n".join(lines[:20]), ephemeral=True
         )
 
-    # -- upcoming ----------------------------------------------------------
     @app_commands.command(name="upcoming", description="What would fire in the next N hours")
     @app_commands.describe(hours="How far ahead to look (default 24)")
     async def upcoming(self, interaction: discord.Interaction, hours: int = 24) -> None:
@@ -401,7 +387,6 @@ class DebugGroup(app_commands.Group):
             (header + render_reminder_rows(due, bot.tz))[:1900], ephemeral=True
         )
 
-    # -- status ------------------------------------------------------------
     @app_commands.command(name="status", description="Bot health and configuration")
     async def status(self, interaction: discord.Interaction) -> None:
         bot = _bot(interaction)
@@ -430,7 +415,6 @@ class DebugGroup(app_commands.Group):
         lines.extend(manage_messages_lines(bot.access_report()))
         await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
 
-    # -- extract -----------------------------------------------------------
     @app_commands.command(
         name="extract", description="Run the chat extractor over this channel and show its JSON"
     )
@@ -467,7 +451,6 @@ class DebugGroup(app_commands.Group):
             body += f"\n```json\n{raw[:1000]}\n```"
         await interaction.followup.send(body[:1900], ephemeral=True)
 
-    # -- clear_test --------------------------------------------------------
     @app_commands.command(
         name="clear_test", description="Delete this channel's 🧪 TEST messages from the last 24h"
     )

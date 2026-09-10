@@ -2,7 +2,51 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## 4.7.0
+## 4.9.0
+
+**Added**
+
+- Governed Discord memory uses schema v12 persistence with notification-first,
+  case-by-case enrollment, typed review cards, and subject-controlled approval.
+- Deterministic typed proposals and scoped retrieval keep memory limited to
+  presentation preferences; no chat transcript is imported or backfilled.
+- Member `/memory` controls plus authenticated portal, API, and `bossctl` admin
+  operations support enrollment, correction, revocation, opt-out, and deletion.
+- Boss strategy responses carry bounded source attribution, with full provenance
+  and source URLs on authenticated per-boss knowledge pages.
+
+**Changed**
+
+- Retention cleanup runs on the first tick and hourly thereafter regardless of the
+  memory switch; failures are isolated, logged, and retried on the next hourly window.
+- Governed memory now expires proposals after 7 days, active preferences after
+  180 days, inactive content and retrieval diagnostics after 30 days (diagnostics
+  also keep only the newest 500), and lifecycle events after 365 days.
+- The rollout remains disabled by default; enabling the capability never enrolls
+  members or enables production collection by itself.
+
+**Fixed**
+
+- Reworked member review into a single tabbed Memory governance window, keeping enrollment,
+  preference setting, records, and activity within the fixed viewport review surface.
+
+## 4.8.2
+
+**Changed**
+
+- Split repository guidance into subsystem-specific `AGENTS.md` files covering
+  boss data, runtime packages, chatbot tools, portal assets, and tests.
+
+## 4.8.1
+
+**Changed**
+
+- Removed unused helpers and logger scaffolding, stale generated comments, and
+  repeated documentation introductions without changing runtime behavior.
+- Pruned redundant implementation-detail tests and made shared chatbot fixtures
+  deterministic across boss-week reset boundaries.
+
+## 4.8.0
 
 **Added**
 
@@ -25,6 +69,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Chat schedule lookups now treat unqualified weeks as guild-local calendar
+  weeks, while explicit boss-week lookups retain reset-to-reset semantics.
+- Chat schedule replies now use bounded two-line records; trusted requests for
+  runs left, remaining, upcoming, or next exclude completed runs without giving
+  the model a filtering option.
 - Reply-profile overlays moved up to `config/personas/behaviours/` with
   staging overrides in `config/personas/behaviours/staging/`; the old
   `behaviours/profiles/` and `behaviour-plugins/` paths remain readable as

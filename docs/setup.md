@@ -1,8 +1,5 @@
 # Setup
 
-Everything to get the bot from zero to running: the Discord developer
-portal, `.env`, and the container.
-
 ## Discord developer portal setup
 
 1. Go to <https://discord.com/developers/applications> → **New Application**.
@@ -79,6 +76,15 @@ When the chatbot is configured, `BOSS_KNOWLEDGE_PATH` (default
 `boss/knowledge`) must contain `_meta.yaml` and one lowercase YAML document for
 every catalog boss. The catalog and knowledge are validated together at startup;
 missing, extra, or malformed documents stop the chat-enabled bot until fixed.
+
+Durable chatbot memory is disabled by default with
+`CHAT_MEMORY_ENABLED=false`. Setting it to `true` requires a restart, enables
+only the capability, and enrolls nobody. An administrator must enroll each
+member individually through the authenticated portal or `bossctl`; Kanade sends
+a typed-preferences notice by Discord DM and activates that member only after
+delivery succeeds. The bossing role never enrolls members, and there is no bulk
+enrollment. See the [memory policy](chatbot-memory-policy.md) for the typed
+grammar, controls, retention, and deletion boundaries.
 
 **Upgrading from the old layout:** if your `.env` explicitly says
 `BOSSES_PATH=config/bosses.yaml`, change it to `BOSSES_PATH=boss/bosses.yaml`,

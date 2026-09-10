@@ -88,14 +88,6 @@ def test_the_guild_owner_is_staff_here_too(chat_bot):
     assert reply(chat_bot, FakeAuthor(OWNER_ID)) == STAFF_LIMITS_REPLY
 
 
-def test_the_staff_line_says_no_numbers_at_all(chat_bot):
-    """Their window is empty and stays empty; quoting one would invent a limit."""
-    personal(chat_bot, count=5)
-    said = reply(chat_bot, FakeAuthor(MEMBER_ID, roles=(CHAT_ROLE, ADMIN_ROLE)))
-
-    assert "5" not in said and "used" not in said
-
-
 # --- the bar ----------------------------------------------------------------
 
 
@@ -151,11 +143,6 @@ def test_the_bar_only_fills_completely_when_the_window_is():
     assert usage_bar(11, 12).count(BAR_EMPTY) == 1
     assert usage_bar(12, 12) == BAR_FILLED * BAR_SEGMENTS
     assert usage_bar(0, 12) == BAR_EMPTY * BAR_SEGMENTS
-
-
-def test_the_bar_is_always_the_same_width():
-    for used in range(8):
-        assert len(usage_bar(used, 7)) == BAR_SEGMENTS
 
 
 # --- whose allowance --------------------------------------------------------

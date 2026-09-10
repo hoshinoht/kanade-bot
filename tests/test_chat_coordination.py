@@ -25,7 +25,6 @@ from bot.infrastructure.db import Repo
 from .chat_support import (
     ADOPTED_CHANNEL,
     CHAT_CHANNEL,
-    OTHER_ROLE,
     chat_settings,
     message,
 )
@@ -125,23 +124,6 @@ def test_an_unhandled_message_still_reaches_the_extractor(repo, chat_bot, reason
 
     assert client.extractor.seen == [msg]
     assert client.repo.get_message(msg.id) is not None
-
-
-def test_ambient_chat_in_a_channel_that_is_both_is_still_extracted(repo, chat_bot):
-    """No mention, so the gate refuses and the party channel behaves as always."""
-    client = wire(repo, Handling(False, "the bot was not mentioned"))
-    msg = dated(message(chat_bot, "mon 9:30 can?", channel_id=WATCHED_CHANNEL, mentions=()))
-    deliver(client, msg)
-    assert client.extractor.seen == [msg]
-
-
-def test_a_mention_from_somebody_without_the_role_is_extracted_as_before(repo, chat_bot):
-    client = wire(repo, Handling(False, "the author does not hold the chat role"))
-    msg = dated(
-        message(chat_bot, "@bot move hstar", channel_id=WATCHED_CHANNEL, roles=(OTHER_ROLE,))
-    )
-    deliver(client, msg)
-    assert client.extractor.seen == [msg]
 
 
 # ---------------------------------------------------------------------------

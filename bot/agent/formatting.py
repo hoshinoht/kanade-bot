@@ -47,6 +47,7 @@ REACT_HINT = f"React {EMOJI_YES} if you're on, {EMOJI_NO} if not."
 COLOUR_DAY_OF = 0x5865F2  # blurple
 COLOUR_COUNTDOWN = 0xFEE75C  # yellow
 COLOUR_ALL_SET = 0x57F287  # green
+COLOUR_MEMORY = 0x9B59B6
 
 
 @dataclass
@@ -88,6 +89,34 @@ class Card:
             or self.thumbnail_path
             or self.image_path
         )
+
+
+def memory_proposal_card(memory: Mapping[str, Any], *, state: str | None = None) -> Card:
+    """Render a typed preference proposal without source-message text."""
+    scope = f"; boss={memory['boss_token']}" if memory.get("boss_token") else ""
+    current = state or memory.get("state", "proposed")
+    status = {
+        "active": "Approved",
+        "rejected": "Rejected",
+        "expired": "Expired",
+        "revoked": "No longer eligible",
+    }.get(current, "Awaiting review")
+    return Card(
+        content=f"<@{memory['user_id']}> memory preference review",
+        title="Memory preference proposal",
+        description=f"`{memory['slot']}={memory['value']}{scope}`",
+        fields=[
+            (
+                "Review",
+                "Only you may approve with ✅. You or a bot administrator may reject with ❌.",
+            ),
+            ("Expiry", "This proposal expires in 7 days."),
+            ("Your control", "You can opt out or delete memory at any time."),
+        ],
+        footer=status,
+        colour=COLOUR_MEMORY,
+        mention_users=[str(memory["user_id"])],
+    )
 
 
 @dataclass(frozen=True)
@@ -559,10 +588,6 @@ def fixed_run_line(fixed: dict, table: object | None = None) -> str:
     return line
 
 
-# ---------------------------------------------------------------------------
-# extractor proposal cards (DESIGN.md §2.3, §2b.3)
-# ---------------------------------------------------------------------------
-
 COLOUR_PROPOSAL = 0xEB459E  # fuchsia
 COLOUR_SUGGESTION = 0xFAA61A  # orange -- something is still unanswered
 COLOUR_FIXED = 0x9B59B6  # purple -- a recurring timing
@@ -838,10 +863,6 @@ def applied_notice(display_name: str) -> str:
 def rejected_notice(display_name: str) -> str:
     return f"❌ rejected by {display_name}"
 
-
-# ---------------------------------------------------------------------------
-# weekly digest (DESIGN.md §3, posted at reset; the portal can post it on demand)
-# ---------------------------------------------------------------------------
 
 COLOUR_DIGEST = 0x5865F2
 
