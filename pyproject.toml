@@ -10,7 +10,7 @@ dependencies = [
     "discord-py==2.7.1",
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
-    "dateparser==1.4.2",
+    "dateparser==1.4.3",
     "PyYAML==6.0.3",
     "ollama==0.6.2",
     "fastapi==0.141.1",
