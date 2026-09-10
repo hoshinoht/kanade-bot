@@ -47,6 +47,7 @@ REACT_HINT = f"React {EMOJI_YES} if you're on, {EMOJI_NO} if not."
 COLOUR_DAY_OF = 0x5865F2  # blurple
 COLOUR_COUNTDOWN = 0xFEE75C  # yellow
 COLOUR_ALL_SET = 0x57F287  # green
+COLOUR_MEMORY = 0x9B59B6
 
 
 @dataclass
@@ -88,6 +89,34 @@ class Card:
             or self.thumbnail_path
             or self.image_path
         )
+
+
+def memory_proposal_card(memory: Mapping[str, Any], *, state: str | None = None) -> Card:
+    """Render a typed preference proposal without source-message text."""
+    scope = f"; boss={memory['boss_token']}" if memory.get("boss_token") else ""
+    current = state or memory.get("state", "proposed")
+    status = {
+        "active": "Approved",
+        "rejected": "Rejected",
+        "expired": "Expired",
+        "revoked": "No longer eligible",
+    }.get(current, "Awaiting review")
+    return Card(
+        content=f"<@{memory['user_id']}> memory preference review",
+        title="Memory preference proposal",
+        description=f"`{memory['slot']}={memory['value']}{scope}`",
+        fields=[
+            (
+                "Review",
+                "Only you may approve with ✅. You or a bot administrator may reject with ❌.",
+            ),
+            ("Expiry", "This proposal expires in 7 days."),
+            ("Your control", "You can opt out or delete memory at any time."),
+        ],
+        footer=status,
+        colour=COLOUR_MEMORY,
+        mention_users=[str(memory["user_id"])],
+    )
 
 
 @dataclass(frozen=True)

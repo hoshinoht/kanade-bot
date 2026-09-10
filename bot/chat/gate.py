@@ -63,6 +63,7 @@ __all__ = [
     "RATE_LIMITED_REACTION",
     "SEEN_REACTION",
     "ChatDecision",
+    "access_decide",
     "decide",
     "is_chat_channel",
     "mentions_bot",
@@ -244,44 +245,23 @@ def _spend_an_answer(
     return None
 
 
-def decide(
+def access_decide(
     message: Any,
     settings: Settings,
     *,
     bot_user_id: int | str | None,
     enabled: bool = True,
     is_admin: bool = False,
-    limiter: Any | None = None,
-    global_limiter: Any | None = None,
     self_role_id: int | str | None = None,
     replied_author_id: int | str | None = None,
 ) -> ChatDecision:
-    """Whether to answer ``message``.
+    """Run the non-spending chat access checks.
 
-    ``enabled`` is the runtime kill switch (``chat_mode``), passed in rather than
-    read from the bot so this stays a function of its arguments. The two
-    limiters are consulted last and only when everything else passed, so they
-    record an allowance exactly when one is about to be spent.
-
-    ``global_limiter`` is the guild's shared budget: the per-person window stops
-    one member monopolising the model, and this stops *twenty* members doing it
-    between them. The host has one model, so widening who holds the pilot role
-    must not widen how much of the machine the guild can consume in an hour.
-
-    ``is_admin`` is the existing "who runs this bot" rule
-    (:func:`bot.agent.util.is_bot_admin`) and does two things here: it stands in for
-    the chat role, and it exempts the holder from both budgets. Staff being
-    silently ignored by their own bot is a support ticket nobody can debug from
-    inside Discord -- and anyone who can already `/say`, `/debug` and approve
-    every card gains nothing by also being made to hold the pilot role. Their
-    answers do not drain the community's pool either, for the same reason. The
-    pilot role stays the knob for everybody else.
-
-    ``self_role_id`` and ``replied_author_id`` are the two facts about a mention
-    that this function cannot work out for itself -- one needs the live guild,
-    the other may need an API call -- so they arrive as data, exactly as
-    ``bot_user_id`` does. See :func:`mentions_bot`.
+    Deterministic chat features use this before deciding whether a request needs
+    the model.  Keeping it separate makes their access boundary identical to a
+    normal answer without charging a model allowance.
     """
+
     early = _before_the_mention_check(message, settings, bot_user_id, enabled)
     if early is not None:
         return early
@@ -296,6 +276,33 @@ def decide(
         # telling them would make the bot a way to get a reply out of it.
         return ChatDecision(False, "the author does not hold the chat role")
 
+    return ChatDecision(True, "ok")
+
+
+def decide(
+    message: Any,
+    settings: Settings,
+    *,
+    bot_user_id: int | str | None,
+    enabled: bool = True,
+    is_admin: bool = False,
+    limiter: Any | None = None,
+    global_limiter: Any | None = None,
+    self_role_id: int | str | None = None,
+    replied_author_id: int | str | None = None,
+) -> ChatDecision:
+    """Whether to answer ``message``, including model-budget accounting."""
+    decision = access_decide(
+        message,
+        settings,
+        bot_user_id=bot_user_id,
+        enabled=enabled,
+        is_admin=is_admin,
+        self_role_id=self_role_id,
+        replied_author_id=replied_author_id,
+    )
+    if not decision.act:
+        return decision
     if not is_admin:
         author = getattr(message, "author", None)
         refused = _spend_an_answer(limiter, global_limiter, getattr(author, "id", author))

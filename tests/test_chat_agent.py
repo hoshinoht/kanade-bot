@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from dataclasses import replace
 from datetime import timedelta
+from types import MappingProxyType
 
 import pytest
 
@@ -25,6 +27,7 @@ from bot.chat.agent import (
     _ground_schedule_reply,
     _member_facing,
     _schedule_defaults,
+    _source_host,
     retry_note,
     unglue_first_bullet,
 )
@@ -84,6 +87,17 @@ def strategy_ready(bot):
     from .conftest import REPO_ROOT
 
     bot.boss_knowledge = BossKnowledgeBase.load(REPO_ROOT / "boss" / "knowledge", bot.bosses)
+
+
+def test_strategy_source_host_is_bounded_without_exposing_a_long_url():
+    source = "https://" + ("a" * 2030) + ".test/path"
+
+    host = _source_host(source)
+
+    assert len(source) == 2048
+    assert len(host) == 64
+    assert host.endswith("…")
+    assert "/" not in host and ":" not in host
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +574,11 @@ async def test_an_attack_question_prefetches_before_an_immediate_model_answer(
     result = (await agent.offer(message(chat_bot, "@bot what attacks does FA have?"))).answered
 
     assert result is not None
-    assert result.reply == "FA's only attack is the model's invented answer."
+    assert result.reply == (
+        "FA's only attack is the model's invented answer.\n\n"
+        "**Checked-in sources**\n"
+        "- The First Adversary — 2026-09-05 · mapletools.app +1 sources"
+    )
     assert result.tool_calls == ["get_boss_strategy"]
     assert result.outcomes[0].round == 0
     assert len(agent._client.calls) == 1
@@ -569,6 +587,114 @@ async def test_an_attack_question_prefetches_before_an_immediate_model_answer(
     assert prompt[-2]["tool_calls"][0]["function"]["arguments"] == {"boss": "FA"}
     assert prompt[-1]["role"] == "tool"
     assert "# The First Adversary (FA)" in prompt[-1]["content"]
+
+
+async def test_strategy_attribution_follows_intent_order_and_stays_out_of_the_model_prompt(
+    chat_bot, chat_seeded
+):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(chat_bot, says("Two grounded guides."))
+
+    result = (
+        await agent.offer(
+            message(chat_bot, "@bot strategy for HFA, Extreme Kalos, and Extreme Seren")
+        )
+    ).answered
+
+    assert result is not None
+    attribution = result.reply.split("\n\n")[-1]
+    assert attribution == (
+        "**Checked-in sources**\n"
+        "- The First Adversary — 2026-09-05 · mapletools.app +1 sources\n"
+        "- Gatekeeper Kalos — 2026-09-05 · mapletools.app +1 sources\n"
+        "- Chosen Seren — 2026-09-05 · mapletools.app +1 sources"
+    )
+    assert "https://" not in result.reply
+    assert all("Checked-in sources" not in turn["content"] for turn in agent._client.conversation())
+    trace = chat_bot.repo.recent_chat_interactions()[0]["tool_calls"]
+    assert trace[0]["strategy"] == {
+        "boss": "FA",
+        "difficulty": "h",
+        "path": "fa.yaml",
+        "researched_as_of": "2026-09-05",
+        "meta_hash": chat_bot.boss_knowledge.get("FA").provenance.meta_hash,
+        "document_hash": chat_bot.boss_knowledge.get("FA").provenance.document_hash,
+        "source_count": 2,
+    }
+
+
+async def test_strategy_attribution_reserves_the_discord_reply_budget(chat_bot, chat_seeded):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(chat_bot, says("answer " * 300))
+
+    result = (await agent.offer(message(chat_bot, "@bot tips for FA"))).answered
+
+    assert result is not None
+    attribution = result.reply[result.reply.index("**Checked-in sources**") :]
+    assert len(result.reply) <= 1200
+    assert len(attribution) <= 320
+    assert result.reply.startswith("answer ")
+
+
+async def test_strategy_attribution_keeps_complete_lines_and_safely_shortens_markdown(
+    chat_bot, chat_seeded
+):
+    strategy_ready(chat_bot)
+    source = "https://" + ("a" * 2030) + ".test/path"
+    sources = (source, source)
+    knowledge = chat_bot.boss_knowledge
+    chat_bot.boss_knowledge = replace(
+        knowledge,
+        documents=MappingProxyType(
+            {
+                short: replace(
+                    document,
+                    sources=sources,
+                    provenance=replace(document.provenance, sources=sources),
+                )
+                for short, document in knowledge.documents.items()
+            }
+        ),
+    )
+    chat_bot.settings.ollama_num_ctx = 16384
+    markdown = "**" + ("formatted " * 100) + "**\n```python\n" + ("code() " * 10) + "\n```"
+    agent = pilot(chat_bot, says(markdown))
+
+    result = (
+        await agent.offer(
+            message(chat_bot, "@bot strategy for HFA, Extreme Kalos, and Extreme Seren")
+        )
+    ).answered
+
+    assert result is not None
+    answer, attribution = result.reply.split("\n\n", 1)
+    lines = attribution.splitlines()
+    assert lines[0] == "**Checked-in sources**"
+    assert len(lines) == 4
+    assert len(attribution) <= 320
+    assert len(result.reply) <= 1200
+    for boss, line in zip(
+        ("The First Adversary", "Gatekeeper Kalos", "Chosen Seren"), lines[1:], strict=True
+    ):
+        assert boss in line
+        assert "2026-09-05" in line
+        assert "+1 sources" in line
+        assert line.endswith("… +1 sources")
+        assert "https://" not in line and "/" not in line
+    assert answer.endswith("…")
+    assert "**" not in answer and "```" not in answer and "`" not in answer
+
+
+async def test_failed_and_unresolved_strategy_replies_have_no_attribution(chat_bot, chat_seeded):
+    failed = pilot(chat_bot, says("invented"))
+    failed_result = (await failed.offer(message(chat_bot, "@bot tips for FA"))).answered
+    unresolved = pilot(chat_bot, says("Which boss?"))
+    unresolved_result = (await unresolved.offer(message(chat_bot, "@bot tips for Zakum"))).answered
+
+    assert "Checked-in sources" not in failed_result.reply
+    assert "Checked-in sources" not in unresolved_result.reply
 
 
 async def test_strategy_prefetch_keeps_tools_for_a_mixed_schedule_request(chat_bot, chat_seeded):

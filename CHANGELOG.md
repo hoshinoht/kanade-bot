@@ -2,6 +2,34 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 4.9.0
+
+**Added**
+
+- Governed Discord memory uses schema v12 persistence with notification-first,
+  case-by-case enrollment, typed review cards, and subject-controlled approval.
+- Deterministic typed proposals and scoped retrieval keep memory limited to
+  presentation preferences; no chat transcript is imported or backfilled.
+- Member `/memory` controls plus authenticated portal, API, and `bossctl` admin
+  operations support enrollment, correction, revocation, opt-out, and deletion.
+- Boss strategy responses carry bounded source attribution, with full provenance
+  and source URLs on authenticated per-boss knowledge pages.
+
+**Changed**
+
+- Retention cleanup runs on the first tick and hourly thereafter regardless of the
+  memory switch; failures are isolated, logged, and retried on the next hourly window.
+- Governed memory now expires proposals after 7 days, active preferences after
+  180 days, inactive content and retrieval diagnostics after 30 days (diagnostics
+  also keep only the newest 500), and lifecycle events after 365 days.
+- The rollout remains disabled by default; enabling the capability never enrolls
+  members or enables production collection by itself.
+
+**Fixed**
+
+- Reworked member review into a single tabbed Memory governance window, keeping enrollment,
+  preference setting, records, and activity within the fixed viewport review surface.
+
 ## 4.8.2
 
 **Changed**

@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 import discord
@@ -51,7 +52,7 @@ from .materialise import (
 from .pings import audience
 from .rescan import RescanWorker
 from .rsvp import EMOJI_NO, EMOJI_YES, apply_reaction
-from .util import positive_float, positive_int, roster_rows
+from .util import is_bot_admin, positive_float, positive_int, roster_rows
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +88,15 @@ class ChannelLookup:
         return self.channel is not None
 
 
+@dataclass(frozen=True)
+class MemoryEnrollmentNoticeResult:
+    """Outcome of one explicit, notification-first enrollment attempt."""
+
+    state: str
+    delivered: bool
+    problem: str | None = None
+
+
 CFG_PING_TIME = "day_of_ping_time"
 CFG_COUNTDOWNS = "countdown_minutes"
 CFG_PAUSED = "paused"
@@ -119,6 +129,10 @@ CFG_LAST_BACKUP = "last_backup_day"
 #: ❌ toggled on and off (or mashed) never floods the channel.
 DECLINE_NOTICE_COOLDOWN = timedelta(hours=6)
 
+# Governed-memory retention is independent of the feature switch: disabling
+# collection must not leave expired or deleted content in the live store.
+MEMORY_CLEANUP_INTERVAL = timedelta(hours=1)
+
 
 class BossBot(discord.Client):
     """discord.py client plus an application-command tree."""
@@ -150,6 +164,9 @@ class BossBot(discord.Client):
         #: once rather than every 30 s until midnight. Deliberately in memory:
         #: a restart is a good moment to try again.
         self._backup_failed_on: str | None = None
+        #: The retention sweep's last monotonic-clock attempt; failures wait for
+        #: the next hourly window instead of retrying on every reminder tick.
+        self._last_memory_cleanup: float | None = None
         #: Runs whose posted cards no longer match the database, and the task
         #: draining them. Every write that a card displays goes through
         #: :attr:`bot.infrastructure.db.Repo.on_run_changed`, so no caller has to remember.
@@ -561,11 +578,33 @@ class BossBot(discord.Client):
         )
         return self.repo.get_config(CFG_LAST_WEEK) != current
 
+    def _cleanup_memories(self, now: datetime) -> None:
+        """Run the retention sweep at most hourly, without affecting the tick."""
+        monotonic_now = monotonic()
+        if (
+            self._last_memory_cleanup is not None
+            and monotonic_now - self._last_memory_cleanup < MEMORY_CLEANUP_INTERVAL.total_seconds()
+        ):
+            return
+        self._last_memory_cleanup = monotonic_now
+        try:
+            result = self.repo.cleanup_memories(now=now)
+        except Exception:  # noqa: BLE001 - retention must not stop reminders
+            log.exception("scheduled memory cleanup failed")
+            return
+        if result.get("expired") or result.get("purged"):
+            log.info(
+                "memory cleanup: expired %d, purged %d",
+                result.get("expired", 0),
+                result.get("purged", 0),
+            )
+
     @tasks.loop(seconds=30)
     async def tick(self) -> None:
         now = utcnow()
         try:
             self.repo.heartbeat(now)
+            self._cleanup_memories(now)
             if self._week_rolled_over(now):
                 log.info("boss week rolled over; materialising")
                 self.materialise_weeks()
@@ -972,6 +1011,79 @@ class BossBot(discord.Client):
         if message is not None:
             self.repo.mark_reminder_sent(reminder["id"], message.id)
 
+    async def post_memory_proposal(self, channel: discord.abc.Messageable, proposal: dict):
+        """Post one dedicated, non-schedule preference review card."""
+        return await self._post(channel, formatting.memory_proposal_card(proposal))
+
+    async def annotate_memory_proposal_unavailable(
+        self, channel: discord.abc.Messageable, message_id: int | str
+    ) -> None:
+        await self.edit_card(
+            getattr(channel, "id", None), message_id, formatting.Card("", footer="Unavailable")
+        )
+
+    async def enroll_memory_member(
+        self, user_id: int | str, admin_actor_id: int | str, *, policy_version: str = "memory-v1"
+    ) -> MemoryEnrollmentNoticeResult:
+        """Enroll exactly one member after a successfully delivered DM notice."""
+        if not self.settings.chat_memory_enabled:
+            return MemoryEnrollmentNoticeResult(
+                "disabled", False, "Memory is disabled for this server."
+            )
+        if not self.repo.begin_memory_enrollment(
+            self.settings.guild_id, user_id, admin_actor_id, policy_version
+        ):
+            enrollment = self.repo.get_memory_enrollment(self.settings.guild_id, user_id)
+            return MemoryEnrollmentNoticeResult(
+                enrollment["state"] if enrollment else "disabled",
+                False,
+                "Member is already active.",
+            )
+        self.repo.record_memory_notice_attempt(self.settings.guild_id, user_id, admin_actor_id)
+        guild = self.get_guild(self.settings.guild_id)
+        member = None
+        if guild is not None:
+            getter = getattr(guild, "get_member", None)
+            member = getter(int(user_id)) if getter is not None else None
+            if member is None:
+                member = next(
+                    (m for m in getattr(guild, "members", ()) if m.id == int(user_id)), None
+                )
+        if member is None:
+            return MemoryEnrollmentNoticeResult(
+                "pending_notice", False, "Member is unavailable; retry after the bot can see them."
+            )
+        notice = (
+            "Kanade memory notice: stored fields are limited to "
+            "answer_detail=concise|standard|detailed; "
+            "answer_format=prose|bullets|steps; "
+            "strategy_disclosure=none|hints|full; "
+            "strategy_emphasis=mechanics|survival|party_roles. "
+            "Portal administrators can view and edit them. "
+            "Active preferences expire after 180 days. "
+            "You can opt out or delete memory anytime without a policy prompt. "
+            "Deletion removes the live memory row; Discord messages and historical "
+            "backups may retain residual copies."
+        )
+        try:
+            sent = await member.send(notice)
+        except Exception:  # noqa: BLE001 - a pending enrollment is the safe failure mode
+            log.info("memory notice could not be delivered to %s", user_id, exc_info=True)
+            return MemoryEnrollmentNoticeResult(
+                "pending_notice",
+                False,
+                "Direct message failed; ask the member to allow DMs and retry.",
+            )
+        if not self.repo.activate_memory_enrollment(
+            self.settings.guild_id, user_id, admin_actor_id, sent.id
+        ):
+            return MemoryEnrollmentNoticeResult(
+                "pending_notice",
+                False,
+                "Enrollment changed before the notice could be activated; retry.",
+            )
+        return MemoryEnrollmentNoticeResult("active", True)
+
     @staticmethod
     def _embed(card: formatting.Card) -> discord.Embed | None:
         if not card.has_embed:
@@ -1116,6 +1228,11 @@ class BossBot(discord.Client):
         emoji = str(payload.emoji)
         if emoji not in (EMOJI_YES, EMOJI_NO):
             return
+        memory_proposal = self.repo.memory_proposal_by_message(payload.message_id)
+        if memory_proposal is not None:
+            if added:
+                await self._handle_memory_proposal_reaction(payload, memory_proposal, emoji)
+            return
         # A /debug ping is not a reminder row, but reacting to one must still
         # drive the real RSVP flow so the whole path can be tested.
         sources = self.repo.reminders_by_message(payload.message_id) or (
@@ -1136,8 +1253,6 @@ class BossBot(discord.Client):
             run = self.repo.get_run(reminder["run_id"])
             if run is None:
                 continue
-            # A grouped day-of message covers several runs: apply to each run the
-            # reactor actually belongs to.
             result = apply_reaction(self.repo, run, payload.user_id, emoji, added)
             if not result.applied:
                 continue
@@ -1148,17 +1263,10 @@ class BossBot(discord.Client):
             elif result.state == "yes":
                 confirmations.append(fresh)
             elif not added and emoji == EMOJI_NO:
-                # They took the ❌ back without putting a ✅ up. The run stops
-                # being `at_risk`, so the "can't make it - reschedule?" notice
-                # has to go with it: left standing it has the party re-planning
-                # a night around somebody who is available again. `/rsvp` and
-                # the portal already retract on any answer that is not "no".
                 retractions.append(fresh)
-
         if not applied:
             return
         if added:
-            # One answer per person: putting ✅ takes their ❌ off, and vice versa.
             await self._drop_opposite_reaction(payload, emoji)
         for run in confirmations + retractions:
             await self.retract_decline(run, payload.user_id)
@@ -1172,6 +1280,38 @@ class BossBot(discord.Client):
                     channel_id=payload.channel_id,
                     reference_id=payload.message_id,
                 )
+
+    async def _handle_memory_proposal_reaction(self, payload, proposal: dict, emoji: str) -> None:
+        """Review a typed preference card without entering schedule-card handling."""
+        actor = str(payload.user_id)
+        subject = str(proposal["user_id"])
+        member = getattr(payload, "member", None)
+        guild = self.get_guild(self.settings.guild_id)
+        is_admin = is_bot_admin(
+            bool(getattr(getattr(member, "guild_permissions", None), "administrator", False)),
+            guild is not None and getattr(guild, "owner_id", None) == payload.user_id,
+            [getattr(role, "id", role) for role in getattr(member, "roles", ()) or ()],
+            self.settings.admin_role_id,
+        )
+        allowed = actor == subject if emoji == EMOJI_YES else actor == subject or is_admin
+        if not allowed:
+            log.info("ignoring %s on memory proposal from %s: unauthorized", emoji, actor)
+            return
+        if emoji == EMOJI_YES:
+            self.repo.approve_memory_proposal(
+                self.settings.guild_id, subject, proposal["id"], actor
+            )
+        else:
+            self.repo.reject_memory_proposal(self.settings.guild_id, subject, proposal["id"], actor)
+        fresh = self.repo.get_memory(self.settings.guild_id, subject, proposal["id"])
+        if fresh is None:
+            return
+        state = fresh["state"]
+        await self.edit_card(
+            payload.channel_id,
+            payload.message_id,
+            formatting.memory_proposal_card(fresh, state=state),
+        )
 
     async def _handle_proposal_reaction(
         self, payload: discord.RawReactionActionEvent, proposals: list[dict], emoji: str

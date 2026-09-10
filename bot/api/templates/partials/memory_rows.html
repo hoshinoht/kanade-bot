@@ -1,0 +1,77 @@
+{% from "partials/macros.html" import no_match %}
+
+<div class="pane__body">
+  {% if not listing.rows %}
+    {% if filters.q %}
+      {{ no_match(filters.q, "Try clearing a filter or search by the member's Discord ID.") }}
+    {% else %}
+      <div class="empty">
+        <strong>No governed members yet.</strong>
+        {% if memory_enabled %}
+          Enroll one individual member; bulk enrollment is not available.
+        {% else %}
+          Enable memory in server configuration before enrolling an individual member.
+        {% endif %}
+      </div>
+    {% endif %}
+  {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Member</th>
+          <th scope="col">Enrollment</th>
+          <th scope="col">Typed preferences</th>
+          <th scope="col">Expiry / freshness</th>
+          <th scope="col"><span class="vh">Open</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in listing.rows %}
+        <tr>
+          <th scope="row">
+            <a class="memory-name" href="/memory/{{ row.user_id }}?next={{ back|urlencode }}">{{ row.name }}</a><br>
+            <span class="id mono">{{ row.user_id }}</span>
+          </th>
+          <td>
+            {% if row.enrollment %}
+              <strong>{{ row.enrollment.state|replace('_', ' ') }}</strong>
+              {% if row.enrollment.notice_attempted_at and not row.enrollment.notice_sent_at %}
+                <br><span class="note">Notice needs retry</span>
+              {% endif %}
+            {% else %}
+              <strong>Not enrolled</strong>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.memories %}
+              {% for memory in row.memories[:2] %}
+                <span class="chip chip--mono">{{ memory.slot }}={{ memory.value }}{% if memory.boss %} · {{ memory.boss }}{% endif %}</span>
+              {% endfor %}
+              {% if row.memories|length > 2 %}<span class="note">+{{ row.memories|length - 2 }} more</span>{% endif %}
+            {% else %}
+              <span class="note">No typed preferences</span>
+            {% endif %}
+          </td>
+          <td>
+            {% set expiring = row.memories|selectattr('expires_at')|list %}
+            {% if expiring %}{{ expiring[0].expires_at|local_dt }}{% else %}<span class="note">No expiry recorded</span>{% endif %}
+          </td>
+          <td><a class="btn" href="/memory/{{ row.user_id }}?next={{ back|urlencode }}">Review</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+{% if listing.pages > 1 %}
+<nav class="pager" aria-label="Pages">
+  {% if listing.prev %}
+  <a class="btn" href="/memory?{{ dict(filters, page=listing.prev)|urlencode }}" rel="prev">← Newer</a>
+  {% endif %}
+  <span class="pager__at mono">Page {{ listing.page }} of {{ listing.pages }} · {{ listing.total }} subjects</span>
+  {% if listing.next %}
+  <a class="btn" href="/memory?{{ dict(filters, page=listing.next)|urlencode }}" rel="next">Older →</a>
+  {% endif %}
+</nav>
+{% endif %}

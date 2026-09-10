@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Memory — YuukiSakuna{% endblock %}
+{% block body_class %}framed memory-frame{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Governed member preferences</p>
+    <h1>{{ "{:,}".format(listing.total) }} memory subject{{ "" if listing.total == 1 else "s" }}</h1>
+    <p class="note">One member at a time. Preferences are typed and explicit; chat content is never shown here.</p>
+  </div>
+</div>
+
+{% if not memory_enabled %}
+<p class="flash flash--error" role="status">
+  <strong>Memory is disabled for this server.</strong>
+  You can still inspect, revoke, expire, or remove existing records.
+</p>
+{% endif %}
+
+<section class="card pane">
+  <div class="card__head">
+    <h2 class="card__title">Members</h2>
+    {% if memory_enabled %}
+    <form class="memory-enroll" method="post" action="/memory/enroll">
+      <label class="vh" for="memory-user-id">Discord ID to enroll</label>
+      <input id="memory-user-id" name="user_id" inputmode="numeric" pattern="[0-9]+" required
+             placeholder="Discord ID">
+      <button class="btn btn--primary" type="submit">Enroll one member</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <form class="filters memory-filters" method="get" action="/memory" role="search"
+        hx-get="/memory" hx-target="#memory-rows" hx-swap="innerHTML" hx-push-url="true">
+    <label class="field">
+      <span>Member</span>
+      <input type="search" name="q" value="{{ filters.q or '' }}" placeholder="name or Discord ID">
+    </label>
+    <label class="field">
+      <span>Enrollment</span>
+      <select name="enrollment">
+        <option value="">Any</option>
+        {% for state in ['pending_notice', 'active', 'disabled', 'opted_out'] %}
+        <option value="{{ state }}"{% if filters.enrollment == state %} selected{% endif %}>
+          {{ state|replace('_', ' ') }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Lifecycle</span>
+      <select name="lifecycle">
+        <option value="">Any</option>
+        {% for state in ['proposed', 'active', 'superseded', 'rejected', 'revoked', 'expired'] %}
+        <option value="{{ state }}"{% if filters.lifecycle == state %} selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Slot</span>
+      <select name="slot">
+        <option value="">Any</option>
+        {% for value in ['answer_detail', 'answer_format', 'strategy_disclosure', 'strategy_emphasis'] %}
+        <option value="{{ value }}"{% if filters.slot == value %} selected{% endif %}>
+          {{ value|replace('_', ' ') }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Boss</span>
+      <input name="boss" value="{{ filters.boss or '' }}" placeholder="e.g. hstar">
+    </label>
+    <label class="field">
+      <span>Expires before</span>
+      <input type="date" name="expires_before" value="{{ filters.expires_before or '' }}">
+    </label>
+    <button class="btn btn--primary" type="submit">Filter</button>
+    <a class="btn" href="/memory">Clear</a>
+  </form>
+
+  <div id="memory-rows" class="pane__swap">
+    {% include "partials/memory_rows.html" %}
+  </div>
+</section>
+{% endblock %}

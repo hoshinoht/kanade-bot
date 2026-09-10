@@ -23,6 +23,7 @@ from .models import (
     ApproveIn,
     ApproveOut,
     AuditOut,
+    BossKnowledgeOut,
     ChatInteractionDetailOut,
     ChatInteractionOut,
     ChatSummaryOut,
@@ -44,6 +45,16 @@ from .models import (
     LimitsOut,
     MemberOut,
     MemberUpdate,
+    MemoryDeletedOut,
+    MemoryEnrollmentResultOut,
+    MemoryEnrollmentState,
+    MemoryLifecycle,
+    MemoryListingOut,
+    MemoryOut,
+    MemorySetIn,
+    MemorySlot,
+    MemorySubjectDetailOut,
+    MemorySubjectOut,
     NickIn,
     NickOut,
     PingIn,
@@ -257,6 +268,71 @@ async def patch_member(bot: Bot, caller: Caller, user_id: str, body: MemberUpdat
 @router.post("/members/{user_id}/nick", response_model=NickOut)
 async def post_nick(bot: Bot, caller: Caller, user_id: str, body: NickIn) -> dict:
     return service.set_nick(bot, user_id, body.alias)
+
+
+@router.get("/memory", response_model=MemoryListingOut, summary="Governed-memory members")
+async def get_memory_listing(
+    bot: Bot,
+    caller: Caller,
+    page: int = Query(default=1, ge=1),
+    q: str = "",
+    enrollment: MemoryEnrollmentState | None = None,
+    lifecycle: MemoryLifecycle | None = None,
+    slot: MemorySlot | None = None,
+    boss: str | None = None,
+    expires_before: str | None = None,
+) -> dict:
+    expiry = service.parse_since(bot, expires_before, "expires_before") if expires_before else None
+    return service.memory_listing(
+        bot,
+        page=page,
+        q=q,
+        enrollment=enrollment,
+        lifecycle=lifecycle,
+        slot=slot,
+        boss=boss,
+        expires_before=expiry,
+    )
+
+
+@router.get("/memory/{user_id}", response_model=MemorySubjectDetailOut)
+async def get_memory_subject(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return service.memory_subject(bot, user_id)
+
+
+@router.post("/memory/{user_id}/enroll", response_model=MemoryEnrollmentResultOut)
+async def post_memory_enroll(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return await service.enroll_memory_member(bot, user_id)
+
+
+@router.post("/memory/{user_id}/disable", response_model=MemorySubjectOut)
+async def post_memory_disable(bot: Bot, caller: Caller, user_id: str) -> dict:
+    return service.disable_memory_member(bot, user_id)
+
+
+@router.put("/memory/{user_id}/memories", response_model=MemoryOut)
+async def put_memory(bot: Bot, caller: Caller, user_id: str, body: MemorySetIn) -> dict:
+    return service.set_memory(bot, user_id, **body.model_dump())
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/revoke", response_model=MemoryOut)
+async def post_memory_revoke(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.revoke_memory(bot, user_id, memory_id)
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/expire", response_model=MemoryOut)
+async def post_memory_expire(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.expire_memory(bot, user_id, memory_id)
+
+
+@router.delete("/memory/{user_id}/memories/{memory_id}", response_model=MemoryDeletedOut)
+async def remove_memory(bot: Bot, caller: Caller, user_id: str, memory_id: str) -> dict:
+    return service.delete_memory(bot, user_id, memory_id)
+
+
+@router.get("/bosses/{boss}/knowledge", response_model=BossKnowledgeOut)
+async def get_boss_knowledge(bot: Bot, caller: Caller, boss: str) -> dict:
+    return service.boss_knowledge_detail(bot, boss)
 
 
 @router.get("/config", response_model=ConfigOut)

@@ -14,9 +14,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from bot.agent.util import is_bot_admin
-from bot.domain.bosses import BossReference
+from bot.domain.bosses import BossParseError, BossReference
 from bot.domain.timeutil import utcnow
 from bot.domain.weeks import current_week_start
 from bot.infrastructure import events
@@ -32,7 +33,7 @@ from bot.infrastructure.watch import origin_ids
 
 from .. import behaviour_plugins
 from ..extract.prompt import estimate_messages, estimate_tokens, prompt_budget
-from . import followup, gate, persona, persona_catalog, progress, strategy, tools
+from . import followup, gate, memory, persona, persona_catalog, progress, strategy, tools
 from .ratelimit import RateLimiter
 from .tools.contracts import MAX_MEMBER_REPLY
 
@@ -256,10 +257,11 @@ def _brief(arguments: dict, limit: int = 200) -> str:
     return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
 
 
-def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
+def tool_trace(outcomes: Sequence[tools.ToolOutcome], bot: Any = None) -> list[dict]:
     """Return stored diagnostics for tool calls."""
-    return [
-        {
+    trace = []
+    for outcome in outcomes:
+        item = {
             "name": outcome.name or "?",
             "round": outcome.round,
             "arguments": _brief(outcome.arguments),
@@ -269,8 +271,84 @@ def tool_trace(outcomes: Sequence[tools.ToolOutcome]) -> list[dict]:
             "created": list(outcome.created),
             "posted": list(outcome.posted),
         }
-        for outcome in outcomes
-    ]
+        provenance = _strategy_trace(outcome, bot) if bot is not None else None
+        if provenance is not None:
+            item["strategy"] = provenance
+        trace.append(item)
+    return trace
+
+
+def _strategy_trace(outcome: tools.ToolOutcome, bot: Any) -> dict[str, object] | None:
+    """Return bounded audit facts for a successful canonical strategy lookup."""
+    if outcome.name != "get_boss_strategy" or not outcome.ok:
+        return None
+    short = outcome.arguments.get("boss")
+    knowledge = getattr(bot, "boss_knowledge", None)
+    if not isinstance(short, str) or knowledge is None:
+        return None
+    try:
+        reference = bot.bosses.resolve_reference(short)
+        document = knowledge.get(reference.short)
+        difficulty = reference.difficulty
+        requested = outcome.arguments.get("difficulty")
+        if isinstance(requested, str):
+            key = requested.strip().lower()
+            difficulty = (
+                key
+                if key in bot.bosses.difficulties
+                else next(
+                    letter
+                    for letter, name in bot.bosses.difficulties.items()
+                    if name.lower() == key
+                )
+            )
+    except Exception:  # noqa: BLE001 - diagnostics must not affect an answer
+        return None
+    provenance = document.provenance
+    return {
+        "boss": document.boss,
+        "difficulty": difficulty,
+        "path": provenance.path,
+        "researched_as_of": provenance.researched_as_of.isoformat(),
+        "meta_hash": provenance.meta_hash,
+        "document_hash": provenance.document_hash,
+        "source_count": len(provenance.sources),
+    }
+
+
+def _source_host(source: str) -> str:
+    """Return a bounded display host without exposing a source URL."""
+    try:
+        host = urlparse(source).hostname or "source unavailable"
+    except ValueError:
+        host = "source unavailable"
+    return host[:63] + "…" if len(host) > 64 else host
+
+
+def _ellipsize_host(host: str, limit: int) -> str:
+    """Keep a hostname display complete within its allocated character budget."""
+    if len(host) <= limit:
+        return host
+    return host[: limit - 1] + "…" if limit > 1 else "…"
+
+
+def _plain_text(markdown: str) -> str:
+    """Remove common Markdown delimiters before a bounded reply is shortened."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", markdown)
+    text = re.sub(r"[`*_~]", "", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def _truncate_plain_text(text: str, limit: int) -> str:
+    """Keep whole words where possible and reserve a closing ellipsis."""
+    if len(text) <= limit:
+        return text
+    if limit <= 1:
+        return "…"[:limit]
+    prefix = text[: limit - 1].rstrip()
+    if " " in prefix:
+        prefix = prefix.rsplit(" ", 1)[0].rstrip()
+    return f"{prefix}…" if prefix else "…"
 
 
 #: A list marker accidentally placed after a heading.
@@ -867,6 +945,19 @@ class ChatPilot:
         # Share one staff decision between gate and tool authority checks.
         is_admin = self._is_admin(getattr(message, "author", None))
         self_role_id = self._self_role_id(message)
+        access = gate.access_decide(
+            message,
+            self.settings,
+            bot_user_id=bot_user_id,
+            enabled=self.enabled,
+            is_admin=is_admin,
+            self_role_id=self_role_id,
+            replied_author_id=replied_author_id,
+        )
+        if access.act:
+            memory_handling = await self._offer_memory(message, self_role_id)
+            if memory_handling is not None:
+                return memory_handling
         decision = gate.decide(
             message,
             self.settings,
@@ -918,7 +1009,6 @@ class ChatPilot:
             await self._react(message, gate.CHANNEL_BUSY_REACTION)
             return Handling(True, "the model is busy")
         try:
-            # Hold the shared model across every round of this answer.
             return Handling(
                 True,
                 "ok",
@@ -934,6 +1024,103 @@ class ChatPilot:
             release()
             self._busy.discard(channel_id)
             await self._unreact(message, gate.SEEN_REACTION)
+
+    @staticmethod
+    def _memory_text(message: Any, self_role_id: int | str | None) -> str:
+        """Remove only resolved direct-address markup before exact parsing."""
+        text = getattr(message, "content", "") or ""
+        bot_id = getattr(getattr(message, "guild", None), "me", None)
+        bot_id = getattr(bot_id, "id", None)
+        if bot_id is not None:
+            text = re.sub(rf"<@!?{re.escape(str(bot_id))}>", " ", text, count=1)
+        if self_role_id is not None:
+            text = re.sub(rf"<@&{re.escape(str(self_role_id))}>", " ", text, count=1)
+        return text.strip()
+
+    async def _offer_memory(self, message: Any, self_role_id: int | str | None) -> Handling | None:
+        """Handle an explicit typed preference before any model resources are spent."""
+        text = self._memory_text(message, self_role_id)
+        quoted = text.startswith((">", "'", '"', "`"))
+        candidate = re.sub(r"^(?:>[ \t]*|`{1,3}[ \t]*|['\"][ \t]*)", "", text)
+        parsed = memory.parse_memory_request(
+            candidate,
+            reply_derived=getattr(message, "reference", None) is not None,
+            quoted=quoted,
+            code_block="```" in text,
+            question="?" in text,
+        )
+        if not parsed.is_memory:
+            return None
+        if not parsed.is_valid:
+            await self._post(message, parsed.help)
+            return Handling(True, "malformed memory preference")
+        if not self.settings.chat_memory_enabled:
+            await self._post(message, "Memory preferences are currently disabled for this server.")
+            return Handling(True, "memory disabled")
+        guild_id = getattr(getattr(message, "guild", None), "id", None)
+        author_id = getattr(getattr(message, "author", None), "id", None)
+        if guild_id is None or author_id is None:  # access gate should make this unreachable
+            return Handling(False, "not a guild message")
+        preference = parsed.preference
+        assert preference is not None
+        boss_token = None
+        if preference.boss_reference is not None:
+            try:
+                reference = self.bot.bosses.resolve_reference(preference.boss_reference)
+                if reference.difficulty is None:
+                    forms = self.bot.bosses.valid_forms(reference.short)
+                    await self._post(
+                        message, f"Please include a difficulty for that boss (try {forms})."
+                    )
+                    return Handling(True, "memory boss needs difficulty")
+                boss_token = self.bot.bosses.bosses[reference.short].canonical(reference.difficulty)
+            except BossParseError:
+                await self._post(
+                    message, "I couldn't resolve that boss. Include one supported difficulty."
+                )
+                return Handling(True, "memory boss unresolved")
+        memory_id = self.bot.repo.create_memory_proposal(
+            guild_id,
+            author_id,
+            preference.slot.value,
+            preference.value.value,
+            boss_token=boss_token,
+            boss_table=self.bot.bosses,
+            source_message_id=getattr(message, "id", None),
+            source_channel_id=getattr(getattr(message, "channel", None), "id", None),
+            proposer_id=author_id,
+        )
+        if memory_id is None:
+            await self._post(
+                message,
+                "Your memory enrollment is not active. Ask a portal administrator "
+                "to send or retry your notice.",
+            )
+            return Handling(True, "memory enrollment inactive")
+        proposal = self.bot.repo.get_memory(guild_id, author_id, memory_id)
+        post = getattr(self.bot, "post_memory_proposal", None)
+        try:
+            card_message = (
+                await post(message.channel, proposal) if post is not None and proposal else None
+            )
+        except Exception:  # noqa: BLE001 - an unreviewable proposal must not survive
+            log.exception("chat: could not post memory proposal card")
+            card_message = None
+        if card_message is None:
+            self.bot.repo.discard_memory_proposal(guild_id, author_id, memory_id)
+            await self._post(
+                message, "I couldn't post your memory review card, so no preference was saved."
+            )
+            return Handling(True, "memory card unavailable")
+        if not self.bot.repo.bind_memory_proposal_message(
+            guild_id, author_id, memory_id, card_message.id
+        ):
+            self.bot.repo.discard_memory_proposal(guild_id, author_id, memory_id)
+            annotate = getattr(self.bot, "annotate_memory_proposal_unavailable", None)
+            if annotate is not None:
+                await annotate(message.channel, card_message.id)
+            return Handling(True, "memory card unavailable")
+        return Handling(True, "memory proposal created")
 
     async def _say_limited(self, message: Any, decision: gate.ChatDecision) -> None:
         """Post one static rate-limit reply per refusal episode."""
@@ -1095,8 +1282,11 @@ class ChatPilot:
             is_admin=is_admin,
         )
         overlay = self.reply_overlay(message.author, runtime)
-        conversation = self.build_conversation(message, channel_id, overlay, runtime)
         intent = strategy.route_strategy_intent(text, self.bot.bosses)
+        memory_overlay = self._memory_overlay(message, intent)
+        conversation = self.build_conversation(
+            message, channel_id, overlay, runtime, memory_overlay
+        )
         staging = progress.placeholder_for(
             text,
             self.bot.bosses,
@@ -1158,6 +1348,64 @@ class ChatPilot:
         self._record(getattr(message, "id", None), channel_id, author_id, text, reply, result)
         return result
 
+    def _memory_overlay(self, message: Any, intent: strategy.StrategyIntent) -> str:
+        """Retrieve one member's typed presentation preferences without risking an answer."""
+        if not self.settings.chat_memory_enabled:
+            return ""
+        guild_id = getattr(getattr(message, "guild", None), "id", None)
+        author_id = getattr(getattr(message, "author", None), "id", None)
+        if guild_id is None or author_id is None:
+            return ""
+        stamp = utcnow()
+        records: list[memory.MemoryRecord] = []
+        rendered = ""
+        selected: list[memory.MemoryRecord] = []
+        reason = "unavailable"
+        try:
+            if not self.bot.repo.memory_enrollment_active(guild_id, author_id):
+                reason = "inactive_enrollment"
+            else:
+                for row in self.bot.repo.retrieve_memories(guild_id, author_id, now=stamp):
+                    try:
+                        records.append(memory.record_from_storage(row, self.bot.bosses))
+                    except (TypeError, ValueError):
+                        log.warning("chat: ignoring malformed stored memory row")
+                boss = self._memory_boss_scope(intent)
+                if boss is None:
+                    records = [record for record in records if record.boss is None]
+                rendered = memory.render_memories(records, boss=boss, now=stamp)
+                selected = memory.rank_memories(records, boss=boss, now=stamp)
+                reason = "matched" if selected and rendered else "no_match"
+        except Exception:  # noqa: BLE001 - unavailable memory must not affect a reply
+            log.exception("chat: could not retrieve memory preferences")
+            records = []
+            rendered = ""
+            selected = []
+            reason = "unavailable"
+        try:
+            self.bot.repo.log_memory_retrieval(
+                guild_id,
+                author_id,
+                [record.memory_id for record in selected],
+                reason,
+                now=stamp,
+            )
+        except Exception:  # noqa: BLE001 - diagnostics must not affect a reply
+            log.exception("chat: could not record memory retrieval")
+        return rendered
+
+    def _memory_boss_scope(self, intent: strategy.StrategyIntent) -> memory.CanonicalBoss | None:
+        """Use only one explicit deterministic strategy target as a preference scope."""
+        if intent.kind != "resolved" or len(intent.references) != 1:
+            return None
+        reference = intent.references[0]
+        if reference.difficulty is None:
+            return None
+        try:
+            return memory.CanonicalBoss.from_resolved(self.bot.bosses, reference)
+        except (TypeError, ValueError):
+            return None
+
     def _record(
         self,
         message_id: Any,
@@ -1184,7 +1432,7 @@ class ChatPilot:
                 tools_ms=result.tools_ms,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
-                tool_calls=tool_trace(result.outcomes),
+                tool_calls=tool_trace(result.outcomes, self.bot),
                 model_rounds=result.model_rounds,
             )
         except Exception:  # noqa: BLE001 - analytics must never cost an answer
@@ -1471,6 +1719,7 @@ class ChatPilot:
         channel_id: str,
         role_overlay: str = "",
         runtime: persona_catalog.PersonaRuntime | None = None,
+        memory_overlay: str = "",
     ) -> list[dict[str, str]]:
         """Build a prompt from anchored, live, and reply-chain context."""
         live = self.history(channel_id)
@@ -1482,7 +1731,9 @@ class ChatPilot:
         question = ChatTurn(
             "user", self._speaker(str(message.author.id), (message.content or "").strip())
         )
-        return self.assemble([*earlier, question], channel_id, role_overlay, runtime)
+        return self.assemble(
+            [*earlier, question], channel_id, role_overlay, runtime, memory_overlay
+        )
 
     def assemble(
         self,
@@ -1490,6 +1741,7 @@ class ChatPilot:
         channel_id: str | None = None,
         role_overlay: str = "",
         runtime: persona_catalog.PersonaRuntime | None = None,
+        memory_overlay: str = "",
     ) -> list[dict[str, str]]:
         """Assemble a system prompt and budgeted conversation turns."""
         now = utcnow()
@@ -1507,6 +1759,8 @@ class ChatPilot:
             persona.runtime_line(self.settings.chat_pilot_model),
             persona.focus_line(self.focus(channel_id) if channel_id is not None else ""),
         )
+        if memory_overlay:
+            system = f"{system}\n\n{memory_overlay}"
         rendered = [{"role": t.role, "content": t.content} for t in turns]
         available = max(
             256,
@@ -1562,6 +1816,7 @@ class ChatPilot:
                     else None
                 ),
             )
+            self._append_strategy_attribution(result, strategy_references)
         result.created = list(context.created)
         result.posted = list(context.posted)
         result.latency_ms = int((time.monotonic() - started) * 1000)
@@ -1656,6 +1911,68 @@ class ChatPilot:
         ):
             result.reply = STRATEGY_GROUNDING_FAILURE_REPLY
             result.error = result.error or "strategy grounding unavailable"
+
+    def _append_strategy_attribution(
+        self, result: Generation, references: Sequence[BossReference]
+    ) -> None:
+        """Append deterministic source hosts only after the member reply is final."""
+        if not references or result.error or not self._strategy_grounded(result, references):
+            return
+        knowledge = getattr(self.bot, "boss_knowledge", None)
+        if knowledge is None:
+            return
+        try:
+            entries = []
+            for reference in references:
+                document = knowledge.get(reference.short)
+                provenance = document.provenance
+                entries.append((reference.short, provenance, _source_host(provenance.sources[0])))
+        except Exception:  # noqa: BLE001 - attribution is best-effort presentation
+            log.exception("chat: could not prepare strategy attribution")
+            return
+        header = "**Checked-in sources**"
+
+        def render(labels: list[str]) -> str | None:
+            fixed = []
+            for label, (_short, provenance, _host) in zip(labels, entries, strict=True):
+                extra = len(provenance.sources) - 1
+                fixed.append(
+                    (
+                        f"- {label} — {provenance.researched_as_of.isoformat()} · ",
+                        f"{' +' + str(extra) + ' sources' if extra else ''}",
+                    )
+                )
+            available = 320 - len(header) - sum(len(before) + len(after) for before, after in fixed)
+            available -= len(entries)
+            if available < len(entries):
+                return None
+            limits = [1] * len(entries)
+            for index, (_short, _provenance, host) in enumerate(entries):
+                extra = min(len(host), 64) - limits[index]
+                granted = min(extra, available - len(entries))
+                limits[index] += granted
+                available -= granted
+            lines = [
+                f"{before}{_ellipsize_host(host, limit)}{after}"
+                for (before, after), (_short, _provenance, host), limit in zip(
+                    fixed, entries, limits, strict=True
+                )
+            ]
+            return "\n".join((header, *lines))
+
+        attribution = render([self.bot.bosses.bosses[short].full for short, *_ in entries])
+        if attribution is None:
+            attribution = render([short for short, *_ in entries])
+        if attribution is None:  # catalog bounds should make this unreachable
+            log.warning("chat: strategy attribution exceeded its fixed budget")
+            return
+        budget = MAX_MEMBER_REPLY - len(attribution) - 2
+        if budget <= 0:
+            return
+        answer = result.reply
+        if len(answer) > budget:
+            answer = _truncate_plain_text(_plain_text(answer), budget)
+        result.reply = f"{answer}\n\n{attribution}" if answer else attribution
 
     async def _loop(
         self,

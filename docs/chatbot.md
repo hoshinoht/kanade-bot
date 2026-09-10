@@ -47,6 +47,24 @@ to it. Prompt injection is bounded by that structure rather than by prompt
 wording: the worst a "cancel everything" message achieves is a stack of cancel
 *cards*.
 
+Durable typed preferences, when enabled, follow the separate
+[chatbot memory policy](chatbot-memory-policy.md): administrators enroll members
+individually, Kanade notifies them before collection starts, and members may opt
+out or delete memory at any time.
+
+The capability is globally disabled by default (`CHAT_MEMORY_ENABLED=false`),
+and setting it to `true` still enrolls nobody. A successful notice DM must arrive
+before a member becomes active; the bossing or chat role never enrolls a member,
+and there is no role-wide enrollment. An active member may send a deterministic
+single-line request such as
+`remember preference: answer_detail=concise` or
+`remember preference: strategy_emphasis=survival; boss=HBM`.
+Only the four typed slots and their allowlisted values in the policy are accepted;
+malformed, quoted, multiline, or reply-derived requests do not enter the model
+path. `/memory status`, `/memory list`, `/memory opt-out`, `/memory forget`, and
+`/memory forget-all` are member-scoped controls and remain available for viewing
+or deletion while the capability is off. Environment changes require a restart.
+
 Its write tools are `propose_add` (a new run), `propose_move` (one dated run to
 another night), `propose_cancel` (one dated night off), `propose_remove_fixed`
 (the recurring weekly baseline — future weeks stop being scheduled),
@@ -91,10 +109,13 @@ CHAT_ROLE_PLUGINS=...            # optional initial ROLE_ID=plugin assignments
 CHAT_PILOT_CHANNEL_IDS=...      # a channel made for this
 CHAT_PILOT_CATEGORY_IDS=...     # or a whole category; both empty = feature off
 
-# 2. Follow config/personas/README.md to create private complete persona bundles
+# 2. Optional: leave this false for the disabled rollout. It enrolls nobody.
+CHAT_MEMORY_ENABLED=false       # changing this environment value needs restart
+
+# 3. Follow config/personas/README.md to create private complete persona bundles
 #    and write config/personas/personas.yaml last.
 
-# 3. Rebuild, then mention it in the channel.
+# 4. Rebuild, then mention it in the channel.
 docker compose up -d --build
 ```
 
