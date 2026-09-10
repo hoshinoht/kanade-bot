@@ -12,6 +12,7 @@ every security property of the feature actually lives.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from bot.domain.bosses import BossTable
@@ -267,7 +268,7 @@ def message(
     )
 
 
-def seed(bot: FakeBot) -> dict:
+def seed(bot: FakeBot, *, now: datetime) -> dict:
     """Two parties and a materialised week -- the same shape as `conftest.seeded`.
 
     Returned as ids so a test can name what it means. The roster names are the
@@ -288,7 +289,7 @@ def seed(bot: FakeBot) -> dict:
         repo.upsert_member(user_id, name, nick, True)
     repo.upsert_member(1009, "NotABosser", None, False)
 
-    ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME)
+    ws = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, now)
     repo.add_fixed_run(
         1001, ["HMaleficStar", "HFA"], 0, "21:30", ["1001", "1002"], channel_id=WATCHED_CHANNEL
     )

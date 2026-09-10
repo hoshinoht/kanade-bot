@@ -26,12 +26,14 @@ from bot.agent.pings import audience, normalise_level
 from bot.agent.rsvp import compute_status, recompute_after_roster_change
 from bot.agent.util import is_bot_admin
 from bot.chat import persona_catalog
+from bot.domain.boss_knowledge import BossKnowledgeError
 from bot.domain.bosses import BossParseError
 from bot.domain.ids import IdAmbiguous, IdError, resolve_id, short_id
 from bot.domain.timeutil import from_iso, local_naive, to_iso, utcnow
 from bot.domain.weeks import (
     WEEKDAY_NAMES,
     current_week_start,
+    materialised_week_starts,
     next_week_start,
     parse_hhmm,
     parse_weekday,
@@ -107,11 +109,6 @@ COUNT_KEYS = ("chat_pilot_rate_count", "chat_pilot_global_rate_count")
 WINDOW_KEYS = ("chat_pilot_rate_window_s", "chat_pilot_global_rate_window_s")
 
 
-# ---------------------------------------------------------------------------
-# weeks and ids
-# ---------------------------------------------------------------------------
-
-
 def week_for(bot: BossBot, which: str = "this") -> datetime:
     """``"this"`` / ``"next"`` -> that boss week's start instant."""
     which = (which or "this").lower()
@@ -165,11 +162,6 @@ def load_extraction(bot: BossBot, extraction_id: str) -> dict:
     if extraction is None:  # pragma: no cover
         raise NotFound(f"no extraction `{extraction_id}`")
     return extraction
-
-
-# ---------------------------------------------------------------------------
-# naming things
-# ---------------------------------------------------------------------------
 
 
 def member_name(bot: BossBot, user_id: int | str) -> str:
@@ -285,11 +277,6 @@ def channel_is_watched(bot: BossBot, channel_id: int | str) -> bool:
     if channel is not None:
         return bot.is_watched(channel)
     return cid in bot.settings.chat_channel_id_list
-
-
-# ---------------------------------------------------------------------------
-# views: the JSON shapes both `routes_api` and the templates render
-# ---------------------------------------------------------------------------
 
 
 def monogram(name: str) -> dict:
@@ -754,9 +741,7 @@ def audit_log(bot: BossBot, limit: int = 200) -> list[dict]:
     return [audit_view(bot, row) for row in bot.repo.list_audit(limit)]
 
 
-# -- table listings ----------------------------------------------------------
 # Logs search in SQL; rendered rows search here for derived names.
-
 #: Rows per log page.
 PAGE_SIZE = 20
 
@@ -927,11 +912,6 @@ def reminder_view(bot: BossBot, reminder: dict, run: dict | None) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# schedule
-# ---------------------------------------------------------------------------
-
-
 def schedule(
     bot: BossBot,
     week: str = "this",
@@ -1000,11 +980,6 @@ def week_rail(bot: BossBot, week: str = "this") -> list[dict]:
             }
         )
     return days
-
-
-# ---------------------------------------------------------------------------
-# the week, as a board
-# ---------------------------------------------------------------------------
 
 
 #: Grid width for an empty day.
@@ -1097,11 +1072,6 @@ def week_now(bot: BossBot, runs: Sequence[dict]) -> dict:
         "model_busy": model["busy"],
         "model_holder": model["holder"],
     }
-
-
-# ---------------------------------------------------------------------------
-# fixed runs
-# ---------------------------------------------------------------------------
 
 
 def validate_bosses(bot: BossBot, text: str) -> list[str]:
@@ -1245,8 +1215,9 @@ def _apply_fixed_to_runs(bot: BossBot, fixed_id: str, changed: set[str]) -> None
     if fixed is None or not changed:
         return
     reschedule = bool(changed & {"weekday", "time"})
-    for which in ("this", "next"):
-        ws = week_for(bot, which)
+    for ws in materialised_week_starts(
+        bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, utcnow()
+    ):
         run = bot.repo.run_for_fixed(fixed_id, ws)
         if run is None or run["status"] in ("done", "cancelled"):
             continue
@@ -1269,7 +1240,9 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
     cancelled = retire_fixed_run(
         bot.repo,
         fixed["id"],
-        [week_for(bot, which) for which in ("this", "next")],
+        materialised_week_starts(
+            bot.tz, bot.settings.reset_weekday, bot.settings.reset_time, utcnow()
+        ),
         bot.tz,
         bot.ping_time,
         bot.countdowns,
@@ -1287,11 +1260,6 @@ async def delete_fixed(bot: BossBot, fixed_id: str) -> dict:
         bot, formatting.fixed_notice(fixed, "removed", who), who.mentioned, fixed["channel_id"]
     )
     return {"id": fixed["id"], "short_id": short_id(fixed["id"]), "cancelled_runs": cancelled}
-
-
-# ---------------------------------------------------------------------------
-# run mutations
-# ---------------------------------------------------------------------------
 
 
 #: Reject dateparser mistakes such as reading ``2300`` as a year.
@@ -1750,11 +1718,6 @@ async def _announce(
     )
 
 
-# ---------------------------------------------------------------------------
-# the inbox: approving and rejecting what the extractor proposed
-# ---------------------------------------------------------------------------
-
-
 def pending(bot: BossBot, channel_id: int | str | None = None) -> list[dict]:
     return [
         amendment_view(bot, a)
@@ -1836,11 +1799,6 @@ async def reject_amendment(bot: BossBot, amendment_id: str) -> dict:
         amendment["channel_id"], amendment["proposal_message_id"], PORTAL_REJECTED
     )
     return {"id": amendment["id"], "short_id": short_id(amendment["id"]), "status": "rejected"}
-
-
-# ---------------------------------------------------------------------------
-# members, reminders, config
-# ---------------------------------------------------------------------------
 
 
 def _run_counts(bot: BossBot) -> dict[str, int]:
@@ -2519,11 +2477,6 @@ def _seconds(value: Any, label: str) -> float:
     return parsed
 
 
-# ---------------------------------------------------------------------------
-# things that talk to Discord or the model
-# ---------------------------------------------------------------------------
-
-
 async def post_digest(
     bot: BossBot, channel_id: int | str | None = None, week: str = "this"
 ) -> dict:
@@ -3048,6 +3001,277 @@ def parse_since(bot: BossBot, value: str, field: str = "since") -> datetime:
     return parsed
 
 
+# Governed memory is intentionally kept content-free at this boundary.  The
+# repository rows retain Discord provenance for lifecycle processing, but this
+# admin surface must never turn it into a second chat transcript.
+def _memory_actor(bot: BossBot) -> str:
+    actor = audit.current()
+    return str(bot.portal_actor_id) if actor is audit.SYSTEM else actor.who
+
+
+_MAX_DISCORD_SNOWFLAKE = (1 << 64) - 1
+
+
+def memory_user_id(user_id: int | str) -> str:
+    """Return one canonical positive Discord snowflake, never a coercible alias."""
+    value = str(user_id)
+    if not value.isascii() or not value.isdigit() or value.startswith("0"):
+        raise BadRequest("user_id must be a canonical positive Discord snowflake")
+    try:
+        numeric = int(value)
+    except ValueError:  # pragma: no cover - guarded by isdigit
+        raise BadRequest("user_id must be a canonical positive Discord snowflake") from None
+    if not 1 <= numeric <= _MAX_DISCORD_SNOWFLAKE:
+        raise BadRequest("user_id must be a positive unsigned 64-bit Discord snowflake")
+    return value
+
+
+def _canonical_memory_boss(bot: BossBot, raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    try:
+        reference = bot.bosses.resolve_reference(raw)
+    except BossParseError as exc:
+        raise BadRequest(str(exc)) from None
+    if reference.difficulty is None:
+        raise BadRequest("memory boss scope requires an explicit supported difficulty")
+    boss = bot.bosses.bosses[reference.short]
+    if reference.difficulty not in boss.difficulties:  # pragma: no cover - catalog guard
+        raise BadRequest(f"{boss.full} does not support that difficulty")
+    return boss.canonical(reference.difficulty)
+
+
+def _memory_view(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "slot": row["slot"],
+        "value": row["value"],
+        "boss": row["boss_token"],
+        "lifecycle": row["state"],
+        "created_at": to_iso(row["created_at"]),
+        "reviewed_at": to_iso(row["reviewed_at"]) if row["reviewed_at"] else None,
+        "expires_at": to_iso(row["expires_at"]),
+        "state_at": to_iso(row["state_at"]),
+    }
+
+
+def _memory_identity(bot: BossBot, user_id: str | None) -> tuple[str | None, str | None]:
+    if user_id is None:
+        return None, None
+    return str(user_id), member_name(bot, user_id) if bot.repo.get_member(user_id) else None
+
+
+def _memory_detail_view(bot: BossBot, row: dict) -> dict:
+    proposer_id, proposer_name = _memory_identity(bot, row["proposer_id"])
+    reviewer_id, reviewer_name = _memory_identity(bot, row["reviewer_id"])
+    return {
+        **_memory_view(row),
+        "source_message_id": row["source_message_id"],
+        "source_channel_id": row["source_channel_id"],
+        "source_message_url": message_url(bot, row["source_channel_id"], row["source_message_id"]),
+        "proposer_id": proposer_id,
+        "proposer_name": proposer_name,
+        "reviewer_id": reviewer_id,
+        "reviewer_name": reviewer_name,
+    }
+
+
+def _enrollment_view(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "state": row["state"],
+        "policy_version": row["policy_version"],
+        "notice_attempted_at": (
+            to_iso(row["notice_attempted_at"]) if row["notice_attempted_at"] else None
+        ),
+        "notice_sent_at": to_iso(row["notice_sent_at"]) if row["notice_sent_at"] else None,
+        "opt_out_at": to_iso(row["opt_out_at"]) if row["opt_out_at"] else None,
+        "created_at": to_iso(row["created_at"]),
+        "updated_at": to_iso(row["updated_at"]),
+    }
+
+
+def _memory_subject_view(bot: BossBot, row: dict, *, detail: bool = False) -> dict:
+    user_id = row["user_id"]
+    member = bot.repo.get_member(user_id)
+    result = {
+        "user_id": user_id,
+        "display_name": (member["nickname"] or member["display_name"]) if member else None,
+        "name": member_name(bot, user_id),
+        "enrollment": _enrollment_view(row["enrollment"]),
+        "memories": [
+            _memory_detail_view(bot, memory) if detail else _memory_view(memory)
+            for memory in row["memories"]
+        ],
+    }
+    if detail:
+        result["events"] = [
+            {
+                "id": event["id"],
+                "actor_id": event["actor_id"],
+                "action": event["action"],
+                "reason": event["reason"],
+                "memory_id": event["memory_id"],
+                "at": to_iso(event["at"]),
+            }
+            for event in bot.repo.list_memory_events(bot.settings.guild_id, user_id)
+        ]
+        result["retrievals"] = [
+            {
+                "id": retrieval["id"],
+                "selected_memory_ids": retrieval["selected_memory_ids"],
+                "reason": retrieval["reason"],
+                "latency_ms": retrieval["latency_ms"],
+                "result_count": retrieval["result_count"],
+                "at": to_iso(retrieval["at"]),
+            }
+            for retrieval in bot.repo.list_memory_retrievals(bot.settings.guild_id, user_id)
+        ]
+    return result
+
+
+def memory_listing(
+    bot: BossBot,
+    *,
+    page: int = 1,
+    q: str = "",
+    enrollment: str | None = None,
+    lifecycle: str | None = None,
+    slot: str | None = None,
+    boss: str | None = None,
+    expires_before: datetime | None = None,
+) -> dict:
+    rows = bot.repo.list_memory_subjects(
+        bot.settings.guild_id,
+        enrollment_state=enrollment,
+        lifecycle=lifecycle,
+        slot=slot,
+        boss_token=_canonical_memory_boss(bot, boss),
+        expires_before=expires_before,
+    )
+    kept = [
+        row
+        for row in rows
+        if _matches(
+            q,
+            row["user_id"],
+            (member := bot.repo.get_member(row["user_id"])) and member["display_name"],
+            member and member["nickname"],
+            " ".join(member["aliases"]) if member else None,
+        )
+    ]
+    kept.sort(key=lambda row: (member_name(bot, row["user_id"]).casefold(), row["user_id"]))
+    meta = _page_meta(len(kept), page)
+    page_rows = kept[meta["offset"] : meta["offset"] + meta["per_page"]]
+    return _listing([_memory_subject_view(bot, row) for row in page_rows], meta, q)
+
+
+def memory_subject(bot: BossBot, user_id: int | str) -> dict:
+    user_id = memory_user_id(user_id)
+    enrollment = bot.repo.get_memory_enrollment(bot.settings.guild_id, user_id)
+    memories = bot.repo.list_memories(bot.settings.guild_id, user_id)
+    if enrollment is None and not memories:
+        raise NotFound(f"no memory subject `{user_id}`")
+    return _memory_subject_view(
+        bot, {"user_id": str(user_id), "enrollment": enrollment, "memories": memories}, detail=True
+    )
+
+
+async def enroll_memory_member(bot: BossBot, user_id: int | str) -> dict:
+    user_id = memory_user_id(user_id)
+    if not bot.settings.chat_memory_enabled:
+        raise BadRequest("memory is disabled for this server")
+    result = await bot.enroll_memory_member(user_id, _memory_actor(bot))
+    return {
+        "user_id": str(user_id),
+        "state": result.state,
+        "active": result.state == "active",
+        "message": result.problem,
+    }
+
+
+def disable_memory_member(bot: BossBot, user_id: int | str) -> dict:
+    user_id = memory_user_id(user_id)
+    if not bot.repo.disable_memory_enrollment(bot.settings.guild_id, user_id, _memory_actor(bot)):
+        raise NotFound(f"no enabled memory enrollment for `{user_id}`")
+    return memory_subject(bot, user_id)
+
+
+def set_memory(
+    bot: BossBot, user_id: int | str, *, slot: str, value: str, boss: str | None = None
+) -> dict:
+    user_id = memory_user_id(user_id)
+    memory_id = bot.repo.replace_memory(
+        bot.settings.guild_id,
+        user_id,
+        slot,
+        value,
+        _memory_actor(bot),
+        boss_token=_canonical_memory_boss(bot, boss),
+        boss_table=bot.bosses,
+    )
+    if memory_id is None:
+        raise BadRequest("memory edits require an active enrollment")
+    memory = bot.repo.get_memory(bot.settings.guild_id, user_id, memory_id)
+    if memory is None:  # pragma: no cover - repository invariant
+        raise NotFound(f"no memory `{memory_id}`")
+    return _memory_view(memory)
+
+
+def _change_memory_lifecycle(bot: BossBot, user_id: int | str, memory_id: str, action: str) -> dict:
+    user_id = memory_user_id(user_id)
+    changed = getattr(bot.repo, f"{action}_memory")(
+        bot.settings.guild_id, user_id, memory_id, _memory_actor(bot)
+    )
+    if not changed:
+        raise NotFound(f"memory `{memory_id}` is missing or no longer live")
+    memory = bot.repo.get_memory(bot.settings.guild_id, user_id, memory_id)
+    return _memory_view(memory) if memory else {"id": memory_id, "lifecycle": action + "d"}
+
+
+def revoke_memory(bot: BossBot, user_id: int | str, memory_id: str) -> dict:
+    return _change_memory_lifecycle(bot, user_id, memory_id, "revoke")
+
+
+def expire_memory(bot: BossBot, user_id: int | str, memory_id: str) -> dict:
+    return _change_memory_lifecycle(bot, user_id, memory_id, "expire")
+
+
+def delete_memory(bot: BossBot, user_id: int | str, memory_id: str) -> dict:
+    user_id = memory_user_id(user_id)
+    if not bot.repo.delete_memory(bot.settings.guild_id, user_id, memory_id, _memory_actor(bot)):
+        raise NotFound(f"memory `{memory_id}` does not exist")
+    return {"id": memory_id, "deleted": True}
+
+
+def boss_knowledge_detail(bot: BossBot, boss: str) -> dict:
+    try:
+        reference = bot.bosses.resolve_reference(boss)
+    except BossParseError as exc:
+        raise BadRequest(str(exc)) from None
+    knowledge = getattr(bot, "boss_knowledge", None)
+    if knowledge is None:
+        raise NotFound("boss strategy knowledge is unavailable")
+    entry = bot.bosses.bosses[reference.short]
+    try:
+        document = knowledge.get(reference.short)
+    except BossKnowledgeError:
+        raise NotFound(f"no checked-in strategy guide is available for {entry.full}") from None
+    difficulty = reference.difficulty
+    return {
+        "short": entry.short,
+        "full": entry.full,
+        "difficulty": difficulty,
+        "canonical": entry.canonical(difficulty) if difficulty else entry.short,
+        "researched_as_of": document.provenance.researched_as_of.isoformat(),
+        "path": document.provenance.path,
+        "meta_hash": document.provenance.meta_hash,
+        "document_hash": document.provenance.document_hash,
+        "sources": list(document.provenance.sources),
+    }
+
+
 __all__ = [
     "CONFIG_KEYS",
     "PORTAL_APPLIED",
@@ -3058,6 +3282,7 @@ __all__ = [
     "audit_log",
     "audit_view",
     "boss_grid",
+    "boss_knowledge_detail",
     "boss_view",
     "bosses_in_use",
     "monogram",
@@ -3073,7 +3298,10 @@ __all__ = [
     "created_cards",
     "create_fixed",
     "debug_ping",
+    "delete_memory",
     "delete_fixed",
+    "enroll_memory_member",
+    "expire_memory",
     "export_messages",
     "extraction_view",
     "fixed_view",
@@ -3089,12 +3317,16 @@ __all__ = [
     "load_fixed",
     "load_run",
     "member_name",
+    "memory_listing",
+    "memory_subject",
+    "memory_user_id",
     "render_mentions",
     "members",
     "SETTABLE_STATUSES",
     "otot_run",
     "restore_run",
     "roster_change",
+    "revoke_memory",
     "set_status",
     "swap_participants",
     "parse_since",
@@ -3115,6 +3347,7 @@ __all__ = [
     "schedule",
     "short_subject",
     "set_config",
+    "set_memory",
     "set_nick",
     "set_rsvp",
     "week_for",

@@ -1,8 +1,5 @@
 # The chat extractor
 
-How party chat becomes ✅/❌ proposal cards, how rescans work, and how to
-tune the model against exported conversations.
-
 ## How the extractor decides
 
 The bot watches the party channels and turns the conversation into schedule

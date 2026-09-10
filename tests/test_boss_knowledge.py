@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,29 @@ def test_shipped_knowledge_covers_the_catalog_and_renders_markdown(bosses: BossT
     assert "## Difficulty notes" in rendered
     assert "Every third combination" in rendered
     assert "## Sources" in rendered
+
+
+def test_knowledge_provenance_hashes_exact_bytes_and_is_immutable(tmp_path: Path):
+    meta = b'schema_version: 1\r\nresearched_as_of: "2026-09-05"\r\n'
+    document = (
+        b"boss: Foo\r\nsummary: Summary.\r\ncore: [Core.]\r\ndanger: [Danger.]\r\n"
+        b"tips: [Tip.]\r\nsources: [https://example.test/source]\r\n"
+    )
+    (tmp_path / "_meta.yaml").write_bytes(meta)
+    (tmp_path / "foo.yaml").write_bytes(document)
+
+    first = BossKnowledgeBase.load(tmp_path, _table()).get("Foo").provenance
+    restarted = BossKnowledgeBase.load(tmp_path, _table()).get("Foo").provenance
+
+    assert first.path == "foo.yaml"
+    assert first.meta_schema_version == 1
+    assert first.researched_as_of.isoformat() == "2026-09-05"
+    assert first.meta_hash == sha256(meta).hexdigest()
+    assert first.document_hash == sha256(document).hexdigest()
+    assert first.sources == ("https://example.test/source",)
+    assert restarted == first
+    with pytest.raises(AttributeError):
+        first.path = "other.yaml"  # type: ignore[misc]
 
 
 def test_startup_loads_catalog_without_knowledge_when_chat_is_unconfigured(tmp_path: Path):

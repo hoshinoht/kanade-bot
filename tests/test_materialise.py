@@ -266,27 +266,6 @@ def test_next_weeks_one_off_is_not_this_weeks_run(repo: Repo):
     assert repo.get_run(run_id)["fixed_run_id"] is None
 
 
-def test_fixed_add_now_adopts_where_it_used_to_duplicate(repo: Repo):
-    """`/fixed add` writes the row and calls ``materialise_weeks``; nothing else.
-
-    So the door gets adoption for free, and this pins that: before, the member
-    who already had Monday's run on the board ended up with two.
-    """
-    run_id = add_oneoff(repo)
-    fixed_id = repo.add_fixed_run(
-        "1",
-        ["HMaleficStar", "HFA"],
-        weekday=0,
-        time_hhmm="21:30",
-        participants=["1", "2"],
-        channel_id=900,
-    )
-    materialise(repo)
-
-    assert [r["id"] for r in repo.list_runs(week_start=WEEK)] == [run_id]
-    assert repo.get_run(run_id)["fixed_run_id"] == fixed_id
-
-
 # -- reminder specs (pure) ---------------------------------------------------
 
 

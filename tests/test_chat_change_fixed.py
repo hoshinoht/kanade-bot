@@ -23,7 +23,7 @@ from bot.agent import formatting
 from bot.agent.materialise import materialise_week
 from bot.chat import tools
 from bot.domain.ids import short_id
-from bot.domain.weeks import next_week_start, slot_in_week
+from bot.domain.weeks import materialised_week_starts, next_week_start, slot_in_week
 from bot.extract.commit import FIX_EDIT, commit, may_commit
 
 from .chat_support import ADOPTED_CHANNEL, CHAT_CHANNEL
@@ -60,11 +60,9 @@ def star_fixed(bot) -> dict:
 def materialise_both_weeks(bot) -> None:
     """What ``BossBot.materialise_weeks`` does, without the live client."""
     from bot.domain.timeutil import utcnow
-    from bot.domain.weeks import current_week_start, week_end
 
     now = utcnow()
-    this_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, now)
-    for ws in (this_week, week_end(this_week, TZ)):
+    for ws in materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now):
         materialise_week(bot.repo, ws, TZ, PING_TIME, COUNTDOWNS, now=now)
 
 
@@ -531,6 +529,24 @@ async def test_this_weeks_run_moves_and_keeps_its_id(chat_bot, chat_seeded):
     assert [r["id"] for r in fixed_runs] == [chat_seeded["star"]]
     assert chat_bot.repo.list_reminders(run["id"])
     assert "updated 1 scheduled run(s)" in result.notes
+
+
+async def test_confirmed_fixed_change_updates_all_three_materialised_weeks(chat_bot, chat_seeded):
+    from bot.domain.timeutil import utcnow
+
+    now = utcnow()
+    starts = materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, now)
+    fixed = star_fixed(chat_bot)
+    for start in starts[1:]:
+        materialise_week(chat_bot.repo, start, TZ, PING_TIME, COUNTDOWNS, now=now)
+
+    await ask(chat_bot, query="hstar", time="23:30")
+    approve(chat_bot, proposals(chat_bot)[0])
+
+    assert [
+        chat_bot.repo.run_for_fixed(fixed["id"], start)["datetime"].astimezone(TZ).strftime("%H:%M")
+        for start in starts
+    ] == ["23:30", "23:30", "23:30"]
 
 
 async def test_a_party_change_reaches_this_weeks_run(chat_bot, chat_seeded):

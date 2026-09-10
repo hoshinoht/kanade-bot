@@ -10,11 +10,13 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from dataclasses import replace
 from datetime import timedelta
+from types import MappingProxyType
 
 import pytest
 
-from bot.chat import gate
+from bot.chat import gate, tools
 from bot.chat.agent import (
     FAILURE_REPLY,
     MAX_TOOL_ROUNDS,
@@ -22,6 +24,10 @@ from bot.chat.agent import (
     ChatPilot,
     ChatTurn,
     ContextBudgetError,
+    _ground_schedule_reply,
+    _member_facing,
+    _schedule_defaults,
+    _source_host,
     retry_note,
     unglue_first_bullet,
 )
@@ -40,6 +46,7 @@ from .chat_support import (
     says,
     wants,
 )
+from .fake_bot import OTHER_CHANNEL
 
 pytestmark = pytest.mark.anyio
 
@@ -53,6 +60,23 @@ def pilot(bot, *responses) -> ChatPilot:
     return ChatPilot(bot, client=FakeOllama(*responses))
 
 
+@pytest.mark.parametrize(
+    ("text", "upcoming"),
+    [
+        ("what's left for this week", True),
+        ("what’s left for this week", True),
+        ("runs left", True),
+        ("remaining run", True),
+        ("upcoming runs", True),
+        ("next run", True),
+        ("what's on this week", False),
+        ("what's on next week", False),
+    ],
+)
+def test_schedule_relevance_is_derived_from_the_original_message(text, upcoming):
+    assert _schedule_defaults(text, None, None)[3] is upcoming
+
+
 def replies(bot):
     return [post for post in bot.posts if post.kind == "plain"]
 
@@ -63,6 +87,17 @@ def strategy_ready(bot):
     from .conftest import REPO_ROOT
 
     bot.boss_knowledge = BossKnowledgeBase.load(REPO_ROOT / "boss" / "knowledge", bot.bosses)
+
+
+def test_strategy_source_host_is_bounded_without_exposing_a_long_url():
+    source = "https://" + ("a" * 2030) + ".test/path"
+
+    host = _source_host(source)
+
+    assert len(source) == 2048
+    assert len(host) == 64
+    assert host.endswith("…")
+    assert "/" not in host and ":" not in host
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +484,9 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
         wants("get_schedule", week="this"),
         says("HMaleficStar and HFA on Monday, Kalos on Tuesday."),
     )
-    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+    result = (
+        await agent.offer(message(chat_bot, f"<@{chat_bot.user.id}> what's on this week?"))
+    ).answered
 
     assert result.tool_calls == ["get_schedule"]
     assert result.rounds == 2
@@ -458,6 +495,55 @@ async def test_it_calls_a_tool_then_answers(chat_bot, chat_seeded):
     second_prompt = agent._client.conversation(1)
     assert second_prompt[-1]["role"] == "tool"
     assert "Hard MaleficStar + Hard FA" in second_prompt[-1]["content"]
+
+
+async def test_bare_week_question_ignores_a_model_supplied_participant(chat_bot, chat_seeded):
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this", participant="Priya"),
+        says("The schedule is listed."),
+    )
+
+    result = (
+        await agent.offer(message(chat_bot, f"<@{chat_bot.user.id}> what's on this week?"))
+    ).answered
+
+    assert result is not None
+    assert short_id(chat_seeded["star"]) in result.outcomes[0].output
+    assert short_id(chat_seeded["kalos"]) in result.outcomes[0].output
+    assert "Priya's" not in result.outcomes[0].output
+
+
+async def test_explicit_channel_question_ignores_a_model_supplied_all_scope(chat_bot, chat_seeded):
+    local = chat_bot.repo.create_run(
+        chat_seeded["week_start"],
+        ["HCarling"],
+        chat_seeded["week_start"] + timedelta(days=4, hours=22),
+        ["1002"],
+        "planned",
+        "amend",
+        channel_id=CHAT_CHANNEL,
+    )
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this", scope="all"),
+        says("The schedule is listed."),
+    )
+
+    result = (
+        await agent.offer(
+            message(
+                chat_bot,
+                f"<@{chat_bot.user.id}> what's on this week in this channel?",
+            )
+        )
+    ).answered
+
+    assert result is not None
+    assert short_id(local) in result.outcomes[0].output
+    assert short_id(chat_seeded["star"]) not in result.outcomes[0].output
+    assert short_id(chat_seeded["kalos"]) not in result.outcomes[0].output
+    assert f"<#{OTHER_CHANNEL}>" not in result.outcomes[0].output
 
 
 async def test_a_clear_strategy_question_prefetches_canonical_knowledge(chat_bot, chat_seeded):
@@ -488,7 +574,11 @@ async def test_an_attack_question_prefetches_before_an_immediate_model_answer(
     result = (await agent.offer(message(chat_bot, "@bot what attacks does FA have?"))).answered
 
     assert result is not None
-    assert result.reply == "FA's only attack is the model's invented answer."
+    assert result.reply == (
+        "FA's only attack is the model's invented answer.\n\n"
+        "**Checked-in sources**\n"
+        "- The First Adversary — 2026-09-05 · mapletools.app +1 sources"
+    )
     assert result.tool_calls == ["get_boss_strategy"]
     assert result.outcomes[0].round == 0
     assert len(agent._client.calls) == 1
@@ -497,6 +587,114 @@ async def test_an_attack_question_prefetches_before_an_immediate_model_answer(
     assert prompt[-2]["tool_calls"][0]["function"]["arguments"] == {"boss": "FA"}
     assert prompt[-1]["role"] == "tool"
     assert "# The First Adversary (FA)" in prompt[-1]["content"]
+
+
+async def test_strategy_attribution_follows_intent_order_and_stays_out_of_the_model_prompt(
+    chat_bot, chat_seeded
+):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(chat_bot, says("Two grounded guides."))
+
+    result = (
+        await agent.offer(
+            message(chat_bot, "@bot strategy for HFA, Extreme Kalos, and Extreme Seren")
+        )
+    ).answered
+
+    assert result is not None
+    attribution = result.reply.split("\n\n")[-1]
+    assert attribution == (
+        "**Checked-in sources**\n"
+        "- The First Adversary — 2026-09-05 · mapletools.app +1 sources\n"
+        "- Gatekeeper Kalos — 2026-09-05 · mapletools.app +1 sources\n"
+        "- Chosen Seren — 2026-09-05 · mapletools.app +1 sources"
+    )
+    assert "https://" not in result.reply
+    assert all("Checked-in sources" not in turn["content"] for turn in agent._client.conversation())
+    trace = chat_bot.repo.recent_chat_interactions()[0]["tool_calls"]
+    assert trace[0]["strategy"] == {
+        "boss": "FA",
+        "difficulty": "h",
+        "path": "fa.yaml",
+        "researched_as_of": "2026-09-05",
+        "meta_hash": chat_bot.boss_knowledge.get("FA").provenance.meta_hash,
+        "document_hash": chat_bot.boss_knowledge.get("FA").provenance.document_hash,
+        "source_count": 2,
+    }
+
+
+async def test_strategy_attribution_reserves_the_discord_reply_budget(chat_bot, chat_seeded):
+    strategy_ready(chat_bot)
+    chat_bot.settings.ollama_num_ctx = 16384
+    agent = pilot(chat_bot, says("answer " * 300))
+
+    result = (await agent.offer(message(chat_bot, "@bot tips for FA"))).answered
+
+    assert result is not None
+    attribution = result.reply[result.reply.index("**Checked-in sources**") :]
+    assert len(result.reply) <= 1200
+    assert len(attribution) <= 320
+    assert result.reply.startswith("answer ")
+
+
+async def test_strategy_attribution_keeps_complete_lines_and_safely_shortens_markdown(
+    chat_bot, chat_seeded
+):
+    strategy_ready(chat_bot)
+    source = "https://" + ("a" * 2030) + ".test/path"
+    sources = (source, source)
+    knowledge = chat_bot.boss_knowledge
+    chat_bot.boss_knowledge = replace(
+        knowledge,
+        documents=MappingProxyType(
+            {
+                short: replace(
+                    document,
+                    sources=sources,
+                    provenance=replace(document.provenance, sources=sources),
+                )
+                for short, document in knowledge.documents.items()
+            }
+        ),
+    )
+    chat_bot.settings.ollama_num_ctx = 16384
+    markdown = "**" + ("formatted " * 100) + "**\n```python\n" + ("code() " * 10) + "\n```"
+    agent = pilot(chat_bot, says(markdown))
+
+    result = (
+        await agent.offer(
+            message(chat_bot, "@bot strategy for HFA, Extreme Kalos, and Extreme Seren")
+        )
+    ).answered
+
+    assert result is not None
+    answer, attribution = result.reply.split("\n\n", 1)
+    lines = attribution.splitlines()
+    assert lines[0] == "**Checked-in sources**"
+    assert len(lines) == 4
+    assert len(attribution) <= 320
+    assert len(result.reply) <= 1200
+    for boss, line in zip(
+        ("The First Adversary", "Gatekeeper Kalos", "Chosen Seren"), lines[1:], strict=True
+    ):
+        assert boss in line
+        assert "2026-09-05" in line
+        assert "+1 sources" in line
+        assert line.endswith("… +1 sources")
+        assert "https://" not in line and "/" not in line
+    assert answer.endswith("…")
+    assert "**" not in answer and "```" not in answer and "`" not in answer
+
+
+async def test_failed_and_unresolved_strategy_replies_have_no_attribution(chat_bot, chat_seeded):
+    failed = pilot(chat_bot, says("invented"))
+    failed_result = (await failed.offer(message(chat_bot, "@bot tips for FA"))).answered
+    unresolved = pilot(chat_bot, says("Which boss?"))
+    unresolved_result = (await unresolved.offer(message(chat_bot, "@bot tips for Zakum"))).answered
+
+    assert "Checked-in sources" not in failed_result.reply
+    assert "Checked-in sources" not in unresolved_result.reply
 
 
 async def test_strategy_prefetch_keeps_tools_for_a_mixed_schedule_request(chat_bot, chat_seeded):
@@ -827,8 +1025,173 @@ async def test_schedule_rows_are_regrounded_after_mispaired_backticks(chat_bot, 
     canonical = result.outcomes[0].output
     assert result.reply == f"Kanade's got it!\n\n{canonical}\n\nGood luck, everyone~"
     assert "\\`" not in result.reply
-    assert result.reply.count("\n`[") == 2
+    assert result.reply.count("`[") == 2
     assert replies(chat_bot)[0].content == result.reply
+
+
+async def test_schedule_grounding_happens_before_long_model_commentary_is_bounded(
+    chat_bot, chat_seeded
+):
+    canonical = await tools.dispatch(
+        tools.ToolContext(
+            bot=chat_bot,
+            author_id="1002",
+            channel_id=str(CHAT_CHANNEL),
+            message_id="950000000000000123",
+            bot_user_id=str(chat_bot.user.id),
+        ),
+        "get_schedule",
+        {"scope": "all", "week": "this"},
+    )
+    commentary = f"**{'commentary ' * 130}**"
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", scope="all", week="this"),
+        says(f"{commentary}\n\n{canonical}"),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot what's on this week?"))).answered
+
+    assert result is not None
+    assert result.reply == result.outcomes[0].output
+    assert len(result.reply) <= 1200
+    assert "commentary" not in result.reply
+
+
+async def test_schedule_grounding_replaces_generic_upcoming_prose_everywhere(
+    chat_bot, chat_seeded, monkeypatch
+):
+    week = chat_seeded["week_start"]
+    now = week + timedelta(days=4, hours=22)
+    monkeypatch.setattr(tools, "utcnow", lambda: now)
+    past_ids = [chat_seeded["star"]]
+    for minute in range(11):
+        past_ids.append(
+            chat_bot.repo.create_run(
+                week,
+                ["HCarling"],
+                week + timedelta(days=1, hours=20, minutes=minute),
+                ["1002"],
+                "done",
+                "amend",
+                channel_id=CHAT_CHANNEL,
+            )
+        )
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="this_boss"),
+        says("There is one run left."),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot what's left for this boss week?"))).answered
+
+    assert result is not None
+    canonical = result.outcomes[0].output
+    assert result.outcomes[0].arguments == {"week": "this_boss"}
+    assert result.reply == canonical
+    assert short_id(chat_seeded["kalos"]) in result.reply
+    assert all(short_id(run_id) not in result.reply for run_id in past_ids)
+    assert len(result.reply) <= 1200
+    assert replies(chat_bot)[0].content == canonical
+    assert chat_bot.repo.recent_chat_interactions()[0]["reply"] == canonical
+    assert list(agent.history(str(CHAT_CHANNEL)))[-1].content == canonical
+
+
+def test_schedule_grounding_keeps_a_verbatim_two_line_canonical_reply():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "<#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+    final = ChatPilot._tidy(
+        _member_facing(_ground_schedule_reply(canonical, [outcome])), protected=canonical
+    )
+
+    assert final == canonical
+
+
+def test_schedule_grounding_replaces_bulleted_two_line_records_with_the_canonical_block():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "<#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    bulleted = (
+        "**Stale schedule heading**\n\n"
+        "- **Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        "- <#1520976698743717979> · 2/3 yes · planned · `[9004eab0]`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    assert _ground_schedule_reply(bulleted, [outcome]) == canonical
+
+
+def test_schedule_grounding_removes_a_stale_omission_marker():
+    canonical = (
+        "**1 run left this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes` · <#1520976698743717979>"
+    )
+    reply = canonical + "\n\n*(and 10 more)*"
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    assert _ground_schedule_reply(reply, [outcome]) == canonical
+
+
+def test_schedule_grounding_preserves_id_bearing_commentary_around_records():
+    canonical = (
+        "**1 run this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    reply = (
+        "I saved 9004eab0 for later.\n\n"
+        "`[9004eab0]` **Wrong Boss**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "9004eab0 is still the reference for the card."
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    grounded = _ground_schedule_reply(reply, [outcome])
+
+    assert grounded == (
+        "I saved 9004eab0 for later.\n\n"
+        f"{canonical}\n\n9004eab0 is still the reference for the card."
+    )
+
+
+def test_schedule_grounding_preserves_intervening_id_commentary_between_record_blocks():
+    canonical = (
+        "**2 runs this week · All channels**\n\n"
+        "`[9004eab0]` **Hard MaleficStar**\n"
+        "*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "`[9004eab1]` **Extreme Kalos**\n"
+        "*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    reply = (
+        "`[9004eab0]` **Wrong Boss**\n*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n"
+        "Keep 9004eab0 handy for the proposal card.\n\n"
+        "`[9004eab1]` **Wrong Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+    )
+    outcome = tools.ToolOutcome(name="get_schedule", output=canonical)
+
+    grounded = _ground_schedule_reply(reply, [outcome])
+
+    assert grounded == f"{canonical}\n\nKeep 9004eab0 handy for the proposal card."
+
+
+def test_tidy_drops_near_budget_markdown_commentary_without_splitting_schedule():
+    records = [
+        "**Tue 08 Sep · 00:00 — Hard MaleficStar**\n"
+        f"<#1520976698743717979> · 2/3 yes · planned · `[{index:08x}]`"
+        for index in range(11)
+    ]
+    schedule = "**11 runs this week · All channels**\n\n" + "\n\n".join(records)
+    reply = f"**{'intro ' * 20}**\n\n{schedule}\n\n*{'outro ' * 20}*"
+
+    assert len(schedule) <= 1200 < len(reply)
+    assert ChatPilot._tidy(reply, protected=schedule) == schedule
 
 
 async def test_schedule_paraphrase_with_bare_ids_is_regrounded(chat_bot, chat_seeded):
@@ -850,7 +1213,7 @@ async def test_schedule_paraphrase_with_bare_ids_is_regrounded(chat_bot, chat_se
     canonical = result.outcomes[0].output
     assert result.reply == f"{opener}\n\n{canonical}\n\n{closer}"
     assert "run ID" not in result.reply
-    assert result.reply.count("\n`[") == 2
+    assert result.reply.count("`[") == 2
     assert replies(chat_bot)[0].content == result.reply
 
 
@@ -878,6 +1241,8 @@ async def test_the_channel_and_the_log_get_the_same_normalised_reply(chat_bot, c
 async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bot, chat_seeded):
     raw = (
         'Try `get_schedule(\n{"scope": "all"}\n)` or participant="Alvin Tan"; '
+        'week_basis="boss"; {"week_basis": "calendar"}; '
+        'week="this_boss"; week="next_boss"; week="auto"; '
         f"participant=<@1003>; participant=<@&1234>. `<none>` See <#{CHAT_CHANNEL}>."
     )
     agent = pilot(chat_bot, says(raw))
@@ -891,8 +1256,13 @@ async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bo
     for internal in (
         "<none>",
         "participant=",
+        "week_basis=",
+        '"week_basis"',
         '"scope"',
         "get_schedule",
+        "this_boss",
+        "next_boss",
+        "auto",
         "<@1003>",
         "<@&1234>",
     ):
@@ -900,6 +1270,15 @@ async def test_member_replies_hide_placeholders_and_schedule_call_syntax(chat_bo
         assert internal not in replies(chat_bot)[0].content
         assert internal not in chat_bot.repo.recent_chat_interactions()[0]["reply"]
     assert result.model_rounds[0]["content"] == raw
+
+
+def test_member_facing_rewrites_standalone_week_modes_only():
+    raw = "this_boss next_boss auto automatic automation auto_farm this_bossy <#123> <@123>"
+
+    assert _member_facing(raw) == (
+        "this boss week next boss week the relevant week automatic automation auto_farm "
+        "this_bossy <#123> <@123>"
+    )
 
 
 # ---------------------------------------------------------------------------

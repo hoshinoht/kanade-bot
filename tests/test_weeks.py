@@ -7,7 +7,10 @@ from datetime import UTC, time, timedelta
 import pytest
 
 from bot.domain.weeks import (
+    calendar_week_end,
+    calendar_week_start,
     current_week_start,
+    materialised_week_starts,
     next_week_start,
     parse_hhmm,
     parse_weekday,
@@ -65,6 +68,21 @@ def test_current_and_next_week_are_adjacent():
     assert current == kl(2026, 8, 27)
     assert following == kl(2026, 9, 3)
     assert week_end(current, TZ) == following
+
+
+def test_calendar_weeks_start_on_monday_while_boss_weeks_keep_their_reset():
+    now = kl(2026, 9, 9, 12)
+    start = calendar_week_start(now, TZ)
+    assert start == kl(2026, 9, 7)
+    assert calendar_week_end(start, TZ) == kl(2026, 9, 14)
+
+
+def test_materialised_week_starts_include_the_third_consecutive_boss_week():
+    assert materialised_week_starts(TZ, RESET_WEEKDAY, RESET_TIME, kl(2026, 9, 9, 12)) == (
+        kl(2026, 9, 3),
+        kl(2026, 9, 10),
+        kl(2026, 9, 17),
+    )
 
 
 @pytest.mark.parametrize(

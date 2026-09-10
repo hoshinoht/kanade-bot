@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bot.agent.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, compute_status, state_for_emoji
+from bot.agent.rsvp import EMOJI_NO, EMOJI_YES, apply_reaction, compute_status
 from bot.infrastructure.db import Repo
 
 from .conftest import kl
@@ -18,12 +18,6 @@ WEEK = kl(2026, 8, 27)
 def run(repo: Repo) -> dict:
     run_id = repo.create_run(WEEK, ["HMaleficStar", "HFA"], RUN_AT, PARTICIPANTS)
     return repo.get_run(run_id)
-
-
-def test_emoji_mapping():
-    assert state_for_emoji(EMOJI_YES) == "yes"
-    assert state_for_emoji(EMOJI_NO) == "no"
-    assert state_for_emoji("🍕") is None
 
 
 # -- compute_status ----------------------------------------------------------

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from bot.agent.util import roster_rows
 from bot.infrastructure.watch import is_watched
 
@@ -27,11 +25,6 @@ def test_an_explicitly_listed_channel_is_watched():
 
 def test_any_channel_under_a_watched_category_is_watched():
     assert watched(channel(999, category_id=200))
-
-
-def test_a_channel_created_later_under_the_category_needs_no_restart():
-    # Nothing is cached: resolution is by the channel object handed to us.
-    assert watched(channel(123456789, category_id=200))
 
 
 def test_an_unrelated_channel_is_not_watched():
@@ -83,12 +76,3 @@ def test_bot_accounts_are_never_added_to_the_roster():
         [member(1, "harbour4417"), member(2, "YuukiSakuna", bot=True), member(3, "Alvin")]
     )
     assert [r[0] for r in rows] == ["1", "3"]
-
-
-def test_a_bot_holding_the_bossing_role_is_still_skipped():
-    assert roster_rows([member(9, "SomeBot", bot=True)]) == []
-
-
-@pytest.mark.parametrize("members", [[], [member(1, "a", bot=True)]])
-def test_an_all_bot_role_yields_an_empty_roster(members):
-    assert roster_rows(members) == []

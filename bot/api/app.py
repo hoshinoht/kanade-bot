@@ -8,7 +8,6 @@ stand-in client.  Everything a handler needs is reachable from
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,8 +30,6 @@ from .templating import build_templates
 
 if TYPE_CHECKING:  # pragma: no cover
     from bot.agent.client import BossBot
-
-log = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE_DIR = HERE / "templates"

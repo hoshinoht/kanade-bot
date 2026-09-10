@@ -48,7 +48,6 @@ RESCAN_TIMEOUT = httpx.Timeout(10.0, read=900.0)
 console = Console()
 err = Console(stderr=True)
 
-#: Run status -> how it reads in a terminal.
 STATUS_STYLE = {
     "planned": "yellow",
     "confirmed": "green",
@@ -81,11 +80,6 @@ def os_user() -> str:
         return getpass.getuser()[:64]
     except Exception:  # noqa: BLE001 - never fail a command over a log label
         return "unknown"
-
-
-# ---------------------------------------------------------------------------
-# configuration
-# ---------------------------------------------------------------------------
 
 
 def find_env(start: Path | None = None) -> Path | None:
@@ -316,11 +310,6 @@ def api() -> Api:
     return Api()
 
 
-# ---------------------------------------------------------------------------
-# rendering
-# ---------------------------------------------------------------------------
-
-
 def status_text(status: str, label: str | None = None) -> Text:
     return Text(label or status, style=STATUS_STYLE.get(status, ""))
 
@@ -373,10 +362,6 @@ def fail(message: str) -> None:
     raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
-# the app
-# ---------------------------------------------------------------------------
-
 app = typer.Typer(
     help="Control the boss-scheduler bot over its local HTTP API.",
     no_args_is_help=True,
@@ -385,6 +370,7 @@ app = typer.Typer(
 fixed_app = typer.Typer(help="The weekly baseline timings.", no_args_is_help=True)
 config_app = typer.Typer(help="Runtime settings.", no_args_is_help=True)
 member_app = typer.Typer(help="Per-member settings.", no_args_is_help=True)
+memory_app = typer.Typer(help="Governed typed chat preferences.", no_args_is_help=True)
 #: The one group with a bare form: `bossctl limits` is the reading, and the
 #: subcommand under it is the only thing you can do about what it says. The
 #: others are `no_args_is_help` because "bossctl config" alone means nothing.
@@ -392,6 +378,7 @@ limits_app = typer.Typer(help="Capacity: the shared model and the answer budgets
 app.add_typer(fixed_app, name="fixed")
 app.add_typer(config_app, name="config")
 app.add_typer(member_app, name="member")
+app.add_typer(memory_app, name="memory")
 app.add_typer(limits_app, name="limits")
 
 
@@ -605,6 +592,122 @@ def members() -> None:
             for m in rows
         ],
     )
+
+
+@memory_app.command("list")
+def memory_list(
+    query: str = typer.Option("", "--query", "-q", help="Member name or Discord id."),
+    enrollment: str | None = typer.Option(None, "--enrollment"),
+    lifecycle: str | None = typer.Option(None, "--lifecycle"),
+    slot: str | None = typer.Option(None, "--slot"),
+    boss: str | None = typer.Option(None, "--boss"),
+) -> None:
+    """List governed-memory subjects; names lead and ids remain available."""
+    data = api().get(
+        "/api/memory",
+        q=query or None,
+        enrollment=enrollment,
+        lifecycle=lifecycle,
+        slot=slot,
+        boss=boss,
+    )
+    print_table(
+        f"{data['total']} member(s)",
+        ["member", "user id", "enrollment", "memories"],
+        [
+            [
+                row["name"],
+                row["user_id"],
+                row["enrollment"]["state"] if row["enrollment"] else "none",
+                (
+                    ", ".join(
+                        f"{memory['slot']}={memory['value']} ({memory['lifecycle']})"
+                        for memory in row["memories"]
+                    )
+                    or "—"
+                ),
+            ]
+            for row in data["rows"]
+        ],
+    )
+
+
+@memory_app.command("show")
+def memory_show(user_id: str = typer.Argument(help="Discord user id.")) -> None:
+    """Show one member's typed values and content-free lifecycle diagnostics."""
+    row = api().get(f"/api/memory/{user_id}")
+    console.print(f"[bold]{row['name']}[/bold] [dim]{row['user_id']}[/dim]")
+    console.print(f"Enrollment: {row['enrollment']['state'] if row['enrollment'] else 'none'}")
+    print_table(
+        "memories",
+        ["id", "slot", "value", "boss", "lifecycle", "expires"],
+        [
+            [m["id"], m["slot"], m["value"], m["boss"] or "—", m["lifecycle"], m["expires_at"]]
+            for m in row["memories"]
+        ],
+    )
+
+
+@memory_app.command("enroll")
+def memory_enroll(user_id: str = typer.Argument(help="Discord user id.")) -> None:
+    """Send one member the required notice and activate only after delivery."""
+    row = api().post(f"/api/memory/{user_id}/enroll")
+    message = f" — {row['message']}" if row["message"] else ""
+    console.print(f"[green]✓[/green] {user_id}: {row['state']}{message}")
+
+
+@memory_app.command("disable")
+def memory_disable(user_id: str = typer.Argument(help="Discord user id.")) -> None:
+    """Disable one enrollment and atomically revoke its live preferences."""
+    row = api().post(f"/api/memory/{user_id}/disable")
+    console.print(f"[green]✓[/green] {row['name']} is disabled.")
+
+
+@memory_app.command("set")
+def memory_set(
+    user_id: str = typer.Argument(help="Discord user id."),
+    slot: str = typer.Argument(help="Typed preference slot."),
+    value: str = typer.Argument(help="Allowed value for that slot."),
+    boss: str | None = typer.Option(None, "--boss", help="Explicit-difficulty boss scope."),
+) -> None:
+    """Create or correct one active typed preference for an active member."""
+    row = api().request(
+        "PUT", f"/api/memory/{user_id}/memories", json={"slot": slot, "value": value, "boss": boss}
+    )
+    console.print(f"[green]✓[/green] {row['slot']}={row['value']} ({row['lifecycle']}).")
+
+
+def _memory_change(user_id: str, memory_id: str, verb: str) -> None:
+    row = api().post(f"/api/memory/{user_id}/memories/{memory_id}/{verb}")
+    console.print(f"[green]✓[/green] {row['id']} is {row['lifecycle']}.")
+
+
+@memory_app.command("revoke")
+def memory_revoke(
+    user_id: str = typer.Argument(help="Discord user id."),
+    memory_id: str = typer.Argument(help="Memory id."),
+) -> None:
+    """Revoke one live preference."""
+    _memory_change(user_id, memory_id, "revoke")
+
+
+@memory_app.command("expire")
+def memory_expire(
+    user_id: str = typer.Argument(help="Discord user id."),
+    memory_id: str = typer.Argument(help="Memory id."),
+) -> None:
+    """Expire one live preference now."""
+    _memory_change(user_id, memory_id, "expire")
+
+
+@memory_app.command("delete")
+def memory_delete(
+    user_id: str = typer.Argument(help="Discord user id."),
+    memory_id: str = typer.Argument(help="Memory id."),
+) -> None:
+    """Physically delete one preference immediately."""
+    api().delete(f"/api/memory/{user_id}/memories/{memory_id}")
+    console.print(f"[green]✓[/green] Deleted {memory_id}.")
 
 
 def resolve_member(who: str) -> dict:
@@ -883,7 +986,6 @@ def guide(
 
     posted = 0
     for content in messages:
-        # Detect the bosses placeholder and replace with embeds.
         if "bosses: true" in content:
             header = content.replace("bosses: true", "").strip()
             if boss_entries:
@@ -915,7 +1017,6 @@ def guide(
                     )
                     time.sleep(1)
 
-            # Footer as its own message.
             api().post(
                 "/api/say",
                 {"channel_id": channel, "content": footer_text},
@@ -1219,9 +1320,6 @@ def export(
     console.print(f"[green]✓[/green] {count} message(s) → {out}")
 
 
-# --- bossctl fixed ----------------------------------------------------------
-
-
 @fixed_app.command("list")
 def fixed_list(user: str | None = typer.Option(None, "--user", help="Only this member's.")) -> None:
     """The weekly baseline timings."""
@@ -1314,9 +1412,6 @@ def fixed_rm(fixed_id: str = typer.Argument(help="Timing id, or any unique prefi
     )
 
 
-# --- bossctl config ---------------------------------------------------------
-
-
 @config_app.command("get")
 def config_get(key: str | None = typer.Argument(None, help="One setting, or all of them.")) -> None:
     """Show the runtime settings (and the read-only deployment ones)."""
@@ -1369,11 +1464,6 @@ def config_set(
         parsed = value
     values = api().request("PUT", "/api/config", json={key: parsed})
     console.print(f"[green]✓[/green] {key} = {values.get(key)}")
-
-
-# ---------------------------------------------------------------------------
-# entry point
-# ---------------------------------------------------------------------------
 
 
 def main() -> int:

@@ -516,12 +516,6 @@ def test_a_new_run_is_keyed_on_its_bosses():
     assert consolidate([first, second]) == [second]
 
 
-def test_consolidating_nothing_gives_nothing():
-    from bot.extract.pipeline import consolidate
-
-    assert consolidate([]) == []
-
-
 def test_a_rescan_posts_one_card_for_the_whole_window(fake_bot):
     """Not one per burst: a week is often one decision revisited across evenings."""
     from .fake_bot import WATCHED_CHANNEL

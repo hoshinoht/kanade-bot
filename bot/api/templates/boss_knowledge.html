@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}{{ knowledge.full }} knowledge — YuukiSakuna{% endblock %}
+
+{% block content %}
+<p><a class="btn" href="/bosses">← Boss catalog</a></p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Checked-in strategy provenance</p>
+    <h1>{{ knowledge.full }}{% if knowledge.difficulty %} — {{ knowledge.difficulty|upper }}{% endif %}</h1>
+    <p class="note">Researched {{ knowledge.researched_as_of }}. Source URLs are preserved in full.</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card__head"><h2 class="card__title">Sources</h2><span class="id">{{ knowledge.canonical }}</span></div>
+  {% if knowledge.sources %}
+  <ul class="knowledge-sources">
+    {% for source in knowledge.sources %}
+    <li><a href="{{ source }}" rel="noopener noreferrer" target="_blank">{{ source }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty"><strong>No source URLs recorded.</strong></p>
+  {% endif %}
+  <details class="knowledge-meta">
+    <summary>Repository provenance</summary>
+    <dl>
+      <dt>Relative source path</dt><dd class="mono">{{ knowledge.path }}</dd>
+      <dt>Metadata hash</dt><dd class="mono">{{ knowledge.meta_hash }}</dd>
+      <dt>Document hash</dt><dd class="mono">{{ knowledge.document_hash }}</dd>
+    </dl>
+  </details>
+</section>
+{% endblock %}

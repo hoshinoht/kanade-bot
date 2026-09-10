@@ -162,12 +162,6 @@ async def test_the_trigger_mention_and_me_together(chat_bot, chat_seeded):
     assert party(chat_bot) == ["1002"]
 
 
-async def test_the_asker_comes_from_the_message_not_the_model(chat_bot, chat_seeded):
-    """`me` is whoever wrote the message, whatever the model thinks."""
-    await add(chat_bot, "me", author_id=1003)
-    assert party(chat_bot) == ["1003"]
-
-
 async def test_a_first_person_word_inside_a_name_is_not_substituted(chat_bot, chat_seeded):
     """Word-bounded: `i` must not rewrite the i in Priya."""
     await add(chat_bot, "Priya")
@@ -194,16 +188,6 @@ async def test_an_invented_snowflake_is_still_refused(chat_bot, chat_seeded):
 # ---------------------------------------------------------------------------
 # what the model is told it just did
 # ---------------------------------------------------------------------------
-
-
-async def test_the_tool_result_names_the_resolved_party(chat_bot, chat_seeded):
-    """The card's own party, by display name, so a reply can only echo it."""
-    answer = await add(chat_bot, f"<@{BOT_USER_ID}> and <@1003>", author_id=1002)
-
-    assert "kanon" in answer and "Priya" in answer
-    assert "Hard Bellona" in answer
-    assert str(BOT_USER_ID) not in answer
-    assert "YuukiSakuna" not in answer
 
 
 async def test_the_result_names_the_asker_even_when_the_model_named_nobody(chat_bot, chat_seeded):

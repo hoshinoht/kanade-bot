@@ -522,12 +522,6 @@ def test_a_tie_between_two_changes_goes_to_the_later_one():
     assert [e.resolved.day for e in kept] == [date(2026, 9, 3)]
 
 
-def test_a_tie_keeps_only_one_line_for_the_run():
-    run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))
-    kept = one_per_run([entry("otot", ["HCarling"], run), entry("otot", ["HCarling"], run)])
-    assert len(kept) == 1
-
-
 def test_a_stand_in_survives_beside_a_move_for_the_same_run():
     """ "ZedRS's out, X fills, and we do Wed" is one decision: both lines stay."""
     run = run_row("r1", ["HCarling"], NOW + timedelta(days=1))

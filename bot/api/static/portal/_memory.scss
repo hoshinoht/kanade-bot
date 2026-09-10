@@ -1,0 +1,95 @@
+/* Memory stays a dense operational ledger: a member is the anchor, not a record id. */
+.memory-name { font-weight: 700; }
+.memory-filters { margin: 0 -0.2rem 0.7rem; }
+.memory-enroll { display: flex; gap: 0.35rem; margin-left: auto; }
+.memory-enroll input { width: 11rem; }
+.memory-enrollment { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.9rem; }
+.memory-enrollment > p { flex: 1 0 100%; margin: 0; }
+.memory-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 16rem; }
+.memory-actions form { margin: 0; }
+.memory-ledger { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.memory-ledger h3 { font-family: var(--display); font-size: var(--fs-lg); margin: 0 0 0.35rem; }
+.memory-ledger ol { margin: 0; padding-left: 1.2rem; }
+.memory-ledger li + li { margin-top: 0.5rem; }
+.knowledge-sources { margin: 0; padding-left: 1.25rem; overflow-wrap: anywhere; }
+.knowledge-sources li + li { margin-top: 0.55rem; }
+.knowledge-meta { margin-top: 1rem; border-top: 2px solid var(--line-soft); padding-top: 0.65rem; }
+.knowledge-meta dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 0.8rem; margin: 0.7rem 0 0; }
+.knowledge-meta dt { color: var(--dim); }
+.knowledge-meta dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Keep the page chrome fixed at every viewport size. The memory card is the
+   single scrolling window, avoiding a nested page/table scroll on phones. */
+body.memory-frame,
+body.memory-subject-frame {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.memory-frame .masthead,
+body.memory-subject-frame .masthead { flex: none; }
+body.memory-frame .shell,
+body.memory-subject-frame .shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+body.memory-frame .shell > * { flex: none; }
+body.memory-frame .pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+body.memory-frame .pane__swap {
+  flex: none;
+  min-height: auto;
+  display: block;
+}
+body.memory-frame .pane__body {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+body.memory-subject-frame .shell > p { flex: none; }
+body.memory-subject-frame .memory-subject {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+body.memory-subject-frame .memory-subject > .flash,
+body.memory-subject-frame .memory-subject > .page-head { flex: none; }
+body.memory-subject-frame .memory-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.memory-subject-frame .memory-tabs .tabs__strip { flex: none; }
+body.memory-subject-frame .memory-tabs .tabs__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 899px) {
+  /* Keep the same selected-panel contract on phones: fragment links still need
+     no script, but the panel—not the document—owns keyboard and touch scroll. */
+  body.memory-subject-frame .memory-tabs .tabs__panel {
+    display: none;
+  }
+  body.memory-subject-frame .memory-tabs .tabs__panel:target,
+  body.memory-subject-frame .memory-tabs:not(:has(.tabs__panel:target)) .tabs__panel--first {
+    display: block;
+  }
+}
+@media (max-width: 640px) { .memory-enroll { width: 100%; margin-left: 0; } .memory-enroll input { flex: 1; width: auto; } .memory-ledger { grid-template-columns: 1fr; } .memory-actions { min-width: 0; } .knowledge-meta dl { grid-template-columns: 1fr; gap: 0.1rem; } }

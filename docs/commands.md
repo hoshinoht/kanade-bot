@@ -1,8 +1,5 @@
 # Commands
 
-The slash commands, how ids and boss tokens work, and the `/debug` group
-for testing the whole flow on demand.
-
 ```
 /fixed add bosses:hstar, hfa day:Mon time:21:30 member1:@Alvin member2:@Priya
                                 # run this in your party's channel - that becomes
@@ -35,8 +32,23 @@ for testing the whole flow on demand.
 /bot pause | /bot resume        # stop/resume chat watching
 /rescan hours:24                # re-read this channel's recent chat and propose
 
+/memory status                   # your enrollment and saved-preference count
+/memory list                     # your typed preferences and short ids
+/memory opt-out                  # revoke active preferences and stop proposals
+/memory forget id:a1b2c3d4       # delete one of your preferences immediately
+/memory forget-all               # delete all of your preferences immediately
+
 /say message:... [channel:#x]   # admins only: the bot posts your words verbatim
 ```
+
+`/memory` is guild-only, member-scoped, and ephemeral. Viewing, opting out, and
+deleting remain available when memory is disabled or the member is not enrolled;
+none of them requires accepting a policy notice. Members cannot self-enroll or
+enroll a role. To correct a value, submit a new typed
+`remember preference: <slot>=<value>` proposal. Administrators enroll one member
+at a time and directly manage allowlisted values through the authenticated portal
+or the HTTP-only `bossctl memory` commands; a successful Discord notice DM is
+required before the enrollment becomes active.
 
 **`/say`** is the one thing the bot writes that really notifies people: the
 allow-list is built from the `@mentions` you type, so it reaches exactly who you

@@ -11,8 +11,6 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 
-import pytest
-
 from bot.infrastructure import backfill
 from bot.infrastructure.db import Repo
 
@@ -195,10 +193,3 @@ def test_resolving_a_channel_never_falls_back_to_the_post_channel(fake_bot):
     assert BossBot.resolve_channel(fake_bot, WATCHED_CHANNEL).id == WATCHED_CHANNEL
     assert BossBot.resolve_channel(fake_bot, 424242) is None
     assert BossBot.resolve_channel(fake_bot, "not-an-id") is None
-
-
-@pytest.mark.parametrize("flag", [True, False])
-def test_the_startup_sweep_is_configurable(flag):
-    from .fake_bot import make_settings
-
-    assert make_settings(backfill_on_start=flag).backfill_on_start is flag

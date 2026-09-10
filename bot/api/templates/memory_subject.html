@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Memory member — YuukiSakuna{% endblock %}
+{% block body_class %}framed memory-subject-frame{% endblock %}
+
+{% block content %}
+<p><a class="btn" href="{{ back }}">← Memory members</a></p>
+<div id="memory-subject" class="memory-subject">
+  {% include "partials/memory_subject.html" %}
+</div>
+{% endblock %}

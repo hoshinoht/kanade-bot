@@ -27,12 +27,13 @@ token signs every browser session out.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Week**         | The default. A seven-column rail for the boss week — starting on the reset day, not Monday — with a pip per run, then the runs grouped by day. Filter by channel, member or boss; move, preview-ping, and a status control (planned · confirmed · own time · done · cancelled) on each row. Past and cancelled runs are hidden until you ask. |
 | **Fixed**        | The baseline timings, with a create/edit form. Bosses are picked from a **boss grid** — the in-game list, one row per boss with its real difficulties as pills — or typed as tokens. The party comes from the synced roster. |
-| **Bosses**       | The same grid, read-only, with the difficulties the group actually has timings for ticked. A quick "what do we run".                                |
+| **Bosses**       | The same grid, read-only, with the difficulties the group actually has timings for ticked. A quick "what do we run"; each boss links to its authenticated source/provenance page. |
 | **Inbox**        | What the extractor proposed and nobody has answered: the change, its confidence, and the exact chat lines it cited. Approve, edit-then-approve, or reject — the same code path a ✅ on the Discord card runs, and the card is edited to say it was applied via the portal. |
 | **Extractions**  | Every model call: the prompt as sent, the raw JSON back, the latency, and the changes it produced. This is the prompt-tuning tool.                  |
 | **Chat**         | Every chatbot interaction: who asked what, the reply, rounds, tool calls, latency and token counts, with per-model totals up top. On rows raised by a ❌ follow-up the "question" is the scheduler's own prompt (it starts `[Note from the scheduler…]`) — no member typed it. |
 | **Members**      | The roster as synced from the bossing role, plus the chat aliases the extractor matches names against.                                              |
 | **Reminders**    | Queued and sent reminder rows, with a link straight to each posted message in Discord.                                                              |
+| **Memory**       | Authenticated administrator view of typed preference enrollment, lifecycle, expiry, provenance and content-free events; filter members and manage one member at a time. |
 | **Config**       | Morning ping time, countdown offsets, pause chat watching, turn the extractor off, post the weekly digest now, **re-read the party channels**, and a **channel access** table showing what the bot may actually do in each one. The `.env`-only values are listed read-only underneath. |
 
 Every time on every page is in the group's timezone, which is named in the header.
@@ -119,6 +120,33 @@ bossctl export --channel <id> --since 2026-06-01 --out data/exports/party.jsonl
 bossctl config get [key] | config set <key> <value>
 ```
 
+Governed memory administration is available through the authenticated HTTP API
+and the matching HTTP-only CLI. `bossctl memory list` accepts member, enrollment,
+lifecycle, slot, and boss filters; `bossctl memory show <user-id>` shows one
+member's typed values and content-free diagnostics. The mutation commands are:
+
+```sh
+bossctl memory enroll <user-id>             # one member; sends the required DM notice
+bossctl memory disable <user-id>            # revoke that member's live preferences
+bossctl memory set <user-id> <slot> <value> [--boss <token>]
+bossctl memory revoke <user-id> <memory-id>
+bossctl memory expire <user-id> <memory-id>
+bossctl memory delete <user-id> <memory-id>
+```
+
+Enrollment is disabled unless `CHAT_MEMORY_ENABLED=true`, and that setting
+requires a bot restart. It still enrolls no one automatically: a successful
+notice DM is required, with no role-wide or bulk enrollment. Typed edits require
+an active enrollment; viewing, revoke/expire, and deletion do not require active
+enrollment or policy acceptance. Disabling applies to an existing pending or
+active enrollment. Deletion physically deletes the live `chat_memories` row and
+removes its content from current memory and retrieval immediately. This is
+logical live-memory deletion rather than forensic erasure: related Discord
+messages, watched-message and chat logs, SQLite WAL/free pages, manually copied
+databases, and historical backups may retain related text. New backups omit
+purged rows, while existing managed snapshots age out under the deployment's
+normal rotation.
+
 `config set` takes the four runtime settings the portal edits —
 `day_of_ping_time`, `countdown_minutes`, `paused`, `extract_enabled`. Everything
 else is `.env` and a redeploy.
@@ -142,3 +170,15 @@ curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/schedule
 
 `GET /healthz` is the one unauthenticated route and returns nothing but `ok`; the
 compose healthcheck uses it alongside the SQLite heartbeat.
+
+The authenticated API routes for memory are `GET /api/memory`,
+`GET /api/memory/{user_id}`, `POST /api/memory/{user_id}/enroll`,
+`POST /api/memory/{user_id}/disable`, `PUT /api/memory/{user_id}/memories`,
+`POST /api/memory/{user_id}/memories/{memory_id}/revoke`,
+`POST /api/memory/{user_id}/memories/{memory_id}/expire`, and
+`DELETE /api/memory/{user_id}/memories/{memory_id}`. Boss source provenance is
+available at `GET /api/bosses/{boss}/knowledge` and the portal page
+`/bosses/{boss}/knowledge`; those show the resolved catalog boss, research date,
+hashes, source path, and complete source URLs. Boss catalog and knowledge changes
+are loaded at startup and require a restart; portraits and entry art only need a
+page reload.

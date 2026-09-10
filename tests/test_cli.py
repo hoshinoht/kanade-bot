@@ -45,6 +45,118 @@ def run(*args: str):
     return runner.invoke(cli.app, list(args))
 
 
+def test_memory_set_uses_only_the_http_api(api):
+    route = api.put("/api/memory/1001/memories").respond(
+        200,
+        json={
+            "id": "memory-1",
+            "slot": "answer_format",
+            "value": "bullets",
+            "boss": None,
+            "lifecycle": "active",
+            "created_at": "2026-09-01T00:00:00+00:00",
+            "reviewed_at": "2026-09-01T00:00:00+00:00",
+            "expires_at": "2027-03-01T00:00:00+00:00",
+            "state_at": "2026-09-01T00:00:00+00:00",
+        },
+    )
+
+    result = run("memory", "set", "1001", "answer_format", "bullets")
+
+    assert result.exit_code == 0
+    assert route.called
+    assert json.loads(route.calls[0].request.content) == {
+        "slot": "answer_format",
+        "value": "bullets",
+        "boss": None,
+    }
+
+
+def test_memory_delete_displays_api_failure(api):
+    api.delete("/api/memory/1001/memories/mem-1").respond(404, json={"error": "memory is gone"})
+
+    result = run("memory", "delete", "1001", "mem-1")
+
+    assert result.exit_code == 1
+    assert str(result.exception) == "memory is gone"
+
+
+MEMORY_SUBJECT = {
+    "user_id": "1001",
+    "display_name": "Mei",
+    "name": "Mei",
+    "enrollment": {"state": "active"},
+    "memories": [],
+}
+MEMORY_ROW = {
+    "id": "memory-1",
+    "slot": "answer_format",
+    "value": "bullets",
+    "boss": None,
+    "lifecycle": "active",
+    "created_at": "2026-09-01T00:00:00+00:00",
+    "reviewed_at": "2026-09-01T00:00:00+00:00",
+    "expires_at": "2027-03-01T00:00:00+00:00",
+    "state_at": "2026-09-01T00:00:00+00:00",
+}
+
+
+@pytest.mark.parametrize(
+    ("args", "method", "path", "payload"),
+    [
+        (
+            ("memory", "list", "--query", "Mei", "--enrollment", "active"),
+            "get",
+            "/api/memory",
+            {"rows": [MEMORY_SUBJECT], "total": 1},
+        ),
+        (
+            ("memory", "show", "1001"),
+            "get",
+            "/api/memory/1001",
+            {**MEMORY_SUBJECT, "events": [], "retrievals": []},
+        ),
+        (
+            ("memory", "enroll", "1001"),
+            "post",
+            "/api/memory/1001/enroll",
+            {"user_id": "1001", "state": "active", "active": True, "message": None},
+        ),
+        (("memory", "disable", "1001"), "post", "/api/memory/1001/disable", MEMORY_SUBJECT),
+        (
+            ("memory", "revoke", "1001", "memory-1"),
+            "post",
+            "/api/memory/1001/memories/memory-1/revoke",
+            MEMORY_ROW,
+        ),
+        (
+            ("memory", "expire", "1001", "memory-1"),
+            "post",
+            "/api/memory/1001/memories/memory-1/expire",
+            MEMORY_ROW,
+        ),
+        (
+            ("memory", "delete", "1001", "memory-1"),
+            "delete",
+            "/api/memory/1001/memories/memory-1",
+            {"id": "memory-1", "deleted": True},
+        ),
+    ],
+)
+def test_memory_commands_use_exact_http_contract(api, args, method, path, payload):
+    route = getattr(api, method)(path).respond(200, json=payload)
+
+    result = run(*args)
+
+    assert result.exit_code == 0
+    assert route.called
+    request = route.calls[0].request
+    if args[1] == "list":
+        assert dict(request.url.params) == {"q": "Mei", "enrollment": "active"}
+    else:
+        assert request.content in (b"", b"null")
+
+
 SCHEDULE = {
     "week": "this",
     "week_start": "2026-08-26T16:00:00+00:00",

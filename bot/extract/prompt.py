@@ -197,11 +197,6 @@ class PromptContext:
     guild_runs: Sequence[dict] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# rendering helpers
-# ---------------------------------------------------------------------------
-
-
 def member_name(member: dict) -> str:
     return member.get("nickname") or member.get("display_name") or str(member["user_id"])
 
@@ -254,11 +249,6 @@ def render_fixed(fixed: dict, names: dict[str, str]) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# choosing what to include
-# ---------------------------------------------------------------------------
-
-
 def relevant_roster(context: PromptContext) -> list[dict]:
     """The members worth naming: authors, people mentioned, and run participants.
 
@@ -294,11 +284,6 @@ def named_bosses(context: PromptContext) -> set[str]:
             if parts is not None:
                 found.add(parts[1].short)
     return found
-
-
-# ---------------------------------------------------------------------------
-# the prompt
-# ---------------------------------------------------------------------------
 
 
 def build_user_prompt(context: PromptContext) -> str:
