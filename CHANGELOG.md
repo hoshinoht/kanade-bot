@@ -2,6 +2,13 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 4.8.2
+
+**Changed**
+
+- Split repository guidance into subsystem-specific `AGENTS.md` files covering
+  boss data, runtime packages, chatbot tools, portal assets, and tests.
+
 ## 4.8.1
 
 **Changed**
