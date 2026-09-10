@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     #: Reasoning effort for the chat pilot. Empty falls back to ``OLLAMA_THINK``
     #: so the extractor can stay fast while speech reasons harder.
     chat_pilot_think: str = ""
+
+    #: Governed typed preference memory is deliberately opt-in.
+    chat_memory_enabled: bool = False
     #: Deprecated seed identity path; manifest deployments resolve its basename.
     persona_path: str = "config/personas/identities/persona.md"
     #: Legacy-only staging path. Manifest bundles carry their own baseline staging.

@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
 from urllib.parse import urlparse
@@ -53,11 +54,14 @@ _UniqueKeyLoader.add_constructor(
 )
 
 
-def _load_yaml(path: Path) -> object:
+def _load_yaml(path: Path) -> tuple[object, bytes]:
     try:
-        return yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
+        raw = path.read_bytes()
+        return yaml.load(raw.decode("utf-8"), Loader=_UniqueKeyLoader), raw
     except FileNotFoundError as exc:
         raise BossKnowledgeError(f"required knowledge file is missing: {path.name}") from exc
+    except UnicodeDecodeError as exc:
+        raise BossKnowledgeError(f"{path.name}: invalid UTF-8") from exc
     except BossKnowledgeError as exc:
         raise BossKnowledgeError(f"{path.name}: {exc}") from exc
     except yaml.YAMLError as exc:
@@ -119,6 +123,18 @@ class BossKnowledgeMeta:
 
 
 @dataclass(frozen=True)
+class BossKnowledgeProvenance:
+    """Immutable audit facts for one validated checked-in guide."""
+
+    path: str
+    meta_schema_version: int
+    researched_as_of: date
+    meta_hash: str
+    document_hash: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class BossKnowledge:
     """Validated, source-backed knowledge for one canonical boss."""
 
@@ -130,6 +146,7 @@ class BossKnowledge:
     sources: tuple[str, ...]
     difficulty_notes: Mapping[str, str]
     notes: tuple[str, ...]
+    provenance: BossKnowledgeProvenance
 
 
 @dataclass(frozen=True)
@@ -145,7 +162,7 @@ class BossKnowledgeBase:
         directory = Path(path)
         if not directory.is_dir():
             raise BossKnowledgeError(f"knowledge directory does not exist: {directory}")
-        meta = _parse_meta(directory / "_meta.yaml")
+        meta, meta_hash = _parse_meta(directory / "_meta.yaml")
         files = [
             item
             for item in directory.iterdir()
@@ -176,7 +193,7 @@ class BossKnowledgeBase:
         documents: dict[str, BossKnowledge] = {}
         for item in sorted(knowledge_files):
             short = expected[item.stem]
-            documents[short] = _parse_document(item, short, table)
+            documents[short] = _parse_document(item, short, table, directory, meta, meta_hash)
         return cls(table=table, meta=meta, documents=MappingProxyType(documents))
 
     def get(self, short: str) -> BossKnowledge:
@@ -240,8 +257,9 @@ class BossKnowledgeBase:
     retrieve = render
 
 
-def _parse_meta(path: Path) -> BossKnowledgeMeta:
-    raw = _mapping(_load_yaml(path), path.name)
+def _parse_meta(path: Path) -> tuple[BossKnowledgeMeta, str]:
+    loaded, bytes_ = _load_yaml(path)
+    raw = _mapping(loaded, path.name)
     unknown = set(raw) - _META_FIELDS
     missing = {"schema_version", "researched_as_of"} - set(raw)
     if unknown or missing:
@@ -264,11 +282,19 @@ def _parse_meta(path: Path) -> BossKnowledgeMeta:
     intended_use = (
         _text(raw["intended_use"], "_meta.yaml intended_use") if "intended_use" in raw else None
     )
-    return BossKnowledgeMeta(1, researched_date, intended_use)
+    return BossKnowledgeMeta(1, researched_date, intended_use), sha256(bytes_).hexdigest()
 
 
-def _parse_document(path: Path, short: str, table: BossTable) -> BossKnowledge:
-    raw = _mapping(_load_yaml(path), path.name)
+def _parse_document(
+    path: Path,
+    short: str,
+    table: BossTable,
+    root: Path,
+    meta: BossKnowledgeMeta,
+    meta_hash: str,
+) -> BossKnowledge:
+    loaded, bytes_ = _load_yaml(path)
+    raw = _mapping(loaded, path.name)
     unknown = set(raw) - _REQUIRED_FIELDS - _OPTIONAL_FIELDS
     missing = _REQUIRED_FIELDS - set(raw)
     if unknown or missing:
@@ -286,15 +312,24 @@ def _parse_document(path: Path, short: str, table: BossTable) -> BossKnowledge:
             if not isinstance(letter, str) or letter not in table.bosses[short].difficulties:
                 raise BossKnowledgeError(f"{path.name} has unsupported difficulty note {letter!r}")
             difficulty_notes[letter] = _text(note, f"{path.name} difficulty_notes.{letter}")
+    sources = _sources(raw["sources"], f"{path.name} sources")
     document = BossKnowledge(
         boss=boss,
         summary=_text(raw["summary"], f"{path.name} summary"),
         core=_bullets(raw["core"], f"{path.name} core", 1, 8),
         danger=_bullets(raw["danger"], f"{path.name} danger", 1, 8),
         tips=_bullets(raw["tips"], f"{path.name} tips", 1, 8),
-        sources=_sources(raw["sources"], f"{path.name} sources"),
+        sources=sources,
         difficulty_notes=MappingProxyType(difficulty_notes),
         notes=_bullets(raw.get("notes", []), f"{path.name} notes", 0, 8),
+        provenance=BossKnowledgeProvenance(
+            path=path.relative_to(root).as_posix().lower(),
+            meta_schema_version=meta.schema_version,
+            researched_as_of=meta.researched_as_of,
+            meta_hash=meta_hash,
+            document_hash=sha256(bytes_).hexdigest(),
+            sources=sources,
+        ),
     )
     text = "".join(
         (

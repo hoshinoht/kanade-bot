@@ -727,6 +727,147 @@ class BotGroup(app_commands.Group):
         await interaction.response.send_message("▶️ Chat watching resumed.", ephemeral=True)
 
 
+MEMORY_LIST_LIMIT = 1800
+MEMORY_DELETION_LIMITATION = (
+    "This is logical deletion; related Discord, log, WAL, or backup copies may remain."
+)
+
+
+def _memory_id(bot: BossBot, user_id: int, raw: str) -> str:
+    """Resolve only one member's memory ID, never another member's."""
+    candidates = [row["id"] for row in bot.repo.list_memories(bot.settings.guild_id, user_id)]
+    try:
+        return resolve_id(raw, candidates)
+    except IdAmbiguous as exc:
+        listed = ", ".join(f"`#{short_id(candidate)}`" for candidate in exc.candidates[:8])
+        raise NotAllowed(f"Several memories match: {listed} - be more specific") from None
+    except IdError:
+        raise NotAllowed("No matching memory. Use `/memory list` and its memory ID.") from None
+
+
+def _memory_line(memory: dict) -> str:
+    boss = f" · boss {memory['boss_token']}" if memory["boss_token"] else ""
+    expires_at = memory["expires_at"]
+    expiry = expires_at.strftime("%Y-%m-%d UTC") if isinstance(expires_at, datetime) else "unknown"
+    return (
+        f"{memory['slot']}={memory['value']}{boss} · {memory['state']} · expires {expiry} · "
+        f"`#{short_id(memory['id'])}`"
+    )
+
+
+@app_commands.guild_only()
+class MemoryGroup(app_commands.Group):
+    """Member-owned governed-memory controls."""
+
+    def __init__(self) -> None:
+        super().__init__(name="memory", description="View or remove your saved reply preferences")
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        guild = interaction.guild
+        if guild is None or guild.id != _bot(interaction).settings.guild_id:
+            raise NotAllowed("Memory controls are only available in this guild.")
+        return True
+
+    @app_commands.command(
+        name="status", description="Show your memory enrollment and saved-preference status"
+    )
+    async def status(self, interaction: discord.Interaction) -> None:
+        bot = _bot(interaction)
+        enrollment = bot.repo.get_memory_enrollment(bot.settings.guild_id, interaction.user.id)
+        count = len(bot.repo.list_memories(bot.settings.guild_id, interaction.user.id))
+        enabled = "enabled" if bot.settings.chat_memory_enabled else "disabled"
+        if enrollment is None:
+            state = "You are not enrolled and have no memory enrollment record."
+        elif enrollment["state"] == "opted_out":
+            state = "You are opted out; new proposals cannot become active."
+        else:
+            state = f"Your enrollment is **{enrollment['state']}**."
+        await interaction.response.send_message(
+            f"Memory is globally **{enabled}**. {state}\n"
+            f"{count} saved preference{'s' if count != 1 else ''}. "
+            "To correct a preference, submit a new `remember preference:` proposal.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="list", description="List your saved reply preferences")
+    async def list_(self, interaction: discord.Interaction) -> None:
+        bot = _bot(interaction)
+        memories = bot.repo.list_memories(bot.settings.guild_id, interaction.user.id)
+        if not memories:
+            await interaction.response.send_message(
+                "No saved preferences. To correct a preference, submit a new "
+                "`remember preference:` proposal when enrolled.",
+                ephemeral=True,
+            )
+            return
+        lines: list[str] = []
+        for memory in memories:
+            line = _memory_line(memory)
+            if len("\n".join([*lines, line])) > MEMORY_LIST_LIMIT:
+                break
+            lines.append(line)
+        truncated = len(lines) < len(memories)
+        suffix = "\nMore preferences are available in the portal." if truncated else ""
+        await interaction.response.send_message(
+            "Your saved preferences:\n"
+            + "\n".join(lines)
+            + suffix
+            + "\nTo correct a preference, submit a new `remember preference:` proposal.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="opt-out", description="Stop memory proposals and revoke active preferences"
+    )
+    async def opt_out(self, interaction: discord.Interaction) -> None:
+        bot = _bot(interaction)
+        enrollment = bot.repo.get_memory_enrollment(bot.settings.guild_id, interaction.user.id)
+        bot.repo.opt_out_memory(bot.settings.guild_id, interaction.user.id, interaction.user.id)
+        if enrollment is not None and enrollment["state"] == "opted_out":
+            message = "You are already opted out; active and pending preferences remain revoked."
+        else:
+            message = "You are opted out. Active and pending preferences were revoked."
+        await interaction.response.send_message(message, ephemeral=True)
+
+    @app_commands.command(
+        name="forget", description="Permanently remove one of your saved preferences"
+    )
+    @app_commands.describe(id="An ID from `/memory list`, such as `a1b2c3d4`")
+    async def forget(self, interaction: discord.Interaction, id: str) -> None:
+        bot = _bot(interaction)
+        try:
+            memory_id = _memory_id(bot, interaction.user.id, id)
+        except NotAllowed as exc:
+            await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+            return
+        bot.repo.delete_memory(
+            bot.settings.guild_id, interaction.user.id, memory_id, interaction.user.id
+        )
+        await interaction.response.send_message(
+            f"🗑️ Memory `#{short_id(memory_id)}` was removed immediately. "
+            + MEMORY_DELETION_LIMITATION,
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="forget-all", description="Permanently remove all your saved preferences"
+    )
+    async def forget_all(self, interaction: discord.Interaction) -> None:
+        bot = _bot(interaction)
+        deleted = bot.repo.forget_all_memories(
+            bot.settings.guild_id, interaction.user.id, interaction.user.id
+        )
+        if deleted:
+            message = (
+                f"🗑️ Removed {deleted} saved preference{'s' if deleted != 1 else ''} immediately."
+            )
+        else:
+            message = "You have no saved preferences to remove."
+        await interaction.response.send_message(
+            f"{message} {MEMORY_DELETION_LIMITATION}", ephemeral=True
+        )
+
+
 @app_commands.command(name="schedule", description="Show the boss schedule for a week")
 @app_commands.describe(
     scope="`channel` (default in a party channel), `mine`, or `all`",
@@ -1531,6 +1672,7 @@ def register_commands(bot: BossBot) -> None:
     tree = bot.tree
     tree.add_command(FixedGroup())
     tree.add_command(BotGroup())
+    tree.add_command(MemoryGroup())
     tree.add_command(DebugGroup())
     for command in (
         schedule,

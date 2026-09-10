@@ -65,7 +65,8 @@
     <div class="bossrow__id">
       {{ portrait(row, size="md") }}
       <span>
-        <span class="bossrow__name">{{ row.full }}</span>
+        {% if readonly %}<a class="bossrow__name" href="/bosses/{{ row.short }}/knowledge">{{ row.full }}</a>
+        {% else %}<span class="bossrow__name">{{ row.full }}</span>{% endif %}
         {% if row.level %}<span class="bossrow__lv">Lv. {{ row.level }}</span>{% endif %}
       </span>
     </div>

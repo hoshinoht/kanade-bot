@@ -125,6 +125,28 @@ def test_a_snapshot_is_one_self_contained_file(bot):
     assert backups(bot) == [path.name]
 
 
+def test_a_snapshot_omits_explicitly_deleted_memory_content(db, tmp_path):
+    stamp = datetime(2026, 8, 31, tzinfo=UTC)
+    assert db.begin_memory_enrollment("g", "u", "admin", "v1", now=stamp)
+    assert db.record_memory_notice_attempt("g", "u", "admin", now=stamp)
+    assert db.activate_memory_enrollment("g", "u", "admin", "notice", now=stamp)
+    memory_id = db.replace_memory("g", "u", "answer_format", "bullets", "admin", now=stamp)
+    assert memory_id and db.delete_memory("g", "u", memory_id, "u", now=stamp)
+
+    path = tmp_path / "after-delete.sqlite"
+    db.backup_to(path)
+    copy = sqlite3.connect(path)
+    try:
+        assert (
+            copy.execute(
+                "SELECT COUNT(*) FROM chat_memories WHERE id = ?", (memory_id,)
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        copy.close()
+
+
 def test_only_one_snapshot_a_day_however_often_the_tick_runs(bot):
     bot.back_up(kl(2026, 8, 31, 4, 0))
     for minute in range(1, 6):

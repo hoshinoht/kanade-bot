@@ -57,6 +57,7 @@ the browser and never sent to the bot.
 | **Changes**         | `/amend`, `/status`, `/swap`, `/rsvp` and friends; every change made outside Discord is announced in the run's home channel.                                                         |
 | **Chat extraction** | A local `gemma4:12b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                            |
 | **Chatbot**         | Mention-gated, role-gated, rate-limited, in its own channel, with a persona. Read tools answer directly; write tools post the same ✅/❌ cards — it never writes to the schedule.      |
+| **Durable memory**  | Disabled by default. An administrator may enroll members one at a time after a successful notice DM; only typed presentation preferences are retained, and `/memory` provides member controls. |
 | **Portal & CLI**    | Week view, fixed-timing editor, proposal inbox, extraction log, chat analytics and config — one API inside the bot process, loopback only, tailnet via the bundled Caddy front door. |
 
 ## Quickstart
@@ -81,6 +82,7 @@ documented inline in [`.env.example`](.env.example) and has sensible defaults.
 | [Commands](docs/commands.md)            | Every slash command, how ids and boss tokens work, testing with `/debug`                |
 | [The chat extractor](docs/extractor.md) | How chat becomes proposal cards, rescans, tuning, exporting history                     |
 | [The chatbot](docs/chatbot.md)          | The persona chatbot: gates, tools, setup, voice tuning, tracing its decisions           |
+| [Chatbot memory policy](docs/chatbot-memory-policy.md) | Individual enrollment, notices, stored preferences, opt-out, deletion, and retention |
 | [Portal, CLI and API](docs/portal.md)   | The web portal, tailnet access, `bossctl`, the JSON API                                 |
 | [Development](docs/development.md)      | Tests, lint, and the module layout                                                      |
 

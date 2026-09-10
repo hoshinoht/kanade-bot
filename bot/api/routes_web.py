@@ -29,11 +29,34 @@ from .auth import (
     token_matches,
 )
 from .deps import Bot, Caller, get_bot
-from .errors import ApiError, NotConfigured, NotFound
+from .errors import ApiError, BadRequest, NotConfigured, NotFound
 from .models import Week
 from .templating import STATUS_WORDS, read_section
 
 router = APIRouter(include_in_schema=False)
+
+
+MEMORY_ENROLLMENT_STATES = frozenset({"disabled", "pending_notice", "active", "opted_out"})
+MEMORY_LIFECYCLE_STATES = frozenset(
+    {"proposed", "active", "superseded", "rejected", "revoked", "expired"}
+)
+MEMORY_SLOTS = frozenset(
+    {"answer_detail", "answer_format", "strategy_disclosure", "strategy_emphasis"}
+)
+MEMORY_PREFERENCES = {
+    "answer_detail:concise": ("answer_detail", "concise"),
+    "answer_detail:standard": ("answer_detail", "standard"),
+    "answer_detail:detailed": ("answer_detail", "detailed"),
+    "answer_format:prose": ("answer_format", "prose"),
+    "answer_format:bullets": ("answer_format", "bullets"),
+    "answer_format:steps": ("answer_format", "steps"),
+    "strategy_disclosure:none": ("strategy_disclosure", "none"),
+    "strategy_disclosure:hints": ("strategy_disclosure", "hints"),
+    "strategy_disclosure:full": ("strategy_disclosure", "full"),
+    "strategy_emphasis:mechanics": ("strategy_emphasis", "mechanics"),
+    "strategy_emphasis:survival": ("strategy_emphasis", "survival"),
+    "strategy_emphasis:party_roles": ("strategy_emphasis", "party_roles"),
+}
 
 
 def _templates(request: Request):
@@ -560,6 +583,261 @@ async def bosses_page(request: Request, bot: Bot, caller: Caller) -> Response:
         rows=service.boss_grid(bot, in_use),
         in_use=in_use,
         total=sum(len(row["difficulties"]) for row in service.boss_grid(bot)),
+    )
+
+
+@router.get("/bosses/{boss}/knowledge")
+async def boss_knowledge_page(request: Request, bot: Bot, caller: Caller, boss: str) -> Response:
+    """Checked-in strategy provenance for one catalog boss."""
+    request.state.caller = caller
+    return render(
+        request,
+        "boss_knowledge.html",
+        "bosses",
+        knowledge=service.boss_knowledge_detail(bot, boss),
+    )
+
+
+def _memory_filters(
+    q: str,
+    enrollment: str,
+    lifecycle: str,
+    slot: str,
+    boss: str,
+    expires_before: str,
+) -> dict[str, str]:
+    """The stable query context that listing links and redirects retain."""
+    return {
+        key: value.strip()
+        for key, value in {
+            "q": q,
+            "enrollment": enrollment,
+            "lifecycle": lifecycle,
+            "slot": slot,
+            "boss": boss,
+            "expires_before": expires_before,
+        }.items()
+        if value.strip()
+    }
+
+
+def _memory_listing(
+    bot: Bot,
+    *,
+    page: int,
+    q: str,
+    enrollment: str,
+    lifecycle: str,
+    slot: str,
+    boss: str,
+    expires_before: str,
+) -> dict:
+    enrollment = enrollment.strip()
+    lifecycle = lifecycle.strip()
+    slot = slot.strip()
+    if enrollment and enrollment not in MEMORY_ENROLLMENT_STATES:
+        raise BadRequest("unknown memory enrollment state")
+    if lifecycle and lifecycle not in MEMORY_LIFECYCLE_STATES:
+        raise BadRequest("unknown memory lifecycle state")
+    if slot and slot not in MEMORY_SLOTS:
+        raise BadRequest("unknown memory preference slot")
+    expiry = service.parse_since(bot, expires_before, "expires_before") if expires_before else None
+    return service.memory_listing(
+        bot,
+        page=page,
+        q=q,
+        enrollment=enrollment or None,
+        lifecycle=lifecycle or None,
+        slot=slot or None,
+        boss=boss or None,
+        expires_before=expiry,
+    )
+
+
+@router.get("/memory")
+async def memory_page(
+    request: Request,
+    bot: Bot,
+    caller: Caller,
+    page: int = 1,
+    q: str = "",
+    enrollment: str = "",
+    lifecycle: str = "",
+    slot: str = "",
+    boss: str = "",
+    expires_before: str = "",
+) -> Response:
+    request.state.caller = caller
+    filters = _memory_filters(q, enrollment, lifecycle, slot, boss, expires_before)
+    listing = _memory_listing(
+        bot,
+        page=page,
+        q=q,
+        enrollment=enrollment,
+        lifecycle=lifecycle,
+        slot=slot,
+        boss=boss,
+        expires_before=expires_before,
+    )
+    return table_page(
+        request,
+        "memory.html",
+        "memory",
+        "partials/memory_rows.html",
+        listing=listing,
+        filters=filters,
+        back="/memory?" + urlencode({**filters, "page": page}),
+        memory_enabled=bot.settings.chat_memory_enabled,
+    )
+
+
+def _memory_detail_fragment(
+    request: Request, bot: Bot, user_id: str, message: str | None = None, kind: str = "ok"
+) -> HTMLResponse:
+    return fragment(
+        request,
+        "partials/memory_subject.html",
+        subject=service.memory_subject(bot, user_id),
+        memory_enabled=bot.settings.chat_memory_enabled,
+        message=message,
+        kind=kind,
+    )
+
+
+@router.get("/memory/{user_id}")
+async def memory_subject_page(
+    request: Request, bot: Bot, caller: Caller, user_id: str, next: str = ""
+) -> Response:
+    request.state.caller = caller
+    return render(
+        request,
+        "memory_subject.html",
+        "memory",
+        subject=service.memory_subject(bot, user_id),
+        memory_enabled=bot.settings.chat_memory_enabled,
+        back=safe_next(next, "/memory"),
+    )
+
+
+def _after_memory_action(
+    request: Request, bot: Bot, user_id: str, message: str, kind: str = "ok"
+) -> Response:
+    if request.headers.get("HX-Request"):
+        return _memory_detail_fragment(request, bot, user_id, message, kind)
+    return back_to(request, f"/memory/{user_id}", message, kind, fragment="memory-subject")
+
+
+@router.post("/memory/{user_id}/enroll")
+async def web_memory_enroll(request: Request, bot: Bot, caller: Caller, user_id: str) -> Response:
+    try:
+        result = await service.enroll_memory_member(bot, user_id)
+    except ApiError as exc:
+        return _after_memory_action(request, bot, user_id, exc.message, "error")
+    message = result["message"] or f"Enrollment is {result['state']}."
+    return _after_memory_action(
+        request, bot, user_id, message, "ok" if result["active"] else "error"
+    )
+
+
+@router.post("/memory/enroll")
+async def web_memory_enroll_member(
+    request: Request, bot: Bot, caller: Caller, user_id: str = Form()
+) -> Response:
+    """Start one enrollment from the listing without offering a bulk control."""
+    user_id = user_id.strip()
+    try:
+        result = await service.enroll_memory_member(bot, user_id)
+    except ApiError as exc:
+        return back_to(request, "/memory", exc.message, "error")
+    message = result["message"] or f"Enrollment is {result['state']}."
+    return back_to(
+        request, f"/memory/{result['user_id']}", message, "ok" if result["active"] else "error"
+    )
+
+
+@router.post("/memory/{user_id}/disable")
+async def web_memory_disable(request: Request, bot: Bot, caller: Caller, user_id: str) -> Response:
+    try:
+        service.disable_memory_member(bot, user_id)
+    except ApiError as exc:
+        return _after_memory_action(request, bot, user_id, exc.message, "error")
+    return _after_memory_action(
+        request, bot, user_id, "Enrollment disabled; existing records remain governed."
+    )
+
+
+@router.post("/memory/{user_id}/memories")
+async def web_memory_set(request: Request, bot: Bot, caller: Caller, user_id: str) -> Response:
+    form = await request.form()
+    preference = str(form.get("preference") or "").strip()
+    setting = MEMORY_PREFERENCES.get(preference)
+    if setting is None:
+        return _after_memory_action(
+            request, bot, user_id, "Choose one of the listed typed preferences.", "error"
+        )
+    boss = str(form.get("boss") or "").strip() or None
+    if boss and setting[0] not in {"strategy_disclosure", "strategy_emphasis"}:
+        return _after_memory_action(
+            request,
+            bot,
+            user_id,
+            "Boss scope is available only for strategy preferences.",
+            "error",
+        )
+    try:
+        service.set_memory(
+            bot,
+            user_id,
+            slot=setting[0],
+            value=setting[1],
+            boss=boss,
+        )
+    except (ApiError, ValueError) as exc:
+        message = (
+            exc.message if isinstance(exc, ApiError) else "Unable to save that typed preference."
+        )
+        return _after_memory_action(request, bot, user_id, message, "error")
+    return _after_memory_action(request, bot, user_id, "Typed preference saved.")
+
+
+async def _web_memory_lifecycle(
+    request: Request, bot: Bot, user_id: str, memory_id: str, action: str
+) -> Response:
+    try:
+        getattr(service, f"{action}_memory")(bot, user_id, memory_id)
+    except ApiError as exc:
+        return _after_memory_action(request, bot, user_id, exc.message, "error")
+    return _after_memory_action(request, bot, user_id, f"Preference {action}d.")
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/revoke")
+async def web_memory_revoke(
+    request: Request, bot: Bot, caller: Caller, user_id: str, memory_id: str
+) -> Response:
+    return await _web_memory_lifecycle(request, bot, user_id, memory_id, "revoke")
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/expire")
+async def web_memory_expire(
+    request: Request, bot: Bot, caller: Caller, user_id: str, memory_id: str
+) -> Response:
+    return await _web_memory_lifecycle(request, bot, user_id, memory_id, "expire")
+
+
+@router.post("/memory/{user_id}/memories/{memory_id}/delete")
+async def web_memory_delete(
+    request: Request, bot: Bot, caller: Caller, user_id: str, memory_id: str
+) -> Response:
+    try:
+        service.delete_memory(bot, user_id, memory_id)
+    except ApiError as exc:
+        return _after_memory_action(request, bot, user_id, exc.message, "error")
+    return _after_memory_action(
+        request,
+        bot,
+        user_id,
+        "Preference permanently removed from memory and retrieval; "
+        "Discord, logs, WAL, or backups may retain copies.",
     )
 
 

@@ -139,3 +139,20 @@ def test_chat_think_overrides_shared_think_independently():
 def test_bad_chat_think_is_rejected_at_startup():
     with pytest.raises(ValidationError):
         make(chat_pilot_think="ultra")
+
+
+def test_governed_memory_is_disabled_by_default_and_configurable():
+    assert make().chat_memory_enabled is False
+    assert make(chat_memory_enabled=True).chat_memory_enabled is True
+    assert make(MEMORY_ENABLED=True).chat_memory_enabled is False
+
+
+def test_the_env_example_documents_only_the_memory_feature_switch():
+    from .conftest import REPO_ROOT
+
+    text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "\nCHAT_MEMORY_ENABLED=false" in text
+    assert "CHAT_MEMORY_" not in text.replace("CHAT_MEMORY_ENABLED", "")
+    assert {name for name in Settings.model_fields if name.startswith("chat_memory_")} == {
+        "chat_memory_enabled"
+    }

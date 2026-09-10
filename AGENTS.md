@@ -31,7 +31,14 @@
 - Keep comments and docstrings concise.
 - Read the nearest nested `AGENTS.md` before changing a subsystem; local files contain only subsystem-specific guidance.
 
+## CHANGELOG
+- when new features are added, changed, or bugfixes are made, add a changelog entry with a brief description.
+
+
 <!-- recall:lessons:begin -->
 - Keep chatbot schedule language distinct from storage boundaries: unqualified `this`/`next week` is calendar Monday–Sunday, explicit `boss week` uses the configured reset interval, and bare weekdays resolve forward; calendar/date reads may therefore merge multiple boss-week buckets while API/CLI/write paths retain boss-week semantics.
 - Keep seeded chatbot tests on one fixture-scoped aware clock: pass the same instant into week materialization and patch each imported clock seam used by tools, commits, API service, and test helpers so reset-day rollovers cannot change the suite.
+- Keep durable chatbot memory individually enrolled, notification-first, typed, and presentation-only: bossing-role membership never enrolls users, opt-out/deletion remain available while disabled, and checked-in boss YAML and schedule state always outrank memory.
+- Schedule retention by monotonic elapsed time while passing an aware wall-clock instant into persistence, so system clock rollback cannot suppress expiry and purge work.
+- Keep operational detail pages in a fixed `100dvh` shell with one tabbed window filling the remaining height: the document/body, masthead, back navigation, human identity, and tab strip never scroll; only the selected panel scrolls, including on narrow screens. Never fall back to stacked card windows, whole-window movement, or document-body scrolling.
 <!-- recall:lessons:end -->

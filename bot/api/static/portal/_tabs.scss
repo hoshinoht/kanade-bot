@@ -62,7 +62,7 @@
 }
 
 /* Written out per key, because a stylesheet cannot compare an `href` to an id.
-   `LIMITS_TABS` and `CHAT_TABS` in `bot/api/templating.py` are the list these
+   `LIMITS_TABS`, `CHAT_TABS`, and `MEMORY_TABS` in `bot/api/templating.py` are the list these
    pairs answer to, and a test holds them to it.
    The last selector is the no-fragment case. It names a class rather than
    `:first-child`, which is what the settings window can use: on /limits the
@@ -80,6 +80,10 @@
 .tabs:has(#chat-read:target) [href="#chat-read"],
 .tabs:has(#raw:target) [href="#raw"],
 .tabs:has(#extraction:target) [href="#extraction"],
+.tabs:has(#memory-enrollment:target) [href="#memory-enrollment"],
+.tabs:has(#memory-preference:target) [href="#memory-preference"],
+.tabs:has(#memory-records:target) [href="#memory-records"],
+.tabs:has(#memory-activity:target) [href="#memory-activity"],
 .tabs:not(:has(.tabs__panel:target)) .tabs__tab:first-child {
   opacity: 1;
   color: var(--ink);
