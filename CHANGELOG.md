@@ -19,6 +19,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Weekly digests now lead with each boss and an explicit cleared/planned status,
+  with scheduling metadata on a separate line and cleared progress in the summary.
+- The chat tool-schema growth guard now allows up to 4,096 estimated tokens.
 - Retention cleanup runs on the first tick and hourly thereafter regardless of the
   memory switch; failures are isolated, logged, and retried on the next hourly window.
 - Governed memory now expires proposals after 7 days, active preferences after
@@ -29,6 +32,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Whole-next-week chatbot lookups now recover when the model redundantly sends
+  `day="next"`, avoiding unnecessary weekday-by-weekday tool loops.
 - Chat scheduling now passes Discord user mentions directly to proposal tools
   instead of reasking for names, and routes requests to set up recurring runs
   through new-weekly proposals rather than existing-weekly changes.
