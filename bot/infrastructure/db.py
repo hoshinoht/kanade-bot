@@ -21,7 +21,7 @@ from bot.domain.timeutil import from_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 CHAT_INTERACTIONS_KEPT = 500
 
@@ -194,6 +194,17 @@ CREATE TABLE IF NOT EXISTS reminders (
 
 CREATE INDEX IF NOT EXISTS reminders_pending ON reminders (sent_at, fire_at);
 CREATE INDEX IF NOT EXISTS reminders_message ON reminders (message_id);
+
+-- One live digest card per boss week. Retired rows remain as the weekly log,
+-- while only rows without retired_at continue to follow schedule changes.
+CREATE TABLE IF NOT EXISTS weekly_digests (
+    week_start TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    posted_at  TEXT NOT NULL,
+    retired_at TEXT
+);
+CREATE INDEX IF NOT EXISTS weekly_digests_message ON weekly_digests (message_id);
 
 CREATE TABLE IF NOT EXISTS messages (
     id           TEXT PRIMARY KEY,
@@ -476,6 +487,11 @@ def _migrate_11_to_12(conn: sqlite3.Connection) -> None:
     del conn
 
 
+def _migrate_12_to_13(conn: sqlite3.Connection) -> None:
+    """v12 -> v13: add empty weekly digest tracking without guessing old posts."""
+    del conn
+
+
 def _json_list(value: str | None) -> list:
     if not value:
         return []
@@ -634,6 +650,11 @@ class Repo:
             log.info("migrating database %s: v11 -> v12", self.path)
             _migrate_11_to_12(self._conn)
             self._conn.execute("UPDATE schema_version SET version = 12")
+            current = 12
+        if current == 12:
+            log.info("migrating database %s: v12 -> v13", self.path)
+            _migrate_12_to_13(self._conn)
+            self._conn.execute("UPDATE schema_version SET version = 13")
         # Some unreleased v12 databases predate the card binding column.  Add it
         # before SCHEMA_SQL creates its index, otherwise SQLite rejects startup.
         if "chat_memories" in existing_tables:
@@ -1198,6 +1219,68 @@ class Repo:
             "SELECT * FROM reminders WHERE message_id = ?", (str(message_id),)
         )
         return [self._reminder(r) for r in rows]
+
+    def set_weekly_digest(
+        self,
+        week_start: datetime,
+        channel_id: int | str,
+        message_id: int | str,
+        *,
+        at: datetime | None = None,
+    ) -> None:
+        """Bind a boss week to its one live digest card, retaining the row as its log."""
+        self._conn.execute(
+            """
+            INSERT INTO weekly_digests
+                (week_start, channel_id, message_id, posted_at, retired_at)
+            VALUES (?, ?, ?, ?, NULL)
+            ON CONFLICT(week_start) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                message_id = excluded.message_id,
+                posted_at = excluded.posted_at,
+                retired_at = NULL
+            """,
+            (to_iso(week_start), str(channel_id), str(message_id), to_iso(at or utcnow())),
+        )
+
+    def get_weekly_digest(self, week_start: datetime, *, active_only: bool = False) -> dict | None:
+        sql = "SELECT * FROM weekly_digests WHERE week_start = ?"
+        if active_only:
+            sql += " AND retired_at IS NULL"
+        row = self._conn.execute(sql, (to_iso(week_start),)).fetchone()
+        if row is None:
+            return None
+        digest = dict(row)
+        digest["week_start"] = from_iso(digest["week_start"])
+        digest["posted_at"] = from_iso(digest["posted_at"])
+        digest["retired_at"] = from_iso(digest["retired_at"]) if digest["retired_at"] else None
+        return digest
+
+    def retire_weekly_digest(self, week_start: datetime, *, at: datetime | None = None) -> bool:
+        cursor = self._conn.execute(
+            "UPDATE weekly_digests SET retired_at = ? WHERE week_start = ? AND retired_at IS NULL",
+            (to_iso(at or utcnow()), to_iso(week_start)),
+        )
+        return bool(cursor.rowcount)
+
+    def retire_weekly_digests_before(
+        self, week_start: datetime, *, at: datetime | None = None
+    ) -> int:
+        """Stop old cards following live state while preserving their final bindings."""
+        cursor = self._conn.execute(
+            "UPDATE weekly_digests SET retired_at = ? WHERE week_start < ? AND retired_at IS NULL",
+            (to_iso(at or utcnow()), to_iso(week_start)),
+        )
+        return cursor.rowcount
+
+    def retire_weekly_digest_by_message(
+        self, message_id: int | str, *, at: datetime | None = None
+    ) -> bool:
+        cursor = self._conn.execute(
+            "UPDATE weekly_digests SET retired_at = ? WHERE message_id = ? AND retired_at IS NULL",
+            (to_iso(at or utcnow()), str(message_id)),
+        )
+        return bool(cursor.rowcount)
 
     @staticmethod
     def _reminder(row: sqlite3.Row) -> dict:

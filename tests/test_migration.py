@@ -1,4 +1,4 @@
-"""Supported database creation and the deployment's v9 -> v12 migrations."""
+"""Supported database creation and the deployment's v9 -> v13 migrations."""
 
 from __future__ import annotations
 
@@ -36,10 +36,11 @@ def v9_database(path) -> None:
     conn.close()
 
 
-def test_a_fresh_database_starts_at_v12_with_empty_memory_storage(tmp_path):
+def test_a_fresh_database_starts_at_v13_with_empty_feature_storage(tmp_path):
     repo = Repo(tmp_path / "fresh.sqlite")
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
     assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
+    assert repo._conn.execute("SELECT COUNT(*) FROM weekly_digests").fetchone()[0] == 0
     assert "proposal_message_id" in {
         row[1] for row in repo._conn.execute("PRAGMA table_info(chat_memories)")
     }
@@ -48,15 +49,16 @@ def test_a_fresh_database_starts_at_v12_with_empty_memory_storage(tmp_path):
     repo.close()
 
 
-def test_v9_migrates_to_v12_without_losing_member_state_or_backfilling_memory(tmp_path):
+def test_v9_migrates_to_v13_without_losing_member_state_or_backfilling_memory(tmp_path):
     path = tmp_path / "v9.sqlite"
     v9_database(path)
 
     repo = Repo(path)
 
-    assert SCHEMA_VERSION == 12
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert SCHEMA_VERSION == 13
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
     assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
+    assert repo._conn.execute("SELECT COUNT(*) FROM weekly_digests").fetchone()[0] == 0
     member = repo.get_member(7)
     assert member["display_name"] == "harbour4417"
     assert member["aliases"] == ["MY"]
@@ -78,7 +80,7 @@ def test_reply_style_survives_reopening(tmp_path):
     reopened.close()
 
 
-def test_v9_to_v12_is_idempotent(tmp_path):
+def test_v9_to_v13_is_idempotent(tmp_path):
     path = tmp_path / "v9.sqlite"
     v9_database(path)
     Repo(path).close()
@@ -103,7 +105,7 @@ def test_pre_v9_database_is_refused_with_upgrade_direction(tmp_path):
         Repo(path)
 
 
-def test_unversioned_existing_database_is_not_mislabeled_v12(tmp_path):
+def test_unversioned_existing_database_is_not_mislabeled_v13(tmp_path):
     path = tmp_path / "unversioned.sqlite"
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE members (user_id TEXT PRIMARY KEY)")
@@ -222,7 +224,7 @@ def test_v10_rewrites_stored_star_tokens_to_maleficstar(tmp_path):
     v10_database_with_star_tokens(path)
 
     repo = Repo(path)
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
 
     def bosses(table: str, row_id: str) -> list:
         return json.loads(
@@ -247,14 +249,14 @@ def test_v10_star_rewrite_is_idempotent(tmp_path):
     Repo(path).close()
 
     conn = sqlite3.connect(path)
-    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
     assert conn.execute("SELECT bosses FROM runs WHERE id = 'r1'").fetchone()[0] == (
         '["HMaleficStar", "HFA"]'
     )
     conn.close()
 
 
-def test_v11_migrates_to_v12_without_enrolling_legacy_rows(tmp_path):
+def test_v11_migrates_to_v13_without_enrolling_legacy_rows(tmp_path):
     path = tmp_path / "v11.sqlite"
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -271,7 +273,7 @@ def test_v11_migrates_to_v12_without_enrolling_legacy_rows(tmp_path):
 
     repo = Repo(path)
 
-    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 12
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
     assert repo._conn.execute("SELECT COUNT(*) FROM chat_memory_enrollments").fetchone()[0] == 0
     assert repo._conn.execute("SELECT COUNT(*) FROM chat_memories").fetchone()[0] == 0
     assert repo._conn.execute("SELECT content FROM messages WHERE id = 'message-1'").fetchone()[
@@ -303,6 +305,8 @@ def test_pre_card_v12_gains_binding_column_before_index_creation(tmp_path):
 
     repo = Repo(path)
 
+    assert repo._conn.execute("SELECT version FROM schema_version").fetchone()[0] == 13
+    assert repo._conn.execute("SELECT COUNT(*) FROM weekly_digests").fetchone()[0] == 0
     columns = {row[1] for row in repo._conn.execute("PRAGMA table_info(chat_memories)")}
     indexes = {row[1] for row in repo._conn.execute("PRAGMA index_list(chat_memories)")}
     assert "proposal_message_id" in columns

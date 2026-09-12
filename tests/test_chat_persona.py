@@ -203,6 +203,11 @@ def test_component_prompt_has_explicit_precedence_and_dynamic_name():
         "bare weekday means its next occurrence",
         "today/tonight/tomorrow mean",
         "the corresponding local dates",
+        "already identifies that participant exactly",
+        "never ask them to restate the person's name or tag",
+        '"Set up" or "create" a recurring run means a new weekly proposal',
+        'The word "recurring" does not mean a',
+        "weekly already exists",
     ):
         assert guidance in built
 

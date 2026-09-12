@@ -43,6 +43,7 @@ def test_the_digest_groups_by_day_and_counts_what_is_unsettled(repo):
     runs = repo.list_runs(week_start=ws)
     card = formatting.digest_card(runs, ws, TZ, {r["id"]: repo.get_rsvps(r["id"]) for r in runs})
     assert [name for name, _ in card.fields] == ["Mon 31 Aug", "Tue 01 Sep"]
+    assert card.description.startswith("**0/2 Cleared**")
     assert "2 run(s) across 2 day(s)" in card.description
     assert "**2** still unconfirmed" in card.description
 
@@ -56,6 +57,16 @@ def test_a_confirmed_run_is_not_flagged(repo):
     card = formatting.digest_card(runs, ws, TZ, {})
     assert "unconfirmed" not in card.description
     assert "⚠️" not in "".join(value for _, value in card.fields)
+
+
+def test_a_cleared_run_has_an_explicit_status_and_progress(repo):
+    ws = _week(repo)
+    runs = repo.list_runs(week_start=ws)
+    repo.set_run_status(runs[0]["id"], "done")
+    card = formatting.digest_card(repo.list_runs(week_start=ws), ws, TZ, {})
+
+    assert "🏁 **Cleared**" in card_text(card)
+    assert card.description.startswith("**1/2 Cleared**")
 
 
 def test_the_digest_names_people_rather_than_mentioning_them(repo):
@@ -90,6 +101,51 @@ def test_each_line_carries_the_id_you_would_type_back(repo):
         assert short_id(run["id"]) in body
 
 
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [
+        ("done", "🏁 **Cleared**"),
+        ("confirmed", "✅ **Confirmed**"),
+        ("planned", "⚠️ **Planned**"),
+        ("at_risk", "❗ **At risk**"),
+        ("otot", "🕒 **Own time**"),
+    ],
+)
+def test_each_digest_status_is_explicit(repo, status, label):
+    ws = _week(repo)
+    run = repo.list_runs(week_start=ws)[0]
+
+    assert label in formatting.digest_line({**run, "status": status}, TZ, {})
+
+
+def test_each_line_leads_with_boss_and_keeps_metadata_secondary(repo):
+    ws = _week(repo)
+    run = repo.list_runs(week_start=ws)[0]
+
+    identity, metadata = formatting.digest_line(run, TZ, {}).split("\n")
+
+    assert identity == "**HMaleficStar + HFA** · ⚠️ **Planned**"
+    assert metadata.startswith("`21:30` · 0/2 ✅")
+    assert f"<#{WATCHED_CHANNEL}>" in metadata
+    assert metadata.endswith(f"`#{short_id(run['id'])}`")
+
+
+def test_runs_on_the_same_day_have_space_between_them(repo):
+    ws = _week(repo)
+    runs = repo.list_runs(week_start=ws)
+    second = {
+        **runs[1],
+        "bosses": ["HLimbo"],
+        "datetime": runs[0]["datetime"].replace(minute=45),
+    }
+
+    card = formatting.digest_card([runs[0], second], ws, TZ, {})
+    monday = card.fields[0][1]
+
+    assert f"`#{short_id(runs[0]['id'])}`\n\n**HLimbo**" in monday
+    assert short_id(second["id"]) in monday
+
+
 def card_text(card) -> str:
     return "\n".join([card.content, card.description or "", *(v for _, v in card.fields)])
 
@@ -109,8 +165,8 @@ def test_a_run_someone_declined_is_marked_apart_from_one_nobody_answered(repo):
     runs = _statuses(repo, ws, "at_risk", "planned")
     lines = {run["bosses"][0]: formatting.digest_line(run, TZ, {}) for run in runs}
 
-    assert lines["HMaleficStar"].startswith("❗")
-    assert lines["XKalos"].startswith("⚠️")
+    assert "❗ **At risk**" in lines["HMaleficStar"]
+    assert "⚠️ **Planned**" in lines["XKalos"]
 
 
 def test_the_summary_counts_the_at_risk_runs_separately(repo):
@@ -220,6 +276,18 @@ def test_setting_the_channel_later_does_not_back_post_a_half_finished_week(
     assert digest(configured, kl(2026, 9, 5, 12, 0)) is None
     assert digest(configured, kl(2026, 9, 10, 0, 1)) is not None
     assert len(configured.digests) == 1
+
+
+def test_the_previous_digest_is_retired_but_kept_as_a_weekly_log(fake_bot):
+    old_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, SUNDAY)
+    fake_bot.repo.set_weekly_digest(old_week, WATCHED_CHANNEL, 7001, at=SUNDAY)
+    fake_bot.repo.set_config(CFG_LAST_DIGEST, old_week.isoformat())
+
+    assert digest(fake_bot, RESET) is not None
+    assert fake_bot.repo.get_weekly_digest(old_week, active_only=True) is None
+    log = fake_bot.repo.get_weekly_digest(old_week)
+    assert log["message_id"] == "7001"
+    assert log["retired_at"] is not None
 
 
 # --- the runtime extractor switch ------------------------------------------

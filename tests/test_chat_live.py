@@ -14,7 +14,7 @@ import pytest
 from bot.chat.agent import ChatPilot
 from bot.domain.ids import short_id
 
-from .chat_support import message
+from .chat_support import BOT_USER_ID, message
 
 pytestmark = [pytest.mark.ollama, pytest.mark.anyio]
 LOCAL_HOST = "http://127.0.0.1:11434"
@@ -48,6 +48,23 @@ async def test_it_answers_a_schedule_question_from_the_tools(chat_bot, chat_seed
     assert len(result.reply) < 1200
 
 
+async def test_it_answers_a_next_week_followup_without_walking_each_weekday(
+    chat_bot, chat_seeded, live
+):
+    chat_bot.settings.chat_pilot_timeout = 120
+    first = (await live.offer(message(chat_bot, "@bot what runs do we have this week?"))).answered
+    assert first is not None and first.error is None
+
+    result = (await live.offer(message(chat_bot, "what about next week?"))).answered
+
+    assert result is not None and result.error is None
+    schedule_calls = [outcome for outcome in result.outcomes if outcome.name == "get_schedule"]
+    assert len(schedule_calls) == 1
+    assert schedule_calls[0].ok
+    assert schedule_calls[0].arguments["week"] == "next"
+    assert schedule_calls[0].arguments.get("day") in (None, "next")
+
+
 async def test_it_drafts_a_move_as_a_card_and_moves_nothing(chat_bot, chat_seeded, live):
     before = chat_bot.repo.get_run(chat_seeded["star"])["datetime"]
     result = (
@@ -63,6 +80,30 @@ async def test_it_drafts_a_move_as_a_card_and_moves_nothing(chat_bot, chat_seede
     assert chat_bot.repo.get_run(chat_seeded["star"])["datetime"] == before
     for amendment in chat_bot.repo.list_amendments():
         assert amendment["status"] == "proposed"
+
+
+async def test_it_uses_mentioned_members_without_asking_for_their_names(
+    chat_bot, chat_seeded, live
+):
+    # This request needs a tool-selection round and a confirmation round on the
+    # local 8 GB model; leave enough time for both when the prompt cache is cold.
+    chat_bot.settings.chat_pilot_timeout = 120
+    result = (
+        await live.offer(
+            message(
+                chat_bot,
+                "@bot setup a recurring hlimbo run for <@1001> <@1002> <@1003> every Friday 2200",
+                mentions=(BOT_USER_ID, 1001, 1002, 1003),
+            )
+        )
+    ).answered
+
+    assert result is not None and result.error is None
+    assert "propose_add" in result.tool_calls
+    row = chat_bot.repo.list_amendments(status="proposed")[0]
+    assert row["kind"] == "fix"
+    assert row["bosses"] == ["HLimbo"]
+    assert row["participants"] == ["1001", "1002", "1003"]
 
 
 async def test_it_will_not_be_talked_out_of_the_card(chat_bot, chat_seeded, live):
