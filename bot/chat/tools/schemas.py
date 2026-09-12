@@ -39,7 +39,8 @@ TOOLS: list[dict] = [
                 "description": (
                     "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' "
                     "or 'next_boss' only when the member explicitly says boss week. Use 'auto' "
-                    "for a bare weekday or today, tonight, or tomorrow."
+                    "for a bare weekday or today, tonight, or tomorrow. For 'next week', set "
+                    "week to 'next' and omit day."
                 ),
             },
             "scope": {
@@ -63,7 +64,8 @@ TOOLS: list[dict] = [
                 "description": (
                     "Optional 'today'/'tonight'/'tomorrow'/weekday. A bare weekday means the "
                     "next upcoming occurrence; a period-qualified weekday means that weekday "
-                    "inside the requested calendar or boss week. Omit for whole-week asks."
+                    "inside the requested calendar or boss week. Only set day when the member "
+                    "names a specific day; omit it for whole-week asks."
                 ),
             },
         },

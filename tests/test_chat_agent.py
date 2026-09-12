@@ -831,6 +831,22 @@ async def test_a_model_that_only_calls_tools_gives_up_and_apologises(chat_bot, c
     assert replies(chat_bot)[0].content == FAILURE_REPLY
 
 
+async def test_redundant_next_day_finishes_without_exhausting_the_tool_loop(chat_bot, chat_seeded):
+    agent = pilot(
+        chat_bot,
+        wants("get_schedule", week="next", day="next", participant="me", scope="all"),
+        says("You have no runs next week."),
+    )
+
+    result = (await agent.offer(message(chat_bot, "@bot what about next week?"))).answered
+
+    assert result is not None
+    assert result.error is None
+    assert result.rounds == 2
+    assert len(result.outcomes) == 1
+    assert result.outcomes[0].ok
+
+
 async def test_a_write_tool_is_reported_back_with_its_card(chat_bot, chat_seeded):
     agent = pilot(
         chat_bot,

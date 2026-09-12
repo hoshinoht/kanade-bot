@@ -48,6 +48,23 @@ async def test_it_answers_a_schedule_question_from_the_tools(chat_bot, chat_seed
     assert len(result.reply) < 1200
 
 
+async def test_it_answers_a_next_week_followup_without_walking_each_weekday(
+    chat_bot, chat_seeded, live
+):
+    chat_bot.settings.chat_pilot_timeout = 120
+    first = (await live.offer(message(chat_bot, "@bot what runs do we have this week?"))).answered
+    assert first is not None and first.error is None
+
+    result = (await live.offer(message(chat_bot, "what about next week?"))).answered
+
+    assert result is not None and result.error is None
+    schedule_calls = [outcome for outcome in result.outcomes if outcome.name == "get_schedule"]
+    assert len(schedule_calls) == 1
+    assert schedule_calls[0].ok
+    assert schedule_calls[0].arguments["week"] == "next"
+    assert schedule_calls[0].arguments.get("day") in (None, "next")
+
+
 async def test_it_drafts_a_move_as_a_card_and_moves_nothing(chat_bot, chat_seeded, live):
     before = chat_bot.repo.get_run(chat_seeded["star"])["datetime"]
     result = (
