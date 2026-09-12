@@ -875,6 +875,16 @@ COLOUR_DIGEST = 0x5865F2
 UNSETTLED_MARKERS: dict[str, str] = {"planned": "⚠️ ", "at_risk": "❗ "}
 UNSETTLED = tuple(UNSETTLED_MARKERS)
 
+#: The digest is a whole-guild scan, so each state is spelled out rather than
+#: relying on the icon vocabulary used by compact surfaces.
+DIGEST_STATUS_LABEL: dict[str, str] = {
+    "done": "🏁 **Cleared**",
+    "confirmed": "✅ **Confirmed**",
+    "planned": "⚠️ **Planned**",
+    "at_risk": "❗ **At risk**",
+    "otot": "🕒 **Own time**",
+}
+
 
 def digest_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
     """One run inside a digest day, without the `<@id>` mentions.
@@ -883,12 +893,11 @@ def digest_line(run: dict, tz: ZoneInfo, rsvps: dict[str, str]) -> str:
     them -- 30 bossers must not all get a notification for every party's run.
     """
     when = "own time" if run["status"] == "otot" else local_time(run["datetime"], tz)
-    marker = UNSETTLED_MARKERS.get(run["status"], "")
     where = f" · <#{run['channel_id']}>" if run.get("channel_id") else ""
+    status = DIGEST_STATUS_LABEL.get(run["status"], run["status"])
     return (
-        f"{marker}`{when}` **{format_bosses(run['bosses'])}** · "
-        f"{rsvp_tally(run['participants'], rsvps)} · "
-        f"`#{short_id(run['id'])}`{where}"
+        f"**{format_bosses(run['bosses'])}** · {status}\n"
+        f"`{when}` · {rsvp_tally(run['participants'], rsvps)}{where} · `#{short_id(run['id'])}`"
     )
 
 
@@ -911,11 +920,15 @@ def digest_card(
 
     unsettled = sum(1 for r in live if r["status"] in UNSETTLED)
     at_risk = sum(1 for r in live if r["status"] == "at_risk")
+    cleared = sum(1 for r in live if r["status"] == "done")
     fields = [
-        (heading, "\n".join(digest_line(run, tz, rsvps_by_run.get(run["id"], {})) for run in day))
+        (
+            heading,
+            "\n\n".join(digest_line(run, tz, rsvps_by_run.get(run["id"], {})) for run in day),
+        )
         for heading, day in group_by_day(live, tz)
     ]
-    summary = f"{len(live)} run(s) across {len(fields)} day(s)"
+    summary = f"**{cleared}/{len(live)} Cleared** · {len(live)} run(s) across {len(fields)} day(s)"
     if unsettled:
         summary += f" · **{unsettled}** still unconfirmed ⚠️"
     if at_risk:

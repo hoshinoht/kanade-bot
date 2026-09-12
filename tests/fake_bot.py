@@ -9,6 +9,7 @@ approving a proposal annotated the right card, and nothing needs a gateway.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import time
 from typing import Any
@@ -79,8 +80,12 @@ class FakeMessage:
         self.channel = channel
         self._bot = bot
         self.deleted = False
+        self.edits: list[dict[str, Any]] = []
 
-    async def edit(self, content: str | None = None, allowed_mentions: Any = None) -> None:
+    async def edit(
+        self, content: str | None = None, allowed_mentions: Any = None, **kwargs: Any
+    ) -> None:
+        self.edits.append({"content": content, "allowed_mentions": allowed_mentions, **kwargs})
         if self._bot is not None:
             await self._bot._edit_post(self.id, content or "")
         # allowed_mentions is accepted for discord.py parity; the fake records
@@ -112,6 +117,7 @@ class FakeChannel:
         self.category_id = category_id
         self.parent = None
         self.guild = None
+        self.messages: dict[int, FakeMessage] = {}
         #: Flip these to simulate a channel the bot can see but not post in.
         self.permissions = FakePermissions()
 
@@ -129,6 +135,15 @@ class FakeChannel:
                 return False
 
         return _Typing()
+
+    async def fetch_message(self, message_id: int) -> FakeMessage:
+        import discord
+
+        message = self.messages.get(int(message_id))
+        if message is None or message.deleted:
+            gone = type("Response", (), {"status": 404, "reason": "Not Found"})()
+            raise discord.NotFound(gone, "unknown message")
+        return message
 
 
 class FakeMe:
@@ -260,6 +275,7 @@ class FakeBot:
         self.digest_channel: Any = "unset"
         self.digest_fails = False
         self.digests: list[FakeMessage] = []
+        self._digest_lock = asyncio.Lock()
         self._next_message_id = 700000000000000000
         # message id -> index in `posts` for staging edit/delete parity.
         self._posts_by_id: dict[int, int] = {}
@@ -397,7 +413,10 @@ class FakeBot:
     # -- discord side effects ---------------------------------------------
     def _message(self, channel) -> FakeMessage:
         self._next_message_id += 1
-        return FakeMessage(self._next_message_id, channel, bot=self)
+        message = FakeMessage(self._next_message_id, channel, bot=self)
+        if hasattr(channel, "messages"):
+            channel.messages[message.id] = message
+        return message
 
     async def find_channel(self, channel_id=None, *, allow_fallback: bool = True):
         """Mirrors :meth:`bot.client.BossBot.find_channel`, including its reasons."""
@@ -572,12 +591,22 @@ class FakeBot:
         self.digest_channel = channel_id
         if self.digest_fails:
             return None
-        channel = await self.post_channel(channel_id, allow_fallback=channel_id is None)
-        if channel is None:
-            return None
-        message = self._message(channel)
-        self.digests.append(message)
+        from bot.agent.client import BossBot
+
+        message = await BossBot.post_digest(self, channel_id, week)
+        if message is not None:
+            self.digests.append(message)
         return message
+
+    async def _delete_digest_card(self, channel_id, message_id) -> bool:
+        from bot.agent.client import BossBot
+
+        return await BossBot._delete_digest_card(self, channel_id, message_id)
+
+    def _digest_guard(self) -> asyncio.Lock:
+        from bot.agent.client import BossBot
+
+        return BossBot._digest_guard(self)
 
 
 def add_pilot(

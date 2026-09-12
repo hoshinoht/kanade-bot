@@ -99,6 +99,9 @@ def _schedule_interval(
 
     today = now.astimezone(ctx.bot.tz).date()
     raw = value.lower()
+    if week == "next" and raw == "next":
+        # Small models sometimes copy "next" from "next week" into both fields.
+        return start, end, None
     if raw in _RELATIVE_DAYS:
         chosen = today + timedelta(days=_RELATIVE_DAYS[raw])
         day_start, day_end = _local_day_bounds(chosen, ctx.bot.tz)
@@ -111,7 +114,9 @@ def _schedule_interval(
             return day_start, day_end, {chosen}
         return start, end, _dates_in_interval(start, end, weekday)
     else:
-        raise ToolError("day must be today, tonight, tomorrow, or one weekday.")
+        raise ToolError(
+            "day must be omitted for a whole week, or be today, tonight, tomorrow, or one weekday."
+        )
 
 
 def _intersecting_buckets(ctx: ToolContext, start: datetime, end: datetime) -> list[datetime]:

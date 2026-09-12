@@ -135,6 +135,15 @@ async def test_a_named_party_is_resolved_against_the_roster(chat_bot, chat_seede
     assert proposals(chat_bot)[0]["participants"] == ["1002", "1003"]
 
 
+async def test_a_mentioned_party_is_resolved_without_reasking_for_names(chat_bot, chat_seeded):
+    await ask_weekly(chat_bot, boss="HLimbo", participants="<@1001>, <@1002>, <@1003>")
+
+    row = proposals(chat_bot)[0]
+    assert row["kind"] == "fix"
+    assert row["bosses"] == ["HLimbo"]
+    assert row["participants"] == ["1001", "1002", "1003"]
+
+
 async def test_the_tool_result_says_weekly_and_names_the_party(chat_bot, chat_seeded):
     """What the model reads back has to be the card, recurrence included."""
     answer = await ask_weekly(chat_bot, participants="kanon, Priya")
@@ -497,6 +506,8 @@ def test_the_schema_makes_one_time_the_default_and_says_so():
     assert "ONLY for explicit" in weekly["description"]
     assert "every week" in weekly["description"]
     assert "one run that day only" in weekly["description"]
+    assert "set up a recurring run every Friday" in add["description"]
+    assert "recurring does not imply an existing weekly" in add["description"]
 
 
 def test_an_unclear_request_is_told_not_to_ask():
@@ -506,3 +517,22 @@ def test_an_unclear_request_is_told_not_to_ask():
 
     assert "Unclear wording" in weekly
     assert "leave it out" in weekly
+
+
+def test_the_schema_says_discord_mentions_are_complete_participant_references():
+    for tool_name in ("propose_add", "propose_change_fixed"):
+        tool = next(t["function"] for t in tools.TOOLS if t["function"]["name"] == tool_name)
+        participants = tool["parameters"]["properties"]["participants"]["description"]
+
+        assert "Discord mentions" in participants
+        assert "Mentions are exact: pass them as written" in participants
+        assert "never ask for names/tags" in participants
+
+
+def test_the_change_schema_excludes_requests_to_set_up_a_new_weekly():
+    change = next(
+        t["function"] for t in tools.TOOLS if t["function"]["name"] == "propose_change_fixed"
+    )
+
+    assert "'set up/create a recurring run'" in change["description"]
+    assert "use propose_add with `weekly` true" in change["description"]

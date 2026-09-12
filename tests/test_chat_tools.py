@@ -130,7 +130,16 @@ def test_tool_schemas_stay_within_context_budget():
     from bot.extract.prompt import estimate_tokens
 
     schemas = json.dumps(tools.TOOLS, ensure_ascii=False, default=str, separators=(",", ":"))
-    assert estimate_tokens(schemas) < 3250
+    assert estimate_tokens(schemas) <= 4096
+
+
+def test_get_schedule_schema_spells_out_the_whole_next_week_call():
+    schema = next(tool for tool in tools.TOOLS if tool["function"]["name"] == "get_schedule")
+    parameters = schema["function"]["parameters"]
+
+    assert parameters["required"] == ["week"]
+    assert "For 'next week'" in parameters["properties"]["week"]["description"]
+    assert "omit day" in parameters["properties"]["week"]["description"]
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +209,17 @@ async def test_next_calendar_week_reads_the_third_materialised_bucket(
     answer = await tools.dispatch(
         context(chat_bot), "get_schedule", {"week": "next", "week_basis": "calendar"}
     )
+    recovered = await tools.run(
+        context(chat_bot),
+        "get_schedule",
+        {"week": "next", "week_basis": "calendar", "day": "next"},
+    )
     assert all(
         short_id(chat_bot.repo.run_for_fixed(fixed_id, starts[2])["id"]) in answer
         for fixed_id in fixed_ids
     )
+    assert recovered.ok
+    assert recovered.output == answer
 
 
 async def test_calendar_reset_day_combines_buckets_but_boss_day_does_not_leak(

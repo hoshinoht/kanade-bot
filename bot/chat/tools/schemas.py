@@ -39,7 +39,8 @@ TOOLS: list[dict] = [
                 "description": (
                     "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' "
                     "or 'next_boss' only when the member explicitly says boss week. Use 'auto' "
-                    "for a bare weekday or today, tonight, or tomorrow."
+                    "for a bare weekday or today, tonight, or tomorrow. For 'next week', set "
+                    "week to 'next' and omit day."
                 ),
             },
             "scope": {
@@ -63,7 +64,8 @@ TOOLS: list[dict] = [
                 "description": (
                     "Optional 'today'/'tonight'/'tomorrow'/weekday. A bare weekday means the "
                     "next upcoming occurrence; a period-qualified weekday means that weekday "
-                    "inside the requested calendar or boss week. Omit for whole-week asks."
+                    "inside the requested calendar or boss week. Only set day when the member "
+                    "names a specific day; omit it for whole-week asks."
                 ),
             },
         },
@@ -128,11 +130,10 @@ TOOLS: list[dict] = [
     ),
     _tool(
         "propose_add",
-        "Post a card proposing a NEW run that is not on the schedule yet. By default it is "
-        "a ONE-TIME run that week -- only `weekly` makes it recurring. Never use this to "
-        "change a weekly that already exists: it would leave a second one beside it and "
-        "the party on neither. Use propose_change_fixed for that. This does NOT create "
-        "it: somebody has to react ✅ on the card first.",
+        "Propose a NEW run. Default: ONE-TIME. Set `weekly` true for explicit recurrence, "
+        "including 'set up a recurring run every Friday'; recurring does not imply an existing "
+        "weekly. Never use this to change a weekly that already exists; use "
+        "propose_change_fixed. Needs ✅.",
         {
             "boss": {
                 "type": "string",
@@ -151,9 +152,10 @@ TOOLS: list[dict] = [
             "participants": {
                 "type": "string",
                 "description": (
-                    "Optional comma-separated names. Omit for just the asker. When filled, "
-                    "include the asker too if they are on it ('for me'/'for us'). "
-                    "'me' works; every line is labelled with who said it."
+                    "Optional comma-separated names, 'me', or Discord mentions (`<@123>`). "
+                    "Mentions are exact: pass them as written; never ask for names/tags. Omit "
+                    "for just the asker. For 'for me' or 'for us', include the asker too. Turns "
+                    "are labelled with who said it."
                 ),
             },
             "weekly": {
@@ -197,13 +199,10 @@ TOOLS: list[dict] = [
     ),
     _tool(
         "propose_change_fixed",
-        "Post a card proposing that an EXISTING recurring weekly timing changes: the day "
-        "and time it happens every week, who is on it, or both. This is the tool for "
-        '"change the weekly to 23:30", "we do the fixed run on Wednesdays now" and "add '
-        "Priya to the weekly\". It is NOT for one week's run on its own -- propose_move "
-        "does that -- and never reach for propose_add instead: adding another weekly "
-        "leaves a duplicate and the party split across the two. This does NOT change "
-        "anything: somebody has to react ✅ on the card first.",
+        "Propose changes to an identified EXISTING weekly: day, time, party, or both. Not for "
+        "one dated run (use propose_move) or 'set up/create a recurring run' (use propose_add "
+        "with `weekly` true). When changing one, never reach for propose_add: that creates a "
+        "duplicate. Needs ✅.",
         {
             "query": {
                 "type": "string",
@@ -233,12 +232,10 @@ TOOLS: list[dict] = [
             "participants": {
                 "type": "string",
                 "description": (
-                    "Optional. The WHOLE party it should have from now on, by name, comma "
-                    "separated -- not only the people joining or leaving. That includes "
-                    "the person asking whenever they put themselves on it: 'add me to the "
-                    "weekly' means the party it has now plus them, and every line you are "
-                    "shown is labelled with who said it. Leave it out to keep the party "
-                    "exactly as it is."
+                    "Optional WHOLE party, not only the people joining or leaving: names, 'me', "
+                    "or Discord mentions (`<@123>`). Mentions are exact: pass them as written; "
+                    "never ask for names/tags. Include the person asking for 'add me to the "
+                    "weekly'; turns are labelled with who said it. Omit to keep the party."
                 ),
             },
         },
