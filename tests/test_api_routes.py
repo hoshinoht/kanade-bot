@@ -12,6 +12,7 @@ import pytest
 from bot.api import service
 from bot.api.service import PORTAL_APPLIED, PORTAL_REJECTED
 from bot.domain.ids import short_id
+from bot.domain.weeks import current_week_start
 
 from .fake_bot import (
     OTHER_CHANNEL,
@@ -1281,6 +1282,24 @@ def test_digest_posts_and_returns_a_link(auth, fake_bot, seeded):
     assert body["posted"] is True
     assert fake_bot.digest_channel == str(OTHER_CHANNEL)
     assert body["url"].startswith("https://discord.com/channels/")
+
+
+def test_posting_another_digest_replaces_the_tracked_card(auth, fake_bot, seeded):
+    first = auth.post("/api/digest", json={"channel_id": str(WATCHED_CHANNEL)}).json()
+    old_message = fake_bot.digests[-1]
+
+    second = auth.post("/api/digest", json={"channel_id": str(OTHER_CHANNEL)}).json()
+
+    assert old_message.deleted is True
+    assert second["message_id"] != first["message_id"]
+    ws = current_week_start(
+        fake_bot.tz,
+        fake_bot.settings.reset_weekday,
+        fake_bot.settings.reset_time,
+    )
+    tracked = fake_bot.repo.get_weekly_digest(ws, active_only=True)
+    assert tracked["message_id"] == second["message_id"]
+    assert tracked["channel_id"] == str(OTHER_CHANNEL)
 
 
 def test_digest_says_which_channel_and_why(auth, fake_bot, seeded):
