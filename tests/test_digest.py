@@ -222,6 +222,18 @@ def test_setting_the_channel_later_does_not_back_post_a_half_finished_week(
     assert len(configured.digests) == 1
 
 
+def test_the_previous_digest_is_retired_but_kept_as_a_weekly_log(fake_bot):
+    old_week = current_week_start(TZ, RESET_WEEKDAY, RESET_TIME, SUNDAY)
+    fake_bot.repo.set_weekly_digest(old_week, WATCHED_CHANNEL, 7001, at=SUNDAY)
+    fake_bot.repo.set_config(CFG_LAST_DIGEST, old_week.isoformat())
+
+    assert digest(fake_bot, RESET) is not None
+    assert fake_bot.repo.get_weekly_digest(old_week, active_only=True) is None
+    log = fake_bot.repo.get_weekly_digest(old_week)
+    assert log["message_id"] == "7001"
+    assert log["retired_at"] is not None
+
+
 # --- the runtime extractor switch ------------------------------------------
 
 

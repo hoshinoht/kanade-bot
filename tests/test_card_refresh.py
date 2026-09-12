@@ -272,6 +272,26 @@ def test_last_nights_cards_are_not_touched(bot, repo, channel):
     assert channel.messages[CARD_ID].edits == []
 
 
+def test_a_digest_follows_an_rsvp_even_without_a_reminder_card(bot, repo, channel):
+    run = a_run(repo)
+    repo.set_weekly_digest(run["week_start"], WATCHED_CHANNEL, CARD_ID)
+    repo.set_rsvp(run["id"], "1001", "yes")
+
+    assert refresh(bot, run["id"]) == 1
+    embed = channel.messages[CARD_ID].edits[-1]["embed"]
+    assert "1/2 ✅" in "\n".join(field.value for field in embed.fields)
+
+
+def test_a_digest_records_a_clear_after_the_runs_reminders_freeze(bot, repo, channel):
+    run = a_run(repo, at=LAST_YEAR)
+    repo.set_weekly_digest(run["week_start"], WATCHED_CHANNEL, CARD_ID)
+    repo.set_run_status(run["id"], "done")
+
+    assert refresh(bot, run["id"]) == 1
+    embed = channel.messages[CARD_ID].edits[-1]["embed"]
+    assert "⚠️" not in "\n".join(field.value for field in embed.fields)
+
+
 def test_a_run_that_has_gone_away_refreshes_nothing(bot, repo):
     assert refresh(bot, "no-such-run") == 0
 

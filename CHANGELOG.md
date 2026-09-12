@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Weekly digest cards are now tracked per boss week, update after clears and
+  RSVPs, replace earlier portal posts, and retire into a persistent weekly log.
 - Governed Discord memory uses schema v12 persistence with notification-first,
   case-by-case enrollment, typed review cards, and subject-controlled approval.
 - Deterministic typed proposals and scoped retrieval keep memory limited to
@@ -27,6 +29,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Chat scheduling now passes Discord user mentions directly to proposal tools
+  instead of reasking for names, and routes requests to set up recurring runs
+  through new-weekly proposals rather than existing-weekly changes.
 - Reworked member review into a single tabbed Memory governance window, keeping enrollment,
   preference setting, records, and activity within the fixed viewport review surface.
 

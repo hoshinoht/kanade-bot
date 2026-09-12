@@ -172,6 +172,9 @@ class BossBot(discord.Client):
         #: :attr:`bot.infrastructure.db.Repo.on_run_changed`, so no caller has to remember.
         self._stale_cards: set[str] = set()
         self._card_refresh: asyncio.Task | None = None
+        #: Serialises delete-then-post digest replacement, so two portal clicks
+        #: cannot both observe the same old card and leave duplicate summaries.
+        self._digest_lock = asyncio.Lock()
         repo.on_run_changed = self.card_needs_refresh
         # The chat extractor: buffers each channel's messages and runs one model
         # call per burst. Constructing it does not touch Ollama.
@@ -866,19 +869,21 @@ class BossBot(discord.Client):
                 log.exception("could not refresh the cards for run %s", run_id)
 
     async def refresh_run_cards(self, run_id: str) -> int:
-        """Re-render this run's already-posted reminders; returns how many were edited.
+        """Re-render this run's posted cards; returns how many were edited.
 
         Discord does not notify anyone about an edit, so this is the cheap way
-        to keep a morning card honest: the tally on it goes on meaning what it
-        said at 09:00 unless somebody rewrites it, which is how a run everybody
-        had ✅'d still read "2/4 ✅" at 21:00.
+        to keep reminder and weekly digest tallies honest. Reminder cards stop
+        changing after the run, when they become a record; the current week's
+        digest still receives the final cleared state.
         """
         run = self.repo.get_run(run_id)
-        if run is None or is_past(run["datetime"], utcnow()):
+        if run is None:
+            return 0
+        edited = int(await self.refresh_weekly_digest(run["week_start"]))
+        if is_past(run["datetime"], utcnow()):
             # The night has been and gone: its cards are a record of it now,
             # not a live tally, and editing them would only cost API calls.
-            return 0
-        edited = 0
+            return edited
         seen: set[str] = set()
         for reminder in self.repo.list_reminders(run_id):
             message_id = reminder["message_id"]
@@ -903,6 +908,28 @@ class BossBot(discord.Client):
             ):
                 edited += 1
         return edited
+
+    async def refresh_weekly_digest(self, week_start: datetime) -> bool:
+        """Rebuild the live digest for one boss week from persisted schedule state."""
+        async with self._digest_guard():
+            tracked = self.repo.get_weekly_digest(week_start, active_only=True)
+            if tracked is None:
+                return False
+            runs = self.repo.list_runs(week_start=week_start)
+            card = formatting.digest_card(
+                runs,
+                week_start,
+                self.tz,
+                {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs},
+            )
+            return await self.edit_card(tracked["channel_id"], tracked["message_id"], card)
+
+    def _digest_guard(self) -> asyncio.Lock:
+        """Return the digest lock, including for focused clients built with ``__new__``."""
+        lock = getattr(self, "_digest_lock", None)
+        if lock is None:
+            lock = self._digest_lock = asyncio.Lock()
+        return lock
 
     def _rebuild_card(self, reminder: dict, run: dict) -> formatting.Card | None:
         """What that message would say if it were posted right now."""
@@ -1505,34 +1532,91 @@ class BossBot(discord.Client):
     async def post_digest(
         self, channel_id: int | str | None = None, week: str = "this"
     ) -> discord.Message | None:
-        """Post the whole guild's week (DESIGN.md §3, "Weekly digest").
+        """Replace the tracked card for a whole guild week (DESIGN.md §3).
 
         Goes to ``channel_id`` if given, else ``POST_CHANNEL_ID``. It names
         people rather than mentioning them: a guild-wide post must not notify
-        thirty bossers about every party's run. An explicit channel never
-        falls back elsewhere.
+        thirty bossers about every party's run. If that week already has a
+        tracked card, it is deleted before the replacement is posted so a
+        portal retry cannot fill channels with duplicate digests.
         """
-        now = utcnow()
-        ws = (
-            next_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
-            if week == "next"
-            else current_week_start(
+        async with self._digest_guard():
+            now = utcnow()
+            current = current_week_start(
                 self.tz, self.settings.reset_weekday, self.settings.reset_time, now
             )
-        )
-        runs = self.repo.list_runs(week_start=ws)
-        channel = await self.post_channel(channel_id, allow_fallback=channel_id is None)
-        if channel is None:
-            log.error("no channel available for the weekly digest")
-            return None
-        card = formatting.digest_card(
-            runs, ws, self.tz, {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
-        )
-        # Through `_post` like every other card, so quiet mode marks it and a
-        # dropped connection is retried rather than losing the week's digest.
-        # `mention_users=[]` because the card names people instead of tagging
-        # them; `react=False` because a summary is not something to answer.
-        return await self._post(channel, card, mention_users=[], react=False)
+            ws = (
+                next_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+                if week == "next"
+                else current
+            )
+            self.repo.retire_weekly_digests_before(current, at=now)
+            channel = await self.post_channel(channel_id, allow_fallback=channel_id is None)
+            if channel is None:
+                log.error("no channel available for the weekly digest")
+                return None
+
+            tracked = self.repo.get_weekly_digest(ws, active_only=True)
+            if tracked is not None:
+                deleted = await self._delete_digest_card(
+                    tracked["channel_id"], tracked["message_id"]
+                )
+                if not deleted:
+                    log.error(
+                        "could not replace weekly digest %s without risking a duplicate",
+                        tracked["message_id"],
+                    )
+                    return None
+                self.repo.retire_weekly_digest(ws, at=now)
+
+            runs = self.repo.list_runs(week_start=ws)
+            card = formatting.digest_card(
+                runs, ws, self.tz, {run["id"]: self.repo.get_rsvps(run["id"]) for run in runs}
+            )
+            # Through `_post` like every other card, so quiet mode marks it and a
+            # dropped connection is retried rather than losing the week's digest.
+            # `mention_users=[]` because the card names people instead of tagging
+            # them; `react=False` because a summary is not something to answer.
+            message = await self._post(channel, card, mention_users=[], react=False)
+            if message is None:
+                return None
+            posted_channel_id = getattr(getattr(message, "channel", None), "id", None) or getattr(
+                channel, "id", None
+            )
+            if posted_channel_id is None:  # pragma: no cover - Discord messages always have one
+                log.error("posted weekly digest %s without a channel binding", message.id)
+                return message
+            self.repo.set_weekly_digest(ws, posted_channel_id, message.id, at=now)
+            if ws == current:
+                # A manual portal/CLI post satisfies this week's automatic post
+                # as well; the next tick must not immediately replace it again.
+                self.repo.set_config(CFG_LAST_DIGEST, to_iso(current))
+            return message
+
+    async def _delete_digest_card(
+        self, channel_id: int | str | None, message_id: int | str
+    ) -> bool:
+        """Delete a superseded digest; a message already gone counts as success."""
+        if channel_id is None:
+            return False
+        try:
+            channel = self.get_channel(int(channel_id)) or await self.fetch_channel(int(channel_id))
+            message = await channel.fetch_message(int(message_id))  # type: ignore[union-attr]
+            await message.delete()
+            return True
+        except discord.NotFound:
+            return True
+        except (
+            discord.Forbidden,
+            discord.HTTPException,
+            AttributeError,
+            TypeError,
+            ValueError,
+            OSError,
+            TimeoutError,
+        ):
+            log.debug("could not delete digest card %s", message_id, exc_info=True)
+            return False
 
     async def post_week_digest(self, now: datetime) -> discord.Message | None:
         """Post the digest once at each boss-week reset (DESIGN.md §3).
@@ -1544,9 +1628,11 @@ class BossBot(discord.Client):
         through Thursday midnight posts exactly one digest when it wakes --
         not one per missed tick, and not none.
         """
-        current = to_iso(
-            current_week_start(self.tz, self.settings.reset_weekday, self.settings.reset_time, now)
+        current_start = current_week_start(
+            self.tz, self.settings.reset_weekday, self.settings.reset_time, now
         )
+        current = to_iso(current_start)
+        self.repo.retire_weekly_digests_before(current_start, at=now)
         last = self.repo.get_config(CFG_LAST_DIGEST)
         if last == current:
             return None
@@ -1615,6 +1701,7 @@ class BossBot(discord.Client):
         offering an Approve button for a card nobody can see, and a supersede
         check still treats them as the live proposal for that run.
         """
+        self.repo.retire_weekly_digest_by_message(message_id)
         withdrawn = [
             a for a in self.repo.amendments_by_message(message_id) if a["status"] == "proposed"
         ]
