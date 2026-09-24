@@ -1,0 +1,15 @@
+packages=322
+
+non-common license expressions (verbatim):
+  r-efi 5.3.0: MIT OR Apache-2.0 OR LGPL-2.1-or-later
+  r-efi 6.0.0: MIT OR Apache-2.0 OR LGPL-2.1-or-later
+  webpki-root-certs 1.0.9: CDLA-Permissive-2.0
+  webpki-roots 0.26.11: CDLA-Permissive-2.0
+  webpki-roots 1.0.9: CDLA-Permissive-2.0
+
+manual notes:
+  CDLA-Permissive-2.0: permissive data license on Mozilla-root-derived certificate data (webpki-roots*, webpki-root-certs); no copyleft obligation on the binary
+  LGPL-2.1-or-later: appears only inside r-efi's 'MIT OR Apache-2.0 OR LGPL-2.1-or-later', so a permissive choice is available; r-efi itself is lockfile-only for non-host (wasi) targets and absent from the host/Linux build graphs
+
+identifiers without a manual note (require owner decision):
+  (none)

@@ -1,0 +1,231 @@
+{
+  "cases": [
+    {
+      "case_id": "bosses.token.alias",
+      "expected": {
+        "value": "HStar"
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "token": "h-rstar"
+      },
+      "op": "parse_token"
+    },
+    {
+      "case_id": "bosses.token.canonical",
+      "expected": {
+        "value": "XKalos"
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "token": "XKalos"
+      },
+      "op": "parse_token"
+    },
+    {
+      "case_id": "bosses.token.missing-difficulty",
+      "error_type": "BossParseError",
+      "expected": {
+        "error": {
+          "message": "`kalos` is missing a difficulty prefix (n/h/x) - try NKalos, XKalos",
+          "type": "BossParseError"
+        }
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "token": "kalos"
+      },
+      "op": "parse_token"
+    },
+    {
+      "case_id": "bosses.token.unsupported-difficulty",
+      "error_type": "BossParseError",
+      "expected": {
+        "error": {
+          "message": "Gatekeeper Kalos has no Hard difficulty - did you mean NKalos, XKalos?",
+          "type": "BossParseError"
+        }
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "token": "hkalos"
+      },
+      "op": "parse_token"
+    },
+    {
+      "case_id": "bosses.token.not-found",
+      "error_type": "BossParseError",
+      "expected": {
+        "error": {
+          "message": "unknown boss `hzzz`",
+          "type": "BossParseError"
+        }
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "token": "hzzz"
+      },
+      "op": "parse_token"
+    },
+    {
+      "case_id": "bosses.parse.spelled-and-order",
+      "expected": {
+        "value": [
+          "HStar",
+          "XKalos"
+        ]
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "text": "Hard Radiant Star, Extreme Gatekeeper Kalos, hard star"
+      },
+      "op": "parse"
+    },
+    {
+      "case_id": "bosses.reference.free-form",
+      "expected": {
+        "value": {
+          "difficulty": "x",
+          "short": "Kalos"
+        }
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "text": "please explain Extreme Gatekeeper Kalos tonight"
+      },
+      "op": "resolve_reference"
+    },
+    {
+      "case_id": "bosses.reference.conflicting",
+      "error_type": "BossParseError",
+      "expected": {
+        "error": {
+          "message": "conflicting difficulties: Hard and Normal",
+          "type": "BossParseError"
+        }
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "text": "Hard NStar"
+      },
+      "op": "resolve_reference"
+    },
+    {
+      "case_id": "bosses.names-in",
+      "expected": {
+        "value": [
+          "Star",
+          "Kalos"
+        ]
+      },
+      "input": {
+        "catalog_id": "synthetic-bosses-v1",
+        "text": "hstar and xkalos and hstar"
+      },
+      "op": "names_in"
+    },
+    {
+      "case_id": "bosses.describe",
+      "expected": {
+        "value": "Radiant Star (Hard, Lv280)"
+      },
+      "input": {
+        "canonical": "HStar",
+        "catalog_id": "synthetic-bosses-v1"
+      },
+      "op": "describe"
+    },
+    {
+      "case_id": "bosses.detail",
+      "expected": {
+        "value": {
+          "difficulty": "Hard",
+          "full": "Radiant Star",
+          "letter": "h",
+          "level": 280,
+          "short": "Star",
+          "token": "HStar"
+        }
+      },
+      "input": {
+        "canonical": "HStar",
+        "catalog_id": "synthetic-bosses-v1"
+      },
+      "op": "detail"
+    }
+  ],
+  "family": "bosses",
+  "fixtures": {
+    "catalogs": {
+      "synthetic-bosses-v1": {
+        "bosses": [
+          {
+            "aliases": [
+              "star",
+              "rstar"
+            ],
+            "difficulties": [
+              "n",
+              "h"
+            ],
+            "full": "Radiant Star",
+            "level": 280,
+            "short": "Star"
+          },
+          {
+            "aliases": [
+              "kalos",
+              "gatekeeper kalos"
+            ],
+            "difficulties": [
+              "n",
+              "x"
+            ],
+            "full": "Gatekeeper Kalos",
+            "level": 265,
+            "short": "Kalos"
+          }
+        ],
+        "difficulties": [
+          {
+            "label": "Normal",
+            "prefix": "n"
+          },
+          {
+            "label": "Hard",
+            "prefix": "h"
+          },
+          {
+            "label": "Extreme",
+            "prefix": "x"
+          }
+        ]
+      }
+    }
+  },
+  "provenance": {
+    "functions": [
+      "BossTable.from_dict",
+      "parse_token",
+      "parse",
+      "resolve_reference",
+      "names_in",
+      "describe",
+      "detail"
+    ],
+    "inventory_surfaces": [
+      "domain.bosses"
+    ],
+    "oracle": "legacy/python bot.domain.bosses",
+    "source_tests": [
+      "tests/test_bosses.py::test_parse_token",
+      "tests/test_bosses.py::test_bare_boss_name_demands_a_difficulty",
+      "tests/test_bosses.py::test_parse_list",
+      "tests/test_bosses.py::test_free_form_reference_resolution",
+      "tests/test_bosses.py::test_a_loose_sentence_gives_up_the_bosses_it_names",
+      "tests/test_bosses.py::test_describe_expands_to_the_full_in_game_name",
+      "tests/test_bosses.py::test_table_needs_difficulties_and_bosses"
+    ]
+  },
+  "schema_version": "v5-domain-v1"
+}
