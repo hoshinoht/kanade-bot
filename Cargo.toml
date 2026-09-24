@@ -1,0 +1,26 @@
+[package]
+name = "kanade"
+version = "1.0.0-beta.1"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[features]
+test-support = ["tokio/test-util"]
+
+[dependencies]
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+chrono-tz = "=0.10.4"
+http-body-util = "=0.1.5"
+hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "=0.1.20", default-features = false, features = ["tokio"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+jsonschema = { version = "=0.40.0", default-features = false }
+tokio = { version = "=1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+
+[[test]]
+name = "provider_contract"
+path = "tests/provider/main.rs"
+required-features = ["test-support"]
