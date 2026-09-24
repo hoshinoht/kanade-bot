@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "CatalogBoss": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "token": {
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "label"
+      ],
+      "title": "CatalogBoss",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bosses": {
+      "items": {
+        "$ref": "#/$defs/CatalogBoss"
+      },
+      "title": "Bosses",
+      "type": "array"
+    },
+    "historic_tokens": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Historic Tokens",
+      "type": "array"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "string"
+    }
+  },
+  "required": [
+    "revision",
+    "bosses"
+  ],
+  "title": "Catalog",
+  "type": "object"
+}

@@ -4,6 +4,7 @@
 !.env.example
 data/
 .venv/
+target/
 __pycache__/
 *.py[cod]
 *.sqlite
@@ -57,6 +58,3 @@ config/personas/behaviours/staging/*
 # Local design notes.
 DESIGN.md
 
-# The live Caddyfile names the private domain.
-caddy/Caddyfile
-!caddy/Caddyfile.example

@@ -26,29 +26,34 @@ jobs:
       # no `@v10` to pin to -- the full version tag is the immutable one.
       - uses: astral-sh/setup-uv@v10.0.1
 
-      # Reads `requires-python` from pyproject.toml (3.12), the same as the image.
+      # Match the legacy project's Python constraint and rollback image.
       - name: Install Python
-        run: uv python install
+        run: uv python install 3.12
 
       # `--locked` fails if uv.lock has drifted from pyproject.toml, so a
       # dependency bump that forgot to relock cannot merge.
       - name: Install the project
+        working-directory: legacy/python
         run: uv sync --locked
 
       - name: Lint
+        working-directory: legacy/python
         run: uv run ruff check .
 
       - name: Format
+        working-directory: legacy/python
         run: uv run ruff format --check .
 
       - name: Build portal stylesheet
+        working-directory: legacy/python
         run: uv run python -m bot.portal_styles --output /tmp/portal.css
 
-      # The `ollama` marker hits an 8 GB local model on the developer's machine
-      # and is deliberately never run here; `uv run pytest -m ollama` is a
+      # The `live_model` marker calls the private Kanata gateway and is
+      # deliberately never run here; `uv run pytest -m live_model` is a
       # local-only step. Everything else must pass.
       - name: Tests
-        run: uv run pytest -q -m "not ollama"
+        working-directory: legacy/python
+        run: uv run pytest -q -m "not live_model"
 
   docker:
     runs-on: ubuntu-latest
@@ -58,4 +63,19 @@ jobs:
       # Build validity only: the image is never pushed, so there is no registry
       # login and no secret to leak to a fork's pull request.
       - name: Build the image
-        run: docker build .
+        run: docker build -f legacy/python/deploy/Dockerfile legacy/python
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+      - name: Format
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --locked --all-targets --all-features
+      - name: Release build
+        run: cargo build --locked --release

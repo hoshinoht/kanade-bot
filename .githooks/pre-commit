@@ -3,6 +3,8 @@
 # Enable once per clone: git config core.hooksPath .githooks
 set -e
 
+cd legacy/python
+
 if ! command -v uv >/dev/null 2>&1; then
   echo "githooks: uv not found, skipping checks" >&2
   exit 0
@@ -13,7 +15,7 @@ uv lock --check >/dev/null 2>&1 || {
   exit 1
 }
 
-staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+staged=$(git diff --cached --name-only --diff-filter=ACM | sed -n 's#^legacy/python/##p' | grep '\.py$' || true)
 if [ -n "$staged" ]; then
   # shellcheck disable=SC2086
   uv run ruff format $staged

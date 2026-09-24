@@ -2,6 +2,164 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 1.0.0b (in development)
+
+**Added**
+
+- Source-checked v5 compatibility inventory covering routes, commands, runtime
+  entrypoints, configuration, storage, workers, chat tools, and portal assets,
+  with regression checks for missing entrypoints and environment dispositions.
+- Relocated the runnable v4 rollback implementation to `legacy/python/` without
+  moving private deployment state.
+- Added initial portable migration schema modules, synthetic history/delivery
+  fixtures and independently validated JSON Schema artifacts; runtime export,
+  import and maintenance operations are not implemented yet.
+- Added deterministic, bounded migration archives, pure guild/catalog/reference
+  preflight checks, and private no-overwrite publication with Linux/macOS path-race
+  protection. These helpers do not yet export or import a running database.
+- Added the modular Rust runtime foundation with explicit offline serving,
+  loopback health checks, strict configuration, redacted errors and bounded
+  shutdown. Scheduler, storage and Discord adapters remain under development.
+- Added synthetic Python-derived domain and initial stateful scheduler vectors,
+  with replay/drift checks and full input-schema validation before opening the
+  oracle store. Broader scheduling and migration parity remain in development.
+- Added an offline Rust LLM-provider interface, deterministic fake provider,
+  structured output/tool-call validation, bounded payloads and retries, and
+  redacted diagnostics. Kanata networking and chat integration remain deferred.
+- Added the unreleased Python maintenance foundation with v14 state/lease tables,
+  exclusive store ownership, pre-upgrade snapshots and task-bound retirement.
+  Startup recovery authority is revoked before repository access is returned.
+  Operational maintenance, transfer and production upgrades remain disabled or
+  unapproved pending delivery journaling, ingress and reconciliation integration.
+- Added v15 per-source adoption-resolution storage with protected control-plane
+  writes and snapshot-first synthetic v13/v14 upgrades. Existing upgrades stay
+  BLOCKED/pending; runtime classification and private/live database upgrades remain
+  out of scope.
+- Added offline v13/v14 first-adoption source classification with content-free,
+  domain-separated evidence and a fixed-purpose task-bound BLOCKED seed lease.
+  Adoption remains pending; no Discord fetch, fake send attempt, or memory-family
+  classification is introduced.
+- Added private synthetic whole-message adoption binding and reasoned source/
+  attempt retirement under a separate persisted BLOCKED task authority. Synthetic
+  observations are not proof of remote authorship; no fetch, release, or memory
+  handling is included. Only reminder and card message groups may bind or retire
+  multiple targets; multi-target decline or digest groups are rejected unchanged.
+- Added the J0 delivery-journal kernel: immutable send plans, request/observable
+  fingerprints, pre-send intent and target claims, one-call transport handling,
+  and atomic native bindings. The kernel alone was not a release or
+  live-operation authorization.
+- Added J1 v4 Discord effect wiring for reminders, digests, grouped extractor
+  cards, and slash/portal debug cards. Bound effects precede reactions; J1 card
+  edits, cleanup deletions, and RSVP reactions fail closed under maintenance
+  leases. Ambiguous sends are not retried, and confirmed digest/debug deletions
+  retire exact bound targets with durable reasons. No production use or release
+  is authorized.
+- Added J2 v4 chatbot source/semantic-slot journaling for final, refusal, staging,
+  and rejection-follow-up replies. Chat placeholder edits, deletion, and reactions
+  are lease-gated; an uncertain edit does not trigger a second final reply.
+- Added J3 journaling for non-memory mutation notices, repeatable `/say` and guide
+  posts, and decline notice binding/retraction. Guide fingerprints cover validated
+  decoded files and ordered embeds; uncertain sends are not reported as refusals.
+  Personal-memory effects remain excluded, and no release is authorized.
+- Added G1 closed-state runtime attempt recovery: a content-free blocker report,
+  operator bind of intent/indeterminate attempts to verified bot-authored message
+  evidence, and reasoned no-replay retirement (reminder skipped shape, decline
+  cooldown, digest week marker, retained v15 memory as `feature_removed`), all under
+  a persisted task-bound BLOCKED/FROZEN-only lease. A retired card leaves its
+  amendment proposed and reported; extraction never reposts it, so it is resolved
+  by portal approve/reject. A retired reminder is never re-armed by a ping-time
+  change; moving its run still schedules fresh reminders for the new time. A
+  retired decline permanently suppresses further decline notices for that run and
+  member. Binding a current-week digest records the week so the reset tick does not
+  replace it; a future-week digest retires without a marker, so that week's reset
+  still posts (an earlier preview that did land may need manual deletion). Bounded
+  Discord history listing is advisory only. No sends, endpoints, or BLOCKED→OPEN
+  transition.
+- v4: Config → Models picks the extraction and chat Kanata aliases and reasoning
+  levels at runtime from the live `/v1/models` list (also `GET /api/config/models`
+  and `bossctl config set`), with capability badges, reasoning levels limited to
+  each alias's published list, and a privacy warning for `external` or `-cloud`
+  aliases. Selections are audited, stored as runtime config rows seeded once from
+  `EXTRACT_MODEL`/`CHAT_PILOT_MODEL`/`EXTRACT_REASONING`/`CHAT_PILOT_THINK`, carried
+  in bundle `runtime_config`, and honored by startup checks.
+
+**Changed**
+
+- v4: Kanata request bodies follow per-alias capability metadata from `/v1/models`
+  (cached, minimal when absent): `response_format`, `temperature`/`seed` and
+  `reasoning_effort` are sent only to aliases that accept them, so extraction and
+  chat work on cloud and codex aliases. A 400 naming one of those fields drops it
+  for that alias (for the cache TTL) and retries once. The extraction prompt budget
+  counts the in-prompt JSON schema, and the client trims a trailing `/v1`.
+- Changed the new Rust release and supporting spike code to GPL-3.0-only;
+  the independently licensed Python rollback tree retains MIT.
+- Organized the Rust bootstrap into responsibility-based runtime, API and CLI
+  subdirectories, with a dedicated integration-test directory.
+- Refined the unpublished migration contract to preserve grouped Discord sends,
+  require matching proposal-card bindings and canonical Discord IDs, and reject
+  excluded memory/generic delivery records.
+- Restored SQLite foreign-key enforcement when reopening existing v14 repositories,
+  including a FROZEN maintenance restart.
+- Schema v16: opening a v9–v15 store takes the pre-upgrade snapshot, then drops
+  every `chat_memor*` table; retained delivery-journal rows are kept, and a v15
+  store keeps its maintenance state unchanged. The snapshot still contains the
+  old memory rows. Leftover `CHAT_MEMORY_*` settings are ignored with one startup
+  warning.
+- v4 extraction and chat now call the Kanata gateway's OpenAI-compatible API over
+  verified HTTPS with a bearer key read from `KANATA_API_KEY_FILE` (a Compose secret
+  in the container), replacing the direct Ollama client and the `ollama` package.
+  New settings: `KANATA_BASE_URL`, `KANATA_TIMEOUT`, `EXTRACT_MODEL`,
+  `EXTRACT_REASONING`, `MODEL_CONTEXT_TOKENS`; `CHAT_PILOT_MODEL` and
+  `EXTRACT_MODEL` have no default and are required at startup when their feature is
+  enabled; a database extractor switch that outranks `EXTRACT_ENABLED=false` gets
+  one startup ERROR instead of per-burst warnings. Extraction uses a strict JSON
+  schema (closed objects, all fields required). A trailing `/v1` on
+  `KANATA_BASE_URL` is trimmed. `OLLAMA_*` settings are ignored with one startup
+  warning naming each replacement; the `ollama` pytest marker is now `live_model`.
+- v4 `.env.example` now lists only the settings an operator must fill in; every
+  other setting, with its default, is in the `docs/setup.md` settings reference.
+  Fresh databases now seed a 01:00 day-of ping and a single 60-minute countdown
+  (was 09:00 and 60,15); existing portal-stored values are unchanged. Portal docs
+  now describe the shared edge front door instead of the kanade Caddy service.
+- v4 container files moved to `legacy/python/deploy/` (`Dockerfile`,
+  `Dockerfile.dockerignore`, `compose.yaml`); build with
+  `docker build -f deploy/Dockerfile .` from `legacy/python` and run Compose with
+  `-f deploy/compose.yaml`. v5 container files will live in the root `deploy/`.
+  The obsolete kanade Caddy image and Caddyfile example were removed; TLS ingress
+  is the shared edge.
+
+**Removed**
+
+- Removed the v4 personal-memory feature: typed-preference requests and prompt
+  injection, `/memory` commands, enrollment notice DMs, proposal cards, the
+  cleanup worker, the portal Memory pages, `/api/memory` routes,
+  `bossctl memory`, and the `CHAT_MEMORY_ENABLED` setting.
+
+**Fixed**
+
+- A failed or maintenance-denied move/problem notice no longer aborts applying
+  the remaining amendments on a ✅ card; digest and test-ping failures now say
+  delivery was not confirmed instead of claiming Discord rejected them.
+- v4 now starts on a BLOCKED, FROZEN or adoption-pending store instead of dying on
+  a denied config seed: seeding runs only under an admitted OPEN operation, the API
+  starts after Discord login, and the tick, heartbeat, on-ready
+  roster/week/identity/backfill work and rescan worker are skipped with no database
+  writes after bootstrap normalization (an adoption-pending store is still
+  normalized to BLOCKED on open; reconciliation is flagged in-process). The healthcheck reads the mode and accepts a live API
+  without a heartbeat while closed.
+
+## Unreleased
+
+**Changed**
+
+- Upgraded  with automated scoring, multi-repetition capabilities, and markdown reporting.
+
+## Unreleased
+
+**Changed**
+
+- Upgraded `scripts/bench_headers.py` with automated scoring, multi-repetition capabilities, and markdown reporting.
+
 ## 4.9.0
 
 **Added**

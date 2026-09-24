@@ -1,0 +1,78 @@
+name: kanade
+services:
+  bot:
+    # Build context is legacy/python; paths below are relative to this file.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: kanade-bot
+    # Live secrets and private data stay at the repo root after the relocation.
+    env_file: ../../../.env
+    environment:
+      # Kanata gateway bearer key, mounted from the operator file below.
+      KANATA_API_KEY_FILE: /run/secrets/kanata_api_key
+      DB_PATH: /app/data/bot.sqlite
+      BOSSES_PATH: /app/boss/bosses.yaml
+      BOSS_KNOWLEDGE_PATH: /app/boss/knowledge
+      # Private identity on the host bind mount; missing files use the template.
+      PERSONA_PATH: /app/config/personas/identities/persona.md
+      # Host exposure is restricted by `ports`, not this container bind address.
+      API_HOST: "0.0.0.0"
+    secrets: [kanata_api_key]
+    # Loopback only; tailnet traffic enters through the shared edge
+    # (~/projects/personal/edge, sites/kanade) over kanade_edge.
+    ports: ["127.0.0.1:8080:8080"]
+    networks:
+      - default
+      - edge
+    volumes:
+      # Keep SQLite on a named volume, not macOS VirtioFS.
+      - botdata:/app/data
+      # Host-visible snapshots created through SQLite's backup API.
+      - ../../../data/backups:/app/data/backups
+      - ../../../config:/app/config:ro
+      # Canonical catalog and knowledge (tracked in legacy/python).
+      - ../boss:/app/boss:ro
+      # Untracked portraits and entry artwork remain at the repo root.
+      - ../../../boss/portraits:/app/boss/portraits:ro
+      - ../../../boss/artwork:/app/boss/artwork:ro
+      # Writable for private identities, behaviours, and portal-managed profiles.
+      - ../../../config/personas:/app/config/personas
+    restart: unless-stopped
+    # Root stays immutable; only mounted data and config/personas are writable.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    pids_limit: 256
+    # Allow in-flight extraction and SQLite writes to finish.
+    stop_grace_period: 60s
+    healthcheck:
+      # Checks the SQLite heartbeat and in-process API.
+      test: ["CMD", "python", "-m", "bot.health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # Dedicated internal network the shared edge Caddy joins; nothing else attaches.
+  edge:
+    name: kanade_edge
+    internal: true
+
+secrets:
+  kanata_api_key:
+    # Operator path outside the repo, interpolated by Compose (shell or --env-file).
+    file: ${KANATA_API_KEY_HOST_FILE:?set KANATA_API_KEY_HOST_FILE to the Kanata key file}
+
+volumes:
+  botdata:
+    name: kanade_botdata
+    external: true

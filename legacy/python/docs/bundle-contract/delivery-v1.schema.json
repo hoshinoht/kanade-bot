@@ -1,0 +1,630 @@
+{
+  "$defs": {
+    "BoundDeliveryAttempt": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Channel Id",
+          "type": "string"
+        },
+        "delivery_kind": {
+          "enum": [
+            "reminder",
+            "digest",
+            "decline",
+            "card",
+            "debug_card"
+          ],
+          "title": "Delivery Kind",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "state": {
+          "const": "bound",
+          "title": "State",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "card": "#/$defs/CardTarget",
+                "debug_card": "#/$defs/DebugCardTarget",
+                "decline": "#/$defs/DeclineTarget",
+                "digest": "#/$defs/DigestTarget",
+                "reminder": "#/$defs/ReminderTarget"
+              },
+              "propertyName": "binding_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ReminderTarget"
+              },
+              {
+                "$ref": "#/$defs/DigestTarget"
+              },
+              {
+                "$ref": "#/$defs/DeclineTarget"
+              },
+              {
+                "$ref": "#/$defs/CardTarget"
+              },
+              {
+                "$ref": "#/$defs/DebugCardTarget"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state",
+        "delivery_kind",
+        "channel_id",
+        "message_id",
+        "targets"
+      ],
+      "title": "BoundDeliveryAttempt",
+      "type": "object"
+    },
+    "CardBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_id": {
+          "format": "uuid",
+          "title": "Amendment Id",
+          "type": "string"
+        },
+        "channel_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Channel Id",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amendment_id",
+        "channel_id",
+        "message_id"
+      ],
+      "title": "CardBinding",
+      "type": "object"
+    },
+    "CardTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_id": {
+          "format": "uuid",
+          "title": "Amendment Id",
+          "type": "string"
+        },
+        "binding_type": {
+          "const": "card",
+          "title": "Binding Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_type",
+        "amendment_id"
+      ],
+      "title": "CardTarget",
+      "type": "object"
+    },
+    "DebugCardBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "message_id",
+        "kind",
+        "created_at"
+      ],
+      "title": "DebugCardBinding",
+      "type": "object"
+    },
+    "DebugCardTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_type": {
+          "const": "debug_card",
+          "title": "Binding Type",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_type",
+        "message_id"
+      ],
+      "title": "DebugCardTarget",
+      "type": "object"
+    },
+    "DeclineBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel Id"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Id"
+        },
+        "notified_at": {
+          "format": "date-time",
+          "title": "Notified At",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "user_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "User Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "user_id",
+        "notified_at"
+      ],
+      "title": "DeclineBinding",
+      "type": "object"
+    },
+    "DeclineTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_type": {
+          "const": "decline",
+          "title": "Binding Type",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "user_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "User Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_type",
+        "run_id",
+        "user_id"
+      ],
+      "title": "DeclineTarget",
+      "type": "object"
+    },
+    "DigestBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Channel Id",
+          "type": "string"
+        },
+        "message_id": {
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "title": "Message Id",
+          "type": "string"
+        },
+        "posted_at": {
+          "format": "date-time",
+          "title": "Posted At",
+          "type": "string"
+        },
+        "retired_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retired At"
+        },
+        "week_start": {
+          "format": "date-time",
+          "title": "Week Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "week_start",
+        "channel_id",
+        "message_id",
+        "posted_at"
+      ],
+      "title": "DigestBinding",
+      "type": "object"
+    },
+    "DigestTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_type": {
+          "const": "digest",
+          "title": "Binding Type",
+          "type": "string"
+        },
+        "week_start": {
+          "format": "date-time",
+          "title": "Week Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_type",
+        "week_start"
+      ],
+      "title": "DigestTarget",
+      "type": "object"
+    },
+    "ReminderBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "fire_at": {
+          "format": "date-time",
+          "title": "Fire At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Id"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "sent_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sent At"
+        }
+      },
+      "required": [
+        "id",
+        "run_id",
+        "fire_at",
+        "kind"
+      ],
+      "title": "ReminderBinding",
+      "type": "object"
+    },
+    "ReminderTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_type": {
+          "const": "reminder",
+          "title": "Binding Type",
+          "type": "string"
+        },
+        "reminder_id": {
+          "format": "uuid",
+          "title": "Reminder Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_type",
+        "reminder_id"
+      ],
+      "title": "ReminderTarget",
+      "type": "object"
+    },
+    "RetiredDeliveryAttempt": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "delivery_kind": {
+                "const": "pre_journal_attestation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "targets": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel Id"
+        },
+        "delivery_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "reminder",
+                "digest",
+                "decline",
+                "card",
+                "debug_card"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "pre_journal_attestation",
+              "type": "string"
+            }
+          ],
+          "title": "Delivery Kind"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "pattern": "^[1-9][0-9]{0,19}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Id"
+        },
+        "retired_by": {
+          "pattern": "^(?:[1-9][0-9]{0,19}|admin|system)$",
+          "title": "Retired By",
+          "type": "string"
+        },
+        "retired_reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Retired Reason",
+          "type": "string"
+        },
+        "state": {
+          "const": "retired",
+          "title": "State",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "card": "#/$defs/CardTarget",
+                "debug_card": "#/$defs/DebugCardTarget",
+                "decline": "#/$defs/DeclineTarget",
+                "digest": "#/$defs/DigestTarget",
+                "reminder": "#/$defs/ReminderTarget"
+              },
+              "propertyName": "binding_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ReminderTarget"
+              },
+              {
+                "$ref": "#/$defs/DigestTarget"
+              },
+              {
+                "$ref": "#/$defs/DeclineTarget"
+              },
+              {
+                "$ref": "#/$defs/CardTarget"
+              },
+              {
+                "$ref": "#/$defs/DebugCardTarget"
+              }
+            ]
+          },
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state",
+        "delivery_kind",
+        "retired_by",
+        "retired_reason"
+      ],
+      "title": "RetiredDeliveryAttempt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attempts": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "bound": "#/$defs/BoundDeliveryAttempt",
+            "retired": "#/$defs/RetiredDeliveryAttempt"
+          },
+          "propertyName": "state"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/BoundDeliveryAttempt"
+          },
+          {
+            "$ref": "#/$defs/RetiredDeliveryAttempt"
+          }
+        ]
+      },
+      "title": "Attempts",
+      "type": "array"
+    },
+    "cards": {
+      "items": {
+        "$ref": "#/$defs/CardBinding"
+      },
+      "title": "Cards",
+      "type": "array"
+    },
+    "current_week_start": {
+      "format": "date-time",
+      "title": "Current Week Start",
+      "type": "string"
+    },
+    "debug_cards": {
+      "items": {
+        "$ref": "#/$defs/DebugCardBinding"
+      },
+      "title": "Debug Cards",
+      "type": "array"
+    },
+    "declines": {
+      "items": {
+        "$ref": "#/$defs/DeclineBinding"
+      },
+      "title": "Declines",
+      "type": "array"
+    },
+    "digests": {
+      "items": {
+        "$ref": "#/$defs/DigestBinding"
+      },
+      "title": "Digests",
+      "type": "array"
+    },
+    "pinned_at": {
+      "format": "date-time",
+      "title": "Pinned At",
+      "type": "string"
+    },
+    "reminders": {
+      "items": {
+        "$ref": "#/$defs/ReminderBinding"
+      },
+      "title": "Reminders",
+      "type": "array"
+    },
+    "retired_out_of_week_bindings": {
+      "minimum": 0,
+      "title": "Retired Out Of Week Bindings",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "current_week_start",
+    "pinned_at",
+    "reminders",
+    "digests",
+    "declines",
+    "cards",
+    "debug_cards",
+    "attempts",
+    "retired_out_of_week_bindings"
+  ],
+  "title": "DeliveryLedger",
+  "type": "object"
+}
