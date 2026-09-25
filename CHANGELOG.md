@@ -122,6 +122,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: the model client is built at startup from the configured Kanata endpoint, key and
+  per-role models; an unreachable model list leaves extraction and chat degraded rather
+  than stopping the bot, and unpublished reasoning levels are reported.
 - v5: notices from schedule changes (admin edits, inbox and ✅ approvals, requests,
   rollbacks, expiry) are saved with the change itself and posted once by the reminder
   tick, surviving crashes without being lost or sent twice.

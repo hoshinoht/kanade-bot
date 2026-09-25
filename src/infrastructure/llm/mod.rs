@@ -10,6 +10,7 @@ mod provider;
 mod request;
 mod response;
 mod schema;
+pub mod setup;
 mod shaping;
 mod wire;
 

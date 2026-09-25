@@ -12,6 +12,7 @@ mod payload;
 mod runner;
 mod safety;
 mod schema;
+mod setup;
 mod stub;
 mod support;
 mod tool_rounds;
