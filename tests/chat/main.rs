@@ -11,6 +11,7 @@ mod gate;
 mod identity;
 mod looping;
 mod model;
+mod pilot;
 mod propose;
 mod read_tools;
 mod sanitize;

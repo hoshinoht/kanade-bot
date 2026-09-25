@@ -4,6 +4,7 @@ pub mod context;
 pub mod gate;
 pub mod nudge;
 pub mod persona;
+pub mod pilot;
 pub mod prompts;
 pub mod sanitize;
 pub mod tools;

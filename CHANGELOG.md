@@ -174,6 +174,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
   filled line is checked again. Kanade has her own rewrite voice and request lines.
   Extraction now plans the redirect for each kept change (still cards only while the
   public portal is closed) and uses up the weekly tip only when a link is posted.
+- v5: chat traffic and safety: per-member allowance overrides from the admin store,
+  refunds when a question fails through no fault of the asker, a short per-channel
+  queue instead of dropping questions, a guard that pauses clean retries during a storm,
+  a fixed reply when the content filter blocks an answer (personas may set their own
+  `failures.content_blocked` line), and blocked questions kept out of everyone's later
+  context. Not yet wired to Discord.
 - v5: chat question loop and context: history, reply chains and anchors trimmed to a
   token budget, one limiter slot per question with a round cap plus one clean retry
   (also used when the content filter stops a reply), a failed card post told to the

@@ -7,6 +7,7 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
 use super::{
     PersonaError, YamlIssue,
+    failures::{Failures, RawFailures},
     id::{PersonaId, ProfileId, validate_alias},
     nudges::{Nudges, RawNudges},
     staging,
@@ -66,6 +67,8 @@ struct RawBundle {
     compact: Option<RawCompact>,
     #[serde(default)]
     nudges: Option<RawNudges>,
+    #[serde(default)]
+    failures: Option<RawFailures>,
 }
 
 #[derive(Deserialize)]
@@ -344,6 +347,7 @@ pub struct Bundle {
     pub staging: Staging,
     pub compact: Option<Compact>,
     pub nudges: Option<Nudges>,
+    pub failures: Option<Failures>,
 }
 
 /// Parse a bundle whose file name was derived from `expected`.
@@ -363,6 +367,7 @@ pub fn parse_bundle(text: &str, expected: &PersonaId) -> Result<Bundle, PersonaE
         staging: raw.staging.try_into()?,
         compact: raw.compact.map(Compact::try_from).transpose()?,
         nudges: raw.nudges.map(Nudges::try_from).transpose()?,
+        failures: raw.failures.map(Failures::try_from).transpose()?,
     })
 }
 

@@ -29,7 +29,7 @@ are rejected. Block scalars (`|`) keep their internal newlines.
 - **Bundle:** `id` (matching the filename), `identity`, `behaviour` with a
   required `prompt` and optional one-line `voice`, a complete `staging` map
   (`schedule`, `guide`, `guide_named`, `write`, `generic`), optional
-  `compact` and optional `nudges`. `compact` holds v5-only prompts (text of
+  `compact`, optional `nudges` and optional `failures`. `compact` holds v5-only prompts (text of
   any length) that ask a small model to rewrite a single line: at least one
   of `header_rewrite` (reminder header lines) and `nudge_rewrite`
   (self-service nudge lead-ins). The tracked Kanade bundle carries
@@ -48,6 +48,21 @@ trimmed, with no mentions (`<@…>`, `<#…>`, `@everyone`, `@here`).
 `guide_named` holds exactly one literal `{boss}` and no other braces; the other
 lines hold no braces at all. The boss name is substituted literally; an unsafe
 name or a result over 300 characters shows the `guide` line instead.
+
+### Failures
+
+A fixed line posted when the provider's content filter blocked an answer
+(after the clean retry); the provider's own refusal text is never shown.
+Without it the code-owned neutral line is used. The tracked Kanade bundle
+declares none.
+
+```yaml
+failures:
+  content_blocked: "Nope, not touching that one."
+```
+
+The section must declare the line: one line of at most 200 characters,
+unpadded, with no mentions, links or braces. It is posted verbatim.
 
 ### Nudges
 

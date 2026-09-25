@@ -8,7 +8,8 @@ mod budget;
 mod state;
 
 pub use assemble::{
-    Parent, QuestionMessage, Reference, assemble, build_turns, reply_chain, system_prompt,
+    Parent, QuestionMessage, Reference, assemble, build_turns, question_turn, reply_chain,
+    system_prompt,
 };
 pub use budget::{ContextBudgetError, budgeted};
 pub use state::{Conversations, card_focus};
@@ -53,6 +54,9 @@ pub struct ChatTurn {
     pub message_id: Option<String>,
     /// Monotonic seconds; unstamped turns never expire.
     pub at: Option<f64>,
+    /// Flagged (content-filtered) or the bot's reply to such a turn: kept
+    /// only as [`WITHHELD`] in anyone's context (pollution containment).
+    pub withheld: bool,
 }
 
 impl ChatTurn {
@@ -62,6 +66,19 @@ impl ChatTurn {
             content: content.into(),
             message_id,
             at: None,
+            withheld: false,
+        }
+    }
+
+    /// What a prompt shows for this turn.
+    pub fn prompt_text(&self) -> &str {
+        if self.withheld {
+            WITHHELD
+        } else {
+            &self.content
         }
     }
 }
+
+/// The neutral placeholder for a withheld turn (user decision 2026-09-25).
+pub const WITHHELD: &str = "[message withheld]";

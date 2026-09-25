@@ -118,13 +118,29 @@ pub fn build_turns(
     seen.extend(chain.iter().filter_map(|turn| turn.message_id.clone()));
     let mut turns = state.reanchored(message.replied_message_id(), &seen);
     turns.extend(live);
-    turns.extend(chain);
+    turns.extend(chain.into_iter().map(|mut turn| {
+        // A withheld message is never pulled back in through a reply.
+        turn.withheld = turn
+            .message_id
+            .as_deref()
+            .is_some_and(|id| state.is_withheld(id));
+        turn
+    }));
     turns.push(ChatTurn::new(
         TurnRole::User,
         speaker(directory, &message.author_id, strip(&message.content)),
         None,
     ));
     turns
+}
+
+/// The question as history remembers it (keyed by its message id).
+pub fn question_turn(message: &QuestionMessage, directory: &(impl Directory + ?Sized)) -> ChatTurn {
+    ChatTurn::new(
+        TurnRole::User,
+        speaker(directory, &message.author_id, strip(&message.content)),
+        Some(message.id.clone()).filter(|id| !id.is_empty()),
+    )
 }
 
 /// The per-turn system prompt: persona, clock header, runtime model and the
@@ -154,7 +170,7 @@ pub fn assemble(turns: &[ChatTurn], system: String, model_context_tokens: usize)
         .max(CONVERSATION_FLOOR_TOKENS);
     let mut kept: &[ChatTurn] = turns;
     while kept.len() > 1 {
-        let contents: Vec<&str> = kept.iter().map(|turn| turn.content.as_str()).collect();
+        let contents: Vec<&str> = kept.iter().map(ChatTurn::prompt_text).collect();
         if estimate_tokens(&contents.join("\n\n")) <= available {
             break;
         }
@@ -163,10 +179,10 @@ pub fn assemble(turns: &[ChatTurn], system: String, model_context_tokens: usize)
     let mut messages = vec![Message::System { content: system }];
     messages.extend(kept.iter().map(|turn| match turn.role {
         TurnRole::User => Message::User {
-            content: turn.content.clone(),
+            content: turn.prompt_text().to_owned(),
         },
         TurnRole::Assistant => Message::Assistant {
-            content: Some(turn.content.clone()),
+            content: Some(turn.prompt_text().to_owned()),
             tool_calls: Vec::new(),
         },
     }));

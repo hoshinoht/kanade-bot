@@ -98,7 +98,49 @@ the prompt). Outcomes: `answered`; `refused`/`clarified` when a write was
 refused (clarified if the reply asks); `content_blocked` (guardrail
 `{"content_filter": true}`), `timeout`, `turned_away` (governor refusals,
 gateway admission, backend down), else `error`. `clean_retry` is a flag;
-`rate_limited` and `withheld` are recorded by the caller (gate, pre-screen).
+`rate_limited` rows come from `ChatPilot::limited` and the `withheld` flag
+from `ChatPilot::conclude` (below).
+
+## Pilot: traffic and safety (C3)
+
+`chat::pilot` wraps one question; it holds no Discord types (replies go
+through `ReplyPort::post_reply`, the adapter wires it later).
+
+- **Allowance.** v4's per-member (4/300 s) and guild-pool (12/900 s)
+  windows; `Allowance::apply` loads the defaults and replaces the per-member
+  overrides (`chat_allowance_overrides`, `window_ms` → seconds). v5 refunds:
+  a question whose failure charges `Refunded` (shed, turned away, before any
+  model work), or one dropped from the queue, cancelled or expired, gives its
+  slot back to both windows (`Allowance::refund` with the stamp the gate
+  spent). A refused member gets v4's static limited reply (their own
+  override's count) once per refusal episode, and a `rate_limited` row.
+- **Queue** (user decision 2026-09-24; v4 dropped a second question with a
+  busy reaction). `Traffic`: one answer per channel; later questions queue
+  FIFO per channel (default 3 per channel, 10 guild-wide, 120 s wait), get a
+  1-based position, are given up (`Busy`) past a bound, and are cancellable
+  by message id. Reactions and position display belong to the adapter.
+- **Clean-retry guard.** `CleanRetryGuard`: one clean retry per member per
+  600 s; more than 3 in 60 s suspends clean retries guild-wide for 600 s and
+  raises one `StormAlert`. The caller sets `AnswerSettings::clean_retry`;
+  guarded off, the question fails with its original reason and no retry is
+  sent. The governor's retry budget and breaker still apply.
+- **Routing.** v4 had no model pre-screen, so `ChatPilot::route` is
+  code-only (`bundles::select` over the text and card, no intent label).
+- **Glue.** `ChatPilot::conclude` posts the answer or a fixed failure line
+  (content blocked: the persona's `failures.content_blocked`, else
+  `CONTENT_BLOCKED_REPLY`; any other failure: v4's `FAILURE_REPLY`),
+  remembers the question and reply, anchors the reply id, notes
+  `Generation::focus`, refunds, records a sent clean retry with the guard
+  and builds the log row.
+- **Pollution containment.** A content-blocked question and the reply to it
+  are withheld (`Conversations::withhold`): every later prompt shows them as
+  `[message withheld]`, they are never anchored or re-anchored, and a reply
+  chain through them is withheld too.
+- **Limits.** `ChatPilot::limits` returns `LimitsView` (member and pool
+  used/limit/window/resets-in with override flags, the queue, the guard) for
+  the API's Limits page.
+- Not here: strategy prefetch and source attribution (no boss-knowledge v2
+  renderer outside `api`), and a model pre-screen.
 
 ## Vectors and named differences
 

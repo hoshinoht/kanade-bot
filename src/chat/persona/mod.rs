@@ -3,6 +3,7 @@
 
 mod compiler;
 mod error;
+mod failures;
 mod id;
 mod loader;
 mod markdown;
@@ -15,6 +16,7 @@ mod staging;
 
 pub use compiler::{CompileProvenance, CompiledPersona, ExampleSource, NudgeSeeds, VoiceSource};
 pub use error::{PersonaError, YamlIssue};
+pub use failures::{Failures, MAX_FAILURE_CHARS, check_failure_line};
 pub use id::{EXAMPLE_PROFILE, FALLBACK_PERSONA, PersonaId, ProfileId, RoleId};
 pub use loader::{Loaded, PersonaRoot, ProfileIssue, ProfileSet, Source};
 pub use nudges::{

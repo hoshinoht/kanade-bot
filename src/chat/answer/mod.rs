@@ -68,6 +68,9 @@ pub struct AnswerSettings {
     pub max_output_tokens: u32,
     /// `MODEL_CONTEXT_TOKENS`.
     pub model_context_tokens: usize,
+    /// The clean retry may be sent (the caller's per-member and storm
+    /// guards); when `false` the question fails with the original reason.
+    pub clean_retry: bool,
 }
 
 /// One question as the loop receives it.

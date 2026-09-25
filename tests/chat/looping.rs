@@ -80,6 +80,7 @@ pub fn settings(input: &Value, tool_rounds: u8) -> AnswerSettings {
             raw["model_context_tokens"].as_u64().expect("context"),
         )
         .expect("usize"),
+        clean_retry: true,
     }
 }
 

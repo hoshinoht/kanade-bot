@@ -449,16 +449,21 @@ where
         }
     };
 
-    if let Some(retry) = retry {
-        clean_retry(
-            &mut state,
-            retry,
-            clean_base,
-            session,
-            identity,
-            (&alias, seconds, context_tokens, round),
-        )
-        .await;
+    match retry {
+        Some(retry) if settings.clean_retry => {
+            clean_retry(
+                &mut state,
+                retry,
+                clean_base,
+                session,
+                identity,
+                (&alias, seconds, context_tokens, round),
+            )
+            .await;
+        }
+        // Guarded off (per-member limit or storm guard): no retry is sent.
+        Some(retry) => state.generation.failure = Some(retry.failure()),
+        None => {}
     }
     let mut generation = state.generation;
     generation.requests = session.requests_used();

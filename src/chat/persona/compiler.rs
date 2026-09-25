@@ -64,6 +64,7 @@ pub struct CompiledPersona {
     nudge_rewrite: Option<String>,
     profile_nudges: Option<Nudges>,
     bundle_nudges: Option<Nudges>,
+    content_blocked: Option<String>,
     provenance: CompileProvenance,
 }
 
@@ -169,6 +170,10 @@ impl CompiledPersona {
             examples,
             profile_nudges: profile.and_then(|profile| profile.nudges.clone()),
             bundle_nudges: bundle.nudges.clone(),
+            content_blocked: bundle
+                .failures
+                .as_ref()
+                .and_then(|failures| failures.content_blocked.clone()),
             provenance: CompileProvenance {
                 bundle: bundle.id.clone(),
                 profile: profile.map(|profile| profile.id.clone()),
@@ -225,6 +230,11 @@ impl CompiledPersona {
 
     pub fn nudge_rewrite(&self) -> Option<&str> {
         self.nudge_rewrite.as_deref()
+    }
+
+    /// The bundle's fixed line for a content-filtered answer, if it has one.
+    pub fn content_blocked_line(&self) -> Option<&str> {
+        self.content_blocked.as_deref()
     }
 
     /// Profile pools, then bundle pools, then neutral built-ins.

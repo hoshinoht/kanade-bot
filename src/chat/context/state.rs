@@ -39,6 +39,9 @@ pub struct Conversations {
     /// Insertion-ordered, oldest first.
     anchors: Vec<(String, Anchor)>,
     replied: Vec<(String, Option<String>)>,
+    /// Message ids of withheld turns, oldest first, so a reply chain or a
+    /// later remember never brings their text back.
+    withheld: VecDeque<String>,
 }
 
 impl Conversations {
@@ -49,7 +52,36 @@ impl Conversations {
             focus: HashMap::new(),
             anchors: Vec::new(),
             replied: Vec::new(),
+            withheld: VecDeque::new(),
         }
+    }
+
+    /// Withhold a message from every later context: history, reply chains
+    /// and anchors (bounded like the reference cache).
+    pub fn withhold(&mut self, message_id: &str) {
+        if message_id.is_empty() || self.is_withheld(message_id) {
+            return;
+        }
+        if self.withheld.len() >= REFERENCE_CACHE {
+            self.withheld.pop_front();
+        }
+        self.withheld.push_back(message_id.to_owned());
+        for turns in self.history.values_mut() {
+            for turn in turns.iter_mut() {
+                if turn.message_id.as_deref() == Some(message_id) {
+                    turn.withheld = true;
+                }
+            }
+        }
+        self.anchors.retain(|(id, anchor)| {
+            id != message_id
+                && anchor.question.message_id.as_deref() != Some(message_id)
+                && anchor.answer.message_id.as_deref() != Some(message_id)
+        });
+    }
+
+    pub fn is_withheld(&self, message_id: &str) -> bool {
+        self.withheld.iter().any(|id| id == message_id)
     }
 
     /// The channel's live history, oldest first, after dropping expired turns.
@@ -69,6 +101,13 @@ impl Conversations {
     /// channel's history length.
     pub fn remember(&mut self, channel_id: &str, mut turn: ChatTurn, now: f64) -> usize {
         turn.at.get_or_insert(now);
+        if turn
+            .message_id
+            .as_deref()
+            .is_some_and(|id| self.is_withheld(id))
+        {
+            turn.withheld = true;
+        }
         self.history(channel_id, now);
         let turns = self.history.entry(channel_id.to_owned()).or_default();
         turns.push_back(turn);
@@ -127,6 +166,10 @@ impl Conversations {
         let Some(key) = message_id.filter(|id| !id.is_empty()) else {
             return;
         };
+        // A withheld exchange is never re-anchored.
+        if question.withheld || answer.withheld || self.is_withheld(key) {
+            return;
+        }
         if self.anchors.len() >= ANCHOR_CACHE {
             self.anchors.remove(0);
         }
