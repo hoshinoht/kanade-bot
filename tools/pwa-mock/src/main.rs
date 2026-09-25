@@ -4,6 +4,8 @@
 
 mod api;
 mod assets;
+#[cfg(test)]
+mod contract;
 mod headers;
 mod mock;
 mod reports;
@@ -116,6 +118,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public: false,
         boss_dir: Arc::new(boss_dir.clone()),
     };
+    let (admin, public) = routers(app, &web);
+
+    let admin_listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{admin_port}")).await?;
+    let public_listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{public_port}")).await?;
+    eprintln!(
+        "admin  http://127.0.0.1:{admin_port}\npublic http://127.0.0.1:{public_port}\nboss art {}",
+        boss_dir.display()
+    );
+
+    tokio::try_join!(
+        axum::serve(admin_listener, admin).with_graceful_shutdown(shutdown()),
+        axum::serve(public_listener, public).with_graceful_shutdown(shutdown()),
+    )?;
+    Ok(())
+}
+
+/// The admin and public origins over one shared store.
+fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
     let public_app = App {
         public: true,
         ..app.clone()
@@ -189,21 +209,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/public/week", get(api::public_week))
         .route("/api/public/status", get(api::public_status));
 
-    let admin = common(&app, admin_api, web.join("apps/admin/dist"));
-    let public = common(&public_app, public_api, web.join("apps/public/dist"));
-
-    let admin_listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{admin_port}")).await?;
-    let public_listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{public_port}")).await?;
-    eprintln!(
-        "admin  http://127.0.0.1:{admin_port}\npublic http://127.0.0.1:{public_port}\nboss art {}",
-        boss_dir.display()
-    );
-
-    tokio::try_join!(
-        axum::serve(admin_listener, admin).with_graceful_shutdown(shutdown()),
-        axum::serve(public_listener, public).with_graceful_shutdown(shutdown()),
-    )?;
-    Ok(())
+    (
+        common(&app, admin_api, web.join("apps/admin/dist")),
+        common(&public_app, public_api, web.join("apps/public/dist")),
+    )
 }
 
 async fn shutdown() {

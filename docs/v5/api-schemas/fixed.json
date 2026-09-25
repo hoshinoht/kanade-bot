@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/fixed.json",
+  "title": "Weekly timings (fixed runs) and boss-text validation",
+  "$defs": {
+    "FixedRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "weekday", "weekday_name", "time", "bosses", "participants",
+        "channel_id", "channel_name", "channel_watched", "owner", "note", "runs"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "description": "0 = Monday." },
+        "weekday_name": { "type": "string" },
+        "time": { "$ref": "week.json#/$defs/LocalTime" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "participants": { "$ref": "common.json#/$defs/Members" },
+        "channel_id": { "type": "string" },
+        "channel_name": { "type": "string" },
+        "channel_watched": { "type": "boolean" },
+        "owner": { "type": "string" },
+        "note": { "$ref": "common.json#/$defs/NullableString" },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_id", "short_id", "week", "day", "time", "status", "amended"],
+            "properties": {
+              "run_id": { "type": "string" },
+              "short_id": { "type": "string" },
+              "week": { "$ref": "common.json#/$defs/WeekKey" },
+              "day": { "type": "integer", "minimum": 0, "maximum": 6 },
+              "time": { "$ref": "week.json#/$defs/RunTime" },
+              "status": { "$ref": "common.json#/$defs/RunStatus" },
+              "amended": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "FixedRows": { "type": "array", "items": { "$ref": "#/$defs/FixedRow" } },
+    "FixedRetired": {
+      "description": "`DELETE /api/admin/fixed/{id}`: how many live runs were cancelled.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cancelled"],
+      "properties": { "cancelled": { "type": "integer", "minimum": 0 } }
+    },
+    "ValidateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bosses"],
+      "properties": { "bosses": { "$ref": "common.json#/$defs/Bosses" } }
+    }
+  }
+}

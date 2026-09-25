@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/inbox.json",
+  "title": "Inbox: extractor proposals and self-service requests",
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "author", "at", "content", "url", "missing"],
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "at": { "type": "string" },
+        "content": { "$ref": "common.json#/$defs/NullableString" },
+        "url": { "$ref": "common.json#/$defs/NullableString" },
+        "missing": { "type": "boolean" }
+      }
+    },
+    "ProposalPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_effect", "changes", "conflicts"],
+      "properties": {
+        "no_effect": { "type": "boolean" },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "from", "to"],
+            "properties": {
+              "field": { "type": "string" },
+              "from": { "type": "string" },
+              "to": { "type": "string" }
+            }
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "expected", "found"],
+            "properties": {
+              "field": { "type": "string" },
+              "expected": { "type": "string" },
+              "found": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "ProposalChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "label", "when", "amended"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "label": { "type": "string" },
+        "when": { "type": "string" },
+        "amended": { "type": "boolean" }
+      }
+    },
+    "Proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "kind", "kind_label", "source", "tab", "version", "flags", "preview",
+        "expires_at", "choices", "public_summary", "bosses", "run_id", "from_when", "when",
+        "participants", "confidence", "is_question", "channel", "read_at", "summary", "evidence",
+        "card_url", "self_service"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "kind": { "enum": ["move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix"] },
+        "kind_label": { "type": "string" },
+        "source": { "enum": ["extraction", "self_service"] },
+        "tab": { "enum": ["extractor", "self_service"] },
+        "version": { "type": "integer", "minimum": 0 },
+        "flags": {
+          "type": "array",
+          "items": { "enum": ["conflict", "expired", "requester_frozen", "no_effect"] }
+        },
+        "preview": { "$ref": "#/$defs/ProposalPreview" },
+        "expires_at": { "$ref": "common.json#/$defs/NullableString" },
+        "choices": {
+          "anyOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/ProposalChoice" } },
+            { "type": "null" }
+          ]
+        },
+        "public_summary": { "$ref": "common.json#/$defs/NullableString" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "run_id": { "$ref": "common.json#/$defs/NullableString" },
+        "from_when": { "$ref": "common.json#/$defs/NullableString" },
+        "when": { "type": "string" },
+        "participants": { "$ref": "common.json#/$defs/Members" },
+        "confidence": { "type": ["number", "null"] },
+        "is_question": { "type": "boolean" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "read_at": { "type": "string" },
+        "summary": { "type": "string" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" } },
+        "card_url": { "$ref": "common.json#/$defs/NullableString" },
+        "self_service": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["member", "via", "note"],
+              "properties": {
+                "member": { "$ref": "common.json#/$defs/Member" },
+                "via": { "type": "string" },
+                "note": { "$ref": "common.json#/$defs/NullableString" }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "Proposals": { "type": "array", "items": { "$ref": "#/$defs/Proposal" } }
+  }
+}

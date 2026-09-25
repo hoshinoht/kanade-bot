@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/chat.json",
+  "title": "Chatbot log and turn detail",
+  "$defs": {
+    "ChatOutcome": {
+      "enum": [
+        "answered",
+        "refused",
+        "clarified",
+        "error",
+        "timeout",
+        "rate_limited",
+        "turned_away",
+        "content_blocked",
+        "withheld",
+        "clean_retry"
+      ]
+    },
+    "ChatRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "member", "channel", "channel_id", "model", "models", "latency_ms", "outcome", "asked", "tools_used"],
+      "properties": {
+        "id": { "type": "string" },
+        "at": { "type": "string" },
+        "member": { "$ref": "common.json#/$defs/Member" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "model": { "type": "string" },
+        "models": { "type": "array", "items": { "type": "string" } },
+        "latency_ms": { "type": "integer", "minimum": 0 },
+        "outcome": { "$ref": "#/$defs/ChatOutcome" },
+        "asked": { "type": "string" },
+        "tools_used": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ChatSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "count", "answered", "refused", "errors", "p50_ms", "tool_calls"],
+      "properties": {
+        "model": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 },
+        "answered": { "type": "integer", "minimum": 0 },
+        "refused": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "p50_ms": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "rows", "total", "facets"],
+      "properties": {
+        "summary": { "type": "array", "items": { "$ref": "#/$defs/ChatSummary" } },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/ChatRow" } },
+        "total": { "type": "integer", "minimum": 0 },
+        "facets": { "$ref": "common.json#/$defs/LogFacets" }
+      }
+    },
+    "ChatTurn": {
+      "description": "ChatRow plus the full turn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "at", "member", "channel", "channel_id", "model", "models", "latency_ms", "outcome", "asked", "tools_used",
+        "said", "tools", "rounds", "cards", "raw"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "at": { "type": "string" },
+        "member": { "$ref": "common.json#/$defs/Member" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "model": { "type": "string" },
+        "models": { "type": "array", "items": { "type": "string" } },
+        "latency_ms": { "type": "integer", "minimum": 0 },
+        "outcome": { "$ref": "#/$defs/ChatOutcome" },
+        "asked": { "type": "string" },
+        "tools_used": { "type": "array", "items": { "type": "string" } },
+        "said": { "type": "string" },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "arguments", "result", "took_ms", "outcome"],
+            "properties": {
+              "name": { "type": "string" },
+              "arguments": { "type": "string" },
+              "result": { "type": "string" },
+              "took_ms": { "type": "integer", "minimum": 0 },
+              "outcome": { "type": "string" }
+            }
+          }
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["round", "requested_tools", "finish"],
+            "properties": {
+              "round": { "type": "integer", "minimum": 1 },
+              "requested_tools": { "type": "array", "items": { "type": "string" } },
+              "finish": { "type": "string" }
+            }
+          }
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "url"],
+            "properties": {
+              "kind": { "type": "string" },
+              "url": { "type": "string" }
+            }
+          }
+        },
+        "raw": { "type": "string" }
+      }
+    }
+  }
+}

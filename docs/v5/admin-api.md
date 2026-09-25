@@ -5,6 +5,7 @@ Status: every route below is what the PWA calls today against the dev mock
 it. DTO names are from `web/packages/api-types`. Errors are `ApiError`
 (`{error, message}`); mutations that touch a run take the week's `version`
 and answer `409` with a fresh read when it moved underneath.
+Response JSON Schemas (frozen contract, endpoint index): [`api-schemas/`](api-schemas/README.md).
 
 Conventions: `?week=this|next` selects the boss week on week reads; ids in
 paths are URL-encoded (runs, inbox, members, fixed, limits, rescan); `PATCH` bodies are

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/reminders.json",
+  "title": "Reminder cards the bot will post or posted",
+  "$defs": {
+    "ReminderRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_id", "run_short_id", "kind", "state", "at", "bosses", "party", "url"],
+      "properties": {
+        "id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "run_short_id": { "type": "string" },
+        "kind": { "$ref": "common.json#/$defs/CardKind" },
+        "state": { "enum": ["queued", "due", "sent", "stale"] },
+        "at": { "type": "string" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "party": { "type": "array", "items": { "type": "string" } },
+        "url": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "Reminders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upcoming", "sent"],
+      "properties": {
+        "upcoming": { "type": "array", "items": { "$ref": "#/$defs/ReminderRow" } },
+        "sent": { "type": "array", "items": { "$ref": "#/$defs/ReminderRow" } }
+      }
+    }
+  }
+}

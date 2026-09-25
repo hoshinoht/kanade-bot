@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/bosses.json",
+  "title": "Boss list, knowledge pages (boss/knowledge schema v2) and event bosses",
+  "$defs": {
+    "DifficultyOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["letter", "name", "token", "in_use"],
+      "properties": {
+        "letter": { "$ref": "common.json#/$defs/Difficulty" },
+        "name": { "type": "string" },
+        "token": { "type": "string" },
+        "in_use": { "type": "boolean" }
+      }
+    },
+    "BossRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "level", "hue", "portrait", "difficulties"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "integer" },
+        "hue": { "type": "integer", "minimum": 0, "maximum": 359 },
+        "portrait": { "$ref": "common.json#/$defs/NullableString" },
+        "difficulties": { "type": "array", "items": { "$ref": "#/$defs/DifficultyOption" } }
+      }
+    },
+    "BossRows": { "type": "array", "items": { "$ref": "#/$defs/BossRow" } },
+    "EventInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "availability"],
+      "properties": {
+        "name": { "type": "string" },
+        "availability": { "type": "string" }
+      }
+    },
+    "DifficultyFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "enum": ["Easy", "Normal", "Hard", "Chaos", "Extreme"] },
+        "entry_level": { "type": "integer" },
+        "boss_level": { "type": "integer" },
+        "pdr_percent": { "type": "number" },
+        "party_max": { "type": "integer" },
+        "force": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "enum": ["arcane", "sacred"] },
+            "value": { "type": "number" }
+          }
+        },
+        "hp": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "value"],
+            "properties": {
+              "phase": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "recommended_spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "type": "string" },
+            "text": { "type": "string" }
+          }
+        },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "KnowledgeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "author", "kind", "fetched"],
+      "properties": {
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "kind": { "enum": ["guide", "wiki", "tool", "official"] },
+        "fetched": { "type": "string" },
+        "updated": { "type": "string" }
+      }
+    },
+    "KnowledgeDoc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "summary", "core", "danger", "tips", "sources"],
+      "properties": {
+        "boss": { "type": "string" },
+        "summary": { "type": "string" },
+        "core": { "type": "array", "items": { "type": "string" } },
+        "danger": { "type": "array", "items": { "type": "string" } },
+        "tips": { "type": "array", "items": { "type": "string" } },
+        "difficulty_notes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "e": { "type": "string" },
+            "n": { "type": "string" },
+            "h": { "type": "string" },
+            "c": { "type": "string" },
+            "x": { "type": "string" }
+          }
+        },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "event": { "$ref": "#/$defs/EventInfo" },
+        "difficulties": { "type": "array", "items": { "$ref": "#/$defs/DifficultyFacts" } },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/KnowledgeSource" } }
+      }
+    },
+    "Knowledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "level", "portrait", "hue", "researched_as_of", "path", "in_use", "doc"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": ["integer", "null"] },
+        "portrait": { "$ref": "common.json#/$defs/NullableString" },
+        "hue": { "type": "integer", "minimum": 0, "maximum": 359 },
+        "researched_as_of": { "$ref": "common.json#/$defs/NullableString" },
+        "path": { "type": "string" },
+        "in_use": { "type": "array", "items": { "$ref": "common.json#/$defs/Difficulty" } },
+        "doc": { "$ref": "#/$defs/KnowledgeDoc" }
+      }
+    },
+    "EventBoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "event", "summary"],
+      "properties": {
+        "key": { "type": "string" },
+        "event": { "$ref": "#/$defs/EventInfo" },
+        "summary": { "type": "string" }
+      }
+    },
+    "EventBosses": { "type": "array", "items": { "$ref": "#/$defs/EventBoss" } }
+  }
+}

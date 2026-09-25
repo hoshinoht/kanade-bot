@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/common.json",
+  "title": "Shared API shapes",
+  "$defs": {
+    "RunStatus": { "enum": ["planned", "confirmed", "at_risk", "otot", "done", "cancelled"] },
+    "Answer": { "enum": ["yes", "no", "maybe", "waiting"] },
+    "Difficulty": { "enum": ["e", "n", "h", "c", "x"] },
+    "CardKind": { "enum": ["morning", "T-1h", "T-15m"] },
+    "WeekKey": { "enum": ["this", "next"] },
+    "ActorKind": { "enum": ["member", "admin", "system"] },
+    "Surface": {
+      "enum": [
+        "discord",
+        "admin_portal",
+        "public_portal",
+        "cli",
+        "chat_approval",
+        "extraction_approval",
+        "delivery_tick",
+        "rollback",
+        "import"
+      ]
+    },
+    "NullableString": { "type": ["string", "null"] },
+    "Boss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "key", "name", "difficulty", "level", "portrait", "portrait_sm", "art", "hue"],
+      "properties": {
+        "token": { "type": "string" },
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "difficulty": { "$ref": "#/$defs/Difficulty" },
+        "level": { "type": ["integer", "null"] },
+        "portrait": { "$ref": "#/$defs/NullableString" },
+        "portrait_sm": { "$ref": "#/$defs/NullableString" },
+        "art": { "$ref": "#/$defs/NullableString" },
+        "hue": { "type": "integer", "minimum": 0, "maximum": 359 }
+      }
+    },
+    "Bosses": { "type": "array", "items": { "$ref": "#/$defs/Boss" } },
+    "Tally": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "total"],
+      "properties": {
+        "on": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "Members": { "type": "array", "items": { "$ref": "#/$defs/Member" } },
+    "Channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "Channels": { "type": "array", "items": { "$ref": "#/$defs/Channel" } },
+    "WeekDay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "date", "dow", "is_reset", "is_today"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "dow": { "type": "string" },
+        "is_reset": { "type": "boolean" },
+        "is_today": { "type": "boolean" }
+      }
+    },
+    "Head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "hash"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "hash": { "type": "string" }
+      }
+    },
+    "Message": {
+      "description": "`{ message }` acknowledgements (ping, approve, reject, digest, window reset).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": { "message": { "type": "string" } }
+    },
+    "ReloadResult": {
+      "description": "`POST /api/admin/config/profiles/reload` (admin-api.md `{message, reloaded}`; api-types has no named type).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "reloaded"],
+      "properties": {
+        "message": { "type": "string" },
+        "reloaded": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "LogFacets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models", "tools", "outcomes", "channels"],
+      "properties": {
+        "models": { "type": "array", "items": { "type": "string" } },
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "outcomes": { "type": "array", "items": { "type": "string" } },
+        "channels": { "$ref": "#/$defs/Channels" }
+      }
+    }
+  }
+}

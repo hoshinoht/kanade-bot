@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/config.json",
+  "title": "Runtime settings (GET/PATCH /api/admin/config) and the channel access report",
+  "$defs": {
+    "SelfServiceMode": { "enum": ["cards_and_link", "link_first", "cards_only"] },
+    "Rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "window_s"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "window_s": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ModelInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "trust_zone", "leaves_homelab", "function_tools", "structured_output",
+        "sampling_controls", "reasoning_control", "reasoning_efforts", "admission"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "trust_zone": { "enum": ["homelab", "external", "unknown"] },
+        "leaves_homelab": { "type": "boolean" },
+        "function_tools": { "type": "boolean" },
+        "structured_output": { "type": "boolean" },
+        "sampling_controls": { "type": "boolean" },
+        "reasoning_control": { "type": "boolean" },
+        "reasoning_efforts": {
+          "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+        },
+        "admission": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["max_in_flight"],
+              "properties": {
+                "max_in_flight": { "type": "integer", "minimum": 0 },
+                "adapter_max_in_flight": { "type": "integer", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "RoleModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "reasoning"],
+      "properties": {
+        "alias": { "type": "string" },
+        "reasoning": { "type": "string", "description": "`off`, a published effort, or `\"\"` = same as extraction (chat and rewrite only)." }
+      }
+    },
+    "CapacityGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "group", "permits"],
+      "properties": {
+        "model": { "type": "string" },
+        "group": { "type": "string" },
+        "permits": { "type": ["integer", "null"] }
+      }
+    },
+    "AliasLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "max_in_flight", "source"],
+      "properties": {
+        "alias": { "type": "string" },
+        "max_in_flight": { "type": "integer", "minimum": 0 },
+        "adapter_max_in_flight": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["published", "declared"] }
+      }
+    },
+    "KeyLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_in_flight", "shared"],
+      "properties": {
+        "max_in_flight": { "type": "integer", "minimum": 0 },
+        "shared": { "type": "boolean" }
+      }
+    },
+    "CapacityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "message"],
+      "properties": {
+        "level": { "enum": ["ok", "warning", "error"] },
+        "message": { "type": "string" }
+      }
+    },
+    "RoleProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_id", "role_name", "profile"],
+      "properties": {
+        "role_id": { "type": "string" },
+        "role_name": { "type": "string" },
+        "profile": { "type": "string" }
+      }
+    },
+    "ReplyProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "public", "voice", "prompt_summary"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "public": { "type": "boolean" },
+        "voice": { "type": "string" },
+        "prompt_summary": { "type": "string" }
+      }
+    },
+    "ConfigView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "manage_messages", "env"],
+      "properties": {
+        "pings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["day_of_ping_time", "countdown_minutes"],
+          "properties": {
+            "day_of_ping_time": { "type": "string" },
+            "countdown_minutes": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "watching": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["paused", "extract_enabled"],
+          "properties": {
+            "paused": { "type": "boolean" },
+            "extract_enabled": { "type": "boolean" }
+          }
+        },
+        "chatbot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "configured", "missing_env", "member_rate", "guild_rate"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "configured": { "type": "boolean" },
+            "missing_env": { "type": "array", "items": { "type": "string" } },
+            "member_rate": { "$ref": "#/$defs/Rate" },
+            "guild_rate": { "$ref": "#/$defs/Rate" }
+          }
+        },
+        "notifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quiet_mode"],
+          "properties": { "quiet_mode": { "type": "boolean" } }
+        },
+        "self_service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "effective_mode", "public_portal"],
+          "properties": {
+            "mode": { "$ref": "#/$defs/SelfServiceMode" },
+            "effective_mode": { "$ref": "#/$defs/SelfServiceMode" },
+            "public_portal": { "type": "boolean" }
+          }
+        },
+        "persona": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["active", "personas", "profiles", "role_profiles"],
+          "properties": {
+            "active": { "type": "string" },
+            "personas": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "name", "bundle"],
+                "properties": {
+                  "key": { "type": "string" },
+                  "name": { "type": "string" },
+                  "bundle": { "type": "string" }
+                }
+              }
+            },
+            "profiles": { "type": "array", "items": { "$ref": "#/$defs/ReplyProfile" } },
+            "role_profiles": { "type": "array", "items": { "$ref": "#/$defs/RoleProfile" } }
+          }
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reachable", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise"],
+          "properties": {
+            "reachable": { "type": "boolean" },
+            "catalog": { "type": "array", "items": { "$ref": "#/$defs/ModelInfo" } },
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["extraction", "chat", "rewrite"],
+              "properties": {
+                "extraction": { "$ref": "#/$defs/RoleModel" },
+                "chat": { "$ref": "#/$defs/RoleModel" },
+                "rewrite": { "$ref": "#/$defs/RoleModel" }
+              }
+            },
+            "groups": { "type": "array", "items": { "$ref": "#/$defs/CapacityGroup" } },
+            "alias_limits": { "type": "array", "items": { "$ref": "#/$defs/AliasLimit" } },
+            "key_limits": { "$ref": "#/$defs/KeyLimits" },
+            "capacity_check": { "type": "array", "items": { "$ref": "#/$defs/CapacityCheck" } },
+            "pii_pseudonymise": { "type": "boolean" }
+          }
+        },
+        "manage_messages": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["missing"],
+          "properties": { "missing": { "type": "array", "items": { "type": "string" } } }
+        },
+        "notices": {
+          "description": "Present on PATCH responses that reset a stranded reasoning level.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label", "value", "reason"],
+            "properties": {
+              "key": { "type": "string" },
+              "label": { "type": "string" },
+              "value": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "AccessReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "checked_at", "rows"],
+      "properties": {
+        "connected": { "type": "boolean" },
+        "checked_at": { "type": "string" },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "watched", "digest", "view", "send", "history", "embed", "react", "manage_messages"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "watched": { "type": "boolean" },
+              "digest": { "type": "boolean" },
+              "view": { "type": "boolean" },
+              "send": { "type": "boolean" },
+              "history": { "type": "boolean" },
+              "embed": { "type": "boolean" },
+              "react": { "type": "boolean" },
+              "manage_messages": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

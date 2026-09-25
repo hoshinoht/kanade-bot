@@ -17,3 +17,7 @@ tower = "=0.5.3"
 tower-http = { version = "=0.6.11", default-features = false, features = ["fs"] }
 # Reads the tracked boss/knowledge/*.yaml (schema v2).
 yaml_serde = "=0.10.7"
+
+[dev-dependencies]
+# Same pin and features as the root crate; validates responses against docs/v5/api-schemas.
+jsonschema = { version = "=0.40.0", default-features = false }

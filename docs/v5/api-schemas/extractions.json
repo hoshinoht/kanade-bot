@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/extractions.json",
+  "title": "Extraction log, call detail and rescan jobs",
+  "$defs": {
+    "ExtractionOutcome": {
+      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link"]
+    },
+    "ExtractionRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "short_id", "at", "model", "latency_ms", "messages", "changes", "channel", "channel_id", "error", "outcome"],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "at": { "type": "string" },
+        "model": { "type": "string" },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "messages": { "type": "integer", "minimum": 0 },
+        "changes": { "type": "integer", "minimum": 0 },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "error": { "$ref": "common.json#/$defs/NullableString" },
+        "outcome": { "$ref": "#/$defs/ExtractionOutcome" }
+      }
+    },
+    "Extractions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "rows", "total", "facets"],
+      "properties": {
+        "model": { "type": "string" },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/ExtractionRow" } },
+        "total": { "type": "integer", "minimum": 0 },
+        "facets": { "$ref": "common.json#/$defs/LogFacets" }
+      }
+    },
+    "Extraction": {
+      "description": "ExtractionRow without the `messages`/`changes` counts, plus the call itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "at", "model", "latency_ms", "channel", "channel_id", "error", "outcome",
+        "prompt", "raw_response", "amendments", "messages"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "at": { "type": "string" },
+        "model": { "type": "string" },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "error": { "$ref": "common.json#/$defs/NullableString" },
+        "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
+        "prompt": { "type": "string" },
+        "raw_response": { "type": "string" },
+        "amendments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "bosses", "when", "confidence", "status"],
+            "properties": {
+              "kind": { "type": "string" },
+              "bosses": { "type": "string" },
+              "when": { "type": "string" },
+              "confidence": { "type": "number" },
+              "status": { "type": "string" }
+            }
+          }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "author", "at", "content"],
+            "properties": {
+              "id": { "type": "string" },
+              "author": { "type": "string" },
+              "at": { "type": "string" },
+              "content": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "RescanJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "window", "channels", "proposals"],
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "enum": ["running", "done", "cancelled"] },
+        "window": { "enum": ["week", "since_reset", "two_weeks"] },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "state", "messages"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "state": { "enum": ["queued", "reading", "done"] },
+              "messages": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "proposals": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

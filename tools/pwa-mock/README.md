@@ -14,4 +14,7 @@ unset serves generated stand-ins), `KANADE_BOT_NAME`, `ADMIN_PORT`,
 `PUBLIC_PORT`, and `KANADE_MOCK_NOW` (RFC 3339 UTC instant, e.g.
 `2026-09-29T12:00:00Z`) to pin the clock for tests.
 
+`cargo test` also walks every endpoint the PWAs call and validates each
+response against `docs/v5/api-schemas` (`src/contract.rs`).
+
 Checks: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.

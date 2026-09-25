@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/limits.json",
+  "title": "Model backend groups, admission refusals and member allowances (docs/v5/limits-contract.md)",
+  "$defs": {
+    "BackendGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "backend", "models", "permits", "queue", "rate", "retry", "breaker"],
+      "properties": {
+        "name": { "type": "string" },
+        "backend": { "type": "string" },
+        "models": { "type": "array", "items": { "type": "string" } },
+        "permits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["in_use", "total"],
+          "properties": {
+            "in_use": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["position", "kind", "who", "waiting_s"],
+            "properties": {
+              "position": { "type": "integer", "minimum": 0 },
+              "kind": { "type": "string" },
+              "who": { "type": "string" },
+              "waiting_s": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "rate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available", "capacity", "refill_per_min"],
+          "properties": {
+            "available": { "type": "number", "minimum": 0 },
+            "capacity": { "type": "number", "minimum": 0 },
+            "refill_per_min": { "type": "number", "minimum": 0 }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["remaining", "capacity"],
+          "properties": {
+            "remaining": { "type": "number", "minimum": 0 },
+            "capacity": { "type": "number", "minimum": 0 }
+          }
+        },
+        "breaker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "failures", "since"],
+          "properties": {
+            "state": { "enum": ["closed", "half_open", "open"] },
+            "failures": { "type": "integer", "minimum": 0 },
+            "since": { "type": "string" },
+            "retry_at": { "type": "string" }
+          }
+        }
+      }
+    },
+    "Refusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "scope", "target", "count", "last_at"],
+      "properties": {
+        "kind": { "type": "string", "description": "`rate`, `concurrency`, `quota`, `key_rate`, `key_quota`, ... (open set)." },
+        "scope": { "enum": ["group", "key"] },
+        "target": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 },
+        "last_at": { "type": "string" }
+      }
+    },
+    "Allowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member", "staff", "allowance", "used", "override"],
+      "properties": {
+        "member": { "$ref": "common.json#/$defs/Member" },
+        "staff": { "type": "boolean" },
+        "allowance": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count", "per_s"],
+              "properties": {
+                "count": { "type": "integer", "minimum": 0 },
+                "per_s": { "type": "number", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "used": { "type": "integer", "minimum": 0 },
+        "override": { "type": "boolean" }
+      }
+    },
+    "Limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groups", "admission", "allowances"],
+      "properties": {
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/BackendGroup" } },
+        "admission": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["window", "refusals"],
+          "properties": {
+            "window": { "type": "string" },
+            "refusals": { "type": "array", "items": { "$ref": "#/$defs/Refusal" } }
+          }
+        },
+        "allowances": { "type": "array", "items": { "$ref": "#/$defs/Allowance" } }
+      }
+    }
+  }
+}

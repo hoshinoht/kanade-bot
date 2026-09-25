@@ -212,7 +212,7 @@ impl Store {
         };
         Ok(json!({
             "id": c.id, "short_id": c.short_id, "at": Self::when(Self::hour_minute(c.hour)), "model": c.model, "outcome": c.outcome,
-            "latency_ms": c.latency_ms, "channel": seed::channel(c.channel).map(|x| x.1), "error": c.error,
+            "latency_ms": c.latency_ms, "channel": seed::channel(c.channel).map(|x| x.1), "channel_id": c.channel, "error": c.error,
             "prompt": prompt, "raw_response": raw.to_string(), "amendments": amendments, "messages": chat,
         }))
     }
