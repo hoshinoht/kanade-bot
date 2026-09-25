@@ -196,8 +196,8 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
     for path in [
         "/api/public/week",
         "/api/public/requests/mine",
-        "/art/portraits/carling",
-        "/art/entry/carling",
+        "/art/portraits/Carling",
+        "/art/entry/Carling",
         "/art/anything/at/all",
     ] {
         for method in ["GET", "POST"] {

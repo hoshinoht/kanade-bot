@@ -74,7 +74,7 @@ async fn each_origin_sends_exactly_the_mock_security_headers() {
         "public, max-age=31536000, immutable",
     );
     assert_exact(
-        &get(admin, ADMIN_HOST, "/art/portraits/carling").await,
+        &get(admin, ADMIN_HOST, "/art/portraits/Carling").await,
         false,
         "public, max-age=3600",
     );
@@ -93,7 +93,7 @@ async fn each_origin_sends_exactly_the_mock_security_headers() {
     );
     assert_exact(&get(public, PUBLIC_HOST, "/week").await, true, "no-cache");
     assert_exact(
-        &get(public, PUBLIC_HOST, "/art/entry/carling").await,
+        &get(public, PUBLIC_HOST, "/art/entry/Carling").await,
         true,
         "no-store",
     );

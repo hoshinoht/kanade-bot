@@ -86,7 +86,11 @@ async fn traversal_and_symlink_escapes_are_refused() {
         "/art/portraits/../secret",
         "/art/entry/%2e%2e",
         "/art/portraits/Carling.png",
-        "/art/bogus/carling",
+        "/art/bogus/Carling",
+        "/art/portraits/Escape",
+        "//api/admin/week",
+        "/API/admin/week",
+        "//art/portraits/Carling",
     ] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}");
@@ -101,17 +105,18 @@ async fn admin_serves_catalog_art_and_missing_art_is_absent() {
     let mut http = fixture.http();
     let admin = support::admin(&http).await;
 
-    let portrait = get(admin, ADMIN_HOST, "/art/portraits/carling").await;
+    // Catalog keys are mixed case, like v4's art file names.
+    let portrait = get(admin, ADMIN_HOST, "/art/portraits/Carling").await;
     assert_eq!(portrait.status, 200);
     assert_eq!(portrait.header("content-type"), Some("image/png"));
     assert_eq!(
         portrait.body,
-        read(&fixture.path("boss/portraits/carling.png"))
+        read(&fixture.path("boss/portraits/Carling.png"))
     );
-    let entry = get(admin, ADMIN_HOST, "/art/entry/carling").await;
+    let entry = get(admin, ADMIN_HOST, "/art/entry/Carling").await;
     assert_eq!(entry.header("content-type"), Some("image/webp"));
 
-    for path in ["/art/icons/carling", "/art/entry/missing", "/art/portraits"] {
+    for path in ["/art/icons/Carling", "/art/entry/missing", "/art/portraits"] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}");
         assert_eq!(reply.api_error(), "not_found");
@@ -121,7 +126,7 @@ async fn admin_serves_catalog_art_and_missing_art_is_absent() {
     http.web_dir = None;
     let bare = support::admin(&http).await;
     assert_eq!(
-        get(bare, ADMIN_HOST, "/art/portraits/carling").await.status,
+        get(bare, ADMIN_HOST, "/art/portraits/Carling").await.status,
         404
     );
     assert_eq!(get(bare, ADMIN_HOST, "/").await.status, 404);

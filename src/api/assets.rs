@@ -88,33 +88,35 @@ pub async fn art(
         "entry" => "artwork/entry",
         _ => return ApiError::NOT_FOUND.into_response(),
     };
-    // Catalog-key shape until the catalog is wired into the API state.
+    // Catalog keys are mixed case (`MaleficStar`); shape only until the catalog is in the API state.
     let key_ok = (1..=64).contains(&key.len())
-        && key.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
-        });
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
     let Some(root) = site.boss_dir.as_ref().filter(|_| key_ok) else {
         return ApiError::NOT_FOUND.into_response();
     };
     let found = ART_SUFFIXES
         .iter()
-        .map(|suffix| root.join(dir).join(format!("{key}.{suffix}")))
-        .find(|path| path.is_file());
+        .find_map(|suffix| contained(root, &Path::new(dir).join(format!("{key}.{suffix}"))));
     match found {
         Some(path) => send(&path).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
 }
 
-/// Paths owned by the server: never answered with the SPA shell.
+/// Paths owned by the server (in any case, or after a doubled slash): never the SPA shell.
 fn reserved(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
     ["/api", "/art", "/identity", "/healthz"]
         .iter()
         .any(|prefix| {
-            path.strip_prefix(prefix)
+            lower
+                .strip_prefix(prefix)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         })
         || path.starts_with("/__")
+        || path.starts_with("//")
 }
 
 pub async fn fallback(State(site): State<Arc<Site>>, method: Method, uri: Uri) -> Response {

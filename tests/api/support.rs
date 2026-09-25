@@ -50,13 +50,19 @@ impl Fixture {
         );
         write("web/apps/admin/secret.txt", SECRET.as_bytes());
         write("secret.txt", SECRET.as_bytes());
-        write("boss/portraits/carling.png", b"\x89PNG portrait");
-        write("boss/artwork/entry/carling.webp", b"RIFF entry");
+        write("boss/portraits/Carling.png", b"\x89PNG portrait");
+        write("boss/artwork/entry/Carling.webp", b"RIFF entry");
         write("boss/secret.png", SECRET.as_bytes());
         #[cfg(unix)]
         std::os::unix::fs::symlink(
             root.join("secret.txt"),
             root.join("web/apps/admin/dist/assets/escape.js"),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            root.join("secret.txt"),
+            root.join("boss/portraits/Escape.png"),
         )
         .unwrap();
         Self { root }
