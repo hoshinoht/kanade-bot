@@ -4,6 +4,7 @@
 
 mod api;
 mod assets;
+mod auth;
 #[cfg(test)]
 mod contract;
 mod headers;
@@ -76,6 +77,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/__mock/whoami", get(whoami))
         .route("/__mock/csrf/rotate", post(writes::rotate))
         .route("/__mock/session", post(api::switch_session))
+        .route("/__mock/discord", post(auth::fail_next_discord))
         .with_state(app.clone())
         .fallback_service(static_site(dist))
         .layer(middleware::from_fn(headers::apply))
@@ -202,6 +204,15 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/runs/{id}/reset", post(api::reset_run))
         .route("/api/admin/channels", get(api::channels))
         .route("/api/admin/session", get(api::session))
+        .route("/api/admin/auth/methods", get(auth::methods))
+        .route("/api/admin/auth/discord/start", get(auth::discord_start))
+        .route(
+            "/api/admin/auth/discord/callback",
+            get(auth::discord_callback),
+        )
+        .route("/api/admin/auth/token", post(auth::token_login))
+        .route("/api/admin/auth/tailscale", post(auth::tailscale_login))
+        .route("/api/admin/auth/logout", post(auth::logout))
         .route("/api/admin/runs/{id}/move", post(api::move_run))
         .route("/api/admin/runs/{id}/status", patch(api::status))
         .route("/api/admin/runs/{id}/rsvp", post(api::rsvp))

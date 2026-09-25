@@ -111,14 +111,15 @@ test('admin: this week / next week toggle, filters and tiles', async ({ page }) 
   await expect(page.locator('[data-run="r-baldrix"]')).toHaveCount(0);
 });
 
-test('admin: login window wears the identity and opens the portal', async ({ page }) => {
+test('admin: login window wears the identity and signs in with Discord', async ({ page }) => {
   await page.goto(`${ADMIN}/login?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('YuukiSakuna');
   await expect(page.getByRole('link', { name: 'powered by kanade' })).toBeVisible();
   for (const img of await page.locator('.gate img').all()) {
     expect(await img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
   }
-  await page.getByRole('button', { name: 'Sign in with Discord' }).click();
+  // The mock stands in for Discord: start → callback → a landing page that returns to `next`.
+  await page.getByRole('link', { name: 'Sign in with Discord' }).click();
   await expect(page).toHaveURL(`${ADMIN}/`);
   await expect(page.locator('.brand__name')).toHaveText('YuukiSakuna');
 });

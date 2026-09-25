@@ -85,16 +85,19 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
 test('inbox: a token or Tailscale session cannot decide proposals, but can decide requests', async ({ page }) => {
   const switched = await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
   expect(switched.status()).toBe(204);
+  const approvals: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/api\/admin\/inbox\/p-[a-z-]+\/approve$/.test(r.url())) approvals.push(r.url());
+  });
   await go(page, '/inbox');
   const detail = page.locator('.inbox__detail');
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
-  // `Session` does not say how it signed in: the first refusal teaches the page.
-  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(detail.getByRole('alert')).toHaveText("Sign in with Discord to approve or reject Kanade's proposals.");
+  // The session says how it signed in: proposal decisions are off before any attempt.
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
   await expect(detail.getByRole('button', { name: 'Reject…' })).toBeDisabled();
   await expect(detail.getByRole('button', { name: 'Move & approve' })).toBeDisabled();
-  await expect(detail).toContainText("Members' requests can still be decided here.");
+  await expect(detail).toContainText("Sign in with Discord to approve or reject Kanade's proposals. Members' requests can still be decided here.");
+  expect(approvals).toEqual([]);
   const list = page.getByRole('listbox', { name: 'Extractor items' });
   await expect(list.getByRole('option')).toHaveCount(3);
 
@@ -105,6 +108,22 @@ test('inbox: a token or Tailscale session cannot decide proposals, but can decid
   await dialog.getByRole('textbox', { name: 'Reason' }).fill('The run moved; ask again.');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
   await expect(toast(page, 'Rejected: leave #e5f7a9b1.')).toBeVisible();
+});
+
+test('inbox: a 403 discord_session_required still locks proposals when the session did not say its method', async ({ page }) => {
+  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
+  // An older session answer without `method`: the refusal is the fallback.
+  await page.route(`${ADMIN}/api/admin/session`, async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { display: 'Break-glass token' } });
+  });
+  await go(page, '/inbox');
+  const detail = page.locator('.inbox__detail');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(detail.getByRole('alert')).toHaveText("Sign in with Discord to approve or reject Kanade's proposals.");
+  await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+  await expect(detail.getByRole('button', { name: 'Reject…' })).toBeDisabled();
 });
 
 test('inbox: self-service tab — request types, badges, conflicts, choices, reasons and refusals', async ({ page }) => {

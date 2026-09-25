@@ -37,12 +37,17 @@ export class AdminWeek {
   channels = $state<Channel[]>([]);
   identity = $state<Identity | null>(null);
   session = $state<Session | null>(null);
-  /**
-   * The server refused this session Kanade's proposals (403
-   * `discord_session_required`: a token or Tailscale sign-in). `Session`
-   * does not say how it signed in, so the app learns it from that refusal.
-   */
-  proposalsLocked = $state(false);
+  /** A 403 `discord_session_required` arrived anyway (e.g. a session read before sign-in changed). */
+  #refusedProposals = $state(false);
+
+  /** Only a Discord session may approve or reject Kanade's proposals (like ✅ on the card). */
+  get proposalsLocked(): boolean {
+    return this.#refusedProposals || (this.session?.method !== undefined && this.session.method !== 'discord');
+  }
+
+  set proposalsLocked(value: boolean) {
+    this.#refusedProposals = value;
+  }
 
   #client = createClient();
   #poller: Poller;
@@ -71,6 +76,13 @@ export class AdminWeek {
       onData: (snapshot) => this.#receive(snapshot),
       onError: (error) => {
         const offline = !navigator.onLine || (error instanceof ApiRequestError && error.kind === 'network');
+        // Signed out (401) is the sign-in page's job, and another refusal (4xx)
+        // is not an outage: only the network, timeouts and 5xx read as unreachable.
+        const refused = error instanceof ApiRequestError && error.status !== null && error.status < 500;
+        if (refused) {
+          if (this.fresh === 'loading' || this.fresh === 'error') this.fresh = this.week ? 'stale' : 'loading';
+          return;
+        }
         this.fresh = offline ? 'offline' : this.week ? 'stale' : 'error';
       },
     });
@@ -140,6 +152,13 @@ export class AdminWeek {
     this.channels = channels ?? [];
     this.identity = identity;
     this.session = session;
+  }
+
+  /** Ends the session on the server (the cookie is cleared there); the page then shows sign-in. */
+  async signOut(): Promise<void> {
+    await this.#client.post('/api/admin/auth/logout', {}).catch(() => undefined);
+    this.session = null;
+    this.#refusedProposals = false;
   }
 
   start(): () => void {

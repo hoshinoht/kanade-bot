@@ -18,7 +18,9 @@
   import Lazy from './pages/Lazy.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
   import WeekPage, { type WeekTab } from './pages/WeekPage.svelte';
-  import type { Run } from '@kanade/api-types';
+  import type { Run, Session } from '@kanade/api-types';
+  import { onUnauthenticated } from '@kanade/client';
+  import { loginHref, safeNext } from './auth';
   import type { Slot } from './planner/keyboardMove';
   import { match, Router } from './router.svelte';
   import { DETAILS, ROUTES, SECTIONS } from './routes';
@@ -68,7 +70,32 @@
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
   const title = $derived(route?.key === 'login' ? 'Sign in' : (detail?.title ?? section?.title ?? 'Not found'));
 
-  $effect(() => store.start());
+  // The Discord callback reports failures at `/?login_error=<code>`: show them on the sign-in page.
+  $effect(() => {
+    const code = router.query.get('login_error');
+    if (code && route?.key !== 'login') router.go(`/login?login_error=${encodeURIComponent(code)}`, { replace: true });
+  });
+
+  // Signed out (or the session ended): sign in, then come back here.
+  $effect(() => {
+    onUnauthenticated((path) => {
+      // A refused sign-in attempt is the form's to explain.
+      if (path.startsWith('/api/admin/auth/') || router.path === '/login' || router.query.has('login_error')) return;
+      store.session = null;
+      router.go(loginHref(router.path + router.search), { replace: true });
+    });
+    return () => onUnauthenticated(null);
+  });
+
+  // No polling behind the sign-in page; signing in starts it (and re-reads the session).
+  const signingIn = $derived(route?.key === 'login');
+  $effect(() => (signingIn ? undefined : store.start()));
+
+  async function signOut(event: MouseEvent) {
+    event.preventDefault();
+    await store.signOut();
+    router.go('/login');
+  }
 
   // v4's Audit page became History.
   $effect(() => {
@@ -77,8 +104,17 @@
 
   function pageProps(key: string, params: Record<string, string>): Record<string, unknown> {
     switch (key) {
-      case 'login':
-        return { identity: store.identity, onsignin: () => router.go('/') };
+      case 'login': {
+        const next = safeNext(router.query.get('next'));
+        return {
+          next,
+          loginError: router.query.get('login_error') ?? '',
+          onsignedin: (session: Session) => {
+            store.session = session;
+            router.go(next, { replace: true });
+          },
+        };
+      }
       case 'fixed':
       case 'history':
         return { store, toaster };
@@ -289,13 +325,13 @@
         <a class="brand__by" href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
         <Freshness state={store.fresh} updated={store.updated} />
         {#if store.session}<span class="masthead__who masthead__desk-only">{store.session.display}</span>{/if}
-        <a class="masthead__desk-only" href="/login">sign out</a>
+        <a class="masthead__desk-only" href="/login" onclick={signOut}>sign out</a>
         <button type="button" class="btn btn--ghost masthead__desk-only" onclick={() => void togglePalette(true)} aria-keyshortcuts="Control+K Meta+K">
           <Icon name="search" /> Commands <kbd class="kbd">Ctrl K</kbd>
         </button>
       {/snippet}
       {#snippet nav()}
-        <Nav active={section?.key ?? ''} inbox={store.summary?.inbox ?? 0} />
+        <Nav active={section?.key ?? ''} inbox={store.summary?.inbox ?? 0} onsignout={signOut} />
       {/snippet}
     </Masthead>
     <main class="shell" id="main" tabindex="-1">

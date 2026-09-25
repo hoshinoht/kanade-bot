@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, createClient, createCsrfGuard } from '../src/client';
+import { ApiRequestError, createClient, createCsrfGuard, onUnauthenticated } from '../src/client';
 
 function respond(status: number, body: string): typeof fetch {
   return vi.fn(async () => new Response(body, { status })) as unknown as typeof fetch;
@@ -116,5 +116,17 @@ describe('admin writes', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]![1].headers).toHaveProperty('Idempotency-Key');
     expect(calls[0]![1].headers).not.toHaveProperty('X-Kanade-CSRF');
+  });
+
+  it('tells the page of a 401, once per refused request', async () => {
+    const seen: string[] = [];
+    onUnauthenticated((path) => seen.push(path));
+    try {
+      const client = createClient({ fetch: respond(401, '{"error":"unauthenticated","message":"Sign in to continue."}') });
+      await expect(client.get('/api/admin/week')).rejects.toMatchObject({ status: 401 });
+      expect(seen).toEqual(['/api/admin/week']);
+    } finally {
+      onUnauthenticated(null);
+    }
   });
 });

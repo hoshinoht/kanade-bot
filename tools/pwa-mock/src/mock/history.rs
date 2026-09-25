@@ -394,7 +394,12 @@ impl Store {
         }
     }
 
+    /// Sign in as `discord`, `token` or `tailscale`, or sign out with `none`.
     pub fn set_session(&mut self, method: &str) -> bool {
+        if method == "none" {
+            self.signed_in = false;
+            return true;
+        }
         let Some(known) = ["discord", "token", "tailscale"]
             .into_iter()
             .find(|m| *m == method)
@@ -402,7 +407,25 @@ impl Store {
             return false;
         };
         self.session = known;
+        self.signed_in = true;
         true
+    }
+
+    pub fn signed_in(&self) -> bool {
+        self.signed_in
+    }
+
+    pub fn session_method(&self) -> &'static str {
+        self.session
+    }
+
+    /// Consumes the failure queued for the next Discord sign-in.
+    pub fn take_discord_error(&mut self) -> Option<&'static str> {
+        self.discord_error.take()
+    }
+
+    pub fn fail_next_discord(&mut self, code: &'static str) {
+        self.discord_error = Some(code);
     }
 
     /// An admin-portal edit, attributed to the session.

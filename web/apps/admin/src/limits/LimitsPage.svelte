@@ -7,9 +7,9 @@
 <script lang="ts">
   import '@kanade/ui/styles/evidence.scss';
   import type { Limits } from '@kanade/api-types';
-  import { createClient, createPoller } from '@kanade/client';
+  import { ApiRequestError, createClient, createPoller } from '@kanade/client';
   import { Tabs, Toaster, type TabItem } from '@kanade/ui';
-  import { send } from '../resource.svelte';
+  import { errorText, send } from '../resource.svelte';
 
   let { toaster }: { toaster: Toaster } = $props();
 
@@ -24,7 +24,11 @@
       limits = next;
       error = '';
     },
-    onError: () => (error = 'Could not refresh the limits; retrying.'),
+    onError: (e) => {
+      const unbuilt = e instanceof ApiRequestError && e.status === 404;
+      if (unbuilt) poller.stop();
+      error = unbuilt ? errorText(e) : 'Could not refresh the limits; retrying.';
+    },
   });
   $effect(() => {
     poller.start();

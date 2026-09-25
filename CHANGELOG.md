@@ -273,6 +273,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: the admin app signs in for real: it offers only the methods the server enables
+  (Discord, admin token), explains each Discord refusal, returns you to the page you
+  were on after a sign-out, signs out properly, hides proposal decisions for non-Discord
+  sessions, and says "not available on this server yet" for unbuilt routes instead of
+  "Can't reach Kanade".
 - v5: the admin inbox follows the Rust inbox: member request types and chat proposals are
   labelled, conflicts can only be rejected, "Move & approve" works for moves, new runs and
   splits, reasons are asked only for member requests, and token/Tailscale sessions are

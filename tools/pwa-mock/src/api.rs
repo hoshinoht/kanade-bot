@@ -184,10 +184,13 @@ pub async fn reset_run(
 
 /// Mock stand-in for the authenticated caller; carries the CSRF token like the server.
 pub async fn session(State(app): State<App>) -> Response {
-    let display = app.store.lock().await.session_display();
+    let (display, method) = {
+        let store = app.store.lock().await;
+        (store.session_display(), store.session_method())
+    };
     (
         [(crate::writes::CSRF_HEADER, app.writes.token())],
-        Json(json!({ "display": display })),
+        Json(json!({ "display": display, "method": method })),
     )
         .into_response()
 }
@@ -198,14 +201,14 @@ pub struct SessionMethod {
 }
 
 /// `POST /__mock/session {method}`: sign in again as `discord`, `token` or
-/// `tailscale` (a new CSRF token, as a real sign-in), so e2e can cover the
-/// Discord-only proposal rule.
+/// `tailscale` (a new CSRF token, as a real sign-in), or sign out with
+/// `none`, so e2e can cover the Discord-only rule and the sign-in flow.
 pub async fn switch_session(State(app): State<App>, Json(req): Json<SessionMethod>) -> Response {
     if !app.store.lock().await.set_session(&req.method) {
         return error(
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid",
-            "Method is discord, token or tailscale.",
+            "Method is discord, token, tailscale or none.",
         );
     }
     app.writes.rotate();

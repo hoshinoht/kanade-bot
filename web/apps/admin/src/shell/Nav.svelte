@@ -1,7 +1,11 @@
 <script lang="ts">
   import { GROUPS, PINNED, SECTIONS, type Section } from '../routes';
 
-  let { active, inbox = 0 }: { active: string; inbox?: number } = $props();
+  let {
+    active,
+    inbox = 0,
+    onsignout,
+  }: { active: string; inbox?: number; /** Ends the session before the sign-in page shows. */ onsignout?: (event: MouseEvent) => void } = $props();
   let more = $state(false);
 
   // A route change closes the phone menu, as v4's portal.js did on navigation.
@@ -40,7 +44,7 @@
       <summary class="nav__more-btn">More</summary>
       <div class="nav__sheet">
         {@render groups()}
-        <a class="nav__link" href="/login">Sign out</a>
+        <a class="nav__link" href="/login" onclick={onsignout}>Sign out</a>
       </div>
     </details>
   </div>

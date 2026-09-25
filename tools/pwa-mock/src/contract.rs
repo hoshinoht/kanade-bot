@@ -132,9 +132,14 @@ impl Harness {
         let status = res.status();
         let headers = res.headers().clone();
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        // `204 No Content` (mock controls) has no body to check.
-        let value = if status == StatusCode::NO_CONTENT {
+        // No body (204, the sign-in redirects) or the sign-in landing page: nothing JSON to check.
+        let html = headers
+            .get(header::CONTENT_TYPE)
+            .is_some_and(|v| v.as_bytes().starts_with(b"text/html"));
+        let value = if bytes.is_empty() {
             Value::Null
+        } else if html {
+            Value::String(String::from_utf8_lossy(&bytes).into_owned())
         } else {
             serde_json::from_slice(&bytes)
                 .unwrap_or_else(|e| panic!("{method} {path}: not JSON ({e}): {bytes:?}"))
@@ -1179,6 +1184,135 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "",
     )
     .await;
+
+    // Sign-in and sessions: methods, token login, sign-out, 401 while signed out, Discord.
+    let (status, _, methods) = h
+        .send_with(false, "GET", "/api/admin/auth/methods", None, &[])
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    for key in ["discord", "tailscale", "token"] {
+        assert!(methods[key].is_boolean(), "{key}: {methods}");
+    }
+    let session = h
+        .ok(
+            "GET",
+            "/api/admin/session",
+            None,
+            "identity.json#/$defs/Session",
+        )
+        .await;
+    assert_eq!(session["method"], "discord");
+    h.refused(
+        "POST",
+        "/api/admin/auth/token",
+        json!({ "token": "wrong" }),
+        &[],
+        (StatusCode::UNAUTHORIZED, "unauthenticated"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/auth/token",
+        json!({ "tok": "x" }),
+        &[],
+        (StatusCode::BAD_REQUEST, "invalid_body"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/auth/logout",
+        json!({}),
+        &[],
+        (StatusCode::FORBIDDEN, "csrf"),
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    let (status, _, _) = h
+        .send_with(
+            false,
+            "POST",
+            "/api/admin/auth/logout",
+            None,
+            &[("x-kanade-csrf", &csrf)],
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    h.expect(
+        false,
+        "GET",
+        "/api/admin/week",
+        None,
+        StatusCode::UNAUTHORIZED,
+        "",
+    )
+    .await;
+    let (status, headers, session) = h
+        .send_with(
+            false,
+            "POST",
+            "/api/admin/auth/token",
+            Some(json!({ "token": crate::auth::MOCK_TOKEN })),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    h.check(
+        "token login",
+        status,
+        &session,
+        "identity.json#/$defs/Session",
+    );
+    assert_eq!(session["method"], "token");
+    let fresh = headers
+        .get("x-kanade-csrf")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        !fresh.is_empty() && fresh != csrf,
+        "a sign-in issues a new CSRF token"
+    );
+    h.csrf = fresh;
+    h.ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
+        .await;
+    let (status, headers, _) = h
+        .send_with(
+            false,
+            "GET",
+            "/api/admin/auth/discord/start?next=/inbox?tab=self_service",
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let callback = headers[header::LOCATION].to_str().unwrap().to_owned();
+    let (status, _, page) = h.send_with(false, "GET", &callback, None, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        page.as_str()
+            .is_some_and(|p| p.contains("url=/inbox?tab=self_service")),
+        "{page}"
+    );
+    h.send(
+        false,
+        "POST",
+        "/__mock/discord",
+        Some(json!({ "error": "forbidden" })),
+    )
+    .await;
+    let (status, headers, _) = h
+        .send_with(
+            false,
+            "GET",
+            "/api/admin/auth/discord/start?next=//evil.example/",
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(
+        (status, headers[header::LOCATION].to_str().unwrap()),
+        (StatusCode::SEE_OTHER, "/?login_error=forbidden")
+    );
 
     assert!(
         h.failures.is_empty(),

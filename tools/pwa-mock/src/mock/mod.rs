@@ -69,6 +69,10 @@ pub struct Store {
     decided: Vec<inbox::Decided>,
     /// How the mock's admin signed in: `discord`, `token` or `tailscale`.
     session: &'static str,
+    /// Signed out: every admin route but sign-in answers `401 unauthenticated`.
+    signed_in: bool,
+    /// The next Discord sign-in fails with this `login_error` code.
+    discord_error: Option<&'static str>,
     jobs: Vec<extractions::Job>,
     limit_resets: Vec<&'static str>,
     config: config::Config,
@@ -87,6 +91,8 @@ impl Store {
             proposals: Vec::new(),
             decided: Vec::new(),
             session: "discord",
+            signed_in: true,
+            discord_error: None,
             jobs: Vec::new(),
             limit_resets: Vec::new(),
             config: config::defaults(),
@@ -115,6 +121,8 @@ impl Store {
         self.proposals = inbox::seed();
         self.decided.clear();
         self.session = "discord";
+        self.signed_in = true;
+        self.discord_error = None;
         self.jobs.clear();
         self.limit_resets.clear();
         self.config = config::defaults();

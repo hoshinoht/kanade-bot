@@ -133,9 +133,15 @@ fn key(headers: &HeaderMap) -> Result<Option<String>, &'static str> {
 
 /// Route layer on the admin API.
 pub async fn guard(State(app): State<App>, req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_owned();
+    // The e2e reset is mock control, not an admin route.
+    let control = path == "/api/admin/reset";
+    if !control && !crate::auth::open(&path) && !app.store.lock().await.signed_in() {
+        return crate::auth::unauthenticated();
+    }
     let safe = matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
-    // The e2e reset is mock control, not an admin write.
-    if safe || req.uri().path() == "/api/admin/reset" {
+    // Sign-in POSTs need only the same-origin markers, as on the server.
+    if safe || control || crate::auth::open(&path) {
         return next.run(req).await;
     }
     if !app.writes.allows(req.headers()) {

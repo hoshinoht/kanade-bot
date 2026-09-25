@@ -47,6 +47,13 @@ export function guardWrites(sessionPath: string, guards: CsrfGuard['guards']): v
   pageCsrf = createCsrfGuard(sessionPath, guards);
 }
 
+let unauthenticated: ((path: string) => void) | null = null;
+
+/** Page-wide: told of every 401 (signed out or the session ended), so the app can send the user to sign in. */
+export function onUnauthenticated(handler: ((path: string) => void) | null): void {
+  unauthenticated = handler;
+}
+
 /** A fresh `Idempotency-Key` (1–128 of `[A-Za-z0-9-_.:]`): one per user action. */
 export function newIdempotencyKey(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
@@ -118,6 +125,7 @@ export function createClient(options: ClientOptions = {}): Client {
     }
     if (!response.ok) {
       const apiError = isApiError(parsed) ? parsed : null;
+      if (response.status === 401) unauthenticated?.(path);
       throw new ApiRequestError('http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
     }
     return parsed as T;

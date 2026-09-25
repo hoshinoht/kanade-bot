@@ -32,10 +32,20 @@ still check the whole week). Admin changes are attributed as the server does:
 `admin:token` for the mock's session, `admin:discord:<id>` in the seed.
 Unit tests pin their own clock and ignore `KANADE_MOCK_NOW`.
 
+Sign-in follows admin-api "Sign-in and sessions" (`src/auth.rs`):
+`GET /api/admin/auth/methods` offers Discord and the token (no tailnet edge);
+Discord start redirects straight to the callback, whose landing page
+refreshes to `next` (`POST /__mock/discord {"error": code}` makes the next
+start fail with `/?login_error=<code>`); `POST /api/admin/auth/token` takes
+the mock token `kanade-mock-token` (401 otherwise, 400 for a bad body);
+`POST /api/admin/auth/logout` needs CSRF. Signed out, every admin route but
+sign-in answers `401 unauthenticated`. There is one global mock admin and no
+cookie. `GET /api/admin/session` sends `{display, method}`.
+
 The mock's admin signs in with Discord as Asahi (staff, `admin:discord:1001`)
 after every `POST /api/admin/reset`; `POST /__mock/session {"method":
-"discord" | "token" | "tailscale"}` signs in again another way (new CSRF
-token). The Inbox follows admin-api "Inbox (A6)": extractor and chat
+"discord" | "token" | "tailscale" | "none"}` signs in again another way (new
+CSRF token) or signs out. The Inbox follows admin-api "Inbox (A6)": extractor and chat
 proposals plus member requests (`new_fixed`, `change_fixed`, `join`,
 `leave`, `swap`, `via: "request"`); `change_fixed` choices list only the
 amended runs; conflicts always block (`force` is `422 force_unsupported`);

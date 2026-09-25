@@ -327,6 +327,18 @@ export interface Identity {
 /** `GET /api/admin/session`: who is signed in; the `X-Kanade-CSRF` response header carries the write token. */
 export interface Session {
   display: string;
+  /** How it signed in; only `discord` sessions may approve or reject Kanade's proposals. Always sent by the server. */
+  method?: SignInMethod;
+}
+
+export type SignInMethod = 'discord' | 'tailscale' | 'token';
+
+/** `GET /api/admin/auth/methods`: the sign-in methods this server offers this browser. */
+export interface SignInMethods {
+  discord: boolean;
+  /** This request carries an allow-listed identity from the tailnet edge. */
+  tailscale: boolean;
+  token: boolean;
 }
 
 export interface StatusRequest {

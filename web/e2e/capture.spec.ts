@@ -110,7 +110,7 @@ for (const vp of VIEWPORTS) {
       await shot(page, `admin-member-sheet-${tag}`);
 
       await page.goto(`${ADMIN}/login?sw=off`);
-      await expect(page.getByRole('button', { name: 'Sign in with Discord' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
       await shot(page, `admin-login-${tag}`);
 
       await page.goto(`${PUBLIC}/?sw=off`);
