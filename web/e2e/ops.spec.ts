@@ -183,6 +183,11 @@ test('inbox on a phone by keyboard: arrows move the active option, Enter opens, 
   await page.goBack();
   await expect(list).toBeFocused();
   await expect(list).toHaveAttribute('aria-activedescendant', idOf(2));
+  // Forward lands on the detail with focus, not on the hidden list.
+  await page.goForward();
+  await expect(detail).toBeFocused();
+  await page.goBack();
+  await expect(list).toBeFocused();
 
   // A tap opens and focuses the detail the same way.
   await options.nth(3).click();
@@ -196,12 +201,27 @@ test('inbox on a phone: approving returns to the list without a dead Back step',
   await page.getByRole('link', { name: /^Inbox/ }).first().click();
   await page.getByRole('tab', { name: /Self-service/ }).click();
   const list = page.getByRole('listbox', { name: 'Self-service items' });
-  await list.getByRole('option', { name: /HCarling/ }).click();
+  const options = list.getByRole('option');
+  await expect(options).toHaveCount(5);
+  const ids = await options.evaluateAll((els) => els.map((el) => el.id));
+  const carling = ids.findIndex((id) => id.endsWith('-p-carling-link'));
+  const neighbour = ids[carling + 1] ?? ids[carling - 1]!;
+  await options.nth(carling).click();
   await page.locator('.inbox__detail').getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(toast(page, /Approved/)).toBeVisible();
   await expect(list).toBeVisible();
   await expect(list).toBeFocused();
+  // The item after the approved one is active, ready for the next decision.
+  await expect(list).toHaveAttribute('aria-activedescendant', neighbour);
   await expect(page).not.toHaveURL(/item=/);
+  // A later pick restores itself on Back, not the earlier neighbour.
+  const other = options.filter({ hasText: 'HFA' });
+  const otherId = (await other.getAttribute('id'))!;
+  expect(otherId).not.toBe(neighbour);
+  await other.click();
+  await page.getByRole('button', { name: /Back to the list/ }).click();
+  await expect(list).toBeFocused();
+  await expect(list).toHaveAttribute('aria-activedescendant', otherId);
   // One Back leaves the Inbox for the Week, not a copy of the list.
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`^${ADMIN}/(\\?|$)`));

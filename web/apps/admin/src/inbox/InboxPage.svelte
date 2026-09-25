@@ -91,8 +91,8 @@
   let list = $state<ReturnType<typeof InboxList>>();
   let detailEl = $state<HTMLDivElement>();
   // Phones hide the list while a detail is open: focus follows the swap both
-  // ways (into the detail after a pick, back to the opened option on return).
-  let focusDetail = false;
+  // ways (into the detail after a pick or Forward, back to the opened option
+  // on return). `restore` names a different option to land on (after a decision).
   let restore = '';
   let shown = '';
   $effect(() => {
@@ -101,8 +101,7 @@
     shown = key;
     if (!phone || key === was || !was.startsWith(`${current}/`)) return;
     const wasId = was.slice(current.length + 1);
-    if (chosen && focusDetail) {
-      focusDetail = false;
+    if (chosen && !wasId) {
       void tick().then(() => detailEl?.focus());
     } else if (!chosen && wasId) {
       void list?.focusOn(restore || wasId);
@@ -112,17 +111,20 @@
 
   function pick(id: string, open: boolean) {
     error = '';
-    focusDetail = open && phone;
+    restore = '';
     onselect?.(current, id, open && phone);
   }
 
   async function after(message: string) {
     toaster.show({ message, tone: 'ok' });
+    // Before the reload: its effects run inside `load()` and consume `restore`.
     const index = items.findIndex((p) => p.id === chosen?.id);
+    restore = phone && index >= 0 ? ((items[index + 1] ?? items[index - 1])?.id ?? '') : '';
     await inbox.load();
     void store.refresh();
+    await tick();
+    restore = '';
     // The next item of the tab takes the detail (or, on a phone, the list returns with it active).
-    if (phone) restore = (items[index] ?? items[index - 1])?.id ?? '';
     leaveDetail();
   }
 
