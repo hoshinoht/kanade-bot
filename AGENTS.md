@@ -1,23 +1,41 @@
 # Kanade bot repository guide
 
-## Toolchain and checks
+## Repository layout
+
+- Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). `legacy/python/` = frozen v4 rollback (Python), independently runnable.
+- `src/main.rs` installs the rustls `ring` provider and delegates to `src/runtime/` (command dispatch, env-only config, JSON logs, TLS); `src/cli/` parses `serve`, `healthcheck` and reserved `ctl`/`import`/`export`; `src/api/` is the bootstrap health server; `src/chat/persona/` loads the v5 persona layout.
+- Feature code: `src/domain/` (pure rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
+- `tests/<target>/main.rs` integration suites (see `tests/AGENTS.md`); `docs/v5/` contracts, decisions and frozen v4 vectors (see `docs/v5/AGENTS.md`).
+- `config/personas/` tracks only `README.md`, `catalog.example.yaml`, `bundles/kanade.yaml`, `profiles/example.yaml`; everything else there (and `config/personas-v4/`, mounted by the v4 container) is private.
+- `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `tools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); `spikes/stack/` is the finished stack-evaluation prototype; `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
+- `boss/knowledge/` is the tracked v5 boss knowledge (schema v2); v4's copy under `legacy/python/boss/knowledge/` must not change because the frozen v4 container validates it at startup. Root `boss/portraits` and `boss/artwork` are private, git-ignored art.
+- Planning state lives in git-ignored `.opencode/workplan/rust-rewrite-v5.{json,md}`; its `## Decision register` records user decisions that override older plan text.
+
+## v5 toolchain and checks
+
+- CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`.
+- Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
+- The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
+- Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_BIND` loopback-only). See `docs/v5/runtime-bootstrap.md`.
+- Pin new dependencies exactly (`=x.y.z`) with minimal features; keep rustls on `ring` only (no aws-lc/native-tls/openssl).
+
+## v4 rollback toolchain
 
 - The v4 rollback tree is `legacy/python/`; run its Python commands from that directory.
 - Use Python 3.12 and `uv`; run `uv sync --locked` there before v4 checks.
 - A focused v4 test is `cd legacy/python && uv run pytest -q tests/test_<area>.py::test_<case>`.
 - `uv run pytest` excludes the `live_model` marker through pytest config and needs neither Discord nor a model. `uv run pytest -m live_model -v` calls the real Kanata gateway and skips unless `KANATA_BASE_URL`, `KANATA_API_KEY_FILE` and `EXTRACT_MODEL`/`CHAT_PILOT_MODEL` are set; narrow the chatbot smoke test with `-k chat_live`.
 - Match v4 CI from `legacy/python/` with Ruff, stylesheet generation, and the non-live-model suite; the rollback image is `docker build -f legacy/python/deploy/Dockerfile legacy/python`.
-- Optional local hooks are enabled with `git config core.hooksPath .githooks`; pre-commit may format and re-stage Python files, while pre-push runs the non-live-model suite.
+- Optional local hooks are enabled with `git config core.hooksPath .githooks`; they cover only `legacy/python/` (pre-commit lock check, Ruff format/re-stage and lint; pre-push non-live-model suite) and skip when `uv` is missing.
 - If the repository moves and `.venv` commands report a bad interpreter, repair their absolute shebangs with `uv sync --reinstall`.
 
-## Where behavior lives
+## Where v4 behavior lives
 
-- `legacy/python/` is the independently runnable v4 rollback implementation; Rust v5 work belongs at the repository root.
 - Within v4, scheduling rules are under `legacy/python/bot/domain/`, persistence under `legacy/python/bot/infrastructure/`, and adapters under `legacy/python/bot/agent`, `extract`, `chat`, and `api`.
 - v4 `bossctl` remains an HTTP client; do not add a second scheduling path or make it manipulate the live SQLite file directly.
 - v4 catalogs, examples, docs, and container files are under `legacy/python/`; private deployment state remains at its existing root paths until manually mounted by an operator.
 - `legacy/python/tests/` mirrors v4 behavior by feature and supplies Discord/model fakes; v4 guides are under `legacy/python/docs/`.
-- `legacy/python/scripts/bench_extract.py` and `legacy/python/deploy/` (Dockerfile, its `Dockerfile.dockerignore`, Compose) are v4 rollback tooling; v5 container files belong in the root `deploy/` directory. TLS ingress is the shared edge (`~/projects/personal/edge`, site `sites/kanade`) over the internal `kanade_edge` network; kanade no longer ships Caddy.
+- `legacy/python/scripts/bench_extract.py` and `legacy/python/deploy/` (Dockerfile, its `Dockerfile.dockerignore`, Compose) are v4 rollback tooling; v5 container files belong in the root `deploy/` directory. TLS ingress is the shared edge (`~/projects/personal/homelab/edge`, site `sites/kanade`; Kanata lives in `~/projects/personal/homelab/kanata`) over the internal `kanade_edge` network; kanade no longer ships Caddy.
 
 ## Generated, coupled, and private files
 
@@ -46,4 +64,5 @@
 - Keep operational detail pages in a fixed `100dvh` shell with one tabbed window filling the remaining height: the document/body, masthead, back navigation, human identity, and tab strip never scroll; only the selected panel scrolls, including on narrow screens. Never fall back to stacked card windows, whole-window movement, or document-body scrolling.
 - On every existing-store (v14+) Repo reopen, enable connection-local SQLite foreign-key enforcement before using delivery attempts; migration-time PRAGMAs do not persist across connections, including FROZEN maintenance restart.
 - A bound Discord delivery claim survives native row retirement: replace a digest only after confirmed remote deletion, then atomically retire the exact bound attempt, release its target with actor/reason, and retire the native row under the same live lease; ambiguous deletion must suppress replacement.
+- Record every new user decision or scope change for v5 in the workplan as it happens: a JSON note in `.opencode/workplan/rust-rewrite-v5.json` AND a line in the `## Decision register` of `rust-rewrite-v5.md` (resume packets omit old notes), then refresh the checkpoint at milestones so a compacted or fresh session resumes with full context.
 <!-- recall:lessons:end -->

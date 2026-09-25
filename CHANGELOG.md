@@ -26,6 +26,116 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - Added an offline Rust LLM-provider interface, deterministic fake provider,
   structured output/tool-call validation, bounded payloads and retries, and
   redacted diagnostics. Kanata networking and chat integration remain deferred.
+- v5: capability-aware model requests (Kanata `/v1/models` metadata, operator-declared
+  capabilities or a minimal profile) and a generic OpenAI-compatible HTTP adapter for
+  Kanata or a plain Ollama `/v1` endpoint: https with verified certificates, plain http
+  only for local hosts, optional bearer key, a single capability lookup per call and one
+  reshaped retry when a model rejects a field. Env/config wiring is still pending.
+- v5: Rust domain core (reset and calendar weeks, fixed slots, time parsing, IDs, boss
+  catalog validation) matching the frozen v4 domain vectors, including DST handling.
+- v5: strict persona layout under `config/personas/` (catalog, bundles, profiles) with
+  a Rust loader, trusted Kanade fallback, atomic reloads and per-turn snapshots; the
+  Kanade bundle adds a header-rewrite prompt for small models. Public v4 persona prompt
+  vectors, plus reminder and run-mutation scheduler vectors, are frozen for parity.
+- v5: Rust scheduler core for week materialisation, fixed-run adoption, reminder rows,
+  RSVP reactions and run lifecycle, behind a store interface with an in-memory store and
+  a shared conformance suite. A day-of ping can no longer fire after its run starts on
+  DST spring-forward days. Dispatch, mention and digest scheduler vectors are frozen.
+- v5: run mutations (status, amend, swap, fixed-run edits) plus new fixed-edit choices
+  per manually moved run ("update to fixed" or "keep for this week") and a "reset to
+  fixed" action that refuses slots already passed. Removing someone from a fixed run
+  drops their RSVPs and recomputes status. A pure notification core plans mentions,
+  reminder dispatch and weekly digests; reminders and notices whose home channel is
+  unavailable now fall back to the post channel with an admin warning instead of being
+  silently dropped.
+- v5: Discord adapter groundwork on Twilight: sends report delivered, definitely not
+  sent or ambiguous (never retried), mentions limited to explicit member lists, v4
+  gateway intents with clear fatal-close reasons, reaction RSVPs and roster events,
+  and a slash-command framework with v4 permission gates and 3-second-safe replies.
+- v5: SQLite store (SQLx, no TLS in the store) with checksummed migrations, atomic
+  commits guarded by a store revision (conflicting saves are re-planned), single-writer
+  ownership, and private (0600) online backups; restore validates the copy first and
+  refuses to run beside leftover SQLite journal files.
+- v5: store ownership hardening: an operator lock directory (`owner_lock_dir`, 0700)
+  with a lock named after the database file's identity, private canonical paths with no
+  symlinks, writes and backups refused if the database file is replaced, and
+  cancellation-safe open and restore.
+- v5: tamper-evident schedule history: every change records who, where and the
+  before/after rows in a hash chain the database refuses to edit; admins can revert a
+  change, restore a boss week to a point or undo a member's changes (always forward,
+  never resending pings); repeated requests apply once; backups carry a history anchor.
+- v5: history blame (who last changed each run or fixed-run detail) and immutable
+  checkpoints (automatic at every boss-week start plus admin-named) with a previewed,
+  week-scoped restore.
+- v5: schedule drafts (git-style branches): admins stage changes that ping nobody,
+  preview the resulting week, rebase and merge them as one recorded change with
+  per-detail three-way conflict checks (no force); merges post one summary per affected
+  channel, and drafts for a boss week that has passed expire automatically.
+- v5: edits made from an out-of-date screen no longer silently overwrite someone
+  else's change: each edit can state the last change it saw per detail, a clash on the
+  same detail is refused with who changed it and when, different details still merge,
+  and only admins can apply theirs anyway (recorded as an explicit override).
+- v5: member requests (git-style pull requests): members ask for a new weekly run, a
+  weekly-run change, or to join, leave or swap; admins preview, edit, approve (as one
+  conflict-checked merge) or reject with a reason. Permission is re-checked at
+  approval, party changes are stored as add/remove so concurrent requests merge,
+  members have pending and daily limits, frozen members can't submit, and public
+  channels only ever show a bot-written summary of the request.
+- v5: cherry-pick: admins re-apply a past change (time, party, status or answers) to
+  the same weekly run in another boss week, previewed first and re-checked against
+  the schedule rules; conflicts refuse by default, and force applies exactly the
+  conflicts that were previewed and is recorded as an override.
+- v5: attendance model (off by default, v4 behaviour unchanged until enabled): members
+  can set a standing "always in" answer per weekly run and admins can mark a weekly run
+  "assume everyone's coming"; answers read confirmed / assumed / unknown / declined with
+  tallies like "4/4 (2 assumed)", runs turn at risk only on a ❌ or on unknown answers
+  close to start, morning pings mention only unknown members, and marking a run done
+  records who came (members confirm only their own), with private attendance patterns
+  that suggest standing answers. With attendance on, an admin-set planned/confirmed
+  status sticks (shown "set by admin") until a reaction, party change or new status
+  ends it, and a run's status no longer changes once it has started.
+- v5: delivery journal for Discord sends (claim, bind to the channel actually used,
+  mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
+  restart without resending), a message-to-run card index for reactions, and a guard
+  that never reopens a reminder whose delivery may already have happened.
+- v5: scheduler tick and delivery executor: reminders and weekly digests go out
+  through the journal in v4's order, never twice; sends that never left are retried,
+  refused ones retire with a throttled admin alert, a digest is replaced only after
+  the old card is confirmed deleted, and a clock that moved backwards posts nothing.
+- v5: Svelte 5 web workspace (`web/`) with separate admin and public installable apps
+  that keep the portal's look (with WCAG AA contrast fixes), run under a strict CSP with
+  no inline code, work offline, and include a keyboard-accessible drag-and-drop planner.
+- v5 admin app: v4-style masthead and grouped navigation with boss portraits and entry
+  art, plus Week, run sheet (incl. Reset to fixed), Fixed (with per-run update/keep
+  choice), Bosses with knowledge, Members and Reminders screens; a `web` CI job runs
+  lint, type checks, unit and browser tests against the dev mock (`tools/pwa-mock`).
+- v5 admin app: Inbox, Extractions (with re-read jobs), Chat, Limits (model backend
+  groups, queue, breaker, admission refusals), History (timeline, diffs, previewed revert,
+  restore-week and revert-by-member, checkpoints, "who changed this"), and Bosses pages
+  on the new knowledge files; pages load on demand and each app ships its own styles.
+- v5 admin app: full Config settings (12 sections incl. three-role model picker,
+  per-alias capacity check against Kanata's published limits, reasoning levels
+  limited to what each model publishes, a fail-closed cloud/PII warning, the
+  self-service redirect mode, public portal toggle, reply-style profiles shown
+  read-only with reload, publish and role order), a Channel access section, per-run
+  re-read buttons, and a lazily-loaded planner (admin initial JS 71.8 → 43.6 KB);
+  settings saves refuse read-only or unknown fields; proposed PWA contracts in
+  `docs/v5/admin-api.md` and `docs/v5/limits-contract.md` for the backend to confirm.
+- v5 planner cards: the drag-handle column is gone; a small grip sits in the corner,
+  the whole card drags (after a short move, or a long press on touch), `M` picks a
+  card up from the keyboard, and a press made before the drag code loads still drags.
+- v5 public app: while the portal is closed only the app shell, status and bot
+  identity are served, and the page keeps checking so a reopened portal appears.
+- v5: `boss/knowledge/` schema v2 with per-difficulty facts (levels, force, HP, spec)
+  and credited iSIingGunz guide imports (Jupiter, Radiant Malefic Star, First Adversary,
+  Baldrix, Limbo, seasonal Kai), plus `scripts/boss_knowledge` fetch/validate tooling
+  with an anti-copy guard.
+- v4 tooling: `scripts/convert_personas_v5.py` converts a v4 persona directory
+  (`personas.yaml`, persona folders, behaviours) into the v5 catalog/bundle/profile
+  layout using the v4 loaders, with a names-only dry run, no overwrite without
+  `--force` and private file permissions.
+- v4 rollback Compose now mounts the private v4 persona files from
+  `config/personas-v4/`, leaving root `config/personas/` for the v5 layout.
 - Added the unreleased Python maintenance foundation with v14 state/lease tables,
   exclusive store ownership, pre-upgrade snapshots and task-bound retirement.
   Startup recovery authority is revoked before repository access is returned.
@@ -137,6 +247,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 public app: boss entry art on the week board rendered as full-size images
+  covering the cards (the run-card styles were missing from the public stylesheet);
+  a browser test now checks the art stays inside its card on both apps.
 - A failed or maintenance-denied move/problem notice no longer aborts applying
   the remaining amendments on a ✅ card; digest and test-ping failures now say
   delivery was not confirmed instead of claiming Discord rejected them.
