@@ -95,6 +95,8 @@ async fn every_public_debug_representation_redacts_nested_sentinels() {
             strict: true,
         }),
         max_output_tokens: 1,
+        reasoning: None,
+        sampling: None,
     };
     let response = CompletionResponse {
         model: sentinel.into(),

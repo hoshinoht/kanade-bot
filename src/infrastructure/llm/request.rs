@@ -3,6 +3,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::Effort;
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum Message {
@@ -40,6 +42,16 @@ pub struct OutputSchema {
     pub schema: Value,
     pub strict: bool,
 }
+/// Optional sampling controls; each is sent only to models that accept sampling.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Sampling {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+}
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub model: String,
@@ -47,6 +59,11 @@ pub struct ChatRequest {
     pub tools: Vec<ToolDefinition>,
     pub output_schema: Option<OutputSchema>,
     pub max_output_tokens: u32,
+    /// `Off` and `None` both omit `reasoning_effort` on the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<Effort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<Sampling>,
 }
 
 impl fmt::Debug for Message {
@@ -115,6 +132,8 @@ impl fmt::Debug for ChatRequest {
             .field("tool_count", &self.tools.len())
             .field("has_output_schema", &self.output_schema.is_some())
             .field("max_output_tokens", &self.max_output_tokens)
+            .field("reasoning", &self.reasoning)
+            .field("sampling", &self.sampling)
             .finish()
     }
 }

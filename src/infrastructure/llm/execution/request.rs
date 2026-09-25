@@ -22,6 +22,17 @@ pub(super) fn validate_request(
         return Err(LlmError::new(ErrorCode::RequestInvalid, "request-shape"));
     }
     request_text(&request.model, limits)?;
+    if let Some(sampling) = &request.sampling {
+        let temperature_ok = sampling
+            .temperature
+            .is_none_or(|value| (0.0..=2.0).contains(&value));
+        let top_p_ok = sampling
+            .top_p
+            .is_none_or(|value| value > 0.0 && value <= 1.0);
+        if !temperature_ok || !top_p_ok {
+            return Err(LlmError::new(ErrorCode::RequestInvalid, "sampling"));
+        }
+    }
 
     let mut tools = BTreeMap::new();
     for tool in &request.tools {

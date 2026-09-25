@@ -27,6 +27,8 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
             strict: true,
         }),
         max_output_tokens: 1,
+        reasoning: None,
+        sampling: None,
     };
     let limits = ExecutionLimits {
         max_content_bytes: 64,

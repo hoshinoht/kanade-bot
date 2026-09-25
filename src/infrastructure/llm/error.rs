@@ -10,6 +10,8 @@ pub enum ErrorCode {
     InvalidOutput,
     ModelMismatch,
     Incomplete,
+    /// The model's capabilities cannot honour a requested feature; nothing was sent.
+    UnsupportedCapability,
 }
 
 #[derive(Clone, PartialEq, Eq)]

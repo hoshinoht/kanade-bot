@@ -29,6 +29,8 @@ pub fn request() -> ChatRequest {
             strict: true,
         }),
         max_output_tokens: 128,
+        reasoning: None,
+        sampling: None,
     }
 }
 
@@ -72,6 +74,8 @@ pub fn tiny_request() -> ChatRequest {
         tools: Vec::new(),
         output_schema: None,
         max_output_tokens: 1,
+        reasoning: None,
+        sampling: None,
     }
 }
 
@@ -110,6 +114,8 @@ pub fn tool_request() -> ChatRequest {
         }],
         output_schema: None,
         max_output_tokens: 1,
+        reasoning: None,
+        sampling: None,
     }
 }
 

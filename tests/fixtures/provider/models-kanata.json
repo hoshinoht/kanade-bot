@@ -1,0 +1,64 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "sumi-structured",
+      "object": "model",
+      "owned_by": "kanata",
+      "kanata": {
+        "operations": ["chat.completions"],
+        "structured_output": true,
+        "sampling_controls": true,
+        "reasoning_control": true,
+        "function_tools": true,
+        "streaming": true,
+        "trust_zone": "private_network",
+        "reasoning_efforts": ["low", "medium", "high"],
+        "future_field": {"ignored": true}
+      }
+    },
+    {
+      "id": "codex-like",
+      "object": "model",
+      "kanata": {
+        "operations": ["chat.completions"],
+        "structured_output": false,
+        "sampling_controls": false,
+        "reasoning_control": true,
+        "function_tools": true,
+        "streaming": false,
+        "trust_zone": "external",
+        "reasoning_efforts": ["low", "medium", "high"]
+      }
+    },
+    {
+      "id": "glm-cloud",
+      "object": "model",
+      "kanata": {
+        "structured_output": false,
+        "sampling_controls": true,
+        "reasoning_control": false,
+        "function_tools": true,
+        "trust_zone": "local"
+      }
+    },
+    {"id": "plain-alias", "object": "model"},
+    {"id": "codex-like", "kanata": {"structured_output": true}},
+    {"id": "bad-metadata", "kanata": "structured"},
+    {
+      "id": "odd-flags",
+      "kanata": {
+        "structured_output": "true",
+        "function_tools": 1,
+        "trust_zone": "moon",
+        "reasoning_efforts": "high",
+        "operations": [7, "chat.completions"]
+      }
+    },
+    {"id": 42},
+    {"id": ""},
+    {"name": "missing-id"},
+    "not-an-object",
+    null
+  ]
+}

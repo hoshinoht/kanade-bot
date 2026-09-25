@@ -1,8 +1,13 @@
 mod bounds;
+mod capabilities;
 mod correlation;
 mod encoding;
+mod http_resolution;
+mod http_shaping;
+mod http_transport;
 mod payload;
 mod runner;
 mod safety;
 mod schema;
+mod stub;
 mod support;
