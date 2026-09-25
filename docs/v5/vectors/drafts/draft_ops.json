@@ -1,0 +1,16 @@
+{
+  "format": "kanade.draft_op.v1",
+  "ops": [
+    "{\"fixed_run\":{\"bosses\":[\"HFA\",\"Kalos\"],\"channel_id\":\"222\",\"note\":null,\"owner_id\":\"1001\",\"participants\":[\"1001\",\"1002\"],\"time\":\"20:15:00\",\"weekday\":5},\"format\":\"kanade.draft_op.v1\",\"op\":\"add_fixed_run\"}",
+    "{\"choices\":{\"per_run\":{\"run-a\":\"keep_for_this_week\",\"run-b\":\"update_to_fixed\"}},\"edit\":{\"bosses\":null,\"channel_id\":null,\"note\":\"prog \\\"night\\\"\",\"participants\":null,\"time\":\"21:00:00\",\"weekday\":6},\"fixed\":{\"created\":0},\"format\":\"kanade.draft_op.v1\",\"op\":\"apply_fixed_edit\"}",
+    "{\"choices\":\"update_all\",\"edit\":{\"bosses\":null,\"channel_id\":\"333\",\"note\":null,\"participants\":[\"1003\"],\"time\":null,\"weekday\":null},\"fixed\":{\"existing\":\"fixed-1\"},\"format\":\"kanade.draft_op.v1\",\"op\":\"apply_fixed_edit\"}",
+    "{\"fixed\":{\"existing\":\"fixed-1\"},\"format\":\"kanade.draft_op.v1\",\"op\":\"retire_fixed_run\",\"weeks\":[\"2026-08-26T16:00:00+00:00\",\"2026-09-02T16:00:00+00:00\"]}",
+    "{\"bosses\":[\"HFA\"],\"channel_id\":null,\"datetime\":\"2026-08-31T13:30:00+00:00\",\"fixed\":{\"created\":0},\"format\":\"kanade.draft_op.v1\",\"op\":\"create_run\",\"participants\":[\"1001\"],\"source\":\"amend\",\"status\":\"planned\",\"week_start\":\"2026-08-26T16:00:00+00:00\"}",
+    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"amend_run\",\"run\":{\"created\":4},\"to\":\"2026-09-01T12:00:00+00:00\"}",
+    "{\"change\":{\"announce\":false,\"status\":\"cancelled\",\"via_portal\":true},\"format\":\"kanade.draft_op.v1\",\"op\":\"set_status\",\"run\":{\"existing\":\"run-1\"}}",
+    "{\"add\":[\"1003\",\"1004\"],\"format\":\"kanade.draft_op.v1\",\"op\":\"swap_participants\",\"remove\":[\"1002\"],\"run\":{\"existing\":\"run-1\"},\"via_portal\":true}",
+    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"set_rsvp\",\"run\":{\"existing\":\"run-1\"},\"source\":\"chat\",\"state\":\"maybe\",\"user_id\":\"1003\"}",
+    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"reset_to_fixed\",\"run\":{\"existing\":\"run-1\"}}",
+    "{\"add\":[\"1004\"],\"fixed\":{\"existing\":\"fixed-1\"},\"format\":\"kanade.draft_op.v1\",\"op\":\"fixed_participants\",\"remove\":[\"1002\"]}"
+  ]
+}
