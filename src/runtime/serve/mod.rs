@@ -1,12 +1,14 @@
 //! Live `serve`: owns the SQLite store, serves the admin and public routers
 //! against it and, unless `KANADE_DISCORD_GATEWAY=0`, runs the Discord
-//! gateway, roster sync and delivery tick for the configured guild.
+//! gateway, roster sync, extraction and delivery tick for the configured
+//! guild.
 
 pub mod api;
 pub mod chat;
 mod chat_cards;
 mod commands;
 pub mod discord;
+pub mod extract;
 mod health;
 pub mod models;
 pub mod settings;
@@ -53,6 +55,7 @@ pub async fn serve_until(
         transport: Arc::new(LateTransport::new(token)),
         clock: Arc::new(auth::system_now),
         tick: config.tick,
+        extraction: extract::Timing::default(),
     };
     serve_with(&config, shutdown, wiring).await
 }
@@ -99,9 +102,11 @@ where
 {
     let prepared = discord::prepare(config, wiring.tick);
     let health = LiveHealth::new(store.clone())
-        .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
-    let composition = api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
-    let mut discord = discord::start(config, store, &composition, prepared, wiring).await?;
+        .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
+        .with_extraction(prepared.extraction.clone());
+    let mut composition =
+        api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
+    let mut discord = discord::start(config, store, &mut composition, prepared, wiring).await?;
     // HTTP keeps serving until the Discord side has stopped, then drains.
     let served = server::serve(
         &config.runtime,

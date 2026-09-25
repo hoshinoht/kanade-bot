@@ -27,6 +27,9 @@ use crate::infrastructure::llm::identity::IdentityCodec;
 /// store text can carry paths, so it goes only to the server log.
 pub const SCHEDULE_UNREADABLE: &str = "the schedule could not be read";
 pub const HISTORY_UNREADABLE: &str = "the channel history could not be read";
+/// The error of a call cut by [`Extractor::cancel_calls`] (logged `failed`;
+/// its messages stay unprocessed for a later read).
+pub const CALL_CANCELLED: &str = "cancelled: serve shut down";
 
 /// The fixed sentence for a call log; the store's own text goes to stderr
 /// as a structured event.
@@ -89,6 +92,8 @@ pub struct Extractor<S, P, X, O> {
     ids: Mutex<Box<dyn IdSource + Send>>,
     pub(super) self_service: Option<SelfServiceDeps>,
     pub(super) config: PipelineConfig,
+    /// Set once at shutdown: calls and permit waits in flight end at once.
+    cancel: tokio::sync::watch::Sender<bool>,
 }
 
 impl<S, P, X, O> std::fmt::Debug for Extractor<S, P, X, O> {
@@ -149,7 +154,20 @@ where
             ids: Mutex::new(deps.ids),
             self_service: deps.self_service,
             config,
+            cancel: tokio::sync::watch::Sender::new(false),
         }
+    }
+
+    /// Cut every model call and permit wait in flight, and any started
+    /// later: each is logged with [`CALL_CANCELLED`]. For a bounded stop.
+    pub fn cancel_calls(&self) {
+        self.cancel.send_replace(true);
+    }
+
+    /// Resolves once [`Self::cancel_calls`] was called.
+    pub(crate) async fn cancelled(&self) {
+        let mut cancel = self.cancel.subscribe();
+        let _ = cancel.wait_for(|cancelled| *cancelled).await;
     }
 
     pub fn config(&self) -> &PipelineConfig {

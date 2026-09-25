@@ -89,6 +89,9 @@ pub struct Health {
     /// decides `status`: chat is not essential to the process.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat: Option<&'static str>,
+    /// Live gateway only: `disabled`, `idle`, `running` or `degraded`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -121,6 +124,7 @@ impl OfflineApplication {
             dropped_events: None,
             last_tick_age_seconds: None,
             chat: None,
+            extraction: None,
         }
     }
 }

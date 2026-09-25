@@ -32,6 +32,16 @@ impl LiveRoster {
         *self.rows.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(rows);
     }
 
+    /// Every row (the extraction prompt's roster).
+    pub fn profiles(&self) -> Vec<MemberProfile> {
+        self.rows
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
+    }
+
     pub fn profile(&self, user_id: &str) -> Option<MemberProfile> {
         self.rows
             .read()

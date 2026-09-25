@@ -1,10 +1,11 @@
 //! Live `/healthz`: the store answers a read, the gateway is ready and the
-//! delivery tick keeps completing. With `KANADE_DISCORD_GATEWAY=0` Discord
+//! delivery tick keeps completing; `extraction` is informational and never
+//! degrades the status. With `KANADE_DISCORD_GATEWAY=0` Discord
 //! and the scheduler report `disabled` and only storage decides.
 
 use std::sync::Arc;
 
-use super::tick::TickStatus;
+use super::{extract::ExtractionStatus, tick::TickStatus};
 use crate::{
     bot::{
         events::DroppedEvents,
@@ -27,6 +28,7 @@ pub struct LiveHealth {
     gateway: Option<GatewayProbe>,
     tick: Option<Arc<TickStatus>>,
     chat: Arc<ChatHandle>,
+    extraction: Option<Arc<ExtractionStatus>>,
 }
 
 impl LiveHealth {
@@ -36,6 +38,7 @@ impl LiveHealth {
             gateway: None,
             tick: None,
             chat: Arc::default(),
+            extraction: None,
         }
     }
 
@@ -47,6 +50,11 @@ impl LiveHealth {
     pub fn with_discord(mut self, gateway: GatewayProbe, tick: Arc<TickStatus>) -> Self {
         self.gateway = Some(gateway);
         self.tick = Some(tick);
+        self
+    }
+
+    pub fn with_extraction(mut self, extraction: Arc<ExtractionStatus>) -> Self {
+        self.extraction = Some(extraction);
         self
     }
 }
@@ -83,6 +91,10 @@ impl HealthProbe for LiveHealth {
                     (state, state == "running", tick.last_age_seconds())
                 }
             };
+            let extraction = match &self.extraction {
+                Some(extraction) => Some(extraction.state(&self.store).await),
+                None => None,
+            };
             Health {
                 status: if storage_ok && discord_ok && scheduler_ok {
                     "ok"
@@ -96,6 +108,7 @@ impl HealthProbe for LiveHealth {
                 dropped_events,
                 last_tick_age_seconds,
                 chat: Some(self.chat.status()),
+                extraction,
             }
         })
     }

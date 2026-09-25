@@ -2,6 +2,8 @@
 //! [`CardDesk`]; on any other message it is an RSVP through the card index.
 //! Sequential so a member's add and remove are applied in order.
 
+use std::sync::Arc;
+
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -26,7 +28,8 @@ pub enum Reacted {
 }
 
 pub struct Reactions<S, T, I, A, X, K> {
-    pub desk: CardDesk<S, T, I, A>,
+    /// Shared with extraction's card outbox.
+    pub desk: Arc<CardDesk<S, T, I, A>>,
     pub rsvp: ReactionRouter<X, K>,
 }
 

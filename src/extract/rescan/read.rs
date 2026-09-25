@@ -167,7 +167,12 @@ where
                     cancelled = true;
                     break 'groups;
                 }
-                self.pace.wait(not_before).await;
+                // A breaker wait can be long; shutdown cuts it.
+                tokio::select! {
+                    biased;
+                    () = self.extractor.cancelled() => {}
+                    () = self.pace.wait(not_before) => {}
+                }
                 if self.stopped() {
                     cancelled = true;
                     break 'groups;

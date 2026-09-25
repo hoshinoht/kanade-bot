@@ -19,6 +19,7 @@ use twilight_model::id::{
 use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition, spawn_interaction};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
+use crate::bot::extract_feed::{FeedItem, MessageFeed};
 use crate::bot::roster::RosterJob;
 use crate::bot::transport::{DiscordTransport, Outcome};
 use crate::domain::members::Directory;
@@ -26,7 +27,7 @@ use crate::runtime::logging;
 
 pub use reactions::{Reacted, Reactions};
 
-/// Messages seen (extraction does not consume them yet).
+/// Guild messages seen (created, updated, deleted).
 #[derive(Clone, Debug, Default)]
 pub struct MessageCounts(Arc<[AtomicU64; 3]>);
 
@@ -72,6 +73,8 @@ pub struct Fanout<T> {
     pub messages: MessageCounts,
     /// The chat pilot's input; `None` leaves chat off.
     pub chat: Option<ChatFeed>,
+    /// Extraction's message feed; `None` counts messages only.
+    feed: Option<MessageFeed>,
     self_id: Option<Id<UserMarker>>,
     /// A `READY` arrived and its guild has not been synced yet.
     sync_pending: bool,
@@ -104,9 +107,23 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             guild_ready,
             messages: MessageCounts::default(),
             chat: None,
+            feed: None,
             self_id: None,
             sync_pending: false,
             tasks: Vec::new(),
+        }
+    }
+
+    /// Forward guild messages to extraction.
+    #[must_use]
+    pub fn with_feed(mut self, feed: Option<MessageFeed>) -> Self {
+        self.feed = feed;
+        self
+    }
+
+    fn forward(&self, item: FeedItem) {
+        if let Some(feed) = &self.feed {
+            feed.send(item);
         }
     }
 
@@ -246,15 +263,22 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
             }
             BotEvent::Interaction(interaction) => self.interaction(interaction),
             BotEvent::MessageCreated(message) => {
-                // For the extraction feed: v4 never extracts from a message
-                // the chatbot took.
-                let _handled_by_chat = self
+                // Chat first: v4 never extracts from a message the chatbot took.
+                let handled_by_chat = self
                     .chat
                     .as_ref()
                     .is_some_and(|chat| chat.message(&message, self.self_id));
                 self.messages.bump(0, 1);
+                self.forward(FeedItem::Posted {
+                    message,
+                    self_id: self.self_id,
+                    handled_by_chat,
+                });
             }
-            BotEvent::MessageUpdated(_) => self.messages.bump(1, 1),
+            BotEvent::MessageUpdated(message) => {
+                self.messages.bump(1, 1);
+                self.forward(FeedItem::Edited(message, self.self_id));
+            }
             BotEvent::MessagesDeleted(deleted) => {
                 if let Some(chat) = &self.chat {
                     chat.deleted(&deleted);
@@ -263,6 +287,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                     2,
                     u64::try_from(deleted.message_ids.len()).unwrap_or(u64::MAX),
                 );
+                self.forward(FeedItem::Deleted(deleted));
             }
         }
     }

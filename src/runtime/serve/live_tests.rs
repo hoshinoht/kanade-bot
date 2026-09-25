@@ -17,6 +17,7 @@ use twilight_model::id::Id;
 use super::{
     api::{self, Composition},
     discord::{self, Discord, Wiring},
+    extract,
     health::LiveHealth,
     serve_until, serve_with, store,
     tests::Temp,
@@ -125,6 +126,13 @@ fn ready() -> Event {
 }
 
 fn guild_create(channels: &[u64]) -> Event {
+    guild_create_with(
+        channels.iter().map(|id| channel_json(*id)).collect(),
+        Vec::new(),
+    )
+}
+
+fn guild_create_with(channels: Vec<Value>, threads: Vec<Value>) -> Event {
     let mut guild = json!({
         "afk_channel_id": null, "afk_timeout": 300, "application_id": null, "banner": null,
         "default_message_notifications": 0, "description": null, "discovery_splash": null,
@@ -148,7 +156,8 @@ fn guild_create(channels: &[u64]) -> Event {
     ] {
         guild[list] = json!([]);
     }
-    guild["channels"] = channels.iter().map(|id| channel_json(*id)).collect();
+    guild["channels"] = json!(channels);
+    guild["threads"] = json!(threads);
     Event::GuildCreate(Box::new(parse::<GuildCreate>(guild)))
 }
 
@@ -264,6 +273,7 @@ struct Harness {
     _temp: Temp,
     config: ServeConfig,
     fake: Arc<FakeDiscord>,
+    timing: extract::Timing,
 }
 
 struct Ctx {
@@ -278,16 +288,23 @@ const TICK: Duration = Duration::from_millis(50);
 
 impl Harness {
     fn new() -> Self {
+        Self::with(&[])
+    }
+
+    fn with(extra: &[(&str, &str)]) -> Self {
         let temp = Temp::new();
-        let config = temp.config(&[
+        let mut values = vec![
             ("KANADE_DISCORD_GATEWAY", "1"),
             ("KANADE_EXPECT_V4_STOPPED", "1"),
             ("KANADE_ADMIN_ROLE_ID", "20"),
-        ]);
+        ];
+        values.extend_from_slice(extra);
+        let config = temp.config(&values);
         Self {
             _temp: temp,
             config,
             fake: Arc::new(FakeDiscord::new()),
+            timing: extract::Timing::default(),
         }
     }
 
@@ -301,20 +318,29 @@ impl Harness {
         let store = store::open(&self.config.store).await.unwrap();
         let prepared = discord::prepare(&self.config, TICK);
         let health = LiveHealth::new(store.clone())
-            .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
-        let composition = api::compose(&self.config, store.clone(), prepared.cache.clone(), health)
-            .await
-            .unwrap();
+            .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
+            .with_extraction(prepared.extraction.clone());
+        let mut composition =
+            api::compose(&self.config, store.clone(), prepared.cache.clone(), health)
+                .await
+                .unwrap();
         let (events, source) = script();
         let wiring = Wiring {
             source,
             transport: Arc::clone(&self.fake),
             clock: Arc::new(auth::system_now),
             tick: TICK,
+            extraction: self.timing,
         };
-        let discord = discord::start(&self.config, store.clone(), &composition, prepared, wiring)
-            .await
-            .unwrap();
+        let discord = discord::start(
+            &self.config,
+            store.clone(),
+            &mut composition,
+            prepared,
+            wiring,
+        )
+        .await
+        .unwrap();
         let ctx = Ctx {
             store,
             events,
@@ -548,7 +574,13 @@ async fn guild_create_registers_guild_commands_reconciles_and_drops_other_guilds
     .await;
     assert_eq!(
         discord.steps(),
-        ["gateway_closed", "workers_stopped", "tick_stopped"]
+        [
+            "gateway_closed",
+            "chat_stopped",
+            "extraction_stopped",
+            "workers_stopped",
+            "tick_stopped"
+        ]
     );
     assert!(discord.result().is_ok());
     finish(&harness, ctx).await;
@@ -832,7 +864,13 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
     .await;
     assert_eq!(
         discord.steps(),
-        ["gateway_closed", "workers_stopped", "tick_stopped"]
+        [
+            "gateway_closed",
+            "chat_stopped",
+            "extraction_stopped",
+            "workers_stopped",
+            "tick_stopped"
+        ]
     );
     finish(&harness, ctx).await;
 }
@@ -1032,6 +1070,7 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
         transport: Arc::clone(&harness.fake),
         clock: Arc::new(auth::system_now),
         tick: TICK,
+        extraction: extract::Timing::default(),
     };
     // Serve stays up (no exit, so no restart re-IDENTIFYing) until shutdown.
     let started = Instant::now();
@@ -1076,7 +1115,13 @@ async fn a_fatal_close_reports_closed_health_and_stops_the_discord_side() {
     .await;
     assert_eq!(
         discord.steps(),
-        ["gateway_closed", "workers_stopped", "tick_stopped"]
+        [
+            "gateway_closed",
+            "chat_stopped",
+            "extraction_stopped",
+            "workers_stopped",
+            "tick_stopped"
+        ]
     );
     assert!(discord.result().is_ok());
     finish(&harness, ctx).await;
@@ -1153,3 +1198,5 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
     .await;
     finish(&harness, ctx).await;
 }
+
+mod extraction;

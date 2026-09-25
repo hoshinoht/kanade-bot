@@ -11,6 +11,7 @@ pub mod chat_feed;
 pub mod commands;
 pub mod delivery;
 pub mod events;
+pub mod extract_feed;
 pub mod gateway;
 pub mod guild_cache;
 pub mod handler;

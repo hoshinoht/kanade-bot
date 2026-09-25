@@ -26,7 +26,9 @@ pub use config::{
 };
 pub use debounce::Bursts;
 pub use driver::Pipeline;
-pub use extractor::{Deps, Extractor, HISTORY_UNREADABLE, PassReport, SCHEDULE_UNREADABLE};
+pub use extractor::{
+    CALL_CANCELLED, Deps, Extractor, HISTORY_UNREADABLE, PassReport, SCHEDULE_UNREADABLE,
+};
 pub use outcome::extraction_outcome;
 pub use ports::{
     AuthorKind, BacklogDrop, Card, CardEntry, ChatAnswer, Guild, IncomingMessage, MessageEvent,

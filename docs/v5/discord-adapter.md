@@ -175,6 +175,16 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   channel (also for an unknown channel). The router passes the bot's own and
   other bots' messages through; the consumer applies the loop guard.
   `Debug` omits message content.
+- Extraction feed (`extract_feed/`): the serve handler forwards `Message*`
+  to a `MessageFeed` (unbounded, never awaited inline) with the bot's id
+  from `READY`; `Feed::run` converts each to an `IncomingMessage` (filed
+  under `origin_channel_id`; `AuthorKind` `Myself` / `Webhook` / `Bot` /
+  `Member`) and forwards it to the pipeline in gateway order. A message or
+  edit whose latest timestamp is more than `STALE_AFTER` (60 s) old is
+  `Replay` and only cached (`StaleCache`), never offered. `DiscordHistory`
+  is the rescan `History`: the channel, then each cached thread under it,
+  `channel_messages` `After` pages of 100 from the window's snowflake (at
+  most 200 pages each; an unreadable thread is skipped).
 - Channels and threads (`CHANNEL_*`, `THREAD_*`, `THREAD_LIST_SYNC`) only
   update the guild cache and return `None`.
 - Guild access: `events::Router` is stateful. It keeps the owner and every
@@ -402,7 +412,7 @@ autocomplete goes through `commands::spawn_interaction`.
 
 Opposite-reaction removal and decline notices (chat answers apply without
 them); card portraits/artwork; withdrawing a card whose message was deleted;
-converting `BotEvent::Message*` into the extraction input and the
-rescan `History` over `channel_messages`; attachments; an admin-alert
+converting `BotEvent::Message*` into anything beyond chat and extraction;
+archived threads in rescans; attachments; an admin-alert
 destination beyond the log; an
 authenticated gateway/TLS smoke test against Discord (L1, run by hand).

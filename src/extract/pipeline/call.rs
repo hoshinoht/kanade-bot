@@ -9,7 +9,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tokio::time::Instant;
 
-use super::extractor::{Extractor, utc};
+use super::extractor::{CALL_CANCELLED, Extractor, utc};
 use super::ports::{Outbox, Proposer};
 use crate::domain::catalog::BossTable;
 use crate::domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
@@ -400,11 +400,18 @@ where
         record.authors.extend(prepared.author_ids.clone());
 
         let timeout = self.config.call_timeout;
-        let mut session = match self
-            .client
-            .open_extraction(channel_id, self.config.permit_wait, timeout)
-            .await
-        {
+        let opened = tokio::select! {
+            biased;
+            () = self.cancelled() => None,
+            opened = self
+                .client
+                .open_extraction(channel_id, self.config.permit_wait, timeout) => Some(opened),
+        };
+        let Some(opened) = opened else {
+            record.fail(Failure::Failed, CALL_CANCELLED.into());
+            return record;
+        };
+        let mut session = match opened {
             Ok(session) => session,
             Err(error) => {
                 let (_, failure) = classify(&error, timeout);
@@ -424,10 +431,25 @@ where
                 self.config.reasoning,
                 identity.as_ref(),
             );
-            let sent = if first {
-                session.complete(&request).await
-            } else {
-                session.answer_retry(&request).await
+            let sending = async {
+                if first {
+                    session.complete(&request).await
+                } else {
+                    session.answer_retry(&request).await
+                }
+            };
+            let sent = tokio::select! {
+                biased;
+                () = self.cancelled() => None,
+                sent = sending => Some(sent),
+            };
+            let Some(sent) = sent else {
+                record.model = alias;
+                record.requests = session.requests_used();
+                record.latency_ms =
+                    Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+                record.fail(Failure::Failed, CALL_CANCELLED.into());
+                return record;
             };
             first = false;
             let outcome = match sent {

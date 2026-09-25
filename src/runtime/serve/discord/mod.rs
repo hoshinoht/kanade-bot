@@ -1,14 +1,15 @@
 //! The Discord side of live serve: one gateway session for the configured
-//! guild, the roster task, the reaction worker and the delivery tick, all
-//! sharing one `GuildCache`, one `LiveRoster` and the API's store, sessions
-//! and access policy, plus the chat pilot (`super::chat`). Extraction is not
-//! wired.
+//! guild, the roster task, the reaction worker, the chat pilot
+//! (`super::chat`), extraction (`super::extract`) and the delivery tick, all
+//! sharing one `GuildCache`, one `LiveRoster`, one `CardDesk` and the API's
+//! store, sessions and access policy.
 //!
 //! Shutdown order: gateway close (then its spawned interaction and
 //! registration tasks) → chat stops (waiting questions refunded, running
-//! ones finish within the grace or are cut, each concluded) → roster and
-//! reaction workers drain → the running tick finishes → (caller) HTTP drain
-//! → store close.
+//! ones finish within the grace or are cut, each concluded) → extraction
+//! (feed, pipeline, `Rescans::close`; calls in flight cancelled) → roster and
+//! reaction workers drain → the running tick finishes (polled throughout) →
+//! (caller) HTTP drain → store close.
 
 mod late;
 mod ports;
@@ -28,11 +29,15 @@ use super::{
     chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
     chat_cards::ChatDesk,
     commands,
+    extract::{self, Extraction, ExtractionStatus, Timing},
     health::GatewayProbe,
     tick::{self, TickLoop, TickStatus, delivery_config, watch_list},
 };
 use crate::{
-    api::{admin::config::SettingsChanged, auth::Clock, state::GuildAccess, write::ApiClock},
+    api::{
+        admin::config::SettingsChanged, auth::Clock, rescan::RescanDesk, state::GuildAccess,
+        write::ApiClock,
+    },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
         delivery::LogAlerts,
@@ -54,12 +59,14 @@ use ports::{StaffAuthority, StoreIndex, StoreRoster};
 /// How long the gateway waits for its close handshake on shutdown.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The gateway source and transport, and the loop's clock and period.
+/// The gateway source and transport, the loop's clock and period, and
+/// extraction's debounce and backlog pace.
 pub struct Wiring<S, T> {
     pub source: S,
     pub transport: Arc<T>,
     pub clock: Clock,
     pub tick: Duration,
+    pub extraction: Timing,
 }
 
 /// Shared state created before the API is composed (health reads it).
@@ -67,6 +74,7 @@ pub struct Prepared {
     pub cache: Arc<GuildCache>,
     pub probe: GatewayProbe,
     pub tick_status: Arc<TickStatus>,
+    pub extraction: Arc<ExtractionStatus>,
     live: Live,
 }
 
@@ -83,6 +91,7 @@ pub fn prepare(config: &ServeConfig, tick: Duration) -> Prepared {
         cache,
         probe,
         tick_status: Arc::new(TickStatus::new(tick)),
+        extraction: Arc::new(ExtractionStatus::default()),
         live: Live {
             router,
             status: connection,
@@ -104,6 +113,7 @@ pub struct Discord {
     gateway: Option<JoinHandle<RunExit>>,
     stop_workers: watch::Sender<bool>,
     workers: Vec<JoinHandle<()>>,
+    extraction: Extraction,
     /// Polled by [`Discord::until`] rather than spawned: the tick's future
     /// is not provably `Send` (async-closure lease helper).
     tick: Option<Pin<Box<dyn Future<Output = ()>>>>,
@@ -148,11 +158,12 @@ fn card_desk<T: GatewayTransport>(
 }
 
 /// Recover the delivery journal, then start everything. Nothing connects
-/// until the gateway task first polls the source.
+/// until the gateway task first polls the source. Attaches the rescan
+/// runner to the API state, so call it before HTTP serves.
 pub async fn start<S, T>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
-    composition: &Composition,
+    composition: &mut Composition,
     prepared: Prepared,
     wiring: Wiring<S, T>,
 ) -> Result<Discord, Error>
@@ -166,6 +177,7 @@ where
     let Prepared {
         cache,
         tick_status,
+        extraction: extraction_status,
         live,
         probe,
     } = prepared;
@@ -191,11 +203,17 @@ where
         stopped.clone(),
     );
 
-    let (transport, clock) = (&wiring.transport, &wiring.clock);
-    let new_desk = || card_desk(config, &store, transport, clock, &roster, &access, &policy);
-    // Chat posts its cards through its own desk; ✅/❌ reach them through
-    // the reaction worker's, which reads the same stored cards.
-    let (desk, chat_desk) = (new_desk(), new_desk());
+    // One desk for extraction cards, chat cards and the reaction worker's
+    // ✅/❌, which all read the same stored cards.
+    let desk = Arc::new(card_desk(
+        config,
+        &store,
+        &wiring.transport,
+        &wiring.clock,
+        &roster,
+        &access,
+        &policy,
+    ));
     let rsvp = ReactionRouter::new(
         StoreIndex(Arc::clone(&store)),
         SchedulerService::new(
@@ -208,6 +226,39 @@ where
     let (reaction_jobs, reaction_queue) = mpsc::unbounded_channel();
 
     let (guild_ready, ready) = watch::channel(false);
+    let state = &composition.admin.state;
+    let mut extraction = extract::start(extract::Inputs {
+        store: Arc::clone(&store),
+        models: composition.models.clone(),
+        settings: composition.settings.clone(),
+        changes: state.config.as_ref().map(|desk| desk.subscribe()),
+        desk: Arc::clone(&desk),
+        transport: Arc::clone(&wiring.transport),
+        cache: Arc::clone(&cache),
+        roster: Arc::clone(&roster),
+        bosses: Arc::clone(&state.catalog),
+        policy: policy.clone(),
+        zone: config.runtime.timezone,
+        clock: Arc::clone(&wiring.clock),
+        status: extraction_status,
+        timing: wiring.extraction,
+        guild_ready: ready.clone(),
+    });
+    // Nothing has cloned the state yet: compose returned the only handle.
+    match Arc::get_mut(&mut composition.admin.state) {
+        Some(state) => {
+            state.rescans = extraction
+                .rescans
+                .clone()
+                .map(|runner| Arc::new(RescanDesk::new(runner)));
+        }
+        None => {
+            extraction.stop().await;
+            return Err(Error::Startup(
+                "the rescan runner could not be attached".into(),
+            ));
+        }
+    }
     let tick = TickLoop {
         store: Arc::clone(&store),
         transport: Arc::clone(&wiring.transport),
@@ -220,12 +271,18 @@ where
         status: tick_status,
     };
 
-    let dispatcher = commands::factory(
+    let dispatcher = match commands::factory(
         Arc::clone(&composition.admin.state),
         Arc::clone(&store),
         Arc::clone(&cache),
         Arc::clone(&wiring.transport),
-    )?;
+    ) {
+        Ok(dispatcher) => dispatcher,
+        Err(error) => {
+            extraction.stop().await;
+            return Err(error);
+        }
+    };
     let ready_transport = Arc::clone(&wiring.transport);
     let owner_access = Arc::clone(&access);
     let chat_roster = Arc::clone(&roster);
@@ -239,9 +296,10 @@ where
         reaction_jobs,
         Box::new(move |application| ready_transport.application_ready(application)),
         guild_ready,
-    );
+    )
+    .with_feed(extraction.feed.take());
     let messages = handler.messages.clone();
-    let (feed, chat) = chat::start(ChatInputs {
+    let started = chat::start(ChatInputs {
         config: DriverConfig::default(),
         answerer: ServeAnswerer {
             store: Arc::clone(&store),
@@ -254,14 +312,21 @@ where
             guild_id: config.guild.guild_id.to_string(),
             pilot_role: access.pilot_role.clone(),
             clock: Arc::clone(&wiring.clock),
-            desk: Arc::new(chat_desk),
+            desk: Arc::clone(&desk),
         },
         transport: Arc::clone(&wiring.transport),
         handle: composition.admin.state.chat.clone(),
         roster: chat_roster,
         access: Arc::clone(&access),
     })
-    .await?;
+    .await;
+    let (feed, chat) = match started {
+        Ok(started) => started,
+        Err(error) => {
+            extraction.stop().await;
+            return Err(error);
+        }
+    };
     handler.chat = Some(feed);
 
     let workers = vec![
@@ -291,6 +356,7 @@ where
         gateway: Some(gateway),
         stop_workers,
         workers,
+        extraction,
         tick: Some(tick),
         exit: None,
         messages,
@@ -381,23 +447,41 @@ impl Discord {
                 json!({"exit": format!("{:?}", self.exit)}),
             );
         }
-        // No message can reach chat any more; its cards and replies go out
-        // before the workers stop.
-        if let Some(mut chat) = self.chat.take() {
-            chat.stop().await;
-            logging::event("INFO", "chat_stopped", json!({}));
-        }
-        // The handler (and so every queue sender) is gone: workers drain.
-        self.stop_workers.send_replace(true);
-        for worker in self.workers.drain(..) {
-            let _ = worker.await;
-        }
-        if !self.steps.contains(&"workers_stopped") {
-            self.steps.push("workers_stopped");
-        }
-        if let Some(tick) = self.tick.take() {
-            let _ = tick.await;
-            self.steps.push("tick_stopped");
+        // The tick is polled meanwhile: a tick suspended inside a store write
+        // would otherwise block every write below.
+        let tick = self.tick.take();
+        let steps = &mut self.steps;
+        let chat = self.chat.take();
+        let extraction = &mut self.extraction;
+        let stop_workers = &self.stop_workers;
+        let workers = &mut self.workers;
+        let rest = async move {
+            // No message can reach chat or extraction any more; their cards
+            // and replies go out before the workers stop.
+            if let Some(mut chat) = chat {
+                chat.stop().await;
+                logging::event("INFO", "chat_stopped", json!({}));
+                steps.push("chat_stopped");
+            }
+            extraction.stop().await;
+            if !steps.contains(&"extraction_stopped") {
+                steps.push("extraction_stopped");
+            }
+            // Every queue sender is gone: workers drain, the tick stops.
+            stop_workers.send_replace(true);
+            for worker in workers.drain(..) {
+                let _ = worker.await;
+            }
+            if !steps.contains(&"workers_stopped") {
+                steps.push("workers_stopped");
+            }
+        };
+        match tick {
+            Some(tick) => {
+                tokio::join!(rest, tick);
+                self.steps.push("tick_stopped");
+            }
+            None => rest.await,
         }
     }
 

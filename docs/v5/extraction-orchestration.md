@@ -6,7 +6,16 @@ Status: `src/extract/pipeline/`, `src/extract/backlog.rs`,
 `bot/agent/rescan.py`. The self-service redirect (slice N1) is wired
 below; cards and ✅/❌ (slice E5) are `bot::cards` (`docs/v5/discord-adapter.md`
 *Proposal cards*), whose `CardOutbox` implements `Outbox`. Serve wiring
-(Discord events, config, the Limits view) is not done yet.
+(S9) is `src/runtime/serve/extract/` with `bot::extract_feed` (gateway
+messages and the rescan `History`); see `runtime-bootstrap.md` *Live
+serve*. Not wired yet: the Limits view, self-service links (cards only
+while the public portal is closed) and `check_reasoning_effort` at startup.
+Serve sets `handled_by_chat` from the chat driver's verdict (answered,
+queued, shed or rate-limited) and keeps it for that message's later edits.
+`Extractor::cancel_calls` (shutdown) cuts calls and permit waits in flight,
+and any started later: each is logged `failed` with `CALL_CANCELLED`
+(`cancelled: serve shut down`) and its messages stay unprocessed; a rescan's
+turned-away wait is cut too.
 
 ## Ports
 
@@ -147,8 +156,10 @@ own text (it can carry paths) goes only to the server log as
 
 ## Backlog
 
-Late messages (`MessageOrigin::Replay`: RESUME replays, backfill on start)
-and the messages of turned-away bursts wait in the backlog: deduplicated
+Late messages (`MessageOrigin::Replay`) and the messages of turned-away
+bursts wait in the backlog. Live serve never offers `Replay` messages
+(parent decision: stale history makes no card unless rescanned); it caches
+them only, so in serve the backlog holds turned-away bursts. The backlog: deduplicated
 by message id (a replay of an already-cached, unchanged message is not
 queued at all), bounded by `backlog_capacity` (default 1000); past it the
 oldest are dropped and reported through `Outbox::backlog_dropped`. One

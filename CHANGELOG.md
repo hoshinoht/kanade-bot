@@ -273,6 +273,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 serve runs extraction live (S9): watched messages feed the pipeline, proposal cards post
+  and resolve with ✅/❌ (one card desk for extraction and chat cards), `/rescan` and the admin
+  Rescan panel page Discord history, a 24 h startup rescan runs when extraction is on, chat
+  questions are never extracted, health reports `extraction`, and shutdown cuts in-flight
+  extraction calls so it stays inside the container's stop grace.
 - v5 admin app: role and bot mentions resolve to names, message authors are copyable names,
   Config → Models shows read-only capacity groups with one line for Kanata's limits, the
   masthead is regrouped (status chip, account menu, compact Commands), state pills share

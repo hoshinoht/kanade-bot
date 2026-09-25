@@ -18,6 +18,7 @@ use twilight_model::gateway::payload::incoming::{GuildCreate, MessageCreate, Rea
 use super::{
     api::{self, Composition},
     discord::{self, Discord, Wiring},
+    extract,
     health::LiveHealth,
     store,
     tests::Temp,
@@ -350,7 +351,7 @@ async fn live(stub: &ModelStub, extra: &[(&str, &str)]) -> (Live, Discord) {
     let prepared = discord::prepare(&config, Duration::from_millis(50));
     let health = LiveHealth::new(store.clone())
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
-    let composition = api::compose(&config, store.clone(), prepared.cache.clone(), health)
+    let mut composition = api::compose(&config, store.clone(), prepared.cache.clone(), health)
         .await
         .unwrap();
     let models = composition.models.clone().expect("model stack");
@@ -362,8 +363,9 @@ async fn live(stub: &ModelStub, extra: &[(&str, &str)]) -> (Live, Discord) {
         transport: Arc::clone(&fake),
         clock: Arc::new(auth::system_now),
         tick: Duration::from_millis(50),
+        extraction: extract::Timing::default(),
     };
-    let discord = discord::start(&config, store.clone(), &composition, prepared, wiring)
+    let discord = discord::start(&config, store.clone(), &mut composition, prepared, wiring)
         .await
         .unwrap();
     let live = Live {

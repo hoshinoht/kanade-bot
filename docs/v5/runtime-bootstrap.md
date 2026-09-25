@@ -7,8 +7,8 @@ latter as a semver version.
 ## Available now
 
 The offline development server and live `serve` (Discord gateway, roster
-sync, delivery tick and the chat pilot for the configured guild; extraction
-off):
+sync, delivery tick, the chat pilot and extraction (behind its settings
+switch) for the configured guild):
 
 ```sh
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
@@ -50,7 +50,11 @@ the pilot role or a chat category, or while the clean-retry storm guard is
 suspended; chat never decides `status`). `status` is `ok` (HTTP 200) only when storage is ok,
 Discord is `ready` and the scheduler `running`; otherwise `degraded` (503).
 With `KANADE_DISCORD_GATEWAY=0`, `scheduler`/`discord` are `disabled` and
-only storage decides.
+only storage decides. The live gateway also reports `extraction`
+(informational, never degrades `status`): `disabled` (switched off or
+paused), `degraded` (on, but no model gateway or extraction model, or the
+latest extraction call `failed` or was `turned_away`), `running` (a rescan
+job is queued or running) or `idle`.
 `healthcheck` accepts the exact offline document or a live one with `status`
 and `storage` `ok`, ignoring extra fields.
 Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
@@ -309,15 +313,45 @@ The Discord side (`serve/discord/`) runs one gateway session for
   outcome `error`) unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` (then answered,
   guardrail `external_unmasked`). The persona is the live snapshot with the
   member's saved reply style. Replies are outside the delivery journal (an
-  ambiguous reply is logged, never retried); proposal cards go through a
-  card desk (journalled, ✅/❌ via the reaction worker). Withheld ids are
+  ambiguous reply is logged, never retried); proposal cards go through the
+  shared card desk (journalled, ✅/❌ via the reaction worker). Withheld ids are
   reloaded from the chat log before the first admission (a failed reload
   fails startup); the question timeout (60 s) is validated below the
   clean-retry window. A queued question gets its position as a keycap
   reaction; shed, expired and deleted waiters are refunded; deleting a
   running question lets it finish (a staged proposal is never cut) but
-  posts nothing more for it. Extraction is still off (S9); the handler
-  computes `handled_by_chat` for it.
+  posts nothing more for it.
+- Extraction (`serve/extract/`, S9; contract
+  `extraction-orchestration.md`): the handler hands created, edited and
+  deleted guild messages to `bot::extract_feed` without awaiting; one feed
+  task forwards them in gateway order to the `Pipeline` (debounce, backlog,
+  governed calls on the `ModelStack`'s client under Passthrough, so an
+  `external` route is refused unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` and
+  the refusal is logged as a `failed` call). Chat sees each created message
+  first: one it handles (answered, queued, shed or rate-limited; v4
+  `Handling(True)`) is `handled_by_chat`, cached but never extracted, and
+  so are its later edits (the live guild's chat and watch categories are
+  the same). Watched = the settings' channel
+  ids plus every channel and thread under the watched categories (thread
+  messages are filed under their parent). A message or edit first seen more
+  than 60 s after it happened is `Replay`: cached for rescans, never offered
+  to the pipeline, so stale history (RESUME replays included) makes no card
+  until a rescan (parent decision). Cards only (the public portal is
+  closed), posted and refreshed through the one `CardDesk` chat and the
+  reaction worker share, so card ✅/❌ reach them; merge notices go through
+  the notice outbox. `extract_enabled` and `paused` apply live through
+  `ConfigDesk::subscribe` (the watch list too); while off, messages are
+  cached, nothing calls the model and rescan submits are refused (`/rescan`
+  "not available", API `503`; parent decision). When on at startup, once
+  the guild is available the stored roster is loaded and one automated
+  `24h` rescan (`source: startup`) of every watched channel is queued.
+  Without a model gateway or extraction alias nothing is composed
+  (`extraction_unavailable` logged; rescans `503`); messages are then only
+  counted. `ApiState.rescans` and `/rescan` share one runner
+  (`RescanService` over `Rescans`, backfill via `channel_messages` `After`
+  pages of 100). The extraction effort sent is the configured level at
+  startup (the runner floors `off`). A rescan re-reads cached messages
+  whatever chat did with them (as v4).
 - A fatal close (4004: the token; 4014: enable the Server Members and
   Message Content privileged intents in the Developer Portal) is logged once
   (`gateway_closed_for_good`), stops the Discord side (workers, tick) and
@@ -332,8 +366,15 @@ interaction/registration tasks finish), chat stops (waiting questions are
 refunded, running ones get 3 s to finish and are then cut, refunded and
 concluded with a `cancelled` log row; tidy-up gets 2 s more plus 1 s for
 the log writes of anything aborted, so chat adds at most 6 s; logged
-`chat_stopped`), the roster and reaction workers
-drain, the running tick finishes (a tick is never cut midway), then HTTP
+`chat_stopped`), extraction stops (`Rescans::close`: queued jobs end
+`cancelled` / `shut down`, the running one `cancelled` before its next
+burst; feed, pipeline and worker get 1 s, then calls and permit waits in
+flight are cut and logged `failed` with `cancelled: serve shut down`
+(`extraction_calls_cancelled`), and anything left after 2 s more is
+aborted (`extraction_aborted`), so extraction adds about 3 s), the roster
+and reaction workers drain, the running tick finishes (a tick is never cut
+midway, and it keeps being polled during the steps before so none of them
+waits on a store write it holds), then HTTP
 drains, then the store closes (logged `store_closed`) so ownership is
 released only after SQLite closes. A startup failure after the store opened
 closes it too.
@@ -342,8 +383,7 @@ Runbook (production token, real guild): `docker stop kanade-bot` (v4) first,
 then set `KANADE_EXPECT_V4_STOPPED=1` and start v5; to roll back, stop v5,
 set it back to `0` and `docker start kanade-bot`.
 
-Still not wired: `rescans` is `None` (`503`); the inbox's Discord card
-refresh/close; extraction.
+Still not wired: the inbox's Discord card refresh/close.
 
 ### Listeners
 
@@ -389,11 +429,12 @@ the gateway's `GuildCache` as the channel list. Gateway wiring (see
 `BotEvent::GuildAvailable` → role pruning then `on_guild_available`, both on
 one sequential roster task with startup reconciliation, so the Discord
 sign-in preconditions (ordering, reconciliation, admin-role deletion) hold.
-Rescans (A7): `ApiState.rescans` is `None` (rescan routes answer `503`)
-until serve builds the extractor's `Rescans` queue (Discord `History`
-backfill, `Extractor` over the governed model client, `Proposer`, `Outbox`),
-spawns `Rescans::run` and passes `RescanDesk::new(RescanService::new(..))`;
-serve shutdown must call `Rescans::close`.
+Rescans (A7): live serve builds the extractor's `Rescans` queue (Discord
+`History` backfill, `Extractor` over the governed model client, the
+scheduler `Proposer`, `CardOutbox`), spawns `Rescans::run`, sets
+`ApiState.rescans` to `RescanDesk::new(..)` over the gated runner and calls
+`Rescans::close` on shutdown before the store closes. Without a model
+gateway, and in `serve --offline`, it stays `None` (`503`).
 Admin writes' notices (A4 run and timing notices, rollbacks, inbox merge and
 requester notices) are written to the store's notice outbox with the change
 and posted by the delivery tick's outbox drain once serve runs the tick
@@ -460,8 +501,9 @@ emit only safe configuration-error descriptions, not environment values.
 
 ## Deliberate boundaries
 
-Live `serve` runs the Discord gateway, roster sync and delivery tick, with
-chat and extraction off (see "Live serve"). `ctl` and `export`
+Live `serve` runs the Discord gateway, roster sync, the chat pilot,
+extraction and the delivery tick, chat and extraction each behind its
+settings switch (see "Live serve"). `ctl` and `export`
 are reserved commands that return a nonzero not-implemented result.
 `import v4` is the one-off testing import from a v4 snapshot
 (`v4-import.md`). `serve --offline` wires no scheduler, persistence,
