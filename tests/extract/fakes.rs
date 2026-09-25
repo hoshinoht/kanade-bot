@@ -4,6 +4,9 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use kanade::chat::nudge::{GovernedRewriter, Nudger, SharedRewriter};
+use kanade::chat::persona::{CompiledPersona, PersonaId, parse_bundle};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,8 +26,10 @@ use kanade::domain::scheduler::{
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage,
-    MessageEvent, MessageOrigin, Outbox, Pipeline, PipelineConfig, Proposer, RedirectOffer,
+    MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig, Proposer, Redirected,
+    SelfServiceDeps,
 };
+use kanade::extract::redirect::PublicPortalLinks;
 use kanade::extract::rescan::History;
 use kanade::infrastructure::llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
@@ -231,14 +236,12 @@ pub struct Recorder {
     pub cards: Mutex<Vec<Card>>,
     pub answers: Mutex<Vec<ChatAnswer>>,
     pub drops: Mutex<Vec<BacklogDrop>>,
-    pub offers: Mutex<Vec<RedirectOffer>>,
-    pub redirect: AtomicBool,
+    pub redirects: Mutex<Vec<Redirected>>,
 }
 
 impl Outbox for Recorder {
-    async fn redirect(&self, offer: &RedirectOffer) -> bool {
-        self.offers.lock().unwrap().push(offer.clone());
-        self.redirect.load(Ordering::SeqCst)
+    async fn redirect(&self, redirected: Redirected) {
+        self.redirects.lock().unwrap().push(redirected);
     }
 
     async fn card(&self, card: Card) {
@@ -284,6 +287,27 @@ impl History for FakeHistory {
                     .collect()
             })
             .unwrap_or_default())
+    }
+}
+
+pub const PORTAL: &str = "https://kanade-pub.example.dev";
+
+/// The tracked Kanade bundle, no profile.
+pub fn kanade() -> CompiledPersona {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/config/personas/bundles/kanade.yaml"
+    );
+    let text = std::fs::read_to_string(path).expect("tracked bundle");
+    let bundle = parse_bundle(&text, &PersonaId::parse("kanade").unwrap()).expect("bundle");
+    CompiledPersona::compile(&bundle, None)
+}
+
+struct KanadeForAll(CompiledPersona);
+
+impl Personas for KanadeForAll {
+    fn persona_for(&self, _member_id: &str) -> Option<CompiledPersona> {
+        Some(self.0.clone())
     }
 }
 
@@ -398,12 +422,21 @@ impl World {
         tune: impl FnOnce(&mut PipelineConfig),
         codec: Arc<dyn IdentityCodec>,
     ) -> Self {
-        Self::build(actions, tune, codec, true).await
+        Self::build(actions, tune, codec, true, false).await
     }
 
     /// Extraction routed to an ungrouped alias.
     pub async fn ungrouped(actions: Vec<FakeAction>) -> Self {
-        Self::build(actions, |_| {}, Arc::new(Passthrough), false).await
+        Self::build(actions, |_| {}, Arc::new(Passthrough), false, false).await
+    }
+
+    /// With self-service links wired: the portal at [`PORTAL`], the tracked
+    /// Kanade persona for everyone, and rewrites through the same governor.
+    pub async fn self_service(
+        actions: Vec<FakeAction>,
+        tune: impl FnOnce(&mut PipelineConfig),
+    ) -> Self {
+        Self::build(actions, tune, Arc::new(Passthrough), true, true).await
     }
 
     async fn build(
@@ -411,6 +444,7 @@ impl World {
         tune: impl FnOnce(&mut PipelineConfig),
         codec: Arc<dyn IdentityCodec>,
         grouped: bool,
+        self_service: bool,
     ) -> Self {
         let store = Arc::new(MemoryScheduleStore::new());
         let clock = TestClock::new(now().fixed_offset());
@@ -456,6 +490,17 @@ impl World {
         let outbox = Arc::new(Recorder::default());
         let mut config = config();
         tune(&mut config);
+        let self_service = self_service.then(|| SelfServiceDeps {
+            links: Arc::new(PublicPortalLinks::new(PORTAL).expect("origin")),
+            nudger: Arc::new(Nudger::new(
+                Arc::new(Fixed),
+                SharedRewriter(Arc::new(GovernedRewriter::new(
+                    client.clone(),
+                    codec.clone(),
+                ))),
+            )),
+            personas: Arc::new(KanadeForAll(kanade())),
+        });
         let extractor = Arc::new(Extractor::new(
             Deps {
                 store: store.clone(),
@@ -466,6 +511,7 @@ impl World {
                 outbox: outbox.clone(),
                 clock: Arc::new(clock),
                 ids: Box::new(Ids::new(0x106)),
+                self_service,
             },
             config,
         ));
@@ -504,6 +550,7 @@ impl World {
                 outbox: self.outbox.clone(),
                 clock: Arc::new(TestClock::new(now().fixed_offset())),
                 ids: Box::new(Ids::new(0x5a1)),
+                self_service: None,
             },
             config(),
         ))

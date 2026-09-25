@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 
 use super::call::{CallRecord, Failure, Loaded};
 use super::config::{CONTEXT_WINDOW, PipelineConfig, RECENT_SCHEDULING};
-use super::ports::{Guild, IncomingMessage, Outbox, Proposer};
+use super::ports::{Guild, IncomingMessage, Outbox, Proposer, SelfServiceDeps};
 use crate::domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use crate::domain::weeks;
@@ -35,6 +35,8 @@ pub struct Deps<S, P, X, O> {
     pub clock: Arc<dyn Clock + Send + Sync>,
     /// Extraction log ids.
     pub ids: Box<dyn IdSource + Send>,
+    /// Links and nudges; `None` keeps v4's cards-only behaviour.
+    pub self_service: Option<SelfServiceDeps>,
 }
 
 /// What one pass (a burst, or a rescan channel) did.
@@ -67,6 +69,7 @@ pub struct Extractor<S, P, X, O> {
     pub(super) outbox: Arc<O>,
     pub(super) clock: Arc<dyn Clock + Send + Sync>,
     ids: Mutex<Box<dyn IdSource + Send>>,
+    pub(super) self_service: Option<SelfServiceDeps>,
     pub(super) config: PipelineConfig,
 }
 
@@ -126,6 +129,7 @@ where
             outbox: deps.outbox,
             clock: deps.clock,
             ids: Mutex::new(deps.ids),
+            self_service: deps.self_service,
             config,
         }
     }

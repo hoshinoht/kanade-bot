@@ -5,6 +5,7 @@
 //! most one lead-in per member per boss week.
 
 mod compose;
+mod governed;
 mod prompt;
 mod rewrite;
 mod rotation;
@@ -14,6 +15,7 @@ pub use compose::{
     EDIT_RUN_ACTION, LineSource, Nudge, NudgeFacts, Nudger, REQUEST_CHANGE_ACTION, SeedReason,
     action, mood_for, render,
 };
+pub use governed::{DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, SharedRewriter};
 pub use prompt::{
     GENTLE_MOOD, NUDGE_REWRITE_INSTRUCTION, PLAYFUL_MOOD, RewritePrompt, VOICE_LABEL,
 };

@@ -129,6 +129,8 @@ pub(crate) struct CallRecord {
     pub proposal_ids: Vec<String>,
     pub refusals: Vec<String>,
     pub redirected: usize,
+    /// How each lead-in of this call was made (`LineSource::as_str`), for the log.
+    pub nudges: Vec<&'static str>,
 }
 
 impl CallRecord {
@@ -263,6 +265,7 @@ where
             proposal_ids: Vec::new(),
             refusals: Vec::new(),
             redirected: 0,
+            nudges: Vec::new(),
         }
     }
 

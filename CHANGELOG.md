@@ -143,8 +143,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   with an optional 2-second rewrite on a small model that falls back to the seed line.
   Rewrites are refused (seed line used) for markdown, hidden format characters, invite
   links, changed placeholders or a word on a built-in safe-for-work deny-list, and the
-  filled line is checked again. Kanade has her own rewrite voice. The pipeline wiring
-  comes next.
+  filled line is checked again. Kanade has her own rewrite voice and request lines.
+  Extraction now plans the redirect for each kept change (still cards only while the
+  public portal is closed) and uses up the weekly tip only when a link is posted.
 - v5: chat gate, authority, read and proposal tools (proposals only through the
   scheduler, refused up front when unworkable), reply sanitising and injection guards,
   matching the frozen v4 chat vectors; tools load in bundles as needed instead of all

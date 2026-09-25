@@ -3,7 +3,8 @@
 //! prompt, plan), and commit through the v5 proposal path. `pipeline` and
 //! `rescan` drive the orchestration over pipeline-level fakes (`fakes`).
 //! `redirect` and `nudge` cover the v5 self-service redirect and its persona
-//! nudges (no v4 vectors). Cards belong to a later slice.
+//! nudges (no v4 vectors); `self_service` wires them through the governed
+//! rewrite and the pipeline. Cards belong to a later slice.
 
 mod commit;
 mod fakes;
@@ -18,6 +19,7 @@ mod prompt;
 mod redirect;
 mod rescan;
 mod resolve;
+mod self_service;
 mod session;
 mod shaping;
 mod support;

@@ -66,6 +66,8 @@ pub enum SeedReason {
     Unavailable,
     /// The provider's content filter or a refusal.
     Refused,
+    /// An operator setting prevents rewrites; worth flagging.
+    Misconfigured,
     TimedOut,
     Rejected(Rejection),
     /// The rewrite was fine but became unsafe once `{boss}`/`{day}`/`{time}` were filled.
@@ -78,6 +80,27 @@ pub enum LineSource {
     Seed(SeedReason),
     /// The filled seed was unsafe too: a placeholder-free built-in line.
     FieldFree,
+}
+
+impl LineSource {
+    /// Stable log label; never includes model text (a deny-list hit names only the class).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rewritten => "rewritten",
+            Self::FieldFree => "field_free",
+            Self::Seed(reason) => match reason {
+                SeedReason::Unavailable => "seed_unavailable",
+                SeedReason::Refused => "seed_refused",
+                SeedReason::Misconfigured => "seed_misconfigured",
+                SeedReason::TimedOut => "seed_timed_out",
+                SeedReason::UnsafeFill => "seed_unsafe_fill",
+                SeedReason::Rejected(Rejection::LineRules) => "seed_rejected_line_rules",
+                SeedReason::Rejected(Rejection::Placeholders) => "seed_rejected_placeholders",
+                SeedReason::Rejected(Rejection::Markup) => "seed_rejected_markup",
+                SeedReason::Rejected(Rejection::Denied(_)) => "seed_rejected_denied",
+            },
+        }
+    }
 }
 
 /// A filled lead-in; provenance is for logs only, never shown.
@@ -150,6 +173,9 @@ impl<R: NudgeRewriter> Nudger<R> {
             }
             Ok(Err(RewriteFailure::Refused)) => {
                 (seed.to_owned(), LineSource::Seed(SeedReason::Refused))
+            }
+            Ok(Err(RewriteFailure::Misconfigured)) => {
+                (seed.to_owned(), LineSource::Seed(SeedReason::Misconfigured))
             }
             Ok(Ok(output)) => match accept_rewrite(&output, seed) {
                 Ok(line) => (line, LineSource::Rewritten),

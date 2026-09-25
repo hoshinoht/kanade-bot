@@ -8,11 +8,14 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
+use crate::chat::nudge::{LineSource, Nudger, SharedRewriter};
+use crate::chat::persona::CompiledPersona;
 use crate::domain::catalog::BossTable;
 use crate::domain::proposals::ProposedChange;
 use crate::domain::schedule::RsvpState;
 use crate::domain::scheduler::{ProposalRequest, ProposalResult, Proposed, SupersedeScope};
 use crate::extract::AmendmentKind;
+use crate::extract::redirect::{PortalLinks, RedirectLink};
 use crate::infrastructure::llm::identity::Member;
 
 /// Who wrote a message. Only members' messages are ever stored or read; the
@@ -98,13 +101,44 @@ pub trait Proposer: Send + Sync {
     ) -> impl Future<Output = ProposalResult<Proposed>> + Send;
 }
 
-/// A kept change before it is proposed, as the self-service redirect sees it.
+/// The member's resolved persona for a nudge (role profile → saved profile →
+/// bundle default); `None` posts the link without a lead-in.
+pub trait Personas: Send + Sync {
+    fn persona_for(&self, member_id: &str) -> Option<CompiledPersona>;
+}
+
+/// What self-service links need; absent, the pipeline stays cards-only.
+#[derive(Clone)]
+pub struct SelfServiceDeps {
+    pub links: Arc<dyn PortalLinks + Send + Sync>,
+    pub nudger: Arc<Nudger<SharedRewriter>>,
+    pub personas: Arc<dyn Personas>,
+}
+
+impl std::fmt::Debug for SelfServiceDeps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelfServiceDeps").finish_non_exhaustive()
+    }
+}
+
+/// A pre-filled portal link for one change, with the author's once-per-boss-week
+/// lead-in when this is their first tip. `line` says how the lead-in was made
+/// (for logs; never model text).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RedirectOffer {
+pub struct SelfServiceTip {
+    pub link: RedirectLink,
+    pub lead_in: Option<String>,
+    pub line: Option<LineSource>,
+}
+
+/// A self-serviceable change sent as a link only (link-first mode): no
+/// proposal and no card entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Redirected {
     pub channel_id: String,
     pub change: ProposedChange,
-    /// Authors of the evidence messages.
-    pub authors: Vec<String>,
+    pub author_id: String,
+    pub tip: SelfServiceTip,
 }
 
 /// One proposed change on a card, with what the card shows beside it.
@@ -122,6 +156,9 @@ pub struct CardEntry {
     pub day_ref: Option<String>,
     pub time_ref: Option<String>,
     pub evidence_message_ids: Vec<String>,
+    /// The card is kept and this link goes beside it (cards-and-link mode, or a
+    /// weekly-timing request form).
+    pub self_service: Option<SelfServiceTip>,
 }
 
 /// One card per burst (or per rescan channel pass).
@@ -151,9 +188,8 @@ pub struct BacklogDrop {
 }
 
 pub trait Outbox: Send + Sync {
-    /// Self-service redirect seam (slice N1): `true` when a link was sent
-    /// instead of a card, so no proposal is created.
-    fn redirect(&self, offer: &RedirectOffer) -> impl Future<Output = bool> + Send;
+    /// A change sent as a self-service link instead of a card.
+    fn redirect(&self, redirected: Redirected) -> impl Future<Output = ()> + Send;
 
     fn card(&self, card: Card) -> impl Future<Output = ()> + Send;
 

@@ -295,10 +295,10 @@ pub struct Redirect {
 /// Applies the effective mode (see [`effective_mode`]) to the classification.
 /// A link is only ever added to cases (a) and (c); in link-first mode only (a)
 /// loses its card, since (c) still needs an approval.
-pub fn plan(
+pub fn plan<L: PortalLinks + ?Sized>(
     facts: &RedirectFacts<'_>,
     mode: SelfServiceMode,
-    links: &impl PortalLinks,
+    links: &L,
 ) -> Redirect {
     let case = classify(facts);
     let unchanged = Redirect {

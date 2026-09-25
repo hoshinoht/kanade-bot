@@ -390,26 +390,6 @@ async fn two_changes_for_one_run_in_one_burst_both_stay_live() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_self_service_redirect_seam_takes_the_change_instead_of_a_card() {
-    let world = World::new(vec![moved("9:30pm", "101")]).await;
-    world.outbox.redirect.store(true, Ordering::SeqCst);
-    let (events, _loop) = world.pipeline();
-    events.send(post(MOVE_TEXT)).await.expect("send");
-    after(91).await;
-    assert!(world.live_proposals().await.is_empty());
-    let offers = world.outbox.offers.lock().unwrap().clone();
-    assert_eq!(offers[0].authors, [MY]);
-    assert_eq!(
-        offers[0].change.run_id.as_deref(),
-        Some(world.runs[0].as_str())
-    );
-    assert_eq!(
-        world.logs().await[0].outcome,
-        ExtractionOutcome::SelfServiceLink
-    );
-}
-
-#[tokio::test(start_paused = true)]
 async fn pseudonymized_prompts_leak_nobody_and_answers_decode_back() {
     let tagged = reply(
         r#"{"amendments": [{"kind": "move", "bosses": ["HMaleficStar", "HFA"],

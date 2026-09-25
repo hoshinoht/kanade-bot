@@ -10,7 +10,8 @@ use serde_json::json;
 use super::call::{CallRecord, Failure, Kept};
 use super::extractor::{Extractor, PassReport, utc};
 use super::outcome::extraction_outcome;
-use super::ports::{Card, CardEntry, ChatAnswer, Outbox, Proposer, RedirectOffer};
+use super::ports::{Card, CardEntry, ChatAnswer, Outbox, Proposer, Redirected};
+use super::self_service::LinkPlan;
 use crate::domain::drafts::ProposalSource;
 use crate::domain::model_log::{ExtractionLog, ModelLogStore, ReadMessage};
 use crate::domain::proposals::{ChangeKind, Payload as ChangePayload, ProposedChange};
@@ -123,10 +124,26 @@ where
     ) -> PassReport {
         let mut report = PassReport::default();
         let entries = collect(&records, consolidated);
+        let now = self.clock.now();
+        // Changes read from the same message count as one multi-change message.
+        let changes_per_message = |kept: &Kept| {
+            entries
+                .iter()
+                .filter(|(_, other)| other.amendment.kind != AmendmentKind::Rsvp)
+                .filter(|(_, other)| {
+                    other
+                        .amendment
+                        .evidence_message_ids
+                        .iter()
+                        .any(|id| kept.amendment.evidence_message_ids.contains(id))
+                })
+                .count()
+                .max(1)
+        };
 
         let mut answers: Vec<ChatAnswer> = Vec::new();
-        let mut proposals: Vec<(usize, Kept, ProposedChange)> = Vec::new();
-        for (origin, kept) in entries {
+        let mut proposals: Vec<(usize, Kept, ProposedChange, Option<LinkPlan>)> = Vec::new();
+        for (origin, kept) in entries.iter().cloned() {
             if kept.amendment.kind == AmendmentKind::Rsvp {
                 // "maybe" is recorded by nobody, as v4.
                 let (Some(run), Some(state @ (RsvpState::Yes | RsvpState::No))) =
@@ -143,28 +160,45 @@ where
                 continue;
             }
             let change = proposed_change(&kept, channel_id);
-            let authors: Vec<String> = kept
+            let authors: BTreeSet<String> = kept
                 .amendment
                 .evidence_message_ids
                 .iter()
                 .filter_map(|id| records[origin].authors.get(id).cloned())
                 .collect();
-            let offer = RedirectOffer {
-                channel_id: channel_id.to_owned(),
-                change: change.clone(),
-                authors,
-            };
-            if self.outbox.redirect(&offer).await {
-                records[origin].redirected += 1;
-                continue;
+            let authors: Vec<String> = authors.into_iter().collect();
+            let link_plan =
+                self.link_plan(&kept, &change, &authors, changes_per_message(&kept), now);
+            match link_plan {
+                Some(link_plan) if !link_plan.keep_card => {
+                    let author_id = link_plan.author_id.clone();
+                    let tip = self
+                        .tip(channel_id, &change, link_plan, now, &mut report.errors)
+                        .await;
+                    if let Some(line) = tip.line {
+                        records[origin].nudges.push(line.as_str());
+                    }
+                    self.outbox
+                        .redirect(Redirected {
+                            channel_id: channel_id.to_owned(),
+                            change,
+                            author_id,
+                            tip,
+                        })
+                        .await;
+                    records[origin].redirected += 1;
+                }
+                link_plan => proposals.push((origin, kept, change, link_plan)),
             }
-            proposals.push((origin, kept, change));
         }
 
         // v4 `_record`: every older card about these targets retires before
         // anything is written, so this pass never retires its own siblings.
         let mut superseded: Vec<String> = Vec::new();
-        let targets: BTreeSet<Target> = proposals.iter().map(|(_, kept, _)| target(kept)).collect();
+        let targets: BTreeSet<Target> = proposals
+            .iter()
+            .map(|(_, kept, _, _)| target(kept))
+            .collect();
         for goal in &targets {
             let scope = match goal {
                 Target::Run(run_id) => SupersedeScope {
@@ -193,7 +227,7 @@ where
 
         let mut keyed: HashSet<Target> = HashSet::new();
         let mut card: Vec<CardEntry> = Vec::new();
-        for (origin, kept, change) in proposals {
+        for (origin, kept, change, link_plan) in proposals {
             // The first change per target stores the supersede key; a second
             // one (a `sub` beside a `move`) must not retire its sibling.
             let supersede = if keyed.insert(target(&kept)) {
@@ -202,7 +236,7 @@ where
                 Supersede::Keep
             };
             let request = ProposalRequest {
-                change,
+                change: change.clone(),
                 source: ProposalSource::Extraction,
                 source_id: records[origin].log_id.clone(),
                 supersede,
@@ -213,6 +247,19 @@ where
                     superseded.extend(proposed.superseded);
                     records[origin].proposal_ids.push(id.clone());
                     report.proposals.push(id.clone());
+                    // Claimed only now: a refused proposal posts no card, so no link.
+                    let self_service = match link_plan {
+                        Some(link_plan) => {
+                            let tip = self
+                                .tip(channel_id, &change, link_plan, now, &mut report.errors)
+                                .await;
+                            if let Some(line) = tip.line {
+                                records[origin].nudges.push(line.as_str());
+                            }
+                            Some(tip)
+                        }
+                        None => None,
+                    };
                     card.push(CardEntry {
                         proposal_id: id,
                         kind: kept.amendment.kind,
@@ -225,6 +272,7 @@ where
                         day_ref: kept.amendment.day_ref.clone(),
                         time_ref: kept.amendment.time_ref.clone(),
                         evidence_message_ids: kept.amendment.evidence_message_ids.clone(),
+                        self_service,
                     });
                 }
                 Err(error) => {
@@ -253,7 +301,6 @@ where
             self.outbox.answers(answers).await;
         }
 
-        let now = self.clock.now();
         let consumed: Vec<ReadMessage> = records
             .iter()
             .filter(|record| record.ok())
@@ -300,7 +347,12 @@ where
                     record.redirected,
                 ),
                 error,
-                guardrail: json!({}),
+                // How each lead-in was made; labels only, never model text.
+                guardrail: if record.nudges.is_empty() {
+                    json!({})
+                } else {
+                    json!({ "nudges": record.nudges })
+                },
                 message_ids: record.message_ids,
                 proposal_ids: record.proposal_ids,
             };

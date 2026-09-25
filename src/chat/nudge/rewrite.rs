@@ -18,6 +18,10 @@ pub enum RewriteFailure {
     /// The provider declined: a content-filter finish, a refusal, or an
     /// empty/incomplete reply. Adapters must map these here, never to text.
     Refused,
+    /// An operator setting prevents it (unknown or ungrouped role, an
+    /// external route without pseudonymisation, a rejected key or request);
+    /// kept apart so logs can flag it.
+    Misconfigured,
 }
 
 /// A governed one-line rewrite. Implementations take the `rewrite` role's

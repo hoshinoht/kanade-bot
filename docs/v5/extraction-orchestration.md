@@ -4,7 +4,7 @@ Status: `src/extract/pipeline/`, `src/extract/backlog.rs`,
 `src/extract/rescan/` (slice E4). v4 reference: `bot/extract/pipeline.py`
 (`Pipeline.offer`/`flush`/`extract`/`rescan_window`/`apply_plan`) and
 `bot/agent/rescan.py`. Cards and ✅/❌ handling are slice E5; the
-self-service redirect is slice N1 (seam only here). Serve wiring (Discord
+self-service redirect (slice N1) is wired below. Serve wiring (Discord
 events, config, the Limits view) is not done yet.
 
 ## Ports
@@ -20,8 +20,13 @@ No Twilight types cross into `src/extract`:
   pipeline changes nothing else.
 - **`Outbox`**: `card` (one per burst or rescan channel, with the new
   proposals and the ids this pass retired), `answers` (chat RSVPs for the
-  reaction path), `redirect` (N1 seam: `true` means a self-service link
-  replaced the card) and `backlog_dropped` (audit).
+  reaction path), `redirect` (a link-first self-service link that replaced
+  the card: change, author, `SelfServiceTip`) and `backlog_dropped` (audit).
+  A kept card entry may carry `self_service: Option<SelfServiceTip>` (link,
+  optional lead-in, how the lead-in was made).
+- **`SelfServiceDeps`** (optional in `Deps`; absent means cards only):
+  `PortalLinks`, a `Nudger<SharedRewriter>` (production:
+  `GovernedRewriter`) and `Personas` (the member's resolved persona).
 - **`rescan::History`**: `backfill(channel, since)` from Discord.
 
 ## Live bursts
@@ -65,8 +70,25 @@ injected wall clock as `now`.
 - **Chat answers** (`rsvp` yes/no on a matched run) go to
   `Outbox::answers`, which applies them through the reaction path (v4
   `_apply_rsvp`); `maybe` is dropped. They are not proposals.
-- **Redirect seam.** Every other kept change is offered to
-  `Outbox::redirect` first; `true` means no proposal.
+- **Self-service redirect.** Every other kept change is planned with
+  `redirect::plan` under `PipelineConfig::self_service.effective_mode()`,
+  which is `cards_only` while `public_portal_open` is false (the default),
+  so nothing changes before the public launch. Only a change with exactly
+  one author is planned; changes sharing an evidence message count as a
+  multi-change message. A link-first self-service move goes to
+  `Outbox::redirect` with no proposal; otherwise the proposal and card
+  proceed and the link rides on the card entry. The author's weekly tip
+  (`Nudger::tip`, boss week from the configured reset and the injected
+  clock) is claimed only once the link is certain: after the redirect is
+  decided, or after the proposal succeeded; cards-only plans never claim
+  it. The lead-in is labelled (`LineSource::as_str`) in the call's log
+  `guardrail` as `{"nudges": [...]}`; the model's text is never logged.
+- **Rewrite.** `GovernedRewriter` guards the `rewrite` route with the
+  identity codec (an external route under passthrough is refused), opens
+  `ModelClient::open_rewrite` and sends one plain request. Content filter,
+  cut-off or empty replies are `RewriteFailure::Refused`, misconfiguration
+  (`SessionError::is_misconfiguration`, a missing or refused route) is
+  `Misconfigured`, anything else `Unavailable`; every case uses the seed.
 - **Supersede (v4 `_record`).** Before anything is proposed, each target
   (a run: `from_channel` = this channel, or a new boss set in this channel)
   is passed to `supersede_proposals`. Then each change is proposed with
@@ -101,7 +123,7 @@ authors, proposal ids. `outcome`:
 | `content_blocked` | the provider's content filter stopped the answer (`ContentFiltered`); no answer retry, never requeued |
 | `failed` | any other failure, including permanent governor refusals (unknown role, ungrouped alias, forbidden route, may-not-wait, retry budget exhausted: never requeued), or a reply still invalid after the answer retry |
 | `proposed` | at least one proposal was created |
-| `self_service_link` | none created, but the redirect took at least one change |
+| `self_service_link` | none created, but a link-first redirect took at least one change |
 | `no_change` | answered with nothing to propose (dropped, refused, or chat answers only) |
 
 ## Backlog

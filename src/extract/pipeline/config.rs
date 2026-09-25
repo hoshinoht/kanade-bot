@@ -7,6 +7,8 @@ use std::time::Duration;
 use chrono::{NaiveTime, TimeDelta, Weekday};
 use chrono_tz::Tz;
 
+use crate::domain::notify::WeekReset;
+use crate::extract::redirect::{SelfServiceMode, effective_mode};
 use crate::infrastructure::llm::{Effort, ModelCapabilities};
 
 /// v4 `EXTRACT_DEBOUNCE_SECONDS`.
@@ -47,6 +49,22 @@ pub struct PipelineConfig {
     pub call_timeout: Duration,
     pub drain_interval: Duration,
     pub backlog_capacity: usize,
+    pub self_service: SelfServiceConfig,
+}
+
+/// Admin `self_service.mode` and the public portal switch; links are only
+/// ever posted while the portal is open.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SelfServiceConfig {
+    pub mode: SelfServiceMode,
+    /// Closed by default: v5 posts no links before the public launch.
+    pub public_portal_open: bool,
+}
+
+impl SelfServiceConfig {
+    pub fn effective_mode(&self) -> SelfServiceMode {
+        effective_mode(self.mode, self.public_portal_open)
+    }
 }
 
 impl PipelineConfig {
@@ -65,6 +83,15 @@ impl PipelineConfig {
             call_timeout: DEFAULT_CALL_TIMEOUT,
             drain_interval: DEFAULT_DRAIN_INTERVAL,
             backlog_capacity: DEFAULT_BACKLOG_CAPACITY,
+            self_service: SelfServiceConfig::default(),
+        }
+    }
+
+    pub fn week_reset(&self) -> WeekReset {
+        WeekReset {
+            zone: self.zone,
+            weekday: self.reset_weekday,
+            time: self.reset_time,
         }
     }
 }
