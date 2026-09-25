@@ -302,6 +302,19 @@ fn retime(
     Ok(Some(ops))
 }
 
+/// The one scheduled instant an edit would replace, if there is exactly one.
+fn proposed_instant(ops: &[DraftOp]) -> Option<DateTime<Utc>> {
+    let mut instants = ops.iter().filter_map(|op| match op {
+        DraftOp::AmendRun { to, .. } => Some(*to),
+        DraftOp::CreateRun { datetime, .. } => Some(*datetime),
+        _ => None,
+    });
+    match (instants.next(), instants.next()) {
+        (Some(at), None) => Some(at),
+        _ => None,
+    }
+}
+
 fn subject_of(loaded: &LoadedDraft) -> ProposalResult<ProposalSubject> {
     loaded
         .draft
@@ -471,8 +484,11 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     /// schedule and merged as the same single record, with `edited=<instant>`
     /// in the `merged` event. The proposal itself is never changed, so its
     /// card never shows a time ✅ would not apply. The edit is part of the
-    /// request digest: repeating it is `AlreadyApplied`, another edit (or
-    /// none) under the same `approve:<id>` is `IdempotencyMismatch`. An edit
+    /// request digest: repeating it, or a plain ✅ by the member who merged it
+    /// edited, is `AlreadyApplied`; another edit under the same
+    /// `approve:<id>` is `IdempotencyMismatch`. The recorded request is
+    /// looked up before the edit is checked, so a retry after a boss-week
+    /// reset still answers its first result. An edit
     /// equal to the proposed time is a plain approval.
     pub async fn approve_proposal_at(
         &mut self,
@@ -593,8 +609,8 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         let actor = Actor::member(approver.user_id.clone());
         let request_id = format!("approve:{id}");
         // Stored operations never change, so the edit normalises the same
-        // way on every retry.
-        let edited = match edit {
+        // way on every retry; an edit equal to the proposed time is none.
+        let edit = match edit {
             None => None,
             Some(to) => {
                 let (loaded, _) = self
@@ -602,28 +618,44 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     .load_proposal(id)
                     .await?
                     .ok_or_else(|| DraftError::UnknownDraft(id.to_owned()))?;
-                retime(&loaded.draft_ops(), to, policy, now)?.map(|ops| (to, ops))
+                let ops = loaded.draft_ops();
+                (proposed_instant(&ops) != Some(to)).then_some((to, ops))
             }
         };
-        let request_digest = match &edited {
+        let request_digest = match &edit {
             None => digest("proposal_approve", &id),
             Some((to, _)) => digest("proposal_approve", &(id, to)),
         };
+        // The exact-retry lookup runs first, so a retry answers its recorded
+        // result whatever happened since (a boss-week reset included).
         if let Some(recorded) = self.store.recorded_request(&actor, &request_id).await? {
-            return Err(
-                if recorded.digest.as_deref() == Some(request_digest.as_str()) {
-                    DraftError::AlreadyApplied {
-                        seq: recorded.committed.seq,
-                        revision: recorded.committed.revision,
-                    }
-                } else {
-                    DraftError::IdempotencyMismatch {
-                        seq: recorded.committed.seq,
-                    }
+            let same = recorded.digest.as_deref() == Some(request_digest.as_str());
+            // A plain ✅ after this member's own edited approval (the card
+            // not yet refreshed) is a repeat, not a different request.
+            let edited_by_them = edit.is_none() && {
+                let merged = self.store.load_proposal(id).await?;
+                merged.is_some_and(|(loaded, _)| {
+                    loaded.draft.status == DraftStatus::Merged
+                        && loaded.draft.merged_seq == Some(recorded.committed.seq)
+                        && loaded.draft.closed_by.as_ref() == Some(&actor)
+                })
+            };
+            return Err(if same || edited_by_them {
+                DraftError::AlreadyApplied {
+                    seq: recorded.committed.seq,
+                    revision: recorded.committed.revision,
                 }
-                .into(),
-            );
+            } else {
+                DraftError::IdempotencyMismatch {
+                    seq: recorded.committed.seq,
+                }
+            }
+            .into());
         }
+        let edited = match edit {
+            None => None,
+            Some((to, ops)) => retime(&ops, to, policy, now)?.map(|ops| (to, ops)),
+        };
         let (loaded, info, subject, snapshot) = self.live_proposal(id, approver, now).await?;
         let (mut ops, note) = match edited {
             Some((to, ops)) => (

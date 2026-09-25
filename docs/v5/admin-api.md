@@ -317,9 +317,10 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
 - **Retries.** Every decision is naturally repeatable, with the domain's own
   request ids: repeating a completed approval (same admin; same `choices`
   for a request, same edit for a proposal) answers 200 with the same
-  message, and so does repeating one's own rejection with the same reason.
-  A request re-approved at the same version with other `choices`, a
-  proposal re-approved with another edit (or without the first one's), or
+  message, and so does repeating one's own rejection with the same reason
+  (and a plain approval, or ✅, after one's own edited approval). A request
+  re-approved at the same version with other `choices`, a proposal
+  re-approved with another edit, or
   a request re-rejected with another reason is 422 `idempotency_mismatch`
   (the edit is part of the approval digest). `Idempotency-Key` is validated
   as for A4 but not stored.

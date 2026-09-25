@@ -901,8 +901,12 @@ enforced by the service, not the store; TTL 24 h.
   proposal never changes (its card never shows a time ✅ would not apply).
   The edit is part of the request digest (`(id, instant)`; a plain approval
   digests `id` alone), so the same edit repeated is `AlreadyApplied` and
-  another edit, or none, under the same request id is
-  `IdempotencyMismatch`. An edit equal to the proposed time is a plain
+  another edit under the same request id is `IdempotencyMismatch`; a plain
+  ✅ by the member who merged it edited (a card not yet refreshed) is
+  `AlreadyApplied`, so it stays silent and re-runs the follow-ups. The
+  recorded request is looked up first, before the edit is checked, so an
+  exact retry answers its result even after a boss-week reset. An edit
+  equal to the proposed time is a plain
   approval. Authority, TTL, conflict and follow-up rules are unchanged;
   `approve_proposal` is `approve_proposal_at` without an edit.
 - **Preview** (`preview_proposal(id, approver, policy, directory)`), for

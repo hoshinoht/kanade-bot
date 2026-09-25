@@ -796,6 +796,46 @@ async fn a_failure_members_must_not_see_is_alerted_not_posted() {
     )));
 }
 
+#[tokio::test]
+async fn a_members_check_after_their_own_portal_edit_stays_silent() {
+    let world = World::new().await;
+    let entry = world.propose(local(9, 2, 21, 30)).await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let message = world.message_of(&id).await.expect("posted");
+    // The admin approves from the portal at another time; the card is not
+    // refreshed (serve composition does that).
+    let admin = Staff.approver(ADMIN);
+    let edited = local(9, 2, 20, 0);
+    service(&world.store, &world.ids)
+        .approve_proposal_at(&id, &admin, Some(edited), &policy(), &Roster)
+        .await
+        .expect("portal approval");
+    let before = world.store.load(&Scope::All).await.expect("state");
+    let calls = world.discord.calls().len();
+    assert_eq!(
+        world
+            .desk
+            .on_reaction(&message, ADMIN, RsvpAnswer::Yes, true)
+            .await,
+        CardReaction::Ignored
+    );
+    assert_eq!(
+        world.discord.calls().len(),
+        calls,
+        "nothing posted or edited"
+    );
+    assert!(world.alerts.alerts().is_empty(), "no fault alert");
+    let after = world.store.load(&Scope::All).await.expect("state");
+    assert_eq!(after, before, "nothing applied twice");
+    let run = after
+        .runs
+        .iter()
+        .find(|run| run.id == world.run)
+        .expect("run");
+    assert_eq!(run.datetime, edited);
+}
+
 /// `FakeDiscord` whose creates orphan every live lease first (a restart
 /// recovery racing the send), so the journal write after the send fails.
 struct LeaseLost {

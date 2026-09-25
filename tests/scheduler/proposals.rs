@@ -1005,20 +1005,18 @@ async fn an_edited_approval_merges_one_record_at_the_new_time() {
             revision: approved.merge.revision,
         })
     );
-    for other in [Some(utc(kl(9, 2, 21, 0))), None] {
-        let refused = f
-            .service
-            .approve_proposal_at(&id, &member("1002"), other, &f.policy.clone(), &Guild)
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(
-                refused,
-                ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
-            ),
-            "{other:?}: {refused:?}"
-        );
-    }
+    // Another edit under the same `approve:<id>` is another request.
+    let refused = f
+        .approve_at(&id, &member("1002"), utc(kl(9, 2, 21, 0)))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
+        ),
+        "{refused:?}"
+    );
     assert_eq!(f.head().await, head + 1);
 }
 
@@ -1165,4 +1163,58 @@ async fn previewing_a_proposal_writes_nothing() {
             .unwrap_err(),
         ProposalError::Draft(DraftError::UnknownDraft("nope".into()))
     );
+}
+
+#[tokio::test]
+async fn a_plain_approval_after_ones_own_edited_one_is_a_repeat() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let approved = f
+        .approve_at(&id, &member("1002"), utc(kl(9, 2, 20, 0)))
+        .await
+        .unwrap();
+    let head = f.head().await;
+    // The card was not refreshed: the same member's ✅ repeats the merge.
+    assert_eq!(
+        f.approve(&id, &member("1002")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: approved.merge.seq,
+            revision: approved.merge.revision,
+        })
+    );
+    // Anyone else's finds it merged; nothing is written either way.
+    assert!(matches!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyMerged { .. })
+    ));
+    assert_eq!(f.head().await, head);
+    let state = snapshot(&f.service).await;
+    let row = state.runs.iter().find(|row| row.id == run).unwrap();
+    assert_eq!(row.datetime, utc(kl(9, 2, 20, 0)));
+}
+
+#[tokio::test]
+async fn an_edited_retry_after_the_reset_answers_its_first_result() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let edit = utc(kl(9, 2, 20, 0));
+    let approved = f.approve_at(&id, &member("1002"), edit).await.unwrap();
+    // The boss week of the edit has ended (reset Thu 3 Sep 00:00).
+    f.clock.set(kl(9, 3, 1, 0));
+    assert_eq!(
+        f.approve_at(&id, &member("1002"), edit).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: approved.merge.seq,
+            revision: approved.merge.revision,
+        })
+    );
+    // Still a different request when the edit differs.
+    assert!(matches!(
+        f.approve_at(&id, &member("1002"), utc(kl(9, 2, 21, 0)))
+            .await
+            .unwrap_err(),
+        ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
+    ));
 }
