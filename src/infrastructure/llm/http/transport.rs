@@ -71,10 +71,11 @@ impl Transport {
         method: Method,
         suffix: &str,
         body: Option<Vec<u8>>,
+        request_id: Option<&str>,
         success_limit: usize,
         error_limit: usize,
     ) -> Result<Reply, ProviderFailure> {
-        let request = self.request(method, suffix, body)?;
+        let request = self.request(method, suffix, body, request_id)?;
         tokio::time::timeout(self.timeout, async {
             let tcp = self.connect().await?;
             match (&self.tls, &self.endpoint.server_name) {
@@ -98,6 +99,7 @@ impl Transport {
         method: Method,
         suffix: &str,
         body: Option<Vec<u8>>,
+        request_id: Option<&str>,
     ) -> Result<Request<Full<Bytes>>, ProviderFailure> {
         let mut builder = Request::builder()
             .method(method)
@@ -107,6 +109,10 @@ impl Transport {
             .header(USER_AGENT, concat!("kanade/", env!("CARGO_PKG_VERSION")));
         if body.is_some() {
             builder = builder.header(CONTENT_TYPE, "application/json");
+        }
+        // Kanata rejects a malformed id, so one that does not fit is left out.
+        if let Some(id) = request_id.filter(|id| valid_request_id(id)) {
+            builder = builder.header(REQUEST_ID, id);
         }
         if let Some(key) = &self.bearer {
             let header = key
@@ -250,6 +256,15 @@ where
         reply = &mut exchange => reply,
         _ = &mut connection => exchange.await,
     }
+}
+
+const REQUEST_ID: &str = "x-request-id";
+
+fn valid_request_id(id: &str) -> bool {
+    (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 fn retry_after(headers: &HeaderMap) -> Option<Duration> {

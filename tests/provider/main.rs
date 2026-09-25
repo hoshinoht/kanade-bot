@@ -7,6 +7,7 @@ mod http_resolution;
 mod http_shaping;
 mod http_transport;
 mod identity;
+mod kanata_contract;
 mod payload;
 mod runner;
 mod safety;

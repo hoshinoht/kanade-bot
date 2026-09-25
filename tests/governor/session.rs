@@ -609,3 +609,24 @@ async fn a_clean_retry_skipped_while_half_open_sheds_nothing() {
     );
     assert_eq!(provider.requests().len(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_gateway_breaker_cooldown_keeps_ours_open_at_least_as_long() {
+    let governor = build(&config(10));
+    let (_, client) = setup(
+        governor.clone(),
+        [FakeAction::BackendUnavailableFor(Duration::from_secs(120))],
+    );
+    let mut question = client
+        .open_question("member", false, rounds(8))
+        .await
+        .unwrap();
+    let error = question.complete(&request()).await.unwrap_err();
+    assert_eq!(model(&error), ErrorCode::BackendUnavailable);
+    assert_eq!(error.charge, Charge::Refunded);
+    // Our own cooldown alone would half-open after 37.5 s.
+    tokio::time::sleep(Duration::from_secs(100)).await;
+    assert_eq!(snap(&governor).breaker.state, BreakerState::Open);
+    tokio::time::sleep(Duration::from_secs(21)).await;
+    assert_eq!(snap(&governor).breaker.state, BreakerState::HalfOpen);
+}

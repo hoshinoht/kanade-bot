@@ -68,6 +68,9 @@ pub enum Outcome {
     TransientFailure,
     Timeout,
     BackendUnavailable,
+    /// Backend down with the gateway's own breaker cooldown; ours opens for at
+    /// least that long (capped at the policy's `max_open_cooldown`).
+    BackendUnavailableFor(Duration),
     /// Turned away by gateway admission; says nothing about backend health.
     AdmissionRefused,
 }
@@ -77,7 +80,8 @@ impl Outcome {
         match self {
             Self::Success | Self::Rejected => Signal::Healthy,
             Self::TransientFailure | Self::Timeout => Signal::Failure,
-            Self::BackendUnavailable => Signal::Down,
+            Self::BackendUnavailable => Signal::Down(None),
+            Self::BackendUnavailableFor(retry_after) => Signal::Down(Some(retry_after)),
             Self::AdmissionRefused => Signal::Neutral,
         }
     }
@@ -289,7 +293,9 @@ impl Attempt {
             Outcome::Success | Outcome::Rejected => counters.successes += 1,
             Outcome::TransientFailure => counters.transient_failures += 1,
             Outcome::Timeout => counters.timeouts += 1,
-            Outcome::BackendUnavailable => counters.backend_unavailable += 1,
+            Outcome::BackendUnavailable | Outcome::BackendUnavailableFor(_) => {
+                counters.backend_unavailable += 1
+            }
             Outcome::AdmissionRefused => counters.admission_refused += 1,
         }
         state.record(

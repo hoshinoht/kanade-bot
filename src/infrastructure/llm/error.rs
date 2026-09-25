@@ -17,6 +17,8 @@ pub enum ErrorCode {
     BackendUnavailable,
     /// Upstream or transport timeout; the backend may still be working.
     UpstreamTimeout,
+    /// The gateway key has expired (Kanata `key_expired`); rotate it.
+    KeyExpired,
 }
 
 #[derive(Clone, PartialEq, Eq)]

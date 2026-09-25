@@ -6,6 +6,7 @@ use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider, ModelCapabilities,
     ProviderFailureKind,
     governor::{CallKind, Outcome, Random, full_jitter},
+    http::KEY_EXPIRED,
     shaping,
 };
 use super::{
@@ -154,9 +155,13 @@ impl<P: LlmProvider> CompletionRunner<P> {
                     charged,
                 ));
             };
-            let call = match &capabilities {
-                Some(capabilities) => self.provider.complete_with(current, capabilities),
-                None => self.provider.complete(current),
+            let request_id = gate.request_id();
+            let call = match (&capabilities, &request_id) {
+                (Some(capabilities), Some(id)) => {
+                    self.provider.complete_tagged(current, capabilities, id)
+                }
+                (Some(capabilities), None) => self.provider.complete_with(current, capabilities),
+                (None, _) => self.provider.complete(current),
             };
             let Ok(outcome) = tokio::time::timeout(wait, call).await else {
                 // Our own deadline cut the request off: the backend may still be
@@ -295,7 +300,12 @@ fn outcome_of(kind: ProviderFailureKind) -> Outcome {
             Outcome::TransientFailure
         }
         ProviderFailureKind::UpstreamTimeout => Outcome::Timeout,
-        ProviderFailureKind::BackendUnavailable => Outcome::BackendUnavailable,
+        ProviderFailureKind::BackendUnavailable { retry_after: None } => {
+            Outcome::BackendUnavailable
+        }
+        ProviderFailureKind::BackendUnavailable {
+            retry_after: Some(retry_after),
+        } => Outcome::BackendUnavailableFor(retry_after),
         ProviderFailureKind::AdmissionRefused { .. } => Outcome::AdmissionRefused,
         ProviderFailureKind::Permanent
         | ProviderFailureKind::Authentication
@@ -314,10 +324,11 @@ fn cause_of(kind: ProviderFailureKind) -> Cause {
 
 fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
     let code = match kind {
+        ProviderFailureKind::Authentication if reason == KEY_EXPIRED => ErrorCode::KeyExpired,
         ProviderFailureKind::Authentication => ErrorCode::ProviderAuthentication,
         ProviderFailureKind::InvalidOutput => ErrorCode::InvalidOutput,
         ProviderFailureKind::AdmissionRefused { .. } => ErrorCode::AdmissionRefused,
-        ProviderFailureKind::BackendUnavailable => ErrorCode::BackendUnavailable,
+        ProviderFailureKind::BackendUnavailable { .. } => ErrorCode::BackendUnavailable,
         ProviderFailureKind::UpstreamTimeout => ErrorCode::UpstreamTimeout,
         ProviderFailureKind::Transient
         | ProviderFailureKind::RateLimited { .. }

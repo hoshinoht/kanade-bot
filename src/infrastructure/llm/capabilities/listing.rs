@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fmt};
 
 use serde_json::{Map, Value};
 
-use super::{Effort, ModelCapabilities, TrustZone};
+use super::{AdmissionLimits, Effort, ModelCapabilities, TrustZone};
 
 /// Longest alias kept from a listing; matches the 64 KiB metadata bound.
 const MAX_ALIAS_BYTES: usize = 64 * 1024;
@@ -88,5 +88,24 @@ fn metadata(meta: &Map<String, Value>) -> ModelCapabilities {
                 efforts.dedup();
                 efforts
             }),
+        context_tokens: meta.get("context_tokens").and_then(as_u32),
+        admission: meta
+            .get("admission")
+            .and_then(Value::as_object)
+            .and_then(admission),
     }
+}
+
+fn as_u32(value: &Value) -> Option<u32> {
+    value.as_u64().and_then(|number| u32::try_from(number).ok())
+}
+
+/// Needs a usable `max_in_flight`; other fields are optional.
+fn admission(meta: &Map<String, Value>) -> Option<AdmissionLimits> {
+    Some(AdmissionLimits {
+        max_in_flight: meta.get("max_in_flight").and_then(as_u32)?,
+        max_queue: meta.get("max_queue").and_then(as_u32),
+        queue_ms: meta.get("queue_ms").and_then(Value::as_u64),
+        adapter_max_in_flight: meta.get("adapter_max_in_flight").and_then(as_u32),
+    })
 }

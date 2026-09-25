@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use kanade::infrastructure::llm::governor::{
-    CallKind, ConfigError, ConfigWarning, Governor, GovernorConfig, GovernorPolicy, Priority,
-    Refused, Role, RoleConfig, RoleRoute,
+use kanade::infrastructure::llm::{
+    AdmissionLimits,
+    governor::{
+        CallKind, ConfigError, ConfigWarning, Governor, GovernorConfig, GovernorPolicy, Priority,
+        Refused, Role, RoleConfig, RoleRoute,
+    },
 };
 
 use crate::support::{ALIAS, FixedRandom, HALF, LONG, group, roles, single, ticket};
@@ -204,6 +207,44 @@ async fn ungrouped_role_warns_and_is_refused_at_runtime() {
             .unwrap_err(),
         Refused::UnknownRole
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn permits_are_checked_against_published_gateway_admission() {
+    let mut config = single(1, 60);
+    config.groups = vec![
+        group("gpu", 3, 60, &["local-model", "other-model"]),
+        group("cloud", 8, 60, &["cloud-model"]),
+    ];
+    let published = |alias: &str| match alias {
+        // Route 4, adapter 2: the adapter bounds it.
+        "local-model" => Some(AdmissionLimits {
+            max_in_flight: 4,
+            max_queue: Some(16),
+            queue_ms: Some(1_000),
+            adapter_max_in_flight: Some(2),
+        }),
+        "other-model" => Some(AdmissionLimits {
+            max_in_flight: 3,
+            max_queue: None,
+            queue_ms: None,
+            adapter_max_in_flight: None,
+        }),
+        // Nothing published (public listener): operator-declared, not checked here.
+        _ => None,
+    };
+    let expected = [ConfigWarning::PermitsAboveGateway {
+        group: "gpu".into(),
+        alias: "local-model".into(),
+        permits: 3,
+        gateway: 2,
+    }];
+    assert_eq!(config.capacity_warnings(published), expected);
+    let governor = Governor::new_checked(&config, Arc::new(FixedRandom(HALF)), published).unwrap();
+    assert_eq!(governor.warnings(), expected);
+
+    config.groups[0].permits = 2;
+    assert!(config.capacity_warnings(published).is_empty());
 }
 
 #[tokio::test(start_paused = true)]

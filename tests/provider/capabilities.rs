@@ -1,5 +1,5 @@
 use kanade::infrastructure::llm::{
-    Effort, ModelCapabilities, TrustZone, parse_models_list, resolve_capabilities,
+    AdmissionLimits, Effort, ModelCapabilities, TrustZone, parse_models_list, resolve_capabilities,
 };
 
 #[test]
@@ -23,18 +23,39 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
     assert_eq!(
         structured,
         ModelCapabilities {
-            operations: vec!["chat.completions".into()],
+            operations: vec!["chat".into()],
             structured_output: true,
             sampling_controls: true,
             reasoning_control: true,
             function_tools: true,
             streaming: true,
             trust_zone: Some(TrustZone::PrivateNetwork),
-            reasoning_efforts: Some(vec![Effort::Low, Effort::Medium, Effort::High]),
+            // Kanata's `none` is our `Off`.
+            reasoning_efforts: Some(vec![
+                Effort::Off,
+                Effort::Minimal,
+                Effort::Low,
+                Effort::Medium,
+                Effort::High,
+                Effort::Xhigh,
+                Effort::Max,
+            ]),
+            context_tokens: Some(32_768),
+            admission: Some(AdmissionLimits {
+                max_in_flight: 4,
+                max_queue: Some(16),
+                queue_ms: Some(1_000),
+                adapter_max_in_flight: Some(2),
+            }),
         }
     );
+    assert_eq!(structured.admission.unwrap().concurrency(), 2);
     let codex = models[1].capabilities.clone().unwrap();
     assert!(!codex.structured_output && !codex.sampling_controls && codex.reasoning_control);
+    assert_eq!(codex.context_tokens, None);
+    let admission = codex.admission.unwrap();
+    assert_eq!(admission.adapter_max_in_flight, None);
+    assert_eq!(admission.concurrency(), 8, "no adapter cap");
     assert!(codex.is_cloud("codex-like"));
 
     let cloud = models[2].capabilities.clone().unwrap();
@@ -56,7 +77,17 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
     assert!(odd.function_tools);
     assert_eq!(odd.trust_zone, None);
     assert_eq!(odd.reasoning_efforts, None);
-    assert_eq!(odd.operations, vec!["chat.completions".to_owned()]);
+    assert_eq!(odd.operations, vec!["chat".to_owned()]);
+    assert_eq!(odd.context_tokens, None);
+    assert_eq!(
+        odd.admission, None,
+        "admission needs a numeric max_in_flight"
+    );
+    assert_eq!(
+        models[2].capabilities.clone().unwrap().admission,
+        None,
+        "public listener publishes no admission block"
+    );
 }
 
 #[test]

@@ -41,6 +41,8 @@ pub(in crate::infrastructure::llm) use jitter::full as full_jitter;
 
 use group::Group;
 
+use super::AdmissionLimits;
+
 pub struct Governor {
     groups: Vec<Arc<Group>>,
     routes: BTreeMap<Role, (RoleRoute, Option<Arc<Group>>)>,
@@ -82,6 +84,20 @@ impl Governor {
             warnings,
             random,
         })
+    }
+
+    /// Startup path once the gateway listing is known: `new` plus
+    /// [`GovernorConfig::capacity_warnings`] in `warnings()`.
+    pub fn new_checked(
+        config: &GovernorConfig,
+        random: Arc<dyn Random>,
+        published: impl Fn(&str) -> Option<AdmissionLimits>,
+    ) -> Result<Self, ConfigError> {
+        let mut governor = Self::new(config, random)?;
+        governor
+            .warnings
+            .extend(config.capacity_warnings(published));
+        Ok(governor)
     }
 
     pub fn warnings(&self) -> &[ConfigWarning] {

@@ -9,33 +9,75 @@ pub use downgrade::Capability;
 pub(crate) use downgrade::{DowngradeCache, field_capability};
 pub use listing::{ListedModel, parse_models_list};
 
+/// Kanata's limit on published output tokens (`max_tokens`).
+pub(crate) const MAX_OUTPUT_TOKENS: u32 = 1_048_576;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
+    /// No reasoning; Kanata's wire name is `none`.
+    #[serde(alias = "none")]
     Off,
+    Minimal,
     Low,
     Medium,
     High,
+    Xhigh,
+    Max,
 }
 
 impl Effort {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Off => "off",
+            Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+
+    /// The `reasoning_effort` value sent on the wire.
+    pub(crate) fn wire_str(self) -> &'static str {
+        match self {
+            Self::Off => "none",
+            other => other.as_str(),
         }
     }
 
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
-            "off" => Some(Self::Off),
+            "off" | "none" => Some(Self::Off),
+            "minimal" => Some(Self::Minimal),
             "low" => Some(Self::Low),
             "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
+            "xhigh" => Some(Self::Xhigh),
+            "max" => Some(Self::Max),
             _ => None,
         }
+    }
+}
+
+/// Kanata's per-route admission settings, published on its private listener only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdmissionLimits {
+    pub max_in_flight: u32,
+    pub max_queue: Option<u32>,
+    pub queue_ms: Option<u64>,
+    /// Shared by every route on the adapter; `None` caps nothing.
+    pub adapter_max_in_flight: Option<u32>,
+}
+
+impl AdmissionLimits {
+    /// Most concurrent requests the gateway admits for this alias without queueing.
+    pub fn concurrency(&self) -> u32 {
+        self.adapter_max_in_flight
+            .map_or(self.max_in_flight, |adapter| {
+                adapter.min(self.max_in_flight)
+            })
     }
 }
 
@@ -60,6 +102,12 @@ pub struct ModelCapabilities {
     pub trust_zone: Option<TrustZone>,
     /// `None` lets the model decide which efforts it honours.
     pub reasoning_efforts: Option<Vec<Effort>>,
+    /// Published context window; informational.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u32>,
+    /// Gateway admission limits for capacity checks; never sent or enforced here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission: Option<AdmissionLimits>,
 }
 
 impl ModelCapabilities {
@@ -74,6 +122,8 @@ impl ModelCapabilities {
             streaming: false,
             trust_zone: None,
             reasoning_efforts: None,
+            context_tokens: None,
+            admission: None,
         }
     }
 
@@ -104,6 +154,8 @@ impl fmt::Debug for ModelCapabilities {
             .field("streaming", &self.streaming)
             .field("trust_zone", &self.trust_zone)
             .field("reasoning_efforts", &self.reasoning_efforts)
+            .field("context_tokens", &self.context_tokens)
+            .field("admission", &self.admission)
             .finish()
     }
 }

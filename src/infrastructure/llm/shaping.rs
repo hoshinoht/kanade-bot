@@ -31,15 +31,33 @@ pub fn prepare(
             "function-tools",
         ));
     }
+    super::wire::check(request, capabilities)
+        .map_err(|reason| LlmError::new(ErrorCode::RequestInvalid, reason))?;
+    // Substituted here too so the placeholder counts toward every bound.
+    let mut shaped = request
+        .messages
+        .iter()
+        .any(|message| matches!(message, Message::Tool { content, .. } if content.is_empty()))
+        .then(|| {
+            let mut copy = request.clone();
+            for message in &mut copy.messages {
+                if let Message::Tool { content, .. } = message
+                    && content.is_empty()
+                {
+                    super::wire::EMPTY_TOOL_RESULT.clone_into(content);
+                }
+            }
+            copy
+        });
     let Some(output) = &request.output_schema else {
-        return Ok(None);
+        return Ok(shaped);
     };
     if capabilities.structured_output {
-        return Ok(None);
+        return Ok(shaped);
     }
     let instruction = schema_instruction(&output.schema)
         .map_err(|_| LlmError::new(ErrorCode::RequestInvalid, "schema"))?;
-    let mut shaped = request.clone();
+    let mut shaped = shaped.take().unwrap_or_else(|| request.clone());
     match shaped.messages.first_mut() {
         Some(Message::System { content }) => {
             content.push_str("\n\n");

@@ -21,7 +21,14 @@ backend group and validates it against what Kanata publishes:
   every route on the adapter.
 - `KeyLimits`: `{max_in_flight, shared}`. The deployment's key bounds the
   governor's summed concurrency across all groups; the key is shared with
-  the owner's other clients, so its limits are sized for both.
+  the owner's other clients, so its limits are sized for both. Per-key
+  limits are always operator-declared: Kanata never publishes them.
+- Published admission is `kanata.admission` `{max_in_flight, max_queue,
+  queue_ms, adapter_max_in_flight}` on Kanata's private listener only (the
+  public listener and plain Ollama publish none). The provider parses it into
+  `ModelCapabilities::admission`; `GovernorConfig::capacity_warnings` flags a
+  group whose permits exceed min(`max_in_flight`, `adapter_max_in_flight`)
+  for any of its aliases.
 - Rule: each group's N ≤ the minimum over its aliases of
   min(route max_in_flight, adapter_max_in_flight). An alias belongs to
   exactly one group, listed once; an alias Kanata does not list is refused,

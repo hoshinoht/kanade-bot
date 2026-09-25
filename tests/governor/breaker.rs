@@ -83,6 +83,47 @@ async fn backend_unavailable_opens_at_once() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_gateways_breaker_cooldown_floors_ours_up_to_the_maximum() {
+    let governor = fast(1);
+    let permit = hold(&governor);
+    send(
+        &permit,
+        Outcome::BackendUnavailableFor(Duration::from_secs(120)),
+    )
+    .await;
+    let breaker = snap(&governor).breaker;
+    assert_eq!(breaker.state, BreakerState::Open);
+    assert_eq!(breaker.retry_at, Some(wall() + TimeDelta::seconds(120)));
+    assert_eq!(snap(&governor).counters.backend_unavailable, 1);
+
+    // Shorter than our own jittered cooldown: ours wins.
+    let governor = fast(1);
+    let permit = hold(&governor);
+    send(
+        &permit,
+        Outcome::BackendUnavailableFor(Duration::from_secs(5)),
+    )
+    .await;
+    assert_eq!(
+        snap(&governor).breaker.retry_at,
+        Some(wall() + TimeDelta::milliseconds(37_500))
+    );
+
+    // Capped at the policy's 300 s maximum.
+    let governor = fast(1);
+    let permit = hold(&governor);
+    send(
+        &permit,
+        Outcome::BackendUnavailableFor(Duration::from_secs(3_600)),
+    )
+    .await;
+    assert_eq!(
+        snap(&governor).breaker.retry_at,
+        Some(wall() + TimeDelta::seconds(300))
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn admission_refusals_say_nothing_about_backend_health() {
     let governor = fast(1);
     let permit = hold(&governor);

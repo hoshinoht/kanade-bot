@@ -2,7 +2,14 @@
 //! holds one permit for its whole interaction and caps every provider request
 //! it sends, retries and requeues included.
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use tokio::time::Instant;
 
@@ -114,6 +121,9 @@ pub struct ModelClient<P> {
     governor: Arc<Governor>,
     runner: CompletionRunner<P>,
     max_attempts: u8,
+    /// Random per client so ids from different processes rarely collide in gateway logs.
+    instance: u32,
+    sessions: AtomicU64,
 }
 
 impl<P> fmt::Debug for ModelClient<P> {
@@ -134,11 +144,24 @@ impl<P: LlmProvider> ModelClient<P> {
     ) -> Result<Self, LlmError> {
         let max_attempts = retry.max_attempts;
         let runner = CompletionRunner::new(provider, limits, retry, governor.random.clone())?;
+        let instance = (governor.random.next_u64() >> 32) as u32;
         Ok(Self {
             governor,
             runner,
             max_attempts,
+            instance,
+            sessions: AtomicU64::new(0),
         })
+    }
+
+    /// `kanade-{kind}-{instance}-{sequence}`: always a valid `x-request-id` stem.
+    fn next_id(&self, kind: CallKind) -> String {
+        let sequence = self.sessions.fetch_add(1, Ordering::Relaxed) + 1;
+        format!(
+            "kanade-{}-{:08x}-{sequence:x}",
+            kind.as_str().replace('_', "-"),
+            self.instance
+        )
     }
 
     pub fn governor(&self) -> &Arc<Governor> {
@@ -186,6 +209,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
+            id: self.next_id(CallKind::Chat),
         })
     }
 
@@ -223,6 +247,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
+            id: self.next_id(CallKind::Extraction),
         })
     }
 
@@ -259,6 +284,7 @@ pub struct Session<'c, P> {
     answered: bool,
     answer_retry_used: bool,
     ended: bool,
+    id: String,
 }
 
 impl<P> fmt::Debug for Session<'_, P> {
@@ -294,6 +320,11 @@ impl<P: LlmProvider> Session<'_, P> {
     pub fn is_ended(&self) -> bool {
         self.ended
             || (!self.question && self.completed && (!self.answered || self.answer_retry_used))
+    }
+
+    /// Correlation id; request `n` of this session is sent as `x-request-id: {id}-{n}`.
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     /// The alias every request of this session must name.
@@ -387,7 +418,8 @@ impl<P: LlmProvider> Session<'_, P> {
                 cap,
                 retry_first,
                 random.as_ref(),
-            );
+            )
+            .tagged(&self.id);
             let result = self.client.runner.run(request, &mut gate).await;
             drop(gate);
             let failure = match result {

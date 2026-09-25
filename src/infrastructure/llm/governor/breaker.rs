@@ -50,7 +50,8 @@ pub(super) enum Admission {
 pub(super) enum Signal {
     Healthy,
     Failure,
-    Down,
+    /// Opens at once; the duration floors the cooldown.
+    Down(Option<Duration>),
     Neutral,
 }
 
@@ -183,9 +184,13 @@ impl Breaker {
                     self.failures = 0;
                     self.trips = 0;
                 }
-                Signal::Failure | Signal::Down => {
+                Signal::Failure => {
                     self.failures = self.failures.saturating_add(1);
-                    self.trip(now, random);
+                    self.trip(now, random, None);
+                }
+                Signal::Down(floor) => {
+                    self.failures = self.failures.saturating_add(1);
+                    self.trip(now, random, floor);
                 }
                 Signal::Neutral => self.phase = Phase::HalfOpen { probing: false },
             }
@@ -199,26 +204,29 @@ impl Breaker {
             Signal::Failure => {
                 self.failures = self.failures.saturating_add(1);
                 if self.failures >= self.threshold {
-                    self.trip(now, random);
+                    self.trip(now, random, None);
                 }
             }
-            Signal::Down => {
+            Signal::Down(floor) => {
                 self.failures = self.failures.saturating_add(1);
-                self.trip(now, random);
+                self.trip(now, random, floor);
             }
             Signal::Neutral => {}
         }
     }
 
-    /// Cooldown doubles per consecutive trip, capped, then jittered to [1, 1.5)×.
-    fn trip(&mut self, now: Instant, random: &dyn Random) {
+    /// Cooldown doubles per consecutive trip, capped, then jittered to [1, 1.5)×;
+    /// a gateway-reported cooldown (capped at the maximum) is a floor, so we never
+    /// probe while the gateway's own breaker is still open.
+    fn trip(&mut self, now: Instant, random: &dyn Random, floor: Option<Duration>) {
         let factor = 1u32.checked_shl(self.trips.min(16)).unwrap_or(u32::MAX);
         let base = self
             .cooldown
             .checked_mul(factor)
             .unwrap_or(self.max_cooldown)
             .min(self.max_cooldown);
-        let wait = base + base.mul_f64(unit(random) / 2.0);
+        let jittered = base + base.mul_f64(unit(random) / 2.0);
+        let wait = floor.map_or(jittered, |floor| jittered.max(floor.min(self.max_cooldown)));
         self.trips = self.trips.saturating_add(1);
         self.since = now;
         self.phase = Phase::Open {

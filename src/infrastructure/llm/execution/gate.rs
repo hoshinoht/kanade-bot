@@ -15,6 +15,8 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     retry_next: bool,
     random: &'a dyn Random,
     attempt: Option<Attempt>,
+    /// Session id; each request is tagged `{tag}-{n}` for gateway log correlation.
+    tag: Option<&'a str>,
 }
 
 pub(in crate::infrastructure::llm) enum Denied {
@@ -43,7 +45,18 @@ impl<'a> Gate<'a> {
             retry_next: retry_first,
             random,
             attempt: None,
+            tag: None,
         }
+    }
+
+    pub(in crate::infrastructure::llm) fn tagged(mut self, tag: &'a str) -> Self {
+        self.tag = Some(tag);
+        self
+    }
+
+    /// Id of the request admitted last (numbered from 1 within the session).
+    pub(super) fn request_id(&self) -> Option<String> {
+        self.tag.map(|tag| format!("{tag}-{}", *self.used))
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -57,6 +70,7 @@ impl<'a> Gate<'a> {
             retry_next: false,
             random,
             attempt: None,
+            tag: None,
         }
     }
 

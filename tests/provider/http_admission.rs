@@ -1,5 +1,5 @@
 //! Failure classification for gateway admission, backend-down and timeout
-//! replies. The Kanata codes are provisional (not shipped yet); loopback stubs only.
+//! replies, pinned to the codes and statuses Kanata sends; loopback stubs only.
 
 use std::{
     collections::BTreeMap,
@@ -61,7 +61,7 @@ async fn classify(
 }
 
 #[tokio::test]
-async fn provisional_kanata_admission_codes_are_admission_refusals() {
+async fn kanata_admission_codes_are_admission_refusals() {
     for (status, code) in [
         (429, "gateway_queue_full"),
         (429, "gateway_key_busy"),
@@ -91,12 +91,76 @@ async fn provisional_kanata_admission_codes_are_admission_refusals() {
         "HTTP-date Retry-After is ignored"
     );
     assert_eq!(
-        classify(429, Some("gateway_busy"), Some("999999999999")).await,
+        classify(503, Some("gateway_busy"), Some("999999999999")).await,
         ProviderFailureKind::AdmissionRefused {
             retry_after: Some(Duration::from_secs(3_600))
         },
         "Retry-After is capped"
     );
+    assert_eq!(
+        classify(503, Some("server_draining"), None).await,
+        ProviderFailureKind::AdmissionRefused { retry_after: None },
+        "draining is a short requeue, not a backend failure"
+    );
+}
+
+#[tokio::test]
+async fn admission_codes_count_only_with_their_own_status() {
+    for (status, code, kind) in [
+        (503, "gateway_queue_full", ProviderFailureKind::Transient),
+        (503, "gateway_key_busy", ProviderFailureKind::Transient),
+        (
+            503,
+            "gateway_key_rate_limited",
+            ProviderFailureKind::Transient,
+        ),
+        (429, "gateway_busy", ProviderFailureKind::Transient),
+        (429, "server_draining", ProviderFailureKind::Transient),
+        (502, "upstream_unavailable", ProviderFailureKind::Transient),
+    ] {
+        assert_eq!(
+            classify(status, Some(code), None).await,
+            kind,
+            "{status} {code}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn upstream_unavailable_opens_only_with_the_gateways_cooldown() {
+    assert_eq!(
+        classify(503, Some("upstream_unavailable"), Some("30")).await,
+        ProviderFailureKind::BackendUnavailable {
+            retry_after: Some(Duration::from_secs(30))
+        }
+    );
+    assert_eq!(
+        classify(503, Some("upstream_unavailable"), None).await,
+        ProviderFailureKind::Transient,
+        "adapter down without Kanata's breaker counts toward our threshold"
+    );
+}
+
+#[tokio::test]
+async fn an_expired_key_is_reported_distinctly() {
+    let stub = Stub::start(models_or(|_| {
+        Reply::Json(
+            401,
+            json!({"error": {"message": "API key has expired", "type": "authentication_error", "code": "key_expired"}}),
+        )
+    }))
+    .await;
+    let error = runner(declared(stub.url()))
+        .complete(&structured())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::KeyExpired);
+    let stub = Stub::start(models_or(|_| Reply::Json(401, json!({})))).await;
+    let error = runner(declared(stub.url()))
+        .complete(&structured())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ProviderAuthentication);
 }
 
 #[tokio::test]
@@ -105,7 +169,9 @@ async fn backend_down_timeouts_and_generic_statuses_are_classified() {
         (
             503,
             Some("upstream_unavailable"),
-            ProviderFailureKind::BackendUnavailable,
+            ProviderFailureKind::BackendUnavailable {
+                retry_after: Some(Duration::from_secs(5)),
+            },
         ),
         (
             504,
@@ -145,12 +211,12 @@ async fn backend_down_timeouts_and_generic_statuses_are_classified() {
 
 #[tokio::test]
 async fn the_runner_never_retries_admission_refusals_or_a_down_backend() {
-    for (code, expected) in [
-        ("gateway_queue_full", ErrorCode::AdmissionRefused),
-        ("upstream_unavailable", ErrorCode::BackendUnavailable),
+    for (status, code, expected) in [
+        (429, "gateway_queue_full", ErrorCode::AdmissionRefused),
+        (503, "upstream_unavailable", ErrorCode::BackendUnavailable),
     ] {
         let stub = Stub::start(models_or(move |_| {
-            Reply::Raw(raw(503, Some(code), Some("1")))
+            Reply::Raw(raw(status, Some(code), Some("1")))
         }))
         .await;
         let error = runner(declared(stub.url()))
@@ -209,7 +275,9 @@ async fn a_reply_lost_after_sending_is_an_upstream_timeout() {
     }
 }
 
-fn client(provider: Arc<OpenAiCompatibleProvider>) -> ModelClient<OpenAiCompatibleProvider> {
+pub(super) fn client(
+    provider: Arc<OpenAiCompatibleProvider>,
+) -> ModelClient<OpenAiCompatibleProvider> {
     let roles = [Role::Chat, Role::Extraction]
         .into_iter()
         .map(|role| {

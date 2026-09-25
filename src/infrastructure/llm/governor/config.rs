@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use super::super::AdmissionLimits;
+
 pub const MAX_PERMITS: u32 = 64;
 pub const MAX_REQUESTS_PER_MIN: u32 = 6_000;
 pub const MAX_BURST: u32 = 1_000;
@@ -148,9 +150,44 @@ impl std::error::Error for ConfigError {}
 pub enum ConfigWarning {
     /// Contract: a role's model with no group only warns; the governor refuses its calls.
     UngroupedRole { role: Role, alias: String },
+    /// A group holds more permits than the gateway admits for one of its aliases
+    /// (min of route and adapter `max_in_flight`); the excess would queue or be
+    /// refused at the gateway instead of in Kanade's fair queue.
+    PermitsAboveGateway {
+        group: String,
+        alias: String,
+        permits: u32,
+        gateway: u32,
+    },
 }
 
 impl GovernorConfig {
+    /// Compares each group's permits with what the gateway publishes for its
+    /// aliases. `published` returns `None` where nothing is published (public
+    /// listener, plain Ollama); those limits stay operator-declared. Per-key
+    /// limits are never published, so they are not checked here.
+    pub fn capacity_warnings(
+        &self,
+        published: impl Fn(&str) -> Option<AdmissionLimits>,
+    ) -> Vec<ConfigWarning> {
+        let mut warnings = Vec::new();
+        for group in &self.groups {
+            for alias in &group.aliases {
+                if let Some(limits) = published(alias)
+                    && group.permits > limits.concurrency()
+                {
+                    warnings.push(ConfigWarning::PermitsAboveGateway {
+                        group: group.name.clone(),
+                        alias: alias.clone(),
+                        permits: group.permits,
+                        gateway: limits.concurrency(),
+                    });
+                }
+            }
+        }
+        warnings
+    }
+
     /// Checks every bound (first error wins) and resolves each role's group.
     pub fn validate(&self) -> Result<(Vec<RoleRoute>, Vec<ConfigWarning>), ConfigError> {
         self.policy.validate()?;

@@ -14,6 +14,8 @@ pub enum FakeAction {
     Malformed,
     AdmissionRefused(Option<Duration>),
     BackendUnavailable,
+    /// Down with the gateway's breaker cooldown as `Retry-After`.
+    BackendUnavailableFor(Duration),
     UpstreamTimeout,
     Delayed {
         delay: Duration,
@@ -73,7 +75,13 @@ async fn run(action: FakeAction) -> Result<CompletionResponse, ProviderFailure> 
             "admission",
         )),
         FakeAction::BackendUnavailable => Err(failure(
-            ProviderFailureKind::BackendUnavailable,
+            ProviderFailureKind::BackendUnavailable { retry_after: None },
+            "backend-unavailable",
+        )),
+        FakeAction::BackendUnavailableFor(retry_after) => Err(failure(
+            ProviderFailureKind::BackendUnavailable {
+                retry_after: Some(retry_after),
+            },
             "backend-unavailable",
         )),
         FakeAction::UpstreamTimeout => {

@@ -58,11 +58,20 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
     }
     if capabilities.reasoning_control
         && let Some(effort) = request.reasoning
-        && effort != Effort::Off
+        && (effort != Effort::Off || publishes(capabilities, Effort::Off))
     {
-        body.insert("reasoning_effort".into(), json!(effort.as_str()));
+        body.insert("reasoning_effort".into(), json!(effort.wire_str()));
     }
     Value::Object(body)
+}
+
+/// `Off` is sent as `none` only where the alias publishes it; elsewhere omitting
+/// the field is the only portable "no preference".
+fn publishes(capabilities: &ModelCapabilities, effort: Effort) -> bool {
+    capabilities
+        .reasoning_efforts
+        .as_ref()
+        .is_some_and(|efforts| efforts.contains(&effort))
 }
 
 fn message(message: &Message) -> Value {
@@ -89,7 +98,14 @@ fn message(message: &Message) -> Value {
         Message::Tool {
             tool_call_id,
             content,
-        } => json!({"role": "tool", "tool_call_id": tool_call_id, "content": content}),
+        } => {
+            let content = if content.is_empty() {
+                super::EMPTY_TOOL_RESULT
+            } else {
+                content
+            };
+            json!({"role": "tool", "tool_call_id": tool_call_id, "content": content})
+        }
     }
 }
 

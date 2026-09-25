@@ -82,6 +82,7 @@ impl OpenAiCompatibleProvider {
                 Method::GET,
                 "models",
                 None,
+                None,
                 self.limits.models_body_bytes,
                 self.limits.error_body_bytes,
             )
@@ -187,9 +188,16 @@ impl OpenAiCompatibleProvider {
         &self,
         request: &ChatRequest,
         capabilities: &ModelCapabilities,
+        request_id: Option<&str>,
     ) -> Result<CompletionResponse, ProviderFailure> {
+        // Only locally valid values are sent, so a 400 naming a sent field
+        // really means the alias does not support it.
+        wire::check(request, capabilities).map_err(|reason_code| ProviderFailure {
+            kind: ProviderFailureKind::Permanent,
+            reason_code,
+        })?;
         let body = wire::chat_body(request, capabilities);
-        match self.post(&body).await {
+        match self.post(&body, request_id).await {
             Ok(reply) => {
                 let unfence =
                     request.output_schema.is_some() && body.get("response_format").is_none();
@@ -210,7 +218,7 @@ impl OpenAiCompatibleProvider {
         }
     }
 
-    async fn post(&self, body: &Value) -> Result<Reply, PostError> {
+    async fn post(&self, body: &Value, request_id: Option<&str>) -> Result<Reply, PostError> {
         let bytes = serde_json::to_vec(body).map_err(|_| {
             PostError::Failed(ProviderFailure {
                 kind: ProviderFailureKind::Permanent,
@@ -223,6 +231,7 @@ impl OpenAiCompatibleProvider {
                 Method::POST,
                 "chat/completions",
                 Some(bytes),
+                request_id,
                 self.limits.completion_body_bytes,
                 self.limits.error_body_bytes,
             )
@@ -252,7 +261,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
         let request = request.clone();
         Box::pin(async move {
             let capabilities = self.model_capabilities(&request.model).await;
-            self.chat(&request, &capabilities).await
+            self.chat(&request, &capabilities, None).await
         })
     }
 
@@ -263,7 +272,19 @@ impl LlmProvider for OpenAiCompatibleProvider {
     ) -> CompletionFuture<'_> {
         let request = request.clone();
         let capabilities = capabilities.clone();
-        Box::pin(async move { self.chat(&request, &capabilities).await })
+        Box::pin(async move { self.chat(&request, &capabilities, None).await })
+    }
+
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        request_id: &str,
+    ) -> CompletionFuture<'_> {
+        let request = request.clone();
+        let capabilities = capabilities.clone();
+        let request_id = request_id.to_owned();
+        Box::pin(async move { self.chat(&request, &capabilities, Some(&request_id)).await })
     }
 
     /// Half the remaining runner deadline at most, so a stalled listing still
@@ -301,16 +322,17 @@ fn rejected_field(body: &[u8]) -> Option<(&'static str, Capability)> {
     field_capability(value.get("error")?.get("param")?.as_str()?)
 }
 
-/// Provisional Kanata admission codes (not yet shipped by Kanata): the request was
-/// turned away before any backend work.
-const ADMISSION_CODES: [&str; 4] = [
-    "gateway_queue_full",
-    "gateway_busy",
-    "gateway_key_busy",
-    "gateway_key_rate_limited",
+/// Kanata admission refusals, each pinned to the status Kanata sends it with: the
+/// request was turned away before any backend work.
+const ADMISSION_CODES: [(u16, &str); 4] = [
+    (429, "gateway_queue_full"),
+    (503, "gateway_busy"),
+    (429, "gateway_key_busy"),
+    (429, "gateway_key_rate_limited"),
 ];
-/// Provisional Kanata code for an adapter whose own breaker is open.
-const BACKEND_DOWN_CODE: &str = "upstream_unavailable";
+
+/// Distinct from other 401s so operators can tell a rotated-out key.
+pub(crate) const KEY_EXPIRED: &str = "key-expired";
 
 /// `error.code` of an OpenAI-style error body.
 fn gateway_code(body: &[u8]) -> Option<String> {
@@ -321,22 +343,37 @@ fn gateway_code(body: &[u8]) -> Option<String> {
 fn status_failure(reply: &Reply) -> ProviderFailure {
     let status = reply.status.as_u16();
     let code = match status {
-        429 | 500..=599 => gateway_code(&reply.body),
+        401 | 429 | 500..=599 => gateway_code(&reply.body),
         _ => None,
     };
     let (kind, reason_code) = match (status, code.as_deref()) {
+        (401, Some("key_expired")) => (ProviderFailureKind::Authentication, KEY_EXPIRED),
         (401 | 403, _) => (ProviderFailureKind::Authentication, "authentication"),
-        (429 | 503, Some(code)) if ADMISSION_CODES.contains(&code) => (
+        (_, Some(code)) if ADMISSION_CODES.contains(&(status, code)) => (
             ProviderFailureKind::AdmissionRefused {
                 retry_after: reply.retry_after,
             },
             "admission",
         ),
-        (500..=599, Some(BACKEND_DOWN_CODE)) => (
-            ProviderFailureKind::BackendUnavailable,
-            "backend-unavailable",
+        // Shutting down, not failing: requeue shortly, breaker-neutral.
+        (503, Some("server_draining")) => (
+            ProviderFailureKind::AdmissionRefused {
+                retry_after: reply.retry_after,
+            },
+            "draining",
         ),
-        // Kanata's queue timeout and a slow backend are indistinguishable here.
+        // With Retry-After this is Kanata's own open breaker; without it the
+        // adapter is down or unbound, which counts toward our threshold instead.
+        (503, Some("upstream_unavailable")) => match reply.retry_after {
+            Some(retry_after) => (
+                ProviderFailureKind::BackendUnavailable {
+                    retry_after: Some(retry_after),
+                },
+                "backend-unavailable",
+            ),
+            None => (ProviderFailureKind::Transient, "backend-unavailable"),
+        },
+        // Kanata queue timeouts are 503 gateway_busy; a 504 is a backend phase timing out.
         (504, _) => (ProviderFailureKind::UpstreamTimeout, "upstream-timeout"),
         (429, _) => match reply.retry_after {
             Some(retry_after) => (

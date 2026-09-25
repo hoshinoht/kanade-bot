@@ -27,6 +27,17 @@ pub trait LlmProvider: Send + Sync {
     ) -> CompletionFuture<'_> {
         self.complete(request)
     }
+
+    /// `complete_with`, tagged with a gateway log-correlation id (1–128 chars of
+    /// `[A-Za-z0-9_-]`); providers without such a header ignore it.
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        _request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.complete_with(request, capabilities)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,8 +54,11 @@ pub enum ProviderFailureKind {
     AdmissionRefused {
         retry_after: Option<Duration>,
     },
-    /// The gateway reports the backend down; feeds the breaker, never retried.
-    BackendUnavailable,
+    /// The gateway reports the backend down; opens the breaker at once, never
+    /// retried. `retry_after` (the gateway's own breaker cooldown) floors ours.
+    BackendUnavailable {
+        retry_after: Option<Duration>,
+    },
     /// A plain upstream 429 naming `Retry-After`: transient, but the runner's
     /// backoff waits at least `retry_after`.
     RateLimited {

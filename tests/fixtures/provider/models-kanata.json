@@ -6,14 +6,22 @@
       "object": "model",
       "owned_by": "kanata",
       "kanata": {
-        "operations": ["chat.completions"],
+        "operations": ["chat"],
         "structured_output": true,
         "sampling_controls": true,
         "reasoning_control": true,
         "function_tools": true,
         "streaming": true,
+        "input_audio": false,
         "trust_zone": "private_network",
-        "reasoning_efforts": ["low", "medium", "high"],
+        "reasoning_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "context_tokens": 32768,
+        "admission": {
+          "max_in_flight": 4,
+          "max_queue": 16,
+          "queue_ms": 1000,
+          "adapter_max_in_flight": 2
+        },
         "future_field": {"ignored": true}
       }
     },
@@ -21,14 +29,21 @@
       "id": "codex-like",
       "object": "model",
       "kanata": {
-        "operations": ["chat.completions"],
+        "operations": ["chat"],
         "structured_output": false,
         "sampling_controls": false,
         "reasoning_control": true,
         "function_tools": true,
         "streaming": false,
         "trust_zone": "external",
-        "reasoning_efforts": ["low", "medium", "high"]
+        "reasoning_efforts": ["low", "medium", "high"],
+        "context_tokens": null,
+        "admission": {
+          "max_in_flight": 8,
+          "max_queue": 32,
+          "queue_ms": 1000,
+          "adapter_max_in_flight": null
+        }
       }
     },
     {
@@ -52,7 +67,9 @@
         "function_tools": 1,
         "trust_zone": "moon",
         "reasoning_efforts": "high",
-        "operations": [7, "chat.completions"]
+        "operations": [7, "chat"],
+        "context_tokens": -1,
+        "admission": {"max_in_flight": "4", "adapter_max_in_flight": 2}
       }
     },
     {"id": 42},
