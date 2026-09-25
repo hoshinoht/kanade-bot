@@ -30,8 +30,11 @@ async fn plan(conn: &mut SqliteConnection, sql: &str) -> String {
 
 fn statements() -> Vec<String> {
     [
-        extractions::list_sql(),
+        extractions::list_sql(false),
+        extractions::list_sql(true),
         chat::list_sql(),
+        chat::rounds_sql(),
+        messages::by_ids_sql(),
         messages::in_channel_sql(false),
         messages::in_channel_sql(true),
     ]
@@ -47,7 +50,11 @@ async fn lists_walk_the_time_index_without_sorting() {
     let mut conn = schema().await;
     for (sql, index) in [
         (
-            extractions::list_sql(),
+            extractions::list_sql(false),
+            "SCAN e USING INDEX extractions_recent",
+        ),
+        (
+            extractions::list_sql(true),
             "SCAN e USING INDEX extractions_recent",
         ),
         (chat::list_sql(), "SCAN c USING INDEX chat_recent"),
@@ -56,6 +63,13 @@ async fn lists_walk_the_time_index_without_sorting() {
         assert!(plan.contains(index), "{plan}");
         assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
+    let rounds = plan(&mut conn, &chat::rounds_sql()).await;
+    assert!(
+        rounds.contains("SEARCH chat_rounds USING INDEX sqlite_autoindex_chat_rounds_1"),
+        "{rounds}"
+    );
+    let by_ids = plan(&mut conn, &messages::by_ids_sql()).await;
+    assert!(!by_ids.contains("SCAN messages"), "{by_ids}");
     let pending = plan(&mut conn, &messages::in_channel_sql(true)).await;
     assert!(pending.contains("messages_unprocessed"), "{pending}");
 }

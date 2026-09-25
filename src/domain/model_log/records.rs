@@ -23,6 +23,17 @@ pub struct WatchedMessage {
     pub processed_at: Option<DateTime<Utc>>,
 }
 
+/// `found` in the order of `ids`, each id once (the by-ids read's order).
+pub fn in_order(ids: &[String], mut found: Vec<WatchedMessage>) -> Vec<WatchedMessage> {
+    let mut ordered = Vec::with_capacity(found.len());
+    for id in ids {
+        if let Some(index) = found.iter().position(|message| &message.id == id) {
+            ordered.push(found.swap_remove(index));
+        }
+    }
+    ordered
+}
+
 /// One extraction pass (v4 `extractions`, plus the v5 filter fields).
 #[derive(Clone, PartialEq, Eq)]
 pub struct ExtractionLog {

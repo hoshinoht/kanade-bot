@@ -176,6 +176,15 @@ pub(super) async fn load(
     }
 }
 
+/// The rounds of a page's interactions (ids as a JSON array), in order.
+pub(super) fn rounds_sql() -> String {
+    format!(
+        "SELECT interaction_id, {ROUND_COLUMNS} FROM chat_rounds \
+         WHERE interaction_id IN (SELECT value FROM json_each(?1)) \
+         ORDER BY interaction_id, ord"
+    )
+}
+
 /// A bounded scan of `chat_recent` newest first, as the extraction list.
 pub(super) fn list_sql() -> String {
     format!(
@@ -231,9 +240,27 @@ pub(super) async fn list(
         .fetch_all(&mut *conn)
         .await
         .map_err(store_error)?;
-    let mut items = Vec::with_capacity(rows.len());
-    for row in &rows {
-        items.push(with_rounds(conn, interaction_of(row)?).await?);
+    let mut items = rows
+        .iter()
+        .map(interaction_of)
+        .collect::<Result<Vec<_>, _>>()?;
+    // One query for the page's rounds, not one per interaction.
+    let ids = json_list(&items.iter().map(|chat| chat.id.clone()).collect::<Vec<_>>());
+    let rounds = sqlx::query(&rounds_sql())
+        .bind(ids)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    let mut by_id: std::collections::HashMap<String, Vec<ChatRound>> =
+        std::collections::HashMap::new();
+    for row in &rounds {
+        by_id
+            .entry(text(row, "interaction_id")?)
+            .or_default()
+            .push(round_of(row)?);
+    }
+    for chat in &mut items {
+        chat.rounds = by_id.remove(&chat.id).unwrap_or_default();
     }
     Ok(page(items, size))
 }

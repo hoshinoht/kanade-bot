@@ -122,6 +122,10 @@ impl ModelLogStore for SqliteStore {
         )
     }
 
+    async fn messages_by_ids(&self, ids: &[String]) -> Result<Vec<WatchedMessage>, StoreError> {
+        read_txn!(self, tx, messages::by_ids(&mut tx, ids))
+    }
+
     async fn record_extraction(&self, log: ExtractionLog) -> Result<(), StoreError> {
         log.check_shape()?;
         write_txn!(self, tx, extractions::insert(&mut tx, &log))

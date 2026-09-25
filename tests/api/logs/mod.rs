@@ -114,7 +114,7 @@ fn chat(
     }
 }
 
-fn extraction(
+pub fn extraction(
     id: &str,
     at: DateTime<Utc>,
     channel: &str,

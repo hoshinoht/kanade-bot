@@ -8,7 +8,6 @@ use axum::{
     http::Uri,
     response::IntoResponse,
 };
-use chrono::TimeDelta;
 use serde_json::json;
 
 use super::{Directory, Reply, filter, state, store_down};
@@ -23,10 +22,6 @@ use crate::{
     },
     domain::model_log::{ExtractionFilter, ExtractionLog},
 };
-
-/// How far back a call's messages are looked up: a two-week rescan that
-/// widened once reads three boss weeks.
-const MESSAGE_REACH: TimeDelta = TimeDelta::days(22);
 
 async fn every(
     state: &ApiState,
@@ -53,6 +48,7 @@ async fn current_model(state: &ApiState) -> Result<String, Refusal> {
         .store
         .extraction_logs(ExtractionFilter {
             limit: 1,
+            omit_bodies: true,
             ..ExtractionFilter::default()
         })
         .await
@@ -121,19 +117,11 @@ pub async fn detail(
             draft: draft.as_ref(),
         })
         .collect();
-    let messages = match &log.channel_id {
-        Some(channel) if !log.message_ids.is_empty() => state
-            .store
-            .messages(
-                channel.clone(),
-                log.at
-                    .checked_sub_signed(MESSAGE_REACH)
-                    .unwrap_or(chrono::DateTime::<chrono::Utc>::MIN_UTC),
-            )
-            .await
-            .map_err(store_down)?,
-        _ => Vec::new(),
-    };
+    let messages = state
+        .store
+        .messages_by_id(log.message_ids.clone())
+        .await
+        .map_err(store_down)?;
     let directory = Directory::load(state).await?;
     Ok(Json(extraction(
         &directory.names(),

@@ -59,6 +59,30 @@ impl State {
             .find(|tracked| !tracked.job.status.is_final())
     }
 
+    /// Flag a running job to stop; `false` once its final status is
+    /// latched. With [`State::settle`] under the same lock, a stop that is
+    /// accepted always ends the job `cancelled`.
+    fn stop_running(&self, id: &str) -> bool {
+        match self.jobs.get(id) {
+            Some(tracked) if tracked.job.status == RescanStatus::Running => {
+                tracked.stop.store(true, Ordering::SeqCst);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Latch a finished job's status: a stop accepted while it ran wins.
+    fn settle(&mut self, job: &mut RescanJob) {
+        if let Some(tracked) = self.jobs.get_mut(&job.id) {
+            if tracked.stop.load(Ordering::SeqCst) {
+                job.status = RescanStatus::Cancelled;
+            }
+            tracked.job = job.clone();
+            tracked.current = None;
+        }
+    }
+
     fn remember(&mut self, tracked: Tracked) {
         self.order.push(tracked.job.id.clone());
         self.jobs.insert(tracked.job.id.clone(), tracked);
@@ -206,18 +230,12 @@ where
             let state = self.state();
             match state.jobs.get(id) {
                 Some(tracked) if tracked.job.status == RescanStatus::Queued => true,
-                Some(tracked) if tracked.job.status == RescanStatus::Running => {
-                    tracked.stop.store(true, Ordering::SeqCst);
-                    return Ok(true);
-                }
-                _ => return Ok(false),
+                _ => return Ok(state.stop_running(id)),
             }
         };
         if queued && !self.finish_queued(id, "").await? {
             // Started meanwhile: stop it between bursts instead.
-            if let Some(tracked) = self.state().jobs.get(id) {
-                tracked.stop.store(true, Ordering::SeqCst);
-            }
+            return Ok(self.state().stop_running(id));
         }
         Ok(true)
     }
@@ -348,9 +366,8 @@ where
             self.set_results(id, job.results.clone());
             let _ = self.extractor.store().update_rescan_job(job.clone()).await;
         }
-        let status = if stop.load(Ordering::SeqCst) {
-            RescanStatus::Cancelled
-        } else if failure.is_some() && results.is_empty() {
+        // A stop is applied by `finish`, under the lock `cancel` reads.
+        let status = if failure.is_some() && results.is_empty() {
             RescanStatus::Failed
         } else {
             RescanStatus::Done
@@ -374,10 +391,61 @@ where
         job.status = status;
         job.error = error;
         job.finished_at = Some(self.extractor.now());
-        if let Some(tracked) = self.state().jobs.get_mut(&job.id) {
-            tracked.job = job.clone();
-            tracked.current = None;
-        }
+        self.state().settle(job);
         let _ = self.extractor.store().update_rescan_job(job.clone()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    fn running(state: &mut State) -> RescanJob {
+        let job = RescanJob {
+            id: "job".into(),
+            channels: vec!["900".into()],
+            window: "week".into(),
+            source: "portal".into(),
+            automated: false,
+            requested_by: None,
+            status: RescanStatus::Running,
+            created_at: Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap(),
+            started_at: None,
+            finished_at: None,
+            results: Value::Array(Vec::new()),
+            error: None,
+        };
+        state.remember(Tracked {
+            job: job.clone(),
+            stop: Arc::new(AtomicBool::new(false)),
+            current: Some("900".into()),
+        });
+        job
+    }
+
+    /// Both orders of a cancel racing the worker's last step: an accepted
+    /// stop always ends `cancelled`, and once `done` is latched a cancel is
+    /// refused, so a cancel answered `true` can never poll `done`.
+    #[test]
+    fn a_cancel_and_the_final_status_never_disagree() {
+        let mut state = State::default();
+        let mut job = running(&mut state);
+        assert!(state.stop_running("job"));
+        job.status = RescanStatus::Done;
+        state.settle(&mut job);
+        assert_eq!(job.status, RescanStatus::Cancelled);
+        assert_eq!(
+            state.view("job").unwrap().job.status,
+            RescanStatus::Cancelled
+        );
+
+        let mut state = State::default();
+        let mut job = running(&mut state);
+        job.status = RescanStatus::Done;
+        state.settle(&mut job);
+        assert!(!state.stop_running("job"));
+        assert_eq!(state.view("job").unwrap().job.status, RescanStatus::Done);
+        assert!(!state.stop_running("unknown"));
     }
 }

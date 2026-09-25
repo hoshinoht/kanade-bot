@@ -133,7 +133,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: admin logs and rescan API: chat and extraction logs with filters, totals and facets
   (withheld questions stay hidden and unsearchable; extraction details list refused
   changes), and rescans of watched channels that start at once, report unread messages
-  and can be cancelled safely.
+  and can be cancelled safely. Failed extraction calls never show store error text, a
+  cancel racing a finishing rescan always reports how it really ended, and log lists no
+  longer load prompts.
 - v5: admin inbox API: Kanade's extraction and chat proposals and members' requests in
   one list with a preview of what approving would change; approve or reject each
   (safe to retry), approve a proposed move, add or split at a corrected time in one step,

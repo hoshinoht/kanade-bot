@@ -5,7 +5,7 @@ use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
 
 use super::{instant, optional_text, read_instant, read_optional_instant, text};
-use crate::domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage};
+use crate::domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage, in_order};
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::optional_instant;
 use crate::infrastructure::store::sqlite::schedule::store_error;
@@ -150,4 +150,22 @@ pub(super) async fn in_channel(
         .await
         .map_err(store_error)?;
     rows.iter().map(message_of).collect()
+}
+
+/// Messages by id (ids as a JSON array); the primary key serves it.
+pub(super) fn by_ids_sql() -> String {
+    format!("SELECT {COLUMNS} FROM messages WHERE id IN (SELECT value FROM json_each(?1))")
+}
+
+pub(super) async fn by_ids(
+    conn: &mut SqliteConnection,
+    ids: &[String],
+) -> Result<Vec<WatchedMessage>, StoreError> {
+    let rows = sqlx::query(&by_ids_sql())
+        .bind(crate::infrastructure::store::sqlite::rows::list(ids))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    let found = rows.iter().map(message_of).collect::<Result<Vec<_>, _>>()?;
+    Ok(in_order(ids, found))
 }

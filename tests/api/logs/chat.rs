@@ -77,7 +77,7 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
 #[tokio::test]
 async fn chat_filters_each_and_combined() {
     let logs = Logs::new().await;
-    let cases: [(&str, &[&str]); 18] = [
+    let cases: [(&str, &[&str]); 19] = [
         ("?model=kanata/chat-cloud", &["c-withheld"]),
         ("?model=kanata/chat", &["c-timeout", "c-answer"]),
         // Guild-local dates, inclusive.
@@ -102,6 +102,8 @@ async fn chat_filters_each_and_combined() {
         ),
         ("?outcome=answered&channel=star", &[]),
         ("?q=%20summarise%20", &["c-timeout"]),
+        // Parses; no v4-imported row here.
+        ("?outcome=unknown", &[]),
     ];
     for (query, expected) in cases {
         assert_eq!(ids(&list(&logs, query).await), expected, "{query}");

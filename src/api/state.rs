@@ -98,6 +98,8 @@ pub trait ReadStore: Send + Sync {
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>>;
     fn extraction_logs(&self, filter: ExtractionFilter) -> ReadFuture<'_, LogPage<ExtractionLog>>;
     fn extraction_log(&self, id: String) -> ReadFuture<'_, Option<ExtractionLog>>;
+    /// Cached messages by id, in the order asked; pruned ones are left out.
+    fn messages_by_id(&self, ids: Vec<String>) -> ReadFuture<'_, Vec<WatchedMessage>>;
     fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets>;
     fn chat_logs(&self, filter: ChatFilter) -> ReadFuture<'_, LogPage<ChatInteraction>>;
     fn chat_log(&self, id: String) -> ReadFuture<'_, Option<ChatInteraction>>;
@@ -305,6 +307,10 @@ where
 
     fn extraction_log(&self, id: String) -> ReadFuture<'_, Option<ExtractionLog>> {
         Box::pin(async move { self.load_extraction(&id).await })
+    }
+
+    fn messages_by_id(&self, ids: Vec<String>) -> ReadFuture<'_, Vec<WatchedMessage>> {
+        Box::pin(async move { self.messages_by_ids(&ids).await })
     }
 
     fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets> {

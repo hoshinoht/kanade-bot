@@ -82,6 +82,13 @@ pub trait ModelLogStore {
         unprocessed_only: bool,
     ) -> impl Future<Output = Result<Vec<WatchedMessage>, StoreError>> + Send;
 
+    /// Cached messages by id, in the order of `ids` (duplicates once);
+    /// unknown or pruned ids are left out.
+    fn messages_by_ids(
+        &self,
+        ids: &[String],
+    ) -> impl Future<Output = Result<Vec<WatchedMessage>, StoreError>> + Send;
+
     // Logs.
 
     fn record_extraction(

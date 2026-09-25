@@ -9,7 +9,7 @@ use super::{MemoryScheduleStore, micros};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ExtractionFilter, ExtractionLog,
     LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, PruneCounts, ReadMessage,
-    RescanJob, WatchedMessage, page_size,
+    RescanJob, WatchedMessage, in_order, page_size,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -151,6 +151,17 @@ impl ModelLogStore for MemoryScheduleStore {
         Ok(found)
     }
 
+    async fn messages_by_ids(&self, ids: &[String]) -> Result<Vec<WatchedMessage>, StoreError> {
+        let found = self
+            .logs()
+            .messages
+            .values()
+            .filter(|message| ids.contains(&message.id))
+            .cloned()
+            .collect();
+        Ok(in_order(ids, found))
+    }
+
     async fn record_extraction(&self, log: ExtractionLog) -> Result<(), StoreError> {
         log.check_shape()?;
         let mut logs = self.logs();
@@ -204,6 +215,12 @@ impl ModelLogStore for MemoryScheduleStore {
                 .collect();
         found.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
         found.truncate(page_size(filter.limit) as usize + 1);
+        if filter.omit_bodies {
+            for log in &mut found {
+                log.prompt.clear();
+                log.raw_response.clear();
+            }
+        }
         Ok(page(found, filter.limit, |log| LogCursor {
             at: log.at,
             id: log.id.clone(),

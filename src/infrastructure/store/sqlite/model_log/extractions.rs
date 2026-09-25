@@ -19,6 +19,11 @@ const COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reason
     e.raw_response, e.latency_ms, e.request_count, e.outcome, e.error, e.guardrail, \
     e.message_ids, e.proposal_ids, e.refusals";
 
+/// [`COLUMNS`] without the prompt and response bodies (list pages).
+const LIST_COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, \
+    '' AS prompt, '' AS raw_response, e.latency_ms, e.request_count, e.outcome, e.error, \
+    e.guardrail, e.message_ids, e.proposal_ids, e.refusals";
+
 fn refusals_of(row: &SqliteRow) -> Result<Vec<ExtractionRefusal>, StoreError> {
     let value = read_json(row, "refusals")?;
     value
@@ -121,9 +126,10 @@ pub(super) async fn load(
 /// Optional filters are `?n IS NULL OR …`, so SQLite cannot use a per-column
 /// index; the plan walks `extractions_recent` newest first and stops at the
 /// page limit (a bounded scan, pinned by `plans::list_walks_the_time_index`).
-pub(super) fn list_sql() -> String {
+pub(super) fn list_sql(omit_bodies: bool) -> String {
+    let columns = if omit_bodies { LIST_COLUMNS } else { COLUMNS };
     format!(
-        "SELECT {COLUMNS} FROM extractions e \
+        "SELECT {columns} FROM extractions e \
          WHERE (?1 IS NULL OR e.model = ?1) \
          AND (?2 IS NULL OR e.at >= ?2) \
          AND (?3 IS NULL OR e.at < ?3) \
@@ -158,7 +164,7 @@ pub(super) async fn list(
                 .collect::<Vec<_>>(),
         )
     });
-    let rows = sqlx::query(&list_sql())
+    let rows = sqlx::query(&list_sql(filter.omit_bodies))
         .bind(&filter.model)
         .bind(optional_instant(filter.from.as_ref())?)
         .bind(optional_instant(filter.to.as_ref())?)

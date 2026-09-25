@@ -144,6 +144,7 @@ pub fn extractions(uri: &Uri, zone: Tz) -> Result<ExtractionFilter, Refusal> {
         q: query.get("q"),
         cursor: None,
         limit: MAX_PAGE,
+        omit_bodies: true,
     })
 }
 

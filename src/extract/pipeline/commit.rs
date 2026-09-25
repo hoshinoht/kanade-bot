@@ -342,8 +342,9 @@ where
             if let Some(Failure::TurnedAway { retry_at }) = record.failure {
                 report.turned_away.extend(record.burst.iter().cloned());
                 report.retry_at = report.retry_at.max(retry_at);
-            }
-            if let Some(error) = &record.error {
+            } else if let Some(error) = &record.error {
+                // Turned-away pieces are read again (backlog, rescan retry);
+                // the ones never read are reported as unread instead.
                 report.errors.push(error.clone());
             }
             let log = ExtractionLog {

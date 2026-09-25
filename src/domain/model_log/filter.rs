@@ -31,6 +31,9 @@ pub struct ExtractionFilter {
     pub cursor: Option<LogCursor>,
     /// Page size, clamped to 1..=[`MAX_PAGE`].
     pub limit: u32,
+    /// A list projection: `prompt` and `raw_response` come back empty (`q`
+    /// still searches them).
+    pub omit_bodies: bool,
 }
 
 /// Chat log filters, as [`ExtractionFilter`] plus `tool` (called in any

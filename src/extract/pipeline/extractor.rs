@@ -23,6 +23,24 @@ use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::ModelClient;
 use crate::infrastructure::llm::identity::IdentityCodec;
 
+/// Logged (and shown by the admin portal) when the schedule store fails;
+/// store text can carry paths, so it goes only to the server log.
+pub const SCHEDULE_UNREADABLE: &str = "the schedule could not be read";
+pub const HISTORY_UNREADABLE: &str = "the channel history could not be read";
+
+/// The fixed sentence for a call log; the store's own text goes to stderr
+/// as a structured event.
+fn store_failure(sentence: &'static str, error: &StoreError) -> String {
+    let event = serde_json::json!({
+        "level": "WARN",
+        "event": "extraction_store_failed",
+        "stage": sentence,
+        "error": error.to_string(),
+    });
+    eprintln!("{event}");
+    sentence.to_owned()
+}
+
 /// Everything an [`Extractor`] is built from.
 pub struct Deps<S, P, X, O> {
     /// The schedule (reads only) and the model-log store.
@@ -269,13 +287,13 @@ where
             .store
             .load(&Scope::Weeks(starts.into_iter().collect()))
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| store_failure(SCHEDULE_UNREADABLE, &error))?;
         let first = rows.first().map(|row| row.created_at).unwrap_or_default();
         let history = self
             .store
             .channel_messages(channel_id, first - CONTEXT_WINDOW, false)
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| store_failure(HISTORY_UNREADABLE, &error))?;
         Ok(Loaded {
             snapshot,
             history,
@@ -372,4 +390,22 @@ where
 
 pub(super) fn utc(at: &crate::domain::time::ZonedDateTime) -> DateTime<Utc> {
     at.to_fixed().with_timezone(&Utc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_store_failure_logs_a_fixed_sentence_not_the_store_text() {
+        let error = StoreError::Backend("/private/var/db/kanade.sqlite3: disk I/O error".into());
+        assert_eq!(
+            store_failure(SCHEDULE_UNREADABLE, &error),
+            SCHEDULE_UNREADABLE
+        );
+        assert_eq!(
+            store_failure(HISTORY_UNREADABLE, &error),
+            HISTORY_UNREADABLE
+        );
+    }
 }

@@ -287,6 +287,17 @@ async fn messages_cache_edits_and_windows<S: ModelLogStore>(store: S) {
         ["m-0", "m-1"],
         "messages: pending"
     );
+    let picked = store
+        .messages_by_ids(&["m-3".into(), "absent".into(), "m-1".into(), "m-3".into()])
+        .await
+        .expect("by ids");
+    assert_eq!(
+        ids(&picked, |m| &m.id),
+        ["m-3", "m-1"],
+        "messages: by ids in the asked order, across channels, unknown ids and repeats skipped"
+    );
+    assert_eq!(picked[1].content, "Lotus Saturday?");
+    assert!(store.messages_by_ids(&[]).await.expect("none").is_empty());
     assert!(store.delete_message("m-1").await.expect("delete"));
     assert!(!store.delete_message("m-1").await.expect("delete again"));
 }
@@ -431,7 +442,31 @@ async fn extraction_filters_combine_and_page<S: ModelLogStore>(store: S) {
         q: Some("hello lotus".into()),
         ..all.clone()
     };
-    assert_eq!(list(q).await.0, ["x-c"], "extractions: q folds ASCII case");
+    assert_eq!(
+        list(q.clone()).await.0,
+        ["x-c"],
+        "extractions: q folds ASCII case"
+    );
+    let light = store
+        .list_extractions(&ExtractionFilter {
+            omit_bodies: true,
+            ..q
+        })
+        .await
+        .expect("list");
+    let mut full = store
+        .load_extraction("x-c")
+        .await
+        .expect("load")
+        .expect("x-c");
+    assert_eq!(full.raw_response, "HELLO Lotus");
+    full.prompt.clear();
+    full.raw_response.clear();
+    assert_eq!(
+        light.items,
+        [full],
+        "extractions: the list projection drops only the bodies, and q still searches them"
+    );
     let injection = ExtractionFilter {
         q: Some("') OR 1=1 --".into()),
         model: Some("x' OR '1'='1".into()),
@@ -646,6 +681,13 @@ async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S)
         2,
         "chat: listed items carry their rounds"
     );
+    for listed in first.items.iter().chain(&second.items) {
+        assert_eq!(
+            Some(listed),
+            store.load_chat(&listed.id).await.expect("load").as_ref(),
+            "chat: a listed interaction is the stored one, rounds in order"
+        );
+    }
     assert_eq!(
         store.chat_facets().await.expect("facets"),
         LogFacets {

@@ -130,7 +130,11 @@ prompt is one row), written after proposing: model alias (the session's,
 else the route's), `reasoning` (configured effort), prompt text, raw
 response (or the error when there is none), latency (tokio time), request
 count (`Session::requests_used`, the answer retry included), message ids,
-authors, proposal ids. `outcome`:
+authors, proposal ids. A store failure while loading the prompt's
+schedule or channel history is logged as a fixed sentence (`the schedule
+could not be read`, `the channel history could not be read`); the store's
+own text (it can carry paths) goes only to the server log as
+`extraction_store_failed`. `outcome`:
 
 | outcome | when |
 |---|---|
@@ -175,7 +179,9 @@ its new burst.
 - **Cancel**: a queued job is cancelled at once; a running one stops before
   its next burst or channel (a call in flight finishes; what was read is
   still proposed and logged). `close()` cancels queued jobs (`shut down`)
-  and stops the running one.
+  and stops the running one. The final status is latched under the lock
+  `cancel` reads: a stop accepted while the job ran always ends
+  `cancelled`, and a job already final refuses it (`cancel` is `false`).
 - **Windows** (`docs/v5/admin-api.md`): `week` = v4 `week` (current boss
   week; an empty week widens once to the week before), `since_reset` = the
   same start without widening, `two_weeks` = v4 `2weeks`; v4 spellings
@@ -195,7 +201,9 @@ its new burst.
 - **Result** per channel (JSON in `results`): `channel_id`, `name`,
   `window`, `since`, `widened`, `backfilled`, `stored`, `gated`, `bursts`,
   `calls`, `extracted`, `proposals`, `refused`, `dropped`, `stale`,
-  `cancelled`, `unread`, `errors`.
+  `cancelled`, `unread`, `errors`. `errors` hold failed calls and what
+  could not be written; turned-away calls are not failures (read again, or
+  counted in `unread`).
 
 ## Startup check
 

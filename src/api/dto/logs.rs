@@ -18,6 +18,7 @@ use crate::{
         model_log::{ChatInteraction, ChatOutcome, ExtractionLog, LogFacets, WatchedMessage},
         proposals::StoredCard,
     },
+    extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE},
 };
 
 /// No model ran (a rate-limited question has no rounds).
@@ -247,6 +248,83 @@ pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<Value> {
         .collect()
 }
 
+/// Shown instead of a logged failure that is not a known typed text.
+pub const CALL_FAILED: &str = "The call failed; the server log has the detail.";
+
+/// Fixed texts the extractor logs (its own sentences, governor refusals,
+/// session failures, schema and date errors).
+fn fixed_failures() -> Vec<String> {
+    use crate::infrastructure::llm::governor::Refused;
+    let refused = [
+        Refused::UnknownRole,
+        Refused::Ungrouped,
+        Refused::ExternalForbidden,
+        Refused::MustNotWait,
+        Refused::Busy,
+        Refused::Timeout,
+        Refused::Unavailable { retry_at: None },
+        Refused::RateLimited {
+            wait: std::time::Duration::ZERO,
+        },
+        Refused::RetryBudgetExhausted,
+    ];
+    [
+        SCHEDULE_UNREADABLE,
+        HISTORY_UNREADABLE,
+        "no answer",
+        "the extraction model is not configured",
+        "the model returned an empty response",
+        "model request cap reached",
+        "model session has ended",
+        "clean retry unavailable",
+        "answer retry unavailable",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .chain(refused.iter().map(ToString::to_string))
+    .chain([crate::domain::time::DateOutOfRange.to_string()])
+    .collect()
+}
+
+/// Typed texts with a variable part that is never store or backend text:
+/// redacted provider errors, timeouts, schema validation and identity
+/// decoding (model output), and the external-route refusal (config).
+fn typed_failure(text: &str) -> bool {
+    const PREFIXES: [&str; 5] = [
+        "LLM completion failed (",
+        "the model did not answer within ",
+        "not JSON: ",
+        "expected a JSON object, got ",
+        "unknown identity token at byte ",
+    ];
+    let first = text.lines().next().unwrap_or_default();
+    let validation = first.split_once(' ').is_some_and(|(count, rest)| {
+        !count.is_empty()
+            && count.bytes().all(|byte| byte.is_ascii_digit())
+            && matches!(
+                rest,
+                "validation error for Extraction" | "validation errors for Extraction"
+            )
+    });
+    PREFIXES.iter().any(|prefix| text.starts_with(prefix))
+        || validation
+        || (text.starts_with("role ") && text.ends_with(" but pseudonymization is off"))
+}
+
+/// The logged failure when it is a known typed text, else [`CALL_FAILED`]:
+/// store and backend text (paths, SQLite messages), including rows written
+/// before the extractor stopped logging it, never reaches the portal.
+pub fn call_error(error: Option<&str>) -> Option<String> {
+    let error = error?;
+    Some(
+        if typed_failure(error) || fixed_failures().iter().any(|known| known == error) {
+            error.to_owned()
+        } else {
+            CALL_FAILED.to_owned()
+        },
+    )
+}
+
 fn extraction_common(names: &Names<'_>, log: &ExtractionLog) -> Value {
     json!({
         "id": log.id,
@@ -256,7 +334,7 @@ fn extraction_common(names: &Names<'_>, log: &ExtractionLog) -> Value {
         "latency_ms": log.latency_ms,
         "channel": names.channel(log.channel_id.as_deref()),
         "channel_id": log.channel_id.as_deref().unwrap_or_default(),
-        "error": log.error,
+        "error": call_error(log.error.as_deref()),
         "outcome": log.outcome.as_str(),
     })
 }
@@ -372,4 +450,40 @@ pub fn extraction(
         ),
     );
     detail
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::scheduler::StoreError;
+
+    #[test]
+    fn only_known_typed_failures_are_shown() {
+        for shown in [
+            "no answer",
+            "model unavailable",
+            SCHEDULE_UNREADABLE,
+            "date value out of range",
+            "LLM completion failed (InvalidOutput, digest=00000000000000ff)",
+            "the model did not answer within 60s",
+            "2 validation errors for Extraction\namendments.0.kind\n  Input should be ...",
+            "role extraction routes to external model \"x\" but pseudonymization is off",
+        ] {
+            assert_eq!(call_error(Some(shown)).as_deref(), Some(shown), "{shown}");
+        }
+        for hidden in [
+            StoreError::Backend("/private/var/db/kanade.sqlite3: disk I/O error".into())
+                .to_string(),
+            "schedule constraint violated: runs.id".into(),
+            "v4: Traceback (most recent call last)".into(),
+            "1 validation error for Extraction/private".into(),
+        ] {
+            assert_eq!(
+                call_error(Some(&hidden)).as_deref(),
+                Some(CALL_FAILED),
+                "{hidden}"
+            );
+        }
+        assert_eq!(call_error(None), None);
+    }
 }

@@ -441,6 +441,8 @@ async fn only_the_turned_away_piece_of_a_conversation_is_read_again() {
     );
     assert_eq!(world.requests(), 3, "the answered piece is not re-sent");
     assert_eq!(result["unread"], 0);
+    // Turned away, then read on retry: no failure to report.
+    assert_eq!(result["errors"], serde_json::json!([]));
     assert!(world.processed("1").await && world.processed("2").await);
 }
 
@@ -454,6 +456,8 @@ async fn a_piece_still_turned_away_is_reported_unread() {
     .await;
     assert_eq!(result["unread"], 1);
     let errors = result["errors"].as_array().expect("errors");
+    // Only the unread report: the turned-away attempts are not failures.
+    assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(
         errors
             .iter()

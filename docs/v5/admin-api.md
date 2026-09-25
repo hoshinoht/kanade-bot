@@ -350,8 +350,11 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   filter values are unset. Chat `summary` is per model over the listed rows
   (`errors` = `error` + `timeout`, `p50_ms` = median latency of answered
   questions). Extractions `model` is the newest call's alias until runtime
-  settings (A9) name the configured one. Known limit: every match is read
-  (bounded by the 90-day log retention).
+  settings (A9) name the configured one. Returning every match is
+  deliberate (parent decision: admin-only, bounded by the 90-day log
+  retention); the extraction list reads a projection without `prompt` and
+  `raw_response` (the detail carries them), and chat rounds are read in one
+  query per store page.
 - **Chat rows**: `model` is the first round's alias (`—` when no model ran),
   `latency_ms` 0 when unrecorded, `member` `{id: "", name: "unknown"}`
   when the row has none. The turn's `tools` come from the rounds' logged
@@ -363,16 +366,28 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   `[message withheld]` in the list and the detail, and so do that turn's
   `raw` and tool `arguments` (they can quote it); `said` (the fixed failure
   line) is kept. A withheld row matches `q` on its reply only, so the text
-  cannot be found by search either.
+  cannot be found by search either. Withholding is a chat-surface rule
+  (parent decision): the admin-only extraction log shows what the extractor
+  read, including text that chat later withheld.
 - **Extraction detail**: `messages` are the read messages still in the
-  watched-message cache (pruned ones are left out; authors by roster name);
+  watched-message cache, looked up by id (pruned ones are left out; authors
+  by roster name);
   `amendments` are the call's proposals from their stored cards (`when` in
   guild time, else the day/time words), `status` `proposed` | `confirmed` |
   `rejected` | `expired` | `withdrawn` | `superseded` | `discarded`, or
   `missing` for an id no draft has; `refusals` (additive) are the changes
-  refused up front (`[{change, code, message}]`, migration `0011`). `error`
-  is the log's own typed failure text (provider errors are redacted
-  upstream), never store or backend text.
+  refused up front (`[{change, code, message}]`, migration `0011`).
+- **`error`** (list and detail) is shown only when it is a known typed
+  text: the extractor's fixed sentences (`the schedule could not be read`,
+  `the channel history could not be read`, `no answer`, …), governor and
+  session refusals, redacted provider errors (`LLM completion failed
+  (<code>, digest=…)`), timeouts, schema-validation and identity-decoding
+  errors, the external-route refusal and `date value out of range`. Anything
+  else, including store text in rows logged before this rule and v4 imports,
+  reads `The call failed; the server log has the detail.` The extractor logs
+  a store failure as a fixed sentence and writes the store's own text only
+  to the server log (`extraction_store_failed`), so store or backend text
+  never reaches the portal.
 - **Rescans.** `POST` validates `{channels, window}` (unknown fields `400
   invalid_body`; empty, unwatched or unknown channels and other windows,
   v4's `2weeks` included, `422 invalid`), then only queues the job
@@ -386,15 +401,26 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   (fixed sentences for unread messages, a failed Discord backfill and other
   failures — never the recorded text), and the job's `unread` total. A job
   the bot or `/rescan` started may carry `window` `24h` | `48h` (`2weeks`
-  reads `two_weeks`). `DELETE` cancels: a queued job at once, a running one
-  after the call in flight (answered `cancelled` at once, since that is how
-  it ends); a finished job is answered as it is, an unknown id is 404.
+  reads `two_weeks`). Per-channel `errors` count only real failures: a
+  call the governor turned away and that was read on a retry is not one
+  (still-unread messages are the `unread` sentence). `DELETE` cancels: a
+  queued job at once, a running one after the call in flight (answered
+  `cancelled` at once); a finished job is answered as it is, an unknown id
+  is 404. `cancelled` means no further model calls start (parent decision):
+  proposals from calls already made may still appear. The worker latches a
+  job's final status under the lock a cancel reads, so a cancel accepted
+  while the job ran always ends `cancelled` (even if every channel was
+  read), and a job already `done` refuses the stop and is answered `done`.
 - **Retries.** `POST` and `DELETE` honour `Idempotency-Key` (A4 rules): a
   replay answers the recorded job's current state without submitting or
   cancelling again; the same key with another request (other channels or
   window, another job, or the other verb) is `422 idempotency_mismatch`.
-  Keys are kept in memory per admin actor (the newest 1024): jobs do not
-  outlive the process either. `DELETE` is also naturally repeatable.
+  Keys are kept in memory, scoped per admin actor but evicted as one
+  global list of the newest 1024 across all actors: jobs do not outlive the
+  process either. A key evicted (or lost to a restart) and then retried
+  after its job finished submits a new rescan, which re-reads the channels
+  (proposals are deduplicated as for any rescan). `DELETE` is also naturally
+  repeatable.
 - Every route needs an admin session; `POST`/`DELETE` need CSRF. No rescan
   runner composed: `503 unavailable`.
 

@@ -1,6 +1,14 @@
+use kanade::{
+    api::dto::logs::CALL_FAILED,
+    domain::{
+        model_log::{ExtractionOutcome, ModelLogStore},
+        scheduler::StoreError,
+    },
+    extract::pipeline::SCHEDULE_UNREADABLE,
+};
 use serde_json::json;
 
-use super::{ERROR, Logs, ids};
+use super::{ERROR, Logs, extraction as log_row, ids, utc};
 use crate::schemas::assert_valid;
 
 const EXTRACTIONS: &str = "extractions.json#/$defs/Extractions";
@@ -128,4 +136,65 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
         assert_eq!(reply.status, 404, "{id}");
         assert_eq!(reply.api_error(), "not_found");
     }
+}
+
+#[tokio::test]
+async fn store_text_in_a_logged_failure_never_reaches_the_portal() {
+    let logs = Logs::new().await;
+    let backend = StoreError::Backend("/private/var/db/kanade.sqlite3: disk I/O error".into());
+    let mut leaked = log_row(
+        "x-leak",
+        utc(9, 29, 3, 0),
+        "kalos-four",
+        ExtractionOutcome::Failed,
+    );
+    leaked.error = Some(backend.to_string());
+    let mut fixed = log_row(
+        "x-fixed",
+        utc(9, 29, 3, 1),
+        "kalos-four",
+        ExtractionOutcome::Failed,
+    );
+    fixed.error = Some(SCHEDULE_UNREADABLE.into());
+    let mut imported = log_row(
+        "x-v4",
+        utc(9, 29, 3, 2),
+        "kalos-four",
+        ExtractionOutcome::Unknown,
+    );
+    imported.error = Some("Traceback: /srv/kanade/bot/extract/pipeline.py".into());
+    for row in [leaked, fixed, imported] {
+        logs.reads.store.record_extraction(row).await.unwrap();
+    }
+
+    let listed = logs.get("/api/admin/extractions").await;
+    assert_eq!(listed.status, 200);
+    assert!(
+        !listed.text().contains("/private") && !listed.text().contains("/srv"),
+        "{}",
+        listed.text()
+    );
+    let value = listed.json();
+    assert_valid(EXTRACTIONS, "list", &value);
+    let error_of = |id: &str| {
+        value["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap()["error"]
+            .clone()
+    };
+    assert_eq!(error_of("x-leak"), CALL_FAILED);
+    assert_eq!(error_of("x-v4"), CALL_FAILED);
+    assert_eq!(error_of("x-fixed"), SCHEDULE_UNREADABLE);
+    assert_eq!(error_of("x-fail"), "no answer", "typed texts are kept");
+
+    let detail = logs.get("/api/admin/extractions/x-leak").await;
+    assert_eq!(detail.status, 200);
+    assert!(!detail.text().contains("/private"), "{}", detail.text());
+    assert_eq!(detail.json()["error"], CALL_FAILED);
+
+    // v4-imported rows keep their `unknown` outcome, and it filters.
+    assert_eq!(ids(&list(&logs, "?outcome=unknown").await), ["x-v4"]);
 }
