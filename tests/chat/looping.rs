@@ -124,14 +124,15 @@ fn generation_json(generation: &Generation) -> Value {
 const CLEAN_REPLY: &str = "Which one did you mean?";
 
 /// Steps whose answer v5 retries with a clean context (`D-CLEAN-RETRY`);
-/// `true` when the v5 runner rejected the whole reply (`D-STRICT-TOOL-CALLS`
-/// and malformed bodies), so no model round or tool call is recorded.
-const CLEAN_STEPS: [(&str, usize, bool); 6] = [
+/// `true` when the v5 runner rejected the whole reply as unreadable, so no
+/// model round or tool call is recorded: a malformed completion body, or
+/// (`D-STRICT-TOOL-CALLS`) a reply with a duplicate call id or non-JSON
+/// arguments, which v4 renamed or ran with `{}`.
+const CLEAN_STEPS: [(&str, usize, bool); 5] = [
     ("answers-in-words", 1, false),
     ("answers-in-words", 3, false),
     ("refused-write-claims-are-overwritten", 2, false),
     ("call-ids-duplicates-and-malformed-calls", 0, true),
-    ("read-only-turn", 0, true),
     ("transport-failures", 3, true),
 ];
 
@@ -270,37 +271,6 @@ fn cleaned(v4: &Value, strict: bool, scripted: usize) -> Value {
     v5
 }
 
-/// `B-WITHHELD-TOOLS`: the runner refuses a transcript whose tool calls name
-/// tools the request does not offer, so the tools-withheld round fails
-/// before sending (`RequestInvalid`). Blocked on a runner change; the
-/// behaviour is pinned so the replay fails once it lands.
-fn withheld(v4: &Value) -> Value {
-    let mut v5 = v4.clone();
-    let requests = v4["requests"].as_array().expect("requests");
-    let kept = requests.len() - 1;
-    v5["requests"] = json!(requests[..kept].iter().map(shaped).collect::<Vec<_>>());
-    let rounds = v4["model_rounds"].as_array().expect("rounds");
-    v5["model_rounds"] = json!(rounds[..kept]);
-    let outcomes: Vec<Value> = v4["outcomes"]
-        .as_array()
-        .expect("outcomes")
-        .iter()
-        .filter(|o| o["round"].as_u64().is_some_and(|r| r <= kept as u64))
-        .cloned()
-        .collect();
-    v5["tool_calls"] = json!(
-        outcomes
-            .iter()
-            .map(|o| o["name"].clone())
-            .collect::<Vec<_>>()
-    );
-    v5["outcomes"] = json!(outcomes);
-    v5["reply"] = json!("");
-    v5["error"] = json!(REQUEST_INVALID);
-    v5["unused_replies"] = json!(1);
-    v5
-}
-
 const CASES: [&str; 12] = [
     "answers-in-words",
     "read-then-grounded-answer",
@@ -316,12 +286,9 @@ const CASES: [&str; 12] = [
     "context-budget",
 ];
 
-const REQUEST_INVALID: &str = "LLM completion failed (RequestInvalid, digest=ce140b98fa3320bd)";
-
 fn named() -> Vec<Named> {
     let file = crate::support::load("loop.json");
     let mut clean = Vec::new();
-    let mut blocked = Vec::new();
     let mut shaping = Vec::new();
     let mut usage = Vec::new();
     let mut failures = Vec::new();
@@ -349,14 +316,6 @@ fn named() -> Vec<Named> {
                     v4.clone(),
                     cleaned(v4, strict, scripted),
                 ));
-                continue;
-            }
-            if matches!(
-                (case_id, index),
-                ("round-cap-withholds-tools-on-the-last-round", 0 | 1)
-                    | ("posted-write-reserves-the-confirmation-round", 0)
-            ) {
-                blocked.push(dev(case_id, pointer, v4.clone(), withheld(v4)));
                 continue;
             }
             for (k, request) in v4["requests"]
@@ -418,10 +377,6 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-CLEAN-RETRY",
             entries: clean,
-        },
-        Named {
-            name: "B-WITHHELD-TOOLS",
-            entries: blocked,
         },
         Named {
             name: "D-SHAPING",

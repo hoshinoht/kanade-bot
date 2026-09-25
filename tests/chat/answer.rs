@@ -10,7 +10,7 @@ use kanade::chat::answer::{
     interaction,
 };
 use kanade::chat::tools::bundles::{Bundle, ToolOffer};
-use kanade::chat::tools::{REFUSED, ToolContext};
+use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
 use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
 use kanade::domain::scheduler::Clock;
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
@@ -170,12 +170,12 @@ async fn requested_tools_apply_from_the_next_round() {
 
 #[tokio::test(start_paused = true)]
 async fn request_tools_spends_a_round_of_the_cap() {
-    // Three rounds, one spent by `request_tools`: round 2 is the last and
-    // withholds tools (then refused by the runner: B-WITHHELD-TOOLS).
+    // Three rounds, one spent by `request_tools`: round 2 is the last, so
+    // it is sent with tools withheld and the model answers in words.
     let run = run(
         vec![
             wants(&[("r1", "request_tools", json!({"bundle": "strategy"}))]),
-            words("never reached"),
+            words("Dodge the lasers."),
         ],
         ToolOffer::dynamic([], false),
         3,
@@ -185,15 +185,105 @@ async fn request_tools_spends_a_round_of_the_cap() {
     )
     .await;
     assert_eq!(run.generation.rounds, 2);
-    assert_eq!(
-        run.requests.len(),
-        1,
-        "the tools-withheld round was refused before sending"
+    assert_eq!(run.requests.len(), 2);
+    assert!(
+        run.requests[1].tools.is_empty(),
+        "the last round withholds tools"
     );
-    let Some(AnswerFailure::Session(error)) = &run.generation.failure else {
-        panic!("{:?}", run.generation.failure);
-    };
-    assert!(error.to_string().contains("RequestInvalid"));
+    assert_eq!(run.generation.failure, None);
+    assert_eq!(run.generation.reply, "Dodge the lasers.");
+}
+
+/// Lenient chat validation hands unknown tools and schema-invalid object
+/// arguments to the dispatcher, which answers each as v4 did: an
+/// unknown-tool note, or the handler's own refusal for the coerced
+/// arguments (v4 read them with `str(args.get(..) or "")`). Nothing fails.
+#[tokio::test(start_paused = true)]
+async fn unknown_tools_and_schema_invalid_arguments_get_notes_not_failures() {
+    let run = run(
+        vec![
+            wants(&[
+                ("u1", "delete_run", json!({"run_query": "hstar"})),
+                ("u2", "get_run", json!({"query": 7})),
+                ("u3", "get_schedule", json!({"week": 5})),
+                ("u4", "propose_rsvp", json!({"run_query": "hstar"})),
+            ]),
+            words("Which run did you mean?"),
+        ],
+        ToolOffer::full_set(false),
+        8,
+        "hmm",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let generation = &run.generation;
+    assert_eq!(generation.failure, None);
+    let notes: Vec<(&str, Option<&str>)> = generation
+        .outcomes
+        .iter()
+        .map(|o| (o.outcome.output.as_str(), o.outcome.error))
+        .collect();
+    assert_eq!(
+        notes,
+        [
+            (
+                "There is no tool called delete_run. The tools you have are: get_schedule, get_run, list_bosses, get_boss_strategy, get_pending, list_fixed, propose_move, propose_add, propose_cancel, propose_remove_fixed, propose_change_fixed, propose_rsvp. Use one of those when it can answer the request.",
+                Some(UNKNOWN)
+            ),
+            (
+                "No run matches `7`. Check what is scheduled, then ask them which one they mean. Do not guess.",
+                Some(REFUSED)
+            ),
+            (
+                "Ask whether they mean this week, next week, or a specific day.",
+                Some(REFUSED)
+            ),
+            (
+                "answer must be 'yes' or 'no'. Ask them whether they can make it.",
+                Some(REFUSED)
+            ),
+        ]
+    );
+    // Every call's result reached the model before it answered in words.
+    let results = run.requests[1]
+        .messages
+        .iter()
+        .filter(|m| matches!(m, Message::Tool { .. }))
+        .count();
+    assert_eq!(results, 4);
+    assert!(generation.created.is_empty());
+    assert_eq!(generation.reply, "Which run did you mean?");
+}
+
+/// A call to a tool this question was not offered reaches the dispatcher,
+/// which refuses it with the steering note and runs nothing.
+#[tokio::test(start_paused = true)]
+async fn an_unoffered_tool_is_steered_to_request_tools() {
+    let run = run(
+        vec![
+            wants(&[("c1", "propose_cancel", json!({"run_query": "hstar"}))]),
+            words("Want me to ask for that?"),
+        ],
+        ToolOffer::dynamic([], false),
+        8,
+        "cancel hstar",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let outcome = &run.generation.outcomes[0].outcome;
+    assert_eq!(outcome.error, Some(REFUSED));
+    assert!(
+        outcome.output.starts_with(
+            "propose_cancel is not available for this message. If they asked for that, call request_tools with bundle 'run_changes' first."
+        ),
+        "{}",
+        outcome.output
+    );
+    assert!(run.generation.created.is_empty(), "nothing was proposed");
+    assert!(!tool_names(&run.requests[1]).contains(&"propose_cancel"));
+    assert_eq!(run.generation.reply, "Want me to ask for that?");
 }
 
 #[tokio::test(start_paused = true)]

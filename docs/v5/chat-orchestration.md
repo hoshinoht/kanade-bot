@@ -49,9 +49,17 @@ are C3. Discord wiring is later.
   the channel focus (`Generation::focus`, for `Conversations::note_card`).
   `ChatPorts::pending` supplies the inbox for `get_pending` each call;
   intent labels and card context reach bundle routing through `ToolOffer`.
+- Tool calls: chat sessions validate tool calls leniently (runner
+  `ToolCallValidation::Lenient`, user decision 2026-09-25), so unknown,
+  unoffered and schema-invalid object-argument calls reach the dispatcher and
+  are answered as v4 did: the unknown-tool note, the `request_tools` steering
+  note, or the handler's own refusal for the coerced arguments. A withheld
+  round keeps earlier tool calls in its transcript. The runner still rejects
+  a reply it cannot read (non-JSON or non-object arguments, empty or
+  duplicate call ids, bad names) as `InvalidOutput`.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
-  (including a reply the runner rejects: unknown tool, duplicate call id,
-  schema-invalid arguments) or a content-filtered one (`ContentFiltered`) is
+  (including a reply the runner rejects as unreadable) or a content-filtered
+  one (`ContentFiltered`) is
   resent once with the system prompt, the asker's message and the reminder,
   no tools, through `Session::clean_retry` (group retry budget, closed
   breaker). If it is refused or also fails, the question fails with
@@ -81,10 +89,9 @@ gateway admission, backend down), else `error`. `clean_retry` is a flag;
 v4's 4. Named: `D-SHAPING` (sampled requests carry the runner's
 `max_tokens`), `D-CLEAN-RETRY` (empty/malformed answers use the clean retry;
 `D-NO-THINKING`: responses carry no reasoning text), `D-STRICT-TOOL-CALLS`
-(folded into `D-CLEAN-RETRY`: the runner rejects a reply naming unoffered
-tools, duplicate ids or schema-invalid arguments as a whole), `D-USAGE-PAIRS`
-(a round's usage counts only when both counts are integers),
-`D-TYPED-FAILURES` (governor/runner error text), and **`B-WITHHELD-TOOLS`
-(blocked)**: the runner refuses any transcript whose tool calls name tools
-the request does not offer, so the tools-withheld round fails with
-`RequestInvalid`; pinned until the runner accepts it.
+(folded into `D-CLEAN-RETRY`, one step: a reply with a duplicate call id or
+non-JSON arguments is unreadable to the runner as a whole, where v4 renamed
+the id or ran the call with `{}`), `D-USAGE-PAIRS` (a round's usage counts
+only when both counts are integers) and `D-TYPED-FAILURES` (governor/runner
+error text). Tools-withheld rounds, the read-only turn and unoffered calls
+replay as v4.

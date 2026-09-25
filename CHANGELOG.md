@@ -159,8 +159,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: chat question loop and context: history, reply chains and anchors trimmed to a
   token budget, one limiter slot per question with a round cap plus one clean retry
   (also used when the content filter stops a reply), a failed card post told to the
-  model, and one chat log row per question with a round per request. Not yet wired to
-  Discord.
+  model, and one chat log row per question with a round per request. Like v4, the last
+  round is sent without tools, and a call to an unknown or unoffered tool or with bad
+  arguments gets a steering note instead of failing the reply. Not yet wired to Discord.
 - v5: chat gate, authority, read and proposal tools (proposals only through the
   scheduler, refused up front when unworkable), reply sanitising and injection guards,
   matching the frozen v4 chat vectors; tools load in bundles as needed instead of all
