@@ -12,7 +12,7 @@ mod fake;
 use std::fmt;
 use std::future::Future;
 
-use twilight_model::application::command::Command;
+use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::{AllowedMentions, Embed};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
@@ -101,6 +101,8 @@ impl fmt::Debug for InteractionRef {
 pub struct InteractionReply {
     pub content: String,
     pub ephemeral: bool,
+    /// Mentions inside embeds never notify anyone.
+    pub embeds: Vec<Embed>,
 }
 
 impl InteractionReply {
@@ -108,7 +110,22 @@ impl InteractionReply {
         Self {
             content: content.into(),
             ephemeral: true,
+            embeds: Vec::new(),
         }
+    }
+
+    /// A reply everyone in the channel sees (still mentioning nobody).
+    pub fn public(content: impl Into<String>) -> Self {
+        Self {
+            ephemeral: false,
+            ..Self::ephemeral(content)
+        }
+    }
+
+    #[must_use]
+    pub fn with_embed(mut self, embed: Embed) -> Self {
+        self.embeds.push(embed);
+        self
     }
 }
 
@@ -180,6 +197,17 @@ pub trait DiscordTransport: Send + Sync {
         interaction: &InteractionRef,
         reply: &InteractionReply,
     ) -> impl Future<Output = Outcome<()>> + Send;
+
+    /// Answer an autocomplete interaction (response type 8) with at most 25
+    /// choices. Test doubles that never see autocomplete may keep the default.
+    fn autocomplete(
+        &self,
+        interaction: &InteractionRef,
+        choices: &[CommandOptionChoice],
+    ) -> impl Future<Output = Outcome<()>> + Send {
+        let _ = (interaction, choices);
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
 
     /// Replace the guild's command set (an idempotent bulk overwrite). There
     /// is deliberately no global-command operation.

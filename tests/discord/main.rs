@@ -12,4 +12,5 @@ mod members;
 mod mentions;
 mod messages;
 mod reactions;
+mod slash;
 mod support;

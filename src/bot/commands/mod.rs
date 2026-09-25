@@ -1,15 +1,71 @@
-//! Slash-command framework: guild-scoped registration payloads, v4's access
-//! gates, and a dispatcher that answers refusals and failures ephemerally.
+//! Slash commands: guild-scoped registration payloads, v4's access gates, a
+//! dispatcher that answers refusals and failures ephemerally, and the v4
+//! commands v5 retains (user decision 2026-09-25). Every write goes through
+//! the shared scheduler writer; notices reach the outbox with the change.
 
 mod access;
-mod debug_status;
+mod build;
+mod context;
+mod debug;
 mod dispatch;
+mod fixed;
 mod invocation;
+mod limits;
+mod lookup;
+mod members;
+mod options;
+mod participants;
+mod rescan;
+mod runs;
+mod say;
+mod schedule;
+mod text;
+
+use std::sync::Arc;
 
 pub use access::{AccessPolicy, Denial, Gate, Invoker};
-pub use debug_status::{DebugCommand, format_uptime};
-pub use dispatch::{
-    CommandError, CommandFuture, Dispatcher, Disposition, DuplicateCommand, GENERIC_FAILURE,
-    Handled, SlashCommand, spawn_interaction,
+pub use context::{
+    ChatAllowance, Clock, CommandContext, DebugCards, GuildChannels, MemberRows, PortFuture,
+    TestKind, TestPosted,
 };
+pub use debug::{DebugCommand, TEST_CARDS_UNAVAILABLE, TEST_PREFIX};
+pub use dispatch::{
+    ChoicesFuture, CommandError, CommandFuture, Dispatcher, Disposition, DuplicateCommand,
+    GENERIC_FAILURE, Handled, MAX_CHOICES, SlashCommand, choice, spawn_interaction,
+};
+pub use fixed::FixedCommand;
 pub use invocation::Invocation;
+pub use limits::{LIMITS_UNAVAILABLE, LimitsCommand, STAFF_LIMITS_REPLY, limits_text, usage_bar};
+pub use members::{MemberCommand, ping_help};
+pub use rescan::{RESCAN_UNAVAILABLE, RescanCommand, window_label};
+pub use runs::RunCommand;
+pub use say::{SAY_LIMIT, SayCommand, mentioned_users};
+pub use schedule::ScheduleCommand;
+
+use crate::bot::transport::DiscordTransport;
+
+/// Every retained command, in v4's registration order (dropped and merged
+/// commands are absent). `serve` registers `definitions()` for the guild only.
+///
+/// # Errors
+/// [`DuplicateCommand`] if `dispatcher` already holds one of these names.
+pub fn register_retained<T: DiscordTransport + 'static>(
+    dispatcher: Dispatcher,
+    ctx: &Arc<CommandContext>,
+    transport: Arc<T>,
+) -> Result<Dispatcher, DuplicateCommand> {
+    dispatcher
+        .register(FixedCommand::new(Arc::clone(ctx)))?
+        .register(DebugCommand::new(Arc::clone(ctx)))?
+        .register(ScheduleCommand::new(Arc::clone(ctx)))?
+        .register(RunCommand::amend(Arc::clone(ctx)))?
+        .register(RunCommand::swap(Arc::clone(ctx)))?
+        .register(RunCommand::status(Arc::clone(ctx)))?
+        .register(RunCommand::rsvp(Arc::clone(ctx)))?
+        .register(MemberCommand::nick(Arc::clone(ctx)))?
+        .register(MemberCommand::pings(Arc::clone(ctx)))?
+        .register(MemberCommand::style(Arc::clone(ctx)))?
+        .register(LimitsCommand::new(Arc::clone(ctx)))?
+        .register(RescanCommand::new(Arc::clone(ctx)))?
+        .register(SayCommand::new(Arc::clone(ctx), transport))
+}

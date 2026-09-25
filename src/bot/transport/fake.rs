@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use twilight_model::application::command::Command;
+use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -30,6 +30,7 @@ pub enum Op {
     Respond,
     Defer,
     CompleteDeferred,
+    Autocomplete,
     Register,
     ListMembers,
     ChannelMessages,
@@ -101,6 +102,11 @@ pub enum Call {
         reply: InteractionReply,
         outcome: Outcome<()>,
     },
+    Autocomplete {
+        interaction: InteractionRef,
+        choices: Vec<CommandOptionChoice>,
+        outcome: Outcome<()>,
+    },
     Register {
         guild: Id<GuildMarker>,
         commands: Vec<Command>,
@@ -136,6 +142,7 @@ impl Call {
             Self::Respond { .. } => Op::Respond,
             Self::Defer { .. } => Op::Defer,
             Self::CompleteDeferred { .. } => Op::CompleteDeferred,
+            Self::Autocomplete { .. } => Op::Autocomplete,
             Self::Register { .. } => Op::Register,
             Self::ListMembers { .. } => Op::ListMembers,
             Self::ChannelMessages { .. } => Op::ChannelMessages,
@@ -459,6 +466,21 @@ impl DiscordTransport for FakeDiscord {
         state.calls.push(Call::CompleteDeferred {
             interaction: interaction.clone(),
             reply: reply.clone(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn autocomplete(
+        &self,
+        interaction: &InteractionRef,
+        choices: &[CommandOptionChoice],
+    ) -> Outcome<()> {
+        let mut state = self.state();
+        let outcome = state.plain(Op::Autocomplete);
+        state.calls.push(Call::Autocomplete {
+            interaction: interaction.clone(),
+            choices: choices.to_vec(),
             outcome: outcome.clone(),
         });
         outcome

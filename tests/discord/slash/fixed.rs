@@ -1,0 +1,266 @@
+//! `/fixed add|list|edit|remove`.
+
+use chrono::Timelike;
+use serde_json::json;
+
+use kanade::domain::history::{ChangeHistory, Surface};
+use kanade::domain::schedule::RunStatus;
+use kanade::domain::scheduler::{ScheduleStore, Scope};
+
+use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
+use super::{
+    ALICE, BOB, CARA, DAN, F_KALOS, KALOS, LOUNGE, R_KALOS, R_NEXT, Slash, focused, opt, sub,
+    user_opt,
+};
+
+/// v4 `formatting.fixed_run_line(fixed, table)` for `F_KALOS`, printed by the
+/// rollback tree.
+const KALOS_LINE: &str = "`#ffff0001` **XKalos** · Tue 22:00 · <@1001> <@1002> · owner <@1001> · \
+                          <#301>\n   ↳ Gatekeeper Kalos (Extreme, Lv265)";
+
+#[tokio::test]
+async fn list_shows_v4_lines_for_mine_or_all() {
+    let slash = Slash::new().await;
+    assert_eq!(
+        slash.run(BOB, "fixed", sub("list", json!([]))).await,
+        KALOS_LINE
+    );
+    assert_eq!(
+        slash.run(DAN, "fixed", sub("list", json!([]))).await,
+        "None of the fixed runs are yours. `/fixed list scope:all` shows every party's."
+    );
+    assert_eq!(
+        slash
+            .run(DAN, "fixed", sub("list", json!([opt("scope", "all")])))
+            .await,
+        KALOS_LINE
+    );
+}
+
+#[tokio::test]
+async fn add_creates_the_timing_here_and_materialises_it() {
+    let slash = Slash::new().await;
+    let reply = slash
+        .run(
+            DAN,
+            "fixed",
+            sub(
+                "add",
+                json!([
+                    opt("bosses", "hstar"),
+                    opt("day", "wed"),
+                    opt("time", "2130"),
+                    user_opt("member1", BOB),
+                    opt("participants", "Alice"),
+                ]),
+            ),
+        )
+        .await;
+    let snapshot = slash.store.load(&Scope::All).await.unwrap();
+    let fixed = snapshot
+        .fixed_runs
+        .iter()
+        .find(|fixed| fixed.id != F_KALOS)
+        .expect("created");
+    assert_eq!(fixed.owner_id, DAN.to_string());
+    assert_eq!(fixed.channel_id.as_deref(), Some(&*KALOS.to_string()));
+    assert_eq!(fixed.participants, [BOB.to_string(), ALICE.to_string()]);
+    let short = &fixed.id.replace('-', "")[..8];
+    assert_eq!(
+        reply,
+        format!(
+            "✅ Fixed run `#{short}` added — this channel is its home channel, so its pings land \
+             here.\n`#{short}` **HMaleficStar** · Wed 21:30 · <@1002> <@1001> · owner <@1004> · \
+             <#301>\n   ↳ Radiant Malefic Star (Hard, Lv280)\n(you're the owner but not on this \
+             run — it won't ping you; `/fixed edit` to add yourself)"
+        )
+    );
+    // Materialised: this week's Wednesday is still ahead.
+    assert!(snapshot.runs.iter().any(
+        |run| run.fixed_run_id.as_ref() == Some(&fixed.id) && run.status == RunStatus::Planned
+    ));
+    let head = slash.store.history_head().await.unwrap().seq;
+    let created = slash.store.load_change(head).await.unwrap().unwrap();
+    assert_eq!(created.origin.surface, Surface::Discord);
+}
+
+#[tokio::test]
+async fn add_refuses_with_v4_texts() {
+    let slash = Slash::new().await;
+    let add = |bosses: &str, time: &str, extra: serde_json::Value| {
+        let mut options = vec![opt("bosses", bosses), opt("day", "wed"), opt("time", time)];
+        if let serde_json::Value::Array(more) = extra {
+            options.extend(more);
+        }
+        sub("add", serde_json::Value::Array(options))
+    };
+    let catalog = super::catalog();
+    let refusal = catalog.parse("kalos").unwrap_err().to_string();
+    assert_eq!(
+        slash
+            .run(ALICE, "fixed", add("kalos", "21:30", json!([])))
+            .await,
+        format!("❌ {refusal}")
+    );
+    assert_eq!(
+        slash
+            .run(ALICE, "fixed", add("xkalos", "25:99", json!([])))
+            .await,
+        "❌ expected a time like 21:30, 2130 or 9:30pm, got '25:99'"
+    );
+    let reply = slash
+        .run_in(
+            ALICE,
+            &[BOSSING_ROLE],
+            LOUNGE,
+            "fixed",
+            add("xkalos", "21:30", json!([user_opt("member1", ALICE)])),
+        )
+        .await;
+    assert_eq!(
+        reply.content,
+        "❌ This channel isn't watched, so a run here would never get its pings. Run `/fixed \
+         add` in your party's channel, or add this channel to `CHAT_CHANNEL_IDS` / its category \
+         to `CHAT_CATEGORY_IDS`."
+    );
+    assert_eq!(
+        slash
+            .run(
+                ALICE,
+                "fixed",
+                add("xkalos", "21:30", json!([user_opt("member1", CARA)]))
+            )
+            .await,
+        format!("❌ not in the bossing role: <@{CARA}>")
+    );
+    assert_eq!(
+        slash
+            .run(ALICE, "fixed", add("xkalos", "21:30", json!([])))
+            .await,
+        "❌ a run needs at least one participant"
+    );
+    assert_eq!(
+        slash
+            .store
+            .load(&Scope::All)
+            .await
+            .unwrap()
+            .fixed_runs
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn edit_updates_the_timing_and_its_runs() {
+    let slash = Slash::new().await;
+    assert_eq!(
+        slash
+            .run(BOB, "fixed", sub("edit", json!([opt("id", "ffff")])))
+            .await,
+        "Nothing to change."
+    );
+    assert_eq!(
+        slash
+            .run(
+                DAN,
+                "fixed",
+                sub("edit", json!([opt("id", "ffff"), opt("time", "23:00")]))
+            )
+            .await,
+        "❌ You're not on fixed run `#ffff0001`."
+    );
+    assert_eq!(
+        slash
+            .run(
+                BOB,
+                "fixed",
+                sub("edit", json!([opt("id", "ffff"), opt("time", "23:00")]))
+            )
+            .await,
+        "✅ Updated.\n`#ffff0001` **XKalos** · Tue 23:00 · <@1001> <@1002> · owner <@1001> · \
+         <#301>\n   ↳ Gatekeeper Kalos (Extreme, Lv265)"
+    );
+    // Both live runs follow (v4's slash edit), this week's too.
+    for run in [R_KALOS, R_NEXT] {
+        let run = slash.run_row(run).await;
+        let local = run.datetime.with_timezone(&chrono_tz::Asia::Kuala_Lumpur);
+        assert_eq!((local.hour(), local.minute()), (23, 0));
+    }
+    assert_eq!(
+        slash
+            .run(
+                BOB,
+                "fixed",
+                sub(
+                    "edit",
+                    json!([
+                        opt("id", "ffff"),
+                        json!({ "name": "channel", "type": 7, "value": LOUNGE.to_string() })
+                    ])
+                )
+            )
+            .await,
+        format!("❌ <#{LOUNGE}> isn't a watched channel, so its runs would never get their pings.")
+    );
+}
+
+#[tokio::test]
+async fn remove_cancels_the_live_runs() {
+    let slash = Slash::new().await;
+    assert_eq!(
+        slash
+            .run(DAN, "fixed", sub("remove", json!([opt("id", F_KALOS)])))
+            .await,
+        "❌ You're not on fixed run `#ffff0001`."
+    );
+    let reply = slash
+        .run_in(
+            DAN,
+            &[BOSSING_ROLE, ADMIN_ROLE],
+            KALOS,
+            "fixed",
+            sub("remove", json!([opt("id", "#FFFF0001")])),
+        )
+        .await;
+    assert_eq!(
+        reply.content,
+        "🗑️ Fixed run `#ffff0001` removed (2 upcoming run(s) cancelled)."
+    );
+    let snapshot = slash.store.load(&Scope::All).await.unwrap();
+    assert!(snapshot.fixed_runs.is_empty());
+    for id in [R_KALOS, R_NEXT] {
+        assert_eq!(slash.run_row(id).await.status, RunStatus::Cancelled);
+    }
+}
+
+#[tokio::test]
+async fn timing_picker_lists_the_invokers_timings() {
+    let slash = Slash::new().await;
+    let choices = slash
+        .suggest(
+            BOB,
+            &[BOSSING_ROLE],
+            "fixed",
+            sub("edit", json!([focused("id", "")])),
+        )
+        .await;
+    assert_eq!(
+        choices,
+        [(
+            "XKalos · Tue 22:00 · #kalos-four · ffff0001".to_owned(),
+            F_KALOS.to_owned()
+        )]
+    );
+    assert!(
+        slash
+            .suggest(
+                DAN,
+                &[BOSSING_ROLE],
+                "fixed",
+                sub("remove", json!([focused("id", "")]))
+            )
+            .await
+            .is_empty()
+    );
+}

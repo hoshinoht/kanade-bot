@@ -23,6 +23,15 @@ pub struct Invoker {
     pub is_guild_admin: bool,
 }
 
+impl AccessPolicy {
+    /// v4 `BossBot.is_admin`: the admin role only. It lets a member change
+    /// runs and timings they are not on and see everyone's in pickers.
+    pub fn is_admin(&self, invoker: &Invoker) -> bool {
+        self.admin_role_id
+            .is_some_and(|role| invoker.roles.contains(&role))
+    }
+}
+
 /// The check a command requires before it runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gate {
@@ -32,6 +41,9 @@ pub enum Gate {
     Staff,
     /// Staff or a listed debug user (v4 `/debug`).
     Debug,
+    /// Any guild member; the command applies its own rule (v4 `/style`'s
+    /// chatbot-access check).
+    Anyone,
 }
 
 /// A refused invocation.
@@ -61,21 +73,19 @@ impl AccessPolicy {
         invoker: &Invoker,
         owner_id: Option<Id<UserMarker>>,
     ) -> Result<(), Denial> {
-        let allowed = match gate {
-            Gate::BossingRole => invoker.roles.contains(&self.bossing_role_id),
-            Gate::Staff => self.is_staff(invoker, owner_id),
-            Gate::Debug => {
-                self.is_staff(invoker, owner_id) || self.debug_user_ids.contains(&invoker.user_id)
-            }
+        let (allowed, denial) = match gate {
+            Gate::BossingRole => (
+                invoker.roles.contains(&self.bossing_role_id),
+                Denial::MissingBossingRole,
+            ),
+            Gate::Staff => (self.is_staff(invoker, owner_id), Denial::NotStaff),
+            Gate::Debug => (
+                self.is_staff(invoker, owner_id) || self.debug_user_ids.contains(&invoker.user_id),
+                Denial::DebugNotAllowed,
+            ),
+            Gate::Anyone => (true, Denial::NotStaff),
         };
-        if allowed {
-            return Ok(());
-        }
-        Err(match gate {
-            Gate::BossingRole => Denial::MissingBossingRole,
-            Gate::Staff => Denial::NotStaff,
-            Gate::Debug => Denial::DebugNotAllowed,
-        })
+        if allowed { Ok(()) } else { Err(denial) }
     }
 }
 

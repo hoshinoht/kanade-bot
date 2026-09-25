@@ -506,6 +506,46 @@ async fn interaction_reply_is_ephemeral_and_mention_free() {
 }
 
 #[tokio::test]
+async fn autocomplete_and_embed_replies_serialise_as_discord_expects() {
+    let (stub, addr) = Stub::start(vec![raw_reply(204, ""), raw_reply(204, "")]).await;
+    let transport = quick(addr);
+    let interaction = InteractionRef::new(Id::new(7700), "interaction-secret-token".into());
+    let choices = [kanade::bot::commands::choice(
+        "XKalos · Tue 22:00",
+        "run-id",
+    )];
+    assert_eq!(
+        transport.autocomplete(&interaction, &choices).await,
+        Outcome::Delivered(())
+    );
+    let embed: twilight_model::channel::message::Embed = serde_json::from_value(json!({
+        "type": "rich", "title": "Boss week of Thu 24 Sep (all)"
+    }))
+    .unwrap();
+    let reply = InteractionReply::public("").with_embed(embed);
+    assert_eq!(
+        transport.respond(&interaction, &reply).await,
+        Outcome::Delivered(())
+    );
+    let seen = stub.seen();
+    let suggested: Value = serde_json::from_slice(&seen[0].body).unwrap();
+    assert_eq!(suggested["type"], json!(8));
+    assert_eq!(
+        suggested["data"]["choices"],
+        json!([{ "name": "XKalos · Tue 22:00", "value": "run-id" }])
+    );
+    let public: Value = serde_json::from_slice(&seen[1].body).unwrap();
+    assert_eq!(public["type"], json!(4));
+    assert!(public["data"].get("flags").is_none());
+    assert!(public["data"].get("content").is_none());
+    assert_eq!(
+        public["data"]["embeds"][0]["title"],
+        json!("Boss week of Thu 24 Sep (all)")
+    );
+    assert_eq!(public["data"]["allowed_mentions"], json!({ "parse": [] }));
+}
+
+#[tokio::test]
 async fn debug_output_never_contains_the_token() {
     let (_, addr) = Stub::start(Vec::new()).await;
     let transport = quick(addr);

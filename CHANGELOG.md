@@ -273,6 +273,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: slash commands ported from v4 (guild-scoped): `/fixed add|edit|remove|list`,
+  `/schedule`, `/amend`, `/status` (now also covers cancel, own time, done and restore),
+  `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, `/say`, staff-only `/nick`,
+  `/debug ping|clear_test`, with v4's permissions and wording; `/bot`, `/pingtime`,
+  `/debug status` and `/debug extract` are dropped in favour of the admin app.
 - v5: the admin app signs in for real: it offers only the methods the server enables
   (Discord, admin token), explains each Discord refusal, returns you to the page you
   were on after a sign-out, signs out properly, hides proposal decisions for non-Discord

@@ -29,8 +29,8 @@ use twilight_http::error::{Error, ErrorType};
 use twilight_http::request::channel::reaction::RequestReactionType;
 use twilight_http::response::{Response, ResponseFuture};
 use twilight_http::{Client, api_error::ApiError};
-use twilight_model::application::command::Command;
-use twilight_model::channel::message::MessageFlags;
+use twilight_model::application::command::{Command, CommandOptionChoice};
+use twilight_model::channel::message::{Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::http::interaction::{
@@ -264,10 +264,15 @@ fn unicode(emoji: &str) -> RequestReactionType<'_> {
     RequestReactionType::Unicode { name: emoji }
 }
 
-fn interaction_data(content: Option<String>, ephemeral: bool) -> InteractionResponseData {
+fn interaction_data(
+    content: Option<String>,
+    embeds: &[Embed],
+    ephemeral: bool,
+) -> InteractionResponseData {
     InteractionResponseData {
         allowed_mentions: Some(mentions::none()),
         content,
+        embeds: (!embeds.is_empty()).then(|| embeds.to_vec()),
         flags: ephemeral.then_some(MessageFlags::EPHEMERAL),
         ..InteractionResponseData::default()
     }
@@ -368,7 +373,10 @@ impl DiscordTransport for TwilightTransport {
         let response = InteractionResponse {
             kind: InteractionResponseType::ChannelMessageWithSource,
             data: Some(interaction_data(
-                Some(reply.content.clone()),
+                // An embed-only reply sends no content at all.
+                (!reply.content.is_empty() || reply.embeds.is_empty())
+                    .then(|| reply.content.clone()),
+                &reply.embeds,
                 reply.ephemeral,
             )),
         };
@@ -383,7 +391,7 @@ impl DiscordTransport for TwilightTransport {
     async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
         let response = InteractionResponse {
             kind: InteractionResponseType::DeferredChannelMessageWithSource,
-            data: Some(interaction_data(None, ephemeral)),
+            data: Some(interaction_data(None, &[], ephemeral)),
         };
         self.settle_interaction(
             self.client
@@ -403,8 +411,32 @@ impl DiscordTransport for TwilightTransport {
             self.client
                 .interaction(self.application_id)
                 .update_response(interaction.token())
-                .content(Some(&reply.content))
+                .content(
+                    (!reply.content.is_empty() || reply.embeds.is_empty())
+                        .then_some(reply.content.as_str()),
+                )
+                .embeds((!reply.embeds.is_empty()).then_some(reply.embeds.as_slice()))
                 .allowed_mentions(Some(&none)),
+        )
+        .await
+    }
+
+    async fn autocomplete(
+        &self,
+        interaction: &InteractionRef,
+        choices: &[CommandOptionChoice],
+    ) -> Outcome<()> {
+        let response = InteractionResponse {
+            kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
+            data: Some(InteractionResponseData {
+                choices: Some(choices.iter().take(25).cloned().collect()),
+                ..InteractionResponseData::default()
+            }),
+        };
+        self.settle_interaction(
+            self.client
+                .interaction(self.application_id)
+                .create_response(interaction.id, interaction.token(), &response),
         )
         .await
     }

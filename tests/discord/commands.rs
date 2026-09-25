@@ -11,13 +11,14 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use twilight_gateway::Event;
 use twilight_model::application::command::{Command, CommandType};
-use twilight_model::application::interaction::Interaction;
+use twilight_model::application::interaction::{Interaction, InteractionContextType};
 use twilight_model::gateway::payload::incoming::InteractionCreate;
+use twilight_model::guild::Permissions;
 use twilight_model::id::Id;
 
 use kanade::bot::commands::{
-    AccessPolicy, CommandError, CommandFuture, DebugCommand, Denial, Dispatcher, Disposition,
-    GENERIC_FAILURE, Gate, Handled, Invocation, SlashCommand, format_uptime, spawn_interaction,
+    AccessPolicy, CommandError, CommandFuture, Denial, Dispatcher, Disposition, GENERIC_FAILURE,
+    Gate, Handled, Invocation, SlashCommand, spawn_interaction,
 };
 use kanade::bot::events::{BotEvent, EventHandler};
 use kanade::bot::gateway::{EventSource, GatewayError, RunExit, RunnerConfig, run};
@@ -81,18 +82,37 @@ impl SlashCommand for Echo {
             match text.as_str() {
                 "String(\"refuse\")" => Err(CommandError::User("not like that".into())),
                 "String(\"crash\")" => Err(CommandError::Internal("boom".into())),
-                _ => Ok(InteractionReply {
-                    content: "echoed".into(),
-                    ephemeral: false,
-                }),
+                _ => Ok(InteractionReply::public("echoed")),
             }
         })
     }
 }
 
+/// A `/debug`-gated, admin-hidden command answering `ok`.
+struct Probe;
+
+impl SlashCommand for Probe {
+    #[allow(deprecated)]
+    fn definition(&self) -> Command {
+        Command {
+            contexts: Some(vec![InteractionContextType::Guild]),
+            default_member_permissions: Some(Permissions::ADMINISTRATOR),
+            ..plain_command("debug")
+        }
+    }
+
+    fn gate(&self) -> Gate {
+        Gate::Debug
+    }
+
+    fn run<'a>(&'a self, _: &'a Invocation) -> CommandFuture<'a> {
+        Box::pin(async { Ok(InteractionReply::ephemeral("ok")) })
+    }
+}
+
 fn dispatcher() -> Dispatcher {
     Dispatcher::new(policy())
-        .register(DebugCommand::new(Instant::now()))
+        .register(Probe)
         .unwrap()
         .register(Echo)
         .unwrap()
@@ -129,10 +149,6 @@ fn registration_payload_is_guild_scoped_and_admin_hidden() {
     assert_eq!(debug["type"], json!(1));
     assert_eq!(debug["default_member_permissions"], json!("8"));
     assert_eq!(debug["contexts"], json!([0]));
-    assert_eq!(
-        debug["options"],
-        json!([{ "name": "status", "description": "Bot health and configuration", "type": 1 }])
-    );
     assert!(debug.get("guild_id").is_none());
     assert!(
         Dispatcher::new(policy())
@@ -163,10 +179,9 @@ async fn registration_goes_through_the_transport() {
     assert_eq!((*g, commands.len()), (guild(), 2));
 }
 
-#[tokio::test(start_paused = true)]
-async fn debug_status_for_each_staff_route() {
+#[tokio::test]
+async fn debug_gate_admits_each_staff_route() {
     let dispatcher = dispatcher();
-    tokio::time::advance(Duration::from_secs(3_725)).await;
     let cases = [
         ("administrator permission", ALICE, vec![], ADMINISTRATOR),
         ("admin role", ALICE, vec![ADMIN_ROLE], 0),
@@ -180,11 +195,7 @@ async fn debug_status_for_each_staff_route() {
         )
         .await;
         assert_eq!(disposition, Disposition::Ran, "{label}");
-        assert_eq!(
-            reply,
-            InteractionReply::ephemeral("**uptime** 1h 2m\n**storage** not connected"),
-            "{label}"
-        );
+        assert_eq!(reply, InteractionReply::ephemeral("ok"), "{label}");
     }
 }
 
@@ -306,13 +317,6 @@ async fn other_guilds_and_dms_are_not_handled() {
         );
     }
     assert!(fake.calls().is_empty());
-}
-
-#[test]
-fn uptime_matches_v4() {
-    assert_eq!(format_uptime(59), "0m");
-    assert_eq!(format_uptime(3_600), "1h 0m");
-    assert_eq!(format_uptime(90_061), "1d 1h 1m");
 }
 
 /// A deferring command that takes a minute (on the paused clock).

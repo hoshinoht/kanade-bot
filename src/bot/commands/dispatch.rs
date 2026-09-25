@@ -1,29 +1,51 @@
 //! Command registry and dispatch: gate first, then run, with every refusal
-//! or failure answered ephemerally and without mentions.
+//! or failure answered ephemerally and without mentions. Autocomplete goes
+//! through the same gate (a refusal lists nothing), and a redelivered
+//! interaction id is answered only once.
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::task::JoinHandle;
 
-use twilight_model::application::command::Command;
+use twilight_model::application::command::{
+    Command, CommandOptionChoice, CommandOptionChoiceValue,
+};
 use twilight_model::application::interaction::Interaction;
 use twilight_model::id::{
     Id,
-    marker::{GuildMarker, UserMarker},
+    marker::{GuildMarker, InteractionMarker, UserMarker},
 };
 
 use super::access::{AccessPolicy, Denial, Gate};
 use super::invocation::Invocation;
-use crate::bot::transport::{DiscordTransport, InteractionReply, Outcome};
+use crate::bot::transport::{DiscordTransport, InteractionReply, Outcome, RejectionKind};
 
 /// v4's reply for unexpected failures.
 pub const GENERIC_FAILURE: &str = "❌ Something went wrong. Check the bot logs.";
 
 pub type CommandFuture<'a> =
     Pin<Box<dyn Future<Output = Result<InteractionReply, CommandError>> + Send + 'a>>;
+
+pub type ChoicesFuture<'a> = Pin<Box<dyn Future<Output = Vec<CommandOptionChoice>> + Send + 'a>>;
+
+/// Discord's autocomplete limit.
+pub const MAX_CHOICES: usize = 25;
+
+/// Interaction ids remembered to drop redeliveries.
+const SEEN_INTERACTIONS: usize = 512;
+
+/// A string choice; the name is cut to Discord's 100 characters.
+pub fn choice(name: &str, value: impl Into<String>) -> CommandOptionChoice {
+    CommandOptionChoice {
+        name: name.chars().take(100).collect(),
+        name_localizations: None,
+        value: CommandOptionChoiceValue::String(value.into()),
+    }
+}
 
 /// Why a command did not produce its reply.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +73,13 @@ pub trait SlashCommand: Send + Sync {
 
     /// Run an already-authorised invocation whose `path[0]` is this command.
     fn run<'a>(&'a self, invocation: &'a Invocation) -> CommandFuture<'a>;
+
+    /// Choices for the focused option of an authorised autocomplete request.
+    /// Must not fail: an error lists nothing.
+    fn autocomplete<'a>(&'a self, invocation: &'a Invocation) -> ChoicesFuture<'a> {
+        let _ = invocation;
+        Box::pin(async { Vec::new() })
+    }
 }
 
 /// What dispatch did, for the caller to log.
@@ -63,6 +92,10 @@ pub enum Disposition {
     Unknown,
     /// The deferral was not delivered, so the command did not run.
     NotAcknowledged,
+    /// Choices were offered for an autocomplete request.
+    Suggested,
+    /// This interaction id was already handled; nothing was sent.
+    Duplicate,
 }
 
 /// What handling an interaction did and the last transport outcome; `None`
@@ -84,6 +117,7 @@ impl std::error::Error for DuplicateCommand {}
 pub struct Dispatcher {
     policy: AccessPolicy,
     commands: Vec<(String, Box<dyn SlashCommand>)>,
+    seen: Mutex<VecDeque<Id<InteractionMarker>>>,
 }
 
 impl fmt::Debug for Dispatcher {
@@ -107,7 +141,25 @@ impl Dispatcher {
         Self {
             policy,
             commands: Vec::new(),
+            seen: Mutex::new(VecDeque::new()),
         }
+    }
+
+    pub fn policy(&self) -> &AccessPolicy {
+        &self.policy
+    }
+
+    /// Record `id`; `false` when it was already seen.
+    fn first_delivery(&self, id: Id<InteractionMarker>) -> bool {
+        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        if seen.contains(&id) {
+            return false;
+        }
+        seen.push_back(id);
+        while seen.len() > SEEN_INTERACTIONS {
+            seen.pop_front();
+        }
+        true
     }
 
     /// # Errors
@@ -181,9 +233,30 @@ impl Dispatcher {
         invocation: &Invocation,
         owner_id: Option<Id<UserMarker>>,
     ) -> (InteractionReply, Disposition) {
-        match self.authorise(invocation, owner_id) {
-            Ok(command) => Self::execute(command, invocation).await,
+        let mut invocation = invocation.clone();
+        invocation.owner_id = owner_id;
+        match self.authorise(&invocation, owner_id) {
+            Ok(command) => Self::execute(command, &invocation).await,
             Err(refusal) => refusal,
+        }
+    }
+
+    /// Autocomplete choices after the command's gate; a refused or unknown
+    /// command lists nothing.
+    pub async fn suggest(
+        &self,
+        invocation: &Invocation,
+        owner_id: Option<Id<UserMarker>>,
+    ) -> Vec<CommandOptionChoice> {
+        let mut invocation = invocation.clone();
+        invocation.owner_id = owner_id;
+        match self.authorise(&invocation, owner_id) {
+            Ok(command) => {
+                let mut choices = command.autocomplete(&invocation).await;
+                choices.truncate(MAX_CHOICES);
+                choices
+            }
+            Err(_) => Vec::new(),
         }
     }
 
@@ -200,9 +273,23 @@ impl Dispatcher {
         interaction: &Interaction,
         owner_id: Option<Id<UserMarker>>,
     ) -> Handled {
-        let invocation = Invocation::from_interaction(interaction)
+        let mut invocation = Invocation::from_interaction(interaction)
             .filter(|invocation| invocation.guild_id == guild)?;
+        invocation.owner_id = owner_id;
+        if !self.first_delivery(interaction.id) {
+            return Some((
+                Disposition::Duplicate,
+                Outcome::DefinitelyRejected(RejectionKind::NotSent),
+            ));
+        }
         let target = &invocation.interaction;
+        if invocation.autocomplete {
+            let choices = self.suggest(&invocation, owner_id).await;
+            return Some((
+                Disposition::Suggested,
+                transport.autocomplete(target, &choices).await,
+            ));
+        }
         let command = match self.authorise(&invocation, owner_id) {
             Ok(command) => command,
             Err((reply, disposition)) => {
