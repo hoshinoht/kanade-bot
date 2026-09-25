@@ -32,6 +32,8 @@ pub mod precondition_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod proposal_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod settings_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod web_sessions_conformance;
 
 #[cfg(any(test, feature = "test-support"))]

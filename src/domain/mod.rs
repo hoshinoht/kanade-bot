@@ -16,5 +16,6 @@ pub(crate) mod pytext;
 pub mod requests;
 pub mod schedule;
 pub mod scheduler;
+pub mod settings;
 pub mod time;
 pub mod weeks;

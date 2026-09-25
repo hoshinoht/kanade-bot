@@ -32,6 +32,7 @@ mod members;
 mod model_log;
 mod proposal_cards;
 mod proposals;
+mod settings;
 mod web_sessions;
 
 use journal::JournalTables;
@@ -125,6 +126,7 @@ pub struct MemoryScheduleStore {
     logs: Mutex<model_log::LogTables>,
     sessions: Mutex<BTreeMap<String, crate::infrastructure::store::web_sessions::WebSession>>,
     members: Mutex<BTreeMap<String, crate::domain::members::MemberProfile>>,
+    config: Mutex<BTreeMap<String, String>>,
 }
 
 impl MemoryScheduleStore {

@@ -21,6 +21,7 @@ mod proposal_cards;
 mod proposals;
 mod rows;
 mod schedule;
+mod settings;
 mod web_sessions;
 pub(super) mod writer;
 
