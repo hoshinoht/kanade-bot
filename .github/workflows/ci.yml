@@ -79,3 +79,60 @@ jobs:
         run: cargo test --locked --all-targets --all-features
       - name: Release build
         run: cargo build --locked --release
+
+  # The Svelte PWAs (web/) and their dev-only mock server (tools/pwa-mock).
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy, rustfmt
+
+      - name: Install
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: Lint
+        working-directory: web
+        run: bun run lint
+      - name: Check
+        working-directory: web
+        run: bun run check
+      - name: Unit tests
+        working-directory: web
+        run: bun run test
+      # Includes the public build's admin-module guard (forbidModules).
+      - name: Build
+        working-directory: web
+        run: bun run build
+
+      - name: Mock server format
+        working-directory: tools/pwa-mock
+        run: cargo fmt --check
+      - name: Mock server lint
+        working-directory: tools/pwa-mock
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Mock server tests
+        working-directory: tools/pwa-mock
+        run: cargo test --locked
+      # Built ahead so Playwright's webServer start stays well inside its timeout.
+      - name: Mock server build
+        working-directory: tools/pwa-mock
+        run: cargo build --locked --release
+
+      # ubuntu-latest ships Google Chrome, which the suite uses (channel 'chrome');
+      # no browser download, no secrets. Boss art is the committed synthetic fixture set.
+      - name: End-to-end
+        working-directory: web
+        run: bun run e2e
+      - name: Keep Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: web/e2e/.results
+          retention-days: 7
