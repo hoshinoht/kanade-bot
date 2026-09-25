@@ -96,11 +96,27 @@ characters (it breaks on SEA), so Kanade would provide the party view itself.
   clear" hints; a chatbot readiness answer computed in Rust.
 - **Boss knowledge:** add a per-difficulty time limit in minutes plus one
   setting for the 20-minute era; the 30-minute scouter basis is a constant.
-- **Source of each member's %** (open): manual entry per boss/difficulty with a
-  date and a 30-day expiry (MVP); automatic fetch only with MapleScouter's
-  written permission (contact on the site); never scraping; computing our own %
-  is ruled out. MapleScouter's page also has a "Boss Timer" setting — record
-  which timer a % was taken under, or require the 30-minute basis.
+- **Source of each member's %:** MapleScouter's terms (이용약관, effective
+  2026-07-11, `https://maplescouter.com/ko/agreement`) forbid automated access
+  to the site or its API (§15.1), using its calculations as another service's
+  backend or data source (§15.2), reusing its API keys or endpoints (§15.3),
+  and reverse engineering (§15.7); its calculation logic and processed data
+  belong to the operator (§14); violators may be blocked without notice (§17).
+  There is no non-commercial exception. The site does have a private backend
+  (`api.maplescouter.com`, keyed with a key embedded in its bundle, custom 430
+  rate limit, Cloudflare, `msea` region), but it is not a public API.
+  - **Primary path:** ask the operators (maplescouter@gmail.com) for written
+    permission or an API key; use their % only on the terms they set (e.g.
+    once per character per day, cached, identifying User-Agent, credit
+    "Data: MapleScouter (maplescouter.com)").
+  - **Fallback now:** members enter their own observed clear times (clean) or a
+    self-assessed % per boss and difficulty (retyping MapleScouter numbers is a
+    grey area under §14), dated, with a 30-day expiry.
+  - **Optional later:** Kanade's own independent estimate from Nexon Open API
+    data (never a port of MapleScouter's logic; it will not match their %).
+  - **Never:** scraping or calling their endpoints without permission.
+  - MapleScouter's page also has a "Boss Timer" setting — record which timer a
+    % was taken under, or require the 30-minute basis.
 
 ## Privacy, security and operations
 
