@@ -6,7 +6,8 @@
 //! the `(run_id, kind)` uniqueness then ignores.
 
 use crate::domain::attendance::{
-    AttendanceDefault, AttendancePolicy, AttendanceRecord, StandingAnswer, StatusPin,
+    AttendanceDefault, AttendanceMode, AttendancePolicy, AttendanceRecord, StandingAnswer,
+    StatusPin,
 };
 use std::collections::BTreeMap;
 
@@ -265,12 +266,19 @@ impl Draft {
     }
 
     /// Members no longer on the run lose their recorded attendance, and a
-    /// changed party ends a hand-set status pin (callers re-derive).
-    pub fn set_run_participants(&mut self, id: &str, participants: Vec<String>) {
+    /// changed party before the start ends a hand-set status pin (callers
+    /// re-derive).
+    pub fn set_run_participants(
+        &mut self,
+        id: &str,
+        participants: Vec<String>,
+        now: DateTime<Utc>,
+    ) {
+        let v5 = self.attendance.mode == AttendanceMode::V5;
         if let Some(run) = self.runs.get_mut(id) {
             run.attendance
                 .retain(|record| participants.contains(&record.user_id));
-            if run.participants != participants {
+            if v5 && run.participants != participants && now < run.datetime {
                 run.status_pin = None;
             }
             run.participants = participants;

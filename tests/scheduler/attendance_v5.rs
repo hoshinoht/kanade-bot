@@ -11,11 +11,13 @@ use kanade::domain::attendance::{
     snapshot_states, status_label,
 };
 use kanade::domain::drafts::{DraftOp, Target};
-use kanade::domain::history::{Actor, ChangeHistory, Origin, PickMode, PickRefusal, Surface};
+use kanade::domain::history::{
+    Actor, BlameTarget, ChangeHistory, Origin, PickMode, PickRefusal, Surface, blame,
+};
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, NewFixedRun, ReminderPolicy, Run, RunStatus, ScheduleError,
+    EMOJI_NO, EMOJI_YES, FixedEdit, NewFixedRun, ReminderPolicy, Run, RunStatus, ScheduleError,
     SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::scheduler::{
@@ -759,4 +761,145 @@ async fn v4_compat_never_pins() {
     let row = run_row(&f.service, f.run()).await;
     assert_eq!((row.status, row.status_pin), (RunStatus::Confirmed, None));
     assert_eq!(label(&f, 0).await, None);
+}
+
+/// A pinned confirmed run on incomplete answers (1002 unknown).
+async fn pinned_on_incomplete_answers(f: &mut Fixture) -> String {
+    let run = f.run().to_owned();
+    react(f, 0, "1001", EMOJI_YES, true).await;
+    set_status(f, 0, RunStatus::Confirmed).await;
+    let row = run_row(&f.service, &run).await;
+    assert_eq!(
+        (row.status, row.status_pin.map(|pin| pin.status)),
+        (RunStatus::Confirmed, Some(RunStatus::Confirmed))
+    );
+    run
+}
+
+async fn assert_unpinned_and_derived(f: &mut Fixture, run: &str) {
+    let row = run_row(&f.service, run).await;
+    assert_eq!((row.status, row.status_pin), (RunStatus::Planned, None));
+    assert_eq!(label(f, 0).await, None);
+    assert!(recount(f).await.is_empty(), "no pin brings confirmed back");
+    assert_eq!(status(&f.service, run).await, RunStatus::Planned);
+}
+
+#[tokio::test]
+async fn a_move_ends_the_pin_and_re_derives() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = pinned_on_incomplete_answers(&mut f).await;
+    let before = head(&f.service).await;
+    f.service
+        .as_origin(admin())
+        .amend_run(
+            &run,
+            kl(8, 29, 22, 0).with_timezone(&Utc),
+            &policy(f.attendance),
+        )
+        .await
+        .unwrap();
+    assert_eq!(head(&f.service).await, before + 1, "one commit");
+    assert_unpinned_and_derived(&mut f, &run).await;
+}
+
+#[tokio::test]
+async fn a_reset_of_slot_only_ends_the_pin_and_re_derives() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = f.run().to_owned();
+    f.service
+        .as_origin(admin())
+        .amend_run(
+            &run,
+            kl(8, 29, 22, 0).with_timezone(&Utc),
+            &policy(f.attendance),
+        )
+        .await
+        .unwrap();
+    pinned_on_incomplete_answers(&mut f).await;
+    let before = head(&f.service).await;
+    let outcome = f
+        .service
+        .as_origin(admin())
+        .reset_to_fixed(&run, &policy(f.attendance))
+        .await
+        .unwrap();
+    assert_eq!(outcome.value.run.datetime, kl(8, 29, 20, 0));
+    assert_eq!(head(&f.service).await, before + 1, "one commit");
+    assert_unpinned_and_derived(&mut f, &run).await;
+}
+
+#[tokio::test]
+async fn a_weekly_time_edit_moving_the_run_ends_the_pin() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = pinned_on_incomplete_answers(&mut f).await;
+    let fixed = f.fixed.clone();
+    let before = head(&f.service).await;
+    f.service
+        .as_origin(admin())
+        .update_fixed(
+            &fixed,
+            FixedEdit {
+                time: NaiveTime::from_hms_opt(21, 0, 0),
+                ..FixedEdit::default()
+            },
+            &Guild,
+            &policy(f.attendance),
+        )
+        .await
+        .unwrap();
+    assert_eq!(head(&f.service).await, before + 1, "one commit");
+    assert_eq!(
+        run_row(&f.service, &run).await.datetime,
+        kl(8, 29, 21, 0).with_timezone(&Utc)
+    );
+    assert_unpinned_and_derived(&mut f, &run).await;
+}
+
+#[tokio::test]
+async fn after_the_start_party_changes_keep_the_pin() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = pinned_on_incomplete_answers(&mut f).await;
+    let pinned = run_row(&f.service, &run).await.status_pin;
+    async fn pin_blame(service: &Service, run: &str) -> kanade::domain::history::Attribution {
+        blame(service.store(), &BlameTarget::Run(run.to_owned()))
+            .await
+            .unwrap()
+            .unwrap()
+            .lines
+            .into_iter()
+            .find(|line| line.field == "status_pin")
+            .and_then(|line| line.last)
+            .unwrap()
+    }
+    let blamed = pin_blame(&f.service, &run).await;
+    assert_eq!(blamed.actor, Actor::admin("root"));
+    f.clock.set(kl(8, 29, 20, 10));
+    f.service
+        .as_origin(admin())
+        .swap_participants(&run, &["1002".into()], &["1003".into()], true, &Guild)
+        .await
+        .unwrap();
+    f.service
+        .as_origin(admin())
+        .change_fixed_party(
+            &f.fixed,
+            &[],
+            &["1003".into()],
+            &Guild,
+            &policy(f.attendance),
+        )
+        .await
+        .unwrap();
+    let row = run_row(&f.service, &run).await;
+    assert_eq!(row.participants, ["1001"]);
+    assert_eq!((row.status, row.status_pin), (RunStatus::Confirmed, pinned));
+    assert_eq!(
+        label(&f, 0).await,
+        Some(StatusLabel::SetByAdmin(RunStatus::Confirmed))
+    );
+    assert_eq!(pin_blame(&f.service, &run).await, blamed, "blame unchanged");
+    assert!(recount(&mut f).await.is_empty());
+    set_status(&mut f, 0, RunStatus::Done).await;
+    let row = run_row(&f.service, &run).await;
+    assert_eq!((row.status, row.status_pin), (RunStatus::Done, None));
 }

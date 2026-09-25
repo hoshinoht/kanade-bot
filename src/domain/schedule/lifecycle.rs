@@ -10,6 +10,7 @@ use super::policy::utc_instant;
 use super::reminders::{ReminderPolicy, refresh_run_reminders};
 use super::rsvp::recompute_after_roster_change;
 use super::run::{FixedField, RunStatus};
+use crate::domain::attendance::AttendanceMode;
 use crate::domain::ids::IdGenerator;
 use crate::domain::time::{AwareDateTime, ZonedDateTime};
 use crate::domain::weeks::slot_in_week;
@@ -116,7 +117,7 @@ impl FixedPush<'_> {
                 draft.set_run_bosses(&run.id, fixed.bosses.clone());
             }
             if touched_field(FixedField::Participants) && run.participants != fixed.participants {
-                draft.set_run_participants(&run.id, fixed.participants.clone());
+                draft.set_run_participants(&run.id, fixed.participants.clone(), now);
                 for user in run
                     .participants
                     .iter()
@@ -132,7 +133,13 @@ impl FixedPush<'_> {
             }
             if reschedule && !self.keep_slot.contains(&run.id) {
                 let slot = slot_in_week(&start, policy.zone, fixed.weekday, fixed.time)?;
-                draft.set_run_datetime(&run.id, slot.to_fixed().with_timezone(&Utc), week)?;
+                let at = slot.to_fixed().with_timezone(&Utc);
+                draft.set_run_datetime(&run.id, at, week)?;
+                // v5: a move ends the pin.
+                if draft.attendance().mode == AttendanceMode::V5 && at != run.datetime {
+                    draft.set_run_pin(&run.id, None);
+                    recompute_after_roster_change(draft, &run.id, now)?;
+                }
                 refresh_run_reminders(draft, ids, &run.id, policy, now)?;
             }
             touched += 1;

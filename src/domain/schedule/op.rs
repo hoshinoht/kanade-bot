@@ -245,6 +245,13 @@ pub fn apply_op(
         )?)),
         Op::SetRunStatus { run_id, status } => {
             draft.set_run_status(run_id, *status);
+            if draft
+                .run(run_id)
+                .and_then(|run| run.status_pin)
+                .is_some_and(|pin| pin.status != *status)
+            {
+                draft.set_run_pin(run_id, None);
+            }
             quiet(OpResult::Done)
         }
         Op::SetRsvp {

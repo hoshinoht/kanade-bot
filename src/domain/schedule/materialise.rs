@@ -118,7 +118,7 @@ fn adopt_run(
     draft.set_run_fixed(&run.id, Some(fixed.id.clone()))?;
     draft.set_run_datetime(&run.id, slot.to_fixed().with_timezone(&Utc), run.week_start)?;
     if run.participants != fixed.participants {
-        draft.set_run_participants(&run.id, fixed.participants.clone());
+        draft.set_run_participants(&run.id, fixed.participants.clone(), now);
         recompute_after_roster_change(draft, &run.id, now)?;
     }
     refresh_run_reminders(draft, ids, &run.id, policy, now)

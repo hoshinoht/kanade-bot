@@ -316,7 +316,7 @@ pub fn apply_party_delta(
             emptied.push(run.id.clone());
             continue;
         }
-        draft.set_run_participants(&run.id, next);
+        draft.set_run_participants(&run.id, next, now);
         for user in run.participants.iter().filter(|user| remove.contains(user)) {
             draft.clear_rsvp(&run.id, user);
         }

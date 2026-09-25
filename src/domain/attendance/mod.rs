@@ -423,8 +423,9 @@ pub fn recorded_or_prefill(
 }
 
 /// v5: a status an administrator set by hand (planned or confirmed),
-/// kept by derivation until an explicit answer, a party change, another
-/// hand-set status or the run leaving the live statuses clears it. Who set
+/// kept by derivation until an explicit answer or party change before the
+/// start, a move, another hand-set status or the run leaving the live
+/// statuses clears it. Who set
 /// it is the blame of the run's `status_pin` field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StatusPin {

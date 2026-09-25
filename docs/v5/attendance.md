@@ -171,8 +171,11 @@ still holds: removed members' answers are dropped.
   answers, defaults and the unknown window do not override it.
 - The pin ends, and the run is re-derived in the same commit, when:
   someone reacts explicitly (✅ or ❌ added, or a reaction removed) on that
-  run; the run's participant list changes (swap, party edit or delta,
-  reset, adoption); an administrator sets the status again (planned or
+  run; the run's participant list changes before the start (swap, party
+  edit or delta, reset, adoption, fixed-edit push); the run moves to a new
+  slot (`amend_run`, `reset_to_fixed` even when only slot, bosses or
+  channel differ, or a weekly weekday/time edit pushed onto it), re-derived
+  from answers for the new slot; an administrator sets the status again (planned or
   confirmed re-pins; done, cancelled or otot clear it); or the run leaves
   the live statuses (`Draft::set_run_status` clears it). Answers written
   by `set_rsvp` (portal/chat, draft and cherry-pick replays) keep v4's
@@ -187,8 +190,9 @@ still holds: removed members' answers are dropped.
 
 - Once `now >= run.datetime`, answers, reactions, swaps and recounts no
   longer change the run's status (`schedule::is_frozen`); only a hand-set
-  status (done, cancelled, otot, or planned/confirmed) does. Reactions
-  after the start do not end a pin. The tick's recount and the timing
+  status (done, cancelled, otot, or planned/confirmed) does. Reactions and
+  participant changes after the start do not end a pin (its blame stays);
+  only a manual status change touches it. The tick's recount and the timing
   re-derive already skip started runs. V4_COMPAT is unchanged (a swap
   after the start may still re-derive, as v4).
 

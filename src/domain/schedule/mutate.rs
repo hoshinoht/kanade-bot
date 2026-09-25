@@ -197,6 +197,7 @@ pub fn amend_run(
 }
 
 /// The amend status rule on the run's current status, plus a reminder rebuild.
+/// v5: a move ends the pin and re-derives.
 fn settle_after_move(
     draft: &mut Draft,
     ids: &mut impl IdGenerator,
@@ -207,6 +208,12 @@ fn settle_after_move(
     let status = draft.require_run(run_id)?.status;
     if matches!(status, RunStatus::Confirmed | RunStatus::AtRisk) {
         draft.set_run_status(run_id, RunStatus::Planned);
+    }
+    if draft.attendance().mode == AttendanceMode::V5 {
+        draft.set_run_pin(run_id, None);
+        if status.is_live() {
+            recompute_after_roster_change(draft, run_id, now)?;
+        }
     }
     refresh_run_reminders(draft, ids, run_id, policy, now)
 }
@@ -260,7 +267,7 @@ pub fn swap_participants(
     if people == run.participants {
         return Ok(Outcome::quiet(run_state(draft, run_id)?));
     }
-    draft.set_run_participants(run_id, people);
+    draft.set_run_participants(run_id, people, now);
     for uid in &leaving {
         draft.clear_rsvp(run_id, uid);
     }
@@ -348,7 +355,7 @@ pub fn reset_to_fixed(
     draft.set_run_bosses(run_id, fixed.bosses.clone());
     draft.set_run_channel(run_id, fixed.channel_id.clone());
     if run.participants != fixed.participants {
-        draft.set_run_participants(run_id, fixed.participants.clone());
+        draft.set_run_participants(run_id, fixed.participants.clone(), now);
         for uid in run
             .participants
             .iter()

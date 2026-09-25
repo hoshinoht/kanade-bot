@@ -92,8 +92,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   close to start, morning pings mention only unknown members, and marking a run done
   records who came (members confirm only their own), with private attendance patterns
   that suggest standing answers. With attendance on, an admin-set planned/confirmed
-  status sticks (shown "set by admin") until a reaction, party change or new status
-  ends it, and a run's status no longer changes once it has started.
+  status sticks (shown "set by admin") until a reaction, party change, move or new
+  status ends it, and a run's status no longer changes once it has started (after the
+  start only a new status ends the pin).
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard
