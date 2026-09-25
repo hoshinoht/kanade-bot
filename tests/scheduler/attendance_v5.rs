@@ -17,8 +17,8 @@ use kanade::domain::history::{
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, FixedEdit, NewFixedRun, ReminderPolicy, Run, RunStatus, ScheduleError,
-    SchedulePolicy, ScheduleSnapshot, StatusChange,
+    EMOJI_NO, EMOJI_YES, FixedEdit, NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, Run,
+    RunStatus, ScheduleError, SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::scheduler::{
     DraftError, PickError, ScheduleStore, SchedulerError, SchedulerService, Scope,
@@ -664,6 +664,71 @@ async fn a_hand_set_confirmed_holds_until_an_explicit_answer() {
     );
     assert_eq!(head(&f.service).await, before + 1);
     assert_eq!(run_row(&f.service, &run).await.status_pin, None);
+}
+
+async fn portal_answer(f: &mut Fixture, run: usize, user: &str, answer: Option<RsvpState>) {
+    let run = f.runs[run].clone();
+    f.service
+        .as_origin(admin())
+        .portal_answer(&run, user, answer)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn portal_answers_are_chat_recount_and_keep_a_hand_set_status() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = f.run().to_owned();
+    set_status(&mut f, 0, RunStatus::Confirmed).await;
+    portal_answer(&mut f, 0, "1002", Some(RsvpState::No)).await;
+    let row = run_row(&f.service, &run).await;
+    assert_eq!(row.status, RunStatus::Confirmed, "the pin holds");
+    assert!(
+        row.status_pin.is_some(),
+        "a portal answer never ends the pin"
+    );
+    let state = snapshot(&f.service).await;
+    let rsvp = state
+        .rsvps
+        .iter()
+        .find(|rsvp| rsvp.run_id == run && rsvp.user_id == "1002")
+        .unwrap();
+    assert_eq!((rsvp.state, rsvp.source), (RsvpState::No, RsvpSource::Chat));
+
+    // A maybe can be set and cleared like any answer.
+    portal_answer(&mut f, 0, "1001", Some(RsvpState::Maybe)).await;
+    portal_answer(&mut f, 0, "1001", None).await;
+    let state = snapshot(&f.service).await;
+    assert!(
+        !state
+            .rsvps
+            .iter()
+            .any(|rsvp| rsvp.run_id == run && rsvp.user_id == "1001")
+    );
+
+    let refused = f
+        .service
+        .as_origin(admin())
+        .portal_answer(&run, "9999", Some(RsvpState::Yes))
+        .await;
+    assert!(matches!(
+        refused,
+        Err(SchedulerError::Schedule(ScheduleError::NotOnRun(_)))
+    ));
+}
+
+#[tokio::test]
+async fn portal_answers_recount_an_unpinned_run() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run().to_owned();
+    portal_answer(&mut f, 0, "1002", Some(RsvpState::No)).await;
+    assert_eq!(status(&f.service, &run).await, RunStatus::AtRisk);
+    portal_answer(&mut f, 0, "1002", None).await;
+    assert_ne!(
+        status(&f.service, &run).await,
+        RunStatus::AtRisk,
+        "taken back"
+    );
 }
 
 #[tokio::test]

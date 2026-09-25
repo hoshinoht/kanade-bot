@@ -126,7 +126,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   weekly timing, preview pings, create, edit and retire weekly timings, and edit
   members and aliases. Edits made from an out-of-date screen are refused (409) instead
   of overwriting someone else's change, a retried request is applied only once, and
-  Discord member updates no longer overwrite portal member edits. Not yet wired into
+  Discord member updates no longer overwrite portal member edits. Weekly-timing edits
+  must send the week `version` they were loaded at (the admin app change follows),
+  moves stay inside the run's boss week, and portal answers are recorded like v4 chat
+  answers (any answer can be cleared; a hand-set status is kept). Not yet wired into
   `serve`.
 - v5: admin read API: week, stats, summary, weekly timings, reminders, members,
   channels, personas, bosses, boss events and knowledge, each matching the published

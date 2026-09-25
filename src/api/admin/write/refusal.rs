@@ -140,6 +140,7 @@ fn schedule(error: ScheduleError) -> Refusal {
         ScheduleError::NothingToChange => {
             Refusal::new(S::UNPROCESSABLE_ENTITY, "nothing_to_change", message)
         }
+        ScheduleError::NotOnRun(_) => Refusal::new(S::UNPROCESSABLE_ENTITY, "not_on_run", message),
         // Configuration, not the request: never the client's to fix.
         ScheduleError::AttendanceMismatch { .. } => ApiError::UNAVAILABLE.into(),
         _ => Refusal::invalid(message),
@@ -228,6 +229,11 @@ mod tests {
                 ScheduleError::NothingToChange.into(),
                 422,
                 "nothing_to_change",
+            ),
+            (
+                ScheduleError::NotOnRun(vec!["1".into()]).into(),
+                422,
+                "not_on_run",
             ),
             (ScheduleError::NoParticipants.into(), 422, "invalid"),
             (

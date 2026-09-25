@@ -207,6 +207,17 @@ pub async fn move_run(
         .earliest()
         .ok_or_else(|| Refusal::invalid("That time does not exist on that day."))?
         .with_timezone(&chrono::Utc);
+    // With a non-midnight reset, day 0 before the reset time belongs to the
+    // previous boss week; a run never leaves its week.
+    let week = state
+        .policy
+        .week_of(&to)
+        .map_err(|_| Refusal::invalid("That date is out of range."))?;
+    if week.to_fixed() != run.week_start {
+        return Err(Refusal::invalid(
+            "That time falls in another boss week; runs stay in their week.",
+        ));
+    }
     let (run, version) = edit(
         &site,
         &session,
@@ -284,35 +295,14 @@ pub async fn rsvp(
     body: Result<Json<RsvpRequest>, JsonRejection>,
 ) -> Reply {
     let Json(request) = body.map_err(bad_body)?;
-    let state = state(&site)?;
     let answer = match request.answer.as_str() {
         "yes" => Some(RsvpState::Yes),
         "no" => Some(RsvpState::No),
         "clear" => None,
         _ => return Err(Refusal::invalid("An answer is yes, no or clear.")),
     };
-    let snapshot = load_run(state, &run_id).await?;
-    let on_run = snapshot
-        .runs
-        .iter()
-        .any(|run| run.id == run_id && run.participants.contains(&request.member_id));
-    if !on_run {
-        return Err(Refusal::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "not_on_run",
-            "That member is not on this run.",
-        ));
-    }
-    let current = snapshot
-        .rsvps
-        .iter()
-        .find(|rsvp| rsvp.run_id == run_id && rsvp.user_id == request.member_id)
-        .map(|rsvp| rsvp.state);
-    if answer.is_none() && current == Some(RsvpState::Maybe) {
-        return Err(Refusal::invalid(
-            "A maybe answer can be changed to yes or no, not cleared here.",
-        ));
-    }
+    // Membership is checked by the scheduler, after the preconditions: a
+    // member removed since the client's version (with their answer) is 409.
     let (run, version) = edit(
         &site,
         &session,
@@ -323,7 +313,6 @@ pub async fn rsvp(
         RunWrite::Rsvp {
             user_id: request.member_id,
             answer,
-            current,
         },
     )
     .await?;

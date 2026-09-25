@@ -11,10 +11,7 @@ use super::auth::Clock as ApiClockFn;
 use crate::domain::{
     history::{Expect, Origin},
     members::Roster,
-    schedule::{
-        EMOJI_NO, EMOJI_YES, FixedEditRequest, NewFixedRun, ReactionResult, RsvpState,
-        SchedulePolicy, StatusChange,
-    },
+    schedule::{FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange},
     scheduler::{Clock, IdSource, ScheduleStore, SchedulerResult, SchedulerService},
 };
 
@@ -34,12 +31,11 @@ pub enum RunWrite {
         to: DateTime<Utc>,
     },
     Status(StatusChange),
-    /// `Some`: answer as a ✅/❌ reaction would (status re-derived); `None`:
-    /// take back `current`, the member's present answer.
+    /// A portal answer (source `chat`, status re-derived, a status pin kept);
+    /// `None` clears whatever the member answered.
     Rsvp {
         user_id: String,
         answer: Option<RsvpState>,
-        current: Option<RsvpState>,
     },
     Participants {
         add: Vec<String>,
@@ -47,9 +43,6 @@ pub enum RunWrite {
     },
     Reset,
 }
-
-/// The outcome of an RSVP write: whether it changed anything.
-pub type RsvpApplied = Option<ReactionResult>;
 
 pub trait Writer: Send + Sync {
     fn run<'a>(
@@ -59,7 +52,7 @@ pub trait Writer: Send + Sync {
         run_id: &'a str,
         write: RunWrite,
         ctx: &'a WriteContext,
-    ) -> WriteFuture<'a, RsvpApplied>;
+    ) -> WriteFuture<'a, ()>;
 
     fn add_fixed<'a>(
         &'a self,
@@ -113,14 +106,6 @@ impl<S, I, C> SchedulerWriter<S, I, C> {
     }
 }
 
-fn emoji(state: RsvpState) -> Option<&'static str> {
-    match state {
-        RsvpState::Yes => Some(EMOJI_YES),
-        RsvpState::No => Some(EMOJI_NO),
-        RsvpState::Maybe => None,
-    }
-}
-
 impl<S, I, C> Writer for SchedulerWriter<S, I, C>
 where
     S: ScheduleStore + Send + Sync,
@@ -134,47 +119,25 @@ where
         run_id: &'a str,
         write: RunWrite,
         ctx: &'a WriteContext,
-    ) -> WriteFuture<'a, RsvpApplied> {
+    ) -> WriteFuture<'a, ()> {
         Box::pin(async move {
             let mut service = self.service.lock().await;
             let handle = service.as_origin(origin).expecting(expect);
             match write {
-                RunWrite::Move { to } => handle
-                    .amend_run(run_id, to, &ctx.policy)
-                    .await
-                    .map(|_| None),
+                RunWrite::Move { to } => handle.amend_run(run_id, to, &ctx.policy).await.map(drop),
                 RunWrite::Status(change) => handle
                     .set_status(run_id, change, &ctx.policy.reminders)
                     .await
-                    .map(|_| None),
-                RunWrite::Rsvp {
-                    user_id,
-                    answer,
-                    current,
-                } => {
-                    // A portal answer counts as the card reaction would, so
-                    // the status is re-derived and non-members are refused.
-                    let (state, added) = match (answer, current) {
-                        (Some(state), _) => (state, true),
-                        (None, Some(state)) => (state, false),
-                        (None, None) => return Ok(None),
-                    };
-                    let Some(emoji) = emoji(state) else {
-                        return Ok(None);
-                    };
-                    handle
-                        .apply_reaction(run_id, &user_id, emoji, added)
-                        .await
-                        .map(Some)
-                }
+                    .map(drop),
+                RunWrite::Rsvp { user_id, answer } => handle
+                    .portal_answer(run_id, &user_id, answer)
+                    .await
+                    .map(drop),
                 RunWrite::Participants { add, remove } => handle
                     .swap_participants(run_id, &remove, &add, true, &ctx.directory)
                     .await
-                    .map(|_| None),
-                RunWrite::Reset => handle
-                    .reset_to_fixed(run_id, &ctx.policy)
-                    .await
-                    .map(|_| None),
+                    .map(drop),
+                RunWrite::Reset => handle.reset_to_fixed(run_id, &ctx.policy).await.map(drop),
             }
         })
     }

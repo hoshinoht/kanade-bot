@@ -455,6 +455,73 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         Ok(())
     }
 
+    /// A portal answer (v4 `api/service.py set_rsvp`): set (source `chat`) or
+    /// clear one participant's answer, then re-derive the run's status. Unlike
+    /// a reaction it never ends a status pin (`docs/v5/attendance.md`), and any
+    /// answer, `maybe` included, can be cleared. Returns whether the status
+    /// changed.
+    ///
+    /// # Errors
+    /// [`ScheduleError::UnknownRun`], [`ScheduleError::NotOnRun`] for someone
+    /// not on the run, or as any edit (preconditions on `rsvp:<user>`).
+    pub async fn portal_answer(
+        self,
+        run_id: &str,
+        user_id: &str,
+        answer: Option<RsvpState>,
+    ) -> SchedulerResult<bool> {
+        self.expect
+            .validate(&self.origin.actor)
+            .map_err(SchedulerError::Precondition)?;
+        let request = digest("portal_answer", &(run_id, user_id, answer));
+        let request = if self.expect.is_empty() {
+            request
+        } else {
+            digest("expect", &(request, &self.expect.canonical()))
+        };
+        let overriding = !self.expect.overrides.is_empty();
+        let meta = ChangeMeta {
+            origin: self.origin.clone(),
+            at: DateTime::UNIX_EPOCH,
+            notices: Vec::new(),
+            refs: self.expect.overrides.clone(),
+            request_digest: self.origin.request_id.as_ref().map(|_| request),
+            expect: self.expect,
+        };
+        let (run, user) = (run_id.to_owned(), user_id.to_owned());
+        self.service
+            .transact_as(
+                meta,
+                Scope::Run(run_id.to_owned()),
+                move |draft, _, now| {
+                    let before = draft.require_run(&run)?;
+                    if !before.participants.contains(&user) {
+                        return Err(ScheduleError::NotOnRun(vec![user.clone()]));
+                    }
+                    match answer {
+                        Some(state) => draft.set_rsvp(&run, &user, state, RsvpSource::Chat, now),
+                        None => draft.clear_rsvp(&run, &user),
+                    }
+                    // derive_run_status keeps a pinned (or started) run's status.
+                    let after = draft.require_run(&run)?;
+                    let status =
+                        schedule::derive_run_status(draft, &after, after.status, now).status;
+                    if status != after.status {
+                        draft.set_run_status(&run, status);
+                    }
+                    Ok(status != after.status)
+                },
+                |_| {
+                    if overriding {
+                        vec![EDIT_OVERRIDE.to_owned()]
+                    } else {
+                        Vec::new()
+                    }
+                },
+            )
+            .await
+    }
+
     pub async fn apply_reaction(
         self,
         run_id: &str,

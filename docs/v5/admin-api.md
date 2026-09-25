@@ -81,6 +81,14 @@ whole; unknown or read-only keys are refused with 422.
   too. Other fields of the same run merging freely is the point: edits to
   different fields at the same version never conflict. An edit that
   re-derives the status (roster, answers) changes `status` too.
+- **Weekly timings (user decision 2026-09-25):** `PATCH /api/admin/fixed/{id}`
+  requires `version` (missing: `422 version_required`); it declares every
+  timing field (`day`, `time`, `bosses`, `participants`, `channel`, `note`)
+  whose value differs from the stored row and goes through the same check.
+  The body is the whole form, so a form loaded before someone else's edit
+  resends the old value of that field and is `409 stale` rather than
+  reverting it. The admin app and `tools/pwa-mock` must send `version` on
+  this PATCH (client change scheduled separately). `POST` ignores it.
 - Explicit `expect: [{field, seen}]` and admin `override: [{seq, hash}]`
   are accepted in the same bodies and replace the version-derived
   expectations; their refusals are 422 `unknown_field` | `duplicate_field` |
@@ -92,10 +100,21 @@ whole; unknown or read-only keys are refused with 422.
   `invalid_idempotency_key`) is the request id: a replay answers the current
   state (200/201) without applying again, even after its own change moved the
   version; the same key with another request is `422 idempotency_mismatch`.
+  Weekly-timing create/edit/retire look the key up before validating: a
+  replay is checked against the roster and watched channels as the first
+  attempt saw them (a member who has since lost the role does not turn it
+  into a 422), and the scheduler still compares the request digest. A retire
+  replay is matched on the recorded change (that timing deleted), not the
+  digest, which names the materialised weeks and so moves at the weekly
+  reset; it answers `{cancelled: 0}`, as the first count is not recorded.
+- Known limits: the history walk behind `version`-derived expectations is
+  unbounded; two concurrent RSVPs for different members both succeed (each
+  declares only its own `rsvp:<member>`).
 - Other refusals: 404 `not_found`; 409 `move_conflict` (the weekly already
   has a run in that week) or `busy` (revision races outlasted the retries);
   422 `invalid` with the scheduler's own wording, `nothing_to_change`,
-  `choices_required`, `choices_not_applicable`, `not_on_run`, `alias_taken`;
+  `choices_required`, `choices_not_applicable`, `not_on_run`, `alias_taken`,
+  `version_required`;
   400 `invalid_body` (unknown fields refused); 503 `unavailable` (no backend
   text is ever returned).
 
@@ -110,9 +129,9 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. **Implemented** over a `ChannelList` port. |
 | `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins (offline name `Kanade`; `cached` reflects `KANADE_IDENTITY_DIR`). |
 | `GET /api/admin/session` | — | `Session` | Who is signed in. **Implemented** (see Sign-in and sessions). |
-| `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. **Implemented**: `day` 0–6 within the run's boss week; `time` null only for own-time runs; done/cancelled runs are refused (422). |
+| `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. **Implemented**: `day` 0–6 within the run's boss week; `time` null only for own-time runs; a slot outside the run's boss week (day 0 before a non-midnight reset time) and done/cancelled runs are refused (422 `invalid`). |
 | `PATCH /api/admin/runs/{id}/status` | `StatusRequest` (`{status, version}`) | `RunResult` (`{run, version}`) | **Implemented**; `at_risk` is derived, not settable (422). |
-| `POST /api/admin/runs/{id}/rsvp` | `RsvpRequest` (`{member_id, answer, version}`) | `RunResult` | **Implemented**: `yes`/`no` count as the card reaction would (status re-derived); `clear` takes the answer back; a member not on the run is `422 not_on_run`. |
+| `POST /api/admin/runs/{id}/rsvp` | `RsvpRequest` (`{member_id, answer, version}`) | `RunResult` | **Implemented** as v4 `set_rsvp`: `yes`/`no` are recorded with source `chat` and the status is re-derived without ending a status pin (`attendance.md`); `clear` removes any answer, `maybe` included; a member not on the run is `422 not_on_run` (`409 stale` if their answer changed since `version`). |
 | `PATCH /api/admin/runs/{id}/participants` | `ParticipantsRequest` (`{add?, remove?, version}`) | `RunResult` | Week-only roster edits. **Implemented**. |
 | `POST /api/admin/runs/{id}/reset` | `{version}` | `RunResult` | New in v5: back to the weekly timing. **Implemented**. |
 | `POST /api/admin/rescan` (per-run) | `{channels: [run.channel_id], window: 'week'}` | `RescanJob` | The run sheet and phone board re-read one channel; `Run.channel_id` is the explicit key (`party` is the legacy handle). |
@@ -124,7 +143,7 @@ whole; unknown or read-only keys are refused with 422.
 |---|---|---|---|
 | `GET /api/admin/fixed` | — | `FixedRow[]` | **Implemented**; `runs` lists live runs this and next week. |
 | `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. **Implemented**: `201`; the timing's runs are materialised for the current and next two boss weeks; members need the bossing role and the channel must be watched (422). |
-| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. **Implemented**: only fields that differ are edited; an amended run the edit would move needs a decision (`422 choices_required`), a decision for another run is `422 choices_not_applicable`; optional `version`/`expect`/`override` as for runs. |
+| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. **Implemented**: only fields that differ are edited; an amended run the edit would move needs a decision (`422 choices_required`), a decision for another run is `422 choices_not_applicable`; `version` required (`422 version_required`), `expect`/`override` as for runs (see "Weekly timings" above). |
 | `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. **Implemented** (live runs in the three materialised weeks). |
 | `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. **Implemented** (catalog parser; refusals are `422 invalid` with the parser's message). |
 | `GET /api/admin/bosses` | — | `BossRow[]` | **Implemented**; keys are catalog short names (`MaleficStar`, exact case, as `/art/*` keys); hue from the catalog guide colour. |

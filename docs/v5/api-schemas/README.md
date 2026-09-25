@@ -41,7 +41,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/fixed` | `fixed.json#/$defs/FixedRows` |
-| `POST /api/admin/fixed`, `PATCH /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRow` |
+| `POST /api/admin/fixed`, `PATCH /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRow` (request body `FixedRequest`; PATCH requires `version`) |
 | `DELETE /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRetired` |
 | `POST /api/admin/validate/bosses` | `fixed.json#/$defs/ValidateResult` |
 | `GET /api/admin/bosses` | `bosses.json#/$defs/BossRows` |

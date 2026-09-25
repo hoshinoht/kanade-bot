@@ -26,10 +26,11 @@ use crate::{
         error::ApiError,
         listeners::Site,
         state::ApiState,
+        write::WriteContext,
     },
     domain::{
-        history::{Actor, BlameTarget, Origin},
-        members::MemberProfile,
+        history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
+        members::{Member, MemberProfile},
         schedule::{
             AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
             ScheduleError, validate_channel, validate_participants,
@@ -54,7 +55,8 @@ pub struct FixedRequest {
     note: Option<String>,
     #[serde(default)]
     decisions: BTreeMap<String, String>,
-    /// Optional here: the Fixed page has no week version.
+    /// The week version the timing was loaded at: required to edit, ignored
+    /// on create (a new timing has nothing to be stale against).
     #[serde(default)]
     version: Option<u64>,
     #[serde(default)]
@@ -138,15 +140,52 @@ async fn row(
         })
 }
 
-/// The timing a replayed create made, from its recorded change.
-async fn created_by(state: &ApiState, origin: &Origin) -> Option<String> {
-    let request_id = origin.request_id.as_deref()?;
+/// The change already recorded for this request's `Idempotency-Key`, if any.
+async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeRecord>, Refusal> {
+    let Some(request_id) = origin.request_id.clone() else {
+        return Ok(None);
+    };
     state
         .store
-        .recorded_fixed(origin.actor.clone(), request_id.to_owned())
+        .recorded_change(origin.actor.clone(), request_id)
         .await
-        .ok()
-        .flatten()
+        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))
+}
+
+/// A replay is checked against the roster as the first attempt saw it, not
+/// as it is now: a member who has since lost the bossing role, or a channel
+/// no longer watched, must not turn a replay into a 422. The scheduler still
+/// compares the request digest, so a different request under the key is
+/// `idempotency_mismatch`.
+fn as_first_seen(ctx: &mut WriteContext, request: &FixedRequest) {
+    for id in &request.participants {
+        let id = id.trim();
+        if ctx
+            .directory
+            .get(id)
+            .is_none_or(|member| !member.has_role || member.is_bot)
+        {
+            let existing = ctx.directory.get(id).cloned().unwrap_or_default();
+            ctx.directory.upsert(Member {
+                user_id: id.to_owned(),
+                has_role: true,
+                is_bot: false,
+                ..existing
+            });
+        }
+    }
+    ctx.directory.watch(&request.channel_id);
+}
+
+/// The timing a recorded create made.
+fn created_id(record: &ChangeRecord) -> Option<String> {
+    record
+        .rows
+        .iter()
+        .find_map(|row| match (&row.key, &row.before) {
+            (RowKey::FixedRun(id), None) => Some(id.clone()),
+            _ => None,
+        })
 }
 
 pub async fn create(
@@ -158,7 +197,11 @@ pub async fn create(
     let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
-    let (ctx, profiles) = write_context(state).await?;
+    let first = recorded(state, &origin).await?;
+    let (mut ctx, profiles) = write_context(state).await?;
+    if first.is_some() {
+        as_first_seen(&mut ctx, &request);
+    }
     let timing = checked(state, &request, &ctx.directory)?;
     // Discord sessions own what they create; other sign-ins name no Discord user.
     let owner_id = match &session.actor {
@@ -177,8 +220,10 @@ pub async fn create(
     };
     let fixed_id = match state.writer.add_fixed(origin.clone(), new, &ctx).await {
         Ok(id) => id,
-        Err(SchedulerError::AlreadyApplied { .. }) => created_by(state, &origin)
-            .await
+        Err(SchedulerError::AlreadyApplied { .. }) => recorded(state, &origin)
+            .await?
+            .as_ref()
+            .and_then(created_id)
             .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?,
         Err(error) => return Err(scheduler(error)),
     };
@@ -205,9 +250,21 @@ pub async fn update(
     body: Result<Json<FixedRequest>, JsonRejection>,
 ) -> Reply {
     let Json(request) = body.map_err(bad_body)?;
+    // The week version the screen loaded: without it a stale full-body edit
+    // would silently revert fields someone else changed (user decision).
+    let version = request.version.ok_or_else(|| {
+        Refusal::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "version_required",
+            "Send the week version the timing was loaded at.",
+        )
+    })?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
-    let (ctx, profiles) = write_context(state).await?;
+    let (mut ctx, profiles) = write_context(state).await?;
+    if recorded(state, &origin).await?.is_some() {
+        as_first_seen(&mut ctx, &request);
+    }
     let timing = checked(state, &request, &ctx.directory)?;
     let snapshot = state
         .store
@@ -269,7 +326,7 @@ pub async fn update(
         state.store.as_ref(),
         BlameTarget::FixedRun(fixed_id.clone()),
         &fields,
-        request.version,
+        Some(version),
         &Explicit {
             expect: request.expect,
             overrides: request.overrides,
@@ -304,6 +361,24 @@ pub async fn retire(
 ) -> Reply {
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
+    // Replays are recognised here, not by the scheduler: its retire digest
+    // names the materialised weeks, which move at the weekly reset, so a
+    // retry after it would otherwise read as a different request.
+    if let Some(first) = recorded(state, &origin).await? {
+        let retired_this = first.rows.iter().any(|row| {
+            row.key == RowKey::FixedRun(fixed_id.clone())
+                && row.before.is_some()
+                && row.after.is_none()
+        });
+        return if retired_this {
+            // The first attempt's count is not recorded; the replay reports none left.
+            Ok(Json(Retired { cancelled: 0 }).into_response())
+        } else {
+            Err(scheduler(SchedulerError::IdempotencyMismatch {
+                seq: first.seq,
+            }))
+        };
+    }
     let (ctx, _) = write_context(state).await?;
     let exists = state
         .store

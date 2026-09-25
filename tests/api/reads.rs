@@ -151,7 +151,11 @@ fn write(root: &Path, relative: &str) {
     std::fs::write(path, b"art").unwrap();
 }
 
-async fn seed(store: &SqliteStore) {
+/// `reset` past midnight shifts each seeded week start by the same amount.
+async fn seed(store: &SqliteStore, reset: NaiveTime) {
+    let shift = reset - NaiveTime::MIN;
+    let this_week = || this_week() + shift;
+    let next_week = || next_week() + shift;
     let mut alice = profile("1001", "Alice", true);
     alice.aliases = vec!["ali".into()];
     alice.reply_style = Some("terse".into());
@@ -338,6 +342,11 @@ async fn seed(store: &SqliteStore) {
 
 impl Reads {
     pub async fn new() -> Self {
+        Self::with_reset(NaiveTime::MIN).await
+    }
+
+    /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
+    pub async fn with_reset(reset: NaiveTime) -> Self {
         let dir = TempDir::new();
         let store = Arc::new(
             SqliteStore::open(&SqliteStoreConfig {
@@ -347,7 +356,7 @@ impl Reads {
             .await
             .unwrap(),
         );
-        seed(&store).await;
+        seed(&store, reset).await;
 
         let fixture = Fixture::new();
         // Mixed case on purpose: Linux CI is case-sensitive.
@@ -388,7 +397,7 @@ impl Reads {
                     countdowns: vec![60, 15],
                 },
                 Weekday::Thu,
-                NaiveTime::MIN,
+                reset,
             ),
             catalog: Arc::new(catalog()),
             channels: Arc::new(StaticChannels(vec![

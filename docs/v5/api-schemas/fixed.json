@@ -43,6 +43,49 @@
       }
     },
     "FixedRows": { "type": "array", "items": { "$ref": "#/$defs/FixedRow" } },
+    "FixedRequest": {
+      "description": "Request body of `POST /api/admin/fixed` and `PATCH /api/admin/fixed/{id}` (the whole form). `version` is the week version the form was loaded at: required by PATCH (else 422 `version_required`), ignored by POST. `expect`/`override` follow admin-api.md \"Edit preconditions\".",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weekday", "time", "bosses", "participants", "channel_id", "note"],
+      "properties": {
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "time": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "bosses": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "channel_id": { "type": "string" },
+        "note": { "type": ["string", "null"] },
+        "decisions": {
+          "type": "object",
+          "additionalProperties": { "enum": ["update", "keep"] }
+        },
+        "version": { "type": "integer", "minimum": 0 },
+        "expect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "seen"],
+            "properties": {
+              "field": { "type": "string" },
+              "seen": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        },
+        "override": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seq", "hash"],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 0 },
+              "hash": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "FixedRetired": {
       "description": "`DELETE /api/admin/fixed/{id}`: how many live runs were cancelled.",
       "type": "object",

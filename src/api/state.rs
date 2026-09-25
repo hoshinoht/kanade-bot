@@ -20,8 +20,8 @@ use crate::{
         catalog::BossTable,
         drafts::{DraftKind, DraftStatus, ProposalStore},
         history::{
-            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRef,
-            RowKey, changed_fields,
+            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
+            ChangeRef, changed_fields,
         },
         members::{MemberProfile, MemberStore, PortalEdit},
         schedule::{SchedulePolicy, ScheduleSnapshot},
@@ -51,7 +51,12 @@ pub trait ReadStore: Send + Sync {
         version: u64,
     ) -> ReadFuture<'_, Option<u64>>;
     /// The weekly timing a recorded request created (idempotent create replays).
-    fn recorded_fixed(&self, actor: Actor, request_id: String) -> ReadFuture<'_, Option<String>>;
+    /// The change recorded for the actor's request id (an idempotent replay).
+    fn recorded_change(
+        &self,
+        actor: Actor,
+        request_id: String,
+    ) -> ReadFuture<'_, Option<ChangeRecord>>;
     /// Portal member edits bypass the scheduler (members are not history rows).
     fn edit_member(
         &self,
@@ -125,23 +130,16 @@ where
         })
     }
 
-    fn recorded_fixed(&self, actor: Actor, request_id: String) -> ReadFuture<'_, Option<String>> {
+    fn recorded_change(
+        &self,
+        actor: Actor,
+        request_id: String,
+    ) -> ReadFuture<'_, Option<ChangeRecord>> {
         Box::pin(async move {
             let Some(recorded) = self.recorded_request(&actor, &request_id).await? else {
                 return Ok(None);
             };
-            Ok(self
-                .load_change(recorded.committed.seq)
-                .await?
-                .and_then(|record| {
-                    record
-                        .rows
-                        .into_iter()
-                        .find_map(|row| match (row.key, row.before) {
-                            (RowKey::FixedRun(id), None) => Some(id),
-                            _ => None,
-                        })
-                }))
+            self.load_change(recorded.committed.seq).await
         })
     }
 
