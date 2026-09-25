@@ -297,6 +297,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, `/say`, staff-only `/nick`,
   `/debug ping|clear_test`, with v4's permissions and wording; `/bot`, `/pingtime`,
   `/debug status` and `/debug extract` are dropped in favour of the admin app.
+- v5: boss names and difficulty pills no longer run together: Reminders lists one boss per
+  line and inline boss tags keep a gap between bosses.
 - v5: design experiments (on by default; `?experiments=off` or the command palette turns
   them off): a small morphing loading indicator on buttons while they save, sign in,
   reload or decide, and a gently waving progress bar on rescans; both stay still under

@@ -51,6 +51,11 @@
   white-space: normal;
 }
 
+// Inline runs of tags (no list around them) still need a gap between bosses.
+.boss + .boss {
+  margin-inline-start: 0.6rem;
+}
+
 .bosslist {
   list-style: none;
   display: grid;

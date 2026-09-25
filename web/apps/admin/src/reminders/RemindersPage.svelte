@@ -63,7 +63,7 @@
           <tr>
             <td class="mono">{row.at}</td>
             <td class="mono">{row.kind}</td>
-            <th scope="row">{#each row.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</th>
+            <th scope="row"><ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} short /></li>{/each}</ul></th>
             <td><a class="id" href="/reminders?run={encodeURIComponent(row.run_id)}">#{row.run_short_id}</a></td>
             <td><span class="chips">{#each row.party as name, i (i)}<span class="chip">{name}</span>{/each}</span></td>
             <td>
