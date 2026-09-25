@@ -131,7 +131,7 @@ describe('reasoning', () => {
     expect(isReasoningValid(byId('x'), 'high')).toBe(true);
     expect(isReasoningValid(byId('x'), 'medium')).toBe(false);
     expect(isReasoningValid(byId('n'), 'medium')).toBe(true);
-    expect(isReasoningValid(byId('n'), 'minimal')).toBe(false);
+    expect(isReasoningValid(byId('n'), 'minimal')).toBe(true);
     expect(isReasoningValid(byId('d'), 'low')).toBe(false);
     expect(isReasoningValid(undefined, 'low')).toBe(false);
   });
@@ -143,8 +143,10 @@ describe('reasoning', () => {
     expect(reasoningChoices('chat', byId('c'), 'high').map((c) => c.value)).toEqual(['off', 'low', 'medium']);
     // Off is trivially valid everywhere.
     expect(reasoningChoices('chat', byId('c'), 'off')[0]).toEqual({ value: '', label: 'Same as extraction' });
-    // A model that decides takes v4's low/medium/high.
-    expect(reasoningChoices('rewrite', byId('n'), 'medium').map((c) => c.value)).toEqual(['', 'off', 'low', 'medium', 'high']);
+    // `null` efforts: Kanata restricts nothing, so every level is offered (and inherit fits any).
+    expect(reasoningChoices('rewrite', byId('n'), 'medium').map((c) => c.value)).toEqual(['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(reasoningChoices('rewrite', byId('n'), 'xhigh')[0]).toEqual({ value: '', label: 'Same as extraction' });
+    expect(isReasoningValid(byId('n'), 'max')).toBe(true);
     // Extraction never inherits.
     expect(reasoningChoices('extraction', byId('x'), 'low').map((c) => c.value)).toEqual(['off', 'low', 'high']);
     // Unknown aliases keep a marked current value instead of a blank box.

@@ -3,8 +3,11 @@
   import type { ChatTurn } from '@kanade/api-types';
   import { Tabs, type TabItem } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
+  import LogTime from '../logs/LogTime.svelte';
+  import Mentions from '../names/Mentions.svelte';
+  import Name from '../names/Name.svelte';
 
-  let { id }: { id: string } = $props();
+  let { id, timeZone = 'Asia/Kuala_Lumpur' }: { id: string; timeZone?: string } = $props();
   const turn = $derived(new Resource<ChatTurn>(`/api/admin/chat/${encodeURIComponent(id)}`));
   $effect(() => void turn.load());
 
@@ -21,9 +24,9 @@
 
 <div class="page-head">
   <div>
-    <p class="eyebrow"><a href="/chat">Chat</a> · {turn.data?.member.name ?? ''}</p>
-    <h1>{turn.data?.at ?? 'Interaction'}</h1>
-    {#if turn.data}<p class="note">{turn.data.model} · {turn.data.channel} · {turn.data.outcome}</p>{/if}
+    <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member.id} name={turn.data.member.name} />{/if}</p>
+    <h1>{#if turn.data}<LogTime at={turn.data.at} {timeZone} />{:else}Interaction{/if}</h1>
+    {#if turn.data}<p class="note">{turn.data.model} · <Name kind="channel" id={turn.data.channel_id} name={turn.data.channel} /> · {turn.data.outcome}</p>{/if}
   </div>
 </div>
 
@@ -35,9 +38,9 @@
     {#snippet panel(which)}
       {#if which === 'conversation'}
         <h3 class="pane__section">What they asked</h3>
-        <p>{data.asked}</p>
+        <p><Mentions text={data.asked} asked /></p>
         <h3 class="pane__section">What it said</h3>
-        <p>{data.said || '— nothing was sent —'}</p>
+        <p>{#if data.said}<Mentions text={data.said} />{:else}— nothing was sent —{/if}</p>
       {:else if which === 'tools'}
         {#if data.tools.length}
           <table>

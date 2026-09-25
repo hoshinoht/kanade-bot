@@ -172,8 +172,6 @@ const MODELS: [ModelInfo; 6] = [
 /// Key-level admission for this deployment's key (synthetic). The key is
 /// shared with the owner's other clients, so its limits are sized for both.
 const KEY_MAX_IN_FLIGHT: u32 = 8;
-/// Upper bound on one row's permits; larger values are refused, not clamped.
-const MAX_PERMITS: u64 = 64;
 const KEY_SHARED: bool = true;
 
 /// `leaves_homelab`, failing closed: external trust, an unknown zone, or the
@@ -189,7 +187,8 @@ const PERSONAS: [(&str, &str, &str); 3] = [
 ];
 
 /// Reply profiles live as files under `config/personas/profiles/`; the app
-/// shows them read-only and only publishes them or assigns them to roles.
+/// shows them read-only. Kanade's voice ends in a period and its summary is
+/// Markdown, as a real file's can be.
 const PROFILES: [(&str, &str, bool, &str, &str); 4] = [
     (
         "default",
@@ -209,8 +208,8 @@ const PROFILES: [(&str, &str, bool, &str, &str); 4] = [
         "kanade",
         "Kanade",
         true,
-        "Cheeky and smug, earnest underneath",
-        "Teases lightly in the persona's voice while keeping every schedule fact exact.",
+        "comedy.",
+        "## Kanade\n- **Teases** lightly in the persona's voice\n- keeps every *schedule* fact exact",
     ),
     (
         "sparkly",
@@ -407,12 +406,16 @@ fn effective_mode(c: &Config) -> &str {
 
 /// Whether `effort` is a legal reasoning level for this alias: `off` always
 /// is; a model that decides for itself takes v4's low/medium/high.
+/// Every stored reasoning level after `off`, in the server's order.
+const ALL_EFFORTS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
 fn valid_reasoning(info: &ModelInfo, effort: &str) -> bool {
     if effort == "off" {
         return true;
     }
     match info.efforts {
-        None => matches!(effort, "low" | "medium" | "high"),
+        // `null`: Kanata restricts nothing, so every level is accepted.
+        None => ALL_EFFORTS.contains(&effort),
         Some(published) => published.contains(&effort),
     }
 }
@@ -574,58 +577,11 @@ impl Store {
                 next.public_portal = v;
             }
         }
-        if let Some(p) = patch.get("persona") {
-            if let Some(active) = p.get("active").and_then(Value::as_str) {
-                if !PERSONAS.iter().any(|(k, _, _)| *k == active) {
-                    return Err(bad("No such persona in the catalog."));
-                }
-                next.persona = active.into();
+        if let Some(active) = patch.pointer("/persona/active").and_then(Value::as_str) {
+            if !PERSONAS.iter().any(|(k, _, _)| *k == active) {
+                return Err(bad("No such persona in the catalog."));
             }
-            if let Some(list) = p.get("visibility").and_then(Value::as_array) {
-                for item in list {
-                    let key = item
-                        .get("key")
-                        .and_then(Value::as_str)
-                        .filter(|k| PROFILES.iter().any(|(known, _, _, _, _)| *known == *k));
-                    let public = item.get("public").and_then(Value::as_bool);
-                    let (Some(key), Some(public)) = (key, public) else {
-                        return Err(bad(
-                            "Each visibility change needs a known profile and true or false.",
-                        ));
-                    };
-                    if let Some(slot) = next.profile_visibility.iter_mut().find(|v| v.key == key) {
-                        slot.public = public;
-                    }
-                }
-            }
-            if let Some(list) = p.get("role_profiles").and_then(Value::as_array) {
-                let mut roles = Vec::new();
-                for item in list {
-                    let role_id = item
-                        .get("role_id")
-                        .and_then(Value::as_str)
-                        .filter(|r| !r.is_empty() && r.chars().all(|c| c.is_ascii_digit()));
-                    let profile = item
-                        .get("profile")
-                        .and_then(Value::as_str)
-                        .filter(|p| PROFILES.iter().any(|(known, _, _, _, _)| *known == *p));
-                    let (Some(role_id), Some(profile)) = (role_id, profile) else {
-                        return Err(bad(
-                            "Each assignment needs a numeric Discord role id and a known profile.",
-                        ));
-                    };
-                    let role_name = item
-                        .get("role_name")
-                        .and_then(Value::as_str)
-                        .unwrap_or(role_id);
-                    roles.push(RoleProfile {
-                        role_id: role_id.into(),
-                        role_name: role_name.into(),
-                        profile: profile.into(),
-                    });
-                }
-                next.role_profiles = roles;
-            }
+            next.persona = active.into();
         }
         if let Some(p) = patch.get("models") {
             let roles = p.get("roles");
@@ -668,8 +624,8 @@ impl Store {
                         return Err(bad("Extraction sets its own reasoning; it cannot inherit."));
                     }
                 } else if !valid_reasoning(info, level) {
-                    let offered = match info.efforts {
-                        None => vec!["off", "low", "medium", "high"],
+                    let offered: Vec<&str> = match info.efforts {
+                        None => std::iter::once("off").chain(ALL_EFFORTS).collect(),
                         Some(published) => std::iter::once("off")
                             .chain(published.iter().copied())
                             .collect(),
@@ -738,48 +694,6 @@ impl Store {
                 notices.push(format!(
                     "{role} reasoning reset to off: {alias} does not publish {from}."
                 ));
-            }
-            if let Some(list) = p.get("groups").and_then(Value::as_array) {
-                let mut groups = Vec::new();
-                for (i, g) in list.iter().enumerate() {
-                    let row = i + 1;
-                    let m = g
-                        .get("model")
-                        .and_then(Value::as_str)
-                        .filter(|m| !m.is_empty() && model(m).is_some());
-                    let name = g
-                        .get("group")
-                        .and_then(Value::as_str)
-                        .filter(|n| !n.is_empty());
-                    let permits = g.get("permits").and_then(Value::as_u64);
-                    let Some(m) = m else {
-                        return Err(MoveError::invalid(format!(
-                            "Row {row}: each row needs a listed model."
-                        )));
-                    };
-                    let Some(name) = name else {
-                        return Err(MoveError::invalid(format!(
-                            "Row {row}: every row needs a group name."
-                        )));
-                    };
-                    let Some(permits) = permits else {
-                        // A cleared number input arrives as null.
-                        return Err(MoveError::invalid(format!(
-                            "Row {row}: permits must be a whole number."
-                        )));
-                    };
-                    if permits > MAX_PERMITS {
-                        return Err(MoveError::invalid(format!(
-                            "Row {row}: permits are at most {MAX_PERMITS}."
-                        )));
-                    }
-                    groups.push(Group {
-                        model: m.into(),
-                        group: name.into(),
-                        permits: permits as u32,
-                    });
-                }
-                next.groups = groups;
             }
             // The startup check is also the save check: nothing that would stop the bot is saved.
             let errors: Vec<String> = capacity_check(&next)
@@ -861,6 +775,17 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
         for (key, value) in body {
             if !keys.contains(&key.as_str()) {
                 return Err(bad(&format!("{section}.{key}")));
+            }
+            // As the server: contracted as editable, but it cannot store them yet.
+            if matches!(
+                (section.as_str(), key.as_str()),
+                ("models", "groups") | ("persona", "role_profiles" | "visibility")
+            ) {
+                return Err(MoveError::Coded(
+                    422,
+                    "read_only",
+                    format!("{section}.{key}: saving it is not supported yet."),
+                ));
             }
             match (section.as_str(), key.as_str()) {
                 ("chatbot", "member_rate" | "guild_rate") => {
@@ -944,121 +869,46 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn capacity_follows_per_alias_admission() {
+    fn groups_role_profiles_and_visibility_are_read_only() {
         let mut s = store();
-        // extract admits 1: a second permit is refused like startup.
-        let over = json!({ "models": { "groups": [
-            { "model": "kanata/extract", "group": "extract", "permits": 2 },
-            { "model": "kanata/chat", "group": "chat", "permits": 4 },
-            { "model": "kanata/rewrite-small", "group": "rewrite", "permits": 1 },
-        ] } });
-        let err = s.patch_config(&over).unwrap_err();
-        assert!(err.to_string().contains("admits at most 1"), "{err}");
-        // Two identical zero-permit rows name their rows, not one shared message.
-        let zeroes = json!({ "models": { "groups": [
-            { "model": "kanata/extract", "group": "extract", "permits": 0 },
-            { "model": "kanata/extract", "group": "extract", "permits": 0 },
-        ] } });
-        let err = s.patch_config(&zeroes).unwrap_err().to_string();
-        assert!(err.contains("Row 1") && err.contains("Row 2"), "{err}");
-        // One alias in two groups, and twice in one group, are both refused.
-        let split = json!({ "models": { "groups": [
-            { "model": "kanata/chat", "group": "chat", "permits": 2 },
-            { "model": "kanata/chat", "group": "chat-2", "permits": 1 },
-            { "model": "kanata/extract", "group": "extract", "permits": 1 },
-            { "model": "kanata/rewrite-small", "group": "rewrite", "permits": 1 },
-        ] } });
-        assert!(s.patch_config(&split).is_err());
-        let twice = json!({ "models": { "groups": [
-            { "model": "kanata/chat", "group": "chat", "permits": 2 },
-            { "model": "kanata/chat", "group": "chat", "permits": 1 },
-            { "model": "kanata/extract", "group": "extract", "permits": 1 },
-            { "model": "kanata/rewrite-small", "group": "rewrite", "permits": 1 },
-        ] } });
-        assert!(s.patch_config(&twice).is_err());
-        // A cleared permits input arrives as null.
-        let nulls = json!({ "models": { "groups": [
-            { "model": "kanata/extract", "group": "extract", "permits": null },
-        ] } });
-        let err = s.patch_config(&nulls).unwrap_err().to_string();
-        assert!(err.contains("Row 1") && err.contains("permits"), "{err}");
-        // An unknown alias and an empty group name name their rows.
-        let unknown = json!({ "models": { "groups": [
-            { "model": "kanata/gone", "group": "extract", "permits": 1 },
-        ] } });
+        for patch in [
+            json!({ "models": { "groups": [] } }),
+            json!({ "persona": { "role_profiles": [] } }),
+            json!({ "persona": { "visibility": [{ "key": "sparkly", "public": true }] } }),
+        ] {
+            match s.patch_config(&patch) {
+                Err(crate::mock::MoveError::Coded(422, "read_only", _)) => {}
+                Err(other) => panic!("{patch}: wanted read_only, got {other}"),
+                Ok(_) => panic!("{patch}: saved"),
+            }
+        }
+        // The server's startup check still describes the seeded groups.
+        let view = s.config_view();
         assert!(
-            s.patch_config(&unknown)
-                .unwrap_err()
-                .to_string()
-                .contains("Row 1")
+            !view["models"]["capacity_check"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         );
-        let empty = json!({ "models": { "groups": [
-            { "model": "kanata/extract", "group": "", "permits": 1 },
-        ] } });
-        assert!(
-            s.patch_config(&empty)
-                .unwrap_err()
-                .to_string()
-                .contains("Row 1")
-        );
-    }
-
-    #[test]
-    fn role_without_a_group_warns_but_saves() {
-        let mut s = store();
-        let view = s
-            .patch_config(&json!({ "models": { "groups": [
-                { "model": "kanata/extract", "group": "extract", "permits": 1 },
-                { "model": "kanata/chat", "group": "chat", "permits": 2 },
-                { "model": "kanata/chat-cloud", "group": "chat", "permits": 2 },
-            ] } }))
-            .ok()
-            .unwrap();
-        let warnings: Vec<&str> = view["models"]["capacity_check"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|c| c["level"] == "warning")
-            .filter_map(|c| c["message"].as_str())
-            .collect();
-        assert!(
-            warnings
-                .iter()
-                .any(|m| m.contains("rewrite") && m.contains("no capacity group")),
-            "{warnings:?}"
-        );
-    }
-
-    #[test]
-    fn key_sum_over_the_key_limit_is_refused() {
-        let mut s = store();
-        let err = s
-            .patch_config(&json!({ "models": { "groups": [
-                { "model": "kanata/extract", "group": "extract", "permits": 1 },
-                { "model": "kanata/chat", "group": "chat", "permits": 4 },
-                { "model": "kanata/chat-cloud", "group": "chat-2", "permits": 4 },
-                { "model": "kanata/rewrite-small", "group": "rewrite", "permits": 1 },
-            ] } }))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("key admits 8"), "{err}");
     }
 
     #[test]
     fn reasoning_resolution_follows_published_efforts() {
         let mut s = store();
-        // The model-decides alias takes v4's low/medium/high, not minimal.
-        let ok = s
-            .patch_config(&json!({ "models": { "roles": { "rewrite": { "alias": "kanata/legacy", "reasoning": "high" } } } }))
-            .ok()
-            .unwrap();
-        assert_eq!(ok["models"]["roles"]["rewrite"]["reasoning"], "high");
+        // `null` efforts: Kanata restricts nothing, so every level is accepted.
+        for level in ["minimal", "high", "xhigh", "max"] {
+            let ok = s
+                .patch_config(&json!({ "models": { "roles": { "rewrite": { "alias": "kanata/legacy", "reasoning": level } } } }))
+                .ok()
+                .unwrap();
+            assert_eq!(ok["models"]["roles"]["rewrite"]["reasoning"], level);
+        }
         assert!(
             s.patch_config(
-                &json!({ "models": { "roles": { "rewrite": { "reasoning": "minimal" } } } })
+                &json!({ "models": { "roles": { "rewrite": { "reasoning": "ultra" } } } })
             )
             .is_err(),
-            "model-decides takes low/medium/high"
+            "not a level"
         );
         // Inherit is fine while extraction's medium is published for chat…
         let ok = s
@@ -1133,18 +983,6 @@ mod tests {
     }
 
     #[test]
-    fn permits_over_the_bound_are_refused_not_clamped() {
-        let mut s = store();
-        let err = s
-            .patch_config(&json!({ "models": { "groups": [
-                { "model": "kanata/extract", "group": "extract", "permits": 65 },
-            ] } }))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("Row 1") && err.contains("at most 64"), "{err}");
-    }
-
-    #[test]
     fn unknown_and_readonly_patch_keys_are_422() {
         let mut s = store();
         for patch in [
@@ -1160,32 +998,20 @@ mod tests {
     }
 
     #[test]
-    fn profile_visibility_and_reload() {
-        let mut s = store();
-        let view = s
-            .patch_config(
-                &json!({ "persona": { "visibility": [{ "key": "sparkly", "public": true }] } }),
-            )
-            .ok()
-            .unwrap();
+    fn profiles_read_and_reload() {
+        let s = store();
+        let view = s.config_view();
         let sparkly = view["persona"]["profiles"]
             .as_array()
             .unwrap()
             .iter()
             .find(|p| p["key"] == "sparkly")
             .unwrap();
-        assert_eq!(sparkly["public"], true);
         assert!(sparkly["voice"].as_str().is_some_and(|v| !v.is_empty()));
         assert!(
             sparkly["prompt_summary"]
                 .as_str()
                 .is_some_and(|v| !v.is_empty())
-        );
-        assert!(
-            s.patch_config(
-                &json!({ "persona": { "visibility": [{ "key": "nope", "public": true }] } })
-            )
-            .is_err()
         );
         let reloaded = s.reload_profiles();
         assert!(

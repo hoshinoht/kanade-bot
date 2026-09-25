@@ -8,6 +8,7 @@
   import { BossTag, Modal, dayLabel } from '@kanade/ui';
   import BossGrid from '../bosses/BossGrid.svelte';
   import { send } from '../resource.svelte';
+  import { memberLabel } from '../names/directory.svelte';
   import type { Week } from '@kanade/api-types';
 
   let {
@@ -179,7 +180,7 @@
           {#each roster as member (member.id)}
             <label class="chip">
               <input type="checkbox" value={member.id} bind:group={party} />
-              {member.name}{#if roster.filter((m) => m.name === member.name).length > 1}<span class="chip__id">#{member.id}</span>{/if}
+              {memberLabel(roster, member.id)}
             </label>
           {/each}
         </div>

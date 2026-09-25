@@ -36,7 +36,7 @@
       .filter(Boolean)
       .map(Number);
     saving = true;
-    error = await save({ pings: { day_of_ping_time: time.trim(), countdown_minutes: minutes } }, 'Pings saved; unsent pings were re-placed.');
+    error = await save({ pings: { day_of_ping_time: time.trim(), countdown_minutes: minutes } }, 'Pings saved; they take effect when the bot restarts.');
     saving = false;
     badTime = error.includes('HH:MM');
     badCountdowns = !badTime && error.includes('Countdown');
@@ -50,4 +50,4 @@
   <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
 </form>
 <p class="field__error" role="alert">{error}</p>
-<p class="note" id="{uid}-note">Changing either re-places every ping that has not fired yet.</p>
+<p class="note" id="{uid}-note">The server applies pings when the bot restarts; then every ping that has not fired yet is re-placed.</p>

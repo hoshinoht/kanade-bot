@@ -1,6 +1,7 @@
 import type { Channel, Identity, MemberRow, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
+import { directory } from './names/directory.svelte';
 import type { Slot } from './planner/keyboardMove';
 
 const POLL_MS = 15_000;
@@ -151,6 +152,10 @@ export class AdminWeek {
     this.members = members ?? [];
     this.channels = channels ?? [];
     this.identity = identity;
+    // One lookup for every Discord name the pages show.
+    directory.setMembers(this.members);
+    directory.setChannels(this.channels);
+    directory.setIdentity(identity);
     this.session = session;
   }
 

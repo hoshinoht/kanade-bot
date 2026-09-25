@@ -3,6 +3,7 @@
   import type { AccessReport } from '@kanade/api-types';
   import { Icon, type Toaster } from '@kanade/ui';
   import { Resource, send } from '../resource.svelte';
+  import Name from '../names/Name.svelte';
 
   let { toaster }: { toaster: Toaster } = $props();
 
@@ -59,7 +60,7 @@
           {#each data.rows as row (row.id)}
             <tr>
               <th scope="row">
-                {row.name}
+                <Name kind="channel" id={row.id} name={row.name} />
                 {#if row.digest}<span class="chip">digest</span>{/if}
                 {#if !row.watched && !row.digest}<span class="chip chip--waiting">not watched</span>{/if}
               </th>

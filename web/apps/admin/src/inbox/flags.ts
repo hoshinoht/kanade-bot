@@ -1,4 +1,5 @@
 import type { Proposal, ProposalFlag } from '@kanade/api-types';
+import { directory } from '../names/directory.svelte';
 
 /** Badge words; each badge is text, never colour alone. */
 export const FLAG_LABEL: Record<ProposalFlag, string> = {
@@ -33,8 +34,9 @@ export const title = (p: Proposal) => `${p.kind_label} — ${p.bosses.map((b) =>
 
 /** Who it came from: the member for requests, the first person quoted for the extractor. */
 export function who(p: Proposal): string {
-  if (p.self_service) return p.self_service.member.name;
-  return p.evidence.find((e) => !e.missing)?.author ?? p.channel ?? 'the extractor';
+  if (p.self_service) return directory.label('member', p.self_service.member.id, p.self_service.member.name);
+  const author = p.evidence.find((e) => !e.missing)?.author;
+  return author ? directory.label('member', '', author) : (p.channel ?? 'the extractor');
 }
 
 /** Why approve is unavailable, in words; empty when it is allowed. Conflicts always block. */

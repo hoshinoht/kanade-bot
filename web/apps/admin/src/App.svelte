@@ -151,7 +151,7 @@
         return { key: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
       case 'extraction':
       case 'chat-interaction':
-        return { id: params.id ?? '' };
+        return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur' };
       case 'reminders':
         return { run: router.query.get('run') ?? '' };
       default:

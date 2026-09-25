@@ -11,6 +11,11 @@
   const people = (run: R): { party: string; participants: Participant[] } | null =>
     'participants' in run ? (run as R & { party: string; participants: Participant[] }) : null;
   const withPeople = $derived(week.runs.some((r) => people(r) !== null));
+  // Twins read "Ren (2)": their place among same-named members, never the id.
+  const twin = (all: Participant[], p: Participant): string | undefined => {
+    const twins = all.filter((o) => o.name === p.name);
+    return twins.length > 1 ? `${p.name} (${twins.indexOf(p) + 1})` : undefined;
+  };
 </script>
 
 <!-- Bosses lead each row as its header (HPK); the machine id never shows. -->
@@ -49,7 +54,7 @@
                 <span class="party mono">{detail.party}</span>
                 <span class="chips">
                   {#each detail.participants as p (p.id)}
-                    <AnswerChip participant={p} disambiguate={detail.participants.filter((o) => o.name === p.name).length > 1} />
+                    <AnswerChip participant={p} label={twin(detail.participants, p)} />
                   {/each}
                 </span>
               {/if}

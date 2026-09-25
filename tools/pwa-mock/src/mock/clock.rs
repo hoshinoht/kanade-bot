@@ -80,6 +80,20 @@ pub fn parse_instant(text: &str) -> Option<i64> {
     Some(days_from_civil(y, mo as u32, d as u32) * 86_400 + h * 3600 + mi * 60 + s)
 }
 
+/// An absolute guild-local minute as the server writes log instants
+/// (`2026-09-23T16:34:00Z`, UTC).
+pub fn iso_z(local_minute: i64) -> String {
+    let secs = local_minute * 60 - TZ_OFFSET_SECS;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    format!(
+        "{}T{:02}:{:02}:{:02}Z",
+        iso_date(days),
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
 /// Local day number (days since 1970-01-01) and minute of that day.
 pub fn local_now() -> (i64, i64) {
     let local = now_secs() + TZ_OFFSET_SECS;

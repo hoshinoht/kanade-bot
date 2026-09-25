@@ -7,6 +7,7 @@
 <script lang="ts">
   import type { LogFacets, Member, Week } from '@kanade/api-types';
   import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, preset, type LogFilter, type Preset } from './filters';
+  import { directory, memberLabel } from '../names/directory.svelte';
 
   let {
     filter,
@@ -29,8 +30,9 @@
 
   const set = (patch: Partial<LogFilter>) => onchange({ ...filter, ...patch });
   const count = $derived(activeCount({ ...filter, q: '' }));
-  const channelName = (id: string) => facets?.channels.find((c) => c.id === id)?.name ?? id;
-  const memberName = (id: string) => members.find((m) => m.id === id)?.name ?? id;
+  // Filter chips name what they filter by, never the raw id.
+  const channelName = (id: string) => directory.label('channel', id, facets?.channels.find((c) => c.id === id)?.name ?? '');
+  const memberName = (id: string) => memberLabel(members, id);
 
   type Chip = { key: string; label: string; clear: Partial<LogFilter> };
   const chips = $derived.by(() => {
@@ -96,14 +98,14 @@
         ><span>Channel</span>
         <select value={filter.channel} onchange={(e) => set({ channel: e.currentTarget.value })}>
           <option value="">every channel</option>
-          {#each facets?.channels ?? [] as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+          {#each facets?.channels ?? [] as c (c.id)}<option value={c.id}>{directory.label('channel', c.id, c.name)}</option>{/each}
         </select>
       </label>
       <label class="field"
         ><span>Member</span>
         <select value={filter.member} onchange={(e) => set({ member: e.currentTarget.value })}>
           <option value="">anyone</option>
-          {#each members as m (m.id)}<option value={m.id}>{m.name}{members.filter((x) => x.name === m.name).length > 1 ? ` #${m.id}` : ''}</option>{/each}
+          {#each members as m (m.id)}<option value={m.id}>{memberLabel(members, m.id)}</option>{/each}
         </select>
       </label>
       {#if chat}

@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { directory } from '../names/directory.svelte';
+  import Mentions from '../names/Mentions.svelte';
+  import Name from '../names/Name.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import type { Extraction } from '@kanade/api-types';
   import { Tabs, type TabItem } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
+  import LogTime from '../logs/LogTime.svelte';
 
-  let { id }: { id: string } = $props();
+  let { id, timeZone = 'Asia/Kuala_Lumpur' }: { id: string; timeZone?: string } = $props();
   const call = $derived(new Resource<Extraction>(`/api/admin/extractions/${encodeURIComponent(id)}`));
   $effect(() => void call.load());
 
@@ -21,10 +25,10 @@
 <div class="page-head">
   <div>
     <p class="eyebrow"><a href="/extractions">Extractions</a> · #{call.data?.short_id ?? id}</p>
-    <h1>{call.data?.at ?? 'Extraction'}</h1>
+    <h1>{#if call.data}<LogTime at={call.data.at} {timeZone} />{:else}Extraction{/if}</h1>
     {#if call.data}
       <p class="note">
-        {call.data.model} · {call.data.channel ?? 'no channel'} ·
+        {call.data.model} · {#if call.data.channel_id}<Name kind="channel" id={call.data.channel_id} name={call.data.channel} />{:else}no channel{/if} ·
         {call.data.latency_ms !== null ? `${call.data.latency_ms.toLocaleString('en')} ms` : 'latency not recorded'}
       </p>
     {/if}
@@ -54,7 +58,7 @@
       {:else if which === 'chat'}
         <div class="evidence">
           {#each data.messages as m (m.id)}
-            <p class="evidence__line"><span class="evidence__who">{m.author}</span><span class="evidence__at">{m.at}</span><br /><span class="evidence__text">{m.content}</span></p>
+            <p class="evidence__line"><span class="evidence__who">{directory.label('member', '', m.author)}</span><span class="evidence__at"><LogTime at={m.at} {timeZone} /></span><br /><span class="evidence__text"><Mentions text={m.content} /></span></p>
           {/each}
         </div>
       {:else if which === 'prompt'}

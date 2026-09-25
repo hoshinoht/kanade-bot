@@ -160,7 +160,7 @@ impl Store {
             })
             .map(|c| {
                 json!({
-                    "id": c.id, "short_id": c.short_id, "at": Self::when(Self::hour_minute(c.hour)),
+                    "id": c.id, "short_id": c.short_id, "at": super::clock::iso_z(Self::hour_minute(c.hour)),
                     "model": c.model, "latency_ms": c.latency_ms, "messages": c.messages.len(),
                     "changes": c.amendments.len(), "channel": seed::channel(c.channel).map(|x| x.1),
                     "channel_id": c.channel, "error": c.error, "outcome": c.outcome,
@@ -192,7 +192,7 @@ impl Store {
             .messages
             .iter()
             .enumerate()
-            .map(|(i, (who, text))| json!({ "id": format!("{}-{i}", c.short_id), "author": seed::member_name(who).map_or("someone", |m| m.1), "at": Self::when(Self::hour_minute(c.hour) - 5 + i as i64), "content": text }))
+            .map(|(i, (who, text))| json!({ "id": format!("{}-{i}", c.short_id), "author": seed::member_name(who).map_or("someone", |m| m.1), "at": super::clock::iso_z(Self::hour_minute(c.hour) - 5 + i as i64), "content": text }))
             .collect();
         let prompt = format!(
             "System: You extract boss-schedule amendments from party chat. Reply with JSON only.\n\nFixed timings for {channel}: …\nThis week's runs: …\nRoster: …\n\nMessages:\n{lines}",
@@ -211,7 +211,7 @@ impl Store {
             json!({ "amendments": amendments, "summary": "…" })
         };
         Ok(json!({
-            "id": c.id, "short_id": c.short_id, "at": Self::when(Self::hour_minute(c.hour)), "model": c.model, "outcome": c.outcome,
+            "id": c.id, "short_id": c.short_id, "at": super::clock::iso_z(Self::hour_minute(c.hour)), "model": c.model, "outcome": c.outcome,
             "latency_ms": c.latency_ms, "channel": seed::channel(c.channel).map(|x| x.1), "channel_id": c.channel, "error": c.error,
             "prompt": prompt, "raw_response": raw.to_string(), "amendments": amendments, "messages": chat,
         }))

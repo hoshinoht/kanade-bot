@@ -58,7 +58,7 @@ for (const vp of VIEWPORTS) {
       await shot(page, `admin-config-access-${tag}`);
 
       for (const [section, name, ready] of [
-        ['models', 'admin-config-models', page.getByText(/Capacity groups/)],
+        ['models', 'admin-config-models', page.getByRole('heading', { name: 'Capacity groups' })],
         ['persona', 'admin-config-persona', page.getByText(/Reload profiles/)],
         ['self-service', 'admin-config-self-service', page.getByText(/pre-filled link to the public portal/)],
       ] as const) {

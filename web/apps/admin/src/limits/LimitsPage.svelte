@@ -10,6 +10,8 @@
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
   import { Tabs, Toaster, type TabItem } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
+  import { directory } from '../names/directory.svelte';
+  import Name from '../names/Name.svelte';
   import PaneWindow from '../pages/PaneWindow.svelte';
 
   let { toaster }: { toaster: Toaster } = $props();
@@ -144,10 +146,10 @@
           <tbody>
             {#each data.allowances as a (a.member.id)}
               <tr>
-                <th scope="row">{a.member.name}{#if a.staff} <span class="chip">staff</span>{/if}{#if a.override} <span class="chip">own allowance</span>{/if}</th>
+                <th scope="row"><Name kind="member" id={a.member.id} name={a.member.name} />{#if a.staff} <span class="chip">staff</span>{/if}{#if a.override} <span class="chip">own allowance</span>{/if}</th>
                 <td class="mono">{a.allowance ? `${a.allowance.count} per ${a.allowance.per_s}s` : 'exempt'}</td>
                 <td class="mono">{a.allowance ? (a.used ? `${a.used} used, ${a.allowance.count - a.used} left` : 'idle') : '—'}</td>
-                <td>{#if a.allowance && a.used}<button class="btn" type="button" onclick={() => void reset(a.member.id, a.member.name)} aria-label="Reset {a.member.name}'s window">Reset</button>{/if}</td>
+                <td>{#if a.allowance && a.used}<button class="btn" type="button" onclick={() => void reset(a.member.id, directory.label('member', a.member.id, a.member.name))} aria-label="Reset {directory.label('member', a.member.id, a.member.name)}'s window">Reset</button>{/if}</td>
               </tr>
             {/each}
           </tbody>

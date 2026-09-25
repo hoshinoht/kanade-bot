@@ -9,6 +9,8 @@
 <script lang="ts">
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import { AnswerChip, BossTag, Icon, Modal, StatusMark, dayLabel, runTitle } from '@kanade/ui';
+  import { directory, memberLabel } from './names/directory.svelte';
+  import Name from './names/Name.svelte';
   import BlamePanel from './sheet/BlamePanel.svelte';
   import { parseWhen } from './sheet/parseWhen';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
@@ -70,7 +72,8 @@
   });
   const arts = $derived(run ? run.bosses.filter((b) => b.art) : []);
   const addable = $derived(run ? members.filter((m) => !run.participants.some((p) => p.id === m.id)) : []);
-  const duplicate = (p: Participant) => (run?.participants.filter((o) => o.name === p.name).length ?? 0) > 1;
+  // A twin reads "Ren (2)", never its id.
+  const who = (p: Participant) => memberLabel(run?.participants ?? [], p.id);
 
   async function act(work: () => Promise<MoveOutcome>, undo?: () => Promise<MoveOutcome>) {
     busy = true;
@@ -169,11 +172,11 @@
         </div>
         <div class="run__people">
           {#each run.participants as person (person.id)}
-            <AnswerChip participant={person} disambiguate={duplicate(person)}>
+            <AnswerChip participant={person} label={who(person)}>
               <button
                 type="button"
                 class="chip__x"
-                aria-label="Take {person.name}{duplicate(person) ? ` #${person.id}` : ''} off this run for this week only"
+                aria-label="Take {who(person)} off this run for this week only"
                 disabled={busy}
                 onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
               >
@@ -182,14 +185,14 @@
           {#if addable.length > 0}
             <select class="chip__add" aria-label="Add someone to {runTitle(run)} for this week" onchange={add} disabled={busy}>
               <option value="">+ add…</option>
-              {#each addable as member (member.id)}<option value={member.id}>{member.name}</option>{/each}
+              {#each addable as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
             </select>
           {/if}
         </div>
         {#if run.roster_change}
           <p class="run__meta">
             <span class="chip chip--waiting"
-              >this week:{#each run.roster_change.out as person (person.id)}{` −${person.name}`}{/each}{#each run.roster_change.in as person (person.id)}{` +${person.name}`}{/each}</span
+              >this week:{#each run.roster_change.out as person (person.id)}{` −${directory.label('member', person.id, person.name)}`}{/each}{#each run.roster_change.in as person (person.id)}{` +${directory.label('member', person.id, person.name)}`}{/each}</span
             >
           </p>
         {/if}
@@ -270,8 +273,8 @@
           <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
           {#each run.participants as person (person.id)}
             <div class="answers__row">
-              <span class="answers__who">{person.name}{#if duplicate(person)} <span class="id">#{person.id}</span>{/if}</span>
-              <div class="seg seg--answer" role="group" aria-label="Answer for {person.name} on {runTitle(run)}">
+              <span class="answers__who"><Name kind="member" id={person.id} name={who(person)} /></span>
+              <div class="seg seg--answer" role="group" aria-label="Answer for {who(person)} on {runTitle(run)}">
                 {#each ANSWERS as [value, label] (value)}
                   <button
                     type="button"

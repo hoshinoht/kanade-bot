@@ -7,6 +7,9 @@
 <script lang="ts">
   import type { ApproveRequest, Proposal } from '@kanade/api-types';
   import { BossTag, PendingLabel } from '@kanade/ui';
+  import { directory } from '../names/directory.svelte';
+  import Mentions from '../names/Mentions.svelte';
+  import Name from '../names/Name.svelte';
   import { editable } from './edit';
   import { blocked, DISCORD_ONLY, FLAG_LABEL, FLAG_TONE, isProposal, SOURCE_LABEL } from './flags';
 
@@ -68,7 +71,7 @@
 
   {#if p.self_service}
     <p class="flash flash--ok">
-      Sent by <strong>{p.self_service.member.name}</strong> (#{p.self_service.member.id}) as a member request.
+      Sent by <strong><Name kind="member" id={p.self_service.member.id} name={p.self_service.member.name} /></strong> as a member request.
       {#if p.self_service.note}“{p.self_service.note}”{/if}
     </p>
   {/if}
@@ -78,10 +81,10 @@
       {#each p.evidence as line (line.id)}
         <p class="evidence__line">
           {#if line.missing}
-            <span class="evidence__text">A message from {line.author} is no longer stored.</span>
+            <span class="evidence__text">A message from {directory.label('member', '', line.author)} is no longer stored.</span>
           {:else}
-            <span class="evidence__who">{line.author}</span><span class="evidence__at">{line.at}</span>
-            <br /><span class="evidence__text">{line.content}</span>
+            <span class="evidence__who">{directory.label('member', '', line.author)}</span><span class="evidence__at">{line.at}</span>
+            <br /><span class="evidence__text"><Mentions text={line.content ?? ''} /></span>
             {#if line.url}<a class="id" href={line.url} target="_blank" rel="noopener noreferrer">open</a>{/if}
           {/if}
         </p>
@@ -103,7 +106,7 @@
   {:else}
     <p class="note">
       <strong class="mono">{p.when}</strong>
-      {#if p.participants.length}— {#each p.participants as person (person.id)}<span class="chip">{person.name}</span> {/each}{/if}
+      {#if p.participants.length}— {#each p.participants as person (person.id)}<span class="chip"><Name kind="member" id={person.id} name={person.name} /></span> {/each}{/if}
     </p>
   {/if}
   {#if p.preview.no_effect}<p class="note">Already in effect: approving would change nothing.</p>{/if}

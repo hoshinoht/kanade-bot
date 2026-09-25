@@ -205,7 +205,9 @@ test('bosses: the in-game list, ticked by timings, with knowledge pages', async 
 test('members: roster rows, sheet edits for pings, reply style and aliases', async ({ page }) => {
   await go(page, '/members');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
-  await expect(page.getByRole('button', { name: /^Ren #1013/ })).toBeVisible();
+  // Two members share "Ren": told apart by place, never by id.
+  await expect(page.getByRole('button', { name: /^Ren \(2\)/ })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Members' })).not.toContainText('1013');
   await expect(page.getByRole('button', { name: /^Kohane/ })).toContainText('chat only');
   await page.getByRole('searchbox', { name: 'Search members' }).fill('tsu');
   await expect(page.getByRole('list', { name: 'Members' }).getByRole('button')).toHaveCount(1);
@@ -214,15 +216,17 @@ test('members: roster rows, sheet edits for pings, reply style and aliases', asy
   const sheet = page.getByRole('dialog', { name: 'Tsubame' });
   await expect(sheet.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
   await sheet.getByRole('button', { name: 'Essential' }).click();
-  await expect(sheet.getByRole('status')).toHaveText('Pings set to essential.');
+  // The sheet's notice, not the name's copy status.
+  const notice = sheet.locator('[role="status"]:not(.vh)');
+  await expect(notice).toHaveText('Pings set to essential.');
   await sheet.getByLabel('Reply style').selectOption({ label: 'Terse' });
-  await expect(sheet.getByRole('status')).toHaveText('Reply style set to Terse.');
+  await expect(notice).toHaveText('Reply style set to Terse.');
   await sheet.getByRole('textbox', { name: 'New alias for Tsubame' }).fill('swallow');
   await sheet.getByRole('button', { name: 'Add' }).click();
   await expect(sheet.locator('.membersheet__aliases')).toContainText('swallow');
   await sheet.getByRole('textbox', { name: 'New alias for Tsubame' }).fill('mika');
   await sheet.getByRole('button', { name: 'Add' }).click();
-  await expect(sheet.getByRole('status')).toHaveText('“mika” already names someone.');
+  await expect(notice).toHaveText('“mika” already names someone.');
   await expect(sheet.getByRole('textbox', { name: 'New alias for Tsubame' })).toHaveValue('mika');
 
   await page.keyboard.press('Escape');

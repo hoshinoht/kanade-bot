@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { BlameEntry, Member } from '@kanade/api-types';
   import { Icon } from '@kanade/ui';
-  import { actorName, localAt, SURFACE_LABELS } from '../history/describe';
+  import ActorName from '../history/ActorName.svelte';
+  import { localAt, SURFACE_LABELS } from '../history/describe';
+  import { memberLabel } from '../names/directory.svelte';
   import { send } from '../resource.svelte';
   import { blameField, blameValue } from './blame';
 
@@ -10,10 +12,7 @@
   let entries = $state<BlameEntry[] | null>(null);
   let error = $state('');
 
-  const names = (id: string) => {
-    const name = members.find((m) => m.id === id)?.name ?? `member ${id}`;
-    return members.filter((m) => m.name === name).length > 1 ? `${name} #${id}` : name;
-  };
+  const names = (id: string) => memberLabel(members, id);
   const field = (f: string) => blameField(f, names);
   const value = (f: string, v: unknown) => blameValue(f, v, timezone);
 
@@ -41,7 +40,7 @@
             <tr>
               <th scope="row">{field(e.field)}</th>
               <td class="mono">{value(e.field, e.value)}</td>
-              <td>{actorName(e.actor, names, (id) => members.some((m) => m.id === id))} <span class="id">via {SURFACE_LABELS[e.surface] ?? e.surface}</span></td>
+              <td><ActorName actor={e.actor} {names} known={(id) => members.some((m) => m.id === id)} /> <span class="id">via {SURFACE_LABELS[e.surface] ?? e.surface}</span></td>
               <td class="mono"><a href="/history">#{e.seq}</a> · {localAt(e.at, timezone)}</td>
             </tr>
           {/each}

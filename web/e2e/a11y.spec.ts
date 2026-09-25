@@ -49,7 +49,7 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.getByRole('heading', { level: 1, name: 'Config' })).toBeVisible();
     await serious(page, 'admin config');
     await page.getByRole('tab', { name: 'Models' }).click();
-    await expect(page.getByText(/Capacity groups/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Capacity groups' })).toBeVisible();
     await serious(page, 'admin config models');
     await page.getByRole('tab', { name: 'Channel access' }).click();
     await expect(page.getByRole('table', { name: "The bot's permissions in each channel" })).toBeVisible();

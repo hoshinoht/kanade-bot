@@ -4,6 +4,7 @@
   through this page's query string.
 -->
 <script lang="ts">
+  import Name from '../names/Name.svelte';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { activeCount, OUTCOME_LABEL, outcomeTone, parseFilter, toSearch, type LogFilter } from '../logs/filters';
   import LogFilters from '../logs/LogFilters.svelte';
@@ -11,10 +12,13 @@
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { paged } from '../pages/paging';
   import { Resource } from '../resource.svelte';
+  import LogTime from '../logs/LogTime.svelte';
+  import { duration } from '../logs/format';
   import type { AdminWeek } from '../store.svelte';
   import RescanPanel from './RescanPanel.svelte';
 
   let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
+  const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search, { chat: false }));
   // A pasted Chat link's tool/latency keys leave the URL rather than linger as dead chips.
@@ -95,11 +99,11 @@
           <tbody>
             {#each shown.rows as row (row.id)}
               <tr>
-                <th scope="row" class="mono">{row.at}</th>
-                <td>{row.channel ?? '—'}</td>
+                <th scope="row" class="mono"><LogTime at={row.at} timeZone={tz} /></th>
+                <td class="log__who">{#if row.channel_id}<Name kind="channel" id={row.channel_id} name={row.channel} clip />{:else}—{/if}</td>
                 <td><span class="status status--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
-                <td class="mono">{row.model}</td>
-                <td class="num">{row.latency_ms == null ? '—' : `${row.latency_ms.toLocaleString('en')} ms`}</td>
+                <td class="mono log__clip" title={row.model}>{row.model}</td>
+                <td class="num log__nowrap">{duration(row.latency_ms)}</td>
                 <td class="num">{row.messages}</td>
                 <td class="num">{row.changes}</td>
                 <td><a class="btn" href="/extractions/{row.id}" aria-label="Open call {row.short_id}">Open</a></td>
@@ -116,6 +120,22 @@
 </PaneWindow>
 
 <style>
+  /* Aliases and durations never wrap mid-word; a long alias is cut, its tooltip whole. */
+  .log__clip {
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .log__nowrap {
+    white-space: nowrap;
+  }
+
+  .log__who {
+    max-width: 14rem;
+  }
+
   .rescan-box {
     margin: 0.2rem 0 0.8rem;
   }

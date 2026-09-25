@@ -2,6 +2,7 @@
   import type { BossRow, FixedRow } from '@kanade/api-types';
   import { BossTag, Modal, Toaster } from '@kanade/ui';
   import PaneWindow from '../pages/PaneWindow.svelte';
+  import Name from '../names/Name.svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import FixedEditor from './FixedEditor.svelte';
@@ -120,7 +121,7 @@
                 <ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} portrait /></li>{/each}</ul>
                 {#if row.note}<span class="note">{row.note}</span>{/if}
               </th>
-              <td><span class="chips">{#each row.participants as person (person.id)}<span class="chip">{person.name}</span>{/each}</span></td>
+              <td><span class="chips">{#each row.participants as person (person.id)}<span class="chip"><Name kind="member" id={person.id} name={person.name} /></span>{/each}</span></td>
               <td>
                 {row.channel_name}
                 {#if !row.channel_watched}<div class="status status--at_risk">not watched</div>{/if}

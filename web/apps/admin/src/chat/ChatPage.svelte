@@ -4,6 +4,10 @@
   deep-linked through this page's query string.
 -->
 <script lang="ts">
+  import LogTime from '../logs/LogTime.svelte';
+  import { duration } from '../logs/format';
+  import Mentions from '../names/Mentions.svelte';
+  import Name from '../names/Name.svelte';
   import type { AdminWeek } from '../store.svelte';
   import type { Chat } from '@kanade/api-types';
   import { activeCount, OUTCOME_LABEL, outcomeTone, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -14,6 +18,7 @@
   import { Resource } from '../resource.svelte';
 
   let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
+  const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search));
   const chat = $derived(new Resource<Chat>(`/api/admin/chat${toSearch(filter)}`));
@@ -95,13 +100,14 @@
           <thead><tr><th scope="col">Question</th><th scope="col">Who</th><th scope="col">When</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Took</th></tr></thead>
           <tbody>
             {#each shown.rows as row (row.id)}
+              {@const models = row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}
               <tr>
-                <th scope="row"><a href="/chat/{row.id}">{row.asked}</a></th>
-                <td>{row.member.name}<div class="id">{row.channel}</div></td>
-                <td class="mono">{row.at}</td>
+                <th scope="row"><a href="/chat/{row.id}"><Mentions text={row.asked} plain asked dropBot /></a></th>
+                <td class="log__who"><Name kind="member" id={row.member.id} name={row.member.name} clip /><div class="id"><Name kind="channel" id={row.channel_id} name={row.channel} clip /></div></td>
+                <td class="mono"><LogTime at={row.at} timeZone={tz} /></td>
                 <td><span class="status status--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
-                <td class="mono">{row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}</td>
-                <td class="num">{row.latency_ms ? `${row.latency_ms.toLocaleString('en')} ms` : '—'}</td>
+                <td class="mono log__clip" title={models}>{models}</td>
+                <td class="num log__nowrap">{duration(row.latency_ms)}</td>
               </tr>
             {/each}
           </tbody>
@@ -115,6 +121,22 @@
 </PaneWindow>
 
 <style>
+  /* Aliases and durations never wrap mid-word; a long alias is cut, its tooltip whole. */
+  .log__clip {
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .log__nowrap {
+    white-space: nowrap;
+  }
+
+  .log__who {
+    max-width: 14rem;
+  }
+
   .statline {
     flex: 1 0 100%;
     display: grid;

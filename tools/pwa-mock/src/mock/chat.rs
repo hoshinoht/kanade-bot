@@ -47,10 +47,25 @@ fn turn(
 
 fn turns() -> Vec<Turn> {
     vec![
+        // Someone the member list does not know yet, in a channel it does
+        // not name: the server sends placeholders, never names.
+        Turn {
+            latency_ms: 2_870,
+            asked: "<@1543532497948909578> is <@&300001> around tonight?",
+            said: "The staff role has two people on tonight's runs.",
+            ..turn(
+                "c-stranger",
+                105,
+                "114948601234567890",
+                "999000111222333444",
+                "answered",
+            )
+        },
         Turn {
             models: vec![CHAT, CHAT],
             latency_ms: 3_410,
-            asked: "when is carling this week",
+            // Questions open by mentioning the bot, as Discord sends them.
+            asked: "<@1543532497948909578> when is carling this week",
             said: "Carling + Radiant Malefic Star is Tuesday 22:00, 4 of 7 on so far.",
             tools: vec![(
                 "schedule.read",
@@ -98,7 +113,7 @@ fn turns() -> Vec<Turn> {
         },
         Turn {
             latency_ms: 60_000,
-            asked: "who is in fa",
+            asked: "<@1543532497948909578> who is in <#fa-night> tonight, is <@1004> in?",
             tools: vec![(
                 "schedule.read",
                 r#"{"bosses":["HFA"]}"#,
@@ -172,8 +187,9 @@ impl Store {
 
     fn chat_row(t: &Turn) -> Value {
         json!({
-            "id": t.id, "at": Self::when(Self::chat_minute(t)),
-            "member": { "id": t.member, "name": seed::member_name(t.member).map_or("?", |m| m.1) },
+            "id": t.id, "at": super::clock::iso_z(Self::chat_minute(t)),
+            // As the server: `user <short id>` when the roster does not know them.
+            "member": { "id": t.member, "name": seed::member_name(t.member).map_or_else(|| format!("user {}", &t.member[..8.min(t.member.len())]), |m| m.1.to_owned()) },
             "channel": seed::channel(t.channel).map(|c| c.1), "channel_id": t.channel,
             "model": t.models.first().copied().unwrap_or("—"), "models": t.models,
             "latency_ms": t.latency_ms, "outcome": t.outcome, "asked": t.asked,
@@ -293,7 +309,7 @@ mod tests {
     fn chat_filters_combine_and_refuse_nonsense() {
         let s = store();
         let all = s.chat(&LogQuery::default()).ok().unwrap();
-        assert_eq!(all["rows"].as_array().unwrap().len(), 12);
+        assert_eq!(all["rows"].as_array().unwrap().len(), 13);
         let q = LogQuery {
             outcome: Some("timeout,error".into()),
             ..Default::default()

@@ -15,6 +15,8 @@
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
+  import { memberLabel } from '../names/directory.svelte';
+  import ActorName from './ActorName.svelte';
 
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
 
@@ -67,11 +69,7 @@
     { id: 'checkpoints', label: 'Checkpoints' },
   ]);
 
-  const names = (id: string) => {
-    const matches = store.members.filter((m) => m.id === id);
-    const name = matches[0]?.name ?? `member ${id}`;
-    return store.members.filter((m) => m.name === name).length > 1 ? `${name} #${id}` : name;
-  };
+  const names = (id: string) => memberLabel(store.members, id);
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
   const weeks = $derived([...new Set(records.flatMap((r) => r.weeks))].sort().reverse());
   const groups = $derived(
@@ -172,7 +170,7 @@
         <li class="change" class:change--rollback={r.surface === 'rollback'}>
           <div class="change__head">
             <span class="change__seq mono">#{r.seq}</span>
-            <strong>{actorName(r.actor, names, known)}</strong>
+            <strong><ActorName actor={r.actor} {names} {known} /></strong>
             <span class="chip chip--mono">{SURFACE_LABELS[r.surface] ?? r.surface}</span>
             {#if r.refs.length}<span class="chip">reverts {r.refs.map((x) => `#${x.seq}`).join(', ')}</span>{/if}
             <span class="id">{localAt(r.at, tz)}</span>

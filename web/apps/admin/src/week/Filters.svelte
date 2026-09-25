@@ -7,6 +7,7 @@
 <script lang="ts">
   import type { Channel, Member } from '@kanade/api-types';
   import { filtering, NO_FILTER, type WeekFilter } from './filters';
+  import { directory, memberLabel } from '../names/directory.svelte';
 
   let {
     filter = $bindable(),
@@ -19,8 +20,8 @@
 
   const active = $derived(
     [
-      filter.channel && { key: 'channel' as const, label: `Channel: ${channels.find((c) => c.id === filter.channel)?.name ?? filter.channel}` },
-      filter.member && { key: 'member' as const, label: `Member: ${members.find((m) => m.id === filter.member)?.name ?? filter.member}` },
+      filter.channel && { key: 'channel' as const, label: `Channel: ${directory.label('channel', filter.channel, channels.find((c) => c.id === filter.channel)?.name ?? '')}` },
+      filter.member && { key: 'member' as const, label: `Member: ${memberLabel(members, filter.member)}` },
       filter.boss.trim() && { key: 'boss' as const, label: `Boss: ${filter.boss.trim()}` },
     ].filter((x): x is { key: 'channel' | 'member' | 'boss'; label: string } => Boolean(x)),
   );
@@ -36,16 +37,14 @@
       ><span>Channel</span>
       <select bind:value={filter.channel}>
         <option value="">every party</option>
-        {#each channels as channel (channel.id)}<option value={channel.id}>{channel.name}</option>{/each}
+        {#each channels as channel (channel.id)}<option value={channel.id}>{directory.label('channel', channel.id, channel.name)}</option>{/each}
       </select>
     </label>
     <label class="field"
       ><span>Member</span>
       <select bind:value={filter.member}>
         <option value="">everyone</option>
-        {#each members as member (member.id)}<option value={member.id}
-            >{member.name}{members.filter((m) => m.name === member.name).length > 1 ? ` #${member.id}` : ''}</option
-          >{/each}
+        {#each members as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
       </select>
     </label>
     <label class="field"><span>Boss</span><input bind:value={filter.boss} placeholder="hstar" size="10" /></label>

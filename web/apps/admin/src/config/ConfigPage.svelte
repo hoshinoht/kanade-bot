@@ -10,9 +10,9 @@
   import type { ConfigView } from '@kanade/api-types';
   import { Icon, ThemePicker, Toaster } from '@kanade/ui';
   import { SvelteSet } from 'svelte/reactivity';
+  import { directory } from '../names/directory.svelte';
   import { Resource, send } from '../resource.svelte';
   import AccessSection from './AccessSection.svelte';
-  import { capacityCheck } from './capacity';
   import ChatbotSection from './ChatbotSection.svelte';
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
@@ -66,18 +66,12 @@
     if (visited.has('rescan') && !targets.data) void targets.load();
   });
 
-  // A tab that would stop the bot or leak unexpectedly is flagged in the list.
-  const modelsBlocked = $derived(
-    config.data
-      ? capacityCheck({
-          groups: config.data.models.groups,
-          roles: config.data.models.roles,
-          catalog: config.data.models.catalog,
-          aliasLimits: config.data.models.alias_limits,
-          keyLimits: config.data.models.key_limits,
-        }).some((c) => c.level === 'error')
-      : false,
-  );
+  // A tab that would stop the bot is flagged in the list: the server's own startup check says so.
+  const modelsBlocked = $derived(config.data?.models.capacity_check.some((c) => c.level === 'error') ?? false);
+  // Role names for the shared lookup (a role mention reads @name, never its id).
+  $effect(() => {
+    if (config.data) directory.setRoles(config.data.persona.role_profiles);
+  });
   const missingManage = $derived(config.data?.manage_messages.missing ?? []);
 
   // On phones the list is a sideways strip: bring a deep-linked section's tab

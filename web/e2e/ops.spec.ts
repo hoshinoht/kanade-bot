@@ -140,7 +140,7 @@ test('inbox: self-service tab — request types, badges, conflicts, choices, rea
   await list.getByRole('option', { name: /HCarling/ }).click();
   await expect(page).toHaveURL(/tab=self_service&item=p-carling-link/);
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('Join');
-  await expect(detail).toContainText('Sent by Nagi (#1007) as a member request.');
+  await expect(detail).toContainText('Sent by Nagi as a member request.');
   await expect(detail).toContainText('The member sees: “member request: join HCarling + HStar Tue 29 Sep 22:00”');
   await expect(detail.locator('.proposal__changes')).toContainText('Nagi');
   await expect(detail.getByRole('textbox', { name: 'Edit, then approve' })).toHaveCount(0);
@@ -327,7 +327,7 @@ test('chat: interactions and one interaction in detail', async ({ page }) => {
 
 test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page }) => {
   await go(page, '/chat?outcome=timeout,error');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 of 12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 of 13 interactions');
   await expect(page.getByRole('button', { name: /Outcome: timeout, error/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Filters (1)' })).toBeVisible();
   await expect(page.getByRole('row')).toHaveCount(3);
@@ -337,26 +337,26 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   const panel = page.getByRole('group', { name: 'Filters' });
   await panel.getByLabel('Model').selectOption('kanata/chat');
   await expect(page).toHaveURL(/model=kanata%2Fchat/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
   await panel.getByLabel('At least (ms)').fill('70000');
   await panel.getByLabel('At least (ms)').press('Tab');
   await expect(page.getByText('Nothing matches these filters.')).toBeVisible();
   await page.getByRole('button', { name: /≥ 70000 ms/ }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
 
   // Tool used, a date preset (guild time) and text, then Clear.
   await page.getByRole('button', { name: 'Clear' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
   // The panel stays open after Clear.
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used').selectOption('schedule.read');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 13 interactions');
   await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: 'This boss week' }).click();
   await expect(page).toHaveURL(/from=2026-09-24&to=2026-09-30/);
   await page.getByRole('searchbox', { name: 'Search interactions' }).fill('carling');
   await expect(page).toHaveURL(/q=carling/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 12 interactions');
-  await page.getByRole('link', { name: 'when is carling this week' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
+  await page.getByRole('link', { name: /when is carling this week$/ }).click();
   await expect(page).toHaveURL(`${ADMIN}/chat/c-when`);
 
   // Nonsense is refused by the server, not silently ignored.
@@ -368,7 +368,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
 
   // A refused filter shows its error without the previous filter's rows.
   await go(page, '/chat');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('12 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
   await page.getByRole('button', { name: 'Filters (0)' }).click();
   await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').fill('1e3');
   await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').press('Tab');
@@ -491,7 +491,7 @@ test('history: restore a week to a point, revert a member, and blame in the run 
   await go(page, '/history');
   await page.getByRole('button', { name: /^Restore week .* to just after #3$/ }).click();
   const restore = page.getByRole('dialog', { name: /^Restore the week of/ });
-  await expect(restore.getByText(/HCarling \+ HStar roster: −Ren #1013/)).toBeVisible();
+  await expect(restore.getByText(/HCarling \+ HStar roster: −Ren \(2\)/)).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.getByText("Revert a member's changes…").click();
@@ -538,7 +538,8 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await time.fill('08:30');
   await panel.getByRole('textbox', { name: 'Countdowns (minutes)' }).fill('45, 10');
   await panel.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(toast(page, /Pings saved/)).toBeVisible();
+  // The server applies pings on restart; the toast says so rather than claiming a re-place.
+  await expect(toast(page, 'Pings saved; they take effect when the bot restarts.')).toBeVisible();
   await expect(panel.getByRole('textbox', { name: 'Morning ping' })).toHaveValue('08:30');
 
   // Watching toggles flip and stay.
@@ -567,29 +568,37 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('kanade');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
-  // Profiles are read-only files: label, voice and prompt summary, no paths.
-  await expect(panel.getByText('Cheeky and smug, earnest underneath.')).toBeVisible();
-  await expect(panel.locator('.settings__profiles')).not.toContainText('config/personas/profiles/kanade');
-  // Publishing offers the private profile for member choice, and back.
-  const sparkly = panel.locator('.settings__profiles li', { hasText: 'Sparkly' });
-  await sparkly.getByRole('button', { name: 'Publish for member choice' }).click();
-  await expect(toast(page, /Sparkly is published/)).toBeVisible();
-  await sparkly.getByRole('button', { name: 'Make private' }).click();
-  await expect(toast(page, /Sparkly is private/)).toBeVisible();
+  // Reply profiles as v4's table: label, voice as written, the prompt as plain text, visibility.
+  const profiles = panel.getByRole('table', { name: 'Reply profiles' });
+  await expect(profiles.getByRole('columnheader')).toHaveText(['Profile', 'Voice', 'Prompt', 'Visibility', 'Actions']);
+  const kanade = profiles.getByRole('row', { name: /^Kanade/ });
+  await expect(kanade.getByRole('cell').first()).toHaveText('comedy.');
+  await expect(kanade).toContainText("Kanade Teases lightly in the persona's voice keeps every schedule fact exact");
+  await expect(kanade).not.toContainText('**');
+  await expect(profiles).not.toContainText('config/personas/profiles/kanade');
+  // Publishing and role order are read-only on the server (422 read_only): shown, not offered.
+  const sparkly = profiles.getByRole('row', { name: /^Sparkly/ });
+  await expect(sparkly).toContainText('private');
+  await expect(sparkly.getByRole('button', { name: /Make public/ })).toBeDisabled();
+  await expect(panel.getByText('Publishing a profile and assigning profiles to roles are not editable here yet.')).toBeVisible();
+  // Roles read by name, and copy their id.
+  await expect(panel.getByRole('button', { name: '@staff' })).toHaveAttribute('title', 'Role ID 300001 — click to copy');
+  await expect(panel.getByRole('button', { name: 'Save role profiles' })).toHaveCount(0);
+  const refused = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
+    data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },
+  });
+  expect([refused.status(), ((await refused.json()) as { error: string }).error]).toEqual([422, 'read_only']);
   // Reload re-reads the files.
   await panel.getByRole('button', { name: 'Reload profiles' }).click();
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
-  // Role order: the first matching role wins, so it can be moved.
-  await panel.getByRole('button', { name: /Move @newbies up/ }).click();
-  await expect(panel.getByRole('button', { name: /Move @staff down/ })).toBeVisible();
-  await panel.getByRole('button', { name: 'Save role profiles' }).click();
-  await expect(toast(page, /saved in this order/)).toBeVisible();
 
   // Models: the cloud alias's privacy warning follows the PII toggle state.
   await page.getByRole('tab', { name: 'Models' }).click();
-  // The saved seed passes the server's check, and the live preview agrees.
+  // The server's own startup check is shown; the saved seed passes it.
   await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
   await expect(panel.locator('.settings__checks .status--at_risk')).toHaveCount(0);
+  await expect(panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem').first()).toBeVisible();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
   await models.first().selectOption('kanata/chat-cloud');
@@ -604,9 +613,10 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   // Reasoning offers only the model's published efforts: the small rewrite
   // model publishes none, and extraction runs medium, so its picker is off only.
   await expect(reasonings.nth(2).locator('option')).toHaveText(['Off']);
-  // A model that decides takes v4's low/medium/high.
+  // `null` efforts: Kanata restricts nothing, so every level is offered.
   await models.nth(2).selectOption('kanata/legacy');
-  await expect(reasonings.nth(2).locator('option')).toHaveText(['Same as extraction', 'Off', 'Low', 'Medium', 'High']);
+  await expect(reasonings.nth(2).locator('option')).toHaveText(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
+  await expect(panel.getByText('reasoning: any level')).toBeVisible();
   await models.nth(2).selectOption('kanata/rewrite-small');
   // Inherit is offered only while the extraction effort fits the role model.
   await expect(reasonings.nth(1).locator('option').first()).toHaveText('Same as extraction');
@@ -619,51 +629,16 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved/)).toBeVisible();
 
-  // Capacity: a group over Kanata's per-alias admission is refused like at startup.
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/extract' }).fill('2');
-  await expect(panel.getByText(/Group extract declares 2 permits but Kanata admits at most 1/)).toBeVisible();
-  await panel.getByRole('button', { name: 'Save groups' }).click();
-  await expect(panel.getByRole('alert').last()).toContainText('refuses to start');
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/extract' }).fill('1');
-  // A cleared permits input is refused naming its row.
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/chat-cloud' }).fill('');
-  await panel.getByRole('button', { name: 'Save groups' }).click();
-  await expect(panel.getByRole('alert').last()).toContainText('Row 3: permits must be a whole number');
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/chat-cloud' }).fill('2');
-  await expect(panel.getByText(/Group extract: 1 permits, matching/)).toBeVisible();
-  // Two added rows with cleared permits: distinct row messages, no keyed-each crash.
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  await panel.getByRole('button', { name: 'Add a row' }).click();
-  await panel.getByRole('button', { name: 'Add a row' }).click();
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/extract' }).nth(1).fill('');
-  await panel.getByRole('spinbutton', { name: 'Permits for kanata/extract' }).nth(2).fill('');
-  await expect(panel.getByText('Row 5: permits must be a whole number.')).toBeVisible();
-  await expect(panel.getByText('Row 6: permits must be a whole number.')).toBeVisible();
-  await expect(panel.getByText(/Rows 1 and 5: kanata\/extract is in group/)).toHaveCount(0);
-  await expect(panel.getByText(/every row needs a group name/)).toHaveCount(2);
-  expect(errors).toEqual([]);
-  await panel.getByRole('button', { name: 'Remove kanata/extract' }).nth(2).click();
-  await panel.getByRole('button', { name: 'Remove kanata/extract' }).nth(1).click();
-  await expect(panel.getByText(/Row 5/)).toHaveCount(0);
-  await panel.getByRole('button', { name: 'Save groups' }).click();
-  await expect(toast(page, /Capacity groups saved/)).toBeVisible();
-  // Duplicates and unknown aliases are refused over the API too.
-  const dup = await page.request.patch(`${ADMIN}/api/admin/config`, {
+  // Capacity groups are read-only until the server can store them: a table, no editor.
+  await expect(panel.getByText('Capacity groups are not editable here yet; they are set with the deployment.')).toBeVisible();
+  await expect(panel.getByRole('table', { name: 'Capacity group per model' }).getByRole('row', { name: /kanata\/extract/ })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Save groups' })).toHaveCount(0);
+  await expect(panel.getByRole('spinbutton', { name: /Permits/ })).toHaveCount(0);
+  const groups = await page.request.patch(`${ADMIN}/api/admin/config`, {
     headers: await csrf(page.request),
-    data: { models: { groups: [
-      { model: 'kanata/chat', group: 'chat', permits: 2 },
-      { model: 'kanata/chat', group: 'chat-2', permits: 1 },
-    ] } },
+    data: { models: { groups: [] } },
   });
-  await expect(dup.status()).toBe(422);
-  expect(await dup.text()).toContain('exactly one group');
-  const unknown = await page.request.patch(`${ADMIN}/api/admin/config`, {
-    headers: await csrf(page.request),
-    data: { models: { groups: [{ model: 'kanata/gone', group: 'chat', permits: 1 }] } },
-  });
-  await expect(unknown.status()).toBe(422);
-  expect(await unknown.text()).toContain('Row 1');
+  expect([groups.status(), ((await groups.json()) as { error: string }).error]).toEqual([422, 'read_only']);
   const badKey = await page.request.patch(`${ADMIN}/api/admin/config`, {
     headers: await csrf(page.request),
     data: { models: { kanata_limits: [] } },
@@ -834,7 +809,7 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
 test('persona: Reload profiles re-reads the config, so voice and summary follow the files', async ({ page }) => {
   await go(page, '/config?section=persona');
   const panel = page.locator('.settings__panel:not([hidden])');
-  await expect(panel.getByText('Cheeky and smug, earnest underneath.')).toBeVisible();
+  await expect(panel.getByRole('row', { name: /^Kanade/ }).getByRole('cell').first()).toHaveText('comedy.');
   // After the reload the files say something new (served through the config read).
   let reloaded = false;
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
@@ -852,6 +827,6 @@ test('persona: Reload profiles re-reads the config, so voice and summary follow 
   });
   await panel.getByRole('button', { name: 'Reload profiles' }).click();
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
-  await expect(panel.getByText('Freshly edited voice.')).toBeVisible();
+  await expect(panel.getByText('Freshly edited voice', { exact: true })).toBeVisible();
   await expect(panel.getByText('A summary written after the file changed.')).toBeVisible();
 });

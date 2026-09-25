@@ -5,16 +5,21 @@
 
   let {
     participant,
-    disambiguate = false,
+    label,
     children,
-  }: { participant: Participant; disambiguate?: boolean; children?: Snippet } = $props();
+  }: {
+    participant: Participant;
+    /** The name to show when it differs from `participant.name` (a twin's "Ren (2)"); never the id. */
+    label?: string;
+    children?: Snippet;
+  } = $props();
   const answer = $derived(ANSWER_MARKS[participant.answer]);
+  const name = $derived(label ?? participant.name);
 </script>
 
-<!-- Two members can share a display name; then the member id tells them apart (HPK-9). -->
-<span class="chip chip--{participant.answer}" title="{participant.name}: {answer.word}">
+<span class="chip chip--{participant.answer}" title="{name}: {answer.word}">
   <span class="chip__mark" aria-hidden="true">{answer.mark}</span>
-  {participant.name}{#if disambiguate}<span class="chip__id">#{participant.id}</span>{/if}
+  {name}
   <span class="vh">({answer.word})</span>
   {@render children?.()}
 </span>

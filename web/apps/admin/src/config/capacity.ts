@@ -116,21 +116,24 @@ export function effectiveReasoning(reasoning: string, extractionEffort: string):
   return reasoning === '' ? extractionEffort : reasoning;
 }
 
+/** Every stored reasoning level after `off`, in the server's order. */
+export const ALL_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
 /**
- * Whether an effort is legal for an alias: `off` always is; a model that
- * decides for itself takes v4's low/medium/high.
+ * Whether an effort is legal for an alias: `off` always is; `null` efforts
+ * mean Kanata restricts nothing, so every level is (admin-api "Config semantics").
  */
 export function isReasoningValid(model: ModelInfo | undefined, effort: string): boolean {
   if (effort === 'off') return true;
   if (!model) return false;
-  if (model.reasoning_efforts === null) return ['low', 'medium', 'high'].includes(effort);
+  if (model.reasoning_efforts === null) return ALL_EFFORTS.includes(effort);
   return model.reasoning_efforts.includes(effort);
 }
 
 /**
  * The reasoning levels a role may pick. Inherit is offered only when the
  * extraction role's current effort is `off` or in the role model's published
- * list (low/medium/high for a model that decides); otherwise the resolved
+ * list (every level when it publishes none); otherwise the resolved
  * effort would be illegal, so the role must choose explicitly.
  */
 export function reasoningChoices(
@@ -140,7 +143,7 @@ export function reasoningChoices(
   current?: string,
 ): { value: string; label: string }[] {
   const published = model?.reasoning_efforts;
-  const levels = published === undefined ? [] : (published ?? ['low', 'medium', 'high']);
+  const levels = published === undefined ? [] : (published ?? ALL_EFFORTS);
   const choices = [{ value: 'off', label: 'Off' }, ...levels.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))];
   if (role === 'extraction') return choices;
   const values = new Map(choices.map((c) => [c.value, c.label] as const));
@@ -148,7 +151,7 @@ export function reasoningChoices(
   // fail-closed admin sees what is stored rather than a blank box.
   if (current && !values.has(current)) choices.push({ value: current, label: `${current} (not listed)` });
   const inherit =
-    extractionEffort === 'off' || (model !== undefined && (published === null ? ['low', 'medium', 'high'] : (published ?? [])).includes(extractionEffort));
+    extractionEffort === 'off' || (model !== undefined && (published === null ? ALL_EFFORTS : (published ?? [])).includes(extractionEffort));
   if (inherit) return [{ value: '', label: 'Same as extraction' }, ...choices];
   // Never a blank box: a stored inherit that no longer fits stays visible, marked.
   if (current === '') return [{ value: '', label: `Same as extraction (${extractionEffort}, not published)` }, ...choices];

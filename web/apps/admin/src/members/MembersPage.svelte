@@ -5,6 +5,7 @@
   import Pager from '../pages/Pager.svelte';
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { paged } from '../pages/paging';
+  import { memberLabel } from '../names/directory.svelte';
   import { Resource } from '../resource.svelte';
   import MemberSheet from './MemberSheet.svelte';
 
@@ -32,7 +33,6 @@
   const shown = $derived(paged(rows, page));
   const bossers = $derived((members.data ?? []).filter((m) => m.bossing).length);
   const current = $derived(members.data?.find((m) => m.id === openId) ?? null);
-  const duplicate = (m: MemberRow) => (members.data ?? []).filter((o) => o.name === m.name).length > 1;
 
   function replace(row: MemberRow) {
     if (members.data) members.data = members.data.map((m) => (m.id === row.id ? row : m));
@@ -66,8 +66,7 @@
             }}
           >
             <span class="memberlist__name">
-              <strong>{member.name}</strong>
-              {#if duplicate(member)}<span class="id">#{member.id}</span>{/if}
+              <strong>{memberLabel(members.data ?? [], member.id)}</strong>
               {#if member.nickname}<span class="id">{member.nickname}</span>{/if}
               {#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}
             </span>

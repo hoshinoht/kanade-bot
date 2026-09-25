@@ -2,6 +2,8 @@
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
   import { Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
+  import { directory } from '../names/directory.svelte';
+  import Name from '../names/Name.svelte';
 
   let {
     open = $bindable(false),
@@ -60,11 +62,11 @@
 </script>
 
 <!-- v4 partials/member_sheet.html, with v5's editable ping level and reply style. -->
-<Modal bind:open title={member?.name ?? 'Member'} eyebrow={member?.bossing ? 'Member' : 'Chat access only'} narrow>
+<Modal bind:open title={member ? directory.label('member', member.id, member.name) : 'Member'} eyebrow={member?.bossing ? 'Member' : 'Chat access only'} narrow>
   {#if member}
     <dl class="membersheet__grid">
-      <dt>User ID</dt>
-      <dd class="mono">{member.id}</dd>
+      <dt>Discord account</dt>
+      <dd><Name kind="member" id={member.id} name={member.name} /> <span class="note">(select to copy the ID)</span></dd>
       <dt>Server nickname</dt>
       <dd>{member.nickname ?? '—'}</dd>
       <dt>Runs this week</dt>
