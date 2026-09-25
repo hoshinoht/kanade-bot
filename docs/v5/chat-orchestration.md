@@ -56,7 +56,8 @@ are C3. Discord wiring is later.
   and stale cards live. The deadline is checked right after each call
   instead; once past it the question ends as `Timeout` (`timeout` in the
   log) with that call's outcome and created proposals reported and its cards
-  never posted.
+  never posted. A card post cut by the deadline ends the question the same
+  way; that card's delivery is unknown (Discord may already have it).
 - Cards: proposal tools hand `ProposalCard`s to `ChatPorts::post_card`. A card
   that could not be posted turns that call into a refusal the model reads
   (`CARD_NOT_POSTED`, v4's wording) before the next round; a posted card sets

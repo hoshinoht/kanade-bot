@@ -373,6 +373,12 @@ async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
     );
     assert_eq!(row.outcome, ChatOutcome::Timeout);
     assert_eq!(row.error.as_deref(), Some("no answer within 60s"));
+    // The persisted row still shows the call and the proposal it created.
+    assert_eq!(row.rounds[0].tools, ["propose_move"]);
+    assert_eq!(
+        row.rounds[0].tool_calls[0]["created"],
+        json!(generation.created)
+    );
 }
 
 /// Lenient chat validation hands unknown tools and schema-invalid object

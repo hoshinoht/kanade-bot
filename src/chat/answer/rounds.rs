@@ -404,7 +404,19 @@ where
             let mut posted = Vec::new();
             let mut undelivered = false;
             for card in &outcome.cards {
-                match within_deadline!('rounds, ports.post_card(card)) {
+                let Ok(result) = timeout_at(deadline, ports.post_card(card)).await else {
+                    // Log the call and what it created; this card's post is unknown.
+                    state.generation.tools_ms += millis(started);
+                    state.generation.posted.extend(posted.iter().cloned());
+                    state.generation.outcomes.push(RoundOutcome {
+                        round,
+                        outcome,
+                        posted,
+                    });
+                    state.generation.failure = Some(AnswerFailure::Timeout { seconds });
+                    break 'rounds None;
+                };
+                match result {
                     Ok(()) => {
                         posted.push(card.proposal_id.clone());
                         state.generation.focus = Some(state.focus(card));
