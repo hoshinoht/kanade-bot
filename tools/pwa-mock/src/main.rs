@@ -75,6 +75,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/__mock/reports", get(reports::list).delete(reports::clear))
         .route("/__mock/whoami", get(whoami))
         .route("/__mock/csrf/rotate", post(writes::rotate))
+        .route("/__mock/session", post(api::switch_session))
         .with_state(app.clone())
         .fallback_service(static_site(dist))
         .layer(middleware::from_fn(headers::apply))

@@ -371,6 +371,49 @@ impl Store {
         Some(record)
     }
 
+    /// The signed-in admin as the server attributes them (Asahi, staff, by
+    /// default; `/__mock/session` switches the method).
+    pub fn session_actor(&self) -> Actor {
+        match self.session {
+            "token" => Actor::admin(),
+            "tailscale" => Actor::new("admin", "tailscale:ops@example.test"),
+            _ => Actor::discord_admin("1001"),
+        }
+    }
+
+    /// The Discord user behind the session, if it signed in with Discord.
+    pub fn discord_user(&self) -> Option<&'static str> {
+        (self.session == "discord").then_some("1001")
+    }
+
+    pub fn session_display(&self) -> &'static str {
+        match self.session {
+            "token" => "Break-glass token",
+            "tailscale" => "ops@example.test",
+            _ => "Asahi",
+        }
+    }
+
+    pub fn set_session(&mut self, method: &str) -> bool {
+        let Some(known) = ["discord", "token", "tailscale"]
+            .into_iter()
+            .find(|m| *m == method)
+        else {
+            return false;
+        };
+        self.session = known;
+        true
+    }
+
+    /// An admin-portal edit, attributed to the session.
+    pub fn portal<T>(
+        &mut self,
+        change: impl FnOnce(&mut Self) -> Result<T, MoveError>,
+    ) -> Result<T, MoveError> {
+        let actor = self.session_actor();
+        self.tracked(actor, "admin_portal", change)
+    }
+
     /// Runs `change` and appends a record of whatever rows it changed.
     pub fn tracked<T>(
         &mut self,
@@ -571,9 +614,10 @@ impl Store {
                     hash: r.hash.clone(),
                 })
                 .collect();
+            let actor = self.session_actor();
             record = self.push_record(
                 &current,
-                Actor::admin(),
+                actor,
                 "rollback",
                 now_secs(),
                 refs,

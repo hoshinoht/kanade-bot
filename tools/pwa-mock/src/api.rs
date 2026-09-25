@@ -131,12 +131,7 @@ pub async fn fixed(State(app): State<App>) -> Response {
 }
 
 pub async fn create_fixed(State(app): State<App>, Json(req): Json<FixedRequest>) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.create_fixed(req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.create_fixed(req)))
 }
 
 pub async fn update_fixed(
@@ -144,12 +139,7 @@ pub async fn update_fixed(
     Path(id): Path<String>,
     Json(req): Json<FixedRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.update_fixed(&id, req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.update_fixed(&id, req)))
 }
 
 pub async fn retire_fixed(State(app): State<App>, Path(id): Path<String>) -> Response {
@@ -157,7 +147,7 @@ pub async fn retire_fixed(State(app): State<App>, Path(id): Path<String>) -> Res
         app.store
             .lock()
             .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.retire_fixed(&id))
+            .portal(|s| s.retire_fixed(&id))
             .map(|cancelled| json!({ "cancelled": cancelled })),
     )
 }
@@ -188,19 +178,38 @@ pub async fn reset_run(
         app.store
             .lock()
             .await
-            .tracked(Actor::admin(), "admin_portal", |s| {
-                s.reset_to_fixed(&id, req.version)
-            }),
+            .portal(|s| s.reset_to_fixed(&id, req.version)),
     )
 }
 
 /// Mock stand-in for the authenticated caller; carries the CSRF token like the server.
 pub async fn session(State(app): State<App>) -> Response {
+    let display = app.store.lock().await.session_display();
     (
         [(crate::writes::CSRF_HEADER, app.writes.token())],
-        Json(json!({ "display": "admin token" })),
+        Json(json!({ "display": display })),
     )
         .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct SessionMethod {
+    method: String,
+}
+
+/// `POST /__mock/session {method}`: sign in again as `discord`, `token` or
+/// `tailscale` (a new CSRF token, as a real sign-in), so e2e can cover the
+/// Discord-only proposal rule.
+pub async fn switch_session(State(app): State<App>, Json(req): Json<SessionMethod>) -> Response {
+    if !app.store.lock().await.set_session(&req.method) {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Method is discord, token or tailscale.",
+        );
+    }
+    app.writes.rotate();
+    StatusCode::NO_CONTENT.into_response()
 }
 
 pub async fn move_run(
@@ -208,12 +217,7 @@ pub async fn move_run(
     Path(id): Path<String>,
     Json(req): Json<MoveRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.move_run(&id, req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.move_run(&id, req)))
 }
 
 pub async fn status(
@@ -221,12 +225,7 @@ pub async fn status(
     Path(id): Path<String>,
     Json(req): Json<StatusRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.set_status(&id, req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.set_status(&id, req)))
 }
 
 pub async fn rsvp(
@@ -234,12 +233,7 @@ pub async fn rsvp(
     Path(id): Path<String>,
     Json(req): Json<RsvpRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.rsvp(&id, req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.rsvp(&id, req)))
 }
 
 pub async fn participants(
@@ -247,12 +241,7 @@ pub async fn participants(
     Path(id): Path<String>,
     Json(req): Json<ParticipantsRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .tracked(Actor::admin(), "admin_portal", |s| s.participants(&id, req)),
-    )
+    outcome(app.store.lock().await.portal(|s| s.participants(&id, req)))
 }
 
 pub async fn ping(State(app): State<App>, Path(id): Path<String>) -> Response {

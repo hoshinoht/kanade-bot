@@ -116,6 +116,8 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
   await expect(editor.getByLabel('Note')).toHaveValue('Bring snacks');
 
   await editor.getByRole('button', { name: 'Cancel' }).click();
+  // The 409 re-reads the list; reopen only once the other admin's note is on screen.
+  await expect(page.getByRole('row', { name: /Black Mage/ })).toContainText('Starts late');
   await editButton.click();
   await expect(editor.getByLabel('Note')).toHaveValue('Starts late');
   await editor.getByLabel('Note').fill('Starts late; bring snacks');

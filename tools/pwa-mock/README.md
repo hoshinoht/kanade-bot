@@ -32,6 +32,19 @@ still check the whole week). Admin changes are attributed as the server does:
 `admin:token` for the mock's session, `admin:discord:<id>` in the seed.
 Unit tests pin their own clock and ignore `KANADE_MOCK_NOW`.
 
+The mock's admin signs in with Discord as Asahi (staff, `admin:discord:1001`)
+after every `POST /api/admin/reset`; `POST /__mock/session {"method":
+"discord" | "token" | "tailscale"}` signs in again another way (new CSRF
+token). The Inbox follows admin-api "Inbox (A6)": extractor and chat
+proposals plus member requests (`new_fixed`, `change_fixed`, `join`,
+`leave`, `swap`, `via: "request"`); `change_fixed` choices list only the
+amended runs; conflicts always block (`force` is `422 force_unsupported`);
+proposals take one edit (`day`, `time`) for a move, new run or split and are
+decided only by a Discord session (`403 discord_session_required`), as the
+approving member (`extraction_approval` / `chat_approval`); requests by any
+session (`request_merge`). Repeating a decision answers 200 with the first
+message (`422 idempotency_mismatch` if it differs).
+
 History records carry domain rows as the server encodes them (run instants
 in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`
 rows derived from each run's cards), name weeks by their starting RFC 3339

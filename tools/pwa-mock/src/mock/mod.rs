@@ -21,6 +21,7 @@ use clock::{DOW, clock, countdown, iso_date, iso_now, local_now, minutes, valid_
 use dto::*;
 use seed::{Fixed, MemberSeed, Rec};
 
+#[derive(Clone)]
 pub enum MoveError {
     NotFound,
     Stale,
@@ -64,6 +65,10 @@ pub struct Store {
     members: Vec<MemberState>,
     history: Vec<history::Record>,
     proposals: Vec<inbox::Proposal>,
+    /// Closed inbox items, so a repeated decision answers as the first did.
+    decided: Vec<inbox::Decided>,
+    /// How the mock's admin signed in: `discord`, `token` or `tailscale`.
+    session: &'static str,
     jobs: Vec<extractions::Job>,
     limit_resets: Vec<&'static str>,
     config: config::Config,
@@ -80,6 +85,8 @@ impl Store {
             members: Vec::new(),
             history: Vec::new(),
             proposals: Vec::new(),
+            decided: Vec::new(),
+            session: "discord",
             jobs: Vec::new(),
             limit_resets: Vec::new(),
             config: config::defaults(),
@@ -106,6 +113,8 @@ impl Store {
         self.version = 1;
         self.next_id = 1;
         self.proposals = inbox::seed();
+        self.decided.clear();
+        self.session = "discord";
         self.jobs.clear();
         self.limit_resets.clear();
         self.config = config::defaults();

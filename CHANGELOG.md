@@ -232,6 +232,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: the admin inbox follows the Rust inbox: member request types and chat proposals are
+  labelled, conflicts can only be rejected, "Move & approve" works for moves, new runs and
+  splits, reasons are asked only for member requests, and token/Tailscale sessions are
+  told to sign in with Discord to decide Kanade's proposals.
 - v5: weekly-timing edits can no longer pair a fresh week version with an old row (which
   could silently undo another admin's change); only a real out-of-date refusal asks to
   reopen the form, and history names admins by who they are.

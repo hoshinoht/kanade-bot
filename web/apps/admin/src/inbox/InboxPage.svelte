@@ -13,9 +13,9 @@
   import { Icon, Modal, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { Resource, send } from '../resource.svelte';
-  import { parseWhen } from '../sheet/parseWhen';
   import type { AdminWeek } from '../store.svelte';
-  import { REASON_MAX, reasonProblem, title } from './flags';
+  import { parseEdit } from './edit';
+  import { isProposal, REASON_MAX, reasonProblem, refusalText, title } from './flags';
   import InboxDetail from './InboxDetail.svelte';
   import InboxList from './InboxList.svelte';
 
@@ -128,23 +128,30 @@
     leaveDetail();
   }
 
+  /** Words for a refusal; learns the Discord-only rule and re-reads what moved. */
+  function refused(code: string | null | undefined, message: string): string {
+    if (code === 'discord_session_required') store.proposalsLocked = true;
+    if (code === 'stale' || code === 'expired') void inbox.load();
+    return refusalText(code, message);
+  }
+
   async function approve(p: Proposal, body: ApproveRequest) {
     error = '';
     busy = true;
     const result = await send((c) => c.post<{ message: string }>(`/api/admin/inbox/${encodeURIComponent(p.id)}/approve`, body));
     busy = false;
     if (result.ok) await after(result.value.message);
-    else error = result.message;
+    else error = refused(result.code, result.message);
   }
 
-  function move(p: Proposal, text: string, force: boolean) {
-    const run = p.run_id ? store.run(p.run_id) : undefined;
-    const parsed = parseWhen(text, store.week?.days ?? [], { day: run?.day ?? 0, time: run?.time ?? null });
-    if (!parsed.ok) {
-      error = parsed.message;
+  function move(p: Proposal, text: string) {
+    // The proposal's own boss week (the reset weekday is the same every week).
+    const edit = parseEdit(text, p, store.week?.days[0]?.dow ?? store.week?.reset ?? 'Thu');
+    if (!edit.ok) {
+      error = edit.message;
       return;
     }
-    void approve(p, { version: p.version, day: parsed.slot.day, time: parsed.slot.time, force });
+    void approve(p, { version: p.version, day: edit.day, time: edit.time });
   }
 
   async function reject() {
@@ -152,12 +159,13 @@
     if (!p) return;
     reasonError = reasonProblem(p, reason);
     if (reasonError) return;
-    const text = reason.trim();
+    // Proposals take no reason: nothing would keep it.
+    const text = isProposal(p) ? '' : reason.trim();
     const result = await send((c) =>
       c.post<{ message: string }>(`/api/admin/inbox/${encodeURIComponent(p.id)}/reject`, { version: p.version, ...(text ? { reason: text } : {}) }),
     );
     if (!result.ok) {
-      reasonError = result.message;
+      reasonError = refused(result.code, result.message);
       return;
     }
     rejectOpen = false;
@@ -222,9 +230,10 @@
             <InboxDetail
               p={chosen}
               {busy}
+              locked={store.proposalsLocked}
               {error}
               onapprove={(body) => void approve(chosen!, body)}
-              onmove={(text, force) => move(chosen!, text, force)}
+              onmove={(text) => move(chosen!, text)}
               onreject={() => {
                 reason = '';
                 reasonError = '';
@@ -240,18 +249,20 @@
 
 <Modal bind:open={rejectOpen} title={chosen ? `Reject ${title(chosen)}?` : 'Reject'} eyebrow="Inbox" narrow>
   <p>Nothing on the schedule changes. {chosen?.self_service ? 'The member is told, with your reason.' : 'The card in Discord is marked rejected.'}</p>
-  <label class="field">
-    <span>Reason{chosen?.tab === 'self_service' ? '' : ' (optional)'}</span>
-    <textarea
-      bind:value={reason}
-      rows="3"
-      maxlength={REASON_MAX}
-      aria-invalid={reasonError ? 'true' : undefined}
-      aria-describedby="{uid}-reason-help {uid}-reason-err"
-      required={chosen?.tab === 'self_service'}
-    ></textarea>
-  </label>
-  <p class="note" id="{uid}-reason-help"><span class="mono">{[...reason].length}/{REASON_MAX}</span></p>
+  {#if chosen && !isProposal(chosen)}
+    <label class="field">
+      <span>Reason</span>
+      <textarea
+        bind:value={reason}
+        rows="3"
+        maxlength={REASON_MAX}
+        aria-invalid={reasonError ? 'true' : undefined}
+        aria-describedby="{uid}-reason-help {uid}-reason-err"
+        required
+      ></textarea>
+    </label>
+    <p class="note" id="{uid}-reason-help"><span class="mono">{[...reason].length}/{REASON_MAX}</span></p>
+  {/if}
   <p class="field__error" id="{uid}-reason-err" role="alert">{reasonError}</p>
   {#snippet footer(close)}
     <button class="btn" type="button" onclick={close}>Keep it</button>

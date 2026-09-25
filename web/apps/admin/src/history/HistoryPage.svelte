@@ -9,6 +9,7 @@
   import '@kanade/ui/styles/evidence.scss';
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
+  import { SvelteSet } from 'svelte/reactivity';
   import { Tabs, Toaster, weekStartLabel, type TabItem } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -37,6 +38,7 @@
     try {
       const page = await client.get<HistoryPage>(`/api/admin/history?${params}`);
       records = more ? [...records, ...page.records] : page.records;
+      for (const r of page.records) if (r.actor.kind === 'admin') seenAdmins.add(r.actor.id);
       head = page.head;
       nextBefore = page.next_before;
       total = page.total;
@@ -79,9 +81,15 @@
   );
   const loose = $derived(records.filter((r) => r.weeks.length === 0));
   const members = $derived(store.members.filter((m) => m.bossing));
-  // Staff sign in with Discord, so their admin changes are `admin:discord:<id>`.
-  const admins = $derived(store.members.filter((m) => m.access === 'staff'));
   const known = (id: string) => store.members.some((m) => m.id === id);
+  // Admin ids as the history names them (`token`, `discord:<id>`, `tailscale:<login>`),
+  // collected from every page read, so filtering by one keeps the others offered.
+  const seenAdmins = new SvelteSet<string>();
+  const admins = $derived(
+    [...seenAdmins]
+      .map((id) => ({ id, label: actorName({ kind: 'admin', id }, names, known) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  );
 
   // The dialog's request.
   let dialogOpen = $state(false);
@@ -134,8 +142,7 @@
       <span>Who</span>
       <select bind:value={actor}>
         <option value="">everyone</option>
-        <option value="admin:token">Admin (token)</option>
-        {#each admins as m (m.id)}<option value="admin:discord:{m.id}">{names(m.id)} (as admin)</option>{/each}
+        {#each admins as a (a.id)}<option value="admin:{a.id}">{a.label}{a.id.startsWith('discord:') && known(a.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}
         <option value="system:delivery">system (delivery)</option>
         {#each members as m (m.id)}<option value="member:{m.id}">{names(m.id)}</option>{/each}
       </select>

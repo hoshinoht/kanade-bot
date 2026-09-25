@@ -37,6 +37,12 @@ export class AdminWeek {
   channels = $state<Channel[]>([]);
   identity = $state<Identity | null>(null);
   session = $state<Session | null>(null);
+  /**
+   * The server refused this session Kanade's proposals (403
+   * `discord_session_required`: a token or Tailscale sign-in). `Session`
+   * does not say how it signed in, so the app learns it from that refusal.
+   */
+  proposalsLocked = $state(false);
 
   #client = createClient();
   #poller: Poller;

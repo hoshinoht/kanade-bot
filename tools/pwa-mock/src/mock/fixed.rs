@@ -177,6 +177,28 @@ impl Store {
             .iter()
             .position(|f| f.id == id && !f.retired)
             .ok_or(MoveError::NotFound)?;
+        let old = &self.fixed[index];
+        // As the server: each field the form changes must not have moved since `version`.
+        let changed = [
+            ("weekday", old.weekday != timing.weekday),
+            ("time", old.time != timing.time),
+            ("bosses", old.bosses != timing.bosses),
+            ("participants", old.participants != timing.participants),
+            ("channel_id", old.channel != timing.channel),
+            ("note", old.note != timing.note),
+        ];
+        // Nothing differs: the server answers 200 without writing, before any other check.
+        if changed.iter().all(|(_, differs)| !differs) {
+            return Ok(self.fixed_row(old));
+        }
+        // Stale before choices, as the server checks preconditions first.
+        let key = serde_json::json!({ "table": "fixed_runs", "id": id });
+        if changed
+            .iter()
+            .any(|(field, differs)| *differs && self.changed_after(&key, field, version))
+        {
+            return Err(MoveError::Stale);
+        }
         let amended: Vec<String> = self
             .runs
             .iter()
@@ -191,26 +213,11 @@ impl Store {
                 Some("update" | "keep")
             )
         }) {
-            return Err(MoveError::Invalid(format!(
-                "Choose update or keep for amended run {missing}."
-            )));
-        }
-        let old = &self.fixed[index];
-        // As the server: each field the form changes must not have moved since `version`.
-        let changed = [
-            ("weekday", old.weekday != timing.weekday),
-            ("time", old.time != timing.time),
-            ("bosses", old.bosses != timing.bosses),
-            ("participants", old.participants != timing.participants),
-            ("channel_id", old.channel != timing.channel),
-            ("note", old.note != timing.note),
-        ];
-        let key = serde_json::json!({ "table": "fixed_runs", "id": id });
-        if changed
-            .iter()
-            .any(|(field, differs)| *differs && self.changed_after(&key, field, version))
-        {
-            return Err(MoveError::Stale);
+            return Err(MoveError::Coded(
+                422,
+                "choices_required",
+                format!("Choose update or keep for amended run {missing}."),
+            ));
         }
         let old = &self.fixed[index];
         timing.id = old.id.clone();
@@ -375,6 +382,38 @@ mod tests {
         noted.note = Some("bring potions".into());
         let row = edit(&mut s, noted).ok().unwrap();
         assert_eq!(row.note.as_deref(), Some("bring potions"));
+    }
+
+    #[test]
+    fn a_no_op_save_answers_the_row_and_stale_comes_before_choices() {
+        let mut s = store();
+        let loaded = s.version;
+        let edit = |s: &mut Store, req: FixedRequest| {
+            s.tracked(Actor::admin(), "admin_portal", |s| {
+                s.update_fixed("f-kalos", req)
+            })
+        };
+        // The stored values resent: 200 with the row, no choices asked, nothing written.
+        let row = edit(&mut s, request("21:30", &[], Some(loaded)))
+            .ok()
+            .unwrap();
+        assert_eq!((row.time.as_str(), s.version), ("21:30", loaded));
+        match edit(&mut s, request("21:00", &[], Some(loaded))) {
+            Err(MoveError::Coded(422, "choices_required", _)) => {}
+            Err(other) => panic!("wanted choices_required, got {other}"),
+            Ok(_) => panic!("applied without a choice for the amended run"),
+        }
+        edit(
+            &mut s,
+            request("21:00", &[("r-kalos", "keep")], Some(loaded)),
+        )
+        .ok()
+        .unwrap();
+        // A stale form without choices is refused as stale, not asked for choices.
+        assert!(matches!(
+            edit(&mut s, request("20:00", &[], Some(loaded))),
+            Err(MoveError::Stale)
+        ));
     }
 
     #[test]

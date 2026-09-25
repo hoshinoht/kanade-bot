@@ -395,17 +395,17 @@ export interface Evidence {
 
 export type InboxTab = 'extractor' | 'self_service';
 /** Badges an inbox item can carry; each also blocks or qualifies an action. */
-export type ProposalFlag = 'conflict' | 'expired' | 'requester_frozen' | 'no_effect';
+export type ProposalFlag = 'conflict' | 'expired' | 'requester_frozen' | 'requester_unauthorised' | 'no_effect';
 
 export interface ProposalPreview {
   /** Applying it would change nothing (already in effect): approve is refused with 409 no_effect. */
   no_effect: boolean;
   changes: { field: string; from: string; to: string }[];
-  /** What moved since the member asked: approve needs `force` after review, else 409 conflicts. */
+  /** Three-way conflicts (what the change was based on vs now): approving is refused (409 conflicts); reject instead. */
   conflicts: { field: string; expected: string; found: string }[];
 }
 
-/** A weekly-timing change: every open run of the timing needs `update` or `keep`. */
+/** A `change_fixed` request's amended run the edit would move: it needs `update` or `keep`; other runs follow the timing. */
 export interface ProposalChoice {
   run_id: string;
   label: string;
@@ -413,18 +413,21 @@ export interface ProposalChoice {
   amended: boolean;
 }
 
-/** `POST /api/admin/inbox/{id}/approve`. */
+/**
+ * `POST /api/admin/inbox/{id}/approve`. Requests need `version` (and, for
+ * `change_fixed`, `choices`, `{}` when none are listed) and take no edit;
+ * proposals take an optional `version` and, for a move, new run or split,
+ * an edit: `day` (0–6) in the boss week of the proposed time and `time`
+ * `HH:MM`. Conflicts always block; there is no `force`.
+ */
 export interface ApproveRequest {
   version?: number;
-  /** Edit, then approve (moves). */
-  day?: number;
-  time?: string | null;
   choices?: Record<string, 'update' | 'keep'>;
-  /** Approve over reviewed conflicts. */
-  force?: boolean;
+  day?: number;
+  time?: string;
 }
 
-/** `POST /api/admin/inbox/{id}/reject`: a reason of 1–500 characters is required for member requests. */
+/** `POST /api/admin/inbox/{id}/reject`: requests need `version` and a reason of 1–500 characters; proposals take no reason (422 `reason_not_applicable`). */
 export interface RejectRequest {
   version?: number;
   reason?: string;
@@ -434,9 +437,11 @@ export interface RejectRequest {
 export interface Proposal {
   id: string;
   short_id: string;
-  kind: 'move' | 'add' | 'cancel' | 'split' | 'otot' | 'sub' | 'rsvp' | 'fix';
+  /** A proposal's change kind, or a member request's type (`new_fixed` … `swap`). */
+  kind: 'move' | 'add' | 'cancel' | 'split' | 'otot' | 'sub' | 'rsvp' | 'fix' | 'new_fixed' | 'change_fixed' | 'join' | 'leave' | 'swap';
   kind_label: string;
-  source: 'extraction' | 'self_service';
+  /** Kanade read it from party chat (`extraction`) or was asked in chat (`chat`); `self_service` is a member request. */
+  source: 'extraction' | 'chat' | 'self_service';
   tab: InboxTab;
   /** Name it on approve/reject; a different current version answers 409 stale. */
   version: number;
@@ -458,10 +463,7 @@ export interface Proposal {
   summary: string;
   evidence: Evidence[];
   card_url: string | null;
-  /**
-   * Present when a signed-in member confirmed it from a pre-filled self-service
-   * link (run id and proposed time only; the link carries no secret).
-   */
+  /** Member requests: who asked, `via` (`request`) and their own title (admin-only). */
   self_service: { member: Member; via: string; note: string | null } | null;
 }
 

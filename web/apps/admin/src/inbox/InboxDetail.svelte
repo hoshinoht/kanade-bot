@@ -1,16 +1,19 @@
 <!--
   One inbox item: v4's evidence quote, the proposed change as a preview with
-  any conflicts, per-run choices for a weekly timing, and the actions —
-  Approve, Edit then approve (moves), Reject with a reason.
+  any conflicts (which always block), per-run choices for a weekly-timing
+  change, and the actions — Approve, Edit then approve (a move, new run or
+  split), Reject (with a reason for member requests).
 -->
 <script lang="ts">
   import type { ApproveRequest, Proposal } from '@kanade/api-types';
   import { BossTag } from '@kanade/ui';
-  import { blocked, FLAG_LABEL, FLAG_TONE } from './flags';
+  import { editable } from './edit';
+  import { blocked, DISCORD_ONLY, FLAG_LABEL, FLAG_TONE, isProposal, SOURCE_LABEL } from './flags';
 
   let {
     p,
     busy,
+    locked,
     error,
     onapprove,
     onmove,
@@ -18,25 +21,27 @@
   }: {
     p: Proposal;
     busy: boolean;
+    /** This session was refused Kanade's proposals (not signed in with Discord). */
+    locked: boolean;
     error: string;
     onapprove: (body: ApproveRequest) => void;
     /** "Move & approve": the typed slot, parsed by the page. */
-    onmove: (text: string, force: boolean) => void;
+    onmove: (text: string) => void;
     onreject: () => void;
   } = $props();
   const uid = $props.id();
 
   let edit = $state('');
-  let force = $state(false);
   let choices = $state<Record<string, 'update' | 'keep'>>({});
   const band = (c: number | null) => (c === null ? 'unknown' : c >= 0.8 ? 'high' : c >= 0.6 ? 'mid' : 'low');
   const stop = $derived(blocked(p));
   const conflicted = $derived(p.preview.conflicts.length > 0);
+  const refused = $derived(locked && isProposal(p));
 
   function approve() {
     const body: ApproveRequest = { version: p.version };
-    if (p.choices?.length) body.choices = { ...choices };
-    if (conflicted) body.force = force;
+    // A timing change always names its choices, `{}` when no run is listed.
+    if (p.choices !== null) body.choices = { ...choices };
     onapprove(body);
   }
 </script>
@@ -46,9 +51,8 @@
     <h2 class="proposal__title" id="{uid}-title">
       {p.kind_label} — {#each p.bosses as boss (boss.token)}<BossTag {boss} />{/each}
     </h2>
-    {#if p.source === 'self_service'}
-      <span class="chip chip--maybe">Self-service request</span>
-    {:else}
+    <span class="chip{p.source === 'self_service' ? ' chip--maybe' : ''}">{SOURCE_LABEL[p.source]}</span>
+    {#if p.source !== 'self_service'}
       <span class="conf conf--{band(p.confidence)}">{p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`}</span>
     {/if}
     {#each p.flags as flag (flag)}<span class="chip {FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
@@ -61,9 +65,8 @@
 
   {#if p.self_service}
     <p class="flash flash--ok">
-      Sent by <strong>{p.self_service.member.name}</strong> (#{p.self_service.member.id}), signed in with Discord, from a pre-filled link
-      ({p.self_service.via}).
-      {#if p.self_service.note}{p.self_service.note}{/if}
+      Sent by <strong>{p.self_service.member.name}</strong> (#{p.self_service.member.id}) as a member request.
+      {#if p.self_service.note}“{p.self_service.note}”{/if}
     </p>
   {/if}
 
@@ -105,13 +108,12 @@
 
   {#if conflicted}
     <div class="proposal__conflicts" role="group" aria-labelledby="{uid}-conflicts">
-      <h3 class="pane__section" id="{uid}-conflicts">Changed since the member asked</h3>
+      <h3 class="pane__section" id="{uid}-conflicts">{isProposal(p) ? 'Changed since it was read' : 'Changed since the member asked'}</h3>
       <ul>
         {#each p.preview.conflicts as c, i (i)}
-          <li>{c.field}: they saw <span class="mono">{c.expected}</span>, it is now <strong class="mono">{c.found}</strong></li>
+          <li>{c.field}: it was based on <span class="mono">{c.expected}</span>, it is now <strong class="mono">{c.found}</strong></li>
         {/each}
       </ul>
-      <label class="proposal__force"><input type="checkbox" bind:checked={force} /> I reviewed this; approve anyway</label>
     </div>
   {/if}
 
@@ -129,27 +131,27 @@
   {/if}
 
   <div class="proposal__actions">
-    <button class="btn btn--primary" type="button" disabled={busy || Boolean(stop) || (conflicted && !force)} aria-describedby="{uid}-why" onclick={approve}
+    <button class="btn btn--primary" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby="{uid}-why" onclick={approve}
       >Approve</button
     >
-    {#if p.kind === 'move' && p.run_id && !p.flags.includes('expired')}
+    {#if editable(p) && !stop}
       <form
         class="proposal__edit"
         onsubmit={(event) => {
           event.preventDefault();
-          onmove(edit, force);
+          onmove(edit);
         }}
       >
         <label class="field">
           <span>Edit, then approve</span>
           <input class="mono" bind:value={edit} placeholder="wed 21:30" size="10" aria-invalid={error ? 'true' : undefined} aria-describedby="{uid}-err" />
         </label>
-        <button class="btn" type="submit" disabled={busy || (conflicted && !force)}>Move &amp; approve</button>
+        <button class="btn" type="submit" disabled={busy || refused} aria-describedby="{uid}-why">Move &amp; approve</button>
       </form>
     {/if}
-    <button class="btn btn--danger" type="button" onclick={onreject}>Reject…</button>
+    <button class="btn btn--danger" type="button" disabled={refused} aria-describedby="{uid}-why" onclick={onreject}>Reject…</button>
     {#if p.card_url}<a class="btn btn--ghost" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
   </div>
-  <p class="note" id="{uid}-why">{stop || (conflicted && !force ? 'Review the conflict above first.' : '')}</p>
+  <p class="note" id="{uid}-why">{refused ? `${DISCORD_ONLY} Members' requests can still be decided here.` : stop}</p>
   <p class="field__error" id="{uid}-err" role="alert">{error}</p>
 </article>

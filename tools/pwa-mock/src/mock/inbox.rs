@@ -1,6 +1,7 @@
-//! The Inbox (v4 /inbox): proposed changes read from party chat, plus v5
-//! self-service requests members confirm, signed in with Discord, from a
-//! pre-filled link (run id and proposed time only; no secret in the link).
+//! The Inbox (admin-api "Inbox (A6)"): Kanade's proposals from party chat
+//! (`extraction`) and from the chatbot (`chat`), plus members' requests
+//! (`new_fixed`, `change_fixed`, `join`, `leave`, `swap`). Proposals are
+//! decided only by a Discord-signed-in admin; requests by any admin session.
 
 use super::dto::{Boss, Named, Participant};
 use super::history::Actor;
@@ -27,21 +28,21 @@ pub struct SelfService {
     pub note: Option<String>,
 }
 
-/// A member request (v5 "requests as PRs"): who sent it, from where, and the
-/// state the backend reports about it.
+/// A member request (v5 "requests as PRs"): who sent it and the state the
+/// backend reports about it.
 #[derive(Clone)]
 pub struct Request {
     pub member: &'static str,
-    pub via: &'static str,
+    /// The member's own title (admin-only).
     pub note: &'static str,
-    /// The requester is frozen (their requests are held for an admin).
-    pub frozen: bool,
+    /// The requester may no longer have it approved.
+    pub unauthorised: bool,
     /// Hour (from the boss week's start) the request expires at.
     pub expires_hour: Option<i64>,
     /// The run's day and time the member saw when they asked; a different
-    /// value now is a conflict the admin has to acknowledge.
+    /// value now is a conflict, and conflicts always block.
     pub base: Option<(u8, Option<&'static str>)>,
-    /// The generated one-line summary the public app shows the member.
+    /// The generated `member request: <type> <subject>` line.
     pub public_summary: &'static str,
 }
 
@@ -50,11 +51,12 @@ pub struct Proposal {
     pub id: &'static str,
     pub short_id: &'static str,
     pub kind: &'static str,
+    /// `extraction` or `chat` for proposals; requests are `self_service`.
+    pub source: &'static str,
     pub run_id: Option<&'static str>,
     /// For moves and adds: target boss-week day and time.
     pub day: u8,
     pub time: Option<&'static str>,
-    pub answer: Option<(&'static str, &'static str)>,
     pub bosses: Vec<&'static str>,
     pub participants: Vec<&'static str>,
     pub confidence: Option<f32>,
@@ -64,8 +66,9 @@ pub struct Proposal {
     pub summary: &'static str,
     pub evidence: Vec<(&'static str, &'static str, i64, Option<&'static str>)>,
     pub request: Option<Request>,
-    /// For `fix`: the weekly timing the request changes, and its new weekday
-    /// (0 = Monday) and time.
+    /// `change_fixed`: the weekly timing and its new weekday (0 = Monday) and
+    /// time; `new_fixed`: an empty id and the new timing's slot. `swap`
+    /// names the member leaving, then the one joining, in `participants`.
     pub timing: Option<(&'static str, u8, &'static str)>,
     /// Bumped by every edit; approve and reject may name the version they saw.
     pub version: u32,
@@ -111,7 +114,7 @@ pub struct ProposalDto {
     /// The inbox tab it belongs to.
     pub tab: &'static str,
     pub version: u32,
-    /// Badges: `conflict`, `expired`, `requester_frozen`, `no_effect`.
+    /// Badges: `conflict`, `expired`, `requester_unauthorised`, `no_effect`.
     pub flags: Vec<&'static str>,
     pub preview: Preview,
     pub expires_at: Option<String>,
@@ -135,16 +138,27 @@ pub struct ProposalDto {
 
 #[derive(Deserialize, Default)]
 pub struct ApproveRequest {
-    /// Edit, then approve: a new boss-week day and time for a move.
+    /// Edit, then approve (proposals with a time): day of the proposed
+    /// instant's boss week and `HH:MM`.
     pub day: Option<u8>,
     pub time: Option<String>,
-    /// The version the admin reviewed; a different one is 409 stale.
+    /// Required for requests; a different one is 409 stale.
     pub version: Option<u32>,
-    /// Weekly-timing changes: run id -> `update` | `keep`.
+    /// `change_fixed`: amended run id -> `update` | `keep`.
     pub choices: Option<std::collections::BTreeMap<String, String>>,
-    /// Approve over reported conflicts (the admin reviewed them).
-    #[serde(default)]
-    pub force: bool,
+    /// Refused: conflicts always block (`force_unsupported`).
+    pub force: Option<bool>,
+}
+
+/// A closed item, kept so a repeated decision answers as the first did.
+#[derive(Clone)]
+pub struct Decided {
+    pub proposal: Proposal,
+    pub approved: bool,
+    /// The approval's choices or edit, or the rejection's reason.
+    pub digest: String,
+    pub actor: Actor,
+    pub message: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -154,18 +168,19 @@ pub struct RejectRequest {
     pub reason: Option<String>,
 }
 
+/// A boss week's reset, as an hour of `at_hour`.
+const RESET_HOUR: i64 = 7 * 24 + 8;
+
 const fn request(
     member: &'static str,
-    via: &'static str,
     note: &'static str,
     public_summary: &'static str,
 ) -> Request {
     Request {
         member,
-        via,
         note,
-        frozen: false,
-        expires_hour: None,
+        unauthorised: false,
+        expires_hour: Some(RESET_HOUR),
         base: None,
         public_summary,
     }
@@ -176,16 +191,16 @@ pub fn seed() -> Vec<Proposal> {
         id: "",
         short_id: "",
         kind: "move",
+        source: "extraction",
         run_id: None,
         day: 0,
         time: None,
-        answer: None,
         bosses: vec![],
         participants: vec![],
         confidence: None,
         is_question: false,
         channel: "",
-        read_at_hour: 100,
+        read_at_hour: 126,
         summary: "",
         evidence: vec![],
         request: None,
@@ -203,12 +218,11 @@ pub fn seed() -> Vec<Proposal> {
             participants: vec!["1012", "1009", "1008"],
             confidence: Some(0.86),
             channel: "bm-trio",
-            read_at_hour: 108,
             summary: "Minato asks to push Black Mage to Wednesday; Kaito agrees.",
             evidence: vec![
-                ("1012", "tue cannot, wed same time ok?", 107, Some("m1")),
-                ("1009", "wed ok for me", 108, Some("m2")),
-                ("1008", "", 108, None),
+                ("1012", "tue cannot, wed same time ok?", 125, Some("m1")),
+                ("1009", "wed ok for me", 126, Some("m2")),
+                ("1008", "", 126, None),
             ],
             ..base.clone()
         },
@@ -223,77 +237,66 @@ pub fn seed() -> Vec<Proposal> {
             confidence: Some(0.52),
             is_question: true,
             channel: "limbo-trio",
+            read_at_hour: 124,
             summary: "Mika floats a Normal Limbo run on Saturday; nobody has confirmed.",
-            evidence: vec![("1003", "nlimbo sat 9pm anyone?", 99, Some("m3"))],
+            evidence: vec![("1003", "nlimbo sat 9pm anyone?", 123, Some("m3"))],
             ..base.clone()
         },
-        // The redirect feature (case a): Ren confirmed a move of a run they
-        // are on from the chatbot's pre-filled link; others on the run
-        // approve it through an admin.
+        // Asked of the chatbot rather than read from the party channel.
+        Proposal {
+            id: "p-jupiter-chat",
+            short_id: "b2c4d6e8",
+            source: "chat",
+            run_id: Some("r-jupiter"),
+            day: 6,
+            time: Some("21:00"),
+            bosses: vec!["HJupiter"],
+            participants: vec!["1012"],
+            channel: "jupiter-trio",
+            read_at_hour: 128,
+            summary: "Minato asked Kanade to move HJupiter to Wednesday 21:00.",
+            evidence: vec![(
+                "1012",
+                "@Kanade can jupiter be wed 9pm instead?",
+                128,
+                Some("m9"),
+            )],
+            ..base.clone()
+        },
         Proposal {
             id: "p-carling-link",
             short_id: "b3d5f7a9",
+            kind: "join",
             run_id: Some("r-carling"),
-            day: 6,
-            time: Some("22:00"),
             bosses: vec!["HCarling", "HStar"],
-            participants: vec!["1013"],
+            participants: vec!["1007"],
             channel: "hstar-party",
             read_at_hour: 110,
-            summary: "Ren confirmed moving HCarling + HStar to Wednesday 22:00 from a pre-filled link.",
-            request: Some(Request {
-                base: Some((5, Some("22:00"))),
-                expires_hour: Some(24 * 7),
-                ..request(
-                    "1013",
-                    "the chatbot's reply",
-                    "Others are on this run, so it waits for approval.",
-                    "Move HCarling + HStar to Wed 22:00",
-                )
-            }),
-            ..base.clone()
-        },
-        // Case c: a weekly-timing change through the pre-filled request form.
-        Proposal {
-            id: "p-limbo-fixed",
-            short_id: "d4e6f8a0",
-            kind: "fix",
-            run_id: Some("r-limbo"),
-            day: 2,
-            time: Some("22:30"),
-            bosses: vec!["HLimbo"],
-            participants: vec!["1003"],
-            channel: "limbo-trio",
-            read_at_hour: 111,
-            summary: "Mika asks to move the weekly HLimbo timing to Saturdays 22:30.",
+            summary: "Can I fill in this week?",
             request: Some(request(
-                "1003",
-                "the extractor's request-form link",
-                "Weekly timings always need an admin.",
-                "Weekly HLimbo: Fridays 23:30 to Saturdays 22:30",
+                "1007",
+                "Can I fill in this week?",
+                "member request: join HCarling + HStar Tue 29 Sep 22:00",
             )),
-            timing: Some(("f-limbo", 5, "22:30")),
             ..base.clone()
         },
-        // Asked while FA was on Monday; the run has moved since: a conflict.
+        // Asked while FA was at 19:30; the run has moved since: a conflict.
         Proposal {
             id: "p-fa-request",
             short_id: "e5f7a9b1",
+            kind: "leave",
             run_id: Some("r-fa"),
-            day: 5,
-            time: Some("20:30"),
             bosses: vec!["HFA"],
             participants: vec!["1011"],
             channel: "fa-night",
             read_at_hour: 112,
-            summary: "Hotaru asks to move HFA to Tuesday 20:30.",
+            summary: "Something came up on Monday.",
             request: Some(Request {
                 base: Some((4, Some("19:30"))),
                 ..request(
                     "1011",
-                    "the chatbot's reply",
-                    "Asked before the run last moved.",
-                    "Move HFA to Tue 20:30",
+                    "Something came up on Monday.",
+                    "member request: leave HFA Mon 28 Sep 19:30",
                 )
             }),
             ..base.clone()
@@ -302,61 +305,104 @@ pub fn seed() -> Vec<Proposal> {
         Proposal {
             id: "p-kalos-expired",
             short_id: "f6a8b0c2",
+            kind: "swap",
             run_id: Some("r-kalos"),
-            day: 1,
-            time: Some("23:00"),
             bosses: vec!["XKalos"],
-            participants: vec!["1002"],
+            participants: vec!["1002", "1004"],
             channel: "kalos-four",
             read_at_hour: 20,
-            summary: "Ren asked to push XKalos to Friday 23:00.",
+            summary: "Yuzu takes my XKalos spot.",
             request: Some(Request {
                 expires_hour: Some(-12),
                 ..request(
                     "1002",
-                    "the public week page",
-                    "Nobody answered before it expired.",
-                    "Move XKalos to Fri 23:00",
+                    "Yuzu takes my XKalos spot.",
+                    "member request: swap XKalos Fri 25 Sep 22:00",
                 )
             }),
             ..base.clone()
         },
-        // Already where the member asked for it, and sent by a frozen member.
+        // Already on the run, and no longer allowed to have it approved.
         Proposal {
             id: "p-jupiter-same",
             short_id: "a9b1c3d5",
+            kind: "join",
             run_id: Some("r-jupiter"),
-            day: 4,
-            time: Some("21:00"),
             bosses: vec!["HJupiter"],
-            participants: vec!["1010"],
+            participants: vec!["1008"],
             channel: "jupiter-trio",
             read_at_hour: 113,
-            summary: "Rin asks for HJupiter on Monday 21:00, where it already is.",
+            summary: "Put me on Jupiter.",
             request: Some(Request {
-                frozen: true,
+                unauthorised: true,
                 ..request(
-                    "1010",
-                    "the public week page",
-                    "Rin's requests are frozen after repeated no-shows.",
-                    "Move HJupiter to Mon 21:00",
+                    "1008",
+                    "Put me on Jupiter.",
+                    "member request: join HJupiter Mon 28 Sep 21:00",
                 )
             }),
+            ..base.clone()
+        },
+        // A weekly-timing change: only the amended run (r-kalos) needs a choice.
+        Proposal {
+            id: "p-kalos-fixed",
+            short_id: "d4e6f8a0",
+            kind: "change_fixed",
+            bosses: vec!["XKalos"],
+            participants: vec!["1005"],
+            channel: "kalos-four",
+            read_at_hour: 111,
+            summary: "Saturdays suit everyone better.",
+            request: Some(Request {
+                expires_hour: None,
+                ..request(
+                    "1005",
+                    "Saturdays suit everyone better.",
+                    "member request: change_fixed XKalos Fri 21:30",
+                )
+            }),
+            timing: Some(("f-kalos", 5, "22:30")),
+            ..base.clone()
+        },
+        Proposal {
+            id: "p-limbo-new",
+            short_id: "c1d3e5f7",
+            kind: "new_fixed",
+            bosses: vec!["NLimbo"],
+            participants: vec!["1003", "1007"],
+            channel: "limbo-trio",
+            read_at_hour: 114,
+            summary: "A Sunday Normal Limbo for the newer players.",
+            request: Some(Request {
+                expires_hour: None,
+                ..request(
+                    "1003",
+                    "A Sunday Normal Limbo for the newer players.",
+                    "member request: new_fixed NLimbo Sun 21:00",
+                )
+            }),
+            timing: Some(("", 6, "21:00")),
             ..base
         },
     ]
 }
 
+/// As the server's `kind_label`.
 fn label(kind: &str) -> &'static str {
     match kind {
         "move" => "Move",
         "add" => "New run",
         "cancel" => "Cancel",
-        "rsvp" => "Answer",
-        "sub" => "Swap",
-        "otot" => "Own time",
         "split" => "Split",
-        _ => "Weekly timing",
+        "otot" => "Own time",
+        "sub" | "swap" => "Swap",
+        "rsvp" => "Answer",
+        "fix" => "Weekly timing",
+        "new_fixed" => "New weekly run",
+        "change_fixed" => "Weekly timing change",
+        "join" => "Join",
+        "leave" => "Leave",
+        _ => "Change",
     }
 }
 
@@ -364,15 +410,49 @@ fn coded(status: u16, code: &'static str, message: impl Into<String>) -> MoveErr
     MoveError::Coded(status, code, message.into())
 }
 
-const WEEKDAY_NAMES: [&str; 7] = [
-    "Mondays",
-    "Tuesdays",
-    "Wednesdays",
-    "Thursdays",
-    "Fridays",
-    "Saturdays",
-    "Sundays",
-];
+const DOW_MON: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// `Tue 22:00`, a weekly slot (0 = Monday), as the server writes it.
+fn weekly(weekday: u8, time: &str) -> String {
+    format!("{} {time}", DOW_MON[usize::from(weekday) % 7])
+}
+
+fn stale() -> MoveError {
+    coded(
+        409,
+        "stale",
+        "It changed or was decided since you opened it; review it again.",
+    )
+}
+
+fn discord_required() -> MoveError {
+    coded(
+        403,
+        "discord_session_required",
+        "Sign in with Discord to approve or reject Kanade's proposals.",
+    )
+}
+
+fn version_required() -> MoveError {
+    coded(
+        422,
+        "version_required",
+        "Name the version you reviewed (`version`).",
+    )
+}
+
+fn mismatch() -> MoveError {
+    coded(
+        422,
+        "idempotency_mismatch",
+        "That was already decided with different details.",
+    )
+}
+
+/// Only these proposals have a time an edit can replace.
+fn timed(kind: &str) -> bool {
+    matches!(kind, "move" | "add" | "split")
+}
 
 impl Store {
     fn at_hour(h: i64) -> i64 {
@@ -393,6 +473,26 @@ impl Store {
         )
     }
 
+    fn names_of(run: &Rec) -> String {
+        run.participants
+            .iter()
+            .map(|p| p.name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The amended runs a timing change would move: each needs a choice.
+    fn amended_runs(&self, fixed_id: &str) -> Vec<&Rec> {
+        self.runs
+            .iter()
+            .filter(|r| {
+                r.fixed_id.as_deref() == Some(fixed_id)
+                    && matches!(r.status, "planned" | "confirmed" | "at_risk")
+                    && self.amended(r)
+            })
+            .collect()
+    }
+
     /// Badges, preview and per-run choices, derived from the live week.
     fn review(&self, p: &Proposal) -> (Vec<&'static str>, Preview, Option<Vec<Choice>>) {
         let run = p
@@ -403,41 +503,60 @@ impl Store {
         let mut conflicts = Vec::new();
         let mut no_effect = false;
         let mut choices = None;
+        let on = |r: &Rec, id: &str| r.participants.iter().any(|x| x.id == id);
+        let name = |id: &str| seed::member_name(id).map_or(id.to_owned(), |m| m.1.to_owned());
         match (p.kind, run) {
             ("move", Some(r)) => {
                 no_effect = r.day == p.day && r.time.as_deref() == p.time;
                 changes.push(Change {
-                    field: "when",
+                    field: "slot",
                     from: Self::when(Self::start_minute(r)),
                     to: Self::when(Self::target_minute(p)),
                 });
-                if let Some((day, time)) = p.request.as_ref().and_then(|q| q.base)
-                    && (day != r.day || time != r.time.as_deref())
-                {
-                    conflicts.push(Conflict {
-                        field: "when",
-                        expected: Self::slot_when(day, time),
-                        found: Self::when(Self::start_minute(r)),
-                    });
-                }
             }
-            ("fix", _) => {
+            ("join" | "leave" | "swap", Some(r)) => {
+                let who = p.participants.first().copied().unwrap_or_default();
+                let joining = p.participants.get(1).copied();
+                let (effect, to) = match p.kind {
+                    "join" => (!on(r, who), format!("{}, {}", Self::names_of(r), name(who))),
+                    "leave" => (
+                        on(r, who),
+                        r.participants
+                            .iter()
+                            .filter(|x| x.id != who)
+                            .map(|x| x.name)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    _ => {
+                        let incoming = joining.unwrap_or_default();
+                        (
+                            on(r, who) && !on(r, incoming),
+                            Self::names_of(r).replace(&name(who), &name(incoming)),
+                        )
+                    }
+                };
+                no_effect = !effect;
+                changes.push(Change {
+                    field: "participants",
+                    from: Self::names_of(r),
+                    to,
+                });
+            }
+            ("change_fixed", _) => {
                 if let Some((fixed_id, weekday, time)) = p.timing
                     && let Some(f) = self.fixed.iter().find(|f| f.id == fixed_id)
                 {
                     no_effect = f.weekday == weekday && f.time == time;
                     changes.push(Change {
-                        field: "weekly timing",
-                        from: format!("{} {}", WEEKDAY_NAMES[usize::from(f.weekday)], f.time),
-                        to: format!("{} {time}", WEEKDAY_NAMES[usize::from(weekday)]),
+                        field: "day_time",
+                        from: weekly(f.weekday, &f.time),
+                        to: weekly(weekday, time),
                     });
+                    // Unamended runs follow the timing; only amended ones are asked about.
                     choices = Some(
-                        self.runs
-                            .iter()
-                            .filter(|r| {
-                                r.fixed_id.as_deref() == Some(fixed_id)
-                                    && matches!(r.status, "planned" | "confirmed" | "at_risk")
-                            })
+                        self.amended_runs(fixed_id)
+                            .into_iter()
                             .map(|r| Choice {
                                 run_id: r.id.clone(),
                                 label: if r.next_week {
@@ -447,32 +566,48 @@ impl Store {
                                 }
                                 .into(),
                                 when: Self::when(Self::start_minute(r)),
-                                amended: seed::day_of(f.weekday) != r.day
-                                    || r.time.as_deref() != Some(f.time.as_str()),
+                                amended: true,
                             })
                             .collect(),
                     );
                 }
             }
+            ("new_fixed", _) => {
+                if let Some((_, weekday, time)) = p.timing {
+                    changes.push(Change {
+                        field: "new_fixed",
+                        from: "—".into(),
+                        to: format!("{} {}", weekly(weekday, time), p.bosses.join(" + ")),
+                    });
+                }
+            }
             ("add", _) => changes.push(Change {
-                field: "new run",
+                field: "new_run",
                 from: "—".into(),
                 to: Self::when(Self::target_minute(p)),
             }),
             _ => {}
         }
+        if let (Some(r), Some((day, time))) = (run, p.request.as_ref().and_then(|q| q.base))
+            && (day != r.day || time != r.time.as_deref())
+        {
+            conflicts.push(Conflict {
+                field: "slot",
+                expected: Self::slot_when(day, time),
+                found: Self::when(Self::start_minute(r)),
+            });
+        }
         if !conflicts.is_empty() {
             flags.push("conflict");
         }
-        if let Some(q) = &p.request {
-            if q.expires_hour
-                .is_some_and(|h| Self::at_hour(h) <= Self::now_minute())
-            {
-                flags.push("expired");
-            }
-            if q.frozen {
-                flags.push("requester_frozen");
-            }
+        if self
+            .expires_hour(p)
+            .is_some_and(|h| Self::at_hour(h) <= Self::now_minute())
+        {
+            flags.push("expired");
+        }
+        if p.request.as_ref().is_some_and(|q| q.unauthorised) {
+            flags.push("requester_unauthorised");
         }
         if no_effect {
             flags.push("no_effect");
@@ -488,6 +623,15 @@ impl Store {
         )
     }
 
+    /// A proposal's 24 h TTL or its week's reset, whichever is first; a
+    /// request's week reset (none for weekly-only requests).
+    fn expires_hour(&self, p: &Proposal) -> Option<i64> {
+        match &p.request {
+            Some(q) => q.expires_hour,
+            None => Some((p.read_at_hour + 24).min(RESET_HOUR)),
+        }
+    }
+
     pub fn inbox(&self) -> Vec<ProposalDto> {
         self.proposals
             .iter()
@@ -501,30 +645,35 @@ impl Store {
                         name: name.into(),
                     })
                 };
-                let from_when = run
-                    .filter(|_| matches!(p.kind, "move" | "fix"))
-                    .map(|r| Self::when(Self::start_minute(r)));
-                let when = match (p.kind, run) {
-                    ("rsvp", Some(r)) => Self::when(Self::start_minute(r)),
-                    _ => Self::when(Self::target_minute(p)),
+                let timing = p
+                    .timing
+                    .and_then(|(id, _, _)| self.fixed.iter().find(|f| f.id == id));
+                let from_when = match (p.kind, run) {
+                    ("move", Some(r)) => Some(Self::when(Self::start_minute(r))),
+                    ("change_fixed", _) => timing.map(|f| weekly(f.weekday, &f.time)),
+                    _ => None,
+                };
+                let when = match (p.kind, run, p.timing) {
+                    ("change_fixed" | "new_fixed", _, Some((_, weekday, time))) => {
+                        weekly(weekday, time)
+                    }
+                    ("move" | "add" | "split", _, _) => Self::when(Self::target_minute(p)),
+                    (_, Some(r), _) => Self::when(Self::start_minute(r)),
+                    _ => "—".into(),
                 };
                 let (flags, preview, choices) = self.review(p);
-                let member = p.request.as_ref().is_some();
+                let member = p.request.is_some();
                 ProposalDto {
                     id: p.id,
                     short_id: p.short_id,
                     kind: p.kind,
                     kind_label: label(p.kind),
-                    source: if member { "self_service" } else { "extraction" },
+                    source: if member { "self_service" } else { p.source },
                     tab: if member { "self_service" } else { "extractor" },
                     version: p.version,
                     flags,
                     preview,
-                    expires_at: p
-                        .request
-                        .as_ref()
-                        .and_then(|q| q.expires_hour)
-                        .map(|h| Self::when(Self::at_hour(h))),
+                    expires_at: self.expires_hour(p).map(|h| Self::when(Self::at_hour(h))),
                     choices,
                     public_summary: p.request.as_ref().map(|q| q.public_summary),
                     bosses: p
@@ -562,7 +711,7 @@ impl Store {
                             id: q.member.into(),
                             name: q.member.into(),
                         }),
-                        via: q.via,
+                        via: "request",
                         note: Some(q.note.into()),
                     }),
                 }
@@ -570,45 +719,150 @@ impl Store {
             .collect()
     }
 
-    pub fn approve(
-        &mut self,
-        id: &str,
-        req: ApproveRequest,
-    ) -> Result<(String, &'static str), MoveError> {
-        let index = self
-            .proposals
+    fn decided_message(verb: &str, p: &Proposal) -> String {
+        format!("{verb}: {} #{}.", label(p.kind).to_lowercase(), p.short_id)
+    }
+
+    /// The live item, or the closed one a repeated decision refers to.
+    fn item(&self, id: &str) -> Option<(Proposal, Option<Decided>)> {
+        if let Some(p) = self.proposals.iter().find(|p| p.id == id) {
+            return Some((p.clone(), None));
+        }
+        self.decided
             .iter()
-            .position(|p| p.id == id)
-            .ok_or(MoveError::NotFound)?;
-        let p = self.proposals[index].clone();
+            .rev()
+            .find(|d| d.proposal.id == id)
+            .map(|d| (d.proposal.clone(), Some(d.clone())))
+    }
+
+    /// A repeat answers the first decision when it is the same one by the same
+    /// admin; another decision on a closed item is stale.
+    fn replay(
+        d: &Decided,
+        approve: bool,
+        digest: &str,
+        actor: &Actor,
+    ) -> Result<String, MoveError> {
+        if d.approved != approve || &d.actor != actor {
+            return Err(stale());
+        }
+        if d.digest != digest {
+            return Err(mismatch());
+        }
+        Ok(d.message.clone())
+    }
+
+    /// Who decides this item: the admin's Discord user for proposals (as their
+    /// ✅ on the card), the session's admin for requests.
+    pub fn decider(&self, p: &Proposal) -> Result<Actor, MoveError> {
+        if p.request.is_some() {
+            return Ok(self.session_actor());
+        }
+        self.discord_user()
+            .map(|id| Actor::new("member", id))
+            .ok_or_else(discord_required)
+    }
+
+    /// The edited instant's day and time, or None for a plain approval.
+    fn edit(p: &Proposal, req: &ApproveRequest) -> Result<Option<(u8, String)>, MoveError> {
+        let (day, time) = match (req.day, req.time.as_deref()) {
+            (None, None) => return Ok(None),
+            (Some(day), Some(time)) => (day, time),
+            _ => return Err(MoveError::invalid("An edit needs a day and a time.")),
+        };
+        if !timed(p.kind) {
+            return Err(coded(
+                422,
+                "edit_not_applicable",
+                "Only a change with a time (a move or a new run) can be edited before approving.",
+            ));
+        }
+        if day > 6 {
+            return Err(MoveError::invalid("A boss week has seven days."));
+        }
+        if !super::clock::valid_time(time) {
+            return Err(MoveError::invalid("Times are HH:MM, 00:00 to 23:59."));
+        }
+        // An edit equal to the proposed time is a plain approval.
+        Ok((day != p.day || Some(time) != p.time).then(|| (day, time.to_owned())))
+    }
+
+    pub fn approve(&mut self, id: &str, req: ApproveRequest) -> Result<String, MoveError> {
+        if req.force == Some(true) {
+            return Err(coded(
+                422,
+                "force_unsupported",
+                "Conflicts cannot be approved over; reject it or change the schedule first.",
+            ));
+        }
+        let (p, closed) = self.item(id).ok_or(MoveError::NotFound)?;
+        let actor = self.decider(&p);
+        let (edit, digest) = if p.request.is_some() {
+            if req.day.is_some() || req.time.is_some() {
+                return Err(coded(
+                    422,
+                    "edit_not_applicable",
+                    "Member requests are approved as asked; reject and ask for a new one to change them.",
+                ));
+            }
+            let version = req.version.ok_or_else(version_required)?;
+            let digest = format!("{:?}", req.choices);
+            if let Some(d) = &closed {
+                return Self::replay(d, true, &digest, &actor?);
+            }
+            if version != p.version {
+                return Err(stale());
+            }
+            (None, digest)
+        } else {
+            let actor = actor.as_ref().map_err(Clone::clone)?;
+            if req.choices.is_some() {
+                return Err(coded(
+                    422,
+                    "choices_not_applicable",
+                    "Only weekly-timing change requests take per-run choices.",
+                ));
+            }
+            if closed.is_none() && req.version.is_some_and(|v| v != p.version) {
+                return Err(stale());
+            }
+            let edit = Self::edit(&p, &req)?;
+            let digest = format!("{edit:?}");
+            if let Some(d) = &closed {
+                return Self::replay(d, true, &digest, actor);
+            }
+            (edit, digest)
+        };
+        let actor = actor?;
         let (flags, _, choices) = self.review(&p);
         if flags.contains(&"expired") {
+            // The attempt closes it, as the tick would have.
+            self.close(&p, false, "expired".into(), actor, String::new());
             return Err(coded(
                 410,
                 "expired",
-                "This request expired; it can only be rejected.",
+                "It expired and is now closed; nothing was applied.",
             ));
         }
-        if req.version.is_some_and(|v| v != p.version) {
+        if flags.contains(&"requester_unauthorised") {
             return Err(coded(
                 409,
-                "stale",
-                "The request changed since you opened it; review it again.",
+                "requester_unauthorised",
+                "The member may no longer have this approved; reject it.",
             ));
         }
-        let edited = req.day.is_some() || req.time.is_some();
-        if flags.contains(&"no_effect") && !edited {
+        if flags.contains(&"conflict") {
+            return Err(coded(
+                409,
+                "conflicts",
+                "It changed since the member asked; reject it.",
+            ));
+        }
+        if flags.contains(&"no_effect") && edit.is_none() {
             return Err(coded(
                 409,
                 "no_effect",
                 "It is already like that; nothing would change. Reject it instead.",
-            ));
-        }
-        if flags.contains(&"conflict") && !req.force {
-            return Err(coded(
-                409,
-                "conflicts",
-                "The run moved since the member asked; review the conflict, then approve anyway.",
             ));
         }
         match (&choices, &req.choices) {
@@ -616,82 +870,88 @@ impl Store {
                 return Err(coded(
                     422,
                     "choices_not_applicable",
-                    "Only weekly-timing changes take per-run choices.",
+                    "Only weekly-timing change requests take per-run choices.",
                 ));
             }
-            (Some(runs), given) if !runs.is_empty() => {
-                let given = given.as_ref();
-                let complete = runs.iter().all(|c| {
-                    given
-                        .and_then(|g| g.get(&c.run_id))
+            (Some(_), None) => {
+                return Err(coded(
+                    422,
+                    "choices_required",
+                    "Choose update or keep for every amended run (send {} when none are listed).",
+                ));
+            }
+            (Some(runs), Some(given)) => {
+                if given.keys().any(|k| runs.iter().all(|c| &c.run_id != k)) {
+                    return Err(coded(
+                        422,
+                        "choices_not_applicable",
+                        "A choice names a run this change does not move.",
+                    ));
+                }
+                if runs.iter().any(|c| {
+                    !given
+                        .get(&c.run_id)
                         .is_some_and(|v| v == "update" || v == "keep")
-                });
-                if !complete {
+                }) {
                     return Err(coded(
                         422,
                         "choices_required",
-                        "Choose update or keep for every run of this timing.",
+                        "Choose update or keep for every amended run.",
                     ));
                 }
             }
-            _ => {}
+            (None, None) => {}
         }
+        self.apply(&p, edit, req.choices.as_ref())?;
+        let message = Self::decided_message("Approved", &p);
+        self.close(&p, true, digest, actor, message.clone());
+        self.version += 1;
+        Ok(message)
+    }
+
+    fn close(
+        &mut self,
+        p: &Proposal,
+        approved: bool,
+        digest: String,
+        actor: Actor,
+        message: String,
+    ) {
+        self.proposals.retain(|x| x.id != p.id);
+        self.decided.push(Decided {
+            proposal: p.clone(),
+            approved,
+            digest,
+            actor,
+            message,
+        });
+    }
+
+    fn apply(
+        &mut self,
+        p: &Proposal,
+        edit: Option<(u8, String)>,
+        choices: Option<&std::collections::BTreeMap<String, String>>,
+    ) -> Result<(), MoveError> {
         let run_index = p
             .run_id
             .and_then(|rid| self.runs.iter().position(|r| r.id == rid));
-        let surface = if p.request.is_some() {
-            "admin_portal"
-        } else {
-            "extraction_approval"
+        let (day, time) = edit.map_or((p.day, p.time.map(Into::into)), |(d, t)| (d, Some(t)));
+        let gone = || MoveError::invalid("That run is no longer on the board.");
+        let person = |id: &str| {
+            seed::member_name(id).map(|(id, name)| Participant {
+                id,
+                name,
+                answer: "waiting",
+            })
         };
-        match (p.kind, run_index) {
-            ("move", Some(i)) => {
-                let day = req.day.unwrap_or(p.day);
-                if day > 6 {
-                    return Err(MoveError::invalid("A boss week has seven days."));
-                }
-                let time = req.time.clone().or(p.time.map(Into::into));
-                if let Some(t) = time.as_deref().filter(|t| !super::clock::valid_time(t)) {
-                    return Err(MoveError::Invalid(format!("“{t}” is not HH:MM.")));
-                }
-                let run = &mut self.runs[i];
+        match p.kind {
+            "move" => {
+                let run = &mut self.runs[run_index.ok_or_else(gone)?];
                 run.day = day;
                 run.time = time;
             }
-            ("rsvp", Some(i)) => {
-                let (member, answer) =
-                    p.answer.ok_or(MoveError::invalid("No answer to record."))?;
-                let run = &mut self.runs[i];
-                let person = run
-                    .participants
-                    .iter_mut()
-                    .find(|x| x.id == member)
-                    .ok_or(MoveError::invalid("They are no longer on the run."))?;
-                person.answer = answer;
-                if answer == "no" && matches!(run.status, "planned" | "confirmed") {
-                    run.status = "at_risk";
-                }
-            }
-            ("fix", _) => {
-                let (fixed_id, weekday, time) = p
-                    .timing
-                    .ok_or(MoveError::invalid("No weekly timing to change."))?;
-                let fi = self
-                    .fixed
-                    .iter()
-                    .position(|f| f.id == fixed_id && !f.retired)
-                    .ok_or(MoveError::invalid("That weekly timing is retired."))?;
-                self.fixed[fi].weekday = weekday;
-                self.fixed[fi].time = time.into();
-                for (run_id, choice) in req.choices.iter().flatten() {
-                    if choice == "update"
-                        && let Some(run) = self.runs.iter_mut().find(|r| &r.id == run_id)
-                    {
-                        super::fixed::apply_timing(run, &self.fixed[fi]);
-                    }
-                }
-            }
-            ("add", _) => {
+            "add" => {
                 let (id, short_id) = self.fresh_id("r");
                 let bosses = p
                     .bosses
@@ -702,8 +962,8 @@ impl Store {
                     id,
                     short_id,
                     next_week: false,
-                    day: p.day,
-                    time: p.time.map(Into::into),
+                    day,
+                    time,
                     status: "planned",
                     bosses,
                     participants: p
@@ -720,70 +980,129 @@ impl Store {
                     fixed_id: None,
                 });
             }
-            _ => return Err(MoveError::invalid("That run is no longer on the board.")),
+            "join" | "leave" | "swap" => {
+                let run = &mut self.runs[run_index.ok_or_else(gone)?];
+                let who = p.participants.first().copied().unwrap_or_default();
+                if p.kind != "join" {
+                    run.participants.retain(|x| x.id != who);
+                }
+                let joining = if p.kind == "join" {
+                    Some(who)
+                } else {
+                    p.participants.get(1).copied()
+                };
+                if let Some(joiner) = joining.filter(|_| p.kind != "leave").and_then(person) {
+                    run.participants.push(joiner);
+                }
+            }
+            "change_fixed" => {
+                let (fixed_id, weekday, time) = p
+                    .timing
+                    .ok_or(MoveError::invalid("No weekly timing to change."))?;
+                let amended: Vec<String> = self
+                    .amended_runs(fixed_id)
+                    .into_iter()
+                    .map(|r| r.id.clone())
+                    .collect();
+                let fi = self
+                    .fixed
+                    .iter()
+                    .position(|f| f.id == fixed_id && !f.retired)
+                    .ok_or(MoveError::invalid("That weekly timing is retired."))?;
+                self.fixed[fi].weekday = weekday;
+                self.fixed[fi].time = time.into();
+                let timing = &self.fixed[fi];
+                for run in self.runs.iter_mut().filter(|r| {
+                    r.fixed_id.as_deref() == Some(fixed_id)
+                        && matches!(r.status, "planned" | "confirmed" | "at_risk")
+                }) {
+                    let keep = amended.contains(&run.id)
+                        && choices.and_then(|c| c.get(&run.id)).map(String::as_str) == Some("keep");
+                    if !keep {
+                        super::fixed::apply_timing(run, timing);
+                    }
+                }
+            }
+            "new_fixed" => {
+                let (_, weekday, time) = p
+                    .timing
+                    .ok_or(MoveError::invalid("No weekly timing to add."))?;
+                self.create_fixed(super::dto::FixedRequest {
+                    weekday,
+                    time: time.into(),
+                    bosses: p.bosses.join(" "),
+                    participants: p.participants.iter().map(|m| (*m).to_owned()).collect(),
+                    channel_id: p.channel.into(),
+                    note: None,
+                    decisions: Default::default(),
+                    version: None,
+                })?;
+            }
+            _ => return Err(MoveError::invalid("The mock cannot apply that change.")),
         }
-        self.proposals.remove(index);
-        self.version += 1;
-        Ok((
-            format!(
-                "Approved: {} {}.",
-                label(p.kind).to_lowercase(),
-                p.bosses.join(" + ")
-            ),
-            surface,
-        ))
+        Ok(())
     }
 
     pub fn reject(&mut self, id: &str, req: RejectRequest) -> Result<String, MoveError> {
-        let index = self
-            .proposals
-            .iter()
-            .position(|p| p.id == id)
-            .ok_or(MoveError::NotFound)?;
-        let p = &self.proposals[index];
-        if req.version.is_some_and(|v| v != p.version) {
-            return Err(coded(
-                409,
-                "stale",
-                "The request changed since you opened it; review it again.",
-            ));
-        }
+        let (p, closed) = self.item(id).ok_or(MoveError::NotFound)?;
+        let actor = self.decider(&p)?;
         let reason = req.reason.as_deref().map(str::trim).unwrap_or_default();
-        if p.request.is_some() && reason.is_empty() {
-            return Err(coded(
-                422,
-                "reason_required",
-                "Say why, in a sentence: the member is told.",
-            ));
+        if p.request.is_some() {
+            let version = req.version.ok_or_else(version_required)?;
+            if reason.is_empty() {
+                return Err(coded(
+                    422,
+                    "reason_required",
+                    "Say why, in a sentence: the member is told.",
+                ));
+            }
+            if reason.chars().count() > 500 {
+                return Err(coded(
+                    422,
+                    "reason_invalid",
+                    "A reason is at most 500 characters.",
+                ));
+            }
+            if let Some(d) = &closed {
+                return Self::replay(d, false, reason, &actor);
+            }
+            if version != p.version {
+                return Err(stale());
+            }
+        } else {
+            if !reason.is_empty() {
+                return Err(coded(
+                    422,
+                    "reason_not_applicable",
+                    "Kanade's proposals are rejected without a reason; nothing would keep it.",
+                ));
+            }
+            if closed.is_none() && req.version.is_some_and(|v| v != p.version) {
+                return Err(stale());
+            }
+            if let Some(d) = &closed {
+                return Self::replay(d, false, "", &actor);
+            }
         }
-        if reason.chars().count() > 500 {
-            return Err(coded(
-                422,
-                "reason_invalid",
-                "A reason is at most 500 characters.",
-            ));
-        }
-        let p = self.proposals.remove(index);
-        Ok(format!(
-            "Rejected: {} {}.",
-            label(p.kind).to_lowercase(),
-            p.bosses.join(" + ")
-        ))
+        let message = Self::decided_message("Rejected", &p);
+        self.close(&p, false, reason.to_owned(), actor, message.clone());
+        Ok(message)
     }
 
+    /// Recorded as the server records it: a proposal as the approving
+    /// member (`extraction_approval` / `chat_approval`), a request as the
+    /// session's admin (`request_merge`).
     pub fn approve_tracked(&mut self, id: &str, req: ApproveRequest) -> Result<String, MoveError> {
-        let surface = if self
-            .proposals
-            .iter()
-            .any(|p| p.id == id && p.request.is_some())
-        {
-            "admin_portal"
-        } else {
-            "extraction_approval"
+        let Some((p, _)) = self.item(id) else {
+            return Err(MoveError::NotFound);
         };
-        self.tracked(Actor::admin(), surface, |s| {
-            s.approve(id, req).map(|(message, _)| message)
-        })
+        let surface = match (p.request.is_some(), p.source) {
+            (true, _) => "request_merge",
+            (false, "chat") => "chat_approval",
+            _ => "extraction_approval",
+        };
+        let actor = self.decider(&p).unwrap_or_else(|_| self.session_actor());
+        self.tracked(actor, surface, |s| s.approve(id, req))
     }
 }
 
@@ -801,138 +1120,305 @@ mod tests {
         }
     }
 
+    fn v1() -> ApproveRequest {
+        ApproveRequest {
+            version: Some(1),
+            ..ApproveRequest::default()
+        }
+    }
+
+    fn keep(run: &str) -> Option<BTreeMap<String, String>> {
+        Some([(run.to_owned(), "keep".to_owned())].into())
+    }
+
     #[test]
-    fn member_requests_carry_flags_preview_and_choices() {
+    fn the_inbox_lists_request_types_chat_proposals_and_amended_choices() {
         let s = store();
         let inbox = s.inbox();
-        assert!(inbox.iter().all(|p| p.kind != "rsvp"));
         let by = |id: &str| inbox.iter().find(|p| p.id == id).unwrap();
-        assert_eq!(by("p-bm-move").tab, "extractor");
-        assert_eq!(by("p-carling-link").tab, "self_service");
+        assert_eq!(
+            (by("p-bm-move").source, by("p-bm-move").tab),
+            ("extraction", "extractor")
+        );
+        assert_eq!(
+            (by("p-jupiter-chat").source, by("p-jupiter-chat").tab),
+            ("chat", "extractor")
+        );
+        let kinds: Vec<&str> = inbox
+            .iter()
+            .filter(|p| p.tab == "self_service")
+            .map(|p| p.kind)
+            .collect();
+        for kind in ["new_fixed", "change_fixed", "join", "leave", "swap"] {
+            assert!(kinds.contains(&kind), "{kind}");
+        }
+        assert!(
+            inbox.iter().filter(|p| p.self_service.is_some()).all(|p| p
+                .self_service
+                .as_ref()
+                .unwrap()
+                .via
+                == "request")
+        );
         assert!(by("p-carling-link").flags.is_empty());
         assert_eq!(by("p-fa-request").flags, vec!["conflict"]);
         assert_eq!(by("p-kalos-expired").flags, vec!["expired"]);
         assert_eq!(
             by("p-jupiter-same").flags,
-            vec!["requester_frozen", "no_effect"]
+            vec!["requester_unauthorised", "no_effect"]
         );
-        assert!(by("p-jupiter-same").preview.no_effect);
-        assert!(
-            by("p-limbo-fixed")
-                .choices
-                .as_ref()
-                .is_some_and(|c| !c.is_empty())
+        // Only the amended run is listed; the other follows the timing.
+        let choices = by("p-kalos-fixed").choices.as_ref().unwrap();
+        assert_eq!(
+            choices
+                .iter()
+                .map(|c| c.run_id.as_str())
+                .collect::<Vec<_>>(),
+            ["r-kalos"]
         );
-        assert!(by("p-carling-link").public_summary.is_some());
+        assert!(choices.iter().all(|c| c.amended));
+        assert!(by("p-bm-move").choices.is_none() && by("p-limbo-new").choices.is_none());
+        assert!(by("p-bm-move").expires_at.is_some());
     }
 
     #[test]
-    fn approve_enforces_the_request_contract() {
+    fn approving_follows_the_server_rules_and_replays() {
         let mut s = store();
-        let none = ApproveRequest::default;
+        let forced = ApproveRequest {
+            force: Some(true),
+            ..v1()
+        };
         assert_eq!(
-            code(s.approve("p-kalos-expired", none()).unwrap_err()),
+            code(s.approve("p-carling-link", forced).unwrap_err()),
+            (422, "force_unsupported")
+        );
+        assert_eq!(
+            code(
+                s.approve("p-carling-link", ApproveRequest::default())
+                    .unwrap_err()
+            ),
+            (422, "version_required")
+        );
+        let edited = ApproveRequest {
+            day: Some(1),
+            time: Some("21:00".into()),
+            ..v1()
+        };
+        assert_eq!(
+            code(s.approve("p-carling-link", edited).unwrap_err()),
+            (422, "edit_not_applicable")
+        );
+        assert_eq!(
+            code(
+                s.approve(
+                    "p-carling-link",
+                    ApproveRequest {
+                        version: Some(9),
+                        ..v1()
+                    }
+                )
+                .unwrap_err()
+            ),
+            (409, "stale")
+        );
+        assert_eq!(
+            code(s.approve("p-kalos-expired", v1()).unwrap_err()),
             (410, "expired")
         );
         assert_eq!(
-            code(s.approve("p-jupiter-same", none()).unwrap_err()),
-            (409, "no_effect")
+            code(s.approve("p-jupiter-same", v1()).unwrap_err()),
+            (409, "requester_unauthorised")
         );
         assert_eq!(
-            code(s.approve("p-fa-request", none()).unwrap_err()),
+            code(s.approve("p-fa-request", v1()).unwrap_err()),
             (409, "conflicts")
         );
-        let stale = ApproveRequest {
-            version: Some(9),
-            ..none()
-        };
         assert_eq!(
-            code(s.approve("p-carling-link", stale).unwrap_err()),
-            (409, "stale")
-        );
-        let stray = ApproveRequest {
-            choices: Some(BTreeMap::new()),
-            ..none()
-        };
-        assert_eq!(
-            code(s.approve("p-carling-link", stray).unwrap_err()),
-            (422, "choices_not_applicable")
-        );
-        assert_eq!(
-            code(s.approve("p-limbo-fixed", none()).unwrap_err()),
+            code(s.approve("p-kalos-fixed", v1()).unwrap_err()),
             (422, "choices_required")
         );
-
-        let runs: Vec<String> = s
-            .inbox()
-            .into_iter()
-            .find(|p| p.id == "p-limbo-fixed")
-            .unwrap()
-            .choices
-            .unwrap()
-            .into_iter()
-            .map(|c| c.run_id)
-            .collect();
-        let choices = runs
-            .iter()
-            .map(|r| (r.clone(), "keep".to_owned()))
-            .collect();
-        s.approve(
-            "p-limbo-fixed",
-            ApproveRequest {
-                choices: Some(choices),
-                ..none()
-            },
-        )
-        .ok()
-        .unwrap();
-        let timing = s.fixed.iter().find(|f| f.id == "f-limbo").unwrap();
+        let none = ApproveRequest {
+            choices: Some(BTreeMap::new()),
+            ..v1()
+        };
+        assert_eq!(
+            code(s.approve("p-kalos-fixed", none).unwrap_err()),
+            (422, "choices_required")
+        );
+        let stray = ApproveRequest {
+            choices: keep("n-kalos"),
+            ..v1()
+        };
+        assert_eq!(
+            code(s.approve("p-kalos-fixed", stray).unwrap_err()),
+            (422, "choices_not_applicable")
+        );
+        let chosen = || ApproveRequest {
+            choices: keep("r-kalos"),
+            ..v1()
+        };
+        let message = s.approve("p-kalos-fixed", chosen()).ok().unwrap();
+        assert_eq!(message, "Approved: weekly timing change #d4e6f8a0.");
+        let timing = s.fixed.iter().find(|f| f.id == "f-kalos").unwrap();
         assert_eq!((timing.weekday, timing.time.as_str()), (5, "22:30"));
+        // The kept run stays; the unamended one follows the timing.
+        let run = |id: &str| s.runs.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(run("r-kalos").time.as_deref(), Some("22:00"));
+        assert_eq!(
+            (run("n-kalos").day, run("n-kalos").time.as_deref()),
+            (2, Some("22:30"))
+        );
+        // A repeat answers the first result; other choices are a different decision.
+        assert_eq!(s.approve("p-kalos-fixed", chosen()).ok().unwrap(), message);
+        let other = ApproveRequest {
+            choices: Some([("r-kalos".to_owned(), "update".to_owned())].into()),
+            ..v1()
+        };
+        assert_eq!(
+            code(s.approve("p-kalos-fixed", other).unwrap_err()),
+            (422, "idempotency_mismatch")
+        );
 
-        s.approve(
-            "p-fa-request",
-            ApproveRequest {
-                force: true,
-                ..none()
-            },
-        )
-        .ok()
-        .unwrap();
-        s.approve(
-            "p-carling-link",
-            ApproveRequest {
-                version: Some(1),
-                ..none()
-            },
-        )
-        .ok()
-        .unwrap();
-        let run = s.runs.iter().find(|r| r.id == "r-carling").unwrap();
-        assert_eq!((run.day, run.time.as_deref()), (6, Some("22:00")));
+        s.approve("p-carling-link", v1()).ok().unwrap();
+        assert!(run_has(&s, "r-carling", "1007"));
+        s.approve("p-limbo-new", v1()).ok().unwrap();
+        assert!(s.fixed.iter().any(|f| f.weekday == 6 && f.time == "21:00"));
+    }
+
+    fn run_has(s: &crate::mock::Store, run: &str, member: &str) -> bool {
+        s.runs
+            .iter()
+            .find(|r| r.id == run)
+            .unwrap()
+            .participants
+            .iter()
+            .any(|p| p.id == member)
     }
 
     #[test]
-    fn member_rejections_need_a_reason() {
+    fn proposals_need_a_discord_session_and_take_one_atomic_edit() {
+        let mut s = store();
+        s.set_session("token");
+        assert_eq!(
+            code(s.approve("p-bm-move", v1()).unwrap_err()),
+            (403, "discord_session_required")
+        );
+        assert_eq!(
+            code(s.reject("p-bm-move", RejectRequest::default()).unwrap_err()),
+            (403, "discord_session_required")
+        );
+        // Requests work for every admin session.
+        let reason = || RejectRequest {
+            version: Some(1),
+            reason: Some("Not this week.".into()),
+        };
+        assert!(s.reject("p-fa-request", reason()).is_ok());
+        s.set_session("discord");
+
+        let choices = ApproveRequest {
+            choices: Some(BTreeMap::new()),
+            ..v1()
+        };
+        assert_eq!(
+            code(s.approve("p-bm-move", choices).unwrap_err()),
+            (422, "choices_not_applicable")
+        );
+        let half = ApproveRequest {
+            day: Some(2),
+            ..v1()
+        };
+        assert!(matches!(
+            s.approve("p-bm-move", half),
+            Err(MoveError::Invalid(_))
+        ));
+        let bad = ApproveRequest {
+            day: Some(7),
+            time: Some("21:00".into()),
+            ..v1()
+        };
+        assert!(matches!(
+            s.approve("p-bm-move", bad),
+            Err(MoveError::Invalid(_))
+        ));
+        let edit = || ApproveRequest {
+            day: Some(6),
+            time: Some("22:30".into()),
+            ..v1()
+        };
+        let message = s.approve("p-bm-move", edit()).ok().unwrap();
+        let bm = s.runs.iter().find(|r| r.id == "r-bm").unwrap();
+        assert_eq!((bm.day, bm.time.as_deref()), (6, Some("22:30")));
+        assert_eq!(s.approve("p-bm-move", edit()).ok().unwrap(), message);
+        assert_eq!(
+            code(s.approve("p-bm-move", v1()).unwrap_err()),
+            (422, "idempotency_mismatch")
+        );
+        assert_eq!(
+            code(s.reject("p-bm-move", RejectRequest::default()).unwrap_err()),
+            (409, "stale")
+        );
+
+        let noted = RejectRequest {
+            reason: Some("no".into()),
+            ..RejectRequest::default()
+        };
+        assert_eq!(
+            code(s.reject("p-limbo-add", noted).unwrap_err()),
+            (422, "reason_not_applicable")
+        );
+        let rejected = s
+            .reject("p-limbo-add", RejectRequest::default())
+            .ok()
+            .unwrap();
+        assert_eq!(rejected, "Rejected: new run #c8e0a2b4.");
+        assert_eq!(
+            s.reject("p-limbo-add", RejectRequest::default())
+                .ok()
+                .unwrap(),
+            rejected
+        );
+    }
+
+    #[test]
+    fn member_rejections_need_a_version_and_a_reason() {
         let mut s = store();
         let none = RejectRequest::default;
         assert_eq!(
             code(s.reject("p-kalos-expired", none()).unwrap_err()),
+            (422, "version_required")
+        );
+        let v = || RejectRequest {
+            version: Some(1),
+            ..none()
+        };
+        assert_eq!(
+            code(s.reject("p-kalos-expired", v()).unwrap_err()),
             (422, "reason_required")
         );
         let long = RejectRequest {
             reason: Some("x".repeat(501)),
-            ..none()
+            ..v()
         };
         assert_eq!(
             code(s.reject("p-kalos-expired", long).unwrap_err()),
             (422, "reason_invalid")
         );
-        let ok = RejectRequest {
+        let ok = || RejectRequest {
             reason: Some("It expired.".into()),
-            ..none()
+            ..v()
         };
-        assert!(s.reject("p-kalos-expired", ok).is_ok());
-        // Extractor proposals keep v4's reason-free reject.
-        assert!(s.reject("p-limbo-add", none()).is_ok());
+        assert!(s.reject("p-kalos-expired", ok()).is_ok());
+        assert!(
+            s.reject("p-kalos-expired", ok()).is_ok(),
+            "a repeat answers 200"
+        );
+        let other = RejectRequest {
+            reason: Some("Other.".into()),
+            ..v()
+        };
+        assert_eq!(
+            code(s.reject("p-kalos-expired", other).unwrap_err()),
+            (422, "idempotency_mismatch")
+        );
     }
 }

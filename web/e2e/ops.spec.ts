@@ -31,18 +31,19 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
   await expect(page.getByRole('table', { name: /facts$/ }).getByRole('row', { name: /Party/ })).toContainText('Solo only');
 });
 
-test('inbox: extractor tab — list and detail, edit then approve, reject', async ({ page }) => {
+test('inbox: extractor tab — list and detail, edit then approve, reject, a chat proposal', async ({ page }) => {
   await go(page, '/inbox');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('7 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
   const tabs = page.getByRole('tablist', { name: 'Inbox' });
   await expect(tabs.getByRole('tab', { name: /Extractor/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(tabs.getByRole('tab', { name: /Extractor/ })).toContainText('2');
-  await expect(tabs.getByRole('tab', { name: /Self-service/ })).toContainText('5');
+  await expect(tabs.getByRole('tab', { name: /Extractor/ })).toContainText('3');
+  await expect(tabs.getByRole('tab', { name: /Self-service/ })).toContainText('6');
   const list = page.getByRole('listbox', { name: 'Extractor items' });
-  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(list.getByRole('option')).toHaveCount(3);
   // Wide screens open the first item; the list is keyboard-navigable and deep-linked.
   const detail = page.locator('.inbox__detail');
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  await expect(detail).toContainText('Read from chat');
   await expect(detail.getByLabel('Evidence')).toContainText('tue cannot, wed same time ok?');
   await list.focus();
   await page.keyboard.press('ArrowDown');
@@ -50,18 +51,29 @@ test('inbox: extractor tab — list and detail, edit then approve, reject', asyn
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
   await page.keyboard.press('ArrowUp');
 
+  // One approval at a corrected time: day and HH:MM in the proposal's own boss week.
   await detail.getByRole('textbox', { name: 'Edit, then approve' }).fill('soon');
   await detail.getByRole('button', { name: 'Move & approve' }).click();
   await expect(detail.getByRole('alert')).toContainText('Write a day');
+  const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/admin/inbox/p-bm-move/approve'));
   await detail.getByRole('textbox', { name: 'Edit, then approve' }).fill('wed 22:30');
   await detail.getByRole('button', { name: 'Move & approve' }).click();
-  await expect(toast(page, 'Approved: move XBM.')).toBeVisible();
-  await expect(list.getByRole('option')).toHaveCount(1);
+  expect((await sent).postDataJSON()).toEqual({ version: 1, day: 6, time: '22:30' });
+  await expect(toast(page, 'Approved: move #a7c1e9d2.')).toBeVisible();
+  await expect(list.getByRole('option')).toHaveCount(2);
 
-  // Extractor proposals reject without a reason, as in v4.
+  // Kanade's proposals reject without a reason, as in v4: no reason field at all.
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
   await detail.getByRole('button', { name: 'Reject…' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Reject change' }).click();
-  await expect(toast(page, 'Rejected: new run NLimbo.')).toBeVisible();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Reason' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Reject change' }).click();
+  await expect(toast(page, 'Rejected: new run #c8e0a2b4.')).toBeVisible();
+
+  // Asked of Kanade in chat: approved like any proposal.
+  await expect(detail).toContainText('Asked of Kanade');
+  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(toast(page, 'Approved: move #b2c4d6e8.')).toBeVisible();
   // An empty tab says why, visibly, not just that it is empty.
   await expect(page.getByText('Nothing waiting here. The extractor posts a card when it reads a change in a watched channel.')).toBeVisible();
 
@@ -70,60 +82,93 @@ test('inbox: extractor tab — list and detail, edit then approve, reject', asyn
   await expect(wed.locator('[data-run="r-bm"]')).toContainText('22:30');
 });
 
-test('inbox: self-service tab — badges, conflicts, choices, reasons and refusals', async ({ page }) => {
+test('inbox: a token or Tailscale session cannot decide proposals, but can decide requests', async ({ page }) => {
+  const switched = await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
+  expect(switched.status()).toBe(204);
+  await go(page, '/inbox');
+  const detail = page.locator('.inbox__detail');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  // `Session` does not say how it signed in: the first refusal teaches the page.
+  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(detail.getByRole('alert')).toHaveText("Sign in with Discord to approve or reject Kanade's proposals.");
+  await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
+  await expect(detail.getByRole('button', { name: 'Reject…' })).toBeDisabled();
+  await expect(detail.getByRole('button', { name: 'Move & approve' })).toBeDisabled();
+  await expect(detail).toContainText("Members' requests can still be decided here.");
+  const list = page.getByRole('listbox', { name: 'Extractor items' });
+  await expect(list.getByRole('option')).toHaveCount(3);
+
+  await page.getByRole('tab', { name: /Self-service/ }).click();
+  await page.getByRole('listbox', { name: 'Self-service items' }).getByRole('option', { name: /HFA/ }).click();
+  await detail.getByRole('button', { name: 'Reject…' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'Reason' }).fill('The run moved; ask again.');
+  await dialog.getByRole('button', { name: 'Reject change' }).click();
+  await expect(toast(page, 'Rejected: leave #e5f7a9b1.')).toBeVisible();
+});
+
+test('inbox: self-service tab — request types, badges, conflicts, choices, reasons and refusals', async ({ page }) => {
   await go(page, '/inbox?tab=self_service');
   const list = page.getByRole('listbox', { name: 'Self-service items' });
-  await expect(list.getByRole('option')).toHaveCount(5);
-  await expect(list.getByRole('option', { name: /XKalos/ })).toContainText('expired');
+  await expect(list.getByRole('option')).toHaveCount(6);
+  await expect(list.getByRole('option', { name: /XKalos/ }).first()).toContainText('expired');
   await expect(list.getByRole('option', { name: /HFA/ })).toContainText('conflict');
-  await expect(list.getByRole('option', { name: /HJupiter/ })).toContainText('frozen requester');
+  await expect(list.getByRole('option', { name: /HJupiter/ })).toContainText('requester not allowed');
   await expect(list.getByRole('option', { name: /HJupiter/ })).toContainText('already in effect');
   const detail = page.locator('.inbox__detail');
 
-  // A move confirmed from a pre-filled link: preview, the member's summary, approve.
+  // A member asking to join this week's run: preview, the member's summary, approve.
   await list.getByRole('option', { name: /HCarling/ }).click();
   await expect(page).toHaveURL(/tab=self_service&item=p-carling-link/);
-  await expect(detail).toContainText('Sent by Ren (#1013), signed in with Discord, from a pre-filled link');
-  await expect(detail).toContainText('The member sees: “Move HCarling + HStar to Wed 22:00”');
-  await expect(detail.locator('.proposal__changes')).toContainText('Wed 30 Sep 22:00');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Join');
+  await expect(detail).toContainText('Sent by Nagi (#1007) as a member request.');
+  await expect(detail).toContainText('The member sees: “member request: join HCarling + HStar Tue 29 Sep 22:00”');
+  await expect(detail.locator('.proposal__changes')).toContainText('Nagi');
+  await expect(detail.getByRole('textbox', { name: 'Edit, then approve' })).toHaveCount(0);
 
-  // A conflict must be reviewed before Approve is offered.
+  // A conflict always blocks: no "approve anyway", only reject.
   await list.getByRole('option', { name: /HFA/ }).click();
-  await expect(detail.getByRole('group', { name: 'Changed since the member asked' })).toContainText('they saw');
+  await expect(detail.getByRole('group', { name: 'Changed since the member asked' })).toContainText('it was based on');
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
-  await detail.getByRole('checkbox', { name: 'I reviewed this; approve anyway' }).check();
-  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(toast(page, 'Approved: move HFA.')).toBeVisible();
+  await expect(detail).toContainText('cannot be approved; reject it');
+  await expect(detail.getByRole('checkbox')).toHaveCount(0);
 
-  // Expired and already-in-effect items can only be rejected, and say why.
-  await list.getByRole('option', { name: /XKalos/ }).click();
+  // Expired items can only be rejected, and say why; requests need a reason (1–500 characters).
+  await list.getByRole('option', { name: /Swap/ }).click();
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
   await expect(detail).toContainText('It expired; it can only be rejected.');
-  // Member requests need a reason (1–500 characters).
   await detail.getByRole('button', { name: 'Reject…' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
   await expect(dialog.getByRole('alert')).toContainText('Say why');
   await dialog.getByRole('textbox', { name: 'Reason' }).fill('It expired before the run.');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
-  await expect(toast(page, 'Rejected: move XKalos.')).toBeVisible();
+  await expect(toast(page, 'Rejected: swap #f6a8b0c2.')).toBeVisible();
 
-  // A weekly timing needs a choice per run; the server refuses without them.
-  await list.getByRole('option', { name: /Weekly timing/ }).click();
-  const refused = await page.request.post(`${ADMIN}/api/admin/inbox/p-limbo-fixed/approve`, { headers: await csrf(page.request), data: { version: 1 } });
+  // A weekly-timing change lists only its amended runs, and always names its choices.
+  await list.getByRole('option', { name: /Weekly timing change/ }).click();
+  const refused = await page.request.post(`${ADMIN}/api/admin/inbox/p-kalos-fixed/approve`, { headers: await csrf(page.request), data: { version: 1 } });
   expect(refused.status()).toBe(422);
   expect(((await refused.json()) as { error: string }).error).toBe('choices_required');
   const choices = detail.getByRole('group', { name: 'Runs of this weekly timing' });
-  for (const keep of await choices.getByRole('radio', { name: 'Keep as it is' }).all()) await keep.check();
+  await expect(choices.getByRole('radiogroup')).toHaveCount(1);
+  await choices.getByRole('radio', { name: 'Keep as it is' }).check();
+  const sent = page.waitForRequest((r) => r.url().endsWith('/api/admin/inbox/p-kalos-fixed/approve'));
   await detail.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(toast(page, 'Approved: weekly timing HLimbo.')).toBeVisible();
+  expect((await sent).postDataJSON()).toEqual({ version: 1, choices: { 'r-kalos': 'keep' } });
+  await expect(toast(page, 'Approved: weekly timing change #d4e6f8a0.')).toBeVisible();
+
+  await list.getByRole('option', { name: /New weekly run/ }).click();
+  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(toast(page, 'Approved: new weekly run #c1d3e5f7.')).toBeVisible();
 
   // The API speaks the contract's codes.
-  const expired = await page.request.post(`${ADMIN}/api/admin/inbox/p-jupiter-same/approve`, { headers: await csrf(page.request), data: {} });
-  expect(expired.status()).toBe(409);
-  expect(((await expired.json()) as { error: string }).error).toBe('no_effect');
-  const stale = await page.request.post(`${ADMIN}/api/admin/inbox/p-carling-link/reject`, { headers: await csrf(page.request), data: { version: 7, reason: 'x' } });
-  expect(stale.status()).toBe(409);
+  const post = async (path: string, data: object) => page.request.post(`${ADMIN}/api/admin/inbox/${path}`, { headers: await csrf(page.request), data });
+  const code = async (r: Awaited<ReturnType<typeof post>>) => [r.status(), ((await r.json()) as { error: string }).error];
+  expect(await code(await post('p-jupiter-same/approve', { version: 1 }))).toEqual([409, 'requester_unauthorised']);
+  expect(await code(await post('p-carling-link/reject', { version: 7, reason: 'x' }))).toEqual([409, 'stale']);
+  expect(await code(await post('p-carling-link/approve', { version: 1, force: true }))).toEqual([422, 'force_unsupported']);
+  expect(await code(await post('p-carling-link/approve', {}))).toEqual([422, 'version_required']);
 });
 
 test('inbox on a phone: the list, then the detail with a back action', async ({ page }) => {
@@ -150,7 +195,7 @@ test('inbox on a phone by keyboard: arrows move the active option, Enter opens, 
   await go(page, '/inbox?tab=self_service');
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   const options = list.getByRole('option');
-  await expect(options).toHaveCount(5);
+  await expect(options).toHaveCount(6);
   const detail = page.locator('.inbox__detail');
   // Read up front: the list (and its options) is hidden while a detail is open.
   const ids = await options.evaluateAll((els) => els.map((el) => el.id));
@@ -202,7 +247,7 @@ test('inbox on a phone: approving returns to the list without a dead Back step',
   await page.getByRole('tab', { name: /Self-service/ }).click();
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   const options = list.getByRole('option');
-  await expect(options).toHaveCount(5);
+  await expect(options).toHaveCount(6);
   const ids = await options.evaluateAll((els) => els.map((el) => el.id));
   const carling = ids.findIndex((id) => id.endsWith('-p-carling-link'));
   const neighbour = ids[carling + 1] ?? ids[carling - 1]!;
@@ -215,7 +260,7 @@ test('inbox on a phone: approving returns to the list without a dead Back step',
   await expect(list).toHaveAttribute('aria-activedescendant', neighbour);
   await expect(page).not.toHaveURL(/item=/);
   // A later pick restores itself on Back, not the earlier neighbour.
-  const other = options.filter({ hasText: 'HFA' });
+  const other = options.filter({ hasText: 'HJupiter' });
   const otherId = (await other.getAttribute('id'))!;
   expect(otherId).not.toBe(neighbour);
   await other.click();

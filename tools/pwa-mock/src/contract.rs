@@ -132,8 +132,13 @@ impl Harness {
         let status = res.status();
         let headers = res.headers().clone();
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        let value = serde_json::from_slice(&bytes)
-            .unwrap_or_else(|e| panic!("{method} {path}: not JSON ({e}): {bytes:?}"));
+        // `204 No Content` (mock controls) has no body to check.
+        let value = if status == StatusCode::NO_CONTENT {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|e| panic!("{method} {path}: not JSON ({e}): {bytes:?}"))
+        };
         (status, headers, value)
     }
 
@@ -208,6 +213,18 @@ impl Harness {
         self.check(&label, status, &value, target);
         value
     }
+}
+
+/// The CSRF token after a (mock) sign-in, as the PWA reads it.
+async fn session_token(h: &Harness) -> String {
+    let (_, headers, _) = h
+        .send_with(false, "GET", "/api/admin/session", None, &[])
+        .await;
+    headers
+        .get("x-kanade-csrf")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn s(value: &Value) -> &str {
@@ -783,7 +800,8 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
-    // Inbox: reject a member request, approve an extractor proposal.
+    // Inbox (A6): proposals from the extractor and the chatbot, member
+    // requests of every type; the Discord-only rule, edits, codes, replays.
     let inbox = h
         .ok(
             "GET",
@@ -792,30 +810,138 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "inbox.json#/$defs/Proposals",
         )
         .await;
-    let items = inbox.as_array().unwrap();
-    let request = items
-        .iter()
-        .find(|p| p["tab"] == "self_service")
-        .expect("a self-service request");
+    let items = inbox.as_array().unwrap().clone();
+    let item = |id: &str| {
+        items
+            .iter()
+            .find(|p| p["id"] == id)
+            .unwrap_or_else(|| panic!("{id}"))
+            .clone()
+    };
+    for source in ["extraction", "chat", "self_service"] {
+        assert!(items.iter().any(|p| p["source"] == source), "{source}");
+    }
+    for kind in ["new_fixed", "change_fixed", "join", "leave", "swap"] {
+        assert!(items.iter().any(|p| p["kind"] == kind), "{kind}");
+    }
+    assert!(items.iter().any(|p| {
+        p["flags"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("requester_unauthorised"))
+    }));
+    assert!(
+        items
+            .iter()
+            .filter(|p| p["tab"] == "self_service")
+            .all(|p| p["self_service"]["via"] == "request")
+    );
+    let csrf = h.csrf.clone();
+    let token = [("x-kanade-csrf", csrf.as_str())];
+    h.refused(
+        "POST",
+        "/api/admin/inbox/p-carling-link/approve",
+        json!({}),
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "version_required"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/inbox/p-bm-move/approve",
+        json!({ "force": true }),
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "force_unsupported"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/inbox/p-carling-link/approve",
+        json!({ "version": 1, "day": 1, "time": "21:00" }),
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "edit_not_applicable"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/inbox/p-limbo-add/reject",
+        json!({ "reason": "why" }),
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "reason_not_applicable"),
+    )
+    .await;
+    // A token (or Tailscale) session cannot decide Kanade's proposals.
+    h.send(
+        false,
+        "POST",
+        "/__mock/session",
+        Some(json!({ "method": "token" })),
+    )
+    .await;
+    h.csrf = session_token(&h).await;
+    let csrf = h.csrf.clone();
+    h.refused(
+        "POST",
+        "/api/admin/inbox/p-bm-move/approve",
+        json!({}),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::FORBIDDEN, "discord_session_required"),
+    )
+    .await;
+    // Every session decides member requests.
+    let request = item("p-fa-request");
     h.ok(
         "POST",
-        &format!("/api/admin/inbox/{}/reject", s(&request["id"])),
+        "/api/admin/inbox/p-fa-request/reject",
         Some(json!({ "version": request["version"], "reason": "Contract test." })),
         "common.json#/$defs/Message",
     )
     .await;
-    let proposal = items
+    h.send(
+        false,
+        "POST",
+        "/__mock/session",
+        Some(json!({ "method": "discord" })),
+    )
+    .await;
+    h.csrf = session_token(&h).await;
+    // Edit then approve: one approval at a corrected time; a repeat answers 200.
+    let edit = json!({ "day": 6, "time": "22:30" });
+    let first = h
+        .ok(
+            "POST",
+            "/api/admin/inbox/p-bm-move/approve",
+            Some(edit.clone()),
+            "common.json#/$defs/Message",
+        )
+        .await;
+    let again = h
+        .ok(
+            "POST",
+            "/api/admin/inbox/p-bm-move/approve",
+            Some(edit),
+            "common.json#/$defs/Message",
+        )
+        .await;
+    assert_eq!(first, again, "a replayed approval answers the first result");
+    let fixed_change = item("p-kalos-fixed");
+    let choices: serde_json::Map<String, Value> = fixed_change["choices"]
+        .as_array()
+        .unwrap()
         .iter()
-        .find(|p| {
-            p["tab"] == "extractor"
-                && p["flags"].as_array().unwrap().is_empty()
-                && p["choices"].is_null()
-        })
-        .expect("a plain extractor proposal");
+        .map(|c| (s(&c["run_id"]).to_owned(), json!("keep")))
+        .collect();
     h.ok(
         "POST",
-        &format!("/api/admin/inbox/{}/approve", s(&proposal["id"])),
-        Some(json!({ "version": proposal["version"] })),
+        "/api/admin/inbox/p-kalos-fixed/approve",
+        Some(json!({ "version": fixed_change["version"], "choices": choices })),
+        "common.json#/$defs/Message",
+    )
+    .await;
+    h.ok(
+        "POST",
+        "/api/admin/inbox/p-jupiter-chat/approve",
+        Some(json!({})),
         "common.json#/$defs/Message",
     )
     .await;
@@ -913,8 +1039,9 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .ok(
             "GET",
             &format!(
-                "/api/admin/history?limit=2&week={}&actor=admin:{}",
+                "/api/admin/history?limit=2&week={}&actor={}:{}",
                 week_key.replace('+', "%2B"),
+                s(&newest["actor"]["kind"]),
                 s(&newest["actor"]["id"])
             ),
             None,
