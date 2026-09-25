@@ -4,6 +4,7 @@
 //! validated against the (A5-extended) schemas.
 
 use kanade::domain::history::{ChangeHistory, Surface};
+use kanade::domain::scheduler::ScheduleStore;
 use serde_json::{Value, json};
 
 use crate::{reads::Reads, schemas::assert_valid, support::ADMIN_HOST, support::request};
@@ -485,4 +486,149 @@ async fn rollbacks_need_csrf_even_to_preview() {
     )
     .await;
     assert_eq!((reply.status, reply.api_error()), (403, "csrf".into()));
+}
+
+/// Seqs past i64::MAX (what SQLite stores) name no record: contract codes,
+/// never 503.
+#[tokio::test]
+async fn seqs_beyond_the_store_range_get_contract_codes() {
+    let reads = Reads::new().await;
+    assert_eq!(
+        reads
+            .status_of("/api/admin/history?before=18446744073709551615")
+            .await,
+        (422, "invalid_query".into())
+    );
+    assert_eq!(
+        reads
+            .status_of("/api/admin/history/9223372036854775808")
+            .await,
+        (404, "not_found".into())
+    );
+    assert_eq!(
+        reads
+            .refused(
+                "POST",
+                "/api/admin/history/revert",
+                json!({"seqs": [9223372036854775808_u64]}),
+            )
+            .await,
+        (422, "invalid".into())
+    );
+    // i64::MAX itself is in range: an older-than cursor, and a missing record.
+    let page = reads
+        .read("/api/admin/history?before=9223372036854775807", PAGE)
+        .await;
+    assert_eq!(seqs(&page), [1]);
+}
+
+/// Strict conflicts list every selected record in `reverts`, not only the
+/// conflicting ones. A consistent history cannot make a week restore
+/// conflict (every later change to the week is selected), so this uses the
+/// actor revert, which shares the path: Bob's later answer conflicts with one
+/// of the admin's two records only.
+#[tokio::test]
+async fn strict_conflicts_list_all_selected_records() {
+    let reads = Reads::new().await;
+    let moved = reads.move_kalos(6, "21:00").await;
+    let v = reads.version().await;
+    reads
+        .ok(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            json!({"member_id": "1004", "answer": "yes", "version": v}),
+            "week.json#/$defs/RunResult",
+        )
+        .await;
+    let answered = moved + 1;
+    // Someone else changes that answer afterwards (not the admin's actor).
+    reads
+        .store
+        .commit(
+            reads
+                .store
+                .load(&kanade::domain::scheduler::Scope::All)
+                .await
+                .unwrap()
+                .revision,
+            kanade::domain::schedule::ChangeSet {
+                changes: vec![kanade::domain::schedule::Change::DeleteRsvp {
+                    run_id: "r-kalos".into(),
+                    user_id: "1004".into(),
+                }],
+            },
+            kanade::domain::history::ChangeMeta {
+                origin: kanade::domain::history::Origin::new(
+                    kanade::domain::history::Actor::member("1004"),
+                    Surface::Discord,
+                ),
+                at: chrono::DateTime::UNIX_EPOCH + chrono::TimeDelta::days(20_725),
+                notices: Vec::new(),
+                refs: Vec::new(),
+                request_digest: None,
+                expect: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+    let head = reads.version().await;
+    let plan = reads
+        .plan(
+            "/api/admin/history/revert-actor",
+            json!({"actor": "admin:token", "since": "2026-09-01"}),
+            &[],
+        )
+        .await;
+    assert_eq!(plan["outcome"], "conflicts");
+    assert_eq!(plan["reverts"], json!([answered, moved]));
+    let conflicting: Vec<_> = plan["conflicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|conflict| conflict["seq"].clone())
+        .collect();
+    assert!(
+        conflicting.iter().all(|seq| *seq == answered),
+        "{conflicting:?}"
+    );
+    assert_eq!(reads.version().await, head, "nothing written");
+}
+
+/// An applied rollback answers the committed record's rows, RSVP rows
+/// included, not the plan.
+#[tokio::test]
+async fn forced_week_restore_answers_the_record_rows() {
+    let reads = Reads::new().await;
+    let revision = reads.read("/api/admin/history/1", RECORD).await["revision"]
+        .as_u64()
+        .unwrap();
+    for (member, answer) in [("1004", "yes"), ("1001", "clear")] {
+        let v = reads.version().await;
+        reads
+            .ok(
+                "POST",
+                "/api/admin/runs/r-kalos/rsvp",
+                json!({"member_id": member, "answer": answer, "version": v}),
+                "week.json#/$defs/RunResult",
+            )
+            .await;
+    }
+    reads.move_kalos(6, "21:00").await;
+    let applied = reads
+        .plan(
+            "/api/admin/history/restore-week",
+            json!({"week": "2026-09-24", "revision": revision, "force": true}),
+            &[],
+        )
+        .await;
+    assert_eq!(applied["outcome"], "applied");
+    assert_eq!(applied["rows"], applied["record"]["rows"]);
+    let tables: Vec<_> = applied["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["key"]["table"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(tables.iter().any(|table| table == "rsvps"), "{tables:?}");
+    assert!(tables.iter().any(|table| table == "runs"), "{tables:?}");
 }

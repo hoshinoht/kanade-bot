@@ -53,6 +53,8 @@ type Reply = Result<Response, ApiError>;
 
 const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
+/// Stores keep seqs as SQLite integers: a larger one names no record.
+pub(super) const MAX_SEQ: u64 = i64::MAX as u64;
 const PARAMS: [&str; 4] = ["week", "actor", "before", "limit"];
 
 /// A record the encoder cannot write (an instant out of range) is a server fault.
@@ -106,7 +108,13 @@ fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
             })
             .transpose()
     };
-    let before = number("before")?;
+    let before = number("before")?
+        .map(|before| {
+            (before <= MAX_SEQ)
+                .then_some(before)
+                .ok_or(ApiError::INVALID_QUERY)
+        })
+        .transpose()?;
     let limit = match number("limit")? {
         None => DEFAULT_LIMIT,
         Some(limit @ 1..=100) => usize::try_from(limit).unwrap_or(MAX_LIMIT),
@@ -164,6 +172,9 @@ async fn record(
     let state = state(&site)?;
     // A non-numeric seq names no record.
     let UrlPath(seq) = seq.map_err(|_| ApiError::NOT_FOUND)?;
+    if seq > MAX_SEQ {
+        return Err(ApiError::NOT_FOUND);
+    }
     let record = state
         .store
         .change(seq)

@@ -485,8 +485,12 @@ impl ChangeHistory for SqliteStore {
     }
 
     async fn load_checked(&self, seq: u64) -> Result<CheckedChange, StoreError> {
+        // No stored seq exceeds i64::MAX: such a seq is simply missing.
+        let Ok(seq) = i64::try_from(seq) else {
+            return Ok(CheckedChange::Missing);
+        };
         let row = sqlx::query(&format!("SELECT {COLUMNS} FROM change_log WHERE seq = ?1"))
-            .bind(i64::try_from(seq).map_err(backend)?)
+            .bind(seq)
             .fetch_optional(&self.readers)
             .await
             .map_err(backend)?;
@@ -542,7 +546,8 @@ impl ChangeHistory for SqliteStore {
             } else {
                 "seq > ?"
             });
-            args.push(Arg::Int(int(cursor)?));
+            // Clamping keeps the selection: no stored seq exceeds i64::MAX.
+            args.push(Arg::Int(i64::try_from(cursor).unwrap_or(i64::MAX)));
         }
         let filter = if clauses.is_empty() {
             "1".to_owned()

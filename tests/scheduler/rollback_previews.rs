@@ -240,9 +240,10 @@ async fn a_strict_preview_reports_conflicts_without_writing() {
         .preview_revert_changes(&[seq], RevertMode::Strict, &reminders, &none)
         .await
         .unwrap();
-    let RevertOutcome::Conflicts(conflicts) = preview else {
+    let RevertOutcome::Conflicts { seqs, conflicts } = preview else {
         panic!("{preview:?}");
     };
+    assert_eq!(seqs, [seq]);
     assert!(conflicts.iter().any(|conflict| matches!(
         &conflict.key,
         RowKey::Rsvp { user_id, .. } if user_id == "1002"

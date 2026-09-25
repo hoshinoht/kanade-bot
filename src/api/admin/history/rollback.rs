@@ -139,10 +139,6 @@ async fn run(
     if mode.preview {
         origin.request_id = None;
     }
-    let selected = match &selection {
-        RollbackSelection::Seqs(seqs) => seqs.clone(),
-        _ => Vec::new(),
-    };
     let by_seqs = matches!(selection, RollbackSelection::Seqs(_));
     let request = RollbackRequest {
         selection,
@@ -194,7 +190,7 @@ async fn run(
         ),
         _ => None,
     };
-    Ok(Json(encoded(dto::plan(&outcome, &selected, applied.as_ref()))?).into_response())
+    Ok(Json(encoded(dto::plan(&outcome, applied.as_ref()))?).into_response())
 }
 
 pub async fn revert(
@@ -206,6 +202,9 @@ pub async fn revert(
     let Json(body) = body.map_err(bad_body)?;
     if body.seqs.is_empty() {
         return Err(Refusal::invalid("Choose at least one change."));
+    }
+    if let Some(seq) = body.seqs.iter().find(|seq| **seq > super::MAX_SEQ) {
+        return Err(Refusal::invalid(format!("no change {seq} to revert")));
     }
     run(
         &site,

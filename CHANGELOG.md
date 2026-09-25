@@ -126,7 +126,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   single change records, who-changed-what per run, a history integrity check, and
   revert, restore-week and revert-a-person's-changes with a preview that never writes
   and retry-safe apply. Cherry-pick and the history graph follow once their contracts
-  are settled.
+  are settled. Out-of-range change numbers get "not found"/"invalid" rather than a
+  server error, a refused rollback lists every requested change, and an applied
+  rollback reports the rows it actually saved.
 - v5: admin edit API: move runs, change status, answers and parties, reset to the
   weekly timing, preview pings, create, edit and retire weekly timings, and edit
   members and aliases. Edits made from an out-of-date screen are refused (409) instead

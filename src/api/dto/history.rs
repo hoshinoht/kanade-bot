@@ -61,17 +61,12 @@ fn skipped(rows: &[SkippedRow]) -> Vec<Value> {
         .collect()
 }
 
-/// `RevertPlan` for a rollback outcome. `selected` names the records a
-/// strict refusal was about (the outcome itself lists only conflicts);
-/// `applied` is the committed rollback record.
+/// `RevertPlan` for a rollback outcome; `applied` is the committed rollback
+/// record, whose rows are the answer's (the outcome's are a plan).
 ///
 /// # Errors
 /// As [`record`].
-pub fn plan(
-    outcome: &RevertOutcome,
-    selected: &[u64],
-    applied: Option<&ChangeRecord>,
-) -> Result<Value, RecordError> {
+pub fn plan(outcome: &RevertOutcome, applied: Option<&ChangeRecord>) -> Result<Value, RecordError> {
     let rows = |rows: &[RowChange]| rows.iter().map(row).collect::<Result<Vec<_>, _>>();
     let conflicts = |list: &[RowConflict]| list.iter().map(conflict).collect::<Result<Vec<_>, _>>();
     Ok(match outcome {
@@ -84,7 +79,7 @@ pub fn plan(
         } => json!({
             "outcome": if applied.is_some() { "applied" } else { "preview" },
             "reverts": seqs,
-            "rows": rows(changed)?,
+            "rows": rows(applied.map_or(changed.as_slice(), |record| record.rows.as_slice()))?,
             "conflicts": conflicts(overridden)?,
             "skipped": skipped(left),
             "record": applied.map(record).transpose()?,
@@ -100,23 +95,17 @@ pub fn plan(
             "skipped": skipped(left),
             "record": null,
         }),
-        RevertOutcome::Conflicts(list) => {
-            let mut reverts: Vec<u64> = if selected.is_empty() {
-                list.iter().map(|conflict| conflict.seq).collect()
-            } else {
-                selected.to_vec()
-            };
-            reverts.sort_unstable_by(|a, b| b.cmp(a));
-            reverts.dedup();
-            json!({
-                "outcome": "conflicts",
-                "reverts": reverts,
-                "rows": [],
-                "conflicts": conflicts(list)?,
-                "skipped": [],
-                "record": null,
-            })
-        }
+        RevertOutcome::Conflicts {
+            seqs,
+            conflicts: list,
+        } => json!({
+            "outcome": "conflicts",
+            "reverts": seqs,
+            "rows": [],
+            "conflicts": conflicts(list)?,
+            "skipped": [],
+            "record": null,
+        }),
     })
 }
 

@@ -653,7 +653,7 @@ async fn conflicting_revert_is_refused_unless_forced<S: ScheduleStore + ChangeHi
     let revision = snapshot(&service).await.revision;
     let none = BTreeSet::new();
     let refused = revert(&mut service, &[amend.seq], RevertMode::Strict, &none).await;
-    let RevertOutcome::Conflicts(conflicts) = refused else {
+    let RevertOutcome::Conflicts { conflicts, .. } = refused else {
         panic!("conflicting_revert_is_refused_unless_forced: {refused:?}");
     };
     assert_eq!(conflicts[0].key, RowKey::Run(run.clone()));

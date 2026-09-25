@@ -129,8 +129,12 @@ pub enum RevertOutcome {
         seqs: Vec<u64>,
         skipped: Vec<SkippedRow>,
     },
-    /// [`RevertMode::Strict`] found conflicts; nothing was changed.
-    Conflicts(Vec<RowConflict>),
+    /// [`RevertMode::Strict`] found conflicts; nothing was changed. `seqs`
+    /// are every selected record, newest first, not only the conflicting.
+    Conflicts {
+        seqs: Vec<u64>,
+        conflicts: Vec<RowConflict>,
+    },
 }
 
 fn current(draft: &Draft, key: &RowKey) -> Option<RowValue> {
@@ -291,7 +295,10 @@ pub fn apply_revert(
         }
     }
     if mode == RevertMode::Strict && !conflicts.is_empty() {
-        return Ok(RevertOutcome::Conflicts(conflicts));
+        return Ok(RevertOutcome::Conflicts {
+            seqs: records.iter().map(|record| record.seq).collect(),
+            conflicts,
+        });
     }
     for run_id in &runs {
         let moved = match (draft.run(run_id), trial.run(run_id)) {
