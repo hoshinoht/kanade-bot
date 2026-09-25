@@ -161,7 +161,8 @@ impl Store {
 
     /// Unamended runs follow the new timing. Amended runs need a decision each:
     /// `update` takes the new timing, `keep` leaves this week's change alone.
-    /// Whole-week version check like the mock's run edits (the server checks per field).
+    /// Per-field stale check as on the server: a resent field that differs from the
+    /// stored row and changed after `version` is `409 stale`.
     pub fn update_fixed(&mut self, id: &str, req: FixedRequest) -> Result<FixedRow, MoveError> {
         let version = req.version.ok_or_else(|| {
             MoveError::Coded(
