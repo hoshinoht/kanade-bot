@@ -9,7 +9,7 @@
       "additionalProperties": false,
       "required": ["count", "window_s"],
       "properties": {
-        "count": { "type": "integer", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Answers per window: 1-100; member_rate also accepts 0 (staff only)." },
         "window_s": { "type": "integer", "minimum": 0 }
       }
     },

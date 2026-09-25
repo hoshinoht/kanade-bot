@@ -100,7 +100,7 @@ fn malformed_values_name_their_key() {
     for (key, value) in [
         ("quiet_mode", "true"),
         ("countdown_minutes", "0"),
-        ("chat_pilot_rate_count", "0"),
+        ("chat_pilot_global_rate_count", "0"),
         ("chat_pilot_rate_window_s", "inf"),
         ("extract_reasoning", ""),
         ("chat_pilot_think", "loud"),
@@ -169,4 +169,18 @@ fn self_service_links_need_the_public_portal() {
     assert_eq!(service.effective_mode(), SelfServiceMode::CardsOnly);
     service.public_portal = true;
     assert_eq!(service.effective_mode(), SelfServiceMode::LinkFirst);
+}
+
+#[test]
+fn a_zero_member_allowance_is_staff_only_but_the_pool_needs_one() {
+    let defaults = RuntimeSettings::default();
+    let read = resolve(&rows(&[(keys::CHAT_RATE_COUNT, "0")]), &defaults).expect("reads");
+    assert_eq!(read.chatbot.member_rate.count, 0);
+    assert!(matches!(
+        resolve(&rows(&[(keys::CHAT_GLOBAL_RATE_COUNT, "0")]), &defaults),
+        Err(SettingsError::Malformed {
+            key: keys::CHAT_GLOBAL_RATE_COUNT,
+            ..
+        })
+    ));
 }

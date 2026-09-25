@@ -16,6 +16,9 @@ use crate::chat::gate::retry_note;
 use crate::chat::pilot::AllowanceSnapshot;
 
 pub const STAFF_LIMITS_REPLY: &str = "No limits for staff — fire away! 🎀🐾";
+/// A zero allowance with no override of their own.
+pub const STAFF_ONLY_LIMITS_REPLY: &str =
+    "🎀 Chat answers are staff only for now — no allowance for members yet.";
 /// Until the chat pilot is wired into `serve`.
 pub const LIMITS_UNAVAILABLE: &str = "Chat limits aren't available right now.";
 
@@ -44,6 +47,9 @@ pub fn limits_text(snapshot: &AllowanceSnapshot, user_id: &str) -> String {
     let (count, used, resets_in) = own.map_or((snapshot.member_default.0, 0, 0.0), |usage| {
         (usage.limit, usage.used, usage.resets_in_s)
     });
+    if count == 0 {
+        return STAFF_ONLY_LIMITS_REPLY.to_owned();
+    }
     let left = count.saturating_sub(used);
     let used = count - left;
     // With none left, the oldest answer freeing up is v4's `retry_after`.
@@ -123,6 +129,32 @@ impl SlashCommand for LimitsCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_zero_allowance_reads_staff_only() {
+        use crate::chat::pilot::{MemberUsage, PoolUsage};
+        let pool = PoolUsage {
+            used: 0,
+            limit: 12,
+            window_s: 900.0,
+            resets_in_s: 0.0,
+        };
+        let mut snapshot = AllowanceSnapshot {
+            member_default: (0, 300.0),
+            members: Vec::new(),
+            pool,
+        };
+        assert_eq!(limits_text(&snapshot, "11"), STAFF_ONLY_LIMITS_REPLY);
+        snapshot.members.push(MemberUsage {
+            member_id: "11".into(),
+            used: 0,
+            limit: 2,
+            window_s: 300.0,
+            resets_in_s: 0.0,
+            overridden: true,
+        });
+        assert!(limits_text(&snapshot, "11").contains("0 of 2 used"));
+    }
 
     #[test]
     fn bar_rounds_up_like_v4() {

@@ -108,13 +108,14 @@ fn id(key: &'static str, value: &str) -> Result<Option<String>, SettingsError> {
     }
 }
 
-fn count(key: &'static str, value: &str) -> Result<u32, SettingsError> {
+/// `floor` 0 is the member allowance's "staff only"; the guild pool needs 1.
+fn count(key: &'static str, value: &str, floor: u32) -> Result<u32, SettingsError> {
     match value.trim().parse::<u32>() {
-        Ok(count) if count >= 1 => Ok(count),
+        Ok(count) if count >= floor => Ok(count),
         _ => Err(malformed(
             key,
             value,
-            "expected a whole number of at least 1",
+            format!("expected a whole number of at least {floor}"),
         )),
     }
 }
@@ -187,9 +188,9 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::WATCHED_CATEGORIES => out.watching.category_ids = ids(key, value)?,
         keys::CHAT_MODE => out.chatbot.enabled = flag(key, value)?,
         keys::CHAT_CATEGORIES => out.chatbot.category_ids = ids(key, value)?,
-        keys::CHAT_RATE_COUNT => out.chatbot.member_rate.count = count(key, value)?,
+        keys::CHAT_RATE_COUNT => out.chatbot.member_rate.count = count(key, value, 0)?,
         keys::CHAT_RATE_WINDOW => out.chatbot.member_rate.window_s = window(key, value)?,
-        keys::CHAT_GLOBAL_RATE_COUNT => out.chatbot.guild_rate.count = count(key, value)?,
+        keys::CHAT_GLOBAL_RATE_COUNT => out.chatbot.guild_rate.count = count(key, value, 1)?,
         keys::CHAT_GLOBAL_RATE_WINDOW => out.chatbot.guild_rate.window_s = window(key, value)?,
         keys::QUIET_MODE => out.notifications.quiet_mode = flag(key, value)?,
         keys::SELF_SERVICE_MODE => {

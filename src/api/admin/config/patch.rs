@@ -17,6 +17,8 @@ use crate::{
 pub const MAX_COUNTDOWNS: usize = 4;
 pub const COUNTDOWN_MINUTES: std::ops::RangeInclusive<u64> = 5..=24 * 60;
 pub const RATE_COUNT: std::ops::RangeInclusive<u64> = 1..=100;
+/// 0 = staff only: members without an override are not answered.
+pub const MEMBER_RATE_COUNT: std::ops::RangeInclusive<u64> = 0..=100;
 pub const RATE_WINDOW_S: std::ops::RangeInclusive<u64> = 10..=86_400;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -188,12 +190,17 @@ fn countdowns(value: &Value) -> Result<Vec<u32>, PatchError> {
     Ok(minutes)
 }
 
-fn rate(current: Rate, value: &Value, path: &str) -> Result<Rate, PatchError> {
+fn rate(
+    current: Rate,
+    value: &Value,
+    path: &str,
+    counts: std::ops::RangeInclusive<u64>,
+) -> Result<Rate, PatchError> {
     let bad = || {
         PatchError::invalid(format!(
             "A rate is {}-{} answers per {}-{} seconds.",
-            RATE_COUNT.start(),
-            RATE_COUNT.end(),
+            counts.start(),
+            counts.end(),
             RATE_WINDOW_S.start(),
             RATE_WINDOW_S.end()
         ))
@@ -201,7 +208,7 @@ fn rate(current: Rate, value: &Value, path: &str) -> Result<Rate, PatchError> {
     let mut next = current;
     for (key, value) in object(value, path)? {
         let (slot, range) = match key.as_str() {
-            "count" => (&mut next.count, RATE_COUNT),
+            "count" => (&mut next.count, counts.clone()),
             "window_s" => (&mut next.window_s, RATE_WINDOW_S),
             other => return Err(PatchError::unknown(format!("{path}.{other}"))),
         };
@@ -252,10 +259,15 @@ pub fn chatbot(
         }
     }
     if let Some(value) = body.get("member_rate") {
-        next.member_rate = rate(current.member_rate, value, "chatbot.member_rate")?;
+        next.member_rate = rate(
+            current.member_rate,
+            value,
+            "chatbot.member_rate",
+            MEMBER_RATE_COUNT,
+        )?;
     }
     if let Some(value) = body.get("guild_rate") {
-        next.guild_rate = rate(current.guild_rate, value, "chatbot.guild_rate")?;
+        next.guild_rate = rate(current.guild_rate, value, "chatbot.guild_rate", RATE_COUNT)?;
     }
     Ok(next)
 }
@@ -323,6 +335,24 @@ mod tests {
         );
         assert_eq!(code(json!({"models": {"groups": []}})), "read_only");
         assert!(section(&json!({"watching": {"paused": true}})).is_ok());
+    }
+
+    #[test]
+    fn member_rate_may_be_zero_but_the_guild_pool_may_not() {
+        let current = Chatbot::default();
+        let staff_only = chatbot(
+            &current,
+            json!({"member_rate": {"count": 0}}).as_object().unwrap(),
+            &[],
+        )
+        .expect("member count 0");
+        assert_eq!(staff_only.member_rate.count, 0);
+        let refused = chatbot(
+            &current,
+            json!({"guild_rate": {"count": 0}}).as_object().unwrap(),
+            &[],
+        );
+        assert_eq!(refused.unwrap_err().0.error, "invalid");
     }
 
     #[test]

@@ -162,7 +162,7 @@ async fn malformed_rows_are_errors_naming_the_key<S: SettingsStore>(store: S) {
         SettingsError::Malformed {
             key: keys::CHAT_RATE_COUNT,
             value: "lots".into(),
-            reason: "expected a whole number of at least 1".into(),
+            reason: "expected a whole number of at least 0".into(),
         }
     );
     assert!(
@@ -185,13 +185,13 @@ async fn refused_writes_store_nothing<S: SettingsStore>(store: S) {
 
     let mut chatbot = RuntimeSettings::default().chatbot;
     chatbot.enabled = true;
-    chatbot.member_rate.count = 0;
+    chatbot.guild_rate.count = 0;
     let invalid = save_section(&store, &Section::Chatbot(chatbot)).await;
     assert!(
         matches!(
             invalid,
             Err(SettingsError::Malformed {
-                key: keys::CHAT_RATE_COUNT,
+                key: keys::CHAT_GLOBAL_RATE_COUNT,
                 ..
             })
         ),

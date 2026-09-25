@@ -28,6 +28,9 @@ pub const GLOBAL_KEY: &str = "guild";
 pub const RATE_LIMITED: &str = "rate limited";
 /// Kept distinct from [`RATE_LIMITED`] so a log says which budget ran out.
 pub const POOL_SPENT: &str = "the guild's answer budget is spent";
+/// A zero allowance (no override): silent, like the role gate, so nothing
+/// about the member reaches the model or the log.
+pub const STAFF_ONLY: &str = "the member allowance is staff only";
 
 /// Static budget replies; composing them never costs a generation.
 pub const RATE_LIMITED_REPLY: &str =
@@ -244,6 +247,11 @@ pub fn decide(
         .as_ref()
         .map_or("", |author| author.id.as_str());
     let Budgets { person, pool, now } = budgets;
+    if let Some(person) = person.as_deref()
+        && person.limit_for(author).0 == 0
+    {
+        return ChatDecision::refuse(STAFF_ONLY);
+    }
     if let Some(person) = person.as_deref()
         && person.remaining(author, now) == 0
     {

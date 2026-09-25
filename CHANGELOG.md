@@ -273,6 +273,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 chat allowance may be 0 per member ("staff only"): members without an override are ignored
+  silently, staff are exempt, and `/limits` says chat is staff only.
 - v5 chat logs keep each tool call's result (up to 8 KiB, marked when cut) and its time; the
   turn view also shows imported v4 outputs and timings. `kanade import v4 --refresh-logs`
   re-imports only `v4-` log rows, and v4 rounds with no requested tools take the call names.

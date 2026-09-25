@@ -609,3 +609,33 @@ async fn shutdown_cuts_running_questions_refunds_and_concludes_them() {
         "closed"
     );
 }
+
+#[tokio::test]
+async fn a_zero_member_allowance_ignores_members_silently_but_not_staff_or_overrides() {
+    let mut fake = Fake::new(vec![Step::Reply("Hello staff."), Step::Reply("Hi.")]);
+    fake.member_rate = (0, 300.0);
+    let rig = rig_with(fake, DriverConfig::default(), &MemoryScheduleStore::new()).await;
+    for id in ["1001", "1002"] {
+        assert!(!rig.driver.offer(asked(id, "11", CHANNEL, &[ROLE])));
+    }
+    rig.settle().await;
+    assert!(rig.surface.events().is_empty(), "no reaction or reply");
+    assert!(rig.rows().is_empty(), "no log row");
+    assert_eq!(rig.pool_used(), 0);
+
+    let mut staff = asked("1003", "12", CHANNEL, &[]);
+    staff.is_admin = true;
+    assert!(rig.driver.offer(staff));
+    rig.settle().await;
+    rig.driver
+        .set_overrides(vec![crate::domain::model_log::AllowanceOverride {
+            member_id: "13".into(),
+            count: 2,
+            window_ms: 300_000,
+            updated_at: when(),
+        }]);
+    assert!(rig.driver.offer(asked("1004", "13", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert_eq!(rig.rows().len(), 2, "staff and the override are answered");
+    assert_eq!(rig.pool_used(), 1, "only the override spent");
+}
