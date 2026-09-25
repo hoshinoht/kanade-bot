@@ -104,6 +104,12 @@ production `StaffGate` = `GuildStaffGate` over `StoreGuildMembers` sharing one
 `GuildAvailable` also fires when the owner or the set of Administrator roles
 changes). `RosterUpdate::Seen` carries role ids and the computed
 Administrator flag from the gateway `Router`'s role-permission cache.
+Preconditions before Discord admin sign-in is enabled in `serve`: both roster
+handlers run on one sequential task (a concurrent `on_guild_available` could
+write back a stale row over a newer `Seen`); startup roster reconciliation
+refreshes members changed while the bot was offline; and deleting the
+configured admin role revokes its holders (verify Discord sends member
+updates, or filter stored roles against the known role set).
 
 ### Edge contract (admin origin)
 

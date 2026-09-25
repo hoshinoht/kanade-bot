@@ -61,8 +61,10 @@ for the public origin when it opens.
     limits apply to every attempt. Wrong guesses are still charged to the
     global bucket, but it no longer bounds how many comparisons run: the
     per-IP limit (5/min) does. When the 4096-client table is full of active
-    buckets, new addresses are served unremembered (global bucket only)
-    rather than refused.
+    buckets, new addresses are served unremembered rather than refused, so
+    comparisons are then bounded only by request throughput. The posture
+    therefore relies on the break-glass file holding at least 32 bytes of real
+    randomness (e.g. `openssl rand -base64 48`); only its length is checked.
 15. Never log the code, state, verifier, tokens or cookies; log the user id,
     outcome and request id.
 

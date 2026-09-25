@@ -149,7 +149,7 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   that fail. It only revokes (a row may belong to someone who left while
   the bot was offline); a role newly granting Administrator takes effect for
   a member at their next member event. The staff gate's re-check reads the
-  stored flag, so a lost Administrator is never kept.
+  stored flag, so a lost Administrator is never kept while the bot is online; changes made while it was offline wait for startup roster reconciliation.
 
 ## Commands
 
