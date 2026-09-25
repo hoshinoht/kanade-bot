@@ -11,7 +11,7 @@ pub mod ids;
 pub mod members;
 pub mod model_log;
 pub mod notify;
-mod pytext;
+pub(crate) mod pytext;
 pub mod requests;
 pub mod schedule;
 pub mod scheduler;

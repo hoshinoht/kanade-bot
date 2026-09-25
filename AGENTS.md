@@ -4,7 +4,7 @@
 
 - Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). `legacy/python/` = frozen v4 rollback (Python), independently runnable.
 - `src/main.rs` installs the rustls `ring` provider and delegates to `src/runtime/` (command dispatch, env-only config, JSON logs, TLS); `src/cli/` parses `serve`, `healthcheck` and reserved `ctl`/`import`/`export`; `src/api/` is the bootstrap health server; `src/chat/persona/` loads the v5 persona layout.
-- Feature code: `src/domain/` (pure rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
+- Feature code: `src/domain/` (pure rules), `src/extract/` (pure extraction rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
 - `tests/<target>/main.rs` integration suites (see `tests/AGENTS.md`); `docs/v5/` contracts, decisions and frozen v4 vectors (see `docs/v5/AGENTS.md`).
 - `config/personas/` tracks only `README.md`, `catalog.example.yaml`, `bundles/kanade.yaml`, `profiles/example.yaml`; everything else there (and `config/personas-v4/`, mounted by the v4 container) is private.
 - `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `tools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); `spikes/stack/` is the finished stack-evaluation prototype; `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
@@ -14,7 +14,7 @@
 ## v5 toolchain and checks
 
 - CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`.
-- Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `governor` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
+- Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `governor`, `extract` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
 - The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
 - Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_BIND` loopback-only). See `docs/v5/runtime-bootstrap.md`.
 - Pin new dependencies exactly (`=x.y.z`) with minimal features; keep rustls on `ring` only (no aws-lc/native-tls/openssl).

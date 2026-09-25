@@ -107,6 +107,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   date, outcome, channel, member, tool and text with keyset paging), rescan jobs,
   allowance overrides and one self-service tip per member per week, plus extractor/chat
   proposals stored as system drafts that expire and supersede older ones.
+- v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
+  resolution, run matching, per-run merge), matching the frozen v4 vectors exactly.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard

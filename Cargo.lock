@@ -1004,6 +1004,7 @@ dependencies = [
  "hyper-util",
  "jsonschema",
  "libc",
+ "regex",
  "ring",
  "rustls",
  "serde",
