@@ -1,0 +1,103 @@
+# Kanade v5. Run from the repository root of the live checkout (private files
+# resolve relative to it): docker compose -f deploy/compose.yaml up -d
+# v4 (`kanade-bot`) shares the bot token and the edge alias: stop it first.
+# Runbook: deploy/README.md.
+name: kanade-v5
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: kanade-v5:local
+    container_name: kanade-v5
+    # Live Discord mode (S7/S8): change to ["serve"].
+    command: ["serve", "--offline"]
+    env_file:
+      # KANADE_TIMEZONE (required), sign-in and tuning settings; never secrets.
+      - path: ${KANADE_ENV_FILE:-../.env.v5}
+        required: true
+    # Overrides env_file: topology and container paths are fixed here.
+    environment:
+      KANADE_ALLOW_PRIVATE_BIND: "1"
+      KANADE_ADMIN_BIND: 192.168.97.10:8080
+      KANADE_ADMIN_HOST: kanade.hoshinoht.dev
+      # Edge container's current address on kanade_edge; the edge does not pin
+      # it yet (handover item), so recheck after any edge recreate.
+      KANADE_TRUSTED_PROXY: 192.168.97.2
+      KANADE_HEALTHCHECK_URL: http://192.168.97.10:8080/healthz
+      KANADE_WEB_DIR: /app/web
+      KANADE_BOSS_DIR: /app/boss
+      KANADE_CATALOG_FILE: /app/boss/bosses.yaml
+      KANADE_KNOWLEDGE_DIR: /app/boss/knowledge
+      KANADE_PERSONA_DIR: /config/personas
+      KANADE_DB_PATH: /data/kanade.sqlite
+      KANADE_OWNER_LOCK_DIR: /data/run
+      KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
+      KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
+      KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret
+      KANADE_MODEL_KEY_FILE: /run/secrets/kanade_model_api_key
+      # Tailscale sign-in is not used: the edge cannot see tailnet peers (Docker NAT).
+    secrets:
+      - kanade_discord_token
+      - kanade_admin_token
+      - kanade_discord_client_secret
+      - kanade_model_api_key
+    networks:
+      # Egress for Discord and Kanata.
+      default: {}
+      edge:
+        ipv4_address: 192.168.97.10
+        # The edge site proxies to kanade-bot:8080; v4 must be stopped.
+        aliases: [kanade-bot]
+    # No published ports: the listener binds only its kanade_edge address.
+    volumes:
+      # SQLite on a named volume, not a macOS bind mount.
+      - data:/data
+      - ../config/personas:/config/personas:ro
+      # Private art (git-ignored) stays on the host.
+      - ../boss/portraits:/app/boss/portraits:ro
+      - ../boss/artwork:/app/boss/artwork:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 128
+    # Above KANADE_SHUTDOWN_TIMEOUT_SECONDS (default 10, max 120) so the drain finishes.
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/kanade", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # Created by the v4 stack (legacy/python/deploy/compose.yaml); the edge joins it.
+  edge:
+    name: kanade_edge
+    external: true
+
+secrets:
+  # Host files outside the repo, one line each.
+  kanade_discord_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_token
+  kanade_admin_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/admin_token
+  kanade_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_client_secret
+  # A symlink to the Kanata key file v4 uses, so there is one key to rotate.
+  kanade_model_api_key:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/model_api_key
+
+volumes:
+  data:
+    name: kanade_v5_data
