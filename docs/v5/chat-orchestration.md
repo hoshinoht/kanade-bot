@@ -37,12 +37,20 @@ are C3. Discord wiring is later.
   voice reminder is encoded through the identity session; tool arguments are
   decoded by the dispatcher; the final reply is decoded (an unknown token is
   a malformed answer).
-- Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). Each round
-  offers the tools snapshotted at its start, so a `request_tools` result
-  applies from the next round; each `request_tools` that adds a bundle
-  spends one round of the cap. The last round, and the round after a posted
-  card, offer no tools. A round with no tool calls ends the loop; running out
-  of rounds is `KeptCallingTools`.
+- Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). A bundle
+  `request_tools` adds is held until the next round starts, so every call is
+  judged against the tools its round was actually sent (a tool requested in
+  the same reply gets a "next step" note). An added bundle spends one round
+  of the cap; a request that would leave no round offering the bundle before
+  the final no-tools round (round + 3 > remaining cap) is refused with
+  `NO_ROUND_LEFT`, adds nothing and is not charged. The last round, and the
+  round after a posted card, offer no tools and are still sent. A round with
+  no tool calls ends the loop; running out of rounds is `KeptCallingTools`.
+- Deadline: the question session's deadline also bounds each tool call's
+  store load, `ChatPorts::pending`, the dispatch (proposals included) and
+  `ChatPorts::post_card`, as v4's `wait_for` bounded the whole loop. Expiry
+  ends the question as `Timeout` (`timeout` in the log); proposals created
+  before it are still reported.
 - Cards: proposal tools hand `ProposalCard`s to `ChatPorts::post_card`. A card
   that could not be posted turns that call into a refusal the model reads
   (`CARD_NOT_POSTED`, v4's wording) before the next round; a posted card sets
@@ -63,7 +71,10 @@ are C3. Discord wiring is later.
   resent once with the system prompt, the asker's message and the reminder,
   no tools, through `Session::clean_retry` (group retry budget, closed
   breaker). If it is refused or also fails, the question fails with
-  `Malformed` or `ContentBlocked`; C3 supplies the member-facing line.
+  `Malformed` or `ContentBlocked`; C3 supplies the member-facing line. The
+  `clean_retry` flag is set only when the session's request count shows the
+  retry was actually sent (a refusal, or a requeue that lost its permit
+  before sending, leaves it unset and keeps the original reason).
 - Finishing (v4 order): an unposted write overwrites a claiming reply unless
   it already asks a question; new-card claims are stripped on turns that
   posted nothing; then schedule regrounding, member-facing scrubbing and

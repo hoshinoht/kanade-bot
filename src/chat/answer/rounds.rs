@@ -8,7 +8,7 @@
 //! asker's message and the voice reminder only.
 
 use serde_json::Value;
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout_at};
 
 use super::finish::finish;
 use super::{
@@ -232,10 +232,26 @@ where
     let seconds = settings.timeout.as_secs();
     let context_tokens = settings.model_context_tokens;
     let cap = u32::from(settings.tool_rounds);
+    // The question's deadline bounds tool work and card posting too, as v4's
+    // `wait_for` bounded the whole loop.
+    let deadline = session.deadline();
     let mut charged = 0u32;
     let mut round = 0u32;
 
-    let retry = loop {
+    // The loop label is passed in: macro hygiene hides one written here.
+    macro_rules! within_deadline {
+        ($rounds:lifetime, $work:expr) => {
+            match timeout_at(deadline, $work).await {
+                Ok(done) => done,
+                Err(_) => {
+                    state.generation.failure = Some(AnswerFailure::Timeout { seconds });
+                    break $rounds None;
+                }
+            }
+        };
+    }
+
+    let retry = 'rounds: loop {
         round += 1;
         let limit = cap.saturating_sub(charged);
         if round > limit {
@@ -244,6 +260,12 @@ where
         }
         state.generation.rounds = round;
         let last = round >= limit;
+        offer.begin_round();
+        // A bundle requested now must leave a round that offers it and a
+        // final no-tools round after the charge; otherwise refuse the request.
+        if round + 3 > limit {
+            offer.close_requests();
+        }
         let posted_write = state.generation.outcomes.iter().any(|o| {
             !o.posted.is_empty() && ToolName::parse(&o.outcome.name).is_some_and(ToolName::is_write)
         });
@@ -307,61 +329,66 @@ where
         for call in &response.tool_calls {
             state.generation.tool_calls.push(call.name.clone());
             let started = Instant::now();
-            let (mut outcome, mut content, requested) =
-                match proposer.service.store().load(&Scope::All).await {
-                    Ok(snapshot) => {
-                        let pending = ports.pending().await;
-                        let world = ToolWorld {
-                            snapshot: &snapshot,
-                            members: guild.members,
-                            directory: guild.directory,
-                            catalog: guild.catalog,
-                            channels: guild.channels,
-                            pilot: guild.pilot,
-                            zone: guild.zone,
-                            reset_weekday: guild.reset_weekday,
-                            reset_time: guild.reset_time,
-                            pending: &pending,
-                            guides: guild.guides,
-                        };
-                        let arguments = Value::String(call.arguments.clone());
-                        let dispatched = dispatch::run(
-                            question.ctx,
-                            &world,
-                            &mut offer,
-                            proposer,
-                            identity,
-                            &call.name,
-                            &arguments,
-                        )
-                        .await;
-                        (
-                            dispatched.outcome,
-                            dispatched.model_content,
-                            dispatched.requested,
-                        )
-                    }
-                    Err(error) => {
-                        let outcome = ToolOutcome {
-                            name: call.name.clone(),
-                            output: LOOKUP_FAILED.to_owned(),
-                            arguments: serde_json::Map::new(),
-                            ok: false,
-                            error: Some(FAILED),
-                            created: Vec::new(),
-                            cards: Vec::new(),
-                            detail: Some(error.to_string()),
-                        };
-                        (outcome, identity.tool_result(LOOKUP_FAILED), None)
-                    }
-                };
+            let loaded = within_deadline!('rounds, proposer.service.store().load(&Scope::All));
+            let (mut outcome, mut content, requested) = match loaded {
+                Ok(snapshot) => {
+                    let pending = within_deadline!('rounds, ports.pending());
+                    let world = ToolWorld {
+                        snapshot: &snapshot,
+                        members: guild.members,
+                        directory: guild.directory,
+                        catalog: guild.catalog,
+                        channels: guild.channels,
+                        pilot: guild.pilot,
+                        zone: guild.zone,
+                        reset_weekday: guild.reset_weekday,
+                        reset_time: guild.reset_time,
+                        pending: &pending,
+                        guides: guild.guides,
+                    };
+                    let arguments = Value::String(call.arguments.clone());
+                    let dispatched = within_deadline!('rounds, dispatch::run(
+                        question.ctx,
+                        &world,
+                        &mut offer,
+                        proposer,
+                        identity,
+                        &call.name,
+                        &arguments,
+                    ));
+                    (
+                        dispatched.outcome,
+                        dispatched.model_content,
+                        dispatched.requested,
+                    )
+                }
+                Err(error) => {
+                    let outcome = ToolOutcome {
+                        name: call.name.clone(),
+                        output: LOOKUP_FAILED.to_owned(),
+                        arguments: serde_json::Map::new(),
+                        ok: false,
+                        error: Some(FAILED),
+                        created: Vec::new(),
+                        cards: Vec::new(),
+                        detail: Some(error.to_string()),
+                    };
+                    (outcome, identity.tool_result(LOOKUP_FAILED), None)
+                }
+            };
             if requested.is_some() {
                 charged += 1;
             }
+            // Recorded before posting, so a deadline hit while posting still
+            // logs the proposal it created.
+            state
+                .generation
+                .created
+                .extend(outcome.created.iter().cloned());
             let mut posted = Vec::new();
             let mut undelivered = false;
             for card in &outcome.cards {
-                match ports.post_card(card).await {
+                match within_deadline!('rounds, ports.post_card(card)) {
                     Ok(()) => {
                         posted.push(card.proposal_id.clone());
                         state.generation.focus = Some(state.focus(card));
@@ -376,10 +403,6 @@ where
                 content = identity.tool_result(CARD_NOT_POSTED);
             }
             state.generation.tools_ms += millis(started);
-            state
-                .generation
-                .created
-                .extend(outcome.created.iter().cloned());
             state.generation.posted.extend(posted.iter().cloned());
             messages.push(Message::Tool {
                 tool_call_id: call.id.clone(),
@@ -427,19 +450,16 @@ async fn clean_retry<P: LlmProvider>(
     };
     let request = state.request(alias, outgoing, &[]);
     let started = Instant::now();
+    let before = session.requests_used();
     let sent = session.clean_retry(&request).await;
     let latency = millis(started);
     state.generation.model_ms += latency;
     let response = match sent {
         Ok(response) => response,
         Err(error) => {
-            // Refused before sending (budget, breaker): nothing was retried.
-            let unsent = matches!(
-                error.failure,
-                SessionFailure::Refused(_)
-                    | SessionFailure::CleanRetryUnavailable
-                    | SessionFailure::RequestsExhausted
-            );
+            // Counted, not inferred from the failure kind: a requeue that
+            // loses its permit or an ended session may or may not have sent.
+            let unsent = session.requests_used() == before;
             state.generation.clean_retry = !unsent;
             state.generation.failure = Some(if unsent {
                 retry.failure()

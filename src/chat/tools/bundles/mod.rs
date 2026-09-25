@@ -102,13 +102,20 @@ pub enum Requested {
     Refused(String),
 }
 
-/// The tools offered to one question, across its rounds.
+/// `request_tools` when no tool-offering round is left after this one.
+pub const NO_ROUND_LEFT: &str = "There is no step left to use more tools for this message. Answer with the tools you have, or ask them in words.";
+
+/// The tools offered to one question, across its rounds. A requested bundle
+/// is held until [`ToolOffer::begin_round`], so a call in the same reply as
+/// `request_tools` is judged by what the model was actually sent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolOffer {
     mode: Mode,
     read_only: bool,
     bundles: BTreeSet<Bundle>,
+    pending: Option<Bundle>,
     requested: bool,
+    closed: bool,
 }
 
 impl ToolOffer {
@@ -118,8 +125,22 @@ impl ToolOffer {
             mode: Mode::FullSet,
             read_only,
             bundles: BTreeSet::new(),
+            pending: None,
             requested: false,
+            closed: false,
         }
+    }
+
+    /// Start a model round: a bundle requested last round is offered from now.
+    pub fn begin_round(&mut self) {
+        if let Some(bundle) = self.pending.take() {
+            self.bundles.insert(bundle);
+        }
+    }
+
+    /// Refuse further `request_tools` (no tool-offering round left).
+    pub fn close_requests(&mut self) {
+        self.closed = true;
     }
 
     /// READ plus the chosen bundles; write bundles never on a read-only turn.
@@ -133,7 +154,9 @@ impl ToolOffer {
             mode: Mode::Dynamic,
             read_only,
             bundles,
+            pending: None,
             requested: false,
+            closed: false,
         }
     }
 
@@ -221,15 +244,24 @@ impl ToolOffer {
                 bundle.request_name().unwrap_or_default()
             ));
         }
-        self.bundles.insert(bundle);
+        if self.closed {
+            return Requested::Refused(NO_ROUND_LEFT.to_owned());
+        }
+        self.pending = Some(bundle);
         self.requested = true;
         Requested::Added(bundle)
     }
 
     /// The steering note for a call to a tool this question was not offered.
     pub fn not_offered(&self, tool: ToolName) -> String {
+        let arriving = self
+            .pending
+            .is_some_and(|pending| pending.tools().contains(&tool));
         let hint = match Self::bundle_for(tool).and_then(Bundle::request_name) {
-            Some(name) if !self.requested => {
+            _ if arriving => {
+                " It becomes available from your next step; call it again then.".to_owned()
+            }
+            Some(name) if !self.requested && !self.closed => {
                 format!(" If they asked for that, call request_tools with bundle '{name}' first.")
             }
             _ => String::new(),

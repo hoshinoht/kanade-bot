@@ -186,7 +186,10 @@ async fn unoffered_tools_are_refused_until_requested_and_requests_are_once() {
         Some(Bundle::RunWrites),
         "the loop charges one round"
     );
-    assert!(offer.requested() && offer.offers(ToolName::ProposeCancel));
+    // Offered from the next round, not the one that asked.
+    assert!(offer.requested() && !offer.offers(ToolName::ProposeCancel));
+    offer.begin_round();
+    assert!(offer.offers(ToolName::ProposeCancel));
 
     let again = world
         .dispatch(

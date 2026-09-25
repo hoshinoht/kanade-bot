@@ -9,7 +9,7 @@ use kanade::chat::answer::{
     AnswerDeps, AnswerFailure, CARD_NOT_POSTED, Generation, Question, answer, chat_outcome,
     interaction,
 };
-use kanade::chat::tools::bundles::{Bundle, ToolOffer};
+use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
 use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
 use kanade::domain::scheduler::Clock;
@@ -170,28 +170,167 @@ async fn requested_tools_apply_from_the_next_round() {
 
 #[tokio::test(start_paused = true)]
 async fn request_tools_spends_a_round_of_the_cap() {
-    // Three rounds, one spent by `request_tools`: round 2 is the last, so
-    // it is sent with tools withheld and the model answers in words.
+    // Four rounds, one spent by `request_tools`: round 2 offers the bundle
+    // and round 3 is the (tools-withheld) last.
     let run = run(
         vec![
             wants(&[("r1", "request_tools", json!({"bundle": "strategy"}))]),
+            wants(&[("s1", "get_boss_strategy", json!({"boss": "hstar"}))]),
             words("Dodge the lasers."),
         ],
         ToolOffer::dynamic([], false),
-        3,
+        4,
         "how do we do hstar?",
         &Passthrough,
         &Ports::default(),
     )
     .await;
-    assert_eq!(run.generation.rounds, 2);
-    assert_eq!(run.requests.len(), 2);
-    assert!(
-        run.requests[1].tools.is_empty(),
-        "the last round withholds tools"
-    );
     assert_eq!(run.generation.failure, None);
+    assert_eq!(run.generation.rounds, 3);
+    assert_eq!(run.requests.len(), 3);
+    assert!(tool_names(&run.requests[1]).contains(&"get_boss_strategy"));
+    assert!(
+        run.requests[2].tools.is_empty(),
+        "the charged cap made round 3 last"
+    );
     assert_eq!(run.generation.reply, "Dodge the lasers.");
+}
+
+/// A request that would leave no round offering the bundle and no final
+/// no-tools round is refused (nothing added, nothing charged), and the
+/// final round is still sent.
+async fn refused_without_room(tool_rounds: u8, earlier: usize) -> Run {
+    let mut actions: Vec<FakeAction> = (0..earlier)
+        .map(|n| wants(&[(&format!("l{n}"), "list_bosses", json!({}))]))
+        .collect();
+    actions.push(wants(&[(
+        "r1",
+        "request_tools",
+        json!({"bundle": "strategy"}),
+    )]));
+    actions.push(words("Hard Star, then."));
+    run(
+        actions,
+        ToolOffer::dynamic([], false),
+        tool_rounds,
+        "how do we do hstar?",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await
+}
+
+fn assert_refused_then_answered(run: &Run, tool_rounds: usize) {
+    let generation = &run.generation;
+    assert_eq!(generation.failure, None, "{:?}", generation.failure);
+    let asked = generation.outcomes.last().expect("request_tools outcome");
+    assert_eq!(
+        (asked.outcome.output.as_str(), asked.outcome.error),
+        (NO_ROUND_LEFT, Some(REFUSED))
+    );
+    assert_eq!(run.requests.len(), tool_rounds);
+    assert_eq!(generation.rounds as usize, tool_rounds);
+    assert!(run.requests[tool_rounds - 1].tools.is_empty());
+    assert!(!tool_names(&run.requests[tool_rounds - 2]).contains(&"get_boss_strategy"));
+    assert_eq!(generation.reply, "Hard Star, then.");
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_tools_in_the_first_of_two_rounds_is_refused() {
+    let run = refused_without_room(2, 0).await;
+    assert_refused_then_answered(&run, 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_tools_in_the_penultimate_default_round_is_refused() {
+    let rounds = usize::from(DEFAULT_TOOL_ROUNDS);
+    let run = refused_without_room(DEFAULT_TOOL_ROUNDS, rounds - 2).await;
+    assert_refused_then_answered(&run, rounds);
+}
+
+/// A call in the same reply as `request_tools` is judged by what that
+/// round offered: the new bundle arrives next round.
+#[tokio::test(start_paused = true)]
+async fn a_tool_requested_in_the_same_reply_waits_for_the_next_round() {
+    let run = run(
+        vec![
+            wants(&[
+                ("r1", "request_tools", json!({"bundle": "run_changes"})),
+                ("c1", "propose_cancel", json!({"run_query": "hstar"})),
+            ]),
+            words("Shall I cancel it?"),
+        ],
+        ToolOffer::dynamic([], false),
+        8,
+        "cancel hstar",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let cancel = &run.generation.outcomes[1].outcome;
+    assert_eq!(cancel.error, Some(REFUSED));
+    assert!(
+        cancel.output.starts_with(
+            "propose_cancel is not available for this message. It becomes available from your next step; call it again then."
+        ),
+        "{}",
+        cancel.output
+    );
+    assert!(run.generation.created.is_empty(), "nothing was proposed");
+    assert!(!tool_names(&run.requests[0]).contains(&"propose_cancel"));
+    assert!(tool_names(&run.requests[1]).contains(&"propose_cancel"));
+}
+
+/// The question's deadline bounds card posting too; the interaction is
+/// still logged, as a timeout with the proposal it created.
+#[tokio::test(start_paused = true)]
+async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
+    let ports = Ports {
+        hang: true,
+        ..Ports::default()
+    };
+    let started = tokio::time::Instant::now();
+    let run = run(
+        vec![
+            wants(&[(
+                "m1",
+                "propose_move",
+                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
+            )]),
+            words("never reached"),
+        ],
+        ToolOffer::full_set(false),
+        8,
+        "move hstar",
+        &Passthrough,
+        &ports,
+    )
+    .await;
+    let timeout = settings(&run.input, 8).timeout;
+    assert!(started.elapsed() >= timeout && started.elapsed() < timeout * 2);
+    let generation = &run.generation;
+    assert_eq!(
+        generation.failure,
+        Some(AnswerFailure::Timeout {
+            seconds: timeout.as_secs()
+        })
+    );
+    assert_eq!(run.requests.len(), 1);
+    assert_eq!(generation.created.len(), 1);
+    assert!(generation.posted.is_empty());
+    let at = run.world.clock.now().with_timezone(&Utc);
+    let row = interaction(
+        "chat-t".into(),
+        at,
+        &run.ctx,
+        "move hstar",
+        generation,
+        MODEL,
+        None,
+        60_000,
+    );
+    assert_eq!(row.outcome, ChatOutcome::Timeout);
+    assert_eq!(row.error.as_deref(), Some("no answer within 60s"));
 }
 
 /// Lenient chat validation hands unknown tools and schema-invalid object
