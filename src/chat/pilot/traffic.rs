@@ -35,8 +35,18 @@ pub struct Waiting {
     pub member_id: String,
     /// When it was queued (monotonic).
     pub since: f64,
-    /// When its allowance was spent (for a refund if it is dropped).
-    pub spent_at: f64,
+    /// When its allowance was spent, for a refund if it is dropped (`None`
+    /// for admins, who spend none).
+    pub spent_at: Option<f64>,
+}
+
+/// What finishing a channel's answer hands over.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Handoff {
+    /// The next question to answer (the channel stays busy for it).
+    pub next: Option<Waiting>,
+    /// Questions given up for waiting too long (busy reaction, refund).
+    pub expired: Vec<Waiting>,
 }
 
 /// What happens to a question the gate accepted.
@@ -83,7 +93,7 @@ impl Traffic {
         channel_id: &str,
         message_id: &str,
         member_id: &str,
-        (now, spent_at): (f64, f64),
+        (now, spent_at): (f64, Option<f64>),
     ) -> Admission {
         if self.answering.insert(channel_id.to_owned()) {
             return Admission::Answer;
@@ -105,9 +115,10 @@ impl Traffic {
         }
     }
 
-    /// The channel's answer is done: the next waiting question to answer,
-    /// if any (the channel stays busy for it).
-    pub fn finish(&mut self, channel_id: &str) -> Option<Waiting> {
+    /// The channel's answer is done: stale waiters anywhere are given up
+    /// first, so the next question handed over has not outwaited its bound.
+    pub fn finish(&mut self, channel_id: &str, now: f64) -> Handoff {
+        let expired = self.expire(now);
         let next = self
             .queues
             .get_mut(channel_id)
@@ -116,7 +127,7 @@ impl Traffic {
             self.answering.remove(channel_id);
             self.queues.remove(channel_id);
         }
-        next
+        Handoff { next, expired }
     }
 
     /// The author deleted a waiting question; returns it for a refund.

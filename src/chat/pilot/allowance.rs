@@ -102,9 +102,10 @@ impl Allowance {
     /// question shed, dropped from the queue, cancelled, or turned away
     /// before any model work does not cost the allowance (v5).
     pub fn refund(&mut self, member: &str, stamp: f64) {
-        if self.person.refund(member, stamp) {
-            self.pool.refund(GLOBAL_KEY, stamp);
-        }
+        // Independent: the member's hit may already be gone (`forget`) while
+        // the pool's is still live.
+        self.person.refund(member, stamp);
+        self.pool.refund(GLOBAL_KEY, stamp);
     }
 
     /// The static limited reply, once per refusal episode (v4 `_say_limited`);

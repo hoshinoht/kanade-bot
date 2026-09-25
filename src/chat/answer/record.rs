@@ -109,7 +109,9 @@ pub fn interaction(
         error: generation.failure.as_ref().map(ToString::to_string),
         clean_retry: generation.clean_retry,
         withheld: false,
-        guardrail: if generation.failure == Some(AnswerFailure::ContentBlocked) {
+        guardrail: if generation.is_blocked()
+            || generation.failure == Some(AnswerFailure::ContentBlocked)
+        {
             json!({"content_filter": true})
         } else {
             json!({})

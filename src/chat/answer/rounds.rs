@@ -449,6 +449,7 @@ where
         }
     };
 
+    let filtered = matches!(retry, Some(Retry::ContentBlocked));
     match retry {
         Some(retry) if settings.clean_retry => {
             clean_retry(
@@ -468,6 +469,8 @@ where
     let mut generation = state.generation;
     generation.requests = session.requests_used();
     finish(&mut generation);
+    generation.blocked = generation.reply.is_empty()
+        && (filtered || generation.failure == Some(AnswerFailure::ContentBlocked));
     generation
 }
 

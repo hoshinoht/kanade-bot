@@ -43,7 +43,11 @@ pub fn check_failure_line(line: &str) -> Result<(), PersonaError> {
         return Err(PersonaError::Invalid("failure lines must not mention"));
     }
     let lower = line.to_lowercase();
-    if lower.contains("://") || lower.contains("www.") || line.contains("](") {
+    // Scheme-less invites render as links in Discord too.
+    let invite = ["discord.gg/", "discord.com/invite", "discordapp.com/invite"]
+        .iter()
+        .any(|host| lower.contains(host));
+    if invite || lower.contains("://") || lower.contains("www.") || line.contains("](") {
         return Err(PersonaError::Invalid("failure lines must not carry links"));
     }
     if line.contains(['{', '}']) {
@@ -101,6 +105,9 @@ mod tests {
             "failures:\n  content_blocked: ' padded'\n",
             "failures:\n  content_blocked: 'hi <@123>'\n",
             "failures:\n  content_blocked: 'see https://x.y'\n",
+            "failures:\n  content_blocked: 'join discord.gg/abc'\n",
+            "failures:\n  content_blocked: 'join Discord.com/Invite/abc'\n",
+            "failures:\n  content_blocked: 'join DISCORDAPP.COM/invite/abc'\n",
             "failures:\n  content_blocked: 'about {boss}'\n",
             "failures:\n  content_blocked: \"two\\nlines\"\n",
             "failures:\n  content_blocked: x\n  other: y\n",

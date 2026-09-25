@@ -2,7 +2,7 @@
 //! the replied-author cache (v4 `ChatPilot._history`/`_focus`/`_anchors`/
 //! `_replied`).
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{ANCHOR_CACHE, ChatTurn, HISTORY_EXCHANGES, REFERENCE_CACHE};
 use crate::domain::pytext::strip;
@@ -40,9 +40,16 @@ pub struct Conversations {
     anchors: Vec<(String, Anchor)>,
     replied: Vec<(String, Option<String>)>,
     /// Message ids of withheld turns, oldest first, so a reply chain or a
-    /// later remember never brings their text back.
+    /// later remember never brings their text back; indexed for lookup.
     withheld: VecDeque<String>,
+    withheld_index: HashSet<String>,
 }
+
+/// Withheld ids kept. A reply can reach any old message, so eviction is by
+/// count, not the history TTL; blocked questions are rare, and 4096 ids
+/// (tens of KB) outlast the chat-log retention any realistic guild fills,
+/// with the reload at startup restoring the newest of them.
+pub const WITHHELD_CACHE: usize = 4096;
 
 impl Conversations {
     pub fn new(ttl_seconds: f64) -> Self {
@@ -53,19 +60,23 @@ impl Conversations {
             anchors: Vec::new(),
             replied: Vec::new(),
             withheld: VecDeque::new(),
+            withheld_index: HashSet::new(),
         }
     }
 
     /// Withhold a message from every later context: history, reply chains
-    /// and anchors (bounded like the reference cache).
+    /// and anchors (at most [`WITHHELD_CACHE`], oldest evicted first).
     pub fn withhold(&mut self, message_id: &str) {
         if message_id.is_empty() || self.is_withheld(message_id) {
             return;
         }
-        if self.withheld.len() >= REFERENCE_CACHE {
-            self.withheld.pop_front();
+        if self.withheld.len() >= WITHHELD_CACHE
+            && let Some(oldest) = self.withheld.pop_front()
+        {
+            self.withheld_index.remove(&oldest);
         }
         self.withheld.push_back(message_id.to_owned());
+        self.withheld_index.insert(message_id.to_owned());
         for turns in self.history.values_mut() {
             for turn in turns.iter_mut() {
                 if turn.message_id.as_deref() == Some(message_id) {
@@ -81,7 +92,7 @@ impl Conversations {
     }
 
     pub fn is_withheld(&self, message_id: &str) -> bool {
-        self.withheld.iter().any(|id| id == message_id)
+        self.withheld_index.contains(message_id)
     }
 
     /// The channel's live history, oldest first, after dropping expired turns.

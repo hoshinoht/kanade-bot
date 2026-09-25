@@ -62,7 +62,8 @@ failures:
 ```
 
 The section must declare the line: one line of at most 200 characters,
-unpadded, with no mentions, links or braces. It is posted verbatim.
+unpadded, with no mentions, links (including scheme-less Discord invites)
+or braces. It is posted verbatim.
 
 ### Nudges
 

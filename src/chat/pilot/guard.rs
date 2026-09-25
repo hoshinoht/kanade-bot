@@ -39,6 +39,8 @@ pub struct StormAlert {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GuardView {
     pub recent: usize,
+    /// Reserved by questions still running.
+    pub pending: usize,
     pub suspended_until: Option<f64>,
 }
 
@@ -47,6 +49,9 @@ pub struct CleanRetryGuard {
     limits: GuardLimits,
     last_by_member: HashMap<String, f64>,
     recent: VecDeque<f64>,
+    /// Member → when their running question reserved a clean retry, so
+    /// concurrent questions cannot all pass the check before any records.
+    pending: HashMap<String, f64>,
     suspended_until: Option<f64>,
 }
 
@@ -69,17 +74,35 @@ impl CleanRetryGuard {
         if self.suspended_until.is_some_and(|until| now >= until) {
             self.suspended_until = None;
         }
+        let per_member = self.limits.per_member_s;
+        self.last_by_member.retain(|_, at| now - *at < per_member);
+        // A question never settled (its task died) stops holding a reservation
+        // long after any question could still be running.
+        self.pending.retain(|_, at| now - *at < per_member);
     }
 
-    /// May `member`'s question spend its clean retry now?
-    pub fn allows(&mut self, member: &str, now: f64) -> bool {
+    /// Reserve `member`'s clean retry for the question starting now; `false`
+    /// when it may not have one. Settle it with [`Self::settle`].
+    ///
+    /// At most `storm_threshold + 1` retries (the one that trips the guard
+    /// included) are recent or reserved at once, as if they ran in turn.
+    pub fn reserve(&mut self, member: &str, now: f64) -> bool {
         self.prune(now);
-        if self.suspended_until.is_some() {
-            return false;
+        let allowed = self.suspended_until.is_none()
+            && !self.pending.contains_key(member)
+            && !self.last_by_member.contains_key(member)
+            && self.recent.len() + self.pending.len() <= self.limits.storm_threshold;
+        if allowed {
+            self.pending.insert(member.to_owned(), now);
         }
-        self.last_by_member
-            .get(member)
-            .is_none_or(|&at| now - at >= self.limits.per_member_s)
+        allowed
+    }
+
+    /// The question ended: release the reservation, and count the retry
+    /// when it was sent (the alert when it trips the guard).
+    pub fn settle(&mut self, member: &str, sent: bool, now: f64) -> Option<StormAlert> {
+        self.pending.remove(member);
+        sent.then(|| self.record(member, now)).flatten()
     }
 
     /// A clean retry was sent; returns the alert when this one trips the guard.
@@ -103,6 +126,7 @@ impl CleanRetryGuard {
         self.prune(now);
         GuardView {
             recent: self.recent.len(),
+            pending: self.pending.len(),
             suspended_until: self.suspended_until,
         }
     }

@@ -118,24 +118,38 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   busy reaction). `Traffic`: one answer per channel; later questions queue
   FIFO per channel (default 3 per channel, 10 guild-wide, 120 s wait), get a
   1-based position, are given up (`Busy`) past a bound, and are cancellable
-  by message id. Reactions and position display belong to the adapter.
+  by message id. `Traffic::finish` gives up stale waiters (returned in
+  `Handoff::expired`) before handing over the next. `spent_at` is `None` for
+  admins. Reactions and position display belong to the adapter.
 - **Clean-retry guard.** `CleanRetryGuard`: one clean retry per member per
   600 s; more than 3 in 60 s suspends clean retries guild-wide for 600 s and
-  raises one `StormAlert`. The caller sets `AnswerSettings::clean_retry`;
-  guarded off, the question fails with its original reason and no retry is
+  raises one `StormAlert`. Every clean retry counts, whatever triggered it
+  (content filter, empty or malformed; user decision 2026-09-25).
+  `ChatPilot::reserve_clean_retry` reserves one when a question starts (the
+  value for `AnswerSettings::clean_retry`), so concurrent questions cannot
+  all pass: one reservation per member, and at most 4 recent or reserved
+  guild-wide. `conclude` settles it: counted if sent, else released.
+  Guarded off, the question fails with its original reason and no retry is
   sent. The governor's retry budget and breaker still apply.
 - **Routing.** v4 had no model pre-screen, so `ChatPilot::route` is
   code-only (`bundles::select` over the text and card, no intent label).
 - **Glue.** `ChatPilot::conclude` posts the answer or a fixed failure line
-  (content blocked: the persona's `failures.content_blocked`, else
+  (blocked: the persona's `failures.content_blocked`, else
   `CONTENT_BLOCKED_REPLY`; any other failure: v4's `FAILURE_REPLY`),
   remembers the question and reply, anchors the reply id, notes
-  `Generation::focus`, refunds, records a sent clean retry with the guard
-  and builds the log row.
-- **Pollution containment.** A content-blocked question and the reply to it
-  are withheld (`Conversations::withhold`): every later prompt shows them as
+  `Generation::focus`, refunds, settles the clean-retry reservation and
+  builds the log row. "Blocked" is `Generation::is_blocked`: no reply and
+  some attempt was content-filtered, even when the clean retry then timed
+  out or was malformed (the row keeps that final outcome, with
+  `withheld = true` and guardrail `{"content_filter": true}`).
+- **Pollution containment.** A blocked question and the reply to it are
+  withheld (`Conversations::withhold`): every later prompt shows them as
   `[message withheld]`, they are never anchored or re-anchored, and a reply
-  chain through them is withheld too.
+  chain through them is withheld too. Up to 4096 ids are kept (by count,
+  not the history TTL, since a reply can reach any old message);
+  `ChatPilot::reload_withheld` restores them at startup from the chat log's
+  withheld rows (`list_chats`, newest first). The bot's replies are not
+  logged by id, but they carry only the fixed line.
 - **Limits.** `ChatPilot::limits` returns `LimitsView` (member and pool
   used/limit/window/resets-in with override flags, the queue, the guard) for
   the API's Limits page.

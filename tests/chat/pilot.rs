@@ -12,18 +12,20 @@ use kanade::chat::gate::{
     Author, ChannelInfo, IncomingMessage, PilotSettings, RATE_LIMITED, Summons, decide,
 };
 use kanade::chat::pilot::{
-    Admission, CONTENT_BLOCKED_REPLY, ChatPilot, Finished, GuardLimits, LogFacts, ReplyPort,
-    TrafficLimits,
+    Admission, CONTENT_BLOCKED_REPLY, ChatPilot, Concluded, Finished, GuardLimits, LogFacts,
+    ReplyPort, TrafficLimits,
 };
 use kanade::chat::sanitize::FAILURE_REPLY;
 use kanade::chat::tools::bundles::{Bundle, CardContext, ToolOffer};
 use kanade::chat::tools::{ToolContext, ToolName};
+use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
 use kanade::infrastructure::llm::identity::Passthrough;
 use kanade::infrastructure::llm::{
     CompletionResponse, FakeAction, FakeProvider, FinishReason, Message,
 };
+use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::json;
 
 use crate::looping::{Ports, roster, settings};
@@ -82,10 +84,14 @@ fn summons() -> Summons<'static> {
 }
 
 fn ctx(member: &str) -> ToolContext {
+    ctx_for(member, "8100")
+}
+
+fn ctx_for(member: &str, message_id: &str) -> ToolContext {
     ToolContext::new(
         member,
         "700",
-        "8100",
+        message_id,
         Utc.with_ymd_and_hms(2026, 9, 9, 4, 0, 0).unwrap(),
     )
 }
@@ -185,33 +191,29 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
         GuardLimits::default(),
     );
     let traffic = &mut pilot.traffic;
+    let at = |now: f64| (now, Some(now));
+    assert_eq!(traffic.admit("700", "m1", "11", at(0.0)), Admission::Answer);
     assert_eq!(
-        traffic.admit("700", "m1", "11", (0.0, 0.0)),
-        Admission::Answer
-    );
-    assert_eq!(
-        traffic.admit("700", "m2", "22", (1.0, 1.0)),
+        traffic.admit("700", "m2", "22", at(1.0)),
         Admission::Queued { position: 1 }
     );
     assert_eq!(
-        traffic.admit("700", "m3", "33", (2.0, 2.0)),
-        Admission::Queued { position: 2 }
+        traffic.admit("700", "m3", "33", (2.0, None)),
+        Admission::Queued { position: 2 },
+        "an admin spends no allowance"
     );
     assert_eq!(
-        traffic.admit("700", "m4", "44", (3.0, 3.0)),
+        traffic.admit("700", "m4", "44", at(3.0)),
         Admission::Busy,
         "channel bound"
     );
+    assert_eq!(traffic.admit("702", "n1", "11", at(3.0)), Admission::Answer);
     assert_eq!(
-        traffic.admit("702", "n1", "11", (3.0, 3.0)),
-        Admission::Answer
-    );
-    assert_eq!(
-        traffic.admit("702", "n2", "22", (4.0, 4.0)),
+        traffic.admit("702", "n2", "22", at(4.0)),
         Admission::Queued { position: 1 }
     );
     assert_eq!(
-        traffic.admit("702", "n3", "33", (5.0, 5.0)),
+        traffic.admit("702", "n3", "33", at(5.0)),
         Admission::Busy,
         "guild bound"
     );
@@ -219,26 +221,57 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
     // Deleting a waiting question removes it; the queue closes up.
     assert_eq!(traffic.cancel("m2").map(|w| w.member_id), Some("22".into()));
     assert_eq!(traffic.position("m3"), Some(1));
+    let handoff = traffic.finish("700", 6.0);
     assert_eq!(
-        traffic.finish("700").map(|w| w.message_id),
-        Some("m3".into())
+        (handoff.next.map(|w| w.message_id), handoff.expired),
+        (Some("m3".into()), Vec::new())
     );
-    assert_eq!(traffic.finish("700"), None, "the channel is free again");
     assert_eq!(
-        traffic.admit("700", "m5", "44", (10.0, 10.0)),
+        traffic.finish("700", 7.0).next,
+        None,
+        "the channel is free again"
+    );
+    assert_eq!(
+        traffic.admit("700", "m5", "44", at(10.0)),
         Admission::Answer
+    );
+    assert_eq!(
+        traffic.admit("700", "m6", "55", at(11.0)),
+        Admission::Queued { position: 1 }
+    );
+
+    // Finishing gives up stale waiters first, so a question that outwaited
+    // its bound is never handed over.
+    let handoff = traffic.finish("700", 71.0);
+    assert_eq!(handoff.next, None);
+    assert_eq!(
+        handoff
+            .expired
+            .iter()
+            .map(|w| (w.message_id.as_str(), w.spent_at))
+            .collect::<Vec<_>>(),
+        [("m6", Some(11.0)), ("n2", Some(4.0))],
+        "by channel"
+    );
+    assert_eq!(
+        traffic.admit("700", "m5", "44", at(72.0)),
+        Admission::Answer
+    );
+    assert_eq!(
+        traffic.admit("702", "n4", "22", at(72.0)),
+        Admission::Queued { position: 1 }
     );
 
     // Waiting past the bound gives up (busy reaction and refund upstream).
-    let dropped = traffic.expire(65.0);
+    let dropped = traffic.expire(140.0);
     assert_eq!(
         dropped
             .iter()
             .map(|w| w.message_id.as_str())
             .collect::<Vec<_>>(),
-        ["n2"]
+        ["n4"]
     );
-    let view = pilot.limits(65.0);
+    let view = pilot.limits(140.0);
     assert_eq!(view.queue.answering, ["700", "702"]);
     assert!(view.queue.waiting.is_empty());
 }
@@ -246,28 +279,68 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
 #[test]
 fn clean_retries_are_limited_per_member_and_by_a_storm_guard() {
     let mut pilot = new_pilot();
-    assert!(pilot.clean_retry_allowed("11", 0.0));
-    assert_eq!(pilot.guard.record("11", 0.0), None);
+    assert!(pilot.reserve_clean_retry("11", 0.0));
+    assert_eq!(pilot.guard.settle("11", true, 0.0), None);
     assert!(
-        !pilot.clean_retry_allowed("11", 59.0),
+        !pilot.reserve_clean_retry("11", 59.0),
         "once per member per 10 min"
     );
     for (member, at) in [("22", 1.0), ("33", 2.0)] {
-        assert_eq!(pilot.guard.record(member, at), None);
+        assert!(pilot.reserve_clean_retry(member, at));
+        assert_eq!(pilot.guard.settle(member, true, at), None);
     }
+    assert!(pilot.reserve_clean_retry("44", 3.0));
     let alert = pilot
         .guard
-        .record("44", 3.0)
+        .settle("44", true, 3.0)
         .expect("the fourth within a minute trips");
     assert_eq!((alert.retries, alert.suspended_until), (4, 603.0));
     assert!(
-        !pilot.clean_retry_allowed("55", 10.0),
+        !pilot.reserve_clean_retry("55", 10.0),
         "suspended guild-wide"
     );
     assert_eq!(pilot.guard.record("66", 11.0), None, "one alert per trip");
-    assert!(pilot.clean_retry_allowed("55", 603.0));
-    assert!(pilot.clean_retry_allowed("11", 603.0), "ten minutes on");
-    assert_eq!(pilot.limits(603.0).clean_retry.suspended_until, None);
+    assert!(pilot.reserve_clean_retry("55", 603.0));
+    assert!(pilot.reserve_clean_retry("11", 603.0), "ten minutes on");
+    let view = pilot.limits(603.0).clean_retry;
+    assert_eq!((view.suspended_until, view.pending), (None, 2));
+}
+
+#[test]
+fn concurrent_questions_from_one_member_reserve_one_clean_retry() {
+    let mut pilot = new_pilot();
+    assert!(pilot.reserve_clean_retry("11", 0.0));
+    assert!(
+        !pilot.reserve_clean_retry("11", 0.5),
+        "the second question in flight gets none"
+    );
+    // The first never sent its retry: the reservation is released.
+    assert_eq!(pilot.guard.settle("11", false, 1.0), None);
+    assert!(pilot.reserve_clean_retry("11", 2.0));
+    assert_eq!(pilot.guard.settle("11", true, 3.0), None);
+    assert!(!pilot.reserve_clean_retry("11", 4.0), "spent, not released");
+}
+
+#[test]
+fn questions_in_many_channels_cannot_overrun_the_storm_limit() {
+    let mut pilot = new_pilot();
+    let members = ["11", "22", "33", "44", "55", "66"];
+    let reserved: Vec<bool> = members
+        .iter()
+        .map(|member| pilot.reserve_clean_retry(member, 0.0))
+        .collect();
+    assert_eq!(
+        reserved,
+        [true, true, true, true, false, false],
+        "at most the tripping fourth is reserved beside the other three"
+    );
+    let alerts: Vec<_> = members[..4]
+        .iter()
+        .filter_map(|member| pilot.guard.settle(member, true, 1.0))
+        .collect();
+    assert_eq!(alerts.len(), 1, "one alert");
+    assert_eq!(alerts[0].retries, 4);
+    assert!(!pilot.reserve_clean_retry("55", 2.0), "suspended");
 }
 
 #[test]
@@ -505,32 +578,33 @@ async fn other_failures_say_v4s_line_and_turned_away_questions_are_refunded() {
     assert!(!concluded.withheld);
 }
 
-/// With the guard off, a content-filtered answer is not retried: one
-/// request, the fixed line, withheld.
-#[tokio::test(start_paused = true)]
-async fn a_guarded_off_clean_retry_is_never_sent() {
+fn filtered() -> FakeAction {
+    FakeAction::Response(CompletionResponse {
+        model: MODEL.into(),
+        content: None,
+        tool_calls: Vec::new(),
+        finish_reason: FinishReason::ContentFilter,
+        usage: None,
+    })
+}
+
+/// A filtered first round, then `after` for the clean retry, concluded:
+/// the generation, the requests sent and what `conclude` did.
+async fn filtered_then(
+    pilot: &mut ChatPilot,
+    after: Vec<FakeAction>,
+    message_id: &str,
+) -> (Generation, usize, Concluded) {
     let input = load("loop.json")["cases"][0]["input"].clone();
     let mut world = World::new(&input).await;
-    let filtered = || {
-        FakeAction::Response(CompletionResponse {
-            model: MODEL.into(),
-            content: None,
-            tool_calls: Vec::new(),
-            finish_reason: FinishReason::ContentFilter,
-            usage: None,
-        })
-    };
     let provider = Arc::new(Scripted {
-        fake: FakeProvider::new([filtered(), filtered()]),
+        fake: FakeProvider::new(std::iter::once(filtered()).chain(after)),
         caps: capabilities(&input["caps"]),
     });
     let (_governor, client) = client(Some(MODEL), provider.clone());
-    let mut pilot = new_pilot();
-    pilot.guard.record("11", 0.0);
-    let ask = ctx("11");
+    let ask = ctx_for("11", message_id);
     let mut settings = settings(&input, 8);
-    settings.clean_retry = pilot.clean_retry_allowed("11", 1.0);
-    assert!(!settings.clean_retry);
+    settings.clean_retry = pilot.reserve_clean_retry("11", 1.0);
     let persona = kanade();
     let roster = roster(&world);
     let deps = AnswerDeps {
@@ -556,10 +630,7 @@ async fn a_guarded_off_clean_retry_is_never_sent() {
         };
         answer(&deps, question, &guild, &mut proposer, &Ports::default()).await
     };
-    assert_eq!(provider.fake.requests().len(), 1);
-    assert_eq!(generation.failure, Some(AnswerFailure::ContentBlocked));
-    assert!(!generation.clean_retry);
-    let question = message("8400", "11", "hmm", None);
+    let question = message(message_id, "11", "hmm", None);
     let concluded = pilot
         .conclude(
             Finished {
@@ -569,13 +640,154 @@ async fn a_guarded_off_clean_retry_is_never_sent() {
                 generation: &generation,
                 persona: &persona,
                 directory: &world.guild,
-                log: facts("chat-g"),
+                log: facts(&format!("chat-{message_id}")),
+                spent_at: None,
+                now: 2.0,
+            },
+            &Replies::default(),
+        )
+        .await;
+    (generation, provider.fake.requests().len(), concluded)
+}
+
+fn assert_withheld(concluded: &Concluded) {
+    assert_eq!(concluded.reply, CONTENT_BLOCKED_REPLY);
+    assert!(concluded.withheld);
+    assert!(concluded.interaction.withheld);
+    assert_eq!(
+        concluded.interaction.guardrail,
+        json!({"content_filter": true})
+    );
+}
+
+/// With the guard off, a content-filtered answer is not retried: one
+/// request, the fixed line, withheld.
+#[tokio::test(start_paused = true)]
+async fn a_guarded_off_clean_retry_is_never_sent() {
+    let mut pilot = new_pilot();
+    pilot.guard.record("11", 0.0);
+    let (generation, requests, concluded) =
+        filtered_then(&mut pilot, vec![filtered()], "8400").await;
+    assert_eq!(requests, 1);
+    assert_eq!(generation.failure, Some(AnswerFailure::ContentBlocked));
+    assert!(!generation.clean_retry);
+    assert_withheld(&concluded);
+    assert!(concluded.alert.is_none());
+}
+
+/// Filtered, then the clean retry is sent and times out: still blocked
+/// content (sticky), so withheld with the blocked line, not v4's line.
+#[tokio::test(start_paused = true)]
+async fn a_filtered_round_whose_clean_retry_times_out_stays_withheld() {
+    let mut pilot = new_pilot();
+    let (generation, requests, concluded) =
+        filtered_then(&mut pilot, vec![FakeAction::UpstreamTimeout], "8401").await;
+    assert_eq!(requests, 2);
+    assert!(generation.clean_retry && generation.blocked);
+    assert!(matches!(
+        generation.failure,
+        Some(AnswerFailure::Timeout { .. })
+    ));
+    assert_withheld(&concluded);
+    assert_eq!(concluded.interaction.outcome, ChatOutcome::Timeout);
+    assert!(pilot.conversations.is_withheld("8401"));
+    assert!(
+        !pilot.reserve_clean_retry("11", 3.0),
+        "the sent retry was counted"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_filtered_round_whose_clean_retry_is_malformed_stays_withheld() {
+    let mut pilot = new_pilot();
+    let malformed = vec![FakeAction::Malformed; 4];
+    let (generation, requests, concluded) = filtered_then(&mut pilot, malformed, "8402").await;
+    assert!(requests >= 2);
+    assert!(generation.clean_retry && generation.blocked);
+    assert_eq!(generation.failure, Some(AnswerFailure::Malformed));
+    assert_withheld(&concluded);
+    assert!(pilot.conversations.is_withheld("8402"));
+}
+
+/// After a restart the pilot's memory is empty; reloading the chat log's
+/// withheld rows keeps a direct reply from pulling the text back.
+#[tokio::test]
+async fn withheld_questions_survive_a_restart() {
+    let world = world().await;
+    let store = MemoryScheduleStore::new();
+    let mut before = new_pilot();
+    let explicit = message("8500", "22", "something explicit", None);
+    let blocked = Generation::failed(AnswerFailure::ContentBlocked);
+    let concluded = before
+        .conclude(
+            Finished {
+                message: &explicit,
+                channel_id: "700",
+                ctx: &ctx_for("22", "8500"),
+                generation: &blocked,
+                persona: &kanade(),
+                directory: &world.guild,
+                log: facts("chat-w"),
                 spent_at: None,
                 now: 1.0,
             },
             &Replies::default(),
         )
         .await;
-    assert_eq!(concluded.reply, CONTENT_BLOCKED_REPLY);
-    assert!(concluded.withheld && concluded.alert.is_none());
+    store.record_chat(concluded.interaction).await.unwrap();
+    let mut answered_row = before
+        .conclude(
+            Finished {
+                message: &message("8501", "22", "fine question", None),
+                channel_id: "700",
+                ctx: &ctx_for("22", "8501"),
+                generation: &answered("Sure."),
+                persona: &kanade(),
+                directory: &world.guild,
+                log: facts("chat-x"),
+                spent_at: None,
+                now: 2.0,
+            },
+            &Replies::default(),
+        )
+        .await
+        .interaction;
+    answered_row.at += chrono::TimeDelta::seconds(1);
+    store.record_chat(answered_row).await.unwrap();
+
+    let reply = message(
+        "8502",
+        "33",
+        "what did they say?",
+        Some(("8500", "22", "something explicit")),
+    );
+    let mut restarted = new_pilot();
+    let leaked = build_turns(
+        &mut restarted.conversations,
+        &reply,
+        "700",
+        3.0,
+        BOT,
+        &world.guild,
+    );
+    assert_eq!(
+        leaked[0].prompt_text(),
+        "kanon: something explicit",
+        "without the reload the parent comes back"
+    );
+    let mut restarted = new_pilot();
+    assert_eq!(restarted.reload_withheld(&store).await.unwrap(), 1);
+    assert!(!restarted.conversations.is_withheld("8501"));
+    let turns = build_turns(
+        &mut restarted.conversations,
+        &reply,
+        "700",
+        3.0,
+        BOT,
+        &world.guild,
+    );
+    assert_eq!(
+        turns.iter().map(|t| t.prompt_text()).collect::<Vec<_>>(),
+        [WITHHELD, "Priya: what did they say?"]
+    );
 }

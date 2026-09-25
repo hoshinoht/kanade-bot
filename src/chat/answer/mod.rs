@@ -174,6 +174,9 @@ pub struct Generation {
     pub focus: Option<String>,
     pub failure: Option<AnswerFailure>,
     pub clean_retry: bool,
+    /// Some attempt was content-filtered and no reply came of it, whatever
+    /// the final failure (a clean retry may then time out or be malformed).
+    pub blocked: bool,
     /// Summed; `None` when no round reported usage.
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
@@ -189,6 +192,12 @@ impl Generation {
             failure: Some(failure),
             ..Self::default()
         }
+    }
+
+    /// No reply because content was filtered at some attempt.
+    pub fn is_blocked(&self) -> bool {
+        self.reply.is_empty()
+            && (self.blocked || self.failure == Some(AnswerFailure::ContentBlocked))
     }
 
     fn add_usage(&mut self, prompt: u32, completion: u32) {

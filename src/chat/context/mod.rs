@@ -12,7 +12,7 @@ pub use assemble::{
     system_prompt,
 };
 pub use budget::{ContextBudgetError, budgeted};
-pub use state::{Conversations, card_focus};
+pub use state::{Conversations, WITHHELD_CACHE, card_focus};
 
 /// Bounded exchanges kept per channel.
 pub const HISTORY_EXCHANGES: usize = 6;

@@ -20,16 +20,19 @@ pub use allowance::{
 };
 pub use guard::{CleanRetryGuard, GuardLimits, GuardView, StormAlert};
 pub use reply::{CONTENT_BLOCKED_REPLY, failure_reply};
-pub use traffic::{Admission, QueueView, Traffic, TrafficLimits, Waiting};
+pub use traffic::{Admission, Handoff, QueueView, Traffic, TrafficLimits, Waiting};
 
-use crate::chat::answer::{AnswerFailure, Generation, interaction};
-use crate::chat::context::{ChatTurn, Conversations, QuestionMessage, TurnRole, question_turn};
+use crate::chat::answer::{Generation, interaction};
+use crate::chat::context::{
+    ChatTurn, Conversations, QuestionMessage, TurnRole, WITHHELD_CACHE, question_turn,
+};
 use crate::chat::gate::ChatDecision;
 use crate::chat::persona::CompiledPersona;
 use crate::chat::tools::ToolContext;
 use crate::chat::tools::bundles::{CardContext, Signals, ToolOffer, select};
 use crate::domain::members::Directory;
-use crate::domain::model_log::{ChatInteraction, ChatOutcome};
+use crate::domain::model_log::{ChatFilter, ChatInteraction, ChatOutcome, MAX_PAGE, ModelLogStore};
+use crate::domain::scheduler::StoreError;
 use crate::infrastructure::llm::Effort;
 use crate::infrastructure::llm::governor::Charge;
 
@@ -123,9 +126,10 @@ impl ChatPilot {
         )
     }
 
-    /// Whether this member's question may spend a clean retry.
-    pub fn clean_retry_allowed(&mut self, member: &str, now: f64) -> bool {
-        self.guard.allows(member, now)
+    /// Reserve a clean retry for the member's question about to run (the
+    /// value for `AnswerSettings::clean_retry`); [`Self::conclude`] settles it.
+    pub fn reserve_clean_retry(&mut self, member: &str, now: f64) -> bool {
+        self.guard.reserve(member, now)
     }
 
     /// A rate-limited question: the once-per-episode reply (if due) and its
@@ -165,9 +169,9 @@ impl ChatPilot {
     pub async fn conclude<R: ReplyPort>(&mut self, done: Finished<'_>, replies: &R) -> Concluded {
         let generation = done.generation;
         let failure = generation.failure.as_ref();
-        let withheld = failure == Some(&AnswerFailure::ContentBlocked);
+        let withheld = generation.is_blocked();
         let reply = if generation.reply.is_empty() {
-            failure_reply(failure, done.persona).to_owned()
+            failure_reply(generation, done.persona).to_owned()
         } else {
             generation.reply.clone()
         };
@@ -201,10 +205,9 @@ impl ChatPilot {
         if let (true, Some(stamp)) = (refunded, done.spent_at) {
             self.allowance.refund(&done.ctx.author_id, stamp);
         }
-        let alert = generation
-            .clean_retry
-            .then(|| self.guard.record(&done.ctx.author_id, done.now))
-            .flatten();
+        let alert = self
+            .guard
+            .settle(&done.ctx.author_id, generation.clean_retry, done.now);
 
         let mut row = interaction(
             done.log.id,
@@ -225,6 +228,43 @@ impl ChatPilot {
             interaction: row,
             alert,
         }
+    }
+
+    /// Withhold again, after a restart, every question the chat log flags
+    /// as withheld (newest [`WITHHELD_CACHE`]), so a direct reply to one
+    /// cannot pull it back through its reply chain. Returns how many.
+    ///
+    /// The bot's own replies to them are not logged by id; they carry only
+    /// the fixed failure line, which is safe to show.
+    pub async fn reload_withheld<S: ModelLogStore + Sync>(
+        &mut self,
+        store: &S,
+    ) -> Result<usize, StoreError> {
+        let mut ids = Vec::new();
+        let mut filter = ChatFilter {
+            outcomes: vec![ChatOutcome::Withheld],
+            limit: MAX_PAGE,
+            ..ChatFilter::default()
+        };
+        while ids.len() < WITHHELD_CACHE {
+            let page = store.list_chats(&filter).await?;
+            ids.extend(
+                page.items
+                    .into_iter()
+                    .filter(|row| row.withheld)
+                    .filter_map(|row| row.message_id),
+            );
+            match page.next {
+                Some(cursor) => filter.cursor = Some(cursor),
+                None => break,
+            }
+        }
+        ids.truncate(WITHHELD_CACHE);
+        // Pages are newest first; insert oldest first so eviction order holds.
+        for id in ids.iter().rev() {
+            self.conversations.withhold(id);
+        }
+        Ok(ids.len())
     }
 
     pub fn limits(&mut self, now: f64) -> LimitsView {
