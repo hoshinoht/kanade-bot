@@ -87,7 +87,7 @@
   {#if job}
     <ul class="rescan__list">
       {#each job.channels as c (c.id)}
-        <li><span>{c.name}</span> <span class="status status--{c.state === 'done' ? 'confirmed' : c.state === 'reading' ? 'planned' : 'waiting'}">{c.state}</span>
+        <li><span>{c.name}</span> <span class="tone tone--{c.state === 'done' ? 'success' : c.state === 'reading' ? 'info' : 'neutral'}">{c.state}</span>
           {#if c.state === 'done'}<span class="id">{c.messages} messages</span>{/if}</li>
       {/each}
     </ul>

@@ -19,6 +19,7 @@ export { default as WeekRail } from './components/WeekRail.svelte';
 export { default as ToastRegion } from './components/ToastRegion.svelte';
 export { Toaster, type Toast, type ToastAction, type ToastTone } from './components/toaster.svelte';
 export * from './format';
+export { CHECK_TONE, RUN_TONE, type Tone } from './tone';
 export { applyColorway, applyMode, COLORWAYS, currentColorway, currentMode, THEME_MODES } from './theme/theme';
 export type { Colorway, ThemeMode } from './theme/theme';
 export { registerServiceWorker, serviceWorkerDisabled } from './sw/register';

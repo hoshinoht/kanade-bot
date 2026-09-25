@@ -203,6 +203,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/reminders", get(api::reminders))
         .route("/api/admin/runs/{id}/reset", post(api::reset_run))
         .route("/api/admin/channels", get(api::channels))
+        .route("/api/admin/roles", get(api::roles))
         .route("/api/admin/session", get(api::session))
         .route("/api/admin/auth/methods", get(auth::methods))
         .route("/api/admin/auth/discord/start", get(auth::discord_start))

@@ -54,9 +54,9 @@
     { id: 'allowances', label: 'Allowances', count: limits?.allowances.length ?? null },
   ]);
   const BREAKER = {
-    closed: { word: 'closed — calls flow', status: 'confirmed' },
-    half_open: { word: 'half-open — probing', status: 'planned' },
-    open: { word: 'open — calls refused', status: 'at_risk' },
+    closed: { word: 'closed — calls flow', tone: 'success' },
+    half_open: { word: 'half-open — probing', tone: 'warning' },
+    open: { word: 'open — calls refused', tone: 'danger' },
   } as const;
   const REFUSAL: Record<string, string> = {
     rate: 'rate limit',
@@ -100,7 +100,7 @@
                 <div><dt>Retry budget</dt><dd class="mono">{g.retry.remaining}/{g.retry.capacity}</dd></div>
                 <div>
                   <dt>Breaker</dt>
-                  <dd><span class="status status--{BREAKER[g.breaker.state].status}">{BREAKER[g.breaker.state].word}</span></dd>
+                  <dd><span class="tone tone--{BREAKER[g.breaker.state].tone}">{BREAKER[g.breaker.state].word}</span></dd>
                 </div>
                 <div><dt>Since</dt><dd class="mono">{g.breaker.since}{g.breaker.failures ? ` · ${g.breaker.failures} failures` : ''}</dd></div>
                 {#if g.breaker.retry_at}<div><dt>Next probe</dt><dd class="mono">{g.breaker.retry_at}</dd></div>{/if}

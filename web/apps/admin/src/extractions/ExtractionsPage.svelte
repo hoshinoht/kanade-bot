@@ -101,7 +101,7 @@
               <tr>
                 <th scope="row" class="mono"><LogTime at={row.at} timeZone={tz} /></th>
                 <td class="log__who">{#if row.channel_id}<Name kind="channel" id={row.channel_id} name={row.channel} clip />{:else}—{/if}</td>
-                <td><span class="status status--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
+                <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
                 <td class="mono log__clip" title={row.model}>{row.model}</td>
                 <td class="num log__nowrap">{duration(row.latency_ms)}</td>
                 <td class="num">{row.messages}</td>

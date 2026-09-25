@@ -90,6 +90,121 @@ img.brand__avatar {
   align-items: center;
 }
 
+/* ── masthead chips (Material 3 shapes only: chips at the small corner, the
+ * menu a larger rounded surface; our colours, type and motion) */
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.15rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+button.mchip {
+  cursor: pointer;
+}
+
+button.mchip:hover,
+button.mchip[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent-text);
+}
+
+.mchip--status .masthead__tz {
+  padding-left: 0.45rem;
+  border-left: 2px solid var(--line-soft);
+  color: var(--dim-text);
+}
+
+.account {
+  position: relative;
+}
+
+.account__initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+}
+
+.account__name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 40;
+  min-width: 13rem;
+  padding: 0.35rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--body);
+}
+
+.account__who {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0 0 0.3rem;
+  padding: 0.3rem 0.55rem 0.45rem;
+  border-bottom: 2px solid var(--line-soft);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.account__who span {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.account__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account__item:hover,
+.account__item:focus-visible {
+  background: var(--raise);
+  color: var(--accent-text);
+}
+
+.masthead__commands .masthead__commands-label {
+  font-family: var(--mono);
+}
+
 .pip {
   display: inline-block;
   min-width: 1.15em;
@@ -105,11 +220,12 @@ img.brand__avatar {
 
 @media (max-width: 640px), (max-height: 500px) {
   // The footnote already names the timezone, the phone "More" sheet carries
-  // sign-out, and a touch screen has no Ctrl-K: the masthead keeps one row.
+  // the account (sign-out), and a touch screen has no Ctrl-K: one row stays.
   .masthead__tz,
   .masthead__meta .kbd,
   .masthead__meta .brand__by,
-  .masthead__meta .masthead__desk-only {
+  .masthead__meta .masthead__desk-only,
+  .masthead__meta .account {
     display: none;
   }
 }
@@ -126,7 +242,8 @@ img.brand__avatar {
 
 @media (max-width: 1120px) {
   .masthead__meta .brand__by,
-  .masthead__meta .kbd {
+  .masthead__meta .kbd,
+  .masthead__commands-label {
     display: none;
   }
 }

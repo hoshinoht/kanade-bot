@@ -40,12 +40,61 @@
   </p>
 {/if}
 <h4 class="settings__subtitle">How often it answers</h4>
-<form class="filters" onsubmit={submit}>
-  <label class="field"><span>Answers per person</span><input type="number" min="1" max="100" bind:value={member.count} /></label>
-  <label class="field"><span>Their window (s)</span><input type="number" min="10" max="86400" bind:value={member.window_s} /></label>
-  <label class="field"><span>Answers per guild</span><input type="number" min="1" max="100" bind:value={guild.count} /></label>
-  <label class="field"><span>Its window (s)</span><input type="number" min="10" max="86400" bind:value={guild.window_s} /></label>
-  <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
+<!-- One line per limit, read as a sentence: "Per person  [4] answers every [300] seconds". -->
+<form onsubmit={submit}>
+  <div class="rates" role="group" aria-label="Answer limits">
+    <span class="rates__who">Per person</span>
+    <input type="number" min="1" max="100" bind:value={member.count} aria-label="Answers per person" />
+    <span class="rates__unit">answers every</span>
+    <input type="number" min="10" max="86400" bind:value={member.window_s} aria-label="Their window (s)" />
+    <span class="rates__unit">seconds</span>
+    <span class="rates__who">Whole guild</span>
+    <input type="number" min="1" max="100" bind:value={guild.count} aria-label="Answers per guild" />
+    <span class="rates__unit">answers every</span>
+    <input type="number" min="10" max="86400" bind:value={guild.window_s} aria-label="Its window (s)" />
+    <span class="rates__unit">seconds</span>
+  </div>
+  <div class="settings__actions">
+    <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
+  </div>
 </form>
 <p class="field__error" role="alert">{error}</p>
 <p class="note">Per-person overrides and live windows are on <a href="/limits">Limits</a>.</p>
+
+<style>
+  /* Label, value, unit in fixed columns so the two limits line up and never wrap raggedly. */
+  .rates {
+    display: grid;
+    grid-template-columns: max-content 5.5rem max-content 6.5rem max-content;
+    align-items: center;
+    gap: 0.45rem 0.6rem;
+  }
+
+  .rates input {
+    width: 100%;
+    text-align: right;
+    font-family: var(--mono);
+  }
+
+  .rates__who {
+    font-weight: 600;
+  }
+
+  .rates__unit {
+    color: var(--dim-text);
+    font-size: var(--fs-small);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 480px) {
+    /* Narrow: the label takes its own line; value and unit columns stay aligned. */
+    .rates {
+      grid-template-columns: 4.5rem max-content 5rem max-content;
+    }
+
+    .rates__who {
+      grid-column: 1 / -1;
+    }
+  }
+</style>
+

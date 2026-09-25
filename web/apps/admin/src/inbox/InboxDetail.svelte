@@ -61,7 +61,7 @@
     {#if p.source !== 'self_service'}
       <span class="conf conf--{band(p.confidence)}">{p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`}</span>
     {/if}
-    {#each p.flags as flag (flag)}<span class="chip {FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
+    {#each p.flags as flag (flag)}<span class="tone tone--{FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
     {#if p.is_question}<span class="chip chip--waiting">still a question</span>{/if}
     {#if p.channel}<span class="chip">{p.channel}</span>{/if}
     <span class="id">#{p.short_id} · read {p.read_at}</span>
@@ -81,9 +81,9 @@
       {#each p.evidence as line (line.id)}
         <p class="evidence__line">
           {#if line.missing}
-            <span class="evidence__text">A message from {directory.label('member', '', line.author)} is no longer stored.</span>
+            <span class="evidence__text">A message from {#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{directory.label('member', '', line.author)}{/if} is no longer stored.</span>
           {:else}
-            <span class="evidence__who">{directory.label('member', '', line.author)}</span><span class="evidence__at">{line.at}</span>
+            <span class="evidence__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{directory.label('member', '', line.author)}{/if}</span><span class="evidence__at">{line.at}</span>
             <br /><span class="evidence__text"><Mentions text={line.content ?? ''} /></span>
             {#if line.url}<a class="id" href={line.url} target="_blank" rel="noopener noreferrer">open</a>{/if}
           {/if}
@@ -128,7 +128,7 @@
       <legend>Runs of this weekly timing</legend>
       {#each p.choices as choice (choice.run_id)}
         <div class="proposal__choice" role="radiogroup" aria-label="{choice.label}, {choice.when}">
-          <span>{choice.label} · <span class="mono">{choice.when}</span>{#if choice.amended} <span class="status status--planned">amended</span>{/if}</span>
+          <span>{choice.label} · <span class="mono">{choice.when}</span>{#if choice.amended} <span class="tone tone--warning">amended</span>{/if}</span>
           <label><input type="radio" name="{uid}-{choice.run_id}" value="update" bind:group={choices[choice.run_id]} /> Update to the new timing</label>
           <label><input type="radio" name="{uid}-{choice.run_id}" value="keep" bind:group={choices[choice.run_id]} /> Keep as it is</label>
         </div>

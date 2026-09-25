@@ -1,11 +1,12 @@
 /**
  * Display names for Discord members, channels and roles (user decision
  * 2026-09-26: ids are never shown as raw numbers). Names come from the
- * member list, the channel list, role profiles and the bot identity; a hint
+ * member, channel and role lists, role profiles and the bot identity
+ * (`bot_user_id`); a hint
  * the server sent is used when it is a real name, and a neutral fallback
  * otherwise — never the id.
  */
-import type { Channel, Identity, Member, RoleProfile } from '@kanade/api-types';
+import type { Channel, Identity, Member, Role, RoleProfile } from '@kanade/api-types';
 import { SvelteMap } from 'svelte/reactivity';
 import type { NameKind } from './mentions';
 
@@ -47,7 +48,11 @@ class Directory implements Known {
   members = new SvelteMap<string, string>();
   channels = new SvelteMap<string, string>();
   roles = new SvelteMap<string, string>();
+  /** `#rrggbb` per role, for a small swatch beside its name. */
+  roleColors = new SvelteMap<string, string>();
   bot = $state<{ id: string | null; name: string }>({ id: null, name: 'Kanade' });
+  /** The server named the bot's id; the leading-mention guess then stands down. */
+  #botKnown = false;
 
   setMembers(list: Member[]) {
     for (const m of list) if (!placeholder('member', m.id, m.name)) this.members.set(m.id, m.name);
@@ -57,20 +62,37 @@ class Directory implements Known {
     for (const c of list) if (!placeholder('channel', c.id, c.name)) this.channels.set(c.id, c.name);
   }
 
+  /** Role profiles name roles too; the guild's role list wins where both do. */
   setRoles(list: RoleProfile[]) {
-    for (const r of list) if (r.role_id && !placeholder('role', r.role_id, r.role_name)) this.roles.set(r.role_id, r.role_name);
+    for (const r of list)
+      if (r.role_id && !this.roles.has(r.role_id) && !placeholder('role', r.role_id, r.role_name)) this.roles.set(r.role_id, r.role_name);
+  }
+
+  setGuildRoles(list: Role[]) {
+    for (const r of list) {
+      if (!placeholder('role', r.id, r.name)) this.roles.set(r.id, r.name);
+      if (r.color) this.roleColors.set(r.id, r.color);
+    }
   }
 
   setIdentity(identity: Identity | null) {
-    if (identity) this.bot.name = identity.name;
+    if (!identity) return;
+    this.bot.name = identity.name;
+    if (identity.bot_user_id) {
+      this.bot.id = identity.bot_user_id;
+      this.#botKnown = true;
+    }
   }
 
-  /**
-   * The API does not send the bot's user id yet; a chatbot question opens by
-   * mentioning Kanade, so an unknown member leading one is taken to be it.
-   */
+  /** Fallback while the gateway is not ready: a chatbot question opens by mentioning Kanade. */
   noteBot(id: string) {
-    if (!this.bot.id && !this.members.has(id)) this.bot.id = id;
+    if (!this.#botKnown && !this.bot.id && !this.members.has(id)) this.bot.id = id;
+  }
+
+  /** Whether `id` is the bot (the leading mention of a question is, when the server has not said). */
+  isBot(id: string): boolean {
+    if (this.#botKnown) return id === this.bot.id;
+    return id === this.bot.id || !this.members.has(id);
   }
 
   label(kind: NameKind, id: string, hint = '', mention = false): string {

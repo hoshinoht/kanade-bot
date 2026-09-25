@@ -597,13 +597,16 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await page.getByRole('tab', { name: 'Models' }).click();
   // The server's own startup check is shown; the saved seed passes it.
   await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
-  await expect(panel.locator('.settings__checks .status--at_risk')).toHaveCount(0);
+  await expect(panel.locator('.settings__checks .tone--danger')).toHaveCount(0);
   await expect(panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem').first()).toBeVisible();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
   await models.first().selectOption('kanata/chat-cloud');
   await expect(panel.getByText(/go to an external provider/)).toBeVisible();
-  await expect(panel.getByText(/pseudonymised before they leave/)).toBeVisible();
+  // The override that lets an external route run is named, never the retired pseudonymisation switch.
+  await expect(panel.getByText(/refuses this route unless the operator sets/)).toBeVisible();
+  await expect(panel.locator('.settings__warn code').first()).toHaveText('KANADE_ALLOW_EXTERNAL_UNMASKED');
+  await expect(panel).not.toContainText('KANADE_PII_PSEUDONYMISE');
   await models.first().selectOption('kanata/extract');
   // An unknown trust zone fails closed with the same warning.
   await models.nth(2).selectOption('kanata/legacy');
@@ -629,9 +632,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved/)).toBeVisible();
 
-  // Capacity groups are read-only until the server can store them: a table, no editor.
-  await expect(panel.getByText('Capacity groups are not editable here yet; they are set with the deployment.')).toBeVisible();
-  await expect(panel.getByRole('table', { name: 'Capacity group per model' }).getByRole('row', { name: /kanata\/extract/ })).toBeVisible();
+  // Capacity groups are read-only (kanade.toml): a table, no editor.
   await expect(panel.getByRole('button', { name: 'Save groups' })).toHaveCount(0);
   await expect(panel.getByRole('spinbutton', { name: /Permits/ })).toHaveCount(0);
   const groups = await page.request.patch(`${ADMIN}/api/admin/config`, {
@@ -829,4 +830,67 @@ test('persona: Reload profiles re-reads the config, so voice and summary follow 
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
   await expect(panel.getByText('Freshly edited voice', { exact: true })).toBeVisible();
   await expect(panel.getByText('A summary written after the file changed.')).toBeVisible();
+});
+
+test('models: capacity groups read-only, one row per group, Kanata limits in words, no variants', async ({ page }) => {
+  await go(page, '/config?section=models');
+  const panel = page.locator('.settings__panel:not([hidden])');
+  // Default source: one gateway group over the role models.
+  const groups = panel.getByRole('table', { name: /Every model shares one group of 1 permit \(models.permits in kanade.toml\)/ });
+  await expect(groups.getByRole('row')).toHaveCount(2);
+  const gateway = groups.getByRole('row', { name: /gateway/ });
+  await expect(gateway.locator('.chip')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
+  await expect(panel.getByRole('button', { name: /Add a row|Save groups/ })).toHaveCount(0);
+  // The server's verdicts, each once; no client-side key or ungrouped warnings.
+  const checks = panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem');
+  await expect(checks).toHaveText([/Group gateway: 1 permits, matching Kanata's limit\.$/]);
+  await expect(panel).not.toContainText('size its limits for both');
+  // Mixed Kanata limits: the models in use, a disclosure for the rest, never a `model:level` variant.
+  const inUse = panel.getByRole('table', { name: 'What Kanata admits for the models in use' });
+  await expect(inUse.getByRole('rowheader')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
+  await panel.getByText('Show all models').click();
+  await expect(panel.getByRole('table', { name: 'What Kanata admits for every listed model' })).not.toContainText(':');
+  await expect(panel.getByText("Kanata publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
+  // The picker lists base models only; `off` is hidden where reasoning is required.
+  const models = panel.getByRole('combobox', { name: /^Model/ });
+  await expect(models.first().locator('option[value*=":"]')).toHaveCount(0);
+  await models.first().selectOption('kanata/think');
+  await expect(panel.getByRole('combobox', { name: /^Reasoning/ }).first().locator('option')).toHaveText(['Low', 'High']);
+});
+
+test('models: config-declared groups, uniform limits, a stored variant, an unset role', async ({ page }) => {
+  await page.route(`${ADMIN}/api/admin/config`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const body = await res.json();
+    body.models.groups_source = 'config';
+    body.models.groups = [
+      { model: 'kanata/extract', group: 'local', permits: 1 },
+      { model: 'kanata/chat', group: 'local', permits: 1 },
+      { model: 'kanata/chat:high', group: 'local', permits: 1 },
+    ];
+    body.models.capacity_check = [
+      { level: 'warning', message: 'The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused.' },
+      { level: 'ok', message: "Group local: 1 permits, matching Kanata's limit." },
+    ];
+    for (const limit of body.models.alias_limits) limit.max_in_flight = 3;
+    body.models.roles.chat = { alias: 'kanata/chat:high', reasoning: '', variant_of: 'kanata/chat', fixed_effort: 'high' };
+    body.models.roles.rewrite = { alias: '', reasoning: 'off' };
+    await route.fulfill({ response: res, json: body });
+  });
+  await go(page, '/config?section=models');
+  const panel = page.locator('.settings__panel:not([hidden])');
+  const groups = panel.getByRole('table', { name: 'Set in kanade.toml under [[models.groups]]; restart to apply.' });
+  await expect(groups.getByRole('row', { name: /local/ }).locator('.chip')).toHaveText(['kanata/extract', 'kanata/chat']);
+  await expect(panel.getByRole('list', { name: 'Startup check' }).locator('.tone--warning')).toHaveCount(1);
+  await expect(panel.getByText('Kanata admits 3 calls at a time per model.')).toBeVisible();
+  await expect(panel.getByRole('table', { name: /models in use/ })).toHaveCount(0);
+  const models = panel.getByRole('combobox', { name: /^Model/ });
+  // The stored variant shows as "<base> (fixed: <level>)"; no other variant is offered.
+  await expect(models.nth(1).locator('option:checked')).toHaveText('kanata/chat (fixed: high)');
+  await expect(models.nth(1).locator('option', { hasText: 'fixed' })).toHaveCount(1);
+  await expect(models.nth(1).locator('option[value="kanata/chat:low"]')).toHaveCount(0);
+  await expect(panel.getByRole('combobox', { name: /^Reasoning/ }).nth(1)).toBeDisabled();
+  // An unset role reads "Not configured".
+  await expect(models.nth(2).locator('option:checked')).toHaveText('Not configured');
 });

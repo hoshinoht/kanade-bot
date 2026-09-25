@@ -27,6 +27,12 @@
   } = $props();
 
   const label = $derived(directory.label(kind, id, name ?? '', mention));
+  const swatch = $derived(kind === 'role' ? directory.roleColors.get(id) : undefined);
+  // The role's own colour via CSSOM (CSP: no inline style attributes).
+  function paint(node: HTMLElement, color: string) {
+    node.style.setProperty('--swatch', color);
+    return { update: (next: string) => node.style.setProperty('--swatch', next) };
+  }
   const WHAT: Record<NameKind, string> = { member: 'member', channel: 'channel', role: 'role' };
   let status = $state('');
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -43,7 +49,7 @@
   }
 </script>
 
-{#if plain || !id}<span class="name" class:name--clip={clip} title={clip ? label : undefined}>{label}</span>{:else}<button
+{#if swatch}<span class="name__swatch" aria-hidden="true" use:paint={swatch}></span>{/if}{#if plain || !id}<span class="name" class:name--clip={clip} title={clip ? label : undefined}>{label}</span>{:else}<button
     type="button"
     class="name name--copy"
     class:name--clip={clip}
@@ -62,6 +68,17 @@
     cursor: copy;
     text-decoration: underline dotted;
     text-underline-offset: 0.2em;
+  }
+
+  /* A role's colour as a small dot only: never the text colour, which must keep contrast. */
+  .name__swatch {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    margin-right: 0.2em;
+    border-radius: 50%;
+    background: var(--swatch);
+    vertical-align: 0.05em;
   }
 
   .name--clip {

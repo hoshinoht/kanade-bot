@@ -60,7 +60,10 @@ pub struct Config {
     pub extraction: RoleModel,
     pub chat: RoleModel,
     pub rewrite: RoleModel,
-    pub groups: Vec<Group>,
+    /// `kanade.toml` `[[models.groups]]`; None runs the default group.
+    pub declared_groups: Option<Vec<Group>>,
+    /// `models.permits`: the default group's permits.
+    pub permits: u32,
 }
 
 struct ModelInfo {
@@ -100,7 +103,7 @@ impl ModelInfo {
 /// as its catalog publishes them. `kanata/rewrite-cloud` exercises the
 /// suffix rule: the Ollama cloud proxy reports `local`, so an alias ending
 /// in `-cloud` leaves the homelab whatever its trust zone says.
-const MODELS: [ModelInfo; 6] = [
+const MODELS: [ModelInfo; 7] = [
     ModelInfo {
         id: "kanata/extract",
         trust: "homelab",
@@ -156,6 +159,18 @@ const MODELS: [ModelInfo; 6] = [
         adapter_max: None,
         declared_max: Some(2),
     },
+    // Requires reasoning: its published list has no `none`, so `off` is hidden.
+    ModelInfo {
+        id: "kanata/think",
+        trust: "homelab",
+        tools: true,
+        json: true,
+        sampling: true,
+        efforts: Some(&["low", "high"]),
+        route_max: Some(1),
+        adapter_max: None,
+        declared_max: None,
+    },
     ModelInfo {
         id: "kanata/rewrite-cloud",
         trust: "homelab",
@@ -169,10 +184,48 @@ const MODELS: [ModelInfo; 6] = [
     },
 ];
 
-/// Key-level admission for this deployment's key (synthetic). The key is
-/// shared with the owner's other clients, so its limits are sized for both.
-const KEY_MAX_IN_FLIGHT: u32 = 8;
+/// Kanata publishes no per-key limit; the key is shared with the owner's other clients.
 const KEY_SHARED: bool = true;
+
+/// Aliases whose published efforts lack `none`: reasoning cannot be off.
+const OFF_REQUIRED: [&str; 1] = ["kanata/think"];
+
+/// Listed `<base>:<level>` variants (Kanata names a fixed-effort route this
+/// way): the picker lists the base and shows a variant only when stored.
+const VARIANTS: [(&str, &str, &str); 3] = [
+    ("kanata/chat:high", "kanata/chat", "high"),
+    ("kanata/chat:low", "kanata/chat", "low"),
+    ("kanata/extract:none", "kanata/extract", "off"),
+];
+
+fn variant(id: &str) -> Option<(&'static str, &'static str)> {
+    VARIANTS
+        .iter()
+        .find(|(v, _, _)| *v == id)
+        .map(|(_, base, effort)| (*base, *effort))
+}
+
+/// The groups the governor runs: `kanade.toml` groups, or one `gateway` group
+/// of `models.permits` over the distinct role aliases.
+pub fn effective_groups(c: &Config) -> Vec<Group> {
+    if let Some(declared) = &c.declared_groups {
+        return declared.clone();
+    }
+    let mut aliases: Vec<&str> = Vec::new();
+    for m in [&c.extraction, &c.chat, &c.rewrite] {
+        if !m.alias.is_empty() && !aliases.contains(&m.alias.as_str()) {
+            aliases.push(&m.alias);
+        }
+    }
+    aliases
+        .into_iter()
+        .map(|alias| Group {
+            model: alias.into(),
+            group: "gateway".into(),
+            permits: c.permits,
+        })
+        .collect()
+}
 
 /// `leaves_homelab`, failing closed: external trust, an unknown zone, or the
 /// `-cloud` alias suffix all count as leaving.
@@ -220,7 +273,8 @@ const PROFILES: [(&str, &str, bool, &str, &str); 4] = [
     ),
 ];
 
-pub const PII_PSEUDONYMISE: bool = true;
+/// As the server: pseudonymisation is not available in this build.
+pub const PII_PSEUDONYMISE: bool = false;
 
 pub fn defaults() -> Config {
     Config {
@@ -266,32 +320,15 @@ pub fn defaults() -> Config {
             alias: "kanata/rewrite-small".into(),
             reasoning: "off".into(),
         },
-        groups: vec![
-            Group {
-                model: "kanata/extract".into(),
-                group: "extract".into(),
-                permits: 1,
-            },
-            Group {
-                model: "kanata/chat".into(),
-                group: "chat".into(),
-                permits: 2,
-            },
-            Group {
-                model: "kanata/chat-cloud".into(),
-                group: "chat".into(),
-                permits: 2,
-            },
-            Group {
-                model: "kanata/rewrite-small".into(),
-                group: "rewrite".into(),
-                permits: 1,
-            },
-        ],
+        // The default: one gateway group over the role aliases.
+        declared_groups: None,
+        permits: 1,
     }
 }
 
+/// A listed alias, or a listed variant's base (whose capabilities it shares).
 fn model(id: &str) -> Option<&'static ModelInfo> {
+    let id = variant(id).map_or(id, |(base, _)| base);
     MODELS.iter().find(|m| m.id == id)
 }
 
@@ -303,86 +340,56 @@ fn profile_visible(c: &Config, key: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The startup check, also run on every save: row problems, duplicate
-/// aliases, per-group admission caps, role models without a group (a warning:
-/// they run with no permits), and the key-level sum. Messages name their row
-/// so two identical rows never produce the same message.
+/// The server's startup check (also run on every save): with declared groups,
+/// a role model outside every group is warned about; each group's permits are
+/// held to the least Kanata admits among its aliases. Nothing about the key:
+/// Kanata publishes no per-key limit.
 pub fn capacity_check(c: &Config) -> Vec<Value> {
+    let groups = effective_groups(c);
     let mut out = Vec::new();
-    for (i, g) in c.groups.iter().enumerate() {
-        let row = i + 1;
-        if g.group.is_empty() {
-            out.push(json!({ "level": "error", "message": format!("Row {row}: every row needs a group name.") }));
-        }
-        if model(&g.model).is_none() {
-            out.push(json!({ "level": "error", "message": format!("Row {row}: Kanata does not list {}.", g.model) }));
-        }
-        if g.permits == 0 {
-            out.push(json!({ "level": "error", "message": format!("Row {row}: {} in group {} declares 0 permits.", g.model, g.group) }));
-        }
-    }
-    // An alias belongs to exactly one group, listed once.
-    let mut seen: Vec<(&str, &str)> = Vec::new();
-    for (i, g) in c.groups.iter().enumerate() {
-        let row = i + 1;
-        for (j, (alias, group)) in seen.iter().enumerate() {
-            if *alias == g.model.as_str() {
-                if *group == g.group.as_str() {
-                    out.push(json!({ "level": "error", "message": format!("Rows {} and {row}: {} is in group {} twice; list it once.", j + 1, g.model, g.group) }));
-                } else {
-                    out.push(json!({ "level": "error", "message": format!("{} is in groups {group} and {}; an alias belongs to exactly one group.", g.model, g.group) }));
-                }
-                break;
+    if c.declared_groups.is_some() {
+        for (role, m) in [
+            ("extraction", &c.extraction),
+            ("chat", &c.chat),
+            ("rewrite", &c.rewrite),
+        ] {
+            if !m.alias.is_empty() && !groups.iter().any(|g| g.model == m.alias) {
+                out.push(json!({ "level": "warning", "message": format!("The {role} model {} is in no capacity group; its calls are refused.", m.alias) }));
             }
         }
-        seen.push((&c.groups[i].model, &c.groups[i].group));
     }
-    for (role, m) in [
-        ("extraction", &c.extraction),
-        ("chat", &c.chat),
-        ("rewrite", &c.rewrite),
-    ] {
-        if !c.groups.iter().any(|g| g.model == m.alias) {
-            out.push(json!({ "level": "warning", "message": format!("The {role} model {} is in no capacity group, so it runs with no permits.", m.alias) }));
+    let mut names: Vec<&str> = Vec::new();
+    for g in &groups {
+        if !names.contains(&g.group.as_str()) {
+            names.push(&g.group);
         }
     }
-    let mut names: Vec<&str> = c.groups.iter().map(|g| g.group.as_str()).collect();
-    names.sort_unstable();
-    names.dedup();
     for name in names {
-        let rows: Vec<&Group> = c.groups.iter().filter(|g| g.group == name).collect();
-        let total: u32 = rows.iter().map(|g| g.permits).sum();
+        let rows: Vec<&Group> = groups.iter().filter(|g| g.group == name).collect();
+        let permits = rows[0].permits;
         let mut cap: Option<(u32, &str)> = None;
         for g in &rows {
-            match model(&g.model).and_then(ModelInfo::cap) {
-                Some(limit) => {
-                    if cap.is_none_or(|(c, _)| limit < c) {
-                        cap = Some((limit, &g.model));
+            match model(&g.model) {
+                None => out.push(json!({ "level": "error", "message": format!("Kanata does not list {}.", g.model) })),
+                Some(info) => match info.cap() {
+                    Some(each) => {
+                        if cap.is_none_or(|(least, _)| each < least) {
+                            cap = Some((each, &g.model));
+                        }
                     }
-                }
-                None => {
-                    cap = None;
-                    out.push(json!({ "level": "error", "message": format!("Kanata publishes no limit for {} and none is declared; declare one for it first.", g.model) }));
-                    break;
-                }
+                    None => out.push(json!({ "level": "warning", "message": format!("Kanata publishes no limit for {}; its calls queue at the gateway.", g.model) })),
+                },
             }
         }
-        if let Some((limit, capped_by)) = cap {
-            if total > limit {
-                out.push(json!({ "level": "error", "message": format!("Group {name} declares {total} permits but Kanata admits at most {limit} (capped by {capped_by}); the bot refuses to start.") }));
-            } else if total < limit {
-                out.push(json!({ "level": "warning", "message": format!("Group {name} uses {total} of the {limit} permits Kanata admits.") }));
+        if let Some((cap, by)) = cap {
+            out.push(if permits > cap {
+                json!({ "level": "error", "message": format!("Group {name} declares {permits} permits but Kanata admits at most {cap} (capped by {by}); the bot refuses to start.") })
+            } else if permits < cap {
+                json!({ "level": "warning", "message": format!("Group {name} uses {permits} of the {cap} permits Kanata admits.") })
             } else {
-                out.push(json!({ "level": "ok", "message": format!("Group {name}: {total} permits, matching Kanata's limit.") }));
-            }
+                json!({ "level": "ok", "message": format!("Group {name}: {permits} permits, matching Kanata's limit.") })
+            });
         }
-    }
-    let sum: u32 = c.groups.iter().map(|g| g.permits).sum();
-    if sum > KEY_MAX_IN_FLIGHT {
-        out.push(json!({ "level": "error", "message": format!("All groups declare {sum} permits but the key admits {KEY_MAX_IN_FLIGHT}; the bot refuses to start.") }));
-    }
-    if KEY_SHARED {
-        out.push(json!({ "level": "warning", "message": "This key is shared with the owner's other clients; size its limits for both.".to_owned() }));
     }
     out
 }
@@ -431,18 +438,34 @@ fn resolve<'a>(reasoning: &'a str, extraction: &'a str) -> &'a str {
 impl Store {
     pub fn config_view(&self) -> Value {
         let c = &self.config;
-        let models: Vec<Value> = MODELS
-            .iter()
-            .map(|m| {
-                json!({
-                    "id": m.id, "trust_zone": m.trust, "leaves_homelab": leaves_homelab(m.id, m.trust),
-                    "function_tools": m.tools, "structured_output": m.json, "sampling_controls": m.sampling,
-                    "reasoning_control": m.efforts.is_none_or(|e| !e.is_empty()),
-                    "reasoning_efforts": m.efforts,
-                    "admission": m.cap().map(|max| admission(max, m.adapter_max)),
-                })
+        let entry = |id: &str, m: &ModelInfo| {
+            json!({
+                "id": id, "trust_zone": m.trust, "leaves_homelab": leaves_homelab(id, m.trust),
+                "function_tools": m.tools, "structured_output": m.json, "sampling_controls": m.sampling,
+                "reasoning_control": m.efforts.is_none_or(|e| !e.is_empty()),
+                "reasoning_efforts": m.efforts,
+                "off_allowed": !OFF_REQUIRED.contains(&m.id),
+                "admission": m.cap().map(|max| admission(max, m.adapter_max)),
             })
-            .collect();
+        };
+        let mut models: Vec<Value> = MODELS.iter().map(|m| entry(m.id, m)).collect();
+        for (id, base, effort) in VARIANTS {
+            if let Some(info) = model(base) {
+                let mut v = entry(id, info);
+                v["variant_of"] = json!(base);
+                v["fixed_effort"] = json!(effort);
+                models.push(v);
+            }
+        }
+        // A stored variant is shown as "<base> (fixed: <level>)".
+        let role = |r: &RoleModel| {
+            let mut v = json!(r);
+            if let Some((base, effort)) = variant(&r.alias) {
+                v["variant_of"] = json!(base);
+                v["fixed_effort"] = json!(effort);
+            }
+            v
+        };
         let missing_manage: Vec<&str> = seed::CHANNELS
             .iter()
             .filter(|(id, _, _)| *id == "seren-trio" || *id == "bm-trio")
@@ -472,15 +495,17 @@ impl Store {
             "models": {
                 "reachable": true,
                 "catalog": models,
-                "roles": { "extraction": c.extraction, "chat": c.chat, "rewrite": c.rewrite },
-                "groups": c.groups,
-                "alias_limits": MODELS.iter().filter_map(|m| m.cap().map(|max| {
+                "roles": { "extraction": role(&c.extraction), "chat": role(&c.chat), "rewrite": role(&c.rewrite) },
+                "groups": effective_groups(c),
+                "groups_source": if c.declared_groups.is_some() { "config" } else { "default" },
+                // Variants are listed too, as the server does; the app shows base models only.
+                "alias_limits": MODELS.iter().map(|m| (m.id, m)).chain(VARIANTS.iter().filter_map(|(id, base, _)| model(base).map(|m| (*id, m)))).filter_map(|(id, m)| m.cap().map(|max| {
                     let mut limit = admission(max, m.adapter_max);
-                    limit["alias"] = json!(m.id);
+                    limit["alias"] = json!(id);
                     limit["source"] = json!(m.source());
                     limit
                 })).collect::<Vec<_>>(),
-                "key_limits": { "max_in_flight": KEY_MAX_IN_FLIGHT, "shared": KEY_SHARED },
+                "key_limits": { "max_in_flight": null, "shared": KEY_SHARED },
                 "capacity_check": capacity_check(c),
                 "pii_pseudonymise": PII_PSEUDONYMISE,
             },
@@ -489,7 +514,9 @@ impl Store {
                 { "key": "KANADE_TIMEZONE", "label": "Timezone", "value": "Asia/Kuala_Lumpur", "reason": "Every stored time is converted with it; a change needs a restart." },
                 { "key": "KANADE_RESET", "label": "Boss week starts", "value": "Thu 00:00", "reason": "Defines boss-week boundaries for every stored run." },
                 { "key": "KANATA_BASE_URL", "label": "Model gateway", "value": "https://kanata.example.internal", "reason": "The gateway address is deployment wiring; repointing it would redirect the bearer key, so only the operator changes it." },
-                { "key": "KANADE_PII_PSEUDONYMISE", "label": "PII pseudonymisation", "value": if PII_PSEUDONYMISE { "on" } else { "off" }, "reason": "A privacy control; only the operator may change it, in the environment." },
+                { "key": "pseudonymisation", "label": "PII pseudonymisation", "value": if PII_PSEUDONYMISE { "on" } else { "off" }, "reason": "Not available in this build: member names reach the model as written, so models that leave the homelab are refused." },
+                { "key": "KANADE_ALLOW_EXTERNAL_UNMASKED", "label": "Unmasked external models", "value": "off", "reason": "Lets models that leave the homelab see member data unmasked (provider testing only); a privacy control only the operator may change." },
+                { "key": "KANADE_MODEL_GROUPS", "label": "Capacity groups", "value": if c.declared_groups.is_some() { "declared in kanade.toml" } else { "default: one gateway group" }, "reason": "Set in kanade.toml ([[models.groups]]); restart to apply." },
                 { "key": "KANADE_MIN_CONFIDENCE", "label": "Minimum confidence", "value": "0.6", "reason": "Tuned with the extraction vectors, not at runtime." },
                 { "key": "KANADE_DIGEST_CHANNEL", "label": "Digest channel", "value": "#boss-schedule", "reason": "Set with the guild's channel layout." },
                 { "key": "KANADE_WATCHED", "label": "Watched channels", "value": seed::CHANNELS.iter().filter(|c| c.2).map(|c| c.1).collect::<Vec<_>>().join(", "), "reason": "Watching a new channel is a deliberate deploy." },
@@ -1019,6 +1046,61 @@ mod tests {
                 .as_str()
                 .is_some_and(|m| m.contains("4 reply profiles"))
         );
+    }
+
+    #[test]
+    fn capacity_reports_the_groups_the_governor_runs() {
+        let mut s = store();
+        let view = s.config_view();
+        assert_eq!(view["models"]["groups_source"], "default");
+        assert!(view["models"]["key_limits"]["max_in_flight"].is_null());
+        let groups = view["models"]["groups"].as_array().unwrap();
+        assert!(groups.iter().all(|g| g["group"] == "gateway"));
+        assert_eq!(groups.len(), 3, "one row per distinct role alias");
+        let checks: Vec<&str> = view["models"]["capacity_check"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|c| c["message"].as_str())
+            .collect();
+        assert_eq!(
+            checks,
+            ["Group gateway: 1 permits, matching Kanata's limit."]
+        );
+        // Declared groups: a role model outside every group is warned about.
+        s.config.declared_groups = Some(vec![super::Group {
+            model: "kanata/chat".into(),
+            group: "chat".into(),
+            permits: 2,
+        }]);
+        let view = s.config_view();
+        assert_eq!(view["models"]["groups_source"], "config");
+        let warnings: Vec<&str> = view["models"]["capacity_check"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["level"] == "warning")
+            .filter_map(|c| c["message"].as_str())
+            .collect();
+        assert!(warnings.contains(
+            &"The extraction model kanata/extract is in no capacity group; its calls are refused."
+        ));
+        assert!(warnings.contains(&"Group chat uses 2 of the 4 permits Kanata admits."));
+        // Variants are listed with their base; the reasoning-only model hides `off`.
+        let catalog = view["models"]["catalog"].as_array().unwrap();
+        let chat_high = catalog
+            .iter()
+            .find(|m| m["id"] == "kanata/chat:high")
+            .unwrap();
+        assert_eq!(
+            (
+                chat_high["variant_of"].as_str(),
+                chat_high["fixed_effort"].as_str()
+            ),
+            (Some("kanata/chat"), Some("high"))
+        );
+        let think = catalog.iter().find(|m| m["id"] == "kanata/think").unwrap();
+        assert_eq!(think["off_allowed"], false);
     }
 
     #[test]

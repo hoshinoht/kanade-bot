@@ -153,11 +153,11 @@
           {/if}
         </div>
         <div class="run__meta">
-          <StatusMark status={run.status} words />
+          <StatusMark status={run.status} words pill />
           <span class="mono">{counts.on}/{counts.total} on</span>
-          {#if counts.out}<span class="status status--at_risk mono">{counts.out} out</span>{/if}
-          {#if counts.maybe}<span class="status status--otot mono">{counts.maybe} maybe</span>{/if}
-          {#if counts.waiting}<span class="status status--waiting mono">{counts.waiting} waiting</span>{/if}
+          {#if counts.out}<span class="tone tone--danger mono">{counts.out} out</span>{/if}
+          {#if counts.maybe}<span class="tone tone--info mono">{counts.maybe} maybe</span>{/if}
+          {#if counts.waiting}<span class="tone tone--neutral mono">{counts.waiting} waiting</span>{/if}
           <span class="chanmark"
             >{run.channel}
             <button

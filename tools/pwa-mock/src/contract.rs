@@ -345,6 +345,8 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "common.json#/$defs/Channels",
     )
     .await;
+    h.ok("GET", "/api/admin/roles", None, "common.json#/$defs/Roles")
+        .await;
     h.ok(
         "GET",
         "/api/admin/session",

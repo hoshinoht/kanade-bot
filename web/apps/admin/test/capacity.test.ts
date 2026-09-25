@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  capacityCheck,
   effectiveReasoning,
+  groupRows,
   isReasoningValid,
+  kanataLimits,
+  keyLine,
+  modelOptions,
   reasoningChoices,
   resetStrandedInheritors,
-  type CapacityInputs,
 } from '../src/config/capacity';
 import type { ModelInfo } from '@kanade/api-types';
 
@@ -15,110 +17,11 @@ const catalog: ModelInfo[] = [
   { id: 'd', trust_zone: 'external', leaves_homelab: true, function_tools: false, structured_output: false, sampling_controls: false, reasoning_control: false, reasoning_efforts: [], admission: { max_in_flight: 2 } },
   { id: 'n', trust_zone: 'unknown', leaves_homelab: true, function_tools: false, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: null, admission: null },
 ] as ModelInfo[];
-const aliasLimits = [
-  { alias: 'x', max_in_flight: 1, adapter_max_in_flight: 2, source: 'published' },
-  { alias: 'c', max_in_flight: 4, source: 'published' },
-  { alias: 'd', max_in_flight: 2, source: 'declared' },
-] as const;
 const roles = {
   extraction: { alias: 'x', reasoning: 'low' },
   chat: { alias: 'c', reasoning: '' },
   rewrite: { alias: 'd', reasoning: 'off' },
 };
-const base: CapacityInputs = {
-  groups: [
-    { model: 'x', group: 'extract', permits: 1 },
-    { model: 'c', group: 'chat', permits: 4 },
-    { model: 'd', group: 'rewrite', permits: 2 },
-  ],
-  roles,
-  catalog,
-  aliasLimits: [...aliasLimits],
-  keyLimits: { max_in_flight: 8, shared: true },
-};
-
-const levels = (out: { level: string }[]) => out.map((c) => c.level);
-
-describe('capacityCheck', () => {
-  it('passes a fitting declaration with the shared-key warning', () => {
-    const out = capacityCheck(base);
-    expect(levels(out)).toEqual(['ok', 'ok', 'ok', 'warning']);
-    expect(out[3]!.message).toContain('shared');
-  });
-
-  it('flags permits over the per-row ceiling, naming the row', () => {
-    const out = capacityCheck({ ...base, groups: [...base.groups, { model: 'n', group: 'big', permits: 65 }] });
-    expect(out.map((c) => c.message)).toContain('Row 4: permits are at most 64.');
-  });
-
-  it('treats a null adapter cap as no cap, not zero', () => {
-    const nullAdapter = [{ alias: 'd', max_in_flight: 2, adapter_max_in_flight: null, source: 'declared' }] as unknown as CapacityInputs['aliasLimits'];
-    const out = capacityCheck({ ...base, groups: [{ model: 'd', group: 'rewrite', permits: 2 }], aliasLimits: nullAdapter });
-    expect(out.filter((c) => c.level === 'error')).toEqual([]);
-  });
-
-  it('caps a group by the adapter limit, not the route', () => {
-    const out = capacityCheck({ ...base, groups: [{ model: 'x', group: 'extract', permits: 2 }] });
-    expect(out.some((c) => c.level === 'error' && c.message.includes('admits at most 1'))).toBe(true);
-  });
-
-  it('names rows for two identical zero-permit rows instead of crashing on keys', () => {
-    const out = capacityCheck({
-      ...base,
-      groups: [
-        { model: 'x', group: 'extract', permits: 0 },
-        { model: 'x', group: 'extract', permits: 0 },
-      ],
-    });
-    const zeroes = out.filter((c) => c.message.includes('declares 0 permits'));
-    expect(zeroes.map((c) => c.message)).toEqual([
-      'Row 1: x in group extract declares 0 permits.',
-      'Row 2: x in group extract declares 0 permits.',
-    ]);
-  });
-
-  it('treats cleared (null) and non-integer permits as invalid, naming the row', () => {
-    for (const permits of [null, Number.NaN, 1.5]) {
-      const out = capacityCheck({ ...base, groups: [{ model: 'x', group: 'extract', permits: permits as null }] });
-      expect(out.some((c) => c.level === 'error' && c.message === 'Row 1: permits must be a whole number.')).toBe(true);
-    }
-  });
-
-  it('refuses an alias twice in one group, in two groups, unknown, or groupless', () => {
-    const twice = capacityCheck({ ...base, groups: [...base.groups, { model: 'c', group: 'chat', permits: 1 }] });
-    expect(twice.some((c) => c.level === 'error' && c.message.includes('twice'))).toBe(true);
-    const split = capacityCheck({
-      ...base,
-      groups: [
-        { model: 'c', group: 'chat', permits: 2 },
-        { model: 'c', group: 'other', permits: 1 },
-      ],
-    });
-    expect(split.some((c) => c.level === 'error' && c.message.includes('exactly one group'))).toBe(true);
-    const unknown = capacityCheck({ ...base, groups: [{ model: 'gone', group: 'extract', permits: 1 }] });
-    expect(unknown.some((c) => c.level === 'error' && c.message === 'Row 1: Kanata does not list gone.')).toBe(true);
-    const empty = capacityCheck({ ...base, groups: [{ model: 'x', group: '', permits: 1 }] });
-    expect(empty.some((c) => c.level === 'error' && c.message === 'Row 1: every row needs a group name.')).toBe(true);
-  });
-
-  it('warns, not errors, when a role model is in no group', () => {
-    const out = capacityCheck({ ...base, groups: [{ model: 'x', group: 'extract', permits: 1 }] });
-    expect(out.filter((c) => c.level === 'error')).toEqual([]);
-    expect(out.some((c) => c.level === 'warning' && c.message.includes('chat') && c.message.includes('no capacity group'))).toBe(true);
-  });
-
-  it('refuses a key sum over the key limit', () => {
-    const out = capacityCheck({
-      ...base,
-      groups: [
-        { model: 'x', group: 'extract', permits: 1 },
-        { model: 'c', group: 'chat', permits: 8 },
-      ],
-    });
-    expect(out.some((c) => c.level === 'error' && c.message.includes('the key admits 8'))).toBe(true);
-  });
-});
-
 describe('reasoning', () => {
   const byId = (id: string) => catalog.find((m) => m.id === id);
   it('resolves inherit to the extraction effort', () => {
@@ -174,3 +77,73 @@ describe('reasoning', () => {
     expect(resetStrandedInheritors(local, catalog)).toEqual([]);
   });
 });
+
+describe('model picker', () => {
+  const withVariants = [
+    ...catalog,
+    { ...catalog[1]!, id: 'c:high', variant_of: 'c', fixed_effort: 'high' },
+    { ...catalog[0]!, id: 'r', off_allowed: false, reasoning_efforts: ['low', 'high'] },
+  ] as ModelInfo[];
+
+  it('offers base models only, a stored variant as "<base> (fixed: <level>)"', () => {
+    const plain = modelOptions('extraction', { alias: 'x', reasoning: 'low' }, withVariants).map((o) => o.value);
+    expect(plain).toEqual(['x', 'c', 'd', 'n', 'r']);
+    const stored = modelOptions('chat', { alias: 'c:high', reasoning: '', variant_of: 'c', fixed_effort: 'high' }, withVariants);
+    expect(stored[0]).toEqual({ value: 'c:high', label: 'c (fixed: high)' });
+    expect(stored.filter((o) => o.value.includes(':'))).toHaveLength(1);
+    // Chat needs tools.
+    expect(stored.find((o) => o.value === 'x')).toMatchObject({ disabled: true, label: 'x (no tools)' });
+  });
+
+  it('reads an unset role as "Not configured"', () => {
+    expect(modelOptions('rewrite', { alias: '', reasoning: 'off' }, catalog)[0]).toEqual({ value: '', label: 'Not configured' });
+  });
+
+  it('hides off for a model that requires reasoning', () => {
+    const required = withVariants.find((m) => m.id === 'r');
+    expect(reasoningChoices('extraction', required, 'low').map((c) => c.value)).toEqual(['low', 'high']);
+    expect(reasoningChoices('extraction', catalog[0], 'low').map((c) => c.value)).toEqual(['off', 'low', 'high']);
+  });
+});
+
+describe('capacity summary', () => {
+  const models = {
+    reachable: true,
+    catalog: [...catalog, { ...catalog[1]!, id: 'c:high', variant_of: 'c', fixed_effort: 'high' }] as ModelInfo[],
+    roles,
+    groups: [
+      { model: 'x', group: 'gateway', permits: 2 },
+      { model: 'c', group: 'gateway', permits: 2 },
+      { model: 'c:high', group: 'gateway', permits: 2 },
+    ],
+    groups_source: 'default' as const,
+    alias_limits: [
+      { alias: 'x', max_in_flight: 2, source: 'published' as const },
+      { alias: 'c', max_in_flight: 2, source: 'published' as const },
+      { alias: 'c:high', max_in_flight: 2, source: 'published' as const },
+      { alias: 'd', max_in_flight: 2, source: 'declared' as const },
+    ],
+    key_limits: { max_in_flight: null, shared: true },
+    capacity_check: [],
+    pii_pseudonymise: false,
+  };
+
+  it('folds a group into one row with base models only', () => {
+    expect(groupRows(models)).toEqual([{ group: 'gateway', permits: 2, models: ['x', 'c'] }]);
+  });
+
+  it('says one line when every base model admits the same, and never lists variants', () => {
+    const uniform = kanataLimits(models);
+    expect(uniform.uniform).toBe(2);
+    expect(uniform.all.map((l) => l.alias)).toEqual(['x', 'c', 'd']);
+    const mixed = kanataLimits({ ...models, alias_limits: [...models.alias_limits, { alias: 'n', max_in_flight: 5, source: 'declared' as const }] });
+    expect(mixed.uniform).toBeNull();
+    expect(mixed.inUse.map((l) => l.alias)).toEqual(['x', 'c', 'd']);
+  });
+
+  it('says the key limit once, in words', () => {
+    expect(keyLine({ max_in_flight: null, shared: true })).toBe("Kanata publishes no limit for this key; it is shared with the owner's other clients.");
+    expect(keyLine({ max_in_flight: 8, shared: false })).toBe('Kanata admits 8 calls at a time for this key.');
+  });
+});
+

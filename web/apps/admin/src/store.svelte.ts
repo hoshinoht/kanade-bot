@@ -1,4 +1,4 @@
-import type { Channel, Identity, MemberRow, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
@@ -143,11 +143,12 @@ export class AdminWeek {
   /** Reference data that changes rarely: loaded once per page. */
   async #loadReference(): Promise<void> {
     const get = <T>(path: string) => this.#client.get<T>(path).catch(() => null);
-    const [members, channels, identity, session] = await Promise.all([
+    const [members, channels, identity, session, roles] = await Promise.all([
       get<MemberRow[]>('/api/admin/members'),
       get<Channel[]>('/api/admin/channels'),
       get<Identity>('/api/identity'),
       get<Session>('/api/admin/session'),
+      get<Role[]>('/api/admin/roles'),
     ]);
     this.members = members ?? [];
     this.channels = channels ?? [];
@@ -156,6 +157,7 @@ export class AdminWeek {
     directory.setMembers(this.members);
     directory.setChannels(this.channels);
     directory.setIdentity(identity);
+    directory.setGuildRoles(roles ?? []);
     this.session = session;
   }
 

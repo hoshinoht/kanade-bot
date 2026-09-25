@@ -307,6 +307,14 @@ export interface Channel {
   name: string;
 }
 
+/** `GET /api/admin/roles`: guild roles for id→name display, highest first, `@everyone` left out. */
+export interface Role {
+  id: string;
+  name: string;
+  /** `#rrggbb`; absent when the role has no colour. */
+  color?: string;
+}
+
 /** `GET /api/admin/summary`: the four "right now" tiles. */
 export interface Summary {
   next: { run_id: string; bosses: string; when: string; countdown: string; on: number; total: number } | null;
@@ -322,6 +330,8 @@ export interface Identity {
   banner: string;
   /** False when the server fell back to generated art (nothing cached). */
   cached: boolean;
+  /** The bot's Discord user id (mentions of it read as the bot's name); null before the gateway is ready. */
+  bot_user_id?: string | null;
 }
 
 /** `GET /api/admin/session`: who is signed in; the `X-Kanade-CSRF` response header carries the write token. */
@@ -398,6 +408,8 @@ export interface PublicStatus {
 export interface Evidence {
   id: string;
   author: string;
+  /** The author's Discord id; null when the message is gone. */
+  author_id?: string | null;
   at: string;
   content: string | null;
   url: string | null;
@@ -523,7 +535,7 @@ export interface Extraction extends Omit<ExtractionRow, 'messages' | 'changes'> 
   prompt: string;
   raw_response: string;
   amendments: { kind: string; bosses: string; when: string; confidence: number; status: string }[];
-  messages: { id: string; author: string; at: string; content: string }[];
+  messages: { id: string; author: string; author_id?: string; at: string; content: string }[];
 }
 
 export interface RescanJob {
@@ -552,6 +564,8 @@ export interface ChatRow {
   id: string;
   at: string;
   member: Member;
+  /** The full Discord id, even when `member.name` is a placeholder. */
+  member_id?: string | null;
   channel: string | null;
   channel_id: string;
   /** The first round's alias ("—" when no model was called). */
@@ -743,18 +757,29 @@ export interface ModelInfo {
   reasoning_control: boolean;
   /**
    * The efforts the model publishes; the reasoning picker offers only these
-   * (plus `off`). Null = the model decides (offered as low/medium/high, as v4
-   * did); empty = no reasoning control.
+   * (plus `off`). Null = Kanata restricts nothing (every level); empty = no
+   * reasoning control.
    */
   reasoning_efforts: string[] | null;
+  /** False when the alias requires reasoning: the picker hides `off`. */
+  off_allowed?: boolean;
+  /** Set on a listed `<base>:<level>` variant: the picker lists the base only. */
+  variant_of?: string;
+  /** The variant's baked-in level (`:none` is `off`). */
+  fixed_effort?: string;
   /** Admission Kanata publishes for the alias, or null when the operator declares it. */
   admission: { max_in_flight: number; adapter_max_in_flight?: number } | null;
 }
 
 export interface RoleModel {
+  /** `""` when the role has no model configured. */
   alias: string;
   /** `off`, a published effort, or `""` = same as extraction (chat and rewrite only). */
   reasoning: string;
+  /** The stored alias is a listed `<base>:<level>` variant of this base. */
+  variant_of?: string;
+  /** That variant's baked-in level; it wins over `reasoning`. */
+  fixed_effort?: string;
 }
 
 export interface CapacityGroup {
@@ -774,7 +799,8 @@ export interface AliasLimit {
 
 /** Key-level admission. The key is shared with the owner's other clients. */
 export interface KeyLimits {
-  max_in_flight: number;
+  /** null: Kanata publishes no per-key limit. */
+  max_in_flight: number | null;
   shared: boolean;
 }
 
@@ -829,7 +855,10 @@ export interface ConfigView {
     reachable: boolean;
     catalog: ModelInfo[];
     roles: Record<ModelRole, RoleModel>;
+    /** The effective groups the governor runs: one row per alias per group. */
     groups: CapacityGroup[];
+    /** `default`: one gateway group of `models.permits` over the role aliases; `config`: kanade.toml `[[models.groups]]`. */
+    groups_source?: 'default' | 'config';
     alias_limits: AliasLimit[];
     key_limits: KeyLimits;
     capacity_check: CapacityCheck[];

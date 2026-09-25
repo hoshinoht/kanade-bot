@@ -126,7 +126,7 @@ test('admin: login window wears the identity and signs in with Discord', async (
 
 test('identity: nothing cached falls back to generated art, never a 404', async ({ page }) => {
   const identity = await (await page.request.get(`${ADMIN}/api/identity`)).json();
-  expect(identity).toEqual({ name: 'YuukiSakuna', avatar: '/identity/avatar', banner: '/identity/banner', cached: false });
+  expect(identity).toEqual({ name: 'YuukiSakuna', avatar: '/identity/avatar', banner: '/identity/banner', cached: false, bot_user_id: '1543532497948909578' });
   for (const path of ['/identity/avatar', '/identity/banner']) {
     const response = await page.request.get(`${ADMIN}${path}`);
     expect(response.status()).toBe(200);

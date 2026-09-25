@@ -192,7 +192,7 @@ impl Store {
             .messages
             .iter()
             .enumerate()
-            .map(|(i, (who, text))| json!({ "id": format!("{}-{i}", c.short_id), "author": seed::member_name(who).map_or("someone", |m| m.1), "at": super::clock::iso_z(Self::hour_minute(c.hour) - 5 + i as i64), "content": text }))
+            .map(|(i, (who, text))| json!({ "id": format!("{}-{i}", c.short_id), "author": seed::member_name(who).map_or("someone", |m| m.1), "author_id": who, "at": super::clock::iso_z(Self::hour_minute(c.hour) - 5 + i as i64), "content": text }))
             .collect();
         let prompt = format!(
             "System: You extract boss-schedule amendments from party chat. Reply with JSON only.\n\nFixed timings for {channel}: …\nThis week's runs: …\nRoster: …\n\nMessages:\n{lines}",

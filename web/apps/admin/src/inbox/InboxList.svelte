@@ -92,7 +92,7 @@
         <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
         {#if p.flags.length || p.is_question}
           <span class="inbox__badges">
-            {#each p.flags as flag (flag)}<span class="chip {FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
+            {#each p.flags as flag (flag)}<span class="tone tone--{FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
             {#if p.is_question}<span class="chip chip--waiting">still a question</span>{/if}
           </span>
         {/if}

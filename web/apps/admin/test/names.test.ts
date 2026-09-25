@@ -67,3 +67,22 @@ describe('profile summaries as plain text', () => {
     expect(plainText('snake_case_names stay')).toBe('snake_case_names stay');
   });
 });
+
+describe('directory: server ids', () => {
+  it('uses bot_user_id over the leading-mention guess, and role names from /roles', async () => {
+    const { directory } = await import('../src/names/directory.svelte');
+    directory.setGuildRoles([{ id: '300001', name: 'staff', color: '#e0a458' }]);
+    expect(directory.label('role', '300001')).toBe('@staff');
+    expect(directory.roleColors.get('300001')).toBe('#e0a458');
+    // A role profile does not rename a guild role.
+    directory.setRoles([{ role_id: '300001', role_name: '@old', profile: 'x' }]);
+    expect(directory.label('role', '300001')).toBe('@staff');
+    directory.setIdentity({ name: 'Kanade', avatar: '', banner: '', cached: false, bot_user_id: '42' });
+    directory.noteBot('77');
+    expect(directory.bot.id).toBe('42');
+    expect(directory.isBot('42')).toBe(true);
+    expect(directory.isBot('77')).toBe(false);
+    expect(directory.label('member', '42', '', true)).toBe('@Kanade');
+  });
+});
+

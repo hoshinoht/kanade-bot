@@ -70,7 +70,7 @@
               {#if row.state === 'sent' && row.url}
                 <a href={row.url} target="_blank" rel="noopener noreferrer">open in Discord</a>
               {:else}
-                <span class="status status--{row.state === 'stale' ? 'at_risk' : row.state === 'due' ? 'planned' : 'waiting'}">{STATE_WORDS[row.state]}</span>
+                <span class="tone tone--{row.state === 'stale' ? 'danger' : row.state === 'due' ? 'warning' : row.state === 'sent' ? 'success' : 'neutral'}">{STATE_WORDS[row.state]}</span>
               {/if}
             </td>
           </tr>

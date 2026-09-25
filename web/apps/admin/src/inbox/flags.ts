@@ -1,4 +1,5 @@
 import type { Proposal, ProposalFlag } from '@kanade/api-types';
+import type { Tone } from '@kanade/ui';
 import { directory } from '../names/directory.svelte';
 
 /** Badge words; each badge is text, never colour alone. */
@@ -10,12 +11,13 @@ export const FLAG_LABEL: Record<ProposalFlag, string> = {
   no_effect: 'already in effect',
 };
 
-export const FLAG_TONE: Record<ProposalFlag, string> = {
-  conflict: 'chip--no',
-  expired: 'chip--waiting',
-  requester_frozen: 'chip--maybe',
-  requester_unauthorised: 'chip--no',
-  no_effect: 'chip--waiting',
+/** Each flag's pill profile. */
+export const FLAG_TONE: Record<ProposalFlag, Tone> = {
+  conflict: 'danger',
+  expired: 'neutral',
+  requester_frozen: 'warning',
+  requester_unauthorised: 'danger',
+  no_effect: 'neutral',
 };
 
 /** Where an item came from, in words. */

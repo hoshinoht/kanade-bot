@@ -103,9 +103,9 @@
               {@const models = row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}
               <tr>
                 <th scope="row"><a href="/chat/{row.id}"><Mentions text={row.asked} plain asked dropBot /></a></th>
-                <td class="log__who"><Name kind="member" id={row.member.id} name={row.member.name} clip /><div class="id"><Name kind="channel" id={row.channel_id} name={row.channel} clip /></div></td>
+                <td class="log__who"><Name kind="member" id={row.member_id || row.member.id} name={row.member.name} clip /><div class="id"><Name kind="channel" id={row.channel_id} name={row.channel} clip /></div></td>
                 <td class="mono"><LogTime at={row.at} timeZone={tz} /></td>
-                <td><span class="status status--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
+                <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
                 <td class="mono log__clip" title={models}>{models}</td>
                 <td class="num log__nowrap">{duration(row.latency_ms)}</td>
               </tr>

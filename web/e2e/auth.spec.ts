@@ -35,7 +35,7 @@ test('signed out, a page sends you to sign in and back; a wrong token is refused
   await page.getByRole('button', { name: 'Sign in with the token' }).click();
   await expect(page).toHaveURL(`${ADMIN}/fixed?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
-  await expect(page.locator('.masthead__who')).toHaveText('Break-glass token');
+  await expect(page.locator('.account__name')).toHaveText('Break-glass token');
   await expect(page.getByText("Can't reach Kanade")).toHaveCount(0);
 });
 
@@ -58,7 +58,7 @@ test('Discord: the start link carries next, and the flow comes back signed in', 
   await discord.click();
   await expect(page).toHaveURL(`${ADMIN}/inbox?tab=self_service&sw=off`);
   await expect(page.getByRole('listbox', { name: 'Self-service items' })).toBeVisible();
-  await expect(page.locator('.masthead__who')).toHaveText('Asahi');
+  await expect(page.locator('.account__name')).toHaveText('Asahi');
 });
 
 const LOGIN_ERRORS: [string, RegExp][] = [
@@ -103,8 +103,9 @@ test('the session method decides the proposal controls up front', async ({ page 
 
 test('sign out ends the session and shows sign-in', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
-  await expect(page.locator('.masthead__who')).toHaveText('Asahi');
-  await page.getByRole('link', { name: 'sign out' }).click();
+  await expect(page.locator('.account__name')).toHaveText('Asahi');
+  await page.getByRole('button', { name: /Asahi/ }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(`${ADMIN}/login`);
   await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
   expect((await page.request.get(`${ADMIN}/api/admin/session`)).status()).toBe(401);

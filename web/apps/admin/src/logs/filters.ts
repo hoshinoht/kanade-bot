@@ -1,3 +1,4 @@
+import type { Tone } from '@kanade/ui';
 /**
  * Chat and Extractions log filters (user request 2026-09-25): server-side,
  * deep-linked through the page's query string, combinable. Pure, so the
@@ -82,10 +83,11 @@ export const OUTCOME_LABEL: Record<string, string> = {
   self_service_link: 'self-service link sent',
 };
 
-/** Status tone for an outcome chip (the word is always shown too). */
-export function outcomeTone(outcome: string): string {
-  if (['answered', 'proposed', 'clean_retry'].includes(outcome)) return 'confirmed';
-  if (['error', 'timeout', 'failed', 'content_blocked'].includes(outcome)) return 'at_risk';
-  if (['no_change', 'withheld'].includes(outcome)) return 'waiting';
-  return 'planned';
+/** The pill profile for a log outcome (the word is always shown too). */
+export function outcomeTone(outcome: string): Tone {
+  if (['answered', 'proposed'].includes(outcome)) return 'success';
+  if (['error', 'timeout', 'failed', 'content_blocked'].includes(outcome)) return 'danger';
+  if (['clarified', 'clean_retry', 'self_service_link'].includes(outcome)) return 'info';
+  if (['no_change', 'withheld'].includes(outcome)) return 'neutral';
+  return 'warning';
 }

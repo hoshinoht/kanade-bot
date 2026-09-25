@@ -189,6 +189,7 @@ impl Store {
         json!({
             "id": t.id, "at": super::clock::iso_z(Self::chat_minute(t)),
             // As the server: `user <short id>` when the roster does not know them.
+            "member_id": t.member,
             "member": { "id": t.member, "name": seed::member_name(t.member).map_or_else(|| format!("user {}", &t.member[..8.min(t.member.len())]), |m| m.1.to_owned()) },
             "channel": seed::channel(t.channel).map(|c| c.1), "channel_id": t.channel,
             "model": t.models.first().copied().unwrap_or("—"), "models": t.models,

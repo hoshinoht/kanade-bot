@@ -55,6 +55,17 @@ approving member (`extraction_approval` / `chat_approval`); requests by any
 session (`request_merge`). Repeating a decision answers 200 with the first
 message (`422 idempotency_mismatch` if it differs).
 
+Names: `GET /api/admin/roles` (three guild roles, one colourless),
+`Identity.bot_user_id` (`1543532497948909578` on the admin origin, null on
+the public one), `author_id` on inbox evidence and extraction messages, and
+chat `member_id`. Config models mirror the server's capacity report: the
+default source runs one `gateway` group of `models.permits` over the role
+aliases (`groups_source: "default"`; `declared_groups` in the store switches
+to `config`), `key_limits.max_in_flight` is null, `capacity_check` holds only
+the server's per-group verdicts (and ungrouped-role warnings with declared
+groups), the catalog lists `model:level` variants (`variant_of`,
+`fixed_effort`) and `kanata/think` requires reasoning (`off_allowed: false`).
+
 History records carry domain rows as the server encodes them (run instants
 in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`
 rows derived from each run's cards), name weeks by their starting RFC 3339

@@ -50,7 +50,7 @@
             <tbody>
               {#each data.amendments as a, i (i)}
                 <tr><th scope="row">{a.kind}</th><td class="mono">{a.bosses}</td><td class="mono">{a.when}</td><td class="num">{a.confidence.toFixed(2)}</td>
-                  <td><span class="status status--{a.status === 'confirmed' ? 'confirmed' : 'planned'}">{a.status}</span></td></tr>
+                  <td><span class="tone tone--{a.status === 'confirmed' ? 'success' : 'warning'}">{a.status}</span></td></tr>
               {/each}
             </tbody>
           </table>
@@ -58,7 +58,7 @@
       {:else if which === 'chat'}
         <div class="evidence">
           {#each data.messages as m (m.id)}
-            <p class="evidence__line"><span class="evidence__who">{directory.label('member', '', m.author)}</span><span class="evidence__at"><LogTime at={m.at} {timeZone} /></span><br /><span class="evidence__text"><Mentions text={m.content} /></span></p>
+            <p class="evidence__line"><span class="evidence__who">{#if m.author_id}<Name kind="member" id={m.author_id} name={m.author} />{:else}{directory.label('member', '', m.author)}{/if}</span><span class="evidence__at"><LogTime at={m.at} {timeZone} /></span><br /><span class="evidence__text"><Mentions text={m.content} /></span></p>
           {/each}
         </div>
       {:else if which === 'prompt'}

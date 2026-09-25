@@ -28,7 +28,9 @@
   import { DETAILS, ROUTES, SECTIONS } from './routes';
   import type RunSheetType from './RunSheet.svelte';
   import type { default as PaletteType } from '@kanade/ui/palette';
+  import AccountMenu from './shell/AccountMenu.svelte';
   import Nav from './shell/Nav.svelte';
+  import { directory } from './names/directory.svelte';
   import { AdminWeek, type MoveOutcome } from './store.svelte';
   import { reread } from './week/reread';
 
@@ -92,6 +94,22 @@
   // No polling behind the sign-in page; signing in starts it (and re-reads the session).
   const signingIn = $derived(route?.key === 'login');
   $effect(() => (signingIn ? undefined : store.start()));
+
+  // Session carries no user id; a Discord sign-in's display name is the member's, when it names exactly one.
+  const accountId = $derived.by(() => {
+    if (store.session?.method !== 'discord') return null;
+    const matches = [...directory.members].filter(([, name]) => name === store.session?.display);
+    return matches.length === 1 ? matches[0]![0] : null;
+  });
+
+  async function copyAccountId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      toaster.show({ message: 'Copied your user ID.', tone: 'ok' });
+    } catch {
+      toaster.show({ message: "Couldn't copy your user ID.", tone: 'error' });
+    }
+  }
 
   async function signOut(event: MouseEvent) {
     event.preventDefault();
@@ -330,13 +348,22 @@
     <a class="skip" href="#main">Skip to the page</a>
     <Masthead name={store.identity?.name ?? 'Kanade'} avatar={store.identity?.avatar ?? null} href="/">
       {#snippet meta()}
-        {#if store.week}<span class="masthead__tz" title="Guild timezone — every time here is in it">{store.week.timezone}</span>{/if}
         <a class="brand__by" href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
-        <Freshness state={store.fresh} updated={store.updated} />
-        {#if store.session}<span class="masthead__who masthead__desk-only">{store.session.display}</span>{/if}
-        <a class="masthead__desk-only" href="/login" onclick={signOut}>sign out</a>
-        <button type="button" class="btn btn--ghost masthead__desk-only" onclick={() => void togglePalette(true)} aria-keyshortcuts="Control+K Meta+K">
-          <Icon name="search" /> Commands <kbd class="kbd">Ctrl K</kbd>
+        <!-- Three groups: data status, the signed-in account, the command palette. -->
+        <span class="mchip mchip--status" role="group" aria-label="Status">
+          <Freshness state={store.fresh} updated={store.updated} />
+          {#if store.week}<span class="masthead__tz" title="Guild timezone — every time here is in it">{store.week.timezone}</span>{/if}
+        </span>
+        <AccountMenu session={store.session} userId={accountId} oncopy={copyAccountId} onsignout={signOut} />
+        <button
+          type="button"
+          class="mchip masthead__commands masthead__desk-only"
+          onclick={() => void togglePalette(true)}
+          aria-keyshortcuts="Control+K Meta+K"
+          aria-label="Commands"
+          title="Commands (Ctrl K)"
+        >
+          <Icon name="search" /><span class="masthead__commands-label">Commands</span><kbd class="kbd">Ctrl K</kbd>
         </button>
       {/snippet}
       {#snippet nav()}

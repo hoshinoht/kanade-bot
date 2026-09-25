@@ -1,115 +1,10 @@
-import type {
-  AliasLimit,
-  CapacityCheck,
-  CapacityGroup,
-  KeyLimits,
-  ModelInfo,
-  ModelRole,
-  RoleModel,
-} from '@kanade/api-types';
+import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
 
 export const ROLES: { id: ModelRole; name: string; job: string }[] = [
   { id: 'extraction', name: 'Extraction', job: 'Reads the party channels and proposes schedule changes.' },
   { id: 'chat', name: 'Chat', job: 'Answers members; it calls tools, so it needs a model that can.' },
   { id: 'rewrite', name: 'Rewrite', job: 'A small local model that nudges replies into the persona’s voice.' },
 ];
-
-/** One row's permit ceiling; the server refuses more (422), never clamps. */
-export const MAX_PERMITS = 64;
-
-export interface CapacityInputs {
-  groups: CapacityGroup[];
-  roles: Record<ModelRole, RoleModel>;
-  catalog: ModelInfo[];
-  aliasLimits: AliasLimit[];
-  keyLimits?: KeyLimits;
-}
-
-const known = (catalog: ModelInfo[], alias: string) => catalog.some((m) => m.id === alias);
-const capOf = (aliasLimits: AliasLimit[], alias: string): { max: number; adapter?: number } | undefined => {
-  const found = aliasLimits.find((l) => l.alias === alias);
-  // A server may send an absent adapter cap as null; either way it caps nothing.
-  return found ? { max: found.max_in_flight, adapter: found.adapter_max_in_flight ?? undefined } : undefined;
-};
-
-/**
- * A live preview of the startup capacity check while groups are edited,
- * mirroring the server's rule: per-alias admission caps each group, the key
- * cap bounds the sum. The server runs the same check on save and is
- * authoritative. Messages name their row so identical rows stay distinct
- * (Svelte's keyed each would otherwise throw on duplicates).
- */
-export function capacityCheck({ groups, roles, catalog, aliasLimits, keyLimits }: CapacityInputs): CapacityCheck[] {
-  const out: CapacityCheck[] = [];
-  groups.forEach((g, i) => {
-    const row = i + 1;
-    if (!g.group) out.push({ level: 'error', message: `Row ${row}: every row needs a group name.` });
-    if (!known(catalog, g.model)) out.push({ level: 'error', message: `Row ${row}: Kanata does not list ${g.model}.` });
-    if (g.permits === null || !Number.isInteger(g.permits))
-      out.push({ level: 'error', message: `Row ${row}: permits must be a whole number.` });
-    else if (g.permits <= 0)
-      out.push({ level: 'error', message: `Row ${row}: ${g.model} in group ${g.group} declares ${g.permits} permits.` });
-    else if (g.permits > MAX_PERMITS)
-      out.push({ level: 'error', message: `Row ${row}: permits are at most ${MAX_PERMITS}.` });
-  });
-  // An alias belongs to exactly one group, listed once.
-  const seen = new Map<string, { group: string; row: number }>();
-  groups.forEach((g, i) => {
-    const row = i + 1;
-    const prior = seen.get(g.model);
-    if (prior) {
-      if (prior.group === g.group)
-        out.push({ level: 'error', message: `Rows ${prior.row} and ${row}: ${g.model} is in group ${g.group} twice; list it once.` });
-      else out.push({ level: 'error', message: `${g.model} is in groups ${prior.group} and ${g.group}; an alias belongs to exactly one group.` });
-    } else seen.set(g.model, { group: g.group, row });
-  });
-  // A role's model with no group only warns: it runs with no permits.
-  for (const role of ROLES) {
-    const alias = roles[role.id].alias;
-    if (!groups.some((g) => g.model === alias))
-      out.push({ level: 'warning', message: `The ${role.id} model ${alias} is in no capacity group, so it runs with no permits.` });
-  }
-  for (const name of [...new Set(groups.map((g) => g.group))].sort()) {
-    const rows = groups.filter((g) => g.group === name);
-    const total = rows.reduce((n, g) => n + (Number.isInteger(g.permits) ? (g.permits ?? 0) : 0), 0);
-    let cap: number | undefined;
-    let cappedBy = '';
-    let unlimited: string | null = null;
-    for (const g of rows) {
-      const limit = capOf(aliasLimits, g.model);
-      if (!limit) {
-        unlimited = g.model;
-        break;
-      }
-      const each = limit.adapter === undefined ? limit.max : Math.min(limit.max, limit.adapter);
-      if (cap === undefined || each < cap) {
-        cap = each;
-        cappedBy = g.model;
-      }
-    }
-    if (unlimited) out.push({ level: 'error', message: `Kanata publishes no limit for ${unlimited} and none is declared; declare one for it first.` });
-    else if (cap !== undefined) {
-      if (total > cap)
-        out.push({
-          level: 'error',
-          message: `Group ${name} declares ${total} permits but Kanata admits at most ${cap} (capped by ${cappedBy}); the bot refuses to start.`,
-        });
-      else if (total < cap) out.push({ level: 'warning', message: `Group ${name} uses ${total} of the ${cap} permits Kanata admits.` });
-      else out.push({ level: 'ok', message: `Group ${name}: ${total} permits, matching Kanata's limit.` });
-    }
-  }
-  if (keyLimits) {
-    const sum = groups.reduce((n, g) => n + (Number.isInteger(g.permits) ? (g.permits ?? 0) : 0), 0);
-    if (sum > keyLimits.max_in_flight)
-      out.push({
-        level: 'error',
-        message: `All groups declare ${sum} permits but the key admits ${keyLimits.max_in_flight}; the bot refuses to start.`,
-      });
-    if (keyLimits.shared)
-      out.push({ level: 'warning', message: "This key is shared with the owner's other clients; size its limits for both." });
-  }
-  return out;
-}
 
 /** The effort an inheriting role resolves to: the extraction role's level. */
 export function effectiveReasoning(reasoning: string, extractionEffort: string): string {
@@ -144,7 +39,9 @@ export function reasoningChoices(
 ): { value: string; label: string }[] {
   const published = model?.reasoning_efforts;
   const levels = published === undefined ? [] : (published ?? ALL_EFFORTS);
-  const choices = [{ value: 'off', label: 'Off' }, ...levels.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))];
+  // A model that requires reasoning never offers `off` (the server would refuse it).
+  const off = model?.off_allowed === false ? [] : [{ value: 'off', label: 'Off' }];
+  const choices = [...off, ...levels.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))];
   if (role === 'extraction') return choices;
   const values = new Map(choices.map((c) => [c.value, c.label] as const));
   // A saved value the catalog no longer lists stays selectable, marked, so a
@@ -175,3 +72,85 @@ export function resetStrandedInheritors(roles: Record<ModelRole, RoleModel>, cat
   }
   return reset;
 }
+
+// ── Model picker and capacity summary (read-only groups, base models only) ──
+
+/** A listed `<base>:<level>` variant's base, or the alias itself. */
+export function baseOf(catalog: ModelInfo[], alias: string): string {
+  return catalog.find((m) => m.id === alias)?.variant_of ?? alias;
+}
+
+export interface PickerOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+/**
+ * Base models only: a `model:level` variant is offered only when it is what
+ * the role already stores, shown as "<base> (fixed: <level>)". An unset role
+ * reads "Not configured"; chat needs a model that calls tools.
+ */
+export function modelOptions(role: ModelRole, stored: RoleModel, catalog: ModelInfo[]): PickerOption[] {
+  const out: PickerOption[] = [];
+  if (!stored.alias) out.push({ value: '', label: 'Not configured' });
+  else if (stored.variant_of) out.push({ value: stored.alias, label: `${stored.variant_of} (fixed: ${stored.fixed_effort ?? '?'})` });
+  else if (!catalog.some((m) => m.id === stored.alias)) out.push({ value: stored.alias, label: `${stored.alias} (not listed)` });
+  for (const m of catalog) {
+    if (m.variant_of) continue;
+    const noTools = role === 'chat' && !m.function_tools;
+    out.push({ value: m.id, label: noTools ? `${m.id} (no tools)` : m.id, disabled: noTools });
+  }
+  return out;
+}
+
+export interface GroupRow {
+  group: string;
+  permits: number | null;
+  /** Base aliases, each once. */
+  models: string[];
+}
+
+/** One row per group; variants fold into their base. */
+export function groupRows(models: ConfigView['models']): GroupRow[] {
+  const rows: GroupRow[] = [];
+  for (const g of models.groups) {
+    let row = rows.find((r) => r.group === g.group);
+    if (!row) rows.push((row = { group: g.group, permits: g.permits, models: [] }));
+    const base = baseOf(models.catalog, g.model);
+    if (!row.models.includes(base)) row.models.push(base);
+  }
+  return rows;
+}
+
+export interface KanataLimits {
+  /** Every base model admits the same number of calls. */
+  uniform: number | null;
+  /** Base models the roles or groups use, with what Kanata admits. */
+  inUse: { alias: string; max: number; declared: boolean }[];
+  /** Every base model Kanata lists with a limit. */
+  all: { alias: string; max: number; declared: boolean }[];
+}
+
+/** What Kanata admits per base model; `model:level` variants are never listed. */
+export function kanataLimits(models: ConfigView['models']): KanataLimits {
+  const variant = (alias: string) => alias.includes(':') || models.catalog.some((m) => m.id === alias && m.variant_of);
+  const all = models.alias_limits
+    .filter((l) => !variant(l.alias))
+    .map((l) => ({ alias: l.alias, max: l.max_in_flight, declared: l.source === 'declared' }));
+  const used = new Set([
+    ...ROLES.map((r) => baseOf(models.catalog, models.roles[r.id].alias)).filter(Boolean),
+    ...models.groups.map((g) => baseOf(models.catalog, g.model)),
+  ]);
+  const maxes = new Set(all.map((l) => l.max));
+  return { uniform: all.length && maxes.size === 1 ? all[0]!.max : null, inUse: all.filter((l) => used.has(l.alias)), all };
+}
+
+/** The key sentence, once: Kanata publishes no per-key limit today. */
+export function keyLine(key: ConfigView['models']['key_limits']): string {
+  const shared = key.shared ? "; it is shared with the owner's other clients" : '';
+  return key.max_in_flight === null
+    ? `Kanata publishes no limit for this key${shared}.`
+    : `Kanata admits ${key.max_in_flight} calls at a time for this key${shared}.`;
+}
+

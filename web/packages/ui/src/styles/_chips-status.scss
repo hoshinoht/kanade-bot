@@ -61,6 +61,54 @@
   gap: 0.28rem;
 }
 
+// Semantic state pills (ui/src/tone.ts): success / warning / danger / info /
+// neutral. One colour story for every state pill — Inbox flags, log outcomes,
+// planner status, Config verdicts — and the same tokens as the .status words.
+// Named .tone so the boss-difficulty .pill palette stays its own.
+.tone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  white-space: nowrap;
+}
+
+.tone--success {
+  color: var(--ok-text);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+}
+
+.tone--warning {
+  // The warn text sits at the AA edge on some dark faces; the tint needs a touch more ink.
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+
+.tone--danger {
+  color: var(--risk-text);
+  border-color: color-mix(in srgb, var(--risk) 35%, transparent);
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+}
+
+.tone--info {
+  color: var(--own-text);
+  border-color: color-mix(in srgb, var(--own) 35%, transparent);
+  background: color-mix(in srgb, var(--own) 10%, var(--surface));
+}
+
+// Settled or informational: quieter by shape (dashed), not by opacity.
+.tone--neutral {
+  color: var(--dim-text);
+  border-style: dashed;
+  background: transparent;
+}
+
 .status {
   display: inline-flex;
   align-items: center;

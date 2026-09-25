@@ -25,7 +25,7 @@
   const segments = $derived.by(() => {
     const all = parseMentions(text.trimStart());
     const first = all[0];
-    const bot = first?.kind === 'member' && (first.id === directory.bot.id || !directory.members.has(first.id));
+    const bot = first?.kind === 'member' && directory.isBot(first.id);
     if (!(asked && dropBot && bot)) return all;
     const rest = all.slice(1);
     if (rest[0]?.kind === 'text') rest[0] = { kind: 'text', text: rest[0].text.trimStart() };

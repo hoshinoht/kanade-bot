@@ -220,7 +220,7 @@
               {:else if item.key === 'persona'}
                 <PersonaSection persona={c.persona} {save} {toaster} refresh={() => config.load()} />
               {:else if item.key === 'models'}
-                <ModelsSection models={c.models} {save} />
+                <ModelsSection models={c.models} env={c.env} {save} />
               {:else if item.key === 'self-service'}
                 <SelfServiceSection selfService={c.self_service} {save} />
               {:else if item.key === 'notifications'}

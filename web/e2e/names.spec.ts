@@ -12,7 +12,8 @@ test('chat log: names, never ids, and a click copies the id', async ({ page }) =
   await page.goto(`${ADMIN}/chat?sw=off`);
   const table = page.getByRole('table', { name: /Chatbot interactions/ });
   // Someone the lists do not know yet: neutral words, not "user 11494860" or the id.
-  const stranger = table.getByRole('row').filter({ has: page.getByRole('link', { name: /is @unknown-role around tonight/ }) });
+  // Role mentions read from GET /api/admin/roles.
+  const stranger = table.getByRole('row').filter({ has: page.getByRole('link', { name: 'is @staff around tonight?' }) });
   await expect(stranger).toContainText('Unknown member');
   await expect(stranger).toContainText('#unknown-channel');
   await expect(table).not.toContainText('user 1149');
@@ -76,3 +77,24 @@ test('run sheet, history and member sheet name people without their ids', async 
   await member.getByRole('button', { name: 'Tsubame' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1005');
 });
+
+test('roles, the bot and message authors resolve from the server\'s ids', async ({ page }) => {
+  // The bot by Identity.bot_user_id, a role by /roles (with its colour as a swatch).
+  await page.goto(`${ADMIN}/chat/c-stranger?sw=off`);
+  const asked = page.locator('.pane__section', { hasText: 'What they asked' }).locator('xpath=following-sibling::p[1]');
+  await expect(asked).toHaveText('@YuukiSakuna is @staff around tonight?');
+  const staff = asked.getByRole('button', { name: '@staff' });
+  await expect(staff).toHaveAttribute('title', 'Role ID 300001 — click to copy');
+  await expect(asked.locator('.name__swatch')).toHaveCount(1);
+  await staff.click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('300001');
+  await asked.getByRole('button', { name: '@YuukiSakuna' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1543532497948909578');
+
+  // Evidence authors are names that copy their ids.
+  await page.goto(`${ADMIN}/inbox?sw=off`);
+  const evidence = page.locator('.inbox__detail').getByLabel('Evidence');
+  await evidence.getByRole('button', { name: 'Minato' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1012');
+});
+

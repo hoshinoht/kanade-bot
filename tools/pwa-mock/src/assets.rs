@@ -28,7 +28,12 @@ pub struct Identity {
     avatar: &'static str,
     banner: &'static str,
     cached: bool,
+    /// The bot's Discord user id on the admin origin; null on the public one.
+    bot_user_id: Option<&'static str>,
 }
+
+/// The mock bot's Discord user id (seeded chat questions mention it).
+pub const BOT_USER_ID: &str = "1543532497948909578";
 
 fn file(dir: &Option<PathBuf>, stem: &str) -> Option<PathBuf> {
     let dir = dir.as_ref()?;
@@ -68,6 +73,7 @@ pub async fn identity(State(app): State<App>) -> Json<Identity> {
         avatar: "/identity/avatar",
         banner: "/identity/banner",
         cached: file(&cfg.dir, "avatar").is_some(),
+        bot_user_id: (!app.public).then_some(BOT_USER_ID),
     })
 }
 

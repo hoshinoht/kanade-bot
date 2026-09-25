@@ -24,7 +24,7 @@
 
 <div class="page-head">
   <div>
-    <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member.id} name={turn.data.member.name} />{/if}</p>
+    <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member_id || turn.data.member.id} name={turn.data.member.name} />{/if}</p>
     <h1>{#if turn.data}<LogTime at={turn.data.at} {timeZone} />{:else}Interaction{/if}</h1>
     {#if turn.data}<p class="note">{turn.data.model} · <Name kind="channel" id={turn.data.channel_id} name={turn.data.channel} /> · {turn.data.outcome}</p>{/if}
   </div>
@@ -49,7 +49,7 @@
             <tbody>
               {#each data.tools as t, i (i)}
                 <tr><th scope="row" class="mono">{t.name}</th><td class="mono">{t.arguments}</td><td class="mono">{t.result || '—'}</td><td class="num">{t.took_ms} ms</td>
-                  <td><span class="status status--{t.outcome === 'ok' ? 'confirmed' : 'at_risk'}">{t.outcome}</span></td></tr>
+                  <td><span class="tone tone--{t.outcome === 'ok' ? 'success' : 'danger'}">{t.outcome}</span></td></tr>
               {/each}
             </tbody>
           </table>

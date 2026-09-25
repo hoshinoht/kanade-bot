@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 pub struct Evidence {
     pub id: String,
     pub author: String,
+    /// The author's Discord id; null once the message is gone.
+    pub author_id: Option<String>,
     pub at: String,
     pub content: Option<String>,
     pub url: Option<String>,
@@ -698,6 +700,7 @@ impl Store {
                         .map(|(i, (who, text, hour, link))| Evidence {
                             id: format!("{}-{i}", p.short_id),
                             author: seed::member_name(who).map_or("someone", |m| m.1).into(),
+                            author_id: (!text.is_empty()).then(|| (*who).to_owned()),
                             at: Self::when(Self::at_hour(*hour)),
                             content: (!text.is_empty()).then(|| (*text).to_owned()),
                             url: link.map(|l| format!("https://discord.com/channels/0/0/{l}")),
