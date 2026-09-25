@@ -212,12 +212,12 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
             "{text}"
         );
     }
-    // The tracked Kanade bundle has no nudge_rewrite; its approved general pools
-    // also serve request-form tips, before any built-in line.
+    // The tracked Kanade bundle carries a nudge_rewrite; its approved general
+    // pools also serve request-form tips, before any built-in line.
     let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
     let compiled = CompiledPersona::compile(&kanade, None);
-    assert_eq!(kanade.compact.unwrap().nudge_rewrite, None);
+    assert!(compiled.nudge_rewrite().is_some_and(|text| text.contains("Kanade")));
     let gentle = compiled.nudge_seeds(NudgePurpose::SelfService, NudgeMood::Gentle);
     assert_eq!(gentle.source, NudgeSource::Bundle);
     assert_eq!(
