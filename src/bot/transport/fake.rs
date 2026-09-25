@@ -5,11 +5,17 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use twilight_model::application::command::Command;
-use twilight_model::id::{Id, marker::GuildMarker};
+use twilight_model::channel::{Channel, Message};
+use twilight_model::guild::Member;
+use twilight_model::id::{
+    Id,
+    marker::{GuildMarker, UserMarker},
+};
 
 use super::{
-    AmbiguousKind, ChannelId, DiscordTransport, InteractionRef, InteractionReply, MessageEdit,
-    MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
+    MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId, Outcome, OutgoingMessage,
+    Presence, RejectionKind,
 };
 
 /// Operation kinds a [`Step`] can be scripted for.
@@ -25,6 +31,9 @@ pub enum Op {
     Defer,
     CompleteDeferred,
     Register,
+    ListMembers,
+    ChannelMessages,
+    GuildChannels,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -97,6 +106,22 @@ pub enum Call {
         commands: Vec<Command>,
         outcome: Outcome<()>,
     },
+    ListMembers {
+        guild: Id<GuildMarker>,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+        outcome: Outcome<Vec<Member>>,
+    },
+    ChannelMessages {
+        channel: ChannelId,
+        page: HistoryPage,
+        limit: u16,
+        outcome: Outcome<Vec<Message>>,
+    },
+    GuildChannels {
+        guild: Id<GuildMarker>,
+        outcome: Outcome<Vec<Channel>>,
+    },
 }
 
 impl Call {
@@ -112,6 +137,9 @@ impl Call {
             Self::Defer { .. } => Op::Defer,
             Self::CompleteDeferred { .. } => Op::CompleteDeferred,
             Self::Register { .. } => Op::Register,
+            Self::ListMembers { .. } => Op::ListMembers,
+            Self::ChannelMessages { .. } => Op::ChannelMessages,
+            Self::GuildChannels { .. } => Op::GuildChannels,
         }
     }
 }
@@ -127,6 +155,10 @@ struct State {
     defaults: BTreeMap<Op, Step>,
     /// Messages that exist remotely, by id, with their channel.
     messages: BTreeMap<MessageId, ChannelId>,
+    /// What the read operations serve, per guild or channel.
+    members: BTreeMap<Id<GuildMarker>, Vec<Member>>,
+    history: BTreeMap<ChannelId, Vec<Message>>,
+    channels: BTreeMap<Id<GuildMarker>, Vec<Channel>>,
 }
 
 /// First id handed out; large enough to look like a real snowflake.
@@ -194,6 +226,29 @@ impl FakeDiscord {
     pub fn seed_message(&self, channel: ChannelId, message: MessageId) {
         self.state().messages.insert(message, channel);
     }
+
+    /// Members [`DiscordTransport::list_members`] pages through.
+    pub fn seed_members(&self, guild: Id<GuildMarker>, members: Vec<Member>) {
+        self.state().members.insert(guild, members);
+    }
+
+    /// History [`DiscordTransport::channel_messages`] pages through, keyed
+    /// by each message's `channel_id`.
+    pub fn seed_history(&self, messages: Vec<Message>) {
+        let mut state = self.state();
+        for message in messages {
+            state
+                .history
+                .entry(message.channel_id)
+                .or_default()
+                .push(message);
+        }
+    }
+
+    /// Channels [`DiscordTransport::guild_channels`] returns.
+    pub fn seed_channels(&self, guild: Id<GuildMarker>, channels: Vec<Channel>) {
+        self.state().channels.insert(guild, channels);
+    }
 }
 
 impl State {
@@ -235,6 +290,19 @@ impl State {
                 }
                 Outcome::Ambiguous(kind)
             }
+        }
+    }
+
+    /// A read: an invalid limit is refused before any step is consumed (as
+    /// Twilight validates before sending); a success serves `data`.
+    fn read<T>(&mut self, op: Op, valid: bool, data: impl FnOnce(&Self) -> T) -> Outcome<T> {
+        if !valid {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
+        match self.next_step(op) {
+            Step::Succeed => Outcome::Delivered(data(self)),
+            Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
+            Step::Ambiguous { kind, .. } => Outcome::Ambiguous(kind),
         }
     }
 
@@ -406,6 +474,93 @@ impl DiscordTransport for FakeDiscord {
         state.calls.push(Call::Register {
             guild,
             commands: commands.to_vec(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn list_members(
+        &self,
+        guild: Id<GuildMarker>,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Member>> {
+        let mut state = self.state();
+        let valid = (1..=MAX_MEMBERS_PAGE).contains(&limit);
+        let outcome = state.read(Op::ListMembers, valid, |state| {
+            let mut members: Vec<Member> = state
+                .members
+                .get(&guild)
+                .into_iter()
+                .flatten()
+                .filter(|member| after.is_none_or(|after| member.user.id > after))
+                .cloned()
+                .collect();
+            members.sort_by_key(|member| member.user.id);
+            members.truncate(usize::from(limit));
+            members
+        });
+        state.calls.push(Call::ListMembers {
+            guild,
+            after,
+            limit,
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn channel_messages(
+        &self,
+        channel: ChannelId,
+        page: HistoryPage,
+        limit: u16,
+    ) -> Outcome<Vec<Message>> {
+        let mut state = self.state();
+        let valid = (1..=MAX_MESSAGES_PAGE).contains(&limit);
+        let outcome = state.read(Op::ChannelMessages, valid, |state| {
+            let mut history: Vec<&Message> =
+                state.history.get(&channel).into_iter().flatten().collect();
+            history.sort_by_key(|message| message.id);
+            let limit = usize::from(limit);
+            match page {
+                HistoryPage::Latest => history.iter().rev().take(limit).copied().cloned().collect(),
+                HistoryPage::Before(id) => history
+                    .iter()
+                    .rev()
+                    .filter(|message| message.id < id)
+                    .take(limit)
+                    .copied()
+                    .cloned()
+                    .collect(),
+                HistoryPage::After(id) => {
+                    let mut oldest: Vec<Message> = history
+                        .iter()
+                        .filter(|message| message.id > id)
+                        .take(limit)
+                        .copied()
+                        .cloned()
+                        .collect();
+                    oldest.reverse();
+                    oldest
+                }
+            }
+        });
+        state.calls.push(Call::ChannelMessages {
+            channel,
+            page,
+            limit,
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
+        let mut state = self.state();
+        let outcome = state.read(Op::GuildChannels, true, |state| {
+            state.channels.get(&guild).cloned().unwrap_or_default()
+        });
+        state.calls.push(Call::GuildChannels {
+            guild,
             outcome: outcome.clone(),
         });
         outcome

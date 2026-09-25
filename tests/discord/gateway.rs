@@ -112,7 +112,21 @@ fn intents_are_exactly_v4s_used_set() {
             | EventTypeFlags::ROLE_UPDATE
             | EventTypeFlags::ROLE_DELETE
     ));
+    assert!(WANTED_EVENTS.contains(
+        EventTypeFlags::MESSAGE_CREATE
+            | EventTypeFlags::MESSAGE_UPDATE
+            | EventTypeFlags::MESSAGE_DELETE
+            | EventTypeFlags::MESSAGE_DELETE_BULK
+            | EventTypeFlags::CHANNEL_CREATE
+            | EventTypeFlags::CHANNEL_UPDATE
+            | EventTypeFlags::CHANNEL_DELETE
+            | EventTypeFlags::THREAD_CREATE
+            | EventTypeFlags::THREAD_UPDATE
+            | EventTypeFlags::THREAD_DELETE
+            | EventTypeFlags::THREAD_LIST_SYNC
+    ));
     assert!(!WANTED_EVENTS.contains(EventTypeFlags::PRESENCE_UPDATE));
+    assert!(!WANTED_EVENTS.contains(EventTypeFlags::TYPING_START));
 }
 
 #[tokio::test]

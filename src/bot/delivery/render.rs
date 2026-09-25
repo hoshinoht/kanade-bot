@@ -141,6 +141,7 @@ pub fn render(
         content: Some(content),
         embeds: Vec::new(),
         allowed_mentions: mentions::for_intent(intent),
+        reply_to: None,
     }
 }
 

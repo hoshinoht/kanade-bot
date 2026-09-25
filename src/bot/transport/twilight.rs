@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use tokio::time::Instant;
 use twilight_http::error::{Error, ErrorType};
 use twilight_http::request::channel::reaction::RequestReactionType;
@@ -30,17 +31,19 @@ use twilight_http::response::{Response, ResponseFuture};
 use twilight_http::{Client, api_error::ApiError};
 use twilight_model::application::command::Command;
 use twilight_model::channel::message::MessageFlags;
+use twilight_model::channel::{Channel, Message};
+use twilight_model::guild::Member;
 use twilight_model::http::interaction::{
     InteractionResponse, InteractionResponseData, InteractionResponseType,
 };
 use twilight_model::id::{
     Id,
-    marker::{ApplicationMarker, GuildMarker},
+    marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
 
 use super::{
-    AmbiguousKind, ChannelId, DiscordTransport, InteractionRef, InteractionReply, MessageEdit,
-    MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, classify_status,
+    AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
+    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, classify_status,
 };
 use crate::bot::mentions;
 
@@ -185,6 +188,24 @@ impl TwilightTransport {
         .await
     }
 
+    /// A read: the whole body as `U`. An unreadable body is ambiguous, like
+    /// any response the transport cannot interpret.
+    async fn fetch<T: Unpin, U: DeserializeOwned>(
+        &self,
+        request: impl IntoFuture<IntoFuture = ResponseFuture<T>>,
+    ) -> Outcome<U> {
+        Self::send(request, self.config.deadline, |response| async {
+            match response.bytes().await {
+                Ok(body) => serde_json::from_slice::<U>(&body).map_or(
+                    Outcome::Ambiguous(AmbiguousKind::UnreadableResponse),
+                    Outcome::Delivered,
+                ),
+                Err(_) => Outcome::Ambiguous(AmbiguousKind::UnreadableResponse),
+            }
+        })
+        .await
+    }
+
     async fn settle_interaction<T: Unpin>(
         &self,
         request: impl IntoFuture<IntoFuture = ResponseFuture<T>>,
@@ -267,6 +288,9 @@ impl DiscordTransport for TwilightTransport {
         }
         if !message.embeds.is_empty() {
             request = request.embeds(&message.embeds);
+        }
+        if let Some(target) = message.reply_to {
+            request = request.reply(target).fail_if_not_exists(false);
         }
         Self::send(request, self.config.deadline, |response| async {
             // Delivered from here on; an unreadable id cannot be bound.
@@ -396,5 +420,36 @@ impl DiscordTransport for TwilightTransport {
                 .set_guild_commands(guild, commands),
         )
         .await
+    }
+
+    async fn list_members(
+        &self,
+        guild: Id<GuildMarker>,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Member>> {
+        let mut request = self.client.guild_members(guild).limit(limit);
+        if let Some(after) = after {
+            request = request.after(after);
+        }
+        self.fetch(request).await
+    }
+
+    async fn channel_messages(
+        &self,
+        channel: ChannelId,
+        page: HistoryPage,
+        limit: u16,
+    ) -> Outcome<Vec<Message>> {
+        let request = self.client.channel_messages(channel);
+        match page {
+            HistoryPage::Latest => self.fetch(request.limit(limit)).await,
+            HistoryPage::Before(id) => self.fetch(request.before(id).limit(limit)).await,
+            HistoryPage::After(id) => self.fetch(request.after(id).limit(limit)).await,
+        }
+    }
+
+    async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
+        self.fetch(self.client.guild_channels(guild)).await
     }
 }

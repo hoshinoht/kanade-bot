@@ -388,6 +388,7 @@ where
             content: Some(view.content.clone()),
             embeds: vec![embed(&view)],
             allowed_mentions: mentions::allow_users(&view.mention_users),
+            reply_to: None,
         };
         let intent = NotificationIntent {
             effect: EffectKind::Card,
@@ -557,6 +558,7 @@ where
             content: Some(content),
             embeds: Vec::new(),
             allowed_mentions: mentions::none(),
+            reply_to: None,
         };
         let intent = NotificationIntent {
             effect: EffectKind::Notice(kind.to_owned()),

@@ -133,4 +133,29 @@ impl DiscordTransport for Intercept<'_> {
     ) -> impl Future<Output = Outcome<()>> + Send {
         self.fake.register_guild_commands(guild, commands)
     }
+
+    fn list_members(
+        &self,
+        guild: Id<GuildMarker>,
+        after: Option<Id<twilight_model::id::marker::UserMarker>>,
+        limit: u16,
+    ) -> impl Future<Output = Outcome<Vec<twilight_model::guild::Member>>> + Send {
+        self.fake.list_members(guild, after, limit)
+    }
+
+    fn channel_messages(
+        &self,
+        channel: ChannelId,
+        page: kanade::bot::transport::HistoryPage,
+        limit: u16,
+    ) -> impl Future<Output = Outcome<Vec<twilight_model::channel::Message>>> + Send {
+        self.fake.channel_messages(channel, page, limit)
+    }
+
+    fn guild_channels(
+        &self,
+        guild: Id<GuildMarker>,
+    ) -> impl Future<Output = Outcome<Vec<twilight_model::channel::Channel>>> + Send {
+        self.fake.guild_channels(guild)
+    }
 }

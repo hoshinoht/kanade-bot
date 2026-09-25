@@ -14,9 +14,11 @@ use std::future::Future;
 
 use twilight_model::application::command::Command;
 use twilight_model::channel::message::{AllowedMentions, Embed};
+use twilight_model::channel::{Channel, Message};
+use twilight_model::guild::Member;
 use twilight_model::id::{
     Id,
-    marker::{ChannelMarker, GuildMarker, InteractionMarker, MessageMarker},
+    marker::{ChannelMarker, GuildMarker, InteractionMarker, MessageMarker, UserMarker},
 };
 
 pub use outcome::{AmbiguousKind, Outcome, RejectionKind, classify_status, codes};
@@ -25,6 +27,11 @@ pub use twilight::{MAX_SENDS, TransportConfig, TwilightTransport};
 #[cfg(any(test, feature = "test-support"))]
 pub use fake::{Call, FakeDiscord, Op, Step};
 
+/// Discord's page-size bounds; out-of-range limits are refused unsent
+/// (`RejectionKind::Invalid`).
+pub const MAX_MEMBERS_PAGE: u16 = 1000;
+pub const MAX_MESSAGES_PAGE: u16 = 100;
+
 /// A new message. `allowed_mentions` is required so no post can fall back to
 /// Discord's parse-everything default; build it with [`crate::bot::mentions`].
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +39,19 @@ pub struct OutgoingMessage {
     pub content: Option<String>,
     pub embeds: Vec<Embed>,
     pub allowed_mentions: AllowedMentions,
+    /// Reply to this message in the same channel. Sent with
+    /// `fail_if_not_exists = false` (a deleted target still posts); whether
+    /// the author is pinged stays with `allowed_mentions.replied_user`.
+    pub reply_to: Option<MessageId>,
+}
+
+/// Which page of a channel's history to read. Discord returns every page
+/// newest first; `After` holds the oldest messages after the id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryPage {
+    Latest,
+    Before(MessageId),
+    After(MessageId),
 }
 
 /// An edit; `None` fields are left unchanged.
@@ -161,10 +181,35 @@ pub trait DiscordTransport: Send + Sync {
         reply: &InteractionReply,
     ) -> impl Future<Output = Outcome<()>> + Send;
 
-    /// Replace the guild's command set (an idempotent bulk overwrite).
+    /// Replace the guild's command set (an idempotent bulk overwrite). There
+    /// is deliberately no global-command operation.
     fn register_guild_commands(
         &self,
         guild: Id<GuildMarker>,
         commands: &[Command],
     ) -> impl Future<Output = Outcome<()>> + Send;
+
+    /// One page of guild members, ordered by user id, after `after`
+    /// (1..=[`MAX_MEMBERS_PAGE`]). Needs `GUILD_MEMBERS`.
+    fn list_members(
+        &self,
+        guild: Id<GuildMarker>,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> impl Future<Output = Outcome<Vec<Member>>> + Send;
+
+    /// One page of a channel's (or thread's) history, newest first
+    /// (1..=[`MAX_MESSAGES_PAGE`]). Needs View Channel + Read Message History.
+    fn channel_messages(
+        &self,
+        channel: ChannelId,
+        page: HistoryPage,
+        limit: u16,
+    ) -> impl Future<Output = Outcome<Vec<Message>>> + Send;
+
+    /// The guild's channels (threads excluded, as Discord lists them).
+    fn guild_channels(
+        &self,
+        guild: Id<GuildMarker>,
+    ) -> impl Future<Output = Outcome<Vec<Channel>>> + Send;
 }

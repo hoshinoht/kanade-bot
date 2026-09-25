@@ -14,11 +14,13 @@ use twilight_model::id::Id;
 
 use kanade::bot::mentions;
 use kanade::bot::transport::{
-    AmbiguousKind, DiscordTransport, InteractionRef, InteractionReply, MAX_SENDS, Outcome,
-    OutgoingMessage, Presence, RejectionKind, TransportConfig, TwilightTransport,
+    AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
+    Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig, TwilightTransport,
 };
 
-use super::support::CHANNEL;
+use super::support::{
+    ALICE, BOB, CHANNEL, GUILD, TEXT, channel_json, member_json, message_json, user_json,
+};
 
 const TOKEN: &str = "synthetic-token-never-real";
 
@@ -197,6 +199,7 @@ fn post() -> OutgoingMessage {
         content: Some("@everyone <@&500> <@1002> run at 8".into()),
         embeds: Vec::new(),
         allowed_mentions: mentions::allow_users(&["1001"]),
+        reply_to: None,
     }
 }
 
@@ -510,4 +513,217 @@ async fn debug_output_never_contains_the_token() {
     let production =
         TwilightTransport::new(TOKEN.to_owned(), Id::new(9), TransportConfig::default());
     assert!(!format!("{production:?}").contains(TOKEN));
+}
+
+#[tokio::test]
+async fn a_reply_references_its_target_without_failing_or_pinging() {
+    let (stub, addr) = Stub::start(vec![json_reply(200, json!({ "id": "90" }))]).await;
+    let mut message = post();
+    message.reply_to = Some(Id::new(55));
+    assert_eq!(
+        quick(addr).create_message(Id::new(CHANNEL), &message).await,
+        Outcome::Delivered(Id::new(90))
+    );
+    let body: Value = serde_json::from_slice(&stub.seen()[0].body).unwrap();
+    assert_eq!(body["message_reference"]["message_id"], json!("55"));
+    assert_eq!(
+        body["message_reference"]["fail_if_not_exists"],
+        json!(false)
+    );
+    assert_eq!(
+        body["allowed_mentions"],
+        json!({ "parse": [], "users": ["1001"] }),
+        "the replied author is not pinged unless listed"
+    );
+}
+
+#[tokio::test]
+async fn a_plain_post_has_no_message_reference() {
+    let (outcome, stub) = create(vec![json_reply(200, json!({ "id": "91" }))]).await;
+    assert!(outcome.is_delivered());
+    let body: Value = serde_json::from_slice(&stub.seen()[0].body).unwrap();
+    assert!(body.get("message_reference").is_none());
+}
+
+#[tokio::test]
+async fn commands_are_registered_on_the_guild_endpoint_only() {
+    let (stub, addr) = Stub::start(vec![json_reply(200, json!([]))]).await;
+    assert_eq!(
+        quick(addr)
+            .register_guild_commands(Id::new(GUILD), &[])
+            .await,
+        Outcome::Delivered(())
+    );
+    let seen = stub.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].request_line,
+        format!("PUT /api/v10/applications/9/guilds/{GUILD}/commands HTTP/1.1")
+    );
+}
+
+/// Global commands would appear in every guild the production token is in.
+#[test]
+fn no_source_touches_global_commands() {
+    fn scan(dir: &std::path::Path, hits: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                scan(&path, hits);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                if text.contains("global_command") {
+                    hits.push(path.display().to_string());
+                }
+            }
+        }
+    }
+    let mut hits = Vec::new();
+    scan(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut hits,
+    );
+    assert!(hits.is_empty(), "global command use in {hits:?}");
+}
+
+#[tokio::test]
+async fn members_are_paged_after_a_user_id() {
+    let members = json!([
+        member_json(user_json(ALICE, "alice", None, false), None, &[]),
+        member_json(user_json(BOB, "bob", None, false), Some("bobby"), &[]),
+    ]);
+    let (stub, addr) = Stub::start(vec![json_reply(200, members)]).await;
+    let Outcome::Delivered(page) = quick(addr)
+        .list_members(Id::new(GUILD), Some(Id::new(1000)), 2)
+        .await
+    else {
+        panic!("page delivered");
+    };
+    assert_eq!(
+        page.iter().map(|m| m.user.id.get()).collect::<Vec<_>>(),
+        vec![ALICE, BOB]
+    );
+    let line = &stub.seen()[0].request_line;
+    assert!(
+        line.starts_with(&format!("GET /api/v10/guilds/{GUILD}/members?")),
+        "{line}"
+    );
+    assert!(
+        line.contains("after=1000") && line.contains("limit=2"),
+        "{line}"
+    );
+}
+
+#[tokio::test]
+async fn history_pages_carry_their_cursor() {
+    let page = json!([
+        message_json(12, CHANNEL, Some(GUILD), "newer"),
+        message_json(11, CHANNEL, Some(GUILD), "older"),
+    ]);
+    let (stub, addr) = Stub::start(vec![
+        json_reply(200, page.clone()),
+        json_reply(200, page.clone()),
+        json_reply(200, page),
+    ])
+    .await;
+    let transport = quick(addr);
+    for (cursor, query) in [
+        (HistoryPage::Latest, "limit=50".to_owned()),
+        (HistoryPage::Before(Id::new(13)), "before=13".to_owned()),
+        (HistoryPage::After(Id::new(10)), "after=10".to_owned()),
+    ] {
+        let Outcome::Delivered(messages) = transport
+            .channel_messages(Id::new(CHANNEL), cursor, 50)
+            .await
+        else {
+            panic!("page delivered");
+        };
+        assert_eq!(messages[0].content, "newer");
+        let line = stub.seen().last().unwrap().request_line.clone();
+        assert!(
+            line.starts_with(&format!("GET /api/v10/channels/{CHANNEL}/messages?")),
+            "{line}"
+        );
+        assert!(line.contains(&query) && line.contains("limit=50"), "{line}");
+    }
+}
+
+#[tokio::test]
+async fn guild_channels_are_read() {
+    let (stub, addr) = Stub::start(vec![json_reply(
+        200,
+        json!([channel_json(CHANNEL, TEXT, "kalos", None, &[])]),
+    )])
+    .await;
+    let Outcome::Delivered(channels) = quick(addr).guild_channels(Id::new(GUILD)).await else {
+        panic!("channels delivered");
+    };
+    assert_eq!(channels[0].name.as_deref(), Some("kalos"));
+    assert_eq!(
+        stub.seen()[0].request_line,
+        format!("GET /api/v10/guilds/{GUILD}/channels HTTP/1.1")
+    );
+}
+
+#[tokio::test]
+async fn reads_are_classified_like_every_other_call() {
+    let (stub, addr) = Stub::start(vec![
+        json_reply(503, json!({ "code": 0, "message": "down" })),
+        json_reply(403, json!({ "code": 50001, "message": "Missing Access" })),
+        raw_reply(200, "{\"not\":\"a list\"}"),
+    ])
+    .await;
+    let transport = quick(addr);
+    let channel = Id::new(CHANNEL);
+    assert_eq!(
+        transport
+            .channel_messages(channel, HistoryPage::Latest, 10)
+            .await,
+        Outcome::Ambiguous(AmbiguousKind::ServerError { status: 503 })
+    );
+    assert_eq!(
+        transport.list_members(Id::new(GUILD), None, 10).await,
+        Outcome::DefinitelyRejected(RejectionKind::MissingAccess)
+    );
+    assert_eq!(
+        transport.guild_channels(Id::new(GUILD)).await,
+        Outcome::Ambiguous(AmbiguousKind::UnreadableResponse)
+    );
+    assert_eq!(stub.seen().len(), 3, "nothing retried");
+}
+
+#[tokio::test]
+async fn persistently_rate_limited_reads_stop_at_the_send_cap() {
+    let (stub, addr) = Stub::start(vec![rate_limited(); 10]).await;
+    assert_eq!(
+        quick(addr)
+            .channel_messages(Id::new(CHANNEL), HistoryPage::Latest, 10)
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::RateLimited)
+    );
+    assert_eq!(stub.seen().len(), MAX_SENDS as usize);
+}
+
+#[tokio::test]
+async fn out_of_range_page_sizes_are_refused_unsent() {
+    let (stub, addr) = Stub::start(Vec::new()).await;
+    let transport = quick(addr);
+    let invalid = Outcome::DefinitelyRejected(RejectionKind::Invalid);
+    assert_eq!(
+        transport
+            .channel_messages(Id::new(CHANNEL), HistoryPage::Latest, 101)
+            .await,
+        invalid
+    );
+    assert_eq!(
+        transport
+            .channel_messages(Id::new(CHANNEL), HistoryPage::Before(Id::new(5)), 0)
+            .await,
+        invalid
+    );
+    assert_eq!(
+        transport.list_members(Id::new(GUILD), None, 1001).await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert!(stub.seen().is_empty());
 }

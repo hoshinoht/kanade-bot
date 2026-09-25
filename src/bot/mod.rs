@@ -11,6 +11,7 @@ pub mod commands;
 pub mod delivery;
 pub mod events;
 pub mod gateway;
+pub mod guild_cache;
 pub mod ids;
 pub mod mentions;
 pub mod transport;

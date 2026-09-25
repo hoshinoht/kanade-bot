@@ -28,9 +28,24 @@ the final image keeps `ca-certificates`.
 ## Seams
 
 - `transport::DiscordTransport`: create (content, embeds, required
-  allowed-mentions), edit, delete, add/remove own unicode reaction, message
-  presence, interaction reply, deferral and deferred completion, guild
-  command registration.
+  allowed-mentions, optional `reply_to`), edit, delete, add/remove own
+  unicode reaction, message presence, interaction reply, deferral and
+  deferred completion, guild command registration, and the reads
+  `list_members(guild, after, limit ≤ 1000)`, `channel_messages(channel,
+  HistoryPage::{Latest, Before, After}, limit ≤ 100)` and
+  `guild_channels(guild)`. A reply sends a message reference with
+  `fail_if_not_exists = false` (a deleted target still posts); pinging the
+  replied author stays governed by the explicit allow-list
+  (`replied_user` false). Reads are classified like every call: 4xx
+  definite, 5xx/unreadable body ambiguous, persistent 429 `RateLimited`,
+  out-of-range limits `Invalid` and never sent. History pages are newest
+  first, as Discord returns them (`After` holds the oldest messages after
+  the cursor).
+- Commands: only `register_guild_commands` (PUT
+  `/applications/{app}/guilds/{guild}/commands`) exists. There is no
+  global-command operation, and a test fails if any source under `src/`
+  names one: v5 runs with the production token, which may sit in other
+  guilds.
   `TwilightTransport` implements it; `FakeDiscord` (test support) records calls,
   scripts outcomes per operation (including ambiguous-but-applied) and mints
   sequential message ids.
@@ -100,10 +115,21 @@ default allow-list is also none, and interaction replies always mention nobody.
 
 ## Gateway
 
-Intents: `GUILDS` (availability, owner and role permissions for staff checks), `GUILD_MEMBERS`
+Intents: `GUILDS` (availability, owner and role permissions for staff
+checks, channel and thread events for the guild cache), `GUILD_MEMBERS`
 (roster), `GUILD_MESSAGES` + `MESSAGE_CONTENT` (watched chat for extraction
 and chat), `GUILD_MESSAGE_REACTIONS` (RSVPs). v4's other default intents (DMs,
 typing, voice, presences, …) were unused and are dropped.
+
+Developer Portal requirement (Bot → Privileged Gateway Intents): **Server
+Members Intent** and **Message Content Intent** must be enabled, or the
+gateway closes with 4014. Without Message Content, message events arrive
+with empty content and extraction/chat see nothing.
+
+Deserialized events (`WANTED_EVENTS`): ready, guild create/update, role
+create/update/delete, member add/update/remove, reaction add/remove,
+interaction create, message create/update/delete/delete-bulk, channel
+create/update/delete, thread create/update/delete/list-sync.
 
 One shard (`ShardId::ONE`). Twilight reconnects with exponential backoff and
 resumes on its own; the loop hands payload-free receive errors to a callback
@@ -133,6 +159,22 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   computed Administrator); bots produce nothing. Remove produces `Left`,
   clearing the role flag immediately (v4 waited for the next full sync) while
   keeping the row.
+- Scope: the production token may be in other guilds. Every event whose
+  guild is not the configured one returns `None` and increments
+  `DroppedEvents` (`other_guild`); guild-less messages, reactions,
+  interactions and channel events (DMs) return `None` and count as
+  `no_guild`. Gateway control events are not counted. `Router::dropped()`
+  hands out the shared counters for health.
+- Messages: `MESSAGE_CREATE` → `BotEvent::MessageCreated`, `MESSAGE_UPDATE`
+  (full message) → `MessageUpdated`, `MESSAGE_DELETE` and
+  `MESSAGE_DELETE_BULK` → `MessagesDeleted { channel_id, origin_channel_id,
+  thread_id, message_ids }`. `origin_channel_id` is v4 `origin_ids`: a
+  thread's parent channel from the guild cache, else the message's own
+  channel (also for an unknown channel). The router passes the bot's own and
+  other bots' messages through; the consumer applies the loop guard.
+  `Debug` omits message content.
+- Channels and threads (`CHANNEL_*`, `THREAD_*`, `THREAD_LIST_SYNC`) only
+  update the guild cache and return `None`.
 - Guild access: `events::Router` is stateful. It keeps the owner and every
   role's permissions (`GuildRoles`) from `GUILD_CREATE`, `GUILD_UPDATE` and
   `GUILD_ROLE_CREATE/UPDATE/DELETE` (event-type filter only; the `GUILDS`
@@ -150,6 +192,32 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   the bot was offline); a role newly granting Administrator takes effect for
   a member at their next member event. The staff gate's re-check reads the
   stored flag, so a lost Administrator is never kept while the bot is online; changes made while it was offline wait for startup roster reconciliation.
+
+## Guild cache
+
+`bot::guild_cache::GuildCache` (shared `Arc`, fed by `Router::with_cache`)
+holds the configured guild's channels and threads (name, kind, parent,
+position, permission overwrites), the role permissions, the owner and the
+bot's own roles, from `GUILD_CREATE` (channels, active threads, the bot's
+member), `GUILD_UPDATE`, role events, the bot's member add/update, and
+channel/thread events. A deleted channel takes its threads;
+`THREAD_LIST_SYNC` replaces the synced parents' threads (all parents when
+unscoped). An unavailable guild keeps its last view. It implements:
+
+- `api::state::ChannelList`: text and announcement channels by position,
+  named `#name`, `watched` from the `WatchList` (`set_watch`: channel ids
+  and category ids; v4 `is_watched`, threads count as their parent).
+- `chat::gate::ChannelDirectory`: a channel's category, or a thread's
+  parent.
+- `domain::notify::ChannelDirectory` (`is_reachable`, v4 `can_send_in`): a
+  known text-capable channel where the bot's computed permissions include
+  View Channel + Send Messages (Send Messages in Threads for threads, from
+  the parent's overwrites). Permissions follow Discord's hierarchy (owner,
+  Administrator, `@everyone`/role/member overwrites); timeouts and
+  private-thread membership are not modelled. Before the bot's own member is
+  seen, permissions are unknown and a known channel counts as reachable (v4
+  "go ahead and try"); unknown channels are unreachable.
+- `channel_name(id)` for prompts and logs (raw name, no `#`).
 
 ## Commands
 
@@ -301,11 +369,14 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
 
 ## Deferred
 
-Serve-mode wiring and logging; startup roster sync and member chunking;
+Serve-mode wiring and logging (including sharing one `GuildCache` between
+the runner's router, the API, chat and delivery, and exposing
+`DroppedEvents` in health); startup roster sync over `list_members`;
 reaction and roster reconciliation; roster persistence; wiring the tick into
-serve mode with a live `ChannelDirectory` and the admin-alert destination;
-notice delivery from mutation operations; routing gateway reactions to
-`CardDesk::on_reaction`; opposite-reaction removal and decline notices
-(chat answers apply without them); card portraits/artwork; withdrawing a
-card whose message was deleted; message events for chat and extraction;
-attachments; the other command definitions; an authenticated gateway/TLS smoke test against Discord.
+serve mode and the admin-alert destination; notice delivery from mutation
+operations; routing gateway reactions to `CardDesk::on_reaction`;
+opposite-reaction removal and decline notices (chat answers apply without
+them); card portraits/artwork; withdrawing a card whose message was deleted;
+converting `BotEvent::Message*` into the extraction/chat inputs and the
+rescan `History` over `channel_messages`; attachments; the other command
+definitions; an authenticated gateway/TLS smoke test against Discord.

@@ -1,12 +1,15 @@
 //! Gateway events narrowed to the configured guild and mapped to typed
 //! adapter events.
 
+mod dropped;
 mod guild;
 mod members;
+mod messages;
 mod reactions;
 
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 
 use twilight_gateway::Event;
 use twilight_model::application::interaction::Interaction;
@@ -17,10 +20,13 @@ use twilight_model::id::{
     marker::{GuildMarker, RoleMarker, UserMarker},
 };
 
+use super::guild_cache::GuildCache;
 use super::ids::id_text;
 
+pub use dropped::{DroppedCounts, DroppedEvents};
 pub use guild::{AdminRoles, GuildRoles};
 pub use members::{RosterUpdate, member_update, roster_update};
+pub use messages::{DeletedMessages, GuildMessage};
 pub use reactions::{
     CardIndex, LookupError, ReactionRouter, ReactionSink, RouteError, RsvpAnswer, RsvpReaction,
     rsvp_reaction,
@@ -52,6 +58,11 @@ pub enum BotEvent {
     },
     Roster(RosterUpdate),
     Interaction(Box<Interaction>),
+    MessageCreated(Box<GuildMessage>),
+    /// Discord sends the full message on edits.
+    MessageUpdated(Box<GuildMessage>),
+    /// `MESSAGE_DELETE` or `MESSAGE_DELETE_BULK`.
+    MessagesDeleted(DeletedMessages),
 }
 
 impl fmt::Debug for BotEvent {
@@ -79,52 +90,148 @@ impl fmt::Debug for BotEvent {
                 .field("guild_id", &interaction.guild_id)
                 .field("token", &"<redacted>")
                 .finish_non_exhaustive(),
+            Self::MessageCreated(message) => {
+                f.debug_tuple("MessageCreated").field(message).finish()
+            }
+            Self::MessageUpdated(message) => {
+                f.debug_tuple("MessageUpdated").field(message).finish()
+            }
+            Self::MessagesDeleted(deleted) => {
+                f.debug_tuple("MessagesDeleted").field(deleted).finish()
+            }
         }
     }
 }
 
 /// Maps gateway events for one guild, keeping the role permissions and owner
-/// that member updates need to compute Administrator.
+/// that member updates need to compute Administrator, and feeding the shared
+/// [`GuildCache`] (channels, threads, the bot's own roles).
 #[derive(Debug)]
 pub struct Router {
     scope: GuildScope,
     guild: GuildRoles,
+    cache: Arc<GuildCache>,
+    dropped: DroppedEvents,
 }
 
 impl Router {
     pub fn new(scope: GuildScope) -> Self {
+        Self::with_cache(scope, Arc::new(GuildCache::new(scope.guild_id)))
+    }
+
+    /// Feed a cache shared with its readers; it must be for `scope`'s guild.
+    pub fn with_cache(scope: GuildScope, cache: Arc<GuildCache>) -> Self {
+        debug_assert_eq!(cache.guild_id(), scope.guild_id);
         Self {
             scope,
             guild: GuildRoles::new(scope.guild_id),
+            cache,
+            dropped: DroppedEvents::default(),
         }
     }
 
+    pub fn cache(&self) -> &Arc<GuildCache> {
+        &self.cache
+    }
+
+    /// Counters of refused other-guild and guild-less events.
+    pub fn dropped(&self) -> DroppedEvents {
+        self.dropped.clone()
+    }
+
     /// Map one gateway event, or `None` for other guilds, DMs, bot members,
-    /// unchanged guild access and kinds the adapter does not handle.
+    /// unchanged guild access, channel/thread bookkeeping and kinds the
+    /// adapter does not handle.
     pub fn route(&mut self, event: Event) -> Option<BotEvent> {
         if let Event::Ready(ready) = &event {
+            self.cache.set_self(ready.user.id);
             return Some(BotEvent::Ready {
                 self_id: ready.user.id,
             });
         }
-        if event.guild_id() != Some(self.scope.guild_id) {
-            return None;
+        match event.guild_id() {
+            Some(guild) if guild == self.scope.guild_id => {}
+            Some(_) => {
+                self.dropped.other_guild();
+                return None;
+            }
+            None => {
+                self.dropped.no_guild(&event);
+                return None;
+            }
         }
         let role = self.scope.bossing_role_id;
+        let cache = &self.cache;
         match event {
             Event::GuildCreate(create) => match *create {
                 GuildCreate::Available(guild) => {
+                    cache.reset(&guild);
                     self.guild.reset(guild.owner_id, &guild.roles);
                     self.guild_access()
                 }
-                GuildCreate::Unavailable(_) => None,
+                GuildCreate::Unavailable(_) => {
+                    cache.set_unavailable();
+                    None
+                }
             },
             Event::GuildUpdate(update) => {
+                cache.update_guild(update.owner_id, &update.roles);
                 self.changed(|guild| guild.reset(update.owner_id, &update.roles))
             }
-            Event::RoleCreate(create) => self.changed(|guild| guild.put_role(&create.role)),
-            Event::RoleUpdate(update) => self.changed(|guild| guild.put_role(&update.role)),
-            Event::RoleDelete(delete) => self.changed(|guild| guild.remove_role(delete.role_id)),
+            Event::RoleCreate(create) => {
+                cache.put_role(&create.role);
+                self.changed(|guild| guild.put_role(&create.role))
+            }
+            Event::RoleUpdate(update) => {
+                cache.put_role(&update.role);
+                self.changed(|guild| guild.put_role(&update.role))
+            }
+            Event::RoleDelete(delete) => {
+                cache.remove_role(delete.role_id);
+                self.changed(|guild| guild.remove_role(delete.role_id))
+            }
+            Event::ChannelCreate(channel) => {
+                cache.put_channel(&channel);
+                None
+            }
+            Event::ChannelUpdate(channel) => {
+                cache.put_channel(&channel);
+                None
+            }
+            Event::ThreadCreate(thread) => {
+                cache.put_channel(&thread);
+                None
+            }
+            Event::ThreadUpdate(thread) => {
+                cache.put_channel(&thread);
+                None
+            }
+            Event::ChannelDelete(channel) => {
+                cache.remove_channel(channel.id);
+                None
+            }
+            Event::ThreadDelete(thread) => {
+                cache.remove_channel(thread.id);
+                None
+            }
+            Event::ThreadListSync(sync) => {
+                cache.sync_threads(&sync.channel_ids, &sync.threads);
+                None
+            }
+            Event::MessageCreate(create) => Some(BotEvent::MessageCreated(Box::new(
+                GuildMessage::new(create.0, cache),
+            ))),
+            Event::MessageUpdate(update) => Some(BotEvent::MessageUpdated(Box::new(
+                GuildMessage::new(update.0, cache),
+            ))),
+            Event::MessageDelete(delete) => Some(BotEvent::MessagesDeleted(DeletedMessages::new(
+                delete.channel_id,
+                vec![delete.id],
+                cache,
+            ))),
+            Event::MessageDeleteBulk(bulk) => Some(BotEvent::MessagesDeleted(
+                DeletedMessages::new(bulk.channel_id, bulk.ids, cache),
+            )),
             Event::ReactionAdd(add) => Some(BotEvent::Reaction {
                 reaction: Box::new(add.0),
                 added: true,
@@ -134,9 +241,11 @@ impl Router {
                 added: false,
             }),
             Event::MemberAdd(add) => {
+                cache.member_roles(add.member.user.id, &add.member.roles);
                 roster_update(&add.member, role, &self.guild.admin_roles()).map(BotEvent::Roster)
             }
             Event::MemberUpdate(update) => {
+                cache.member_roles(update.user.id, &update.roles);
                 member_update(&update, role, &self.guild.admin_roles()).map(BotEvent::Roster)
             }
             Event::MemberRemove(remove) => (!remove.user.bot).then(|| {

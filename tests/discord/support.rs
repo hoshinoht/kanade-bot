@@ -4,10 +4,13 @@
 use serde_json::{Value, json};
 use twilight_gateway::Event;
 use twilight_model::application::interaction::Interaction;
+use twilight_model::channel::{Channel, Message};
 use twilight_model::gateway::GatewayReaction;
 use twilight_model::gateway::payload::incoming::{
-    GuildCreate, GuildUpdate, MemberAdd, MemberRemove, MemberUpdate, ReactionAdd, ReactionRemove,
-    Ready, RoleCreate, RoleDelete, RoleUpdate,
+    ChannelCreate, ChannelDelete, ChannelUpdate, GuildCreate, GuildUpdate, MemberAdd, MemberRemove,
+    MemberUpdate, MessageCreate, MessageDelete, MessageDeleteBulk, MessageUpdate, ReactionAdd,
+    ReactionRemove, Ready, RoleCreate, RoleDelete, RoleUpdate, ThreadCreate, ThreadDelete,
+    ThreadListSync, ThreadUpdate,
 };
 use twilight_model::id::{
     Id,
@@ -53,7 +56,7 @@ pub fn route(scope: GuildScope, event: Event) -> Option<BotEvent> {
 
 pub const ADMINISTRATOR: u64 = 1 << 3;
 
-fn parse<T: serde::de::DeserializeOwned>(value: Value) -> T {
+pub fn parse<T: serde::de::DeserializeOwned>(value: Value) -> T {
     serde_json::from_value(value).expect("twilight model fixture")
 }
 
@@ -250,20 +253,191 @@ fn guild_json(guild_id: u64, owner: u64, roles: &[Value]) -> Value {
 }
 
 pub fn guild_create(guild_id: u64, owner: u64, roles: &[Value]) -> Event {
+    guild_create_with(guild_id, owner, roles, &[], &[], &[])
+}
+
+/// `GUILD_CREATE` with channels, active threads and members.
+pub fn guild_create_with(
+    guild_id: u64,
+    owner: u64,
+    roles: &[Value],
+    channels: &[Value],
+    threads: &[Value],
+    members: &[Value],
+) -> Event {
     let mut guild = guild_json(guild_id, owner, roles);
-    for list in [
-        "channels",
-        "members",
-        "presences",
-        "stickers",
-        "threads",
-        "voice_states",
-    ] {
+    for list in ["presences", "stickers", "voice_states"] {
         guild[list] = json!([]);
     }
+    guild["channels"] = json!(channels);
+    guild["threads"] = json!(threads);
+    guild["members"] = json!(members);
     guild["guild_scheduled_events"] = json!([]);
     guild["stage_instances"] = json!([]);
     Event::GuildCreate(Box::new(parse::<GuildCreate>(guild)))
+}
+
+pub const TEXT: u8 = 0;
+pub const CATEGORY: u8 = 4;
+pub const PUBLIC_THREAD: u8 = 11;
+pub const VIEW_CHANNEL: u64 = 1 << 10;
+pub const SEND_MESSAGES: u64 = 1 << 11;
+pub const SEND_IN_THREADS: u64 = 1 << 38;
+
+/// A permission overwrite; `kind` 0 = role, 1 = member.
+pub fn overwrite(id: u64, kind: u8, allow: u64, deny: u64) -> Value {
+    json!({
+        "id": id.to_string(),
+        "type": kind,
+        "allow": allow.to_string(),
+        "deny": deny.to_string(),
+    })
+}
+
+/// A guild channel as `GUILD_CREATE` lists it (no `guild_id`).
+pub fn channel_json(
+    id: u64,
+    kind: u8,
+    name: &str,
+    parent: Option<u64>,
+    overwrites: &[Value],
+) -> Value {
+    json!({
+        "id": id.to_string(),
+        "type": kind,
+        "name": name,
+        "parent_id": parent.map(|id| id.to_string()),
+        "position": 0,
+        "permission_overwrites": overwrites,
+    })
+}
+
+pub fn thread_json(id: u64, parent: u64, name: &str) -> Value {
+    json!({
+        "id": id.to_string(),
+        "type": PUBLIC_THREAD,
+        "name": name,
+        "parent_id": parent.to_string(),
+        "owner_id": ALICE.to_string(),
+        "thread_metadata": {
+            "archived": false,
+            "auto_archive_duration": 1440,
+            "archive_timestamp": "2026-09-25T12:00:00.000000+00:00",
+            "locked": false,
+        },
+    })
+}
+
+/// `channel` as a gateway event payload for `guild_id` (`None` = a DM).
+fn in_guild(mut channel: Value, guild_id: Option<u64>) -> Value {
+    channel["guild_id"] = json!(guild_id.map(|id| id.to_string()));
+    channel
+}
+
+pub fn channel_create(guild_id: u64, channel: Value) -> Event {
+    Event::ChannelCreate(Box::new(parse::<ChannelCreate>(in_guild(
+        channel,
+        Some(guild_id),
+    ))))
+}
+
+pub fn channel_update(guild_id: u64, channel: Value) -> Event {
+    Event::ChannelUpdate(Box::new(parse::<ChannelUpdate>(in_guild(
+        channel,
+        Some(guild_id),
+    ))))
+}
+
+pub fn channel_delete(guild_id: u64, channel: Value) -> Event {
+    Event::ChannelDelete(Box::new(parse::<ChannelDelete>(in_guild(
+        channel,
+        Some(guild_id),
+    ))))
+}
+
+pub fn thread_create(guild_id: u64, thread: Value) -> Event {
+    Event::ThreadCreate(Box::new(parse::<ThreadCreate>(in_guild(
+        thread,
+        Some(guild_id),
+    ))))
+}
+
+pub fn thread_update(guild_id: u64, thread: Value) -> Event {
+    Event::ThreadUpdate(Box::new(parse::<ThreadUpdate>(in_guild(
+        thread,
+        Some(guild_id),
+    ))))
+}
+
+pub fn thread_delete(guild_id: u64, id: u64, parent: u64) -> Event {
+    Event::ThreadDelete(parse::<ThreadDelete>(json!({
+        "guild_id": guild_id.to_string(),
+        "id": id.to_string(),
+        "type": PUBLIC_THREAD,
+        "parent_id": parent.to_string(),
+    })))
+}
+
+pub fn thread_list_sync(guild_id: u64, parents: &[u64], threads: &[Value]) -> Event {
+    Event::ThreadListSync(parse::<ThreadListSync>(json!({
+        "guild_id": guild_id.to_string(),
+        "channel_ids": parents.iter().map(u64::to_string).collect::<Vec<_>>(),
+        "threads": threads.iter().map(|thread| in_guild(thread.clone(), Some(guild_id))).collect::<Vec<_>>(),
+        "members": [],
+    })))
+}
+
+pub fn parse_channel(channel: Value) -> Channel {
+    parse(channel)
+}
+
+/// A message by Alice in `channel_id`; `guild_id` `None` is a DM.
+pub fn message_json(id: u64, channel_id: u64, guild_id: Option<u64>, content: &str) -> Value {
+    json!({
+        "id": id.to_string(),
+        "channel_id": channel_id.to_string(),
+        "guild_id": guild_id.map(|id| id.to_string()),
+        "author": user_json(ALICE, "alice", None, false),
+        "content": content,
+        "timestamp": "2026-09-25T12:00:00.000000+00:00",
+        "edited_timestamp": null,
+        "tts": false,
+        "mention_everyone": false,
+        "mentions": [],
+        "mention_roles": [],
+        "attachments": [],
+        "embeds": [],
+        "pinned": false,
+        "type": 0,
+    })
+}
+
+pub fn parse_message(message: Value) -> Message {
+    parse(message)
+}
+
+pub fn message_create(message: Value) -> Event {
+    Event::MessageCreate(Box::new(parse::<MessageCreate>(message)))
+}
+
+pub fn message_update(message: Value) -> Event {
+    Event::MessageUpdate(Box::new(parse::<MessageUpdate>(message)))
+}
+
+pub fn message_delete(guild_id: Option<u64>, channel_id: u64, id: u64) -> Event {
+    Event::MessageDelete(parse::<MessageDelete>(json!({
+        "id": id.to_string(),
+        "channel_id": channel_id.to_string(),
+        "guild_id": guild_id.map(|id| id.to_string()),
+    })))
+}
+
+pub fn message_delete_bulk(guild_id: Option<u64>, channel_id: u64, ids: &[u64]) -> Event {
+    Event::MessageDeleteBulk(parse::<MessageDeleteBulk>(json!({
+        "ids": ids.iter().map(u64::to_string).collect::<Vec<_>>(),
+        "channel_id": channel_id.to_string(),
+        "guild_id": guild_id.map(|id| id.to_string()),
+    })))
 }
 
 pub fn guild_update(guild_id: u64, owner: u64, roles: &[Value]) -> Event {
