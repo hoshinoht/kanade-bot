@@ -21,7 +21,8 @@ use super::rows;
 use super::schedule::store_error;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets,
-    LogPage, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, RescanJob, WatchedMessage,
+    LogPage, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, ReadMessage, RescanJob,
+    WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -98,6 +99,10 @@ impl ModelLogStore for SqliteStore {
 
     async fn mark_processed(&self, ids: &[String], at: DateTime<Utc>) -> Result<u64, StoreError> {
         write_txn!(self, tx, messages::mark_processed(&mut tx, ids, &at))
+    }
+
+    async fn mark_read(&self, read: &[ReadMessage], at: DateTime<Utc>) -> Result<u64, StoreError> {
+        write_txn!(self, tx, messages::mark_read(&mut tx, read, &at))
     }
 
     async fn delete_message(&self, id: &str) -> Result<bool, StoreError> {

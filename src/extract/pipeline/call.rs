@@ -12,7 +12,7 @@ use tokio::time::Instant;
 use super::extractor::{Extractor, utc};
 use super::ports::{Outbox, Proposer};
 use crate::domain::catalog::BossTable;
-use crate::domain::model_log::{ModelLogStore, WatchedMessage};
+use crate::domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
 use crate::domain::schedule::{FixedRun, Run, ScheduleSnapshot};
 use crate::domain::scheduler::ScheduleStore;
 use crate::domain::weeks;
@@ -120,6 +120,8 @@ pub(crate) struct CallRecord {
     /// Message id -> author id, context included.
     pub authors: HashMap<String, String>,
     pub burst: Vec<crate::extract::backlog::BacklogEntry>,
+    /// The burst as read, for the conditional processed mark.
+    pub read: Vec<ReadMessage>,
     pub error: Option<String>,
     pub failure: Option<Failure>,
     pub kept: Vec<Kept>,
@@ -173,14 +175,28 @@ fn classify(error: &SessionError, limit: Duration) -> (AttemptOutcome, Failure) 
         detail: error.to_string(),
     };
     match &error.failure {
-        SessionFailure::Refused(refused) => {
-            let retry_at = match refused {
-                Refused::Unavailable { retry_at } => *retry_at,
-                Refused::RateLimited { wait } => Some(Instant::now() + *wait),
-                _ => None,
-            };
-            (failed(), Failure::TurnedAway { retry_at })
-        }
+        SessionFailure::Refused(refused) => match refused {
+            Refused::Unavailable { retry_at } => (
+                failed(),
+                Failure::TurnedAway {
+                    retry_at: *retry_at,
+                },
+            ),
+            Refused::RateLimited { wait } => (
+                failed(),
+                Failure::TurnedAway {
+                    retry_at: Some(Instant::now() + *wait),
+                },
+            ),
+            Refused::Timeout | Refused::Busy => (failed(), Failure::TurnedAway { retry_at: None }),
+            // Configuration refusals never clear by waiting, and an exhausted
+            // retry budget must not be worked around by requeueing.
+            Refused::UnknownRole
+            | Refused::Ungrouped
+            | Refused::ExternalForbidden
+            | Refused::MustNotWait
+            | Refused::RetryBudgetExhausted => (failed(), Failure::Failed),
+        },
         SessionFailure::Model(model) => match model.code {
             // Nothing ran upstream: read the burst again once the gateway
             // or the (now open) breaker lets it through.
@@ -238,6 +254,7 @@ where
                 .map(|row| (row.id.clone(), row.author_id.clone()))
                 .collect(),
             burst: rows.iter().map(super::extractor::entry).collect(),
+            read: rows.iter().map(super::extractor::read_of).collect(),
             error: None,
             failure: None,
             kept: Vec::new(),

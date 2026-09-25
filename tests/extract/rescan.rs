@@ -388,3 +388,143 @@ async fn closing_cancels_queued_jobs_and_refuses_new_ones() {
         Err(RescanError::Closed)
     );
 }
+
+/// Two long messages in one conversation: each is its own prompt-sized piece.
+async fn split_conversation(actions: Vec<FakeAction>) -> (World, Value) {
+    let world = World::with(
+        actions,
+        |config| config.context_tokens = 2_048,
+        Arc::new(kanade::infrastructure::llm::identity::Passthrough),
+    )
+    .await;
+    let long = |id: &str, minute| {
+        let text = format!("hstar wed 9pm? {}", "long planning chatter ".repeat(150));
+        message(id, MY, local(8, 30, 12, minute), &text)
+    };
+    let jobs = jobs(
+        &world.extractor,
+        history(CHANNEL, vec![long("1", 0), long("2", 1)]),
+    );
+    let _worker = start(&jobs);
+    let id = jobs
+        .submit(request(&[CHANNEL], "week"))
+        .await
+        .expect("queued")
+        .job
+        .id;
+    after(200).await;
+    let stored = world
+        .store
+        .load_rescan_job(&id)
+        .await
+        .expect("load")
+        .expect("job");
+    assert_eq!(stored.status, RescanStatus::Done);
+    let result = stored.results[0].clone();
+    (world, result)
+}
+
+#[tokio::test(start_paused = true)]
+async fn only_the_turned_away_piece_of_a_conversation_is_read_again() {
+    let (world, result) =
+        split_conversation(vec![nothing(), FakeAction::BackendUnavailable, nothing()]).await;
+    let outcomes: Vec<_> = world.logs().await.iter().map(|log| log.outcome).collect();
+    assert_eq!(
+        outcomes,
+        [
+            ExtractionOutcome::NoChange,
+            ExtractionOutcome::TurnedAway,
+            // Refused while the breaker was open: no request.
+            ExtractionOutcome::TurnedAway,
+            ExtractionOutcome::NoChange,
+        ]
+    );
+    assert_eq!(world.requests(), 3, "the answered piece is not re-sent");
+    assert_eq!(result["unread"], 0);
+    assert!(world.processed("1").await && world.processed("2").await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_piece_still_turned_away_is_reported_unread() {
+    let (world, result) = split_conversation(vec![
+        nothing(),
+        FakeAction::BackendUnavailable,
+        FakeAction::BackendUnavailable,
+    ])
+    .await;
+    assert_eq!(result["unread"], 1);
+    let errors = result["errors"].as_array().expect("errors");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.as_str().is_some_and(|e| e.contains("not read")))
+    );
+    assert!(world.processed("1").await);
+    assert!(!world.processed("2").await);
+}
+
+/// A private, canonical temp dir as the SQLite store requires.
+struct SqliteDir(std::path::PathBuf);
+
+impl SqliteDir {
+    fn new() -> Self {
+        use std::os::unix::fs::DirBuilderExt;
+        let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
+        let path = root.join(format!("kanade-rescan-{}", uuid::Uuid::new_v4()));
+        for dir in [path.clone(), path.join("locks")] {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&dir)
+                .expect("private dir");
+        }
+        Self(path)
+    }
+
+    fn config(&self) -> kanade::infrastructure::store::SqliteStoreConfig {
+        kanade::infrastructure::store::SqliteStoreConfig {
+            db_path: self.0.join("rescan.sqlite3"),
+            owner_lock_dir: self.0.join("locks"),
+        }
+    }
+}
+
+impl Drop for SqliteDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[tokio::test]
+async fn concurrent_submits_queue_one_job() {
+    use kanade::infrastructure::store::SqliteStore;
+    let world = World::new(Vec::new()).await;
+    let dir = SqliteDir::new();
+    let store = Arc::new(SqliteStore::open(&dir.config()).await.expect("opens"));
+    let jobs = Rescans::new(
+        world.over_sqlite(store.clone()),
+        Arc::new(FakeHistory::default()),
+    );
+    let (a, b) = tokio::join!(
+        jobs.submit(request(&[CHANNEL], "week")),
+        jobs.submit(request(&[CHANNEL], "week")),
+    );
+    assert_eq!(a.expect("a").job.id, b.expect("b").job.id);
+    let (c, d) = tokio::join!(
+        jobs.submit(request(&[CHANNEL], "two_weeks")),
+        jobs.submit(request(&[CHANNEL], "two_weeks")),
+    );
+    assert_eq!(c.expect("c").job.id, d.expect("d").job.id);
+    assert_eq!(jobs.queued(), 1);
+    let rows = store.recent_rescan_jobs(10).await.expect("jobs");
+    let statuses: Vec<_> = rows.iter().map(|job| job.status).collect();
+    assert_eq!(
+        statuses,
+        [RescanStatus::Queued, RescanStatus::Cancelled],
+        "one replacement, no duplicate"
+    );
+    drop(jobs);
+    let Ok(store) = Arc::try_unwrap(store) else {
+        panic!("the store has one owner left");
+    };
+    store.close().await.expect("close");
+}

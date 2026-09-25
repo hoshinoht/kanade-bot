@@ -23,6 +23,23 @@ pub enum MessageUpsert {
     Unchanged,
 }
 
+/// A cached message as a reader saw it: its content is the compare-and-set
+/// token for [`ModelLogStore::mark_read`] (only an edit changes it).
+#[derive(Clone, PartialEq, Eq)]
+pub struct ReadMessage {
+    pub id: String,
+    pub content: String,
+}
+
+impl std::fmt::Debug for ReadMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadMessage")
+            .field("id", &self.id)
+            .field("content_len", &self.content.len())
+            .finish()
+    }
+}
+
 /// Extraction/chat persistence. Filter queries are constant SQL with bound
 /// parameters (no caller-built SQL). Invalid shapes (a `guardrail` that is
 /// not an object, `tool_calls`/`results` that are not arrays, a duplicate
@@ -41,6 +58,15 @@ pub trait ModelLogStore {
     fn mark_processed(
         &self,
         ids: &[String],
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<u64, StoreError>> + Send;
+
+    /// Mark read messages processed at `at`, each only if its content is
+    /// still what was read; one edited meanwhile stays unprocessed. Returns
+    /// how many were marked.
+    fn mark_read(
+        &self,
+        read: &[ReadMessage],
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<u64, StoreError>> + Send;
 

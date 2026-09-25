@@ -81,6 +81,8 @@ pub struct Rescans<S, P, X, O, H> {
     extractor: Arc<Extractor<S, P, X, O>>,
     history: Arc<H>,
     state: Mutex<State>,
+    /// Serialises submit and close (they await store writes).
+    admission: tokio::sync::Mutex<()>,
     wake: Notify,
 }
 
@@ -103,6 +105,7 @@ where
             extractor,
             history,
             state: Mutex::new(State::default()),
+            admission: tokio::sync::Mutex::new(()),
             wake: Notify::new(),
         }
     }
@@ -128,6 +131,9 @@ where
             return Err(RescanError::NoChannels);
         }
         resolve_window(&request.window, request.automated).map_err(RescanError::Window)?;
+        // Held across the store writes so the active-job check and the
+        // replacement or insert are one step for concurrent submits.
+        let _admission = self.admission.lock().await;
         let replaced = {
             let state = self.state();
             if state.closed {
@@ -145,9 +151,15 @@ where
                 _ => None,
             }
         };
-        if let Some(id) = replaced {
-            self.finish_queued(&id, "replaced by a newer request")
-                .await?;
+        if let Some(id) = replaced
+            && !self
+                .finish_queued(&id, "replaced by a newer request")
+                .await?
+        {
+            // The worker started it meanwhile: attach, as to any running job.
+            if let Some(view) = self.state().view(&id) {
+                return Ok(view);
+            }
         }
         let job = RescanJob {
             id: self.extractor.new_id(),
@@ -198,8 +210,11 @@ where
                 _ => return Ok(false),
             }
         };
-        if queued {
-            self.finish_queued(id, "").await?;
+        if queued && !self.finish_queued(id, "").await? {
+            // Started meanwhile: stop it between bursts instead.
+            if let Some(tracked) = self.state().jobs.get(id) {
+                tracked.stop.store(true, Ordering::SeqCst);
+            }
         }
         Ok(true)
     }
@@ -225,6 +240,7 @@ where
     /// Stop taking work: queued jobs are cancelled, the running one stops
     /// between bursts, and [`Rescans::run`] returns once it has.
     pub async fn close(&self) {
+        let _admission = self.admission.lock().await;
         let queued: Vec<String> = {
             let mut state = self.state();
             state.closed = true;
@@ -242,15 +258,16 @@ where
         self.wake.notify_one();
     }
 
-    async fn finish_queued(&self, id: &str, reason: &str) -> Result<(), RescanError> {
+    /// `false` when the job was no longer queued (the worker took it).
+    async fn finish_queued(&self, id: &str, reason: &str) -> Result<bool, RescanError> {
         let job = {
             let mut state = self.state();
             state.queue.retain(|queued| queued != id);
             let Some(tracked) = state.jobs.get_mut(id) else {
-                return Ok(());
+                return Ok(false);
             };
             if tracked.job.status != RescanStatus::Queued {
-                return Ok(());
+                return Ok(false);
             }
             tracked.job.status = RescanStatus::Cancelled;
             tracked.job.finished_at = Some(self.extractor.now());
@@ -258,7 +275,7 @@ where
             tracked.job.clone()
         };
         self.extractor.store().update_rescan_job(job).await?;
-        Ok(())
+        Ok(true)
     }
 
     /// The worker: one job at a time, in submission order, until closed.

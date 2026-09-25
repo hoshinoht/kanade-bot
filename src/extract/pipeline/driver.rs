@@ -129,15 +129,19 @@ where
         let Some(result) = self.extractor.gate_incoming(&message) else {
             return;
         };
-        if message.origin == MessageOrigin::Replay {
+        // One owner per id: a pending live burst keeps a replayed message, and
+        // live activity takes a message out of the backlog.
+        if message.origin == MessageOrigin::Replay && !self.bursts.contains(&message.id) {
             let dropped = self.backlog.push(entry(&message));
             self.audit(dropped).await;
             return;
         }
+        self.backlog.remove(&message.id);
         let now = Instant::now();
         self.bursts
             .add(entry(&message), now, self.extractor.config().debounce);
         if !edited
+            && message.origin == MessageOrigin::Live
             && gate::urgent(&result)
             && let Some(burst) = self.bursts.take(&message.channel_id)
         {
@@ -168,13 +172,18 @@ where
             return;
         };
         let turned_away = !report.turned_away.is_empty();
+        // Edited meanwhile: the pending burst reads it again, not the backlog.
+        let requeue: Vec<BacklogEntry> = report
+            .turned_away
+            .into_iter()
+            .filter(|entry| !self.bursts.contains(&entry.message_id))
+            .collect();
         let dropped = match source {
-            Source::Live => report
-                .turned_away
+            Source::Live => requeue
                 .into_iter()
                 .flat_map(|entry| self.backlog.push(entry))
                 .collect(),
-            Source::Backlog => self.backlog.requeue(report.turned_away),
+            Source::Backlog => self.backlog.requeue(requeue),
         };
         self.audit(dropped).await;
         let paced = Instant::now() + self.extractor.config().drain_interval;
@@ -186,7 +195,8 @@ where
         match source {
             Source::Backlog => {
                 self.draining = false;
-                self.next_drain = wait;
+                // Keep a later hold a live refusal set while this drain ran.
+                self.next_drain = self.next_drain.max(wait);
             }
             Source::Live if turned_away => self.next_drain = self.next_drain.max(wait),
             Source::Live => {}

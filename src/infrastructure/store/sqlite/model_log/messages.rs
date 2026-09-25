@@ -5,7 +5,7 @@ use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
 
 use super::{instant, optional_text, read_instant, read_optional_instant, text};
-use crate::domain::model_log::{MessageUpsert, WatchedMessage};
+use crate::domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage};
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::optional_instant;
 use crate::infrastructure::store::sqlite::schedule::store_error;
@@ -86,6 +86,32 @@ pub(super) async fn mark_processed(
     .await
     .map_err(store_error)?;
     Ok(done.rows_affected())
+}
+
+/// Compare-and-set on content, one constant statement per message in the
+/// caller's transaction; a repeated id counts once (the first wins).
+pub(super) async fn mark_read(
+    conn: &mut SqliteConnection,
+    read: &[ReadMessage],
+    at: &DateTime<Utc>,
+) -> Result<u64, StoreError> {
+    let at = instant(at)?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut done = 0;
+    for entry in read {
+        if !seen.insert(entry.id.as_str()) {
+            continue;
+        }
+        done += sqlx::query("UPDATE messages SET processed_at = ?1 WHERE id = ?2 AND content = ?3")
+            .bind(&at)
+            .bind(&entry.id)
+            .bind(&entry.content)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?
+            .rows_affected();
+    }
+    Ok(done)
 }
 
 pub(super) async fn delete(conn: &mut SqliteConnection, id: &str) -> Result<bool, StoreError> {

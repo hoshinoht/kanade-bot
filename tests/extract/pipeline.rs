@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use kanade::domain::drafts::{DraftStatus, ProposalStore};
 use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
@@ -16,7 +17,8 @@ use kanade::infrastructure::llm::identity::{TaggingCodec, find_request_leaks};
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{
-    ALIAS, CHANNEL, MY, PRIYA, STRANGER, World, after, local, message, nothing, replayed, reply,
+    ALIAS, CHANNEL, MY, OTHER, PRIYA, STRANGER, World, after, local, message, nothing, replayed,
+    reply,
 };
 
 fn moved(time: &str, evidence: &str) -> FakeAction {
@@ -523,6 +525,85 @@ async fn a_full_backlog_drops_its_oldest_messages_and_says_so() {
     let dropped: Vec<String> = drops.iter().flat_map(|d| d.message_ids.clone()).collect();
     assert_eq!(dropped, ["r0", "r1"]);
     assert!(drops.iter().all(|d| d.capacity == 3));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_edit_during_an_in_flight_read_is_read_again() {
+    let slow = FakeAction::Delayed {
+        delay: Duration::from_secs(10),
+        action: Box::new(moved("9pm", "101")),
+    };
+    let world = World::new(vec![slow, moved("10pm", "101")]).await;
+    let (events, _loop) = world.pipeline();
+    events
+        .send(post("@here hstar wed 9pm"))
+        .await
+        .expect("send");
+    after(5).await;
+    let edit = message("101", MY, local(8, 30, 13, 1), "@here hstar wed 10pm");
+    events.send(MessageEvent::Edited(edit)).await.expect("send");
+    after(10).await;
+    assert_eq!(world.requests(), 1);
+    assert!(
+        !world.processed("101").await,
+        "the first read saw 9pm; the edit must be read again"
+    );
+    let first = world.live_proposals().await[0].draft.id.clone();
+    after(90).await;
+    assert_eq!(world.requests(), 2);
+    let logs = world.logs().await;
+    assert!(logs[1].prompt.contains("@here hstar wed 10pm"));
+    let live = world.live_proposals().await;
+    assert_eq!(live.len(), 1);
+    assert_ne!(live[0].draft.id, first, "the correction replaced 9pm");
+    let cards = world.outbox.cards.lock().unwrap().clone();
+    assert_eq!(cards[1].entries[0].time_ref.as_deref(), Some("10pm"));
+    assert_eq!(cards[1].superseded, [first]);
+    assert!(world.processed("101").await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_misconfigured_route_fails_without_a_backlog_retry() {
+    let world = World::ungrouped(vec![moved("9:30pm", "101")]).await;
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+    after(120).await;
+    let logs = world.logs().await;
+    assert_eq!(logs.len(), 1, "never requeued");
+    assert_eq!(logs[0].outcome, ExtractionOutcome::Failed);
+    assert_eq!(world.requests(), 0);
+    assert!(!world.processed("101").await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_backlogged_message_edited_live_is_read_once_by_its_burst() {
+    let world = World::new(vec![nothing(), nothing(), nothing()]).await;
+    let (events, _loop) = world.pipeline();
+    let first = replayed("r0", MY, local(8, 29, 20, 0), "hstar wed 9pm?");
+    let mut other = replayed("r1", MY, local(8, 29, 20, 5), "hstar wed 9pm?");
+    other.channel_id = OTHER.into();
+    for message in [first, other] {
+        events
+            .try_send(MessageEvent::Posted(message))
+            .expect("room");
+    }
+    after(1).await;
+    assert_eq!(world.requests(), 1, "r1 waits for the next drain");
+    let mut edit = message("r1", MY, local(8, 29, 20, 5), "hstar wed 10pm?");
+    edit.channel_id = OTHER.into();
+    events.send(MessageEvent::Edited(edit)).await.expect("send");
+    after(20).await;
+    assert_eq!(world.requests(), 1, "the live burst owns r1 now");
+    after(80).await;
+    assert_eq!(world.requests(), 2);
+    let reads = world
+        .logs()
+        .await
+        .iter()
+        .filter(|log| log.message_ids.contains(&"r1".to_owned()))
+        .count();
+    assert_eq!(reads, 1);
 }
 
 #[test]

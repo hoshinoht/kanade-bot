@@ -55,6 +55,15 @@ impl Bursts {
             .map(|pending| pending.messages)
     }
 
+    pub fn contains(&self, message_id: &str) -> bool {
+        self.pending.values().any(|pending| {
+            pending
+                .messages
+                .iter()
+                .any(|message| message.message_id == message_id)
+        })
+    }
+
     pub fn next_deadline(&self) -> Option<Instant> {
         self.pending.values().map(|pending| pending.deadline).min()
     }

@@ -2,6 +2,7 @@
 //! window's gated messages (widening an empty `week` once), one call per
 //! conversation at the backlog's pace, then one consolidated proposal pass.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Utc};
@@ -43,15 +44,17 @@ impl Pace {
     }
 }
 
-fn turned_away(records: &[CallRecord]) -> Option<Option<Instant>> {
+/// The message ids of the turned-away pieces, and the latest retry time.
+fn turned_away(records: &[CallRecord]) -> (HashSet<String>, Option<Instant>) {
+    let mut ids = HashSet::new();
     let mut retry = None;
     for record in records {
-        match record.failure {
-            Some(Failure::TurnedAway { retry_at }) => retry = retry.max(retry_at),
-            _ => return None,
+        if let Some(Failure::TurnedAway { retry_at }) = record.failure {
+            ids.extend(record.message_ids.iter().cloned());
+            retry = retry.max(retry_at);
         }
     }
-    Some(retry)
+    (ids, retry)
 }
 
 pub(super) struct Reader<'a, S, P, X, O, H> {
@@ -153,8 +156,11 @@ where
 
         let mut records: Vec<CallRecord> = Vec::new();
         let mut cancelled = false;
+        let mut unread = 0;
         'groups: for group in &groups {
             let mut not_before = None;
+            // Only the pieces turned away are read again.
+            let mut pending = group.clone();
             for _ in 0..TURNED_AWAY_ATTEMPTS {
                 // Cooperative: a call in flight finishes, the next never starts.
                 if self.stopped() {
@@ -166,15 +172,22 @@ where
                     cancelled = true;
                     break 'groups;
                 }
-                let batch = self.extractor.call_burst(channel_id, group.clone()).await;
-                let away = turned_away(&batch);
+                let batch = self.extractor.call_burst(channel_id, pending.clone()).await;
+                let (away, retry_at) = turned_away(&batch);
                 records.extend(batch);
-                match away {
-                    // Breaker open or rate-limited: wait for the governor.
-                    Some(retry_at) => not_before = retry_at,
-                    None => break,
+                pending.retain(|row| away.contains(&row.id));
+                if pending.is_empty() {
+                    break;
                 }
+                // Breaker open or rate-limited: wait for the governor.
+                not_before = retry_at;
             }
+            unread += pending.len();
+        }
+        if unread > 0 {
+            errors.push(format!(
+                "{unread} message(s) not read: the model kept turning the rescan away"
+            ));
         }
         let extracted = records.iter().filter(|record| record.ok()).count();
         let calls = records.len();
@@ -197,6 +210,7 @@ where
             "dropped": report.dropped,
             "stale": report.stale,
             "cancelled": cancelled,
+            "unread": unread,
             "errors": errors,
         }))
     }

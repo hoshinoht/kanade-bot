@@ -12,7 +12,7 @@ use super::extractor::{Extractor, PassReport, utc};
 use super::outcome::extraction_outcome;
 use super::ports::{Card, CardEntry, ChatAnswer, Outbox, Proposer, RedirectOffer};
 use crate::domain::drafts::ProposalSource;
-use crate::domain::model_log::{ExtractionLog, ModelLogStore};
+use crate::domain::model_log::{ExtractionLog, ModelLogStore, ReadMessage};
 use crate::domain::proposals::{ChangeKind, Payload as ChangePayload, ProposedChange};
 use crate::domain::schedule::RsvpState;
 use crate::domain::scheduler::{ProposalRequest, ScheduleStore, Supersede, SupersedeScope};
@@ -254,13 +254,13 @@ where
         }
 
         let now = self.clock.now();
-        let consumed: Vec<String> = records
+        let consumed: Vec<ReadMessage> = records
             .iter()
             .filter(|record| record.ok())
-            .flat_map(|record| record.message_ids.iter().cloned())
+            .flat_map(|record| record.read.iter().cloned())
             .collect();
         if !consumed.is_empty()
-            && let Err(error) = self.store.mark_processed(&consumed, now).await
+            && let Err(error) = self.store.mark_read(&consumed, now).await
         {
             report.errors.push(error.to_string());
         }

@@ -14,7 +14,7 @@ pub use filter::{
     ChatFilter, ExtractionFilter, LogCursor, LogFacets, LogPage, MAX_PAGE, page_size,
 };
 pub use outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
-pub use port::{MessageUpsert, ModelLogStore};
+pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
 pub use records::{
     AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, RescanJob, WatchedMessage,
 };

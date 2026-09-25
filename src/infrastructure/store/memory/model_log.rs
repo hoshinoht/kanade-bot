@@ -8,8 +8,8 @@ use chrono::{DateTime, Utc};
 use super::{MemoryScheduleStore, micros};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ExtractionFilter, ExtractionLog,
-    LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, PruneCounts, RescanJob,
-    WatchedMessage, page_size,
+    LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, PruneCounts, ReadMessage,
+    RescanJob, WatchedMessage, page_size,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -100,6 +100,24 @@ impl ModelLogStore for MemoryScheduleStore {
         let mut done = 0;
         for id in ids.iter().collect::<BTreeSet<_>>() {
             if let Some(message) = logs.messages.get_mut(id) {
+                message.processed_at = Some(micros(at));
+                done += 1;
+            }
+        }
+        Ok(done)
+    }
+
+    async fn mark_read(&self, read: &[ReadMessage], at: DateTime<Utc>) -> Result<u64, StoreError> {
+        let mut logs = self.logs();
+        let mut done = 0;
+        let mut seen = BTreeSet::new();
+        for entry in read {
+            if !seen.insert(&entry.id) {
+                continue;
+            }
+            if let Some(message) = logs.messages.get_mut(&entry.id)
+                && message.content == entry.content
+            {
                 message.processed_at = Some(micros(at));
                 done += 1;
             }

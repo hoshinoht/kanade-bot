@@ -81,8 +81,10 @@ injected wall clock as `now`.
 - **Up-front refusals** (`D-PROPOSE-REFUSES`: `Refused`, `NoEffect`,
   `Expired`, or a store failure) create nothing and are logged as
   `refused up front: <kind>: <reason>; …` in the call's `error`.
-- Answered calls mark their messages processed; failed and turned-away
-  calls leave them for a later read.
+- Answered calls mark their messages processed (`ModelLogStore::mark_read`),
+  each only if its content is still what the call read: a message edited
+  while the call was in flight stays unprocessed and its pending burst reads
+  the new text. Failed and turned-away calls leave them for a later read.
 
 ## Extraction log
 
@@ -95,9 +97,9 @@ authors, proposal ids. `outcome`:
 
 | outcome | when |
 |---|---|
-| `turned_away` | governor refusal (breaker open, queue wait or rate ceiling), gateway admission refusal, or backend unavailable: nothing ran upstream |
+| `turned_away` | governor refusal that clears by waiting (breaker open, queue wait, rate ceiling), gateway admission refusal, or backend unavailable: nothing ran upstream; the messages are read again later |
 | `content_blocked` | reserved: the runner reports a content filter and a length cut-off alike (`Incomplete`), so nothing maps here yet |
-| `failed` | any other failure, or a reply still invalid after the answer retry |
+| `failed` | any other failure, including permanent governor refusals (unknown role, ungrouped alias, forbidden route, may-not-wait, retry budget exhausted: never requeued), or a reply still invalid after the answer retry |
 | `proposed` | at least one proposal was created |
 | `self_service_link` | none created, but the redirect took at least one change |
 | `no_change` | answered with nothing to propose (dropped, refused, or chat answers only) |
@@ -114,7 +116,12 @@ channel, its queued messages in time order up to the first 3 h gap and at
 most 12. A turned-away drain goes back to the front and the next drain
 waits for `max(drain_interval, retry_at)` (the breaker's probe time or the
 rate wait), so an open breaker is waited out, not spun on. A turned-away
-live burst joins the backlog and delays the next drain the same way.
+live burst joins the backlog and delays the next drain the same way; a
+drain finishing meanwhile keeps the later hold. A message belongs to either
+a pending live burst or the backlog, never both: live activity (post or
+edit) takes it out of the backlog, a replay of a message in a pending burst
+stays with the burst, and a turned-away message edited meanwhile is left to
+its new burst.
 
 ## Rescan jobs
 
@@ -123,6 +130,8 @@ live burst joins the backlog and delays the next drain the same way.
   queued job with another window is cancelled (`error` `replaced by a newer
   request`: request fields never change in the store) and a new job is
   queued. `NoChannels`, an unknown window and `Closed` are refused.
+  Submits (and `close`) are serialised, so concurrent identical requests
+  queue one job; a queued job the worker starts meanwhile is attached to.
 - **Worker**: one job at a time, in order; `running` with `started_at`,
   then channels one after another, `results` written after each channel,
   and a final `done` | `failed` (every channel failed) | `cancelled`.
@@ -139,15 +148,17 @@ live burst joins the backlog and delays the next drain the same way.
   changed messages are cached), read every cached role-holder message the
   gate hits since the window start — processed or not — cut into
   conversations (`group_for_rescan`), one call per conversation spaced by
-  `drain_interval`, a turned-away conversation tried at most 3 times, each
-  retry after the governor's wait, then one consolidated proposal pass and one card.
+  `drain_interval`; only the turned-away pieces of a conversation are read
+  again, at most 3 attempts in all, each after the governor's wait; what is
+  still turned away is counted in `unread` with an error, never reported as
+  read. Then one consolidated proposal pass and one card.
   Re-reading handled messages does not duplicate proposals: a change
   already applied is dropped as `already scheduled`, and one still pending
   replaces the older proposal (v4 supersede).
 - **Result** per channel (JSON in `results`): `channel_id`, `name`,
   `window`, `since`, `widened`, `backfilled`, `stored`, `gated`, `bursts`,
   `calls`, `extracted`, `proposals`, `refused`, `dropped`, `stale`,
-  `cancelled`, `errors`.
+  `cancelled`, `unread`, `errors`.
 
 ## Startup check
 

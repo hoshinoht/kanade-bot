@@ -33,7 +33,7 @@ use kanade::infrastructure::llm::identity::{IdentityCodec, Member, Passthrough};
 use kanade::infrastructure::llm::{
     CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy, Usage,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -313,7 +313,12 @@ pub fn nothing() -> FakeAction {
     reply(r#"{"amendments": [], "summary": "no schedule change"}"#)
 }
 
-fn client(actions: Vec<FakeAction>) -> (Arc<FakeProvider>, Arc<ModelClient<FakeProvider>>) {
+/// `grouped: false` routes extraction to an alias in no backend group, which
+/// the governor refuses for good.
+pub fn client(
+    actions: Vec<FakeAction>,
+    grouped: bool,
+) -> (Arc<FakeProvider>, Arc<ModelClient<FakeProvider>>) {
     let config = GovernorConfig {
         groups: vec![GroupConfig {
             name: "local".into(),
@@ -326,8 +331,13 @@ fn client(actions: Vec<FakeAction>) -> (Arc<FakeProvider>, Arc<ModelClient<FakeP
         roles: [Role::Chat, Role::Extraction, Role::Rewrite]
             .into_iter()
             .map(|role| {
+                let alias = if grouped || role != Role::Extraction {
+                    ALIAS
+                } else {
+                    "ungrouped"
+                };
                 let route = RoleConfig {
-                    alias: ALIAS.into(),
+                    alias: alias.into(),
                     external: false,
                 };
                 (role, route)
@@ -374,6 +384,20 @@ impl World {
         tune: impl FnOnce(&mut PipelineConfig),
         codec: Arc<dyn IdentityCodec>,
     ) -> Self {
+        Self::build(actions, tune, codec, true).await
+    }
+
+    /// Extraction routed to an ungrouped alias.
+    pub async fn ungrouped(actions: Vec<FakeAction>) -> Self {
+        Self::build(actions, |_| {}, Arc::new(Passthrough), false).await
+    }
+
+    async fn build(
+        actions: Vec<FakeAction>,
+        tune: impl FnOnce(&mut PipelineConfig),
+        codec: Arc<dyn IdentityCodec>,
+        grouped: bool,
+    ) -> Self {
         let store = Arc::new(MemoryScheduleStore::new());
         let clock = TestClock::new(now().fixed_offset());
         let guild = Arc::new(FakeGuild::new());
@@ -414,7 +438,7 @@ impl World {
                 .expect("create_run");
             runs.push(id);
         }
-        let (provider, client) = client(actions);
+        let (provider, client) = client(actions, grouped);
         let outbox = Arc::new(Recorder::default());
         let mut config = config();
         tune(&mut config);
@@ -447,6 +471,28 @@ impl World {
         let (sender, events) = mpsc::channel(1_024);
         let pipeline = Pipeline::new(self.extractor.clone());
         (sender, tokio::spawn(pipeline.run(events)))
+    }
+
+    /// This world's guild and outbox over a SQLite model-log store, whose
+    /// writes really suspend (the memory store never yields).
+    pub fn over_sqlite(
+        &self,
+        store: Arc<SqliteStore>,
+    ) -> Arc<Extractor<SqliteStore, FakeProvider, Scheduler, Recorder>> {
+        let (_, client) = client(Vec::new(), true);
+        Arc::new(Extractor::new(
+            Deps {
+                store,
+                client,
+                codec: Arc::new(Passthrough),
+                guild: self.guild.clone(),
+                proposer: self.scheduler.clone(),
+                outbox: self.outbox.clone(),
+                clock: Arc::new(TestClock::new(now().fixed_offset())),
+                ids: Box::new(Ids::new(0x5a1)),
+            },
+            config(),
+        ))
     }
 
     /// Extraction log rows, oldest first.

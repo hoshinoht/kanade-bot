@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use super::call::{CallRecord, Failure, Loaded};
 use super::config::{CONTEXT_WINDOW, PipelineConfig, RECENT_SCHEDULING};
 use super::ports::{Guild, IncomingMessage, Outbox, Proposer};
-use crate::domain::model_log::{MessageUpsert, ModelLogStore, WatchedMessage};
+use crate::domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use crate::domain::weeks;
 use crate::extract::backlog::BacklogEntry;
@@ -90,6 +90,15 @@ pub(super) fn gated(
     }
     let result = gate::evaluate(&message.content, lexicon, roster);
     result.hit().then_some(result)
+}
+
+/// What a read saw; marking processed later is conditional on it, so an edit
+/// arriving during a call is read again.
+pub(super) fn read_of(message: &WatchedMessage) -> ReadMessage {
+    ReadMessage {
+        id: message.id.clone(),
+        content: message.content.clone(),
+    }
 }
 
 pub(super) fn entry(message: &WatchedMessage) -> BacklogEntry {
@@ -225,8 +234,8 @@ where
             .filter(|row| !wanted.contains(row.id.as_str()))
             .any(|row| gate::evaluate(&row.content, &lexicon, &roster).strong());
         if !gate::should_extract(&results, scheduling) {
-            let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
-            if let Err(error) = self.store.mark_processed(&ids, now).await {
+            let read: Vec<ReadMessage> = rows.iter().map(read_of).collect();
+            if let Err(error) = self.store.mark_read(&read, now).await {
                 report.errors.push(error.to_string());
             }
             return report;

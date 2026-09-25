@@ -143,11 +143,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
   scheduler, refused up front when unworkable), reply sanitising and injection guards,
   matching the frozen v4 chat vectors; tools load in bundles as needed instead of all
   12 every round, and every tool argument and result goes through the identity codec.
+  Compact times after a day (`wed 930`) read as evening like v4, and a bare hour after a
+  weekday (`sat 10`) keeps the weekday instead of v4's day-of-month misreading.
 - v5: extraction pipeline: watched messages are debounced into bursts, read through the
   model limiter (one answer retry), logged once per call with their outcome, and turned
   into proposals only through the scheduler; a bounded backlog drains slowly and waits
   out an open breaker, and rescans run one at a time and can be cancelled. Not yet wired
-  to Discord (cards and reactions come next).
+  to Discord (cards and reactions come next). An edit made while a message is being read
+  is read again rather than lost, a misconfigured model route fails instead of retrying
+  forever, and rescans retry only the turned-away pieces and report what stayed unread.
 - v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
   resolution, run matching, per-run merge), matching the frozen v4 vectors exactly,
   plus the extractor's answer schema, prompt, one-retry answer handling and burst

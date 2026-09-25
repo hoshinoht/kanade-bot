@@ -8,14 +8,15 @@ use serde_json::json;
 
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
-    ExtractionLog, ExtractionOutcome, LogFacets, MessageUpsert, ModelLogStore, RescanJob,
-    RescanStatus, WatchedMessage,
+    ExtractionLog, ExtractionOutcome, LogFacets, MessageUpsert, ModelLogStore, ReadMessage,
+    RescanJob, RescanStatus, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     messages_cache_edits_and_windows(make().await).await;
+    read_marks_skip_messages_edited_since(make().await).await;
     extraction_logs_round_trip_and_refuse_bad_rows(make().await).await;
     extraction_filters_combine_and_page(make().await).await;
     chat_logs_round_trip_with_rounds(make().await).await;
@@ -169,6 +170,51 @@ fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
 
 fn ids<T>(items: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
     items.iter().map(|item| id(item).to_owned()).collect()
+}
+
+async fn read_marks_skip_messages_edited_since<S: ModelLogStore>(store: S) {
+    let at = utc(20, 12, 0);
+    for (id, text) in [("m-1", "Lotus 9pm?"), ("m-2", "Lotus ok")] {
+        store
+            .upsert_message(message(id, "900", at, text))
+            .await
+            .expect("insert");
+    }
+    let read = |id: &str, content: &str| ReadMessage {
+        id: id.into(),
+        content: content.into(),
+    };
+    // Edited while it was being read: the next read must see it.
+    store
+        .upsert_message(message("m-1", "900", at, "Lotus 10pm?"))
+        .await
+        .expect("edit");
+    let marked = store
+        .mark_read(
+            &[
+                read("m-1", "Lotus 9pm?"),
+                read("m-2", "Lotus ok"),
+                read("m-2", "Lotus ok"),
+                read("absent", "x"),
+            ],
+            at,
+        )
+        .await
+        .expect("mark");
+    assert_eq!(marked, 1, "read marks: only unchanged rows, each once");
+    let pending = store
+        .channel_messages("900", utc(1, 0, 0), true)
+        .await
+        .expect("pending");
+    assert_eq!(ids(&pending, |m| &m.id), ["m-1"], "read marks: edit kept");
+    assert_eq!(
+        store
+            .mark_read(&[read("m-1", "Lotus 10pm?")], at)
+            .await
+            .expect("mark"),
+        1,
+        "read marks: the edited text, once read, is marked"
+    );
 }
 
 async fn messages_cache_edits_and_windows<S: ModelLogStore>(store: S) {
