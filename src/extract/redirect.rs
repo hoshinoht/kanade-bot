@@ -236,10 +236,15 @@ impl PortalLinks for PublicPortalLinks {
 }
 
 /// RFC 3986 unreserved characters pass; every other byte is percent-encoded.
+/// An all-dot id keeps its dots encoded so `.`/`..` segments cannot normalise.
 fn encode(value: &str) -> String {
+    let all_dots = !value.is_empty() && value.bytes().all(|byte| byte == b'.');
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+        let keep = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'_' | b'~')
+            || (byte == b'.' && !all_dots);
+        if keep {
             out.push(char::from(byte));
         } else {
             out.push_str(&format!("%{byte:02X}"));

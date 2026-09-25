@@ -307,6 +307,29 @@ fn other_cases_never_get_a_link_or_lose_their_card() {
 }
 
 #[test]
+fn all_dot_ids_are_encoded_so_segments_cannot_normalise() {
+    let links = links();
+    let at = utc(9, 27, 20);
+    assert_eq!(
+        links.move_run(".", at),
+        format!("{ORIGIN}/runs/%2E?move_to=2026-09-27T20:00:00Z")
+    );
+    assert_eq!(
+        links.move_run("..", at),
+        format!("{ORIGIN}/runs/%2E%2E?move_to=2026-09-27T20:00:00Z")
+    );
+    assert_eq!(
+        links.request_fixed("...", FixedChange::Remove, None, None),
+        format!("{ORIGIN}/requests/new?fixed=%2E%2E%2E&change=remove")
+    );
+    // Dots inside an ordinary id stay readable.
+    assert_eq!(
+        links.move_run("r.1", at),
+        format!("{ORIGIN}/runs/r.1?move_to=2026-09-27T20:00:00Z")
+    );
+}
+
+#[test]
 fn links_carry_only_ids_and_the_slot() {
     let links = PublicPortalLinks::new("https://Kanade-Pub.example.dev/").unwrap();
     assert_eq!(links.origin(), ORIGIN);

@@ -14,14 +14,16 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::chat::nudge::{
-    EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, NUDGE_REWRITE_INSTRUCTION, NoRewrite, Nudge,
-    NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD, RECENT_PER_CHANNEL, REQUEST_CHANGE_ACTION,
-    RewritePrompt, RewriteUnavailable, SeedReason, SeedRotation, accept_rewrite, mood_for, render,
+    EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS, NUDGE_REWRITE_INSTRUCTION, NoRewrite,
+    Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD, RECENT_PER_CHANNEL,
+    REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt, SeedReason, SeedRotation,
+    accept_rewrite, denied_word, mood_for, render,
 };
 use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
     parse_profile,
 };
+use kanade::domain::notify::WeekReset;
 use kanade::infrastructure::llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
@@ -45,6 +47,8 @@ enum Step {
     Reply(&'static str),
     Hang,
     Fail,
+    /// The provider's content filter or a refusal.
+    Refuse,
 }
 
 struct GovernedFake {
@@ -74,12 +78,14 @@ impl NudgeRewriter for GovernedFake {
         &self,
         prompt: &RewritePrompt,
         _deadline: Duration,
-    ) -> Result<String, RewriteUnavailable> {
+    ) -> Result<String, RewriteFailure> {
         let permit = self
             .governor
             .try_acquire(Role::Rewrite, CallKind::Rewrite, "nudge")
-            .map_err(|_| RewriteUnavailable)?;
-        let attempt = permit.try_begin_request().map_err(|_| RewriteUnavailable)?;
+            .map_err(|_| RewriteFailure::Unavailable)?;
+        let attempt = permit
+            .try_begin_request()
+            .map_err(|_| RewriteFailure::Unavailable)?;
         self.sent.fetch_add(1, Ordering::SeqCst);
         self.prompts.lock().unwrap().push(prompt.clone());
         let step = self
@@ -100,7 +106,11 @@ impl NudgeRewriter for GovernedFake {
             }
             Step::Fail => {
                 attempt.finish(Outcome::TransientFailure);
-                Err(RewriteUnavailable)
+                Err(RewriteFailure::Unavailable)
+            }
+            Step::Refuse => {
+                attempt.finish(Outcome::Success);
+                Err(RewriteFailure::Refused)
             }
         }
     }
@@ -236,6 +246,15 @@ async fn a_failed_rewrite_or_no_rewrite_role_gives_the_seed() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_provider_refusal_or_content_filter_gives_the_seed() {
+    let fake = GovernedFake::new(governor(), vec![Step::Refuse]);
+    let (nudge, _) = one(&fake, &persona(SEEDS)).await;
+    assert_eq!(nudge.line, LineSource::Seed(SeedReason::Refused));
+    assert_eq!(nudge.lead_in, SEED_FILLED);
+    assert_eq!(fake.sent(), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn invalid_rewrites_fall_back_to_the_seed() {
     let long: &'static str = "a".repeat(141).leak();
     let invalid: [&'static str; 11] = [
@@ -255,9 +274,8 @@ async fn invalid_rewrites_fall_back_to_the_seed() {
     for output in invalid {
         let fake = GovernedFake::new(governor(), vec![Step::Reply(output)]);
         let (nudge, _) = one(&fake, &persona).await;
-        assert_eq!(
-            nudge.line,
-            LineSource::Seed(SeedReason::Rejected),
+        assert!(
+            matches!(nudge.line, LineSource::Seed(SeedReason::Rejected(_))),
             "{output:?} must be rejected"
         );
         assert_eq!(nudge.lead_in, SEED_FILLED);
@@ -269,29 +287,234 @@ async fn a_valid_rewrite_is_trimmed_filled_and_used() {
     let fake = GovernedFake::new(
         governor(),
         vec![Step::Reply(
-            "  Ehh, drag {boss} to {day} {time} yourself~ \n",
+            "  Ehh, drag {boss} to {day} {time} yourself! \n",
         )],
     );
     let (nudge, _) = one(&fake, &persona(SEEDS)).await;
     assert_eq!(nudge.line, LineSource::Rewritten);
-    assert_eq!(nudge.lead_in, "Ehh, drag Hard Lucid to Sat 21:00 yourself~");
+    assert_eq!(nudge.lead_in, "Ehh, drag Hard Lucid to Sat 21:00 yourself!");
     assert_eq!(nudge.seeds, NudgeSource::Bundle);
     assert_eq!(fake.sent(), 1);
 }
 
 #[test]
-fn accepted_rewrites_keep_exactly_the_seed_placeholders() {
+fn accepted_rewrites_keep_exactly_the_seed_placeholder_multiset() {
     let seed = "Move {boss} yourself.";
     assert_eq!(
         accept_rewrite("Go move {boss}!", seed).as_deref(),
-        Some("Go move {boss}!")
+        Ok("Go move {boss}!")
     );
-    assert_eq!(accept_rewrite("Go move it!", seed), None);
-    assert_eq!(accept_rewrite("Move {boss} on {day}", seed), None);
+    let placeholders = Err(Rejection::Placeholders);
+    assert_eq!(accept_rewrite("Go move it!", seed), placeholders);
+    assert_eq!(accept_rewrite("Move {boss} on {day}", seed), placeholders);
+    assert_eq!(accept_rewrite("{boss}, move {boss}!", seed), placeholders);
+    assert_eq!(
+        accept_rewrite("{boss} and {boss} again", "{boss} or {boss}").as_deref(),
+        Ok("{boss} and {boss} again")
+    );
     assert_eq!(
         accept_rewrite("Plain line.", "Plain seed."),
-        Some("Plain line.".into())
+        Ok("Plain line.".into())
     );
+}
+
+#[test]
+fn markdown_format_characters_and_invites_are_rejected() {
+    let seed = "Move {boss} yourself.";
+    let cases = [
+        "# Move {boss} yourself.",
+        "-# Move {boss} yourself.",
+        "> Move {boss} yourself.",
+        ">>> Move {boss} yourself.",
+        "- Move {boss} yourself.",
+        "* Move {boss} yourself.",
+        "1. Move {boss} yourself.",
+        "12. Move {boss} yourself.",
+        "Move `{boss}` yourself.",
+        "Move *{boss}* yourself.",
+        "Move __{boss}__ yourself.",
+        "Move ~~{boss}~~ yourself.",
+        "Move ||{boss}|| yourself.",
+        "Move \\{boss} yourself.",
+        "Move {boss} your\u{200B}self.",
+        "Move {boss} \u{202E}yourself.",
+        "Move {boss} yourself\u{2066}.",
+        "Move {boss} yourself\u{FEFF}.",
+        "Move {boss} at discord.gg/abc",
+        "Move {boss} at DISCORD.com/invite/abc",
+        "Move {boss} at discordapp.com/Invite/abc",
+    ];
+    for output in cases {
+        assert_eq!(
+            accept_rewrite(output, seed),
+            Err(Rejection::Markup),
+            "{output:?}"
+        );
+    }
+    // Plain punctuation and hyphenated words are fine.
+    assert!(accept_rewrite("Re-plan {boss} yourself - quick!", seed).is_ok());
+    assert!(accept_rewrite("2 hours? Move {boss} yourself.", seed).is_ok());
+}
+
+#[test]
+fn the_deny_list_matches_whole_words_through_simple_obfuscation() {
+    let seed = "Move {boss} yourself.";
+    for output in [
+        "Move {boss} yourself, sexy.",
+        "Move {boss} yourself, SEXY.",
+        "Move {boss} yourself, s3xy.",
+        "Move {boss} yourself, fuuuuck.",
+        "Move {boss} yourself, sh1t.",
+        "Move {boss} yourself, $hitty.",
+        "Move {boss} yourself, f.u.c.k.i.n.g lewd.",
+        "Move {boss} yourself, n00dz? no: nude.",
+        "Move {boss} yourself, horny.",
+    ] {
+        assert!(
+            matches!(accept_rewrite(output, seed), Err(Rejection::Denied(_))),
+            "{output:?}"
+        );
+    }
+    assert_eq!(denied_word("so SeXxXy"), Some("sex"));
+    // Whole words only: embedded letters are fine.
+    for clean in [
+        "Move {boss} yourself, Essex style.",
+        "Move {boss} yourself, it's cumbersome.",
+        "Move {boss} yourself, great analysis.",
+        "Move {boss} yourself, scunthorpe.",
+    ] {
+        assert!(accept_rewrite(clean, seed).is_ok(), "{clean:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_denied_rewrite_falls_back_with_its_reason_but_not_its_text() {
+    let fake = GovernedFake::new(governor(), vec![Step::Reply("S3xy {boss} {day} {time}")]);
+    let (nudge, _) = one(&fake, &persona(SEEDS)).await;
+    assert_eq!(
+        nudge.line,
+        LineSource::Seed(SeedReason::Rejected(Rejection::Denied("sex")))
+    );
+    assert_eq!(nudge.lead_in, SEED_FILLED);
+    assert!(!format!("{:?}", nudge.line).contains("S3xy"));
+}
+
+fn hostile(boss: &'static str, day: &'static str, time: &'static str) -> NudgeFacts<'static> {
+    NudgeFacts {
+        boss,
+        day,
+        time,
+        ..facts(NudgeMood::Playful)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn unsafe_filled_values_fall_back_to_the_seed_then_a_field_free_line() {
+    // Seed "<{boss}" style: the mention would only appear once filled.
+    let seeds = "nudges:
+  playful:
+    - 'Hey <{boss}> {day} {time}.'
+    - 'Hey <{boss}> {day} {time} again.'
+    - 'Hey <{boss}> {day} {time} once more.'
+";
+    let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
+    let angled = persona(seeds);
+    let nudge = nudger
+        .lead_in(&angled, &hostile("@123456789012345678", "Sat", "21:00"))
+        .await;
+    assert_eq!(nudge.line, LineSource::FieldFree);
+    assert!(!nudge.lead_in.contains('{') && !nudge.lead_in.contains('@'));
+
+    // Each value is harmless alone; the mention only forms across the boundary.
+    let at = persona(
+        "nudges:
+  playful:
+    - 'Ping @{day} for {boss}.'
+    - 'Ping @{day} for {boss} now.'
+    - 'Ping @{day} for {boss} soon.'
+",
+    );
+    for day in ["everyone", "here"] {
+        let nudge = nudger.lead_in(&at, &hostile("Lucid", day, "21:00")).await;
+        assert_eq!(nudge.line, LineSource::FieldFree, "{day}");
+    }
+
+    let plain = persona(SEEDS);
+    for (boss, day, time) in [
+        ("Lucid\nline two", "Sat", "21:00"),
+        ("Lucid", "@everyone", "21:00"),
+        ("Lucid", "Sat", "<@123>"),
+        ("**Lucid**", "Sat", "21:00"),
+        ("# Lucid", "Sat", "21:00"),
+        ("Lu\u{202E}cid", "Sat", "21:00"),
+        ("Lucid https://x.example", "Sat", "21:00"),
+        ("discord.gg/raid", "Sat", "21:00"),
+        ("{day}", "Sat", "21:00"),
+        ("", "Sat", "21:00"),
+        (&*"L".repeat(140).leak(), "Sat", "21:00"),
+    ] {
+        // Fresh rotation: the first seed uses all three fields.
+        let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
+        let nudge = nudger.lead_in(&plain, &hostile(boss, day, time)).await;
+        assert_eq!(
+            nudge.line,
+            LineSource::FieldFree,
+            "{boss:?} {day:?} {time:?}"
+        );
+        assert!(
+            kanade::chat::persona::check_nudge_line(&nudge.lead_in).is_ok(),
+            "{:?}",
+            nudge.lead_in
+        );
+    }
+
+    // A safe rewrite whose extra field is unsafe drops back to the filled seed.
+    let seeds = "nudges:
+  playful:
+    - 'Move {boss} yourself.'
+    - 'Shift {boss} yourself.'
+    - 'Go on, {boss} is yours.'
+";
+    let fake = GovernedFake::new(governor(), vec![Step::Reply("Move <{boss}> now.")]);
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake);
+    let nudge = nudger
+        .lead_in(&persona(seeds), &hostile("@here", "Sat", "21:00"))
+        .await;
+    assert_eq!(nudge.line, LineSource::FieldFree);
+    let fake = GovernedFake::new(governor(), vec![Step::Reply("Move {boss} <{day}> now.")]);
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake);
+    let nudge = nudger
+        .lead_in(&persona(seeds), &hostile("Lucid", "@here", "21:00"))
+        .await;
+    // Rewrite and seed differ in placeholders, so the rewrite was rejected first.
+    assert_eq!(
+        nudge.line,
+        LineSource::Seed(SeedReason::Rejected(Rejection::Placeholders))
+    );
+    assert_eq!(nudge.lead_in, "Move Lucid yourself.");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rewrite_unsafe_only_once_filled_uses_the_filled_seed() {
+    let seeds = "nudges:
+  playful:
+    - 'Move {boss} yourself.'
+    - 'Shift {boss} yourself.'
+    - 'Go on, {boss} is yours.'
+";
+    // 131 chars of template: fine unfilled, too long with a long boss name,
+    // while the short seed still fits.
+    let long: &'static str = format!("{} {{boss}}.", "a".repeat(123)).leak();
+    let fake = GovernedFake::new(governor(), vec![Step::Reply(long)]);
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake);
+    let nudge = nudger
+        .lead_in(
+            &persona(seeds),
+            &hostile("Chosen Seren the Very Long", "Sat", "21:00"),
+        )
+        .await;
+    assert_eq!(nudge.line, LineSource::Seed(SeedReason::UnsafeFill));
+    assert_eq!(nudge.lead_in, "Move Chosen Seren the Very Long yourself.");
 }
 
 #[tokio::test(start_paused = true)]
@@ -493,12 +716,12 @@ async fn one_tip_per_member_per_boss_week_even_when_claims_race() {
     );
     let nudger = Nudger::new(Arc::new(Fixed(0)), &fake);
     let persona = persona(SEEDS);
-    let week = utc(24, 0);
+    let reset = reset();
     let facts = facts(NudgeMood::Playful);
     let (a, b, c) = tokio::join!(
-        nudger.tip(&store, MEMBER, week, utc(25, 9), &persona, &facts),
-        nudger.tip(&store, MEMBER, week, utc(25, 9), &persona, &facts),
-        nudger.tip(&store, MEMBER, week, utc(25, 9), &persona, &facts),
+        nudger.tip(&store, MEMBER, &reset, utc(25, 9), &persona, &facts),
+        nudger.tip(&store, MEMBER, &reset, utc(25, 9), &persona, &facts),
+        nudger.tip(&store, MEMBER, &reset, utc(25, 9), &persona, &facts),
     );
     let granted = [a.unwrap(), b.unwrap(), c.unwrap()]
         .into_iter()
@@ -508,13 +731,52 @@ async fn one_tip_per_member_per_boss_week_even_when_claims_race() {
     // The claim comes first, so refused tips never reach the model.
     assert_eq!(fake.sent(), 1);
     let again = nudger
-        .tip(&store, MEMBER, week, utc(27, 9), &persona, &facts)
+        .tip(&store, MEMBER, &reset, utc(27, 9), &persona, &facts)
         .await
         .unwrap();
     assert!(again.is_none());
-    let next_reset = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
-    let next_week = nudger
-        .tip(&store, MEMBER, next_reset, next_reset, &persona, &facts)
-        .await;
-    assert!(next_week.unwrap().is_some());
+}
+
+/// Thursday 08:00 Singapore time, i.e. 00:00 UTC.
+fn reset() -> WeekReset {
+    WeekReset {
+        zone: chrono_tz::Asia::Singapore,
+        weekday: chrono::Weekday::Thu,
+        time: chrono::NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tip_week_follows_the_configured_reset() {
+    let store = MemoryScheduleStore::new();
+    let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
+    let persona = persona(SEEDS);
+    let facts = facts(NudgeMood::Playful);
+    let reset = reset();
+    let tip = |now| nudger.tip(&store, MEMBER, &reset, now, &persona, &facts);
+    // Thu 24 Sep 07:59 local is still the week that began Thu 17 Sep.
+    let before_first = Utc.with_ymd_and_hms(2026, 9, 23, 23, 59, 0).unwrap();
+    assert!(tip(before_first).await.unwrap().is_some());
+    assert!(tip(utc(24, 0)).await.unwrap().is_some());
+    let before = Utc.with_ymd_and_hms(2026, 9, 30, 23, 59, 59).unwrap();
+    assert!(tip(before).await.unwrap().is_none());
+    let after = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
+    assert!(tip(after).await.unwrap().is_some());
+    assert!(tip(after).await.unwrap().is_none());
+}
+
+#[test]
+fn the_rotation_remembers_a_bounded_number_of_channels() {
+    let rotation = SeedRotation::new(Arc::new(Fixed(0)));
+    let lines = ["a", "b", "c", "d"];
+    for channel in 0..MAX_CHANNELS + 50 {
+        rotation.pick(&channel.to_string(), &lines);
+    }
+    assert_eq!(rotation.channels(), MAX_CHANNELS);
+    // Channel 0 was the least recently used and was forgotten: it starts over.
+    assert_eq!(rotation.pick("0", &lines), Some("a"));
+    // A recently used channel still remembers its pick.
+    let recent = (MAX_CHANNELS + 49).to_string();
+    assert_eq!(rotation.pick(&recent, &lines), Some("b"));
+    assert_eq!(rotation.channels(), MAX_CHANNELS);
 }

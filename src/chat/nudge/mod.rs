@@ -8,6 +8,7 @@ mod compose;
 mod prompt;
 mod rewrite;
 mod rotation;
+mod safety;
 
 pub use compose::{
     EDIT_RUN_ACTION, LineSource, Nudge, NudgeFacts, Nudger, REQUEST_CHANGE_ACTION, SeedReason,
@@ -16,5 +17,8 @@ pub use compose::{
 pub use prompt::{
     GENTLE_MOOD, NUDGE_REWRITE_INSTRUCTION, PLAYFUL_MOOD, RewritePrompt, VOICE_LABEL,
 };
-pub use rewrite::{NoRewrite, NudgeRewriter, REWRITE_DEADLINE, RewriteUnavailable, accept_rewrite};
-pub use rotation::{RECENT_PER_CHANNEL, SeedRotation};
+pub use rewrite::{
+    NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure, accept_rewrite,
+};
+pub use rotation::{MAX_CHANNELS, RECENT_PER_CHANNEL, SeedRotation};
+pub use safety::{DENY_LIST, denied_word, has_format_char, has_invite, has_markup};
