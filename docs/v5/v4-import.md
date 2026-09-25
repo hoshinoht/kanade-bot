@@ -35,8 +35,11 @@ v4 database, never the live file, and it is not the portable-bundle import.
     author, question, reply, error, latency/model/tools ms, tokens and
     `rounds` (as the request count) are kept. v4 `model_rounds` become v5
     rounds (model = the v4 model, `response` = the round's content, `tools` =
-    its requested tools) carrying the v4 tool-call entries of that round;
-    with no recorded rounds, one round carries all calls. Reasoning effort,
+    its requested tools, or the names of the calls placed in it, deduplicated
+    in call order, when v4 left `requested_tools` empty or missing) carrying
+    the v4 tool-call entries of that round (their `output` and `ms` show as
+    the turn's `result`/`took_ms`); with no recorded rounds, one round
+    carries all calls. Reasoning effort,
     finish reason, per-round latency, bundles and guardrails stay empty.
   - Extraction: amendments present → `proposed` (their ids kept as
     `proposal_ids`; they resolve to no v5 proposal and show as `missing`);
@@ -64,6 +67,8 @@ for `serve`) and `KANADE_CATALOG_FILE` (default `boss/bosses.yaml`).
 kanade import v4 --from /import/v4.sqlite                    # dry run
 kanade import v4 --from /import/v4.sqlite --since 2026-09-01 # narrower logs
 kanade import v4 --from /import/v4.sqlite --apply            # write
+kanade import v4 --from /import/v4.sqlite --refresh-logs     # dry run of a log refresh
+kanade import v4 --from /import/v4.sqlite --refresh-logs --apply
 ```
 
 A **dry run is the default**: it prints what would be added, what is already
@@ -71,6 +76,18 @@ present and what is skipped (by reason), and writes nothing; when the store
 does not exist yet it is not created. The output has counts, reason codes
 and v4 fixed-run ids only, never message text or member names. Run it with
 `--apply` once the counts look right; running `--apply` again adds nothing.
+
+`--refresh-logs` repairs logs imported by an older mapping (2026-09-26:
+rounds whose v4 `requested_tools` was empty lost their tool names, so
+`tools_used`, the `chat_tools` index and the Tools filter missed them).
+Because a normal re-run skips ids already present, it instead rewrites
+every in-window chat and extraction log from the snapshot, replacing the
+stored `v4-<id>` row (with its rounds and `chat_tools`/`extraction_members`
+index rows) and adding any not yet imported, all in one write transaction.
+Only `v4-` ids are written (the store refuses any other id); native v5
+logs, fixed runs, materialised runs, messages and everything else are not
+touched. Its dry run reports how many rows would be replaced and added;
+applying it again replaces the same rows with the same content.
 
 The snapshot is opened `mode=ro` with `immutable=1`: SQLite neither writes
 nor locks it and creates no `-wal`/`-shm` files, so it must be a quiescent

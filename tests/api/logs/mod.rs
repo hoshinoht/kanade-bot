@@ -156,7 +156,7 @@ async fn seed_chats(reads: &Reads) {
                 "kanata/chat",
                 &["schedule_read"],
                 json!([{"name": "schedule_read", "outcome": "ok", "arguments": {"week": "this"},
-                        "created": [], "posted": []}]),
+                        "created": [], "posted": [], "result": "Kalos: Tue 22:00", "took_ms": 12}]),
                 Some(""),
             ),
             round("kanata/chat", &[], json!([]), Some("Tuesday 22:00.")),
@@ -175,7 +175,8 @@ async fn seed_chats(reads: &Reads) {
             "kanata/chat-cloud",
             &["propose_move"],
             json!([{"name": "propose_move", "outcome": "ok",
-                    "arguments": {"note": "the forbidden thing"}, "created": [], "posted": []}]),
+                    "arguments": {"note": "the forbidden thing"}, "created": [], "posted": [],
+                    "result": "moved: the forbidden thing", "took_ms": 5}]),
             Some("the forbidden thing, echoed"),
         )],
     );

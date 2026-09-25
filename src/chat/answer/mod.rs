@@ -92,6 +92,8 @@ pub struct RoundOutcome {
     pub outcome: ToolOutcome,
     /// Cards from this call that reached the channel.
     pub posted: Vec<String>,
+    /// Wall time of the call: store load, dispatch and card posting.
+    pub took_ms: u64,
 }
 
 /// Diagnostics for one model request.

@@ -82,7 +82,7 @@ async fn run(
     tool_rounds: u8,
     question: &str,
     codec: &dyn IdentityCodec,
-    ports: &Ports,
+    ports: &impl kanade::chat::answer::ChatPorts,
 ) -> Run {
     run_routed(actions, offer, tool_rounds, question, codec, ports, |_| {}).await
 }
@@ -94,7 +94,7 @@ async fn run_routed(
     tool_rounds: u8,
     question: &str,
     codec: &dyn IdentityCodec,
-    ports: &Ports,
+    ports: &impl kanade::chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
     let input = load("loop.json")["cases"][0]["input"].clone();
@@ -644,6 +644,93 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
     let store = run.world.service.store();
     store.record_chat(row.clone()).await.expect("recorded");
     assert_eq!(store.load_chat("chat-1").await.expect("load"), Some(row));
+}
+
+/// Ports whose pending-card read takes a fixed time, so a call's wall time
+/// is known under the paused clock.
+#[derive(Default)]
+struct SlowPorts(Ports);
+
+impl kanade::chat::answer::ChatPorts for SlowPorts {
+    async fn pending(&self) -> Vec<kanade::chat::tools::read::PendingCard> {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        self.0.pending().await
+    }
+
+    async fn post_card(&self, card: &kanade::chat::tools::ProposalCard) -> Result<(), String> {
+        self.0.post_card(card).await
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_turn() {
+    use kanade::api::dto::logs::{Names, chat_turn};
+
+    let mut run = run(
+        vec![
+            wants(&[("l1", "list_fixed", json!({}))]),
+            words("Three weeklies."),
+        ],
+        ToolOffer::full_set(false),
+        8,
+        "which weeklies?",
+        &Passthrough,
+        &SlowPorts::default(),
+    )
+    .await;
+    let output = run.generation.outcomes[0].outcome.output.clone();
+    assert!(!output.is_empty());
+    let took = run.generation.outcomes[0].took_ms;
+    assert!(took >= 250, "{took}");
+    assert_eq!(run.generation.tools_ms, took);
+
+    let at = run.world.clock.now().with_timezone(&Utc);
+    let log = |generation: &Generation| {
+        interaction(
+            "chat-t".into(),
+            at,
+            &run.ctx,
+            "which weeklies?",
+            generation,
+            MODEL,
+            None,
+            10,
+        )
+    };
+    let row = log(&run.generation);
+    assert_eq!(row.rounds[0].tool_calls[0]["result"], output.as_str());
+    assert_eq!(row.rounds[0].tool_calls[0]["took_ms"], took);
+    let store = run.world.service.store();
+    store.record_chat(row.clone()).await.expect("recorded");
+    let stored = store.load_chat("chat-t").await.expect("load").expect("row");
+    assert_eq!(stored, row);
+    let roster = kanade::domain::members::Roster::new();
+    let channels = std::collections::BTreeMap::new();
+    let names = Names {
+        roster: &roster,
+        channels: &channels,
+    };
+    let turn = chat_turn(&names, &stored, &[], None);
+    assert_eq!(turn["tools"][0]["result"], output.as_str());
+    assert_eq!(turn["tools"][0]["took_ms"], took);
+
+    // 8 KiB are kept, cut before a two-byte char that straddles the cap.
+    let long = format!("a{}", "é".repeat(5000));
+    run.generation.outcomes[0].outcome.output.clone_from(&long);
+    let result = log(&run.generation).rounds[0].tool_calls[0]["result"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        result,
+        format!("{}… [truncated, 10001 bytes]", &long[..8191])
+    );
+    let exact = "b".repeat(8192);
+    run.generation.outcomes[0].outcome.output.clone_from(&exact);
+    assert_eq!(
+        log(&run.generation).rounds[0].tool_calls[0]["result"],
+        exact.as_str()
+    );
 }
 
 /// A deadline that passes while a proposal is being staged never cuts the

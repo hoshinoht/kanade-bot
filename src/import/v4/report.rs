@@ -6,12 +6,13 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 
-/// Per kind: added (or, in a dry run, would add), already present, and
-/// skipped rows by reason code.
+/// Per kind: added (or, in a dry run, would add), already present,
+/// replaced (`--refresh-logs` only), and skipped rows by reason code.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Counts {
     pub added: u64,
     pub present: u64,
+    pub replaced: u64,
     pub skipped: BTreeMap<&'static str, u64>,
 }
 
@@ -28,6 +29,8 @@ impl Counts {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Report {
     pub applied: bool,
+    /// `--refresh-logs`: logs only, stored ones replaced.
+    pub refreshed: bool,
     /// Logs at or after this instant were considered.
     pub cutoff: DateTime<Utc>,
     pub fixed_runs: Counts,
@@ -45,6 +48,11 @@ pub struct Report {
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verb = if self.applied { "added" } else { "would add" };
+        let replaced = if self.applied {
+            "replaced"
+        } else {
+            "would replace"
+        };
         if self.applied {
             writeln!(f, "kanade import v4: applied")?;
         } else {
@@ -59,13 +67,23 @@ impl fmt::Display for Report {
             crate::domain::time::to_iso(&self.cutoff).unwrap_or_default()
         )?;
         let line = |f: &mut fmt::Formatter<'_>, kind: &str, counts: &Counts| {
-            write!(
-                f,
-                "{kind}: {verb} {}, already present {}, skipped {}",
-                counts.added,
-                counts.present,
-                counts.skipped_total()
-            )?;
+            if self.refreshed {
+                write!(
+                    f,
+                    "{kind}: {verb} {}, {replaced} {}, skipped {}",
+                    counts.added,
+                    counts.replaced,
+                    counts.skipped_total()
+                )?;
+            } else {
+                write!(
+                    f,
+                    "{kind}: {verb} {}, already present {}, skipped {}",
+                    counts.added,
+                    counts.present,
+                    counts.skipped_total()
+                )?;
+            }
             if !counts.skipped.is_empty() {
                 let reasons: Vec<String> = counts
                     .skipped
@@ -76,6 +94,11 @@ impl fmt::Display for Report {
             }
             writeln!(f)
         };
+        if self.refreshed {
+            writeln!(f, "fixed runs and messages: not touched (--refresh-logs)")?;
+            line(f, "chat logs", &self.chats)?;
+            return line(f, "extraction logs", &self.extractions);
+        }
         line(f, "fixed runs", &self.fixed_runs)?;
         for (id, reason) in &self.fixed_skipped {
             writeln!(f, "  skipped fixed run {id}: {reason}")?;

@@ -93,8 +93,15 @@ are C3. Serve wiring is `chat::driver` (below).
 
 `answer::interaction` builds one `chat_interactions` row with a
 `chat_rounds` row per model request (alias, reasoning, finish reason,
-latency, bundles offered, tools called with outcomes, response text; never
-the prompt). Outcomes: `answered`; `refused`/`clarified` when a write was
+latency, bundles offered, tools called, response text; never the prompt).
+Each round's `tool_calls` entry is `{name, outcome, arguments, created,
+posted, result, took_ms}` (user decision 2026-09-26, for agent debugging):
+`result` is the tool output the model read, before identity encoding (so
+real names, not tokens), capped at 8 KiB on a char boundary with a trailing
+`… [truncated, N bytes]` (N = the full length); `took_ms` is the call's
+monotonic wall time (store load, dispatch, card posting), the same span
+summed into `tools_ms`. The clean retry's round logs no calls. Kept for the
+log's 90-day retention. Outcomes: `answered`; `refused`/`clarified` when a write was
 refused (clarified if the reply asks); `content_blocked` (guardrail
 `{"content_filter": true}`), `timeout`, `turned_away` (governor refusals,
 gateway admission, backend down), else `error`. `clean_retry` is a flag;

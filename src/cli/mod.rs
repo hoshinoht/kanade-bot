@@ -50,13 +50,14 @@ fn parse_healthcheck(arguments: &[String]) -> Result<Command, Error> {
     }
 }
 
-/// `import v4 --from <snapshot> [--since YYYY-MM-DD] [--apply]`; a dry run
-/// unless `--apply`.
+/// `import v4 --from <snapshot> [--since YYYY-MM-DD] [--refresh-logs]
+/// [--apply]`; a dry run unless `--apply`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ImportV4Args {
     pub from: PathBuf,
     pub since: Option<NaiveDate>,
     pub apply: bool,
+    pub refresh_logs: bool,
 }
 
 fn parse_import(arguments: &[String]) -> Result<Command, Error> {
@@ -66,11 +67,12 @@ fn parse_import(arguments: &[String]) -> Result<Command, Error> {
     if source != "v4" {
         return Err(usage());
     }
-    let (mut from, mut since, mut apply) = (None, None, false);
+    let (mut from, mut since, mut apply, mut refresh_logs) = (None, None, false, false);
     while let Some((flag, tail)) = rest.split_first() {
         rest = tail;
         match flag.as_str() {
             "--apply" if !apply => apply = true,
+            "--refresh-logs" if !refresh_logs => refresh_logs = true,
             "--from" | "--since" => {
                 let Some((value, tail)) = rest.split_first() else {
                     return Err(usage());
@@ -93,11 +95,16 @@ fn parse_import(arguments: &[String]) -> Result<Command, Error> {
         }
     }
     let from = from.ok_or_else(usage)?;
-    Ok(Command::ImportV4(ImportV4Args { from, since, apply }))
+    Ok(Command::ImportV4(ImportV4Args {
+        from,
+        since,
+        apply,
+        refresh_logs,
+    }))
 }
 
 fn usage() -> Error {
-    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--apply]|ctl|export}".into())
+    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|ctl|export}".into())
 }
 
 #[cfg(test)]
@@ -125,6 +132,7 @@ mod tests {
                 from: PathBuf::from("/import/v4.sqlite"),
                 since: None,
                 apply: false,
+                refresh_logs: false,
             })
         );
         assert_eq!(
@@ -133,6 +141,16 @@ mod tests {
                 from: PathBuf::from("snap.db"),
                 since: NaiveDate::from_ymd_opt(2026, 9, 1),
                 apply: true,
+                refresh_logs: false,
+            })
+        );
+        assert_eq!(
+            args("import v4 --from snap.db --refresh-logs").unwrap(),
+            Command::ImportV4(ImportV4Args {
+                from: PathBuf::from("snap.db"),
+                since: None,
+                apply: false,
+                refresh_logs: true,
             })
         );
         for bad in [
@@ -142,6 +160,7 @@ mod tests {
             "import v4 --from",
             "import v4 --from a --from b",
             "import v4 --from a --apply --apply",
+            "import v4 --from a --refresh-logs --refresh-logs",
             "import v4 --from a --since 2026-9-1",
             "import v4 --from a --since 2026-02-30",
             "import v4 --from a --other",

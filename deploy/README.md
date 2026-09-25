@@ -128,6 +128,9 @@ The dry run prints counts and skip reasons
 only; `--apply` is safe to repeat (it adds nothing the second time).
 `--since YYYY-MM-DD` narrows the logs below the 90-day retention. The owner
 lock directory (`/data/run`) must already exist, as it must for `serve`.
+To rewrite logs imported by an older mapping, run the same two commands
+with `--refresh-logs` added (dry run, then `--refresh-logs --apply`); it
+replaces only `v4-` chat and extraction logs.
 
 ## Hardening
 

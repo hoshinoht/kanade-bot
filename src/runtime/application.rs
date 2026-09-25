@@ -46,6 +46,7 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
                 from: args.from,
                 since: args.since,
                 apply: args.apply,
+                refresh_logs: args.refresh_logs,
             };
             let report = import::v4::run(&options, &config, import::v4::system_now())
                 .await

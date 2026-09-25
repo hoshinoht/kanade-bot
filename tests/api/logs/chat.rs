@@ -155,6 +155,8 @@ async fn a_withheld_question_is_never_shown_or_searchable() {
     assert_eq!(turn["said"], "I can't help with that one.");
     assert_eq!(turn["raw"], "[message withheld]");
     assert_eq!(turn["tools"][0]["arguments"], "[message withheld]");
+    assert_eq!(turn["tools"][0]["result"], "[message withheld]");
+    assert_eq!(turn["tools"][0]["took_ms"], 5);
     assert_eq!(turn["member"], json!({"id": "1002", "name": "Bobby"}));
     assert!(!reply.text().contains("forbidden"), "{}", reply.text());
 }
@@ -170,8 +172,8 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
     assert_eq!(turn["said"], "Tuesday 22:00.");
     assert_eq!(
         turn["tools"],
-        json!([{"name": "schedule_read", "arguments": "{\"week\":\"this\"}", "result": "",
-                "took_ms": 0, "outcome": "ok"}])
+        json!([{"name": "schedule_read", "arguments": "{\"week\":\"this\"}",
+                "result": "Kalos: Tue 22:00", "took_ms": 12, "outcome": "ok"}])
     );
     assert_eq!(
         turn["rounds"],
@@ -188,4 +190,68 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
         assert_eq!(reply.status, 404, "{id}");
         assert_eq!(reply.api_error(), "not_found");
     }
+}
+
+#[test]
+fn an_imported_v4_turn_shows_its_output_and_ms() {
+    use std::collections::BTreeMap;
+
+    use kanade::api::dto::logs::{Names, chat_turn};
+    use kanade::domain::{members::Roster, model_log::ChatOutcome};
+
+    let calls = json!([
+        {"name": "get_boss_strategy", "round": 1, "arguments": "{\"boss\":\"Kalos\"}",
+         "output": "Kalos strategy", "ms": 12, "outcome": "ok"},
+        {"name": "get_schedule", "round": 1, "arguments": "", "output": "x", "ms": -3, "outcome": "ok"},
+        {"name": "get_schedule", "round": 1, "arguments": "", "ms": 2.5, "outcome": "ok"},
+    ]);
+    let mut row = super::chat(
+        "v4-c1",
+        super::utc(9, 28, 12, 0),
+        "1001",
+        "kalos-four",
+        "How do I do Kalos?",
+        "Like this.",
+        ChatOutcome::Answered,
+        Some(1500),
+        vec![super::round(
+            "chat-model",
+            &["get_boss_strategy", "get_schedule"],
+            calls,
+            Some("x"),
+        )],
+    );
+    let (roster, channels) = (Roster::new(), BTreeMap::new());
+    let names = Names {
+        roster: &roster,
+        channels: &channels,
+    };
+    let turn = chat_turn(&names, &row, &[], None);
+    assert_valid(TURN, "v4 turn", &turn);
+    let shown: Vec<_> = turn["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| (tool["result"].clone(), tool["took_ms"].clone()))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (json!("Kalos strategy"), json!(12)),
+            (json!("x"), json!(0)),
+            (json!(""), json!(0)),
+        ]
+    );
+
+    row.withheld = true;
+    let turn = chat_turn(&names, &row, &[], None);
+    assert!(
+        turn["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool["result"] == "[message withheld]"),
+        "{turn}"
+    );
+    assert_eq!(turn["tools"][0]["took_ms"], 12);
 }

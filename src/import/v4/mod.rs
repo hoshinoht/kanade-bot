@@ -6,6 +6,8 @@
 //! the recent chat and extraction logs with the watched messages they
 //! reference. Nothing else: no runs, answers, reminders, history, members
 //! or settings. A dry run unless `apply`; a re-run adds nothing twice.
+//! `refresh_logs` instead rewrites the already-imported logs from the
+//! snapshot (a mapping fix) and touches nothing else.
 
 mod fixed;
 mod logs;
@@ -38,6 +40,9 @@ pub struct Options {
     /// Narrows the log window to guild-local days from this date.
     pub since: Option<NaiveDate>,
     pub apply: bool,
+    /// Replace already-imported `v4-` chat and extraction logs instead of
+    /// skipping them; fixed runs and messages are left alone.
+    pub refresh_logs: bool,
 }
 
 #[derive(Debug)]
@@ -142,6 +147,7 @@ pub async fn run(
     let cutoff = cutoff(now, options.since, config.timezone);
     let mut report = Report {
         applied: options.apply,
+        refreshed: options.refresh_logs,
         cutoff,
         fixed_runs: Counts::default(),
         fixed_skipped: Vec::new(),
@@ -157,6 +163,11 @@ pub async fn run(
     let (fixed_rows, chats, extractions, messages) = read?;
 
     let mut candidates = Vec::new();
+    let fixed_rows = if options.refresh_logs {
+        Vec::new()
+    } else {
+        fixed_rows
+    };
     for (index, row) in fixed_rows.iter().enumerate() {
         match fixed::validate(row, &catalog) {
             Ok(candidate) => candidates.push(candidate),
@@ -189,7 +200,12 @@ pub async fn run(
         })
         .collect();
     let mut watched = Vec::new();
-    for referenced in referenced(&chats, &extractions) {
+    let referenced = if options.refresh_logs {
+        Vec::new()
+    } else {
+        referenced(&chats, &extractions)
+    };
+    for referenced in referenced {
         match by_id.get(&referenced) {
             None => report.messages.skip("not_in_snapshot"),
             Some(row) => match logs::message(row, now) {
@@ -211,18 +227,29 @@ pub async fn run(
     } else {
         None
     };
-    let written = write(
-        store.as_ref(),
-        options.apply,
-        now,
-        config.timezone,
-        candidates,
-        watched,
-        extractions,
-        chats,
-        &mut report,
-    )
-    .await;
+    let written = if options.refresh_logs {
+        refresh(
+            store.as_ref(),
+            options.apply,
+            extractions,
+            chats,
+            &mut report,
+        )
+        .await
+    } else {
+        write(
+            store.as_ref(),
+            options.apply,
+            now,
+            config.timezone,
+            candidates,
+            watched,
+            extractions,
+            chats,
+            &mut report,
+        )
+        .await
+    };
     // `write` holds no clones past its return, so the unwrap succeeds.
     if let Some(Ok(store)) = store.map(Arc::try_unwrap) {
         store
@@ -368,5 +395,50 @@ async fn write(
             report.chats.added += 1;
         }
     }
+    Ok(())
+}
+
+/// Counts every log as replaced (stored) or added; with `apply`, writes
+/// them all in one transaction.
+async fn refresh(
+    store: Option<&Arc<SqliteStore>>,
+    apply: bool,
+    extractions: Vec<crate::domain::model_log::ExtractionLog>,
+    chats: Vec<crate::domain::model_log::ChatInteraction>,
+    report: &mut Report,
+) -> Result<(), ImportError> {
+    let stored =
+        |error: crate::domain::scheduler::StoreError| ImportError::Store(error.to_string());
+    let Some(store) = store else {
+        report.extractions.added += extractions.len() as u64;
+        report.chats.added += chats.len() as u64;
+        return Ok(());
+    };
+    if apply {
+        let done = store
+            .refresh_imported_logs(&chats, &extractions)
+            .await
+            .map_err(stored)?;
+        report.extractions.replaced += done.extractions;
+        report.chats.replaced += done.chats;
+    } else {
+        for log in &extractions {
+            if store
+                .load_extraction(&log.id)
+                .await
+                .map_err(stored)?
+                .is_some()
+            {
+                report.extractions.replaced += 1;
+            }
+        }
+        for chat in &chats {
+            if store.load_chat(&chat.id).await.map_err(stored)?.is_some() {
+                report.chats.replaced += 1;
+            }
+        }
+    }
+    report.extractions.added += extractions.len() as u64 - report.extractions.replaced;
+    report.chats.added += chats.len() as u64 - report.chats.replaced;
     Ok(())
 }

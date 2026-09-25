@@ -62,6 +62,22 @@ pub fn chat_outcome(generation: &Generation) -> ChatOutcome {
     }
 }
 
+/// Bytes of a tool result kept in the log.
+const RESULT_CAP: usize = 8 * 1024;
+
+/// The result as logged: at most [`RESULT_CAP`] bytes cut on a char
+/// boundary, then a marker with the full length in bytes.
+fn capped_result(output: &str) -> String {
+    if output.len() <= RESULT_CAP {
+        return output.to_owned();
+    }
+    let mut end = RESULT_CAP;
+    while !output.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… [truncated, {} bytes]", &output[..end], output.len())
+}
+
 fn round_calls(generation: &Generation, round: u32, clean: bool) -> Value {
     if clean {
         return json!([]);
@@ -77,6 +93,9 @@ fn round_calls(generation: &Generation, round: u32, clean: bool) -> Value {
                 "arguments": o.outcome.arguments,
                 "created": o.outcome.created,
                 "posted": o.posted,
+                // Pre-encoding text: real names, not the model's identity tokens.
+                "result": capped_result(&o.outcome.output),
+                "took_ms": o.took_ms,
             }))
             .collect::<Vec<_>>()
     )

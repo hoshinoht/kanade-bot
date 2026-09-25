@@ -384,13 +384,15 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
 - **Chat rows**: `model` is the first round's alias (`—` when no model ran),
   `latency_ms` 0 when unrecorded, `member` `{id: "", name: "unknown"}`
   when the row has none. The turn's `tools` come from the rounds' logged
-  calls (the log keeps no tool results or per-call timings: `result` is
-  `""`, `took_ms` 0), `rounds[].finish` is the finish reason (`""` when
+  calls: `result` is the logged `result` (v4 imports: `output`), `took_ms`
+  the logged `took_ms` (v4: `ms`; 0 when absent or not a non-negative
+  integer; rows logged before 2026-09-26 show `""`/0),
+  `rounds[].finish` is the finish reason (`""` when
   none), `cards` link the proposals the turn created once their card is
   posted, `raw` joins the rounds' non-empty responses. **Withheld**
   (`chat-orchestration.md`, pollution containment): the question shows as
   `[message withheld]` in the list and the detail, and so do that turn's
-  `raw` and tool `arguments` (they can quote it); `said` (the fixed failure
+  `raw` and tool `arguments` and `result` (they can quote it); `said` (the fixed failure
   line) is kept. A withheld row matches `q` on its reply only, so the text
   cannot be found by search either. Withholding is a chat-surface rule
   (parent decision): the admin-only extraction log shows what the extractor

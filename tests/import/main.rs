@@ -124,6 +124,7 @@ impl Fixture {
             from: self.snapshot(),
             since,
             apply,
+            refresh_logs: false,
         }
     }
 
@@ -595,4 +596,201 @@ async fn cannot_run_while_another_owner_holds_the_store() {
     let snapshot = serving.load(&Scope::All).await.unwrap();
     assert!(snapshot.fixed_runs.is_empty());
     serving.close().await.unwrap();
+}
+
+/// A v4 chat whose rounds left `requested_tools` empty (the live shape).
+async fn add_unlisted_tool_chat(fixture: &Fixture) {
+    let mut conn = SqliteConnectOptions::new()
+        .filename(fixture.snapshot())
+        .journal_mode(SqliteJournalMode::Wal)
+        .connect()
+        .await
+        .unwrap();
+    let rounds = r#"[{"round":1,"content":"let me check","thinking":"","requested_tools":[]},{"round":2,"content":"Use the bind.","thinking":"","requested_tools":[]}]"#;
+    let calls = r#"[{"name":"get_boss_strategy","round":1,"arguments":"{\"boss\":\"Kalos\"}","output":"Kalos notes","ms":12,"outcome":"ok"},{"name":"get_boss_strategy","round":1,"arguments":"{}","output":"again","ms":4,"outcome":"ok"},{"name":"get_schedule","round":1,"arguments":"","output":"none","ms":1,"outcome":"ok"}]"#;
+    sqlx::query(
+        "INSERT INTO chat_interactions (id, at, channel_id, message_id, author_id, model, question, reply, outcome, rounds, tool_calls, model_rounds) \
+         VALUES ('c6', ?1, '900000000000000001', 'm1', '111111111111111111', 'chat-model', 'kalos?', 'Use the bind.', 'answered', 2, ?2, ?3)",
+    )
+    .bind(iso(1))
+    .bind(calls)
+    .bind(rounds)
+    .execute(&mut conn)
+    .await
+    .unwrap();
+    conn.close().await.unwrap();
+}
+
+fn by_tool(tool: &str) -> ChatFilter {
+    ChatFilter {
+        tool: Some(tool.into()),
+        limit: 50,
+        ..ChatFilter::default()
+    }
+}
+
+#[tokio::test]
+async fn call_names_stand_in_for_empty_requested_tools() {
+    let fixture = Fixture::new().await;
+    add_unlisted_tool_chat(&fixture).await;
+    fixture.import(true, None).await;
+    let store = open(&fixture).await;
+    let chat = store.load_chat("v4-c6").await.unwrap().unwrap();
+    assert_eq!(chat.rounds[0].tools, ["get_boss_strategy", "get_schedule"]);
+    assert!(chat.rounds[1].tools.is_empty());
+    assert_eq!(chat.rounds[0].tool_calls[0]["output"], "Kalos notes");
+    assert_eq!(chat.rounds[0].tool_calls[0]["ms"], 12);
+    let found = store
+        .list_chats(&by_tool("get_boss_strategy"))
+        .await
+        .unwrap();
+    assert_eq!(found.items.len(), 1);
+    assert!(
+        store
+            .chat_facets()
+            .await
+            .unwrap()
+            .tools
+            .contains(&"get_boss_strategy".to_owned())
+    );
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
+    let fixture = Fixture::new().await;
+    add_unlisted_tool_chat(&fixture).await;
+    // The older mapping's row for c6 (no tool names) and a native v5 row.
+    let store = open(&fixture).await;
+    let mut stale = kanade::domain::model_log::ChatInteraction {
+        id: "v4-c6".into(),
+        at: now() - Duration::days(1),
+        channel_id: Some("900000000000000001".into()),
+        message_id: Some("m1".into()),
+        member_id: Some("111111111111111111".into()),
+        question: "kalos?".into(),
+        reply: "stale".into(),
+        outcome: ChatOutcome::Answered,
+        error: None,
+        clean_retry: false,
+        withheld: false,
+        guardrail: serde_json::json!({}),
+        request_count: 2,
+        latency_ms: None,
+        model_ms: None,
+        tools_ms: None,
+        prompt_tokens: None,
+        completion_tokens: None,
+        rounds: vec![kanade::domain::model_log::ChatRound {
+            model: "chat-model".into(),
+            reasoning: None,
+            finish_reason: None,
+            latency_ms: None,
+            tool_bundles: Vec::new(),
+            tools: Vec::new(),
+            tool_calls: serde_json::json!([{"name": "get_boss_strategy"}]),
+            response: None,
+        }],
+    };
+    store.record_chat(stale.clone()).await.unwrap();
+    stale.id = "native-1".into();
+    stale.rounds[0].tools = vec!["get_schedule".into()];
+    store.record_chat(stale.clone()).await.unwrap();
+    assert!(
+        store
+            .refresh_imported_logs(std::slice::from_ref(&stale), &[])
+            .await
+            .is_err(),
+        "a native id is refused"
+    );
+    store.close().await.unwrap();
+
+    let first = fixture.import(true, None).await;
+    assert_eq!((first.chats.added, first.chats.present), (3, 1));
+    let store = open(&fixture).await;
+    assert!(
+        store
+            .list_chats(&by_tool("get_boss_strategy"))
+            .await
+            .unwrap()
+            .items
+            .is_empty()
+    );
+    let changes = store.count_changes(&ChangeFilter::All).await.unwrap();
+    let fixed = store.load(&Scope::All).await.unwrap();
+    store.close().await.unwrap();
+
+    let mut refresh = fixture.options(false, None);
+    refresh.refresh_logs = true;
+    let dry = run(&refresh, &fixture.config(), now()).await.unwrap();
+    assert_eq!((dry.chats.replaced, dry.chats.added), (4, 0));
+    assert_eq!((dry.extractions.replaced, dry.extractions.added), (3, 0));
+    let text = dry.to_string();
+    assert!(
+        text.contains("chat logs: would add 0, would replace 4"),
+        "{text}"
+    );
+    assert!(text.contains("not touched"), "{text}");
+    let store = open(&fixture).await;
+    assert_eq!(
+        store.load_chat("v4-c6").await.unwrap().unwrap().reply,
+        "stale",
+        "a dry run writes nothing"
+    );
+    store.close().await.unwrap();
+
+    refresh.apply = true;
+    let applied = run(&refresh, &fixture.config(), now()).await.unwrap();
+    assert_eq!((applied.chats.replaced, applied.chats.added), (4, 0));
+    assert_eq!(applied.extractions.replaced, 3);
+    assert!(applied.materialised.is_none());
+    let store = open(&fixture).await;
+    let repaired = store.load_chat("v4-c6").await.unwrap().unwrap();
+    assert_eq!(repaired.reply, "Use the bind.");
+    assert_eq!(
+        repaired.rounds[0].tools,
+        ["get_boss_strategy", "get_schedule"]
+    );
+    let found = store
+        .list_chats(&by_tool("get_boss_strategy"))
+        .await
+        .unwrap();
+    assert_eq!(
+        found
+            .items
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect::<Vec<_>>(),
+        ["v4-c6"]
+    );
+    let native = store.load_chat("native-1").await.unwrap().unwrap();
+    assert_eq!(native, stale);
+    assert_eq!(
+        store
+            .list_chats(&by_tool("get_schedule"))
+            .await
+            .unwrap()
+            .items
+            .len(),
+        3,
+        "native-1, v4-c1 and v4-c6"
+    );
+    assert_eq!(
+        store.count_changes(&ChangeFilter::All).await.unwrap(),
+        changes
+    );
+    assert_eq!(store.load(&Scope::All).await.unwrap(), fixed);
+    let extraction = store.load_extraction("v4-e1").await.unwrap().unwrap();
+    store.close().await.unwrap();
+
+    let again = run(&refresh, &fixture.config(), now()).await.unwrap();
+    assert_eq!((again.chats.replaced, again.extractions.replaced), (4, 3));
+    let store = open(&fixture).await;
+    assert_eq!(store.load_chat("v4-c6").await.unwrap().unwrap(), repaired);
+    assert_eq!(
+        store.load_extraction("v4-e1").await.unwrap().unwrap(),
+        extraction
+    );
+    assert_eq!(store.chat_facets().await.unwrap().total, 5);
+    store.close().await.unwrap();
 }

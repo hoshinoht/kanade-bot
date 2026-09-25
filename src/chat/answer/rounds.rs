@@ -392,11 +392,13 @@ where
                 .extend(outcome.created.iter().cloned());
             if Instant::now() >= deadline {
                 // Kept so the log's round shows the call; its cards stay unposted.
-                state.generation.tools_ms += millis(started);
+                let took_ms = millis(started);
+                state.generation.tools_ms += took_ms;
                 state.generation.outcomes.push(RoundOutcome {
                     round,
                     outcome,
                     posted: Vec::new(),
+                    took_ms,
                 });
                 state.generation.failure = Some(AnswerFailure::Timeout { seconds });
                 break 'rounds None;
@@ -406,12 +408,14 @@ where
             for card in &outcome.cards {
                 let Ok(result) = timeout_at(deadline, ports.post_card(card)).await else {
                     // Log the call and what it created; this card's post is unknown.
-                    state.generation.tools_ms += millis(started);
+                    let took_ms = millis(started);
+                    state.generation.tools_ms += took_ms;
                     state.generation.posted.extend(posted.iter().cloned());
                     state.generation.outcomes.push(RoundOutcome {
                         round,
                         outcome,
                         posted,
+                        took_ms,
                     });
                     state.generation.failure = Some(AnswerFailure::Timeout { seconds });
                     break 'rounds None;
@@ -430,7 +434,8 @@ where
                 CARD_NOT_POSTED.clone_into(&mut outcome.output);
                 content = identity.tool_result(CARD_NOT_POSTED);
             }
-            state.generation.tools_ms += millis(started);
+            let took_ms = millis(started);
+            state.generation.tools_ms += took_ms;
             state.generation.posted.extend(posted.iter().cloned());
             messages.push(Message::Tool {
                 tool_call_id: call.id.clone(),
@@ -440,6 +445,7 @@ where
                 round,
                 outcome,
                 posted,
+                took_ms,
             });
         }
         // A posted write withholds tools from every later round, so a bundle

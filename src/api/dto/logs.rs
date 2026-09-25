@@ -1,7 +1,7 @@
 //! Chat and extraction log rows (`chat.json`, `extractions.json`). A
 //! withheld chat question is never shown: the admin sees the placeholder the
-//! model sees, and the model output and tool arguments of that turn are
-//! withheld with it, as they may quote the question.
+//! model sees, and the model output and tool arguments and results of that
+//! turn are withheld with it, as they may quote the question.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -146,8 +146,17 @@ fn text(value: Option<&Value>) -> String {
     }
 }
 
-/// The turn: tool calls (the log keeps no results or per-call timings, so
-/// `result` is empty and `took_ms` 0), rounds, cards and the round responses.
+/// A call's wall time: v5 `took_ms`, else v4's `ms`; 0 when absent or not
+/// a non-negative integer.
+fn took_ms(call: &Value) -> u64 {
+    call.get("took_ms")
+        .or_else(|| call.get("ms"))
+        .and_then(Value::as_u64)
+        .unwrap_or_default()
+}
+
+/// The turn: tool calls with their results (v5 `result`, v4 `output`) and
+/// wall times, rounds, cards and the round responses.
 pub fn chat_turn(
     names: &Names<'_>,
     chat: &ChatInteraction,
@@ -164,8 +173,12 @@ pub fn chat_turn(
             json!({
                 "name": text(call.get("name")),
                 "arguments": if chat.withheld { WITHHELD.to_owned() } else { text(call.get("arguments")) },
-                "result": "",
-                "took_ms": 0,
+                "result": if chat.withheld {
+                    WITHHELD.to_owned()
+                } else {
+                    text(call.get("result").or_else(|| call.get("output")))
+                },
+                "took_ms": took_ms(call),
                 "outcome": text(call.get("outcome")),
             })
         })

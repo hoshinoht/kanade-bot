@@ -58,7 +58,8 @@ fn chat_outcome(row: &V4Chat) -> ChatOutcome {
 }
 
 /// v4 `model_rounds` (`{round, content, thinking, requested_tools}`) as v5
-/// rounds, each with the tool calls v4 traced for its round. Calls whose
+/// rounds, each with the tool calls v4 traced for its round (their names
+/// stand in for an empty or missing `requested_tools`). Calls whose
 /// round is unknown go to the last round; with no rounds recorded, one round
 /// carries them all so the model and tool filters still match.
 fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
@@ -104,8 +105,10 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
                         .iter()
                         .filter_map(Value::as_str)
                         .map(str::to_owned)
-                        .collect()
+                        .collect::<Vec<_>>()
                 })
+                // v4 left `requested_tools` empty on some rounds that placed calls.
+                .filter(|tools| !tools.is_empty())
                 .unwrap_or_else(|| names(&calls));
             ChatRound {
                 model: model.to_owned(),
@@ -124,12 +127,18 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
         .collect()
 }
 
+/// The calls' tool names, deduplicated in first-call order.
 fn names(calls: &[Value]) -> Vec<String> {
-    calls
+    let mut seen: Vec<String> = Vec::new();
+    for name in calls
         .iter()
         .filter_map(|call| call.get("name").and_then(Value::as_str))
-        .map(str::to_owned)
-        .collect()
+    {
+        if !seen.iter().any(|known| known == name) {
+            seen.push(name.to_owned());
+        }
+    }
+    seen
 }
 
 pub fn chat(row: &V4Chat, at: DateTime<Utc>) -> ChatInteraction {
