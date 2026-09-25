@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 use hyper::Uri;
 
 use super::{Error, non_empty, parse_bounded_u64};
-use crate::runtime::secrets::Redacted;
+use crate::{domain::settings::Reasoning, runtime::secrets::Redacted};
 
 const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
 const UNMASKED: &str = "KANADE_ALLOW_EXTERNAL_UNMASKED";
@@ -15,6 +15,11 @@ const ALIASES: [&str; 3] = [
     "KANADE_EXTRACT_MODEL",
     "KANADE_CHAT_MODEL",
     "KANADE_REWRITE_MODEL",
+];
+const REASONING: [&str; 3] = [
+    "KANADE_EXTRACT_REASONING",
+    "KANADE_CHAT_REASONING",
+    "KANADE_REWRITE_REASONING",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +31,11 @@ pub struct ModelSettings {
     pub extract_model: Option<String>,
     pub chat_model: Option<String>,
     pub rewrite_model: Option<String>,
+    /// Seeds for the stored `extract_reasoning`, `chat_pilot_think` and
+    /// `v5.rewrite_reasoning`: used only where no row is saved.
+    pub extract_reasoning: Option<Reasoning>,
+    pub chat_reasoning: Option<Reasoning>,
+    pub rewrite_reasoning: Option<Reasoning>,
     pub permits: u16,
     /// `KANADE_ALLOW_EXTERNAL_UNMASKED=1`: external routes may run without
     /// pseudonymization (provider testing only).
@@ -49,12 +59,17 @@ impl ModelSettings {
             })
             .transpose()?;
         let [extract_model, chat_model, rewrite_model] = ALIASES.map(|key| alias(values, key));
+        let [extract_reasoning, chat_reasoning, rewrite_reasoning] =
+            REASONING.map(|key| reasoning(values, key));
         let settings = Self {
             key_file: non_empty(values, KEY_FILE).map(PathBuf::from),
             ca_file: non_empty(values, "KANADE_MODEL_CA_FILE").map(PathBuf::from),
             extract_model: extract_model?,
             chat_model: chat_model?,
             rewrite_model: rewrite_model?,
+            extract_reasoning: extract_reasoning?,
+            chat_reasoning: chat_reasoning?,
+            rewrite_reasoning: rewrite_reasoning?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
             allow_external_unmasked: match non_empty(values, UNMASKED) {
                 None | Some("0") => false,
@@ -69,6 +84,7 @@ impl ModelSettings {
             let dependent = [KEY_FILE, "KANADE_MODEL_CA_FILE"]
                 .into_iter()
                 .chain(ALIASES)
+                .chain(REASONING)
                 .find(|key| non_empty(values, key).is_some());
             if let Some(key) = dependent {
                 return Err(Error::Configuration(format!(
@@ -85,6 +101,27 @@ impl ModelSettings {
             .map(|path| Redacted::read(path, KEY_FILE))
             .transpose()
     }
+}
+
+/// `off`…`max`; `inherit` (extraction's level) for chat and rewrite only.
+fn reasoning(values: &BTreeMap<String, String>, key: &str) -> Result<Option<Reasoning>, Error> {
+    let Some(text) = non_empty(values, key) else {
+        return Ok(None);
+    };
+    let level = if text == "inherit" && key != REASONING[0] {
+        Some(Reasoning::Inherit)
+    } else {
+        Reasoning::parse(text)
+            .filter(|level| *level != Reasoning::Inherit && level.as_str() == text)
+    };
+    level.map(Some).ok_or_else(|| {
+        let allowed = if key == REASONING[0] {
+            "off, minimal, low, medium, high, xhigh or max"
+        } else {
+            "inherit, off, minimal, low, medium, high, xhigh or max"
+        };
+        Error::Configuration(format!("{key} must be one of {allowed}"))
+    })
 }
 
 fn alias(values: &BTreeMap<String, String>, key: &str) -> Result<Option<String>, Error> {
@@ -122,5 +159,54 @@ fn valid_base_url(url: &str) -> bool {
                 || host == "host.docker.internal"
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(pairs: &[(&str, &str)]) -> Result<ModelSettings, String> {
+        let mut values: BTreeMap<String, String> = pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        values
+            .entry("KANADE_MODEL_BASE_URL".into())
+            .or_insert_with(|| "https://gw.example/v1".into());
+        ModelSettings::from_mapping(&values).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn reasoning_seeds_parse_and_refuse() {
+        let settings = parse(&[
+            ("KANADE_EXTRACT_REASONING", "low"),
+            ("KANADE_CHAT_REASONING", "inherit"),
+            ("KANADE_REWRITE_REASONING", "off"),
+        ])
+        .unwrap();
+        assert_eq!(settings.extract_reasoning, Some(Reasoning::Low));
+        assert_eq!(settings.chat_reasoning, Some(Reasoning::Inherit));
+        assert_eq!(settings.rewrite_reasoning, Some(Reasoning::Off));
+        assert_eq!(parse(&[]).unwrap().chat_reasoning, None);
+        assert_eq!(
+            parse(&[("KANADE_EXTRACT_REASONING", "inherit")]).unwrap_err(),
+            "KANADE_EXTRACT_REASONING must be one of off, minimal, low, medium, high, xhigh or max"
+        );
+        for bad in ["none", "High", "loud", "false"] {
+            assert_eq!(
+                parse(&[("KANADE_CHAT_REASONING", bad)]).unwrap_err(),
+                "KANADE_CHAT_REASONING must be one of inherit, off, minimal, low, medium, high, xhigh or max",
+                "{bad}"
+            );
+        }
+        let mut orphan = BTreeMap::new();
+        orphan.insert("KANADE_REWRITE_REASONING".to_owned(), "low".to_owned());
+        assert_eq!(
+            ModelSettings::from_mapping(&orphan)
+                .unwrap_err()
+                .to_string(),
+            "KANADE_REWRITE_REASONING requires KANADE_MODEL_BASE_URL"
+        );
     }
 }

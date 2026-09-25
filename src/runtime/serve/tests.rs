@@ -220,3 +220,142 @@ async fn compose_builds_the_model_stack_and_seeds_unset_role_aliases_from_env() 
     drop(composition);
     store::close(store, Duration::ZERO).await;
 }
+
+/// Serves one `GET /v1/models` listing on loopback.
+async fn model_gateway(listing: serde_json::Value) -> String {
+    use axum::{Json, Router, routing::get};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new().route("/v1/models", get(move || async move { Json(listing) }));
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}/v1")
+}
+
+async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
+    let store = store::open(&config.store).await.unwrap();
+    let health = LiveHealth::new(store.clone());
+    crate::runtime::logging::capture();
+    let mut composition = api::compose(
+        config,
+        store.clone(),
+        Arc::new(StaticChannels(Vec::new())),
+        health,
+    )
+    .await
+    .unwrap();
+    composition.model_tasks.report_done().await;
+    let lines = crate::runtime::logging::captured();
+    drop(composition);
+    store::close(store, Duration::ZERO).await;
+    lines
+}
+
+#[tokio::test]
+async fn compose_logs_the_model_report_with_effective_efforts_and_routes() {
+    let reasoning = serde_json::json!({
+        "trust_zone": "local",
+        "reasoning_control": true,
+        "reasoning_efforts": ["low", "medium", "high"],
+    });
+    let url = model_gateway(serde_json::json!({"object": "list", "data": [
+        {"id": "gpt-6-luna", "kanata": reasoning},
+        {"id": "gpt-6-luna:high", "kanata": reasoning},
+        {"id": "ext", "kanata": {"reasoning_control": false}},
+    ]}))
+    .await;
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", url.as_str()),
+        ("KANADE_EXTRACT_MODEL", "gpt-6-luna:high"),
+        ("KANADE_CHAT_MODEL", "gpt-6-luna"),
+        ("KANADE_CHAT_REASONING", "off"),
+        ("KANADE_REWRITE_MODEL", "ext"),
+        ("KANADE_REWRITE_REASONING", "high"),
+        ("KANADE_ALLOW_EXTERNAL_UNMASKED", "1"),
+    ]);
+    // A saved level beats its env seed.
+    with_rows(&config, &[(keys::REWRITE_REASONING, "low")]).await;
+    let lines = compose_and_report(&config).await;
+    let text = serde_json::to_string(&lines).unwrap();
+    assert!(!text.contains("127.0.0.1"), "no gateway URL: {text}");
+    let events: Vec<(&str, &str)> = lines
+        .iter()
+        .map(|line| {
+            (
+                line["level"].as_str().unwrap(),
+                line["event"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        events,
+        [
+            ("INFO", "models_listed"),
+            ("INFO", "model_role"),
+            ("INFO", "model_role"),
+            ("INFO", "model_role"),
+            ("INFO", "model_warning"),
+            ("WARN", "model_warning"),
+        ],
+        "{text}"
+    );
+    assert_eq!(lines[0]["models"], 3);
+    let role = |index: usize| {
+        let line = &lines[index];
+        (
+            line["role"].as_str().unwrap().to_owned(),
+            line["alias"].as_str().unwrap().to_owned(),
+            line["effort"].as_str().unwrap().to_owned(),
+            line["source"].as_str().unwrap().to_owned(),
+            line["route"].as_str().unwrap().to_owned(),
+        )
+    };
+    let owned = |values: [&str; 5]| values.map(str::to_owned).into();
+    assert_eq!(
+        role(1),
+        owned(["extraction", "gpt-6-luna:high", "high", "fixed", "homelab"])
+    );
+    assert_eq!(
+        role(2),
+        owned(["chat", "gpt-6-luna", "low", "floor", "homelab"])
+    );
+    assert_eq!(
+        role(3),
+        owned(["rewrite", "ext", "low", "stored", "external_unmasked"])
+    );
+    assert_eq!(lines[4]["kind"], "unpublished_effort");
+    assert_eq!(lines[5]["kind"], "external_unmasked");
+    assert!(
+        lines[5]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("UNMASKED: rewrite model ext")
+    );
+}
+
+#[tokio::test]
+async fn compose_logs_a_degraded_listing_and_disabled_models() {
+    let temp = Temp::new();
+    let degraded = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
+        ("KANADE_CHAT_MODEL", "kanata/chat"),
+        ("KANADE_CHAT_REASONING", "medium"),
+    ]);
+    let lines = compose_and_report(&degraded).await;
+    assert_eq!(lines[0]["event"], "models_degraded");
+    assert_eq!(lines[0]["level"], "WARN");
+    assert_eq!(lines[1]["event"], "model_role");
+    assert_eq!(lines[1]["effort"], "medium");
+    assert_eq!(lines[1]["source"], "env");
+    assert_eq!(lines[1]["route"], "external_refused");
+    assert_eq!(lines.last().unwrap()["kind"], "external_refused");
+
+    let temp = Temp::new();
+    let lines = compose_and_report(&temp.config(&[])).await;
+    assert_eq!(
+        lines,
+        [serde_json::json!({"level": "INFO", "event": "models_disabled"})]
+    );
+}

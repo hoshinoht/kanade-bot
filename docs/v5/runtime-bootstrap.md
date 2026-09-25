@@ -15,7 +15,7 @@ kanade serve        # live: the "Serve environment" below is required
 KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
 ```
 
-`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases, `KANADE_ALLOW_EXTERNAL_UNMASKED`) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free completion per configured role (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
+`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases and reasoning seeds, `KANADE_ALLOW_EXTERNAL_UNMASKED`); it cannot read the store while serve owns it, so its roles are what serve runs for a role with no saved alias or level (the `roles` header says so) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free completion per configured role (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
 
 ```text
 gateway: https://kanata.example/v1 (key: set, roots: webpki)
@@ -23,7 +23,7 @@ catalog: 5 models
   sumi-structured zone=private_network homelab=stays efforts=off,minimal,low,medium,high,xhigh,max context=32768 in_flight=2
   codex-like zone=external homelab=leaves efforts=low,medium,high (off not allowed) in_flight=8
   gpt-6-luna zone=external homelab=leaves efforts=low,medium,high (off not allowed) variants: high, low, medium
-roles:
+roles (env seeds; saved settings are not read):
   extraction sumi-structured effort=off route=homelab
   chat codex-like effort=low (configured off) route=external refused
   rewrite (not configured)
@@ -105,7 +105,8 @@ lists are comma-separated.
 | `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
 | `KANADE_MODEL_BASE_URL` | unset | `https`, or `http` only to loopback, `localhost` or `host.docker.internal`; no userinfo or query. Unset disables models; the key, CA and alias variables then are refused. |
 | `KANADE_MODEL_KEY_FILE`, `KANADE_MODEL_CA_FILE` | unset | Bearer key file (plain `KANADE_MODEL_KEY` is refused) and a CA file (PEM bundle or one DER certificate) that replaces the compiled webpki roots. |
-| `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200). |
+| `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200); seeds for a role with no saved alias. |
+| `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls, 1–16. |
 | `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
@@ -126,6 +127,30 @@ pointer to `KANADE_CHAT_CATEGORY_IDS`. Other unknown `KANADE_*` variables are
 ignored, as for the HTTP settings.
 
 ### Live serve
+
+After composing, serve logs the model setup once in the background
+(`serve/models.rs`; HTTP readiness never waits and a degraded listing is
+never fatal), as JSON lines without the key or the gateway URL:
+
+```text
+{"level":"INFO","event":"models_listed","models":3}
+{"level":"INFO","event":"model_role","role":"extraction","alias":"gpt-6-luna:high","effort":"high","source":"fixed","route":"homelab"}
+{"level":"INFO","event":"model_role","role":"chat","alias":"gpt-6-luna","effort":"low","source":"floor","route":"homelab"}
+{"level":"INFO","event":"model_role","role":"rewrite","alias":"ext","effort":"low","source":"stored","route":"external_unmasked"}
+{"level":"INFO","event":"model_warning","kind":"unpublished_effort","message":"chat reasoning off is not allowed: gpt-6-luna requires reasoning; sending low"}
+{"level":"WARN","event":"model_warning","kind":"external_unmasked","message":"UNMASKED: rewrite model ext leaves the homelab and member data is sent without pseudonymization (KANADE_ALLOW_EXTERNAL_UNMASKED)"}
+```
+
+`models_degraded` (WARN, `reason`) replaces `models_listed` when the
+listing fails (every route then stays external until one succeeds);
+`models_disabled` is logged without `KANADE_MODEL_BASE_URL`. `source` is
+`fixed` (a `<base>:<level>` variant), `floor` (the configured level is not
+accepted; the lowest accepted one is used), `inherit` (extraction's level),
+else where the role's own level came from: `stored`, `env` or `default`.
+`route` is `homelab`, `external_refused` or `external_unmasked`; warnings
+`external_unmasked`, `external_refused`, `capacity` and `ungrouped` are WARN,
+`unpublished_effort` INFO. The catalog refresh task (every 300 s, 30 s until
+a listing succeeds) is aborted at shutdown.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
 `KANADE_EXPECT_V4_STOPPED`, opens and owns the store, loads the catalog,

@@ -1,17 +1,19 @@
 //! `kanade models check [--probe]`: lists the gateway catalog and the role
-//! routes from the model environment; `--probe` sends one tiny completion per
+//! routes from the model environment (aliases and reasoning seeds; the store
+//! belongs to serve and is not read); `--probe` sends one tiny completion per
 //! configured role. Live gateway calls; the key is never printed.
 
 use std::{collections::BTreeMap, io::Write, sync::Arc};
 
 use crate::{
+    domain::settings::Models as StoredModels,
     infrastructure::llm::{
         TrustZone,
         governor::XorShift,
         identity::Passthrough,
         setup::{
             CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
-            RoleModel, build,
+            build,
         },
     },
     runtime::{config::ModelSettings, error::Error},
@@ -49,18 +51,34 @@ pub async fn check(
     let key = settings
         .read_key()?
         .map(|key| key.expose().as_bytes().to_vec());
-    let alias = |alias: &Option<String>, fallback: RoleModel| RoleModel {
-        alias: alias.clone(),
-        ..fallback
-    };
-    let defaults = ModelRoles::default();
+    // The store is owned by serve, so roles come from the env seeds alone:
+    // what serve runs for any role without a saved row.
+    let mut stored = StoredModels::default();
+    for (slot, alias, reasoning) in [
+        (
+            &mut stored.extraction,
+            &settings.extract_model,
+            settings.extract_reasoning,
+        ),
+        (
+            &mut stored.chat,
+            &settings.chat_model,
+            settings.chat_reasoning,
+        ),
+        (
+            &mut stored.rewrite,
+            &settings.rewrite_model,
+            settings.rewrite_reasoning,
+        ),
+    ] {
+        slot.alias.clone_from(alias);
+        if let Some(level) = reasoning {
+            slot.reasoning = level;
+        }
+    }
     let setup = ModelSetup {
         base_url: Some(base_url.clone()),
-        roles: ModelRoles {
-            extraction: alias(&settings.extract_model, defaults.extraction),
-            chat: alias(&settings.chat_model, defaults.chat),
-            rewrite: alias(&settings.rewrite_model, defaults.rewrite),
-        },
+        roles: ModelRoles::from(&stored),
         key,
         ca_file: settings.ca_file.clone(),
         permits: u32::from(settings.permits),
@@ -121,7 +139,7 @@ pub async fn check(
         writeln!(out, "  {line}").map_err(io)?;
     }
 
-    writeln!(out, "roles:").map_err(io)?;
+    writeln!(out, "roles (env seeds; saved settings are not read):").map_err(io)?;
     let efforts = stack.efforts();
     for role in ModelRoles::ALL {
         let Some(route) = stack.governor.route(role) else {

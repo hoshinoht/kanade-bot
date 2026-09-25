@@ -77,7 +77,37 @@ pub fn event(level: &'static str, event: &'static str, fields: serde_json::Value
     emit(&line);
 }
 
+#[cfg(test)]
+thread_local! {
+    static CAPTURED: std::cell::RefCell<Option<Vec<serde_json::Value>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Test support: lines emitted on this thread go to [`captured`] instead of stderr.
+#[cfg(test)]
+pub fn capture() {
+    CAPTURED.with(|lines| *lines.borrow_mut() = Some(Vec::new()));
+}
+
+#[cfg(test)]
+pub fn captured() -> Vec<serde_json::Value> {
+    CAPTURED.with(|lines| lines.borrow().clone().unwrap_or_default())
+}
+
 fn emit(event: &impl Serialize) {
+    #[cfg(test)]
+    {
+        let captured = CAPTURED.with(|lines| match lines.borrow_mut().as_mut() {
+            Some(lines) => {
+                lines.extend(serde_json::to_value(event).ok());
+                true
+            }
+            None => false,
+        });
+        if captured {
+            return;
+        }
+    }
     if let Ok(value) = serde_json::to_string(event) {
         eprintln!("{value}");
     }

@@ -6,6 +6,7 @@ pub mod api;
 mod commands;
 pub mod discord;
 mod health;
+pub mod models;
 pub mod settings;
 mod store;
 mod tick;

@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 use twilight_model::id::Id;
 
-use super::{health::LiveHealth, settings};
+use super::{
+    health::LiveHealth,
+    models::{self as model_report, ModelTasks},
+    settings,
+};
 use crate::{
     api::{
         admin::config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
@@ -19,7 +23,11 @@ use crate::{
     },
     bot::commands::AccessPolicy,
     chat::persona::PersonaStore,
-    domain::{ids::RandomIds, scheduler::SchedulerService, settings::RuntimeSettings},
+    domain::{
+        ids::RandomIds,
+        scheduler::SchedulerService,
+        settings::{RuntimeSettings, SettingsStore},
+    },
     infrastructure::{
         files::{LoadError, load_catalog, load_knowledge_dir, load_personas},
         llm::{
@@ -45,6 +53,8 @@ pub struct Composition {
     /// `None` without `KANADE_MODEL_BASE_URL`. Role routes are fixed at build,
     /// so role changes saved in the config API apply at restart.
     pub models: Option<Arc<ModelStack>>,
+    /// Catalog refresh and the startup report; aborted when dropped.
+    pub model_tasks: ModelTasks,
 }
 
 fn file_error(error: LoadError) -> Error {
@@ -61,20 +71,6 @@ fn access(guild: &GuildSettings) -> GuildAccess {
         },
         guild.chat_pilot_role_id.map(|id| id.to_string()),
     )
-}
-
-/// A role with no stored alias runs on its `KANADE_*_MODEL` (a seed).
-fn seed_aliases(settings: &mut RuntimeSettings, models: &ModelSettings) {
-    let roles = &mut settings.models;
-    for (role, alias) in [
-        (&mut roles.extraction, &models.extract_model),
-        (&mut roles.chat, &models.chat_model),
-        (&mut roles.rewrite, &models.rewrite_model),
-    ] {
-        if role.alias.is_none() {
-            role.alias.clone_from(alias);
-        }
-    }
 }
 
 fn model_stack(
@@ -117,8 +113,14 @@ pub async fn compose(
         .transpose()
         .map_err(file_error)?;
     let mut settings = settings::load(&store, &config.seeds).await?;
-    seed_aliases(&mut settings, &config.models);
+    // Loaded above, so a read failure here is a transient store error.
+    let stored = store
+        .settings_rows()
+        .await
+        .map_err(|_| Error::Startup("runtime settings could not be read".into()))?;
+    let sources = model_report::seed_roles(&mut settings, &config.models, &stored);
     let models = model_stack(&config.models, &settings)?;
+    let model_tasks = model_report::start(models.as_ref(), sources);
     let personas = load_personas(
         &config.files.persona_dir,
         settings::persona(&settings)?.as_ref(),
@@ -181,5 +183,6 @@ pub async fn compose(
         settings,
         personas: persona_store,
         models,
+        model_tasks,
     })
 }

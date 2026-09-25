@@ -183,3 +183,37 @@ async fn models_check_fails_when_the_listing_fails_or_models_are_off() {
     .await;
     assert!(matches!(result, Err(Error::Configuration(_))));
 }
+
+#[tokio::test]
+async fn models_check_uses_the_env_reasoning_seeds() {
+    let stub = Stub::start(gateway(kanata_models(), "ok")).await;
+    let env = env(
+        &stub.url(),
+        &[
+            ("KANADE_EXTRACT_MODEL", "sumi-structured"),
+            ("KANADE_EXTRACT_REASONING", "medium"),
+            ("KANADE_CHAT_MODEL", "sumi-structured"),
+            ("KANADE_CHAT_REASONING", "inherit"),
+            ("KANADE_REWRITE_MODEL", "codex-like"),
+            ("KANADE_REWRITE_REASONING", "high"),
+        ],
+    );
+    let (out, result) = run(Args { probe: false }, &env).await;
+    result.unwrap();
+    assert!(
+        out.contains("roles (env seeds; saved settings are not read):"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  extraction sumi-structured effort=medium route=homelab"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  chat sumi-structured effort=medium route=homelab"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  rewrite codex-like effort=high route=external refused"),
+        "{out}"
+    );
+}
