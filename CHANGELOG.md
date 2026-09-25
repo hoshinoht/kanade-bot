@@ -273,6 +273,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- The private v4 rollback env moved from the root `.env` to `legacy/python/.env`; the v4
+  Compose file and guides point there.
 - v5 reads non-secret settings from `kanade.toml` (`KANADE_CONFIG`; template
   `kanade.example.toml`), including model capacity groups; `KANADE_*` env vars still work
   and override the file, and unknown keys stop startup naming the key only.

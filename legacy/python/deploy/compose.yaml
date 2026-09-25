@@ -6,8 +6,8 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     container_name: kanade-bot
-    # Live secrets and private data stay at the repo root after the relocation.
-    env_file: ../../../.env
+    # Private v4 env lives in legacy/python/.env; data stays at the repo root.
+    env_file: ../.env
     environment:
       # Kanata gateway bearer key, mounted from the operator file below.
       KANATA_API_KEY_FILE: /run/secrets/kanata_api_key

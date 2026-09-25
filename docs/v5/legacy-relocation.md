@@ -16,7 +16,7 @@ and `docker build -f deploy/Dockerfile .`. Container files live in
 ## Manual private mounts
 
 No ignored or untracked deployment state moved. `deploy/compose.yaml` reads the
-root `.env` and mounts root data, config, persona and boss artwork paths; set
+private `legacy/python/.env` (moved from the root on 2026-09-26) and mounts root data, config, persona and boss artwork paths; set
 `KANATA_API_KEY_HOST_FILE` before any Compose command. Caddy is no longer part
 of kanade: TLS ingress is the shared edge over `kanade_edge`. The private v4
 persona layout lives in `config/personas-v4/` (mounted writable at

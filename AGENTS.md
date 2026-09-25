@@ -42,7 +42,7 @@
 - Never edit generated, git-ignored `legacy/python/bot/api/static/portal.css`; validate it from `legacy/python/` with `python -m bot.portal_styles`.
 - Boss portraits and entry artwork are intentionally git-ignored deployment assets. Their tests isolate themselves from whatever images happen to exist locally.
 - Treat root and `legacy/python/` `.env`, data, guide, and live persona paths as deployment-private.
-- Full Compose startup also expects the externally managed volume `kanade_botdata` and the private root `.env`. v4 model calls go only to the Kanata gateway (`KANATA_BASE_URL`, https) through `legacy/python/bot/infrastructure/llm/`; Compose mounts the bearer key as the `kanata_api_key` secret from `KANATA_API_KEY_HOST_FILE`, never as an env var. Do not reintroduce the `ollama` package or native Ollama endpoints in `bot/`.
+- Full Compose startup also expects the externally managed volume `kanade_botdata` and the private `legacy/python/.env`. v4 model calls go only to the Kanata gateway (`KANATA_BASE_URL`, https) through `legacy/python/bot/infrastructure/llm/`; Compose mounts the bearer key as the `kanata_api_key` secret from `KANATA_API_KEY_HOST_FILE`, never as an env var. Do not reintroduce the `ollama` package or native Ollama endpoints in `bot/`.
 
 ## Coding policy
 

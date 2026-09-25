@@ -153,8 +153,8 @@ export it in the shell or pass the private env file explicitly:
 
 ```sh
 KANATA_API_KEY_HOST_FILE=/path/outside/repo/kanata.key docker compose up --build
-# or, with KANATA_API_KEY_HOST_FILE in the root .env:
-docker compose --env-file ../../.env up --build
+# or, with KANATA_API_KEY_HOST_FILE in legacy/python/.env:
+docker compose --env-file ../.env up --build
 ```
 
 Compose bind-mounts the secret file as-is, so it must be readable by the
