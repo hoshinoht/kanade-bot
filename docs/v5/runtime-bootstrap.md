@@ -297,7 +297,9 @@ The Discord side (`serve/discord/`) runs one gateway session for
 - Admin alerts go to the structured log (`admin_alert`, throttled per key
   per hour) for the beta.
 - Chat (`runtime::serve::chat`, driver `chat::driver`, input
-  `bot::chat_feed`): a created message mentioning (or replying to) the bot in
+  `bot::chat_feed`): a created message mentioning the bot (its user, or its
+  managed integration role, which `@Kanade` often resolves to; v4) or
+  replying to it in
   any channel or thread of `chatbot.category_ids`, from a holder of
   `KANADE_CHAT_PILOT_ROLE_ID` (staff are exempt), is answered as a reply
   that pings nobody. `chatbot.enabled`, the categories and the allowances
@@ -327,8 +329,10 @@ The Discord side (`serve/discord/`) runs one gateway session for
 
 Shutdown (`SIGINT`/`SIGTERM`): the gateway closes (and its spawned
 interaction/registration tasks finish), chat stops (waiting questions are
-refunded, running ones get 5 s to finish and are then cut, refunded and
-concluded with a `cancelled` log row; logged `chat_stopped`), the roster and reaction workers
+refunded, running ones get 3 s to finish and are then cut, refunded and
+concluded with a `cancelled` log row; tidy-up gets 2 s more plus 1 s for
+the log writes of anything aborted, so chat adds at most 6 s; logged
+`chat_stopped`), the roster and reaction workers
 drain, the running tick finishes (a tick is never cut midway), then HTTP
 drains, then the store closes (logged `store_closed`) so ownership is
 released only after SQLite closes. A startup failure after the store opened

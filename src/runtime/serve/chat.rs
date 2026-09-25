@@ -177,7 +177,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             now: (self.clock)(),
             zone: self.policy.zone(),
             reset: (self.policy.reset_weekday, self.policy.reset_time),
-            bot_names: Vec::new(),
+            bot_names: self.cache.self_names(),
         })
     }
 

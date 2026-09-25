@@ -17,6 +17,8 @@ use crate::chat::gate::{
     Author, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings, SEEN_REACTION,
 };
 use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
+use crate::chat::sanitize::schedule_defaults;
+use crate::chat::tools::ToolContext;
 use crate::domain::members::Roster;
 use crate::domain::model_log::{ChatInteraction, ChatOutcome};
 use crate::infrastructure::llm::Message;
@@ -66,12 +68,14 @@ enum Step {
     Held(Arc<Notify>, &'static str),
     /// Never answers (only a shutdown cut ends it).
     Forever,
+    Panic,
 }
 
 #[derive(Default)]
 struct Seen {
     conversations: Vec<Vec<Message>>,
     clean_retry: Vec<bool>,
+    ctx: Vec<ToolContext>,
 }
 
 struct Fake {
@@ -81,6 +85,8 @@ struct Fake {
     steps: Mutex<VecDeque<Step>>,
     seen: Mutex<Seen>,
     rows: Mutex<Vec<ChatInteraction>>,
+    /// `prepare` waits for this once, when set.
+    prepare_gate: Mutex<Option<Arc<Notify>>>,
 }
 
 impl Fake {
@@ -92,6 +98,7 @@ impl Fake {
             steps: Mutex::new(steps.into()),
             seen: Mutex::default(),
             rows: Mutex::default(),
+            prepare_gate: Mutex::default(),
         }
     }
 }
@@ -123,6 +130,10 @@ impl Answerer for Arc<Fake> {
     }
 
     async fn prepare(&self, _asked: &Asked) -> Option<Prepared> {
+        let gate = self.prepare_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
         Some(Prepared {
             persona: kanade(),
             persona_key: "kanade".into(),
@@ -134,7 +145,7 @@ impl Answerer for Arc<Fake> {
             now: when(),
             zone: chrono_tz::Asia::Kuala_Lumpur,
             reset: (Weekday::Thu, NaiveTime::MIN),
-            bot_names: Vec::new(),
+            bot_names: vec!["Kanade".into()],
         })
     }
 
@@ -143,6 +154,7 @@ impl Answerer for Arc<Fake> {
             let mut seen = self.seen.lock().unwrap();
             seen.conversations.push(job.question.conversation.clone());
             seen.clean_retry.push(job.question.settings.clean_retry);
+            seen.ctx.push(job.question.ctx.clone());
         }
         let step = self.steps.lock().unwrap().pop_front();
         let reply = match step {
@@ -152,6 +164,7 @@ impl Answerer for Arc<Fake> {
                 text
             }
             Some(Step::Forever) | None => std::future::pending().await,
+            Some(Step::Panic) => panic!("scripted answerer panic"),
         };
         Generation {
             reply: reply.into(),
@@ -166,8 +179,16 @@ impl Answerer for Arc<Fake> {
     fn storm(&self, _alert: &crate::chat::pilot::StormAlert) {}
 }
 
+#[derive(Default)]
+struct Knobs {
+    /// Keycap adds take this long (a slow Discord).
+    slow_keycap: Mutex<Option<Duration>>,
+    /// Every removal hangs (a stuck Discord).
+    hang_unreact: AtomicBool,
+}
+
 #[derive(Clone, Default)]
-struct Recorder(Arc<Mutex<Vec<String>>>);
+struct Recorder(Arc<Mutex<Vec<String>>>, Arc<Knobs>);
 
 impl Recorder {
     fn events(&self) -> Vec<String> {
@@ -177,6 +198,10 @@ impl Recorder {
 
 impl Surface for Recorder {
     async fn react(&self, channel_id: &str, message_id: &str, emoji: &str) {
+        let slow = *self.1.slow_keycap.lock().unwrap();
+        if let Some(delay) = slow.filter(|_| emoji.contains('\u{20e3}')) {
+            tokio::time::sleep(delay).await;
+        }
         self.0
             .lock()
             .unwrap()
@@ -184,6 +209,9 @@ impl Surface for Recorder {
     }
 
     async fn unreact(&self, channel_id: &str, message_id: &str, emoji: &str) {
+        if self.1.hang_unreact.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         self.0
             .lock()
             .unwrap()
@@ -261,6 +289,7 @@ fn asked(id: &str, member: &str, channel: &str, roles: &[&str]) -> Asked {
         },
         replied_author_id: None,
         bot_user_id: Some(BOT.into()),
+        self_role_id: None,
         is_admin: false,
     }
 }
@@ -421,7 +450,11 @@ async fn a_waiter_past_its_bound_is_given_up_with_a_refund() {
 #[tokio::test]
 async fn a_deleted_running_question_finishes_but_posts_nothing() {
     let held = Arc::new(Notify::new());
-    let rig = rig(vec![Step::Held(Arc::clone(&held), "late answer")]).await;
+    let rig = rig(vec![
+        Step::Held(Arc::clone(&held), "late answer"),
+        Step::Reply("next"),
+    ])
+    .await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
     rig.driver.deleted(&["1001".into()]);
@@ -435,6 +468,13 @@ async fn a_deleted_running_question_finishes_but_posts_nothing() {
         Some("cancelled: the question was deleted")
     );
     assert_eq!(rig.driver.limits().clean_retry.pending, 0, "concluded");
+
+    // Neither the deleted question nor its unposted answer reaches history.
+    assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    let later = prompt(&rig.fake.seen.lock().unwrap().conversations[1]);
+    assert!(!later.contains("late answer"), "{later}");
+    assert_eq!(later.matches(WITHHELD).count(), 2, "{later}");
 }
 
 #[tokio::test]
@@ -541,14 +581,7 @@ async fn withheld_questions_are_reloaded_before_the_first_admission() {
     assert!(rig.driver.offer(reply));
     rig.settle().await;
     let seen = rig.fake.seen.lock().unwrap();
-    let prompt: String = seen.conversations[0]
-        .iter()
-        .filter_map(|message| match message {
-            Message::System { content } | Message::User { content } => Some(content.clone()),
-            Message::Assistant { content, .. } => content.clone(),
-            _ => None,
-        })
-        .collect();
+    let prompt = prompt(&seen.conversations[0]);
     assert!(prompt.contains(WITHHELD));
     assert!(!prompt.contains("the filtered secret"));
 }
@@ -638,4 +671,170 @@ async fn a_zero_member_allowance_ignores_members_silently_but_not_staff_or_overr
     rig.settle().await;
     assert_eq!(rig.rows().len(), 2, "staff and the override are answered");
     assert_eq!(rig.pool_used(), 1, "only the override spent");
+}
+
+/// Every text the model was sent, one message per line.
+fn prompt(conversation: &[Message]) -> String {
+    conversation
+        .iter()
+        .filter_map(|message| match message {
+            Message::System { content } | Message::User { content } => Some(content.clone()),
+            Message::Assistant { content, .. } => content.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+const SELF_ROLE: &str = "555";
+
+#[tokio::test]
+async fn the_bots_managed_role_mention_is_answered_and_stripped() {
+    let rig = rig(vec![Step::Reply("Here is the week.")]).await;
+    let mut by_role = asked("1001", "11", CHANNEL, &[ROLE]);
+    by_role.message.content = format!("<@&{SELF_ROLE}> what's on this week?");
+    by_role.gate.mentions.clear();
+    by_role.gate.role_mentions = vec![SELF_ROLE.into()];
+    let mut unknown_role = by_role.clone();
+    unknown_role.message.id = "1002".into();
+    // Without the managed role known, a role mention does not summon.
+    assert!(!rig.driver.offer(unknown_role));
+    by_role.self_role_id = Some(SELF_ROLE.into());
+    assert!(rig.driver.offer(by_role.clone()));
+    rig.settle().await;
+    assert_eq!(rig.rows()[0].outcome, ChatOutcome::Answered);
+    let seen = rig.fake.seen.lock().unwrap();
+    let ctx = &seen.ctx[0];
+    assert_eq!(ctx.self_role_id.as_deref(), Some(SELF_ROLE));
+    assert_eq!(ctx.bot_names, ["Kanade"]);
+    let stripped = schedule_defaults(&by_role.message.content, Some(BOT), Some(SELF_ROLE));
+    let kept = schedule_defaults(&by_role.message.content, Some(BOT), None);
+    assert_ne!(stripped, kept, "the role mention changes the reading");
+    assert_eq!(
+        (ctx.force_all_channels, ctx.force_group_schedule),
+        (stripped.force_all_channels, stripped.force_group_schedule)
+    );
+}
+
+#[tokio::test]
+async fn a_question_deleted_before_its_answer_starts_never_reaches_the_model() {
+    let rig = rig(vec![Step::Reply("never")]).await;
+    let gate = Arc::new(Notify::new());
+    *rig.fake.prepare_gate.lock().unwrap() = Some(Arc::clone(&gate));
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert_eq!(rig.pool_used(), 1);
+    rig.driver.deleted(&["1001".into()]);
+    gate.notify_one();
+    rig.settle().await;
+    assert!(rig.fake.seen.lock().unwrap().conversations.is_empty());
+    assert!(rig.rows().is_empty());
+    assert_eq!(rig.pool_used(), 0, "refunded");
+    assert_eq!(rig.driver.limits().clean_retry.pending, 0);
+    assert_eq!(
+        rig.surface.events().last().map(String::as_str),
+        Some(format!("-{SEEN_REACTION} {CHANNEL}/1001").as_str())
+    );
+    assert_eq!(rig.driver.status(), "idle");
+}
+
+#[tokio::test]
+async fn waiters_are_dropped_and_refunded_when_chat_is_turned_off() {
+    let held = Arc::new(Notify::new());
+    let rig = rig(vec![Step::Held(Arc::clone(&held), "first")]).await;
+    for (id, member) in [("1001", "11"), ("1002", "12"), ("1003", "13")] {
+        assert!(rig.driver.offer(asked(id, member, CHANNEL, &[ROLE])));
+    }
+    rig.settle().await;
+    assert_eq!(rig.pool_used(), 3);
+    rig.fake.enabled.store(false, Ordering::SeqCst);
+    held.notify_one();
+    rig.settle().await;
+    assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
+    assert_eq!(rig.rows().len(), 1);
+    assert_eq!(rig.pool_used(), 1, "only the answered one is spent");
+    let events = rig.surface.events();
+    for (id, position) in [("1002", 1), ("1003", 2)] {
+        assert!(events.contains(&format!("-{} {CHANNEL}/{id}", position_reaction(position))));
+        assert!(!events.contains(&format!("+{SEEN_REACTION} {CHANNEL}/{id}")));
+    }
+    assert!(rig.driver.limits().queue.answering.is_empty());
+}
+
+#[tokio::test]
+async fn a_panicking_answer_concludes_and_frees_the_channel() {
+    let rig = rig(vec![Step::Panic, Step::Reply("after")]).await;
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].error.as_deref(),
+        Some("failed: the question stopped unexpectedly")
+    );
+    let limits = rig.driver.limits();
+    assert_eq!(limits.clean_retry.pending, 0, "the reservation settled");
+    assert!(limits.queue.answering.is_empty(), "the channel is free");
+    assert_eq!(limits.allowance.pool.used, 0, "refunded");
+    assert!(!rig.surface.events().iter().any(|e| e.starts_with("reply")));
+    assert!(rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert!(
+        rig.surface
+            .events()
+            .contains(&format!("reply {CHANNEL}/1002: after"))
+    );
+}
+
+#[tokio::test]
+async fn a_keycap_is_removed_only_after_it_was_added() {
+    let held = Arc::new(Notify::new());
+    let rig = rig(vec![Step::Held(Arc::clone(&held), "a"), Step::Reply("b")]).await;
+    *rig.surface.1.slow_keycap.lock().unwrap() = Some(Duration::from_millis(100));
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
+    // Dequeued at once, while the add is still in flight.
+    held.notify_one();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let events = rig.surface.events();
+    let keycap = position_reaction(1);
+    let added = events
+        .iter()
+        .position(|e| *e == format!("+{keycap} {CHANNEL}/1002"));
+    let removed = events
+        .iter()
+        .position(|e| *e == format!("-{keycap} {CHANNEL}/1002"));
+    assert!(added.is_some() && removed.is_some(), "{events:?}");
+    assert!(added < removed, "{events:?}");
+}
+
+#[tokio::test]
+async fn shutdown_is_bounded_even_when_discord_hangs() {
+    let config = DriverConfig {
+        stop_grace: Duration::from_millis(50),
+        cut_budget: Duration::from_millis(50),
+        ..DriverConfig::default()
+    };
+    let rig = rig_with(
+        Fake::new(vec![Step::Forever]),
+        config,
+        &MemoryScheduleStore::new(),
+    )
+    .await;
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    rig.surface.1.hang_unreact.store(true, Ordering::SeqCst);
+    let started = tokio::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(3), rig.driver.stop())
+        .await
+        .expect("stop is bounded");
+    // grace + cut budget + the final log budget (1 s), never the hang.
+    assert!(started.elapsed() < Duration::from_millis(1500));
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1, "logged before the hung tidy-up");
+    assert_eq!(rows[0].error.as_deref(), Some("cancelled: serve shut down"));
+    assert_eq!(rig.pool_used(), 0);
+    assert_eq!(rig.driver.limits().clean_retry.pending, 0);
 }

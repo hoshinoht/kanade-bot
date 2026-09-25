@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 pub use ports::{Answerer, Asked, Job, Prepared, Setup, Surface};
 pub use view::{ChatHandle, ChatView};
@@ -37,6 +38,9 @@ pub const DEFAULT_HISTORY_TTL_S: f64 = 2700.0;
 /// v4 `MODEL_CONTEXT_TOKENS`.
 pub const DEFAULT_CONTEXT_TOKENS: usize = 8192;
 
+/// After the final abort: the log writes aborted questions spawn.
+const LOG_BUDGET: Duration = Duration::from_secs(1);
+
 /// Monotonic seconds.
 pub type Monotonic = Arc<dyn Fn() -> f64 + Send + Sync>;
 
@@ -51,6 +55,9 @@ pub struct DriverConfig {
     pub max_output_tokens: u32,
     /// How long shutdown lets running answers finish before cutting them.
     pub stop_grace: Duration,
+    /// After the cut: how long cut questions get to log (and tidy their
+    /// reactions) before whatever is left is aborted.
+    pub cut_budget: Duration,
 }
 
 impl Default for DriverConfig {
@@ -63,7 +70,10 @@ impl Default for DriverConfig {
             tool_rounds: crate::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS,
             model_context_tokens: DEFAULT_CONTEXT_TOKENS,
             max_output_tokens: crate::chat::context::COMPLETION_RESERVE_TOKENS as u32,
-            stop_grace: Duration::from_secs(5),
+            // With the gateway close (5 s) and the HTTP drain (10 s) the whole
+            // shutdown stays well inside Compose's 30 s stop grace.
+            stop_grace: Duration::from_secs(3),
+            cut_budget: Duration::from_secs(2),
         }
     }
 }
@@ -130,6 +140,8 @@ struct Queued {
     spent_at: Option<f64>,
     /// Its queue position reaction, if it waited.
     position: Option<usize>,
+    /// Set once that reaction's add finished, so its removal comes after.
+    reacted: Option<watch::Receiver<bool>>,
 }
 
 struct State {
@@ -253,7 +265,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             .apply(setup.member_rate, setup.pool_rate, &state.overrides);
         let summons = Summons {
             bot_user_id: asked.bot_user_id.as_deref(),
-            self_role_id: None,
+            self_role_id: asked.self_role_id.as_deref(),
             replied_author_id: asked.replied_author_id.as_deref(),
             enabled: setup.enabled && setup.ready,
             is_admin: asked.is_admin,
@@ -289,17 +301,20 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     asked,
                     spent_at,
                     position: None,
+                    reacted: None,
                 };
                 self.spawn(self.clone().worker(job, cancelled));
             }
             Admission::Queued { position } => {
                 let (channel, emoji) = (asked.channel_id.clone(), position_reaction(position));
+                let (reacted, done) = watch::channel(false);
                 state.waiting.insert(
                     message_id.clone(),
                     Queued {
                         asked,
                         spent_at,
                         position: Some(position),
+                        reacted: Some(done),
                     },
                 );
                 drop(guard);
@@ -310,6 +325,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                         .surface
                         .react(&channel, &message_id, emoji)
                         .await;
+                    reacted.send_replace(true);
                 });
             }
             Admission::Busy => {
@@ -404,34 +420,56 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 })
                 .collect()
         };
-        let deadline = tokio::time::Instant::now() + self.shared.config.stop_grace;
+        let config = &self.shared.config;
+        let deadline = Instant::now() + config.stop_grace;
         for queued in &dropped {
-            if let Some(position) = queued.position {
-                let asked = &queued.asked;
-                let unreact = self.shared.surface.unreact(
-                    &asked.channel_id,
-                    &asked.message.id,
-                    position_reaction(position),
-                );
-                let _ = tokio::time::timeout_at(deadline, unreact).await;
-            }
+            let _ = tokio::time::timeout_at(deadline, self.keycap_off(queued)).await;
         }
-        let tasks: Vec<JoinHandle<()>> = std::mem::take(
-            &mut *self
-                .shared
-                .tasks
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        let mut left = Vec::new();
-        for mut task in tasks {
-            if tokio::time::timeout_at(deadline, &mut task).await.is_err() {
-                left.push(task);
-            }
-        }
+        self.drain(deadline).await;
         self.shared.cut.send_replace(true);
+        // Cut questions conclude and log at once; their Discord tidy-up and
+        // anything else still pending is bounded, then aborted.
+        let hard = Instant::now() + config.cut_budget;
+        self.drain(hard).await;
+        let left: Vec<JoinHandle<()>> = std::mem::take(&mut *self.tasks());
+        for task in &left {
+            task.abort();
+        }
         for task in left {
             let _ = task.await;
+        }
+        // Aborted questions conclude on drop and may spawn their log write.
+        self.drain(Instant::now() + LOG_BUDGET).await;
+        for task in std::mem::take(&mut *self.tasks()) {
+            task.abort();
+        }
+    }
+
+    fn tasks(&self) -> MutexGuard<'_, Vec<JoinHandle<()>>> {
+        self.shared
+            .tasks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Await every task, including ones spawned meanwhile, until `deadline`;
+    /// unfinished ones stay listed.
+    async fn drain(&self, deadline: Instant) {
+        loop {
+            let batch: Vec<JoinHandle<()>> = std::mem::take(&mut *self.tasks());
+            if batch.is_empty() {
+                return;
+            }
+            let mut left = Vec::new();
+            for mut task in batch {
+                if tokio::time::timeout_at(deadline, &mut task).await.is_err() {
+                    left.push(task);
+                }
+            }
+            if !left.is_empty() {
+                self.tasks().extend(left);
+                return;
+            }
         }
     }
 

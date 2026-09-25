@@ -180,11 +180,20 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   when it dequeues a question, answers, posts the reply (`reply_to`, no
   mentions) and then `conclude`s with that reservation under the state
   lock (`conclude` sees the already-posted result), then records the row.
-  Deleting a waiting question refunds it; deleting a running one lets it
-  finish (a dispatch is never cut) but posts nothing more and withholds the
-  question from later context. Shutdown refunds waiters, lets running
-  answers finish within a grace, then cuts the rest (refunded, concluded,
-  row `cancelled: serve shut down`). A persona identity change forgets
+  Before `prepare` a dequeued question is re-gated (chat still on, channel
+  still in a chat category) and after it re-checked for deletion; either
+  drops it with a refund and no model call. Deleting a waiting question
+  refunds it; deleting a running one lets it finish (a dispatch is never
+  cut) but posts nothing more and withholds both the question and its
+  unposted answer from later context. From the reservation on, a `Held`
+  guard concludes the question even if its future is dropped (a panic,
+  caught per question so the channel is handed over, or a shutdown abort).
+  Shutdown refunds waiters, lets running answers finish within a grace,
+  then cuts the rest (refunded, concluded, row `cancelled: serve shut
+  down`), bounding the tidy-up and aborting what is left. The bot's managed
+  role (`@Kanade` as a role mention) summons it like a user mention and is
+  stripped the same way (`ToolContext::self_role_id`); `bot_names` are its
+  user, global and guild names. A persona identity change forgets
   history. Proposals are recorded against the interaction id.
 - Not here: strategy prefetch and source attribution (no boss-knowledge v2
   renderer outside `api`), and a model pre-screen.

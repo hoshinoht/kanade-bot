@@ -66,6 +66,8 @@ pub struct RoleName {
     pub name: String,
     pub color: u32,
     pub position: i64,
+    /// A bot's managed integration role: that bot's user id.
+    pub bot_id: Option<Id<UserMarker>>,
 }
 
 impl RoleName {
@@ -74,6 +76,10 @@ impl RoleName {
             name: role.name.clone(),
             color: role.colors.primary_color,
             position: role.position,
+            bot_id: role
+                .managed
+                .then(|| role.tags.as_ref().and_then(|tags| tags.bot_id))
+                .flatten(),
         }
     }
 }
@@ -83,6 +89,10 @@ struct State {
     available: bool,
     owner_id: Option<Id<UserMarker>>,
     self_id: Option<Id<UserMarker>>,
+    /// The bot's user name and global name (`READY`).
+    self_names: Vec<String>,
+    /// The bot's guild nickname (`GUILD_CREATE`).
+    self_nick: Option<String>,
     /// `None` until the bot's own member is seen: permissions are unknown.
     self_roles: Option<Vec<Id<RoleMarker>>>,
     roles: HashMap<Id<RoleMarker>, Permissions>,
@@ -128,6 +138,39 @@ impl GuildCache {
         self.write().self_id = Some(self_id);
     }
 
+    /// The bot's user and global names, from `READY`.
+    pub fn set_self_names(&self, names: Vec<String>) {
+        self.write().self_names = names;
+    }
+
+    /// What members may call the bot (v4 `user.name`/`display_name`, plus
+    /// its guild nickname): never a member in a party.
+    pub fn self_names(&self) -> Vec<String> {
+        let state = self.read();
+        let mut names: Vec<String> = state
+            .self_names
+            .iter()
+            .chain(&state.self_nick)
+            .filter(|name| !name.trim().is_empty())
+            .cloned()
+            .collect();
+        names.dedup();
+        names
+    }
+
+    /// The bot's own managed role (Discord offers it when members type
+    /// `@Kanade`), once the guild and `READY` are known.
+    pub fn self_role(&self) -> Option<Id<RoleMarker>> {
+        let state = self.read();
+        let me = state.self_id?;
+        state
+            .role_names
+            .iter()
+            .filter(|(_, role)| role.bot_id == Some(me))
+            .map(|(id, _)| *id)
+            .min()
+    }
+
     /// Replace everything from a full guild payload (`GUILD_CREATE`).
     pub fn reset(&self, guild: &Guild) {
         let mut state = self.write();
@@ -156,6 +199,7 @@ impl GuildCache {
             .find(|member| Some(member.user.id) == self_id)
         {
             state.self_roles = Some(me.roles.clone());
+            state.self_nick.clone_from(&me.nick);
         }
     }
 

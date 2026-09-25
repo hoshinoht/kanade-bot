@@ -159,6 +159,12 @@ impl Router {
     pub fn route(&mut self, event: Event) -> Option<BotEvent> {
         if let Event::Ready(ready) = &event {
             self.cache.set_self(ready.user.id);
+            let user = &ready.user;
+            self.cache.set_self_names(
+                std::iter::once(user.name.clone())
+                    .chain(user.global_name.clone())
+                    .collect(),
+            );
             return Some(BotEvent::Ready {
                 self_id: ready.user.id,
                 application_id: ready.application.id,

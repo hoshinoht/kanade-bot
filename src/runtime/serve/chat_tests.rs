@@ -42,6 +42,7 @@ const PILOT_ROLE: u64 = 30;
 const CATEGORY: u64 = 40;
 const CHANNEL: u64 = 50;
 const THREAD: u64 = 60;
+const BOT_ROLE: u64 = 35;
 const ALIAS: &str = "home-chat";
 
 // ---- Loopback model gateway ----
@@ -213,7 +214,7 @@ fn guild_create() -> Event {
         "owner_id": OWNER.to_string(), "preferred_locale": "en-US",
         "premium_progress_bar_enabled": false, "premium_tier": 0,
         "public_updates_channel_id": null,
-        "roles": [role_json(GUILD), role_json(10), role_json(PILOT_ROLE)],
+        "roles": [role_json(GUILD), role_json(10), role_json(PILOT_ROLE), bot_role()],
         "rules_channel_id": null, "splash": null, "system_channel_flags": 0,
         "system_channel_id": null, "verification_level": 0, "vanity_url_code": null,
     });
@@ -242,9 +243,30 @@ fn guild_create() -> Event {
     Event::GuildCreate(Box::new(parse::<GuildCreate>(guild)))
 }
 
+/// The bot's managed integration role.
+fn bot_role() -> Value {
+    let mut role = role_json(BOT_ROLE);
+    role["managed"] = json!(true);
+    role["tags"] = json!({ "bot_id": SELF.to_string() });
+    role
+}
+
 /// Alice asks in the thread, mentioning the bot, holding `roles`.
 fn question(id: u64, roles: &[u64]) -> Event {
-    Event::MessageCreate(Box::new(parse::<MessageCreate>(json!({
+    Event::MessageCreate(Box::new(parse::<MessageCreate>(question_json(id, roles))))
+}
+
+/// Alice asks through `@Kanade` resolved to the bot's managed role.
+fn question_by_role(id: u64, roles: &[u64]) -> Event {
+    let mut message = question_json(id, roles);
+    message["content"] = json!(format!("<@&{BOT_ROLE}> when is lotus?"));
+    message["mentions"] = json!([]);
+    message["mention_roles"] = json!([BOT_ROLE.to_string()]);
+    Event::MessageCreate(Box::new(parse::<MessageCreate>(message)))
+}
+
+fn question_json(id: u64, roles: &[u64]) -> Value {
+    json!({
         "id": id.to_string(),
         "channel_id": THREAD.to_string(),
         "guild_id": GUILD.to_string(),
@@ -268,7 +290,7 @@ fn question(id: u64, roles: &[u64]) -> Event {
         "embeds": [],
         "pinned": false,
         "type": 0,
-    }))))
+    })
 }
 
 // ---- Harness ----
@@ -454,6 +476,15 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
         assert_eq!(stub.completions(), 1);
         let limits = live.composition.admin.state.chat.as_ref().unwrap().limits();
         assert_eq!(limits.unwrap().allowance.pool.used, 1);
+        // `@Kanade` resolved to the bot's managed role summons it too.
+        live.events
+            .send(question_by_role(5003, &[PILOT_ROLE]))
+            .unwrap();
+        eventually!(
+            "the role-mention reply",
+            replies(&live.fake, THREAD).len() == 2
+        );
+        assert_eq!(replies(&live.fake, THREAD)[1].1, Some(5003));
     })
     .await;
 }

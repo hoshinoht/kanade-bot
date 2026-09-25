@@ -29,6 +29,8 @@ pub struct Asked {
     pub gate: IncomingMessage,
     pub replied_author_id: Option<String>,
     pub bot_user_id: Option<String>,
+    /// The bot's managed role: `@Kanade` often arrives as this role mention.
+    pub self_role_id: Option<String>,
     /// Staff: exempt from the role gate and both allowances.
     pub is_admin: bool,
 }

@@ -129,6 +129,7 @@ impl ChatFeed {
             },
             replied_author_id: replied.map(|parent| id_text(parent.author.id)),
             bot_user_id: self_id.map(id_text),
+            self_role_id: self.cache.self_role().map(id_text),
             is_admin: message.member.is_some() && (self.staff)(message.author.id, &roles),
         }
     }

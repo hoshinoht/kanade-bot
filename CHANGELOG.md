@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 chat answers mentions of the bot's managed role, drops queued questions when chat is
+  switched off, never calls the model for a question deleted before its answer starts, keeps
+  unposted answers out of history, survives a panicking answer, and bounds chat shutdown.
 - v5 chat allowance may be 0 per member ("staff only"): members without an override are ignored
   silently, staff are exempt, and `/limits` says chat is staff only.
 - v5 chat logs keep each tool call's result (up to 8 KiB, marked when cut) and its time; the

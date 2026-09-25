@@ -302,3 +302,50 @@ fn owner_bot_has_every_permission() {
     ));
     assert!(cache.is_reachable(&LOCKED.to_string()));
 }
+
+/// The chat pilot's view of the bot: its managed role (`@Kanade` arrives as
+/// that role mention) and every name it goes by (never a party member).
+#[test]
+fn the_bots_managed_role_and_names_come_from_ready_and_the_guild() {
+    let cache = Arc::new(GuildCache::new(guild()));
+    let mut router = Router::with_cache(scope(), Arc::clone(&cache));
+    assert_eq!(cache.self_role(), None);
+    let mut ready_json = serde_json::json!({
+        "application": { "id": "9", "flags": 0 },
+        "guilds": [],
+        "resume_gateway_url": "wss://gateway.invalid",
+        "session_id": "session",
+        "user": user_json(SELF_ID, "kanade", Some("Kanade"), true),
+        "v": 10,
+    });
+    ready_json["user"]["mfa_enabled"] = serde_json::json!(false);
+    router.route(twilight_gateway::Event::Ready(parse(ready_json)));
+    let managed = |id: u64, bot: u64| {
+        let mut role = role_json(id, 0);
+        role["managed"] = serde_json::json!(true);
+        role["tags"] = serde_json::json!({ "bot_id": bot.to_string() });
+        role
+    };
+    router.route(guild_create_with(
+        GUILD,
+        OWNER,
+        &[
+            role_json(GUILD, 0),
+            // Another bot's managed role, and a plain role the bot holds.
+            managed(BOT_ROLE + 1, ALICE),
+            role_json(BOT_ROLE + 2, 0),
+            managed(BOT_ROLE, SELF_ID),
+        ],
+        &[],
+        &[],
+        &[member_json(
+            user_json(SELF_ID, "kanade", Some("Kanade"), true),
+            Some("Kanade-chan"),
+            &[BOT_ROLE, BOT_ROLE + 2],
+        )],
+    ));
+    assert_eq!(cache.self_role(), Some(Id::new(BOT_ROLE)));
+    assert_eq!(cache.self_names(), ["kanade", "Kanade", "Kanade-chan"]);
+    router.route(role_delete(GUILD, BOT_ROLE));
+    assert_eq!(cache.self_role(), None);
+}
