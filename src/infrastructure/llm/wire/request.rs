@@ -65,13 +65,13 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
     Value::Object(body)
 }
 
-/// `Off` is sent as `none` only where the alias publishes it; elsewhere omitting
-/// the field is the only portable "no preference".
+/// Kanata publishes no list when a provider passes every level through, so `None`
+/// allows `none`; a published list must name it.
 fn publishes(capabilities: &ModelCapabilities, effort: Effort) -> bool {
     capabilities
         .reasoning_efforts
         .as_ref()
-        .is_some_and(|efforts| efforts.contains(&effort))
+        .is_none_or(|efforts| efforts.contains(&effort))
 }
 
 fn message(message: &Message) -> Value {

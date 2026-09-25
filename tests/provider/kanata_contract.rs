@@ -192,24 +192,25 @@ async fn a_locally_invalid_value_is_permanent_and_never_downgrades() {
 }
 
 #[test]
-fn off_is_sent_as_none_only_where_published() {
+fn off_is_sent_as_none_unless_a_published_list_excludes_it() {
     let mut caps = full();
     let mut request = tiny_request();
     request.reasoning = Some(Effort::Off);
-    caps.reasoning_efforts = Some(vec![Effort::Off, Effort::Low]);
-    assert_eq!(
-        wire_body(&request, &caps).unwrap()["reasoning_effort"],
-        "none"
-    );
-    for efforts in [None, Some(vec![Effort::Low])] {
+    // No list means the provider passes every level through (Kanata's Ollama/vLLM/OpenRouter).
+    for efforts in [Some(vec![Effort::Off, Effort::Low]), None] {
         caps.reasoning_efforts = efforts;
-        assert!(
-            wire_body(&request, &caps)
-                .unwrap()
-                .get("reasoning_effort")
-                .is_none()
+        assert_eq!(
+            wire_body(&request, &caps).unwrap()["reasoning_effort"],
+            "none"
         );
     }
+    caps.reasoning_efforts = Some(vec![Effort::Low]);
+    assert!(
+        wire_body(&request, &caps)
+            .unwrap()
+            .get("reasoning_effort")
+            .is_none()
+    );
     caps.reasoning_efforts = Some(vec![Effort::Minimal, Effort::Xhigh, Effort::Max]);
     for (effort, wire) in [
         (Effort::Minimal, "minimal"),
