@@ -17,7 +17,9 @@
     channels,
     members,
     week,
+    version,
     onsaved,
+    onstale,
   }: {
     open: boolean;
     /** null = add a new timing. */
@@ -26,7 +28,11 @@
     channels: Channel[];
     members: MemberRow[];
     week: Week | null;
+    /** Week version `row` was read at. */
+    version: number | null;
     onsaved: (row: FixedRow, message: string) => void;
+    /** The timing changed underneath (409): the page re-reads it. */
+    onstale: () => void;
   } = $props();
 
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -45,11 +51,14 @@
   let step = $state<'edit' | 'choose'>('edit');
   let decisions = $state<Record<string, 'update' | 'keep'>>({});
   let seeded: string | null = null;
+  /** Pinned when the form opens, so a re-read behind it cannot turn a stale save into an overwrite. */
+  let formVersion: number | null = null;
 
   $effect(() => {
     const key = row?.id ?? 'new';
     if (open && seeded !== key) {
       seeded = key;
+      formVersion = version;
       weekday = row?.weekday ?? 0;
       time = row?.time ?? '';
       channel = row?.channel_id ?? channels[0]?.id ?? '';
@@ -99,12 +108,14 @@
     error = '';
     const body = request();
     const result = row
-      ? await send((c) => c.patch<FixedRow>(`/api/admin/fixed/${encodeURIComponent(row.id)}`, body))
+      ? await send((c) => c.patch<FixedRow>(`/api/admin/fixed/${encodeURIComponent(row.id)}`, { ...body, version: formVersion ?? undefined }))
       : await send((c) => c.post<FixedRow>('/api/admin/fixed', body));
     busy = false;
     if (!result.ok) {
-      error = result.message;
+      const stale = result.status === 409;
+      error = stale ? `${result.message} Close and reopen this timing to edit what is saved now.` : result.message;
       step = 'edit';
+      if (stale) onstale();
       return;
     }
     const title = `${result.value.weekday_name} ${result.value.time} — ${result.value.bosses.map((b) => b.token).join(' + ')}`;

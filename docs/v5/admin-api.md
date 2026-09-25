@@ -88,7 +88,8 @@ whole; unknown or read-only keys are refused with 422.
   The body is the whole form, so a form loaded before someone else's edit
   resends the old value of that field and is `409 stale` rather than
   reverting it. The admin app and `tools/pwa-mock` must send `version` on
-  this PATCH (client change scheduled separately). `POST` ignores it.
+  this PATCH (both do; the client also sends `X-Kanade-CSRF` and an
+  `Idempotency-Key` on every admin write). `POST` ignores it.
 - Explicit `expect: [{field, seen}]` and admin `override: [{seq, hash}]`
   are accepted in the same bodies and replace the version-derived
   expectations; their refusals are 422 `unknown_field` | `duplicate_field` |

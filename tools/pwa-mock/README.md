@@ -14,6 +14,17 @@ unset serves generated stand-ins), `KANADE_BOT_NAME`, `ADMIN_PORT`,
 `PUBLIC_PORT`, and `KANADE_MOCK_NOW` (RFC 3339 UTC instant, e.g.
 `2026-09-29T12:00:00Z`) to pin the clock for tests.
 
+Admin writes follow the server's API-5 contract (`src/writes.rs`): every
+`POST`/`PATCH`/`DELETE` under `/api/admin/` (except the e2e `reset`) needs the
+`X-Kanade-CSRF` token that `GET /api/admin/session` answers with (`403 csrf`),
+and an `Idempotency-Key` replays the first successful answer (`422
+idempotency_mismatch` for another request, `400 invalid_idempotency_key` for a
+malformed one). `POST /__mock/csrf/rotate` stands in for signing in again.
+`PATCH /api/admin/fixed/{id}` requires `version` (`422 version_required`) and
+is `409 stale` when the week moved since, checked like run edits (whole week,
+where the server checks per field). Unit tests pin their own clock and ignore
+`KANADE_MOCK_NOW`.
+
 `cargo test` also walks every endpoint the PWAs call and validates each
 response against `docs/v5/api-schemas` (`src/contract.rs`).
 

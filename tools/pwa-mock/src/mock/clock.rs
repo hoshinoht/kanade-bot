@@ -8,20 +8,28 @@ use std::{
 pub const TZ_OFFSET_SECS: i64 = 8 * 3600;
 pub const DOW: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
 
+/// Unit tests' instant (the e2e suite's Tue 12:00 guild time): seeded
+/// deadlines and reset-day rollovers must not follow the wall clock.
+const TEST_NOW: &str = "2026-09-29T04:00:00Z";
+
+fn pinned_text() -> Option<String> {
+    if cfg!(test) {
+        Some(TEST_NOW.into())
+    } else {
+        std::env::var("KANADE_MOCK_NOW").ok()
+    }
+}
+
 /// `KANADE_MOCK_NOW` (e.g. `2026-09-29T04:00:00Z`) freezes the clock so tests
 /// never depend on the real date; unset follows the system clock.
 fn pinned() -> Option<i64> {
     static PINNED: OnceLock<Option<i64>> = OnceLock::new();
-    *PINNED.get_or_init(|| {
-        std::env::var("KANADE_MOCK_NOW")
-            .ok()
-            .and_then(|v| parse_instant(&v))
-    })
+    *PINNED.get_or_init(|| pinned_text().and_then(|v| parse_instant(&v)))
 }
 
 /// The pinned instant as given, for `/__mock/whoami`; None when unpinned.
 pub fn pinned_raw() -> Option<String> {
-    pinned().and(std::env::var("KANADE_MOCK_NOW").ok())
+    pinned().and(pinned_text())
 }
 
 pub fn now_secs() -> i64 {

@@ -237,6 +237,9 @@ pub struct FixedRequest {
     /// Per amended run: `update` (follow the new timing) or `keep` (this week only).
     #[serde(default)]
     pub decisions: std::collections::HashMap<String, String>,
+    /// Week version the form was loaded at: required by PATCH, ignored by POST.
+    #[serde(default)]
+    pub version: Option<u64>,
 }
 
 #[derive(Deserialize)]

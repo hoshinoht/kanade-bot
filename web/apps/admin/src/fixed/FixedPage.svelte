@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BossRow, FixedRow } from '@kanade/api-types';
+  import type { BossRow, FixedRow, Week } from '@kanade/api-types';
   import { BossTag, Modal, Toaster } from '@kanade/ui';
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { Resource, send } from '../resource.svelte';
@@ -10,10 +10,19 @@
 
   const fixed = new Resource<FixedRow[]>('/api/admin/fixed');
   const bosses = new Resource<BossRow[]>('/api/admin/bosses');
+  /** Week version the rows were read at; edits send it (409 if a timing moved since). */
+  let loadedAt = $state<number | null>(null);
   $effect(() => {
-    void fixed.load();
+    void load();
     void bosses.load();
   });
+
+  // Head first: an older version can only cost a needless 409, a newer one could hide someone's edit.
+  async function load() {
+    const head = await send((c) => c.get<Week>('/api/admin/week'));
+    loadedAt = head.ok ? head.value.version : null;
+    await fixed.load();
+  }
 
   let query = $state('');
   let editorOpen = $state(false);
@@ -41,7 +50,13 @@
 
   async function saved(_row: FixedRow, message: string) {
     toaster.show({ message, tone: 'ok' });
-    await fixed.load();
+    await load();
+    void store.refresh();
+  }
+
+  /** Like a stale run edit: re-read so reopening shows what is saved now. */
+  function stale() {
+    void load();
     void store.refresh();
   }
 
@@ -56,7 +71,7 @@
     retireOpen = false;
     const n = result.value.cancelled;
     toaster.show({ message: `Retired ${title(row)}; ${n} upcoming run${n === 1 ? '' : 's'} cancelled.`, tone: 'ok' });
-    await fixed.load();
+    await load();
     void store.refresh();
   }
 </script>
@@ -146,7 +161,9 @@
   channels={store.channels}
   members={store.members}
   week={store.week}
+  version={loadedAt}
   onsaved={saved}
+  onstale={stale}
 />
 
 <!-- Retiring cancels runs people are counting on: named consequence, explicit confirm (RECOVER-3). -->

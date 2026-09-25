@@ -217,6 +217,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   through the journal in v4's order, never twice; sends that never left are retried,
   refused ones retire with a throttled admin alert, a digest is replaced only after
   the old card is confirmed deleted, and a clock that moved backwards posts nothing.
+- v5: the admin app now sends the CSRF token and a retry key with every save, and the
+  week version with weekly-timing edits (an out-of-date form shows the reload message
+  and keeps what was typed); the dev mock enforces the same rules.
 - v5: Svelte 5 web workspace (`web/`) with separate admin and public installable apps
   that keep the portal's look (with WCAG AA contrast fixes), run under a strict CSP with
   no inline code, work offline, and include a keyboard-accessible drag-and-drop planner.

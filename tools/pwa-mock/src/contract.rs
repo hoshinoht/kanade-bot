@@ -5,7 +5,7 @@ use crate::{App, assets, mock, reports, routers};
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{Request, StatusCode, header},
+    http::{HeaderMap, Request, StatusCode, header},
 };
 use jsonschema::{Resource, Validator};
 use serde_json::{Value, json};
@@ -58,6 +58,7 @@ struct Harness {
     public: Router,
     failures: Vec<String>,
     checked: usize,
+    csrf: String,
 }
 
 impl Harness {
@@ -75,16 +76,20 @@ impl Harness {
             knowledge: Arc::new(mock::knowledge::KnowledgeDir(root().join("boss/knowledge"))),
             public: false,
             boss_dir: Arc::new(boss_dir),
+            writes: Arc::default(),
         };
+        let csrf = app.writes.token();
         let (admin, public) = routers(app, &root().join("web"));
         Self {
             admin,
             public,
             failures: Vec::new(),
             checked: 0,
+            csrf,
         }
     }
 
+    /// As the PWA sends it: with the session's CSRF token.
     async fn send(
         &self,
         public: bool,
@@ -92,7 +97,25 @@ impl Harness {
         path: &str,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
+        let csrf = self.csrf.clone();
+        let (status, _, value) = self
+            .send_with(public, method, path, body, &[("x-kanade-csrf", &csrf)])
+            .await;
+        (status, value)
+    }
+
+    async fn send_with(
+        &self,
+        public: bool,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, HeaderMap, Value) {
         let mut req = Request::builder().method(method).uri(path);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
         let body = match body {
             Some(value) => {
                 req = req.header(header::CONTENT_TYPE, "application/json");
@@ -107,10 +130,33 @@ impl Harness {
             .await
             .unwrap();
         let status = res.status();
+        let headers = res.headers().clone();
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|e| panic!("{method} {path}: not JSON ({e}): {bytes:?}"));
-        (status, value)
+        (status, headers, value)
+    }
+
+    /// A guarded admin call answering `want` with the ApiError `code`.
+    async fn refused(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: Value,
+        headers: &[(&str, &str)],
+        want: (StatusCode, &str),
+    ) {
+        let (status, _, value) = self
+            .send_with(false, method, path, Some(body), headers)
+            .await;
+        let label = format!("admin {method} {path} ({})", want.1);
+        if (status, value["error"].as_str()) != (want.0, Some(want.1)) {
+            self.failures.push(format!(
+                "{label}: wanted {} {}, got {status}: {value}",
+                want.0, want.1
+            ));
+        }
+        self.check(&label, status, &value, "");
     }
 
     fn check(&mut self, label: &str, status: StatusCode, value: &Value, target: &str) {
@@ -468,7 +514,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     // A failed edit is already recorded; keep going from the last version.
     let version = |w: &Value, v: u64| w["version"].as_u64().unwrap_or(v);
     let mut v = week["version"].as_u64().unwrap();
-    // The test clock is unpinned, so edit a next-week run from a timing (still ahead, resettable).
+    // Edit a next-week run from a timing: still ahead and resettable on any test clock.
     let run = week["runs"]
         .as_array()
         .unwrap()
@@ -617,8 +663,33 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     let fixed_path = format!("/api/admin/fixed/{}", s(&created["id"]));
+    let head = h
+        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
+        .await["version"]
+        .as_u64()
+        .unwrap();
+    let csrf = h.csrf.clone();
+    let token = [("x-kanade-csrf", csrf.as_str())];
     let mut edit = body;
     edit["note"] = json!("contract");
+    h.refused(
+        "PATCH",
+        &fixed_path,
+        edit.clone(),
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "version_required"),
+    )
+    .await;
+    edit["version"] = json!(head - 1);
+    h.refused(
+        "PATCH",
+        &fixed_path,
+        edit.clone(),
+        &token,
+        (StatusCode::CONFLICT, "stale"),
+    )
+    .await;
+    edit["version"] = json!(head);
     h.ok(
         "PATCH",
         &fixed_path,
@@ -631,6 +702,81 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         &fixed_path,
         None,
         "fixed.json#/$defs/FixedRetired",
+    )
+    .await;
+
+    // Write guard: CSRF on every admin write, Idempotency-Key replays.
+    let (_, headers, _) = h
+        .send_with(false, "GET", "/api/admin/session", None, &[])
+        .await;
+    assert_eq!(
+        headers.get("x-kanade-csrf").and_then(|v| v.to_str().ok()),
+        Some(csrf.as_str()),
+        "the session carries the CSRF token"
+    );
+    let head = h
+        .ok(
+            "GET",
+            "/api/admin/week?week=next",
+            None,
+            "week.json#/$defs/Week",
+        )
+        .await["version"]
+        .as_u64()
+        .unwrap();
+    let move_path = format!("/api/admin/runs/{id}/move");
+    let move_body = json!({ "day": run["day"], "time": "21:10", "version": head });
+    let forbidden = (StatusCode::FORBIDDEN, "csrf");
+    h.refused("POST", &move_path, move_body.clone(), &[], forbidden)
+        .await;
+    h.refused(
+        "POST",
+        &move_path,
+        move_body.clone(),
+        &[("x-kanade-csrf", "forged")],
+        forbidden,
+    )
+    .await;
+    h.refused(
+        "POST",
+        &move_path,
+        move_body.clone(),
+        &[("x-kanade-csrf", &csrf), ("sec-fetch-site", "cross-site")],
+        forbidden,
+    )
+    .await;
+    h.refused(
+        "POST",
+        &move_path,
+        move_body.clone(),
+        &[("x-kanade-csrf", &csrf), ("idempotency-key", "no spaces")],
+        (StatusCode::BAD_REQUEST, "invalid_idempotency_key"),
+    )
+    .await;
+    let keyed = [
+        ("x-kanade-csrf", csrf.as_str()),
+        ("idempotency-key", "contract:move-1"),
+    ];
+    let (first_status, _, first) = h
+        .send_with(false, "POST", &move_path, Some(move_body.clone()), &keyed)
+        .await;
+    h.check(
+        "keyed move",
+        first_status,
+        &first,
+        "week.json#/$defs/MoveResult",
+    );
+    // The first attempt moved the version on; the retry replays instead of going stale.
+    let (again_status, _, again) = h
+        .send_with(false, "POST", &move_path, Some(move_body), &keyed)
+        .await;
+    assert_eq!((first_status, &first), (again_status, &again), "replayed");
+    h.refused(
+        "POST",
+        &move_path,
+        json!({ "day": run["day"], "time": "21:20", "version": head + 1 }),
+        &keyed,
+        (StatusCode::UNPROCESSABLE_ENTITY, "idempotency_mismatch"),
     )
     .await;
 

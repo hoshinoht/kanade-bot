@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, test } from './support';
 
 async function serious(page: Page, label: string) {
   // Let entry animations finish; axe reads mid-fade opacity as low contrast.
@@ -139,9 +139,9 @@ test('axe: offline windows', async ({ page }) => {
 });
 
 test('axe: public closed window', async ({ page, request }) => {
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: false } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
   await page.goto(`${PUBLIC}/?sw=off`);
   await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
   await serious(page, 'public closed');
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: true } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
 });

@@ -9,6 +9,7 @@ mod contract;
 mod headers;
 mod mock;
 mod reports;
+mod writes;
 
 use axum::{
     Router,
@@ -33,6 +34,8 @@ struct App {
     /// Art answers `closed` on the public origin while the portal is closed.
     public: bool,
     boss_dir: Arc<PathBuf>,
+    /// CSRF token and Idempotency-Key replays, shared by both origins' state.
+    writes: Arc<writes::Writes>,
 }
 
 /// SPA fallback for extensionless paths only, so a missing asset is a 404 rather than HTML.
@@ -71,6 +74,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/csp-report", post(reports::receive))
         .route("/__mock/reports", get(reports::list).delete(reports::clear))
         .route("/__mock/whoami", get(whoami))
+        .route("/__mock/csrf/rotate", post(writes::rotate))
         .with_state(app.clone())
         .fallback_service(static_site(dist))
         .layer(middleware::from_fn(headers::apply))
@@ -117,6 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         public: false,
         boss_dir: Arc::new(boss_dir.clone()),
+        writes: Arc::default(),
     };
     let (admin, public) = routers(app, &web);
 
@@ -204,7 +209,8 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             patch(api::participants),
         )
         .route("/api/admin/runs/{id}/ping", post(api::ping))
-        .route("/api/admin/reset", post(api::reset));
+        .route("/api/admin/reset", post(api::reset))
+        .route_layer(middleware::from_fn_with_state(app.clone(), writes::guard));
     let public_api = Router::new()
         .route("/api/public/week", get(api::public_week))
         .route("/api/public/status", get(api::public_status));

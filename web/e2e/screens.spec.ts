@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, csrf, expect, test } from './support';
 
 // Fixed, Bosses, Members, Reminders and the run sheet's weekly-timing tools,
 // against the mock pinned to Tue 29 Sep 2026 12:00 (playwright.config.ts).
@@ -55,6 +55,54 @@ test('fixed: editing a timing with an amended run asks update or keep', async ({
   await page.getByRole('link', { name: 'Week' }).click();
   await page.getByRole('button', { name: 'Show them' }).click();
   await expect(page.locator('[data-run="r-kalos"]')).toContainText('21:00');
+});
+
+test('fixed: an edit sends the version it was loaded at; one made stale behind it is refused', async ({ page }) => {
+  await go(page, '/fixed');
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const editor = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+  await editor.getByLabel('Note').fill('Bring potions');
+  // Someone else edits the week while the form is open.
+  const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number; runs: { id: string; day: number }[] };
+  const limbo = week.runs.find((r) => r.id === 'r-limbo')!;
+  const moved = await page.request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, {
+    headers: await csrf(page.request),
+    data: { day: limbo.day, time: '23:45', version: week.version },
+  });
+  expect(moved.ok()).toBe(true);
+
+  const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  const patch = await sent;
+  expect(patch.postDataJSON()).toMatchObject({ version: week.version, note: 'Bring potions' });
+  const headers = await patch.allHeaders();
+  expect(headers['x-kanade-csrf']).toBeTruthy();
+  expect(headers['idempotency-key']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/);
+  await expect(editor.getByRole('alert')).toContainText('The week changed since it was loaded. Close and reopen');
+  await expect(editor.getByLabel('Note')).toHaveValue('Bring potions');
+
+  await editor.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await editor.getByLabel('Note').fill('Bring potions');
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+});
+
+test('admin writes: a refused CSRF token is refreshed once and the same action retried', async ({ page }) => {
+  await go(page, '/fixed');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
+  // Stand-in for signing in again elsewhere: the token the page holds stops working.
+  await page.request.post(`${ADMIN}/__mock/csrf/rotate`);
+  const writes: { status: number; key: string | undefined }[] = [];
+  page.on('response', async (response) => {
+    const request = response.request();
+    if (request.method() === 'DELETE') writes.push({ status: response.status(), key: (await request.allHeaders())['idempotency-key'] });
+  });
+  await page.getByRole('button', { name: 'Retire Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Retire timing' }).click();
+  await expect(toast(page, 'Retired Tuesday 23:30 — XBM; 1 upcoming run cancelled.')).toBeVisible();
+  expect(writes.map((w) => w.status)).toEqual([403, 200]);
+  expect(writes[1]!.key).toBe(writes[0]!.key);
 });
 
 test('fixed: retiring names its consequence and cancels upcoming runs', async ({ page }) => {

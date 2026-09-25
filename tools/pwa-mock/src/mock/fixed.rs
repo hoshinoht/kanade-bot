@@ -161,7 +161,15 @@ impl Store {
 
     /// Unamended runs follow the new timing. Amended runs need a decision each:
     /// `update` takes the new timing, `keep` leaves this week's change alone.
+    /// Whole-week version check like the mock's run edits (the server checks per field).
     pub fn update_fixed(&mut self, id: &str, req: FixedRequest) -> Result<FixedRow, MoveError> {
+        let version = req.version.ok_or_else(|| {
+            MoveError::Coded(
+                422,
+                "version_required",
+                "Send the week version the timing was loaded at.".into(),
+            )
+        })?;
         let mut timing = Self::validated(&req)?;
         let index = self
             .fixed
@@ -185,6 +193,9 @@ impl Store {
             return Err(MoveError::Invalid(format!(
                 "Choose update or keep for amended run {missing}."
             )));
+        }
+        if version != self.version {
+            return Err(MoveError::Stale);
         }
         let old = &self.fixed[index];
         timing.id = old.id.clone();
@@ -248,10 +259,10 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::super::tests::store;
-    use crate::mock::dto::FixedRequest;
+    use crate::mock::{MoveError, dto::FixedRequest};
     use std::collections::HashMap;
 
-    fn request(time: &str, decisions: &[(&str, &str)]) -> FixedRequest {
+    fn request(time: &str, decisions: &[(&str, &str)], version: Option<u64>) -> FixedRequest {
         FixedRequest {
             weekday: 4,
             time: time.into(),
@@ -263,6 +274,7 @@ mod tests {
                 .iter()
                 .map(|(a, b)| ((*a).into(), (*b).into()))
                 .collect::<HashMap<_, _>>(),
+            version,
         }
     }
 
@@ -270,11 +282,15 @@ mod tests {
     fn editing_a_timing_asks_about_amended_runs() {
         let mut s = store();
         assert!(
-            s.update_fixed("f-kalos", request("21:00", &[])).is_err(),
+            s.update_fixed("f-kalos", request("21:00", &[], Some(s.version)))
+                .is_err(),
             "r-kalos is amended"
         );
         let row = s
-            .update_fixed("f-kalos", request("21:00", &[("r-kalos", "keep")]))
+            .update_fixed(
+                "f-kalos",
+                request("21:00", &[("r-kalos", "keep")], Some(s.version)),
+            )
             .ok()
             .unwrap();
         let week = s.week(false);
@@ -298,9 +314,12 @@ mod tests {
             Some("21:00")
         );
         assert_eq!(row.time, "21:00");
-        s.update_fixed("f-kalos", request("20:30", &[("r-kalos", "update")]))
-            .ok()
-            .unwrap();
+        s.update_fixed(
+            "f-kalos",
+            request("20:30", &[("r-kalos", "update")], Some(s.version)),
+        )
+        .ok()
+        .unwrap();
         assert_eq!(
             s.week(false)
                 .runs
@@ -314,11 +333,30 @@ mod tests {
     }
 
     #[test]
+    fn edits_need_the_version_they_were_loaded_at() {
+        let mut s = store();
+        let keep = [("r-kalos", "keep")];
+        match s.update_fixed("f-kalos", request("21:00", &keep, None)) {
+            Err(MoveError::Coded(422, "version_required", _)) => {}
+            Err(other) => panic!("wanted version_required, got {other}"),
+            Ok(_) => panic!("an edit without a version was applied"),
+        }
+        let loaded = s.version;
+        s.update_fixed("f-kalos", request("21:00", &keep, Some(loaded)))
+            .ok()
+            .unwrap();
+        assert!(matches!(
+            s.update_fixed("f-kalos", request("20:00", &keep, Some(loaded))),
+            Err(MoveError::Stale)
+        ));
+    }
+
+    #[test]
     fn retiring_cancels_open_runs_and_creating_materialises() {
         let mut s = store();
         assert_eq!(s.retire_fixed("f-carling").ok(), Some(2));
         assert!(s.fixed_rows().iter().all(|f| f.id != "f-carling"));
-        let created = s.create_fixed(request("19:00", &[])).ok().unwrap();
+        let created = s.create_fixed(request("19:00", &[], None)).ok().unwrap();
         assert!(!created.runs.is_empty());
         assert!(s.validate_bosses("hstar, cfoo").is_err());
         assert!(

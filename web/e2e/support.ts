@@ -1,4 +1,4 @@
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test';
 
 export const ADMIN = process.env.KANADE_E2E_ADMIN ?? 'http://127.0.0.1:4373';
 export const PUBLIC = process.env.KANADE_E2E_PUBLIC ?? 'http://127.0.0.1:4374';
@@ -42,6 +42,12 @@ async function verifyMock(): Promise<void> {
           'Is a dev server on the e2e ports?',
       );
   }
+}
+
+/** A direct admin write needs the session's CSRF token, as the PWA sends it (API-5). */
+export async function csrf(request: APIRequestContext): Promise<Record<string, string>> {
+  const session = await request.get(`${ADMIN}/api/admin/session`);
+  return { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '' };
 }
 
 export async function resetWeek(): Promise<void> {

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, csrf, expect, test } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
@@ -110,7 +110,7 @@ test('inbox: self-service tab — badges, conflicts, choices, reasons and refusa
 
   // A weekly timing needs a choice per run; the server refuses without them.
   await list.getByRole('option', { name: /Weekly timing/ }).click();
-  const refused = await page.request.post(`${ADMIN}/api/admin/inbox/p-limbo-fixed/approve`, { data: { version: 1 } });
+  const refused = await page.request.post(`${ADMIN}/api/admin/inbox/p-limbo-fixed/approve`, { headers: await csrf(page.request), data: { version: 1 } });
   expect(refused.status()).toBe(422);
   expect(((await refused.json()) as { error: string }).error).toBe('choices_required');
   const choices = detail.getByRole('group', { name: 'Runs of this weekly timing' });
@@ -119,10 +119,10 @@ test('inbox: self-service tab — badges, conflicts, choices, reasons and refusa
   await expect(toast(page, 'Approved: weekly timing HLimbo.')).toBeVisible();
 
   // The API speaks the contract's codes.
-  const expired = await page.request.post(`${ADMIN}/api/admin/inbox/p-jupiter-same/approve`, { data: {} });
+  const expired = await page.request.post(`${ADMIN}/api/admin/inbox/p-jupiter-same/approve`, { headers: await csrf(page.request), data: {} });
   expect(expired.status()).toBe(409);
   expect(((await expired.json()) as { error: string }).error).toBe('no_effect');
-  const stale = await page.request.post(`${ADMIN}/api/admin/inbox/p-carling-link/reject`, { data: { version: 7, reason: 'x' } });
+  const stale = await page.request.post(`${ADMIN}/api/admin/inbox/p-carling-link/reject`, { headers: await csrf(page.request), data: { version: 7, reason: 'x' } });
   expect(stale.status()).toBe(409);
 });
 
@@ -543,6 +543,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(toast(page, /Capacity groups saved/)).toBeVisible();
   // Duplicates and unknown aliases are refused over the API too.
   const dup = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
     data: { models: { groups: [
       { model: 'kanata/chat', group: 'chat', permits: 2 },
       { model: 'kanata/chat', group: 'chat-2', permits: 1 },
@@ -551,17 +552,19 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(dup.status()).toBe(422);
   expect(await dup.text()).toContain('exactly one group');
   const unknown = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
     data: { models: { groups: [{ model: 'kanata/gone', group: 'chat', permits: 1 }] } },
   });
   await expect(unknown.status()).toBe(422);
   expect(await unknown.text()).toContain('Row 1');
   const badKey = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
     data: { models: { kanata_limits: [] } },
   });
   await expect(badKey.status()).toBe(422);
   expect(await badKey.text()).toContain('Unknown or read-only');
   // An unwatched channel has nothing to re-read.
-  const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { data: { channels: ['bm-trio'], window: 'week' } });
+  const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { headers: await csrf(page.request), data: { channels: ['bm-trio'], window: 'week' } });
   expect(await reread.text()).toContain('not watched');
 
   // Notifications.
@@ -716,7 +719,7 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
   expect(selected.trim()).toBe('Off');
 
   // The server refuses an explicit inherit that would resolve illegally.
-  const refused = await page.request.patch(`${ADMIN}/api/admin/config`, { data: { models: { roles: { chat: { reasoning: '' } } } } });
+  const refused = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { models: { roles: { chat: { reasoning: '' } } } } });
   expect(refused.status()).toBe(422);
   expect(await refused.text()).toContain('inherits high');
 });

@@ -21,15 +21,51 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Session-bound CSRF token for guarded writes (admin-api API-5). The API paths
+ * come from the app, so the public bundle never names the admin API.
+ */
+export interface CsrfGuard {
+  /** Read whose `X-Kanade-CSRF` answer header carries the token. */
+  sessionPath: string;
+  /** Which unsafe requests carry it. */
+  guards: (path: string) => boolean;
+  token: string | null;
+  refreshing: Promise<void> | null;
+}
+
+export const CSRF_HEADER = 'X-Kanade-CSRF';
+const UNSAFE = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+let pageCsrf: CsrfGuard | null = null;
+
+export function createCsrfGuard(sessionPath: string, guards: CsrfGuard['guards']): CsrfGuard {
+  return { sessionPath, guards, token: null, refreshing: null };
+}
+
+/** Page-wide guard for every client without its own, so a refreshed token reaches them all. */
+export function guardWrites(sessionPath: string, guards: CsrfGuard['guards']): void {
+  pageCsrf = createCsrfGuard(sessionPath, guards);
+}
+
+/** A fresh `Idempotency-Key` (1–128 of `[A-Za-z0-9-_.:]`): one per user action. */
+export function newIdempotencyKey(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export interface ClientOptions {
   /** Same-origin prefix; the CSP only allows `connect-src 'self'`. */
   base?: string;
   timeoutMs?: number;
   fetch?: typeof fetch;
+  /** Defaults to the page-wide guard, if the app installed one. */
+  csrf?: CsrfGuard;
 }
 
 export interface RequestOptions {
   signal?: AbortSignal;
+  /** Pin the key to repeat an earlier action; otherwise each call is a new action. */
+  idempotencyKey?: string;
 }
 
 export interface Client {
@@ -43,8 +79,10 @@ export function createClient(options: ClientOptions = {}): Client {
   const base = options.base ?? '';
   const timeoutMs = options.timeoutMs ?? 10_000;
   const doFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // Read per request: module-level clients may exist before the app installs its guard.
+  const guard = () => options.csrf ?? pageCsrf;
 
-  async function request<T>(method: string, path: string, body: unknown, opts: RequestOptions): Promise<T> {
+  async function attempt<T>(method: string, path: string, body: unknown, opts: RequestOptions, extra: Record<string, string>): Promise<T> {
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     let response: Response;
@@ -55,7 +93,7 @@ export function createClient(options: ClientOptions = {}): Client {
         // Private API data must never land in the HTTP cache either.
         cache: 'no-store',
         credentials: 'same-origin',
-        headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...extra },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (error) {
@@ -63,6 +101,11 @@ export function createClient(options: ClientOptions = {}): Client {
       if (timeout.aborted) throw new ApiRequestError('timeout', `No answer within ${Math.round(timeoutMs / 1000)} s`);
       throw new ApiRequestError('network', error instanceof Error ? error.message : 'Network unavailable');
     }
+
+    // The session and sign-in answers carry it; a new sign-in replaces it.
+    const token = response.headers.get(CSRF_HEADER);
+    const csrf = guard();
+    if (token && csrf) csrf.token = token;
 
     let parsed: unknown = null;
     const text = await response.text();
@@ -78,6 +121,50 @@ export function createClient(options: ClientOptions = {}): Client {
       throw new ApiRequestError('http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
     }
     return parsed as T;
+  }
+
+  /** Concurrent callers share one session read; a failure leaves the server to refuse. */
+  function refreshCsrf(csrf: CsrfGuard): Promise<void> {
+    csrf.refreshing ??= attempt('GET', csrf.sessionPath, undefined, {}, {})
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        csrf.refreshing = null;
+      });
+    return csrf.refreshing;
+  }
+
+  async function request<T>(method: string, path: string, body: unknown, opts: RequestOptions): Promise<T> {
+    if (!UNSAFE.has(method)) return attempt(method, path, body, opts, {});
+    // Kept across both retries below: they repeat this action, so the server replays rather than reapplies.
+    const key = opts.idempotencyKey ?? newIdempotencyKey();
+    const csrf = guard();
+    const guarded = csrf !== null && csrf.guards(path);
+    if (guarded && csrf.token === null) await refreshCsrf(csrf);
+    let csrfRetried = false;
+    let networkRetried = false;
+    for (;;) {
+      const headers: Record<string, string> = { 'Idempotency-Key': key };
+      if (guarded && csrf.token) headers[CSRF_HEADER] = csrf.token;
+      try {
+        return await attempt<T>(method, path, body, opts, headers);
+      } catch (error) {
+        if (!(error instanceof ApiRequestError)) throw error;
+        // One refresh per action: a token that is still refused means the session itself is gone.
+        if (guarded && !csrfRetried && error.status === 403 && error.body?.error === 'csrf') {
+          csrfRetried = true;
+          await refreshCsrf(csrf);
+          continue;
+        }
+        if (!networkRetried && error.kind === 'network') {
+          networkRetried = true;
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   return {

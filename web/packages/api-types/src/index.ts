@@ -194,6 +194,11 @@ export interface FixedRequest {
   note: string | null;
   /** For each amended run of the timing: follow the new timing, or keep this week's change. */
   decisions?: Record<string, 'update' | 'keep'>;
+  /** Week version the form was loaded at: required by PATCH (else 422 `version_required`), ignored by POST. */
+  version?: number;
+  /** admin-api "Edit preconditions": replace the version-derived expectations. */
+  expect?: { field: string; seen: number | null }[];
+  override?: { seq: number; hash: string }[];
 }
 
 export interface ValidateResult {
@@ -319,7 +324,7 @@ export interface Identity {
   cached: boolean;
 }
 
-/** `GET /api/admin/session`: who is signed in. */
+/** `GET /api/admin/session`: who is signed in; the `X-Kanade-CSRF` response header carries the write token. */
 export interface Session {
   display: string;
 }

@@ -194,9 +194,13 @@ pub async fn reset_run(
     )
 }
 
-/// Mock stand-in for the authenticated caller.
-pub async fn session() -> Response {
-    Json(json!({ "display": "admin token" })).into_response()
+/// Mock stand-in for the authenticated caller; carries the CSRF token like the server.
+pub async fn session(State(app): State<App>) -> Response {
+    (
+        [(crate::writes::CSRF_HEADER, app.writes.token())],
+        Json(json!({ "display": "admin token" })),
+    )
+        .into_response()
 }
 
 pub async fn move_run(
@@ -263,6 +267,7 @@ pub async fn ping(State(app): State<App>, Path(id): Path<String>) -> Response {
 
 pub async fn reset(State(app): State<App>) -> StatusCode {
     app.store.lock().await.reset();
+    app.writes.forget().await;
     StatusCode::NO_CONTENT
 }
 

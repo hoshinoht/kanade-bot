@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, HEADING, PUBLIC, expect, test } from './support';
+import { ADMIN, HEADING, PUBLIC, csrf, expect, test } from './support';
 
 // Every test here also asserts, via the auto `csp` fixture, zero enforced or
 // report-only (Trusted Types) violations: console, DOM events and server reports.
@@ -261,7 +261,7 @@ test('admin: a rejected move rolls back and says why', async ({ page }) => {
   await openAdmin(page);
   // Make the page's week version stale by moving through the API behind its back.
   const { version } = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
-  await page.request.post(`${ADMIN}/api/admin/runs/r-bm/move`, { data: { day: 6, time: '23:30', version } });
+  await page.request.post(`${ADMIN}/api/admin/runs/r-bm/move`, { headers: await csrf(page.request), data: { day: 6, time: '23:30', version } });
   const handle = page.locator('[data-handle="r-limbo"]');
   await handle.focus();
   await page.keyboard.press('m');
@@ -293,7 +293,7 @@ test('admin: duplicate display names each render, keyed by member id', async ({ 
 
 test('public: a closed portal keeps polling on the normal cadence and shows the reopening', async ({ page, request }) => {
   await page.clock.install();
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: false } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
   await page.goto(`${PUBLIC}/?sw=off`);
   await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
   // More than the poller's six-failure limit, each one on the plain 30 s
@@ -303,7 +303,7 @@ test('public: a closed portal keeps polling on the normal cadence and shows the 
     await page.clock.runFor(30_000);
     expect((await polled).status()).toBe(503);
   }
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: true } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
   await page.clock.runFor(30_000);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
 });
@@ -319,7 +319,7 @@ test('public: the public week carries no people, party or version', async ({ pag
 });
 
 test('public: a closed portal says so instead of showing a stale week', async ({ page, request }) => {
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: false } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
   await page.goto(`${PUBLIC}/?sw=off`);
   await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
   // The masthead says closed, neutrally: not green Live, not an error.
@@ -338,7 +338,7 @@ test('public: a closed portal says so instead of showing a stale week', async ({
   // The admin origin is unaffected.
   expect((await request.get(`${ADMIN}/art/portraits/Carling`)).status()).toBe(200);
 
-  await request.patch(`${ADMIN}/api/admin/config`, { data: { self_service: { public_portal: true } } });
+  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
   await page.getByRole('button', { name: 'Check again' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
 });
