@@ -75,6 +75,20 @@ pub enum DraftOp {
     ResetToFixed {
         run: Target,
     },
+    /// Replace a run's bosses, rebuilding its reminders (a proposal split).
+    SetRunBosses {
+        run: Target,
+        bosses: Vec<String>,
+    },
+    /// Add the reminders a run lacks (`rebuild = false`): runs a proposal
+    /// creates get them at once, as v4's `add`/`split` did.
+    EnsureReminders {
+        run: Target,
+    },
+    /// Re-derive a run's status from its answers (proposed RSVPs).
+    RecountRun {
+        run: Target,
+    },
 }
 
 /// Why an operation could not be replayed.
@@ -228,6 +242,19 @@ impl DraftOp {
                 run_id: resolve(run, created)?,
                 policy,
             },
+            Self::SetRunBosses { run, bosses } => Op::SetRunBosses {
+                run_id: resolve(run, created)?,
+                bosses: bosses.clone(),
+                policy: &policy.reminders,
+            },
+            Self::EnsureReminders { run } => Op::EnsureReminders {
+                run_id: resolve(run, created)?,
+                rebuild: false,
+                policy: &policy.reminders,
+            },
+            Self::RecountRun { run } => Op::RecountRun {
+                run_id: resolve(run, created)?,
+            },
         })
     }
 }
@@ -267,7 +294,10 @@ impl DraftOp {
             | Self::SetStatus { run, .. }
             | Self::SwapParticipants { run, .. }
             | Self::SetRsvp { run, .. }
-            | Self::ResetToFixed { run } => visit(run),
+            | Self::ResetToFixed { run }
+            | Self::SetRunBosses { run, .. }
+            | Self::EnsureReminders { run }
+            | Self::RecountRun { run } => visit(run),
         }
     }
 
@@ -289,6 +319,9 @@ impl DraftOp {
             Self::SwapParticipants { .. } => "swap_participants",
             Self::SetRsvp { .. } => "set_rsvp",
             Self::ResetToFixed { .. } => "reset_to_fixed",
+            Self::SetRunBosses { .. } => "set_run_bosses",
+            Self::EnsureReminders { .. } => "ensure_reminders",
+            Self::RecountRun { .. } => "recount_run",
         }
     }
 }

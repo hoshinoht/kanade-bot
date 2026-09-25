@@ -1,7 +1,9 @@
 //! Replays the frozen v4 extraction vectors: the pure rules (gate, window,
 //! resolve, match, merge) and schema, prompt and burst planning (parse,
-//! prompt, plan). Commit and cards belong to later slices.
+//! prompt, plan), and commit through the v5 proposal path. Cards belong to a
+//! later slice.
 
+mod commit;
 mod gate;
 mod matching;
 mod merge;
@@ -14,8 +16,12 @@ mod shaping;
 mod support;
 mod window;
 
-const REPLAYED: [&str; 8] = [
-    "gate", "window", "resolve", "match", "merge", "prompt", "parse", "plan",
+// Pinned clock/ids and v4-shaped snapshots shared with the scheduler target.
+#[path = "../common/mod.rs"]
+mod common;
+
+const REPLAYED: [&str; 9] = [
+    "gate", "window", "resolve", "match", "merge", "prompt", "parse", "plan", "commit",
 ];
 
 #[test]

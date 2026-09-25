@@ -3,6 +3,7 @@
 mod cherry_pick;
 mod drafts;
 mod ports;
+mod proposals;
 mod requests;
 mod service;
 
@@ -13,6 +14,10 @@ pub use drafts::{
 pub use ports::{
     AttendanceHistory, Clock, Committed, IdSource, RecordedRequest, ScheduleStore, Scope,
     StoreError,
+};
+pub use proposals::{
+    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, Supersede,
+    SupersedeScope,
 };
 pub use requests::{Approved, Rejected, RequestError, RequestPreview, RequestResult};
 pub use service::{Attributed, COMMIT_ATTEMPTS, SchedulerError, SchedulerResult, SchedulerService};

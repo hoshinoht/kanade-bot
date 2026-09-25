@@ -16,4 +16,6 @@ Never regenerate this file to make a failing test pass: any change to the
 encoder's output is a new format version with its own vector.
 The one in-place extension, before any release (no stored drafts existed),
 appended the `fixed_participants` sample (a weekly-timing party delta);
-the earlier strings are unchanged.
+the earlier strings are unchanged. A second additive extension (E3
+proposals) appended `set_run_bosses`, `ensure_reminders` and `recount_run`
+samples, again leaving every earlier string unchanged.

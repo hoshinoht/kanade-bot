@@ -14,9 +14,9 @@ use super::mutate::{StatusChange, amend_run, reset_to_fixed, set_status, swap_pa
 use super::notice::Outcome;
 use super::policy::SchedulePolicy;
 use super::policy::utc_instant;
-use super::reminders::{ReminderPolicy, ensure_reminders, reconcile_day_of};
+use super::reminders::{ReminderPolicy, ensure_reminders, reconcile_day_of, refresh_run_reminders};
 use super::roster::RunState;
-use super::rsvp::{ReactionResult, apply_reaction};
+use super::rsvp::{ReactionResult, apply_reaction, derive_run_status};
 use super::run::{
     FixedField, FixedRun, FixedRunPatch, NewFixedRun, NewRun, RsvpSource, RsvpState, RunStatus,
 };
@@ -175,6 +175,19 @@ pub enum Op<'a> {
         remove: Vec<String>,
         directory: &'a (dyn Directory + Sync),
         policy: &'a SchedulePolicy,
+    },
+    /// v5 only (proposal split): replace a run's bosses and rebuild its
+    /// reminders, as v4 `_split` does to the run it shrinks.
+    SetRunBosses {
+        run_id: String,
+        bosses: Vec<String>,
+        policy: &'a ReminderPolicy,
+    },
+    /// v5 only (proposed answers): re-derive one run's status from its
+    /// answers, as v4 `api.service.set_rsvp`; a pin or a started run keeps
+    /// its status ([`derive_run_status`](super::rsvp::derive_run_status)).
+    RecountRun {
+        run_id: String,
     },
 }
 
@@ -425,6 +438,24 @@ pub fn apply_op(
         ))),
         Op::ResetToFixed { run_id, policy } => {
             run(reset_to_fixed(draft, ids, run_id, policy, now)?)
+        }
+        Op::SetRunBosses {
+            run_id,
+            bosses,
+            policy,
+        } => {
+            draft.require_run(run_id)?;
+            draft.set_run_bosses(run_id, bosses.clone());
+            refresh_run_reminders(draft, ids, run_id, policy, now)?;
+            quiet(OpResult::Done)
+        }
+        Op::RecountRun { run_id } => {
+            let before = draft.require_run(run_id)?;
+            let status = derive_run_status(draft, &before, before.status, now).status;
+            if status != before.status {
+                draft.set_run_status(run_id, status);
+            }
+            quiet(OpResult::Changed(status != before.status))
         }
     })
 }

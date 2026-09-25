@@ -11,6 +11,7 @@ mod dispatch_replay;
 mod drafts;
 mod failures;
 mod intercept;
+mod proposals;
 mod scenarios;
 
 // Vector loading, pinned clock/ids and snapshots shared with other targets.

@@ -407,7 +407,12 @@ section; there is no UI yet.
 - **Draft operations** (`DraftOp`) mirror the member-facing mutations:
   `add_fixed_run`, `apply_fixed_edit`, `fixed_participants`,
   `retire_fixed_run`, `create_run`, `amend_run`, `set_status`,
-  `swap_participants`, `set_rsvp`, `reset_to_fixed`.
+  `swap_participants`, `set_rsvp`, `reset_to_fixed`, and three used by
+  proposals (see *Proposals*): `set_run_bosses { run, bosses }` (replace a
+  run's bosses and rebuild its reminders), `ensure_reminders { run }` (add
+  the reminders a run lacks, `rebuild = false`) and `recount_run { run }`
+  (re-derive its status from its answers). They were appended to the `v1`
+  codec additively; every earlier encoding is unchanged.
   `fixed_participants { fixed, add, remove }` is a party DELTA for a weekly
   timing, replayed as `schedule::apply_party_delta` (`Op::FixedParticipants`):
   it applies `remove` then `add` (no duplicates, order kept) to the timing's
@@ -602,7 +607,8 @@ and the delivery tick (expiry). Requests are S3, cherry-pick S4.
     `expires_week` is the earliest boss week (`policy.week_of`) touched by
     any run-level operation — `create_run` its slot; `amend_run` the source
     run's week and the destination slot's week; `set_status`,
-    `swap_participants`, `set_rsvp`, `reset_to_fixed` their run's week
+    `swap_participants`, `set_rsvp`, `reset_to_fixed`, `set_run_bosses`,
+    `ensure_reminders`, `recount_run` their run's week
     (`drafts::expires_week`; `create_run` also counts its stated
     `week_start`, which staging requires to equal the slot's week). Drafts staging only weekly-timing operations
     (`add_fixed_run`, `apply_fixed_edit`, `retire_fixed_run`) have none and
@@ -749,12 +755,14 @@ draft of kind `request` (`request_type`, `subject` = `run:<id>` or
 
 ## Proposals (extractor and chatbot)
 
-Status: storage only — `src/domain/drafts/proposal.rs` (`ProposalStore`),
-both stores, migration `0007`. The proposal service (amendment → `DraftOp`
-translation, approval, supersede policy, expiry in the delivery tick) is
-E3. Decided (user, 2026-09-25): v4 approval — ✅ by a participant of the
-run, an administrator or the run's owner — enforced by E3, not the store;
-TTL 24 h.
+Status: storage in `src/domain/drafts/proposal.rs` (`ProposalStore`), both
+stores, migration `0007`; the pure rules in `src/domain/proposals/`
+(translation, `may_commit`, v4 refusal texts, card notes); the service in
+`src/domain/scheduler/proposals.rs`; expiry in the delivery tick. The
+`commit` family of `docs/v5/vectors/extract/` replays through it
+(`tests/extract/commit.rs`). Decided (user, 2026-09-25): v4 approval — ✅
+by a participant of the run, an administrator or the run's owner —
+enforced by the service, not the store; TTL 24 h.
 
 - **A proposal is a draft** of kind `DraftKind::Proposal`, created
   `submitted` with its operations (`created` + `submitted` events) and
@@ -782,6 +790,74 @@ TTL 24 h.
   `expire_proposals(now, actor)` closes live proposals with
   `expires_at <= now` as `expired` (version unchanged). The week expiry
   (`expire_drafts`) still applies to a proposal's `expires_week`.
+- **Propose** (`propose(ProposalRequest { change, source, source_id,
+  supersede }, policy, directory)`). A `ProposedChange` (v4's `amendments`
+  row: kind, run, channel, bosses, participants, new time, answer, typed
+  payload) is translated on the current schedule into operations (v4
+  `commit.py` per kind): `move` → `amend_run`; `add` → `create_run` +
+  `ensure_reminders`; `cancel`/`otot` → `set_status`; `sub` → a
+  `swap_participants` delta (leavers not on the run and joiners already on
+  it ignored, as v4); `split` → `set_run_bosses` (what stays) +
+  `create_run` + `ensure_reminders` (what leaves; all bosses leaving is a
+  move); `rsvp` → one `set_rsvp` (source `chat`) per named member +
+  `recount_run`; `fix` → `add_fixed_run` (note `created from chat`), an
+  edit → `apply_fixed_edit` (`UpdateAll`), a removal → `retire_fixed_run`
+  for the materialised weeks. The operations are dry-run there.
+  **Up-front refusal (user decision, `D-PROPOSE-REFUSES`):** a change that
+  cannot apply now is refused with v4's `commit` text (`Refusal`, e.g. `no
+  new time was agreed - use /amend to set one`), and one that would change
+  nothing is `NoEffect`; nothing is written and no card is posted, and the
+  caller records the reason in its extraction/chat log. v4 carded it and
+  refused at ✅. A new run or timing that names nobody is staged without a
+  party (a timing also without owner); approval fills in the approver, as
+  v4 used the confirming member. The draft `subject` holds the target
+  (sorted-key JSON: kind, run, timing, channel, bosses, named members);
+  `Supersede::Older` stores its key — the run in this channel, else the
+  new boss set in this channel — so the store retires same-target live
+  proposals; `Supersede::Keep` stores none.
+- **Approve** (`approve_proposal(id, approver, policy, directory)`):
+  `Approver { user_id, has_role, is_admin }` comes from the caller (role and
+  admin checks belong to it; `is_admin` also covers the guild owner). The
+  service applies v4 `may_commit` on the current schedule: an admin, the
+  owner of the run's (or the edited timing's) weekly timing, or, with the
+  bossing role, a participant of the run (or timing), or for a change
+  without one a named member (anyone with the role when it names nobody).
+  Anyone else is `Unauthorised`, nothing written. A proposal past its TTL
+  is closed `expired` (system `delivery`) and refused (`Expired`;
+  `D-EXPIRED-REFUSED`, v4 applied it). A vanished target or an answer for a
+  member no longer on the run is refused with v4's text. Then the shared
+  draft merge (`merge_loaded`) commits one record through
+  `Surface::ExtractionApproval` or `Surface::ChatApproval` (by source),
+  actor the approving member, `request_id` `approve:<id>`; the authority
+  check is repeated at every merge attempt, conflicts block, and a replay
+  refusal maps to v4's text. A repeated ✅ by the same member is
+  `AlreadyApplied`, by another `AlreadyMerged`: nothing is written or
+  posted. The merge's summary notices (`NoticeChange::Merged`, title
+  `<kind> proposal`) take the draft-merge outbox path. After the commit
+  nothing returns an error: sibling live proposals about the same target
+  are retired (v4 `commit`'s `supersede`, below), a new weekly timing's
+  weeks are materialised (a second record, `approve:<id>:materialise`), and
+  failures there are reported in `follow_up_errors`. The outcome carries
+  v4's `CommitResult` facts (run, timing, created runs, old time,
+  superseded, notes `adopted …'s run` / `updated N` / `cancelled N
+  scheduled run(s)`).
+- **Reject** (`reject_proposal(id, approver)`): the same members as for ✅;
+  closed `rejected`, no schedule record.
+- **Supersede** (`supersede_proposals(SupersedeScope)`, v4 `supersede`):
+  live proposals about the same run — only those in `from_channel` unless
+  it is the run's home channel — else, with a channel and bosses, run-less
+  ones in that channel with the same boss set; closed `discarded`, reason
+  `superseded`, by the source component.
+- **Expiry.** The delivery tick calls `expire_due_proposals` after draft
+  expiry: live proposals with `expires_at <= now` are closed once as the
+  system `delivery` actor (`D-TTL-BOUNDARY`: v4 expired only strictly after
+  24 h). Nothing is posted; a failure raises the throttled
+  `DraftExpiryFailed` alert and the next tick retries.
+- **Attendance.** The operations are the ordinary ones, so v5's pin and
+  freeze rules hold: `recount_run` re-derives through `derive_run_status`
+  (a pinned run keeps its hand-set status, a started run keeps its status;
+  in v4-compat mode exactly v4's `compute_status`), and `set_rsvp` never
+  ends a pin.
 
 ## Cherry-pick
 

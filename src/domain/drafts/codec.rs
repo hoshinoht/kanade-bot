@@ -163,7 +163,10 @@ pub fn encode(op: &DraftOp) -> Result<String, CodecError> {
             "state": state.as_str(),
             "source": source.as_str(),
         }),
-        DraftOp::ResetToFixed { run } => json!({"run": target(run)}),
+        DraftOp::ResetToFixed { run }
+        | DraftOp::EnsureReminders { run }
+        | DraftOp::RecountRun { run } => json!({"run": target(run)}),
+        DraftOp::SetRunBosses { run, bosses } => json!({"run": target(run), "bosses": bosses}),
     };
     if let Value::Object(map) = &mut body {
         map.insert("format".into(), DRAFT_OP_FORMAT.into());
@@ -333,7 +336,8 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
         "set_status" => &["run", "change"],
         "swap_participants" => &["run", "remove", "add", "via_portal"],
         "set_rsvp" => &["run", "user_id", "state", "source"],
-        "reset_to_fixed" => &["run"],
+        "reset_to_fixed" | "ensure_reminders" | "recount_run" => &["run"],
+        "set_run_bosses" => &["run", "bosses"],
         other => return Err(bad(format!("unknown operation {other}"))),
     };
     exact_keys(&value, &[&["format", "op"][..], body].concat())?;
@@ -447,6 +451,12 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
             source: RsvpSource::parse(&text(&value, "source")?).map_err(bad)?,
         },
         "reset_to_fixed" => DraftOp::ResetToFixed { run: run()? },
+        "ensure_reminders" => DraftOp::EnsureReminders { run: run()? },
+        "recount_run" => DraftOp::RecountRun { run: run()? },
+        "set_run_bosses" => DraftOp::SetRunBosses {
+            run: run()?,
+            bosses: texts(field(&value, "bosses")?)?,
+        },
         other => return Err(bad(format!("unknown operation {other}"))),
     })
 }

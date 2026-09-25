@@ -250,6 +250,9 @@ async fn commit(service: &mut Service, op: &DraftOp) {
                 .await
                 .unwrap();
         }
+        DraftOp::SetRunBosses { .. }
+        | DraftOp::EnsureReminders { .. }
+        | DraftOp::RecountRun { .. } => panic!("proposal-only; not used upstream"),
     }
 }
 
@@ -403,6 +406,16 @@ fn codec_samples() -> Vec<DraftOp> {
             fixed: existing("fixed-1"),
             add: vec!["1004".into()],
             remove: vec!["1002".into()],
+        },
+        DraftOp::SetRunBosses {
+            run: existing("run-1"),
+            bosses: vec!["HFA".into(), "Kalos \"C\"".into()],
+        },
+        DraftOp::EnsureReminders {
+            run: Target::Created(4),
+        },
+        DraftOp::RecountRun {
+            run: existing("run-1"),
         },
     ]
 }

@@ -1,7 +1,7 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
 //! rollover (taking the week's automatic history checkpoint), mark finished
-//! runs done, recount attendance (v5 mode only), expire past-week drafts,
-//! post the weekly digest, then dispatch due reminders. One clock reading
+//! runs done, recount attendance (v5 mode only), expire past-week drafts and
+//! proposals past their TTL, post the weekly digest, then dispatch due reminders. One clock reading
 //! and one journal lease per tick.
 //!
 //! v5 deviation (user decision): the digest posts only when the current boss
@@ -17,7 +17,7 @@ use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendRepor
 use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::render;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::DraftStore;
+use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{
     Actor, CheckpointKind, Checkpoints, NewCheckpoint, Origin, Surface, auto_checkpoint_name,
 };
@@ -203,7 +203,7 @@ pub struct Delivery<'a, S, I, T, A> {
 
 impl<'a, S, I, T, A> Delivery<'a, S, I, T, A>
 where
-    S: ScheduleStore + DeliveryJournal + Checkpoints + DraftStore + Sync,
+    S: ScheduleStore + DeliveryJournal + Checkpoints + ProposalStore + Sync,
     I: IdSource,
     T: DiscordTransport,
     A: AlertSink,
@@ -300,6 +300,7 @@ where
                 .await?;
             let recounted = this.recount_attendance(now).await;
             this.expire_drafts(now).await;
+            this.expire_proposals(now).await;
             let digest = this.digest_in(lease, now).await?;
             let dispatch = this.dispatch_in(lease, now).await?;
             Ok(TickReport {
@@ -388,6 +389,19 @@ where
     async fn expire_drafts(&mut self, now: DateTime<Utc>) {
         let policy = self.config.policy.clone();
         if let Err(error) = self.service(now).expire_due_drafts(&policy).await {
+            let alert = AdminAlert::DraftExpiryFailed {
+                detail: error.to_string(),
+            };
+            if self.throttle.admit(&alert, now) {
+                self.alerts.alert(alert);
+            }
+        }
+    }
+
+    /// Expire proposals past their TTL; nothing is posted for them. A
+    /// failure is alerted like draft expiry and the next tick retries.
+    async fn expire_proposals(&mut self, now: DateTime<Utc>) {
+        if let Err(error) = self.service(now).expire_due_proposals().await {
             let alert = AdminAlert::DraftExpiryFailed {
                 detail: error.to_string(),
             };

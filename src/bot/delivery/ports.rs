@@ -10,7 +10,7 @@ use twilight_model::id::{Id, marker::MessageMarker};
 use crate::bot::events::{CardIndex, LookupError};
 use crate::domain::drafts::{
     DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit, NewDraft,
-    StoredDraft,
+    NewProposal, ProposalCreated, ProposalInfo, ProposalStore, StoredDraft, StoredProposal,
 };
 use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use crate::domain::schedule::{ChangeSet, ScheduleSnapshot};
@@ -162,5 +162,36 @@ impl<S: DraftStore + Sync> DraftStore for StoreRef<'_, S> {
         actor: &Actor,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
         self.0.expire_drafts(week, at, actor)
+    }
+}
+
+impl<S: ProposalStore + Sync> ProposalStore for StoreRef<'_, S> {
+    fn create_proposal(
+        &self,
+        new: NewProposal,
+    ) -> impl Future<Output = Result<ProposalCreated, StoreError>> + Send {
+        self.0.create_proposal(new)
+    }
+
+    fn load_proposal(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = Result<Option<(LoadedDraft, ProposalInfo)>, StoreError>> + Send {
+        self.0.load_proposal(id)
+    }
+
+    fn list_proposals(
+        &self,
+        live_only: bool,
+    ) -> impl Future<Output = Result<Vec<StoredProposal>, StoreError>> + Send {
+        self.0.list_proposals(live_only)
+    }
+
+    fn expire_proposals(
+        &self,
+        now: DateTime<Utc>,
+        actor: &Actor,
+    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
+        self.0.expire_proposals(now, actor)
     }
 }

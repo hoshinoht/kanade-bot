@@ -184,6 +184,10 @@ pub struct MergeOutcome {
     pub weeks: Vec<DateTime<Utc>>,
     /// Things administrators should know that did not stop the merge.
     pub warnings: Vec<MergeWarning>,
+    /// Per operation: the row it created, as committed.
+    pub created: Vec<Option<String>>,
+    /// Per operation: what it returned, as committed.
+    pub results: Vec<crate::domain::schedule::OpResult>,
 }
 
 /// The `merged` event's note: the caller's note, then the runs a party
@@ -905,6 +909,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             if !mismatch.is_empty() {
                 return Err(DraftError::Conflicts(mismatch));
             }
+            let (created, results) = (real.created, real.results);
             let merged = real.draft;
             // Routine materialisation the merge commits alongside the draft
             // stays quiet: compare against the current schedule materialised
@@ -961,6 +966,8 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                         notices,
                         weeks,
                         warnings,
+                        created,
+                        results,
                     });
                 }
                 Ok(MergeCommit::Stale(stale)) => return Err(stale_of(draft_id, stale)),

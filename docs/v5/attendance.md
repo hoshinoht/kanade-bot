@@ -179,7 +179,9 @@ still holds: removed members' answers are dropped.
   confirmed re-pins; done, cancelled or otot clear it); or the run leaves
   the live statuses (`Draft::set_run_status` clears it). Answers written
   by `set_rsvp` (portal/chat, draft and cherry-pick replays) keep v4's
-  `set_rsvp` semantics and do not end it.
+  `set_rsvp` semantics and do not end it. An approved chat proposal's
+  answers are followed by `recount_run`, which re-derives through
+  `derive_run_status`: it keeps a pin (and a started run's status).
 - Cards and the admin UI say "confirmed (set by admin)": `status_label`
   gives `StatusLabel::SetByAdmin(status)` (a pin wins over `Expected`),
   and `tally_text` appends it (`0/2, confirmed (set by admin)`), v5 only.

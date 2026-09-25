@@ -987,6 +987,8 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
             run_id, attended, ..
         } => digest("record_attendance", &(run_id, attended)),
         Op::RecountAttendance => digest("recount_attendance", &()),
+        Op::SetRunBosses { run_id, bosses, .. } => digest("set_run_bosses", &(run_id, bosses)),
+        Op::RecountRun { run_id } => digest("recount_run", run_id),
     })
 }
 

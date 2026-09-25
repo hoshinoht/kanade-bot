@@ -33,7 +33,7 @@ pub trait Store:
     + DeliveryJournal
     + CardIndex
     + kanade::domain::history::Checkpoints
-    + kanade::domain::drafts::DraftStore
+    + kanade::domain::drafts::ProposalStore
     + Sync
 {
 }
@@ -43,7 +43,7 @@ impl<S> Store for S where
         + DeliveryJournal
         + CardIndex
         + kanade::domain::history::Checkpoints
-        + kanade::domain::drafts::DraftStore
+        + kanade::domain::drafts::ProposalStore
         + Sync
 {
 }

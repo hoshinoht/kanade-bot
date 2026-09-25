@@ -138,7 +138,10 @@ pub fn check_staged(
         DraftOp::SetStatus { run, .. } => vec![run],
         DraftOp::SwapParticipants { run, .. } => vec![run],
         DraftOp::SetRsvp { run, .. } => vec![run],
-        DraftOp::ResetToFixed { run } => vec![run],
+        DraftOp::ResetToFixed { run }
+        | DraftOp::SetRunBosses { run, .. }
+        | DraftOp::EnsureReminders { run }
+        | DraftOp::RecountRun { run } => vec![run],
     };
     for target in targets {
         resolve_staged(target, created)?;
