@@ -16,8 +16,26 @@ mod support;
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, cherry_pick_conformance, conformance,
     draft_conformance, history_conformance, journal_conformance, model_log_conformance,
-    precondition_conformance, proposal_conformance,
+    precondition_conformance, proposal_conformance, web_sessions_conformance,
 };
+
+#[tokio::test]
+async fn memory_web_sessions_conform() {
+    web_sessions_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_web_sessions_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    web_sessions_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("sessions-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
 
 #[tokio::test]
 async fn memory_model_logs_conform() {

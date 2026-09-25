@@ -5,7 +5,7 @@ use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
 use axum::{Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, routing::get};
 
-use super::{admin, assets, error, guard, public};
+use super::{admin, assets, auth::AdminAuth, error, guard, public};
 use crate::runtime::config::HttpConfig;
 
 /// Offline mode has no Discord bot user to name the masthead after.
@@ -46,6 +46,8 @@ pub struct Site {
     pub identity_dir: Option<PathBuf>,
     pub identity_name: String,
     pub limits: guard::limits::Limits,
+    /// Admin sign-in; `None` answers `auth_unavailable`. Never set on the public site.
+    pub auth: Option<Arc<AdminAuth>>,
 }
 
 impl Site {
@@ -89,11 +91,16 @@ impl Site {
             identity_dir: http.identity_dir.clone(),
             identity_name: OFFLINE_IDENTITY_NAME.into(),
             limits: guard::limits::Limits::default(),
+            auth: None,
         }
     }
 }
 
-pub fn router(site: Site) -> Router {
+pub fn router(mut site: Site) -> Router {
+    if site.origin == Origin::Public {
+        // Admin credentials must mean nothing on the public origin.
+        site.auth = None;
+    }
     let site = Arc::new(site);
     let routes = match site.origin {
         Origin::Admin => admin::routes(),

@@ -9,7 +9,47 @@ Response JSON Schemas (frozen contract, endpoint index): [`api-schemas/`](api-sc
 
 Rows marked **Implemented** are served by the Rust binary (`src/api/`);
 listener, guard and static-serving behaviour is in `runtime-bootstrap.md`.
-Until admin authentication lands every other `/api/admin/*` path is `404`.
+Unmounted `/api/admin/*` paths are `404`; every mounted admin route requires a
+session (below) and answers `401 unauthenticated` without one.
+
+## Sign-in and sessions (**Implemented**)
+
+| Method & path | Request | Response | Notes |
+|---|---|---|---|
+| `GET /api/admin/auth/methods` | — | `{discord, tailscale, token}` booleans | `tailscale` is true only when this request carries an allow-listed identity from the trusted edge. |
+| `GET /api/admin/auth/discord/start?next=/path` | — | `303` to Discord | Sets the pre-auth cookie. `next` must be a same-origin path (else `/`; never `//…`, `\`, schemes or `/api/…`). |
+| `GET /api/admin/auth/discord/callback` | Discord's `code`, `state` | `303` to `next` + session cookie | Failures: `303 /?login_error=state\|denied\|forbidden\|discord\|unavailable` (bad/expired/replayed state; cancelled; not staff; code refused; Discord or member data unavailable). |
+| `POST /api/admin/auth/tailscale` | `{}` or no body | `Session` + cookie + `X-Kanade-CSRF` | 401 unless the edge vouches for an allow-listed login. |
+| `POST /api/admin/auth/token` | `{token}` | `Session` + cookie + `X-Kanade-CSRF` | Break-glass; every use is logged at WARN. 401 on a wrong token, 400 `invalid_body`. |
+| `POST /api/admin/auth/logout` | — | `204` + cleared cookie | Needs CSRF. Deletes the session server-side. |
+| `GET /api/admin/session` | — | `Session` (`{display}`) + `X-Kanade-CSRF` | 401 `unauthenticated` when signed out. |
+
+Contract for the frontend (API-5):
+
+- Cookie `__Host-kanade_admin` (Secure, HttpOnly, Path=/, `SameSite=Strict`,
+  `Max-Age` = absolute lifetime). The PWA never reads it; `fetch` sends it
+  with `credentials: 'same-origin'`. The pre-auth cookie
+  `__Host-kanade_admin_login` is `SameSite=Lax` (it must survive Discord's
+  redirect back) and lives 10 minutes.
+- CSRF: read `X-Kanade-CSRF` from `GET /api/admin/session` (or the tailscale/
+  token login response) and send it as `X-Kanade-CSRF` on every `POST`,
+  `PATCH`, `PUT` and `DELETE`. It is fixed for the session's lifetime and
+  changes on every login. The browser's own `Origin`/`Sec-Fetch-Site` must
+  say same-origin. Missing, foreign or cross-site: `403 csrf`. Login
+  `POST`s need only the same-origin markers.
+- `401 unauthenticated` means sign in again (expired, idle, logged out, staff
+  revoked, or the edge identity changed). `503 auth_unavailable` means sign-in
+  is not configured or the staff check cannot run; the session is kept.
+- Idle timeout 60 min, absolute 12 h (configurable); any authenticated
+  request counts as activity. Discord staff status (Administrator, guild owner
+  or admin role, from the bot's member data) is re-checked every 5 minutes;
+  losing it ends all of that person's sessions. Tailscale sessions need the
+  same edge-vouched login on every request.
+- `Authorization: Bearer <ADMIN_TOKEN>` is accepted on any admin route for
+  the CLI; it needs no CSRF token, is attributed to `token`, and a bad bearer
+  never falls back to the cookie.
+- History attribution: `admin` actors `discord:<user id>`,
+  `tailscale:<login>` or `token`.
 
 Conventions: `?week=this|next` selects the boss week on week reads; ids in
 paths are URL-encoded (runs, inbox, members, fixed, limits, rescan); `PATCH` bodies are
@@ -26,7 +66,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/members` | — | `MemberRow[]` | One list for the Members page, filter lists and roster adds (`MemberRow` extends `Member`). |
 | `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. |
 | `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins (offline name `Kanade`; `cached` reflects `KANADE_IDENTITY_DIR`). |
-| `GET /api/admin/session` | — | `Session` | Who is signed in. |
+| `GET /api/admin/session` | — | `Session` | Who is signed in. **Implemented** (see Sign-in and sessions). |
 | `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. |
 | `PATCH /api/admin/runs/{id}/status` | `StatusRequest` (`{status, version}`) | `RunResult` (`{run, version}`) | |
 | `POST /api/admin/runs/{id}/rsvp` | `RsvpRequest` (`{member_id, answer, version}`) | `RunResult` | |

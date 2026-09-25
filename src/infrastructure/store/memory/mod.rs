@@ -30,6 +30,7 @@ use super::order::sort_snapshot;
 mod journal;
 mod model_log;
 mod proposals;
+mod web_sessions;
 
 use journal::JournalTables;
 
@@ -118,6 +119,7 @@ impl Tables {
 pub struct MemoryScheduleStore {
     tables: Mutex<Tables>,
     logs: Mutex<model_log::LogTables>,
+    sessions: Mutex<BTreeMap<String, crate::infrastructure::store::web_sessions::WebSession>>,
 }
 
 impl MemoryScheduleStore {

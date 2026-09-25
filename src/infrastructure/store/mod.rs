@@ -5,6 +5,7 @@
 mod history;
 mod order;
 pub mod sqlite;
+pub mod web_sessions;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod attendance_conformance;
@@ -26,6 +27,8 @@ pub mod model_log_conformance;
 pub mod precondition_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod proposal_conformance;
+#[cfg(any(test, feature = "test-support"))]
+pub mod web_sessions_conformance;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::MemoryScheduleStore;

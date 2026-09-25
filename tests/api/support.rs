@@ -132,6 +132,33 @@ impl Reply {
             .map(|(_, value)| value.as_str())
     }
 
+    pub fn all(&self, name: &str) -> Vec<&str> {
+        self.headers
+            .iter()
+            .filter(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+            .collect()
+    }
+
+    /// The value a `Set-Cookie` gives `name` (empty when it clears it).
+    pub fn cookie(&self, name: &str) -> Option<String> {
+        self.all("set-cookie").into_iter().find_map(|line| {
+            let (pair, _) = line.split_once(';').unwrap_or((line, ""));
+            let (key, value) = pair.split_once('=')?;
+            (key == name).then(|| value.to_owned())
+        })
+    }
+
+    /// Every header and the body, for leak checks.
+    pub fn dump(&self) -> String {
+        let headers: Vec<String> = self
+            .headers
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}"))
+            .collect();
+        format!("{}\n{}", headers.join("\n"), self.text())
+    }
+
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.body).into_owned()
     }
@@ -194,11 +221,30 @@ pub async fn request(
     path: &str,
     extra: &[(&str, &str)],
 ) -> Reply {
+    send(address, method, host, path, extra, None).await
+}
+
+/// A request with an optional JSON body (`Content-Type`/`Content-Length` added).
+pub async fn send(
+    address: SocketAddr,
+    method: &str,
+    host: &str,
+    path: &str,
+    extra: &[(&str, &str)],
+    json: Option<&str>,
+) -> Reply {
     let mut text = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
     for (name, value) in extra {
         text.push_str(&format!("{name}: {value}\r\n"));
     }
-    text.push_str("\r\n");
+    if let Some(body) = json {
+        text.push_str(&format!(
+            "Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        ));
+    } else {
+        text.push_str("\r\n");
+    }
     raw(address, text.as_bytes()).await
 }
 

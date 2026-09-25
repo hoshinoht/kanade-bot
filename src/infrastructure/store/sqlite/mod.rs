@@ -19,6 +19,7 @@ mod owner;
 mod proposals;
 mod rows;
 mod schedule;
+mod web_sessions;
 pub(super) mod writer;
 
 use std::fmt;

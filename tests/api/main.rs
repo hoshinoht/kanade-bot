@@ -3,6 +3,7 @@
 //! Every test serves synthetic files from its own temp directory over loopback.
 
 mod assets;
+mod auth;
 mod headers;
 mod origins;
 mod proxy;

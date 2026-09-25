@@ -34,8 +34,19 @@ timeout.
 | `KANADE_WEB_DIR` | unset | Web workspace root; serves `apps/admin/dist` and `apps/public/dist` (same layout as `tools/pwa-mock`). Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
 | `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. |
+| `KANADE_ADMIN_DISCORD_CLIENT_ID` | unset | Discord application id; the three Discord variables are all-or-none. |
+| `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | unset | File holding the client secret (one line, ≤ 4 KiB). |
+| `KANADE_ADMIN_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_ADMIN_HOST/api/admin/auth/discord/callback` (`http:` only for loopback dev hosts); needs `KANADE_ADMIN_HOST`. |
+| `KANADE_ADMIN_TOKEN_FILE` | unset | Break-glass token file (≥ 32 bytes). Changing the token ends sessions made with the old one. |
+| `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires `KANADE_TRUSTED_PROXY`. |
+| `KANADE_ADMIN_SESSION_IDLE_MINUTES` | `60` | Idle timeout, 5–720, not above the absolute lifetime. |
+| `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | `12` | Absolute session lifetime, 1–168. |
 
 Empty values count as unset. Values are never echoed in errors or logs.
+Plain `KANADE_ADMIN_TOKEN` / `KANADE_ADMIN_DISCORD_CLIENT_SECRET` are refused:
+secrets come only from files. `serve --offline` has no store, so it parses
+these but serves sign-in routes as `503 auth_unavailable`; the session store
+is wired with the API state (A3). See `admin-api.md` "Sign-in and sessions".
 
 ### Listeners
 
@@ -63,8 +74,8 @@ CORS headers are ever sent.
 | `GET /art/{portraits,icons,entry}/{key}` | file or 404 | `503 closed` |
 | other `GET`/`HEAD` | the app's static files; extensionless paths get `index.html`, missing files 404 | same, public app |
 
-Admin API routes arrive with admin authentication; until then `/api/admin/*`
-is `404`. Static paths reach the filesystem only as plain segments (no `..`,
+Admin API handlers take the `AdminSession` extractor (`src/api/auth/`);
+unmounted `/api/admin/*` paths are `404`. Static paths reach the filesystem only as plain segments (no `..`,
 dotfiles, percent-encoding or backslashes) and only inside the canonical app
 root, so symlinks cannot escape it.
 
@@ -100,7 +111,8 @@ src/
 │   ├── mod.rs
 │   ├── server.rs        # binding, both listeners, graceful drain
 │   ├── listeners.rs     # per-origin Site policy and router assembly
-│   ├── admin/mod.rs     # admin-only routes
+│   ├── admin/           # admin-only routes (auth.rs: sign-in, session, logout)
+│   ├── auth/            # sessions, CSRF, Discord OAuth, Tailscale, break-glass, staff gate
 │   ├── public/mod.rs    # public-only routes (closed portal)
 │   ├── guard/           # host, proxy, headers, limits
 │   ├── assets.rs        # shell, art, identity

@@ -1,5 +1,8 @@
-//! Admin-origin routes. Admin API endpoints arrive with admin auth (A2+);
-//! until then every `/api/admin/*` path is the generic 404.
+//! Admin-origin routes. Every admin API handler takes
+//! [`crate::api::auth::AdminSession`]; unmounted `/api/admin/*` paths are the
+//! generic 404.
+
+mod auth;
 
 use std::sync::Arc;
 
@@ -12,6 +15,7 @@ pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/healthz", get(health))
         .route("/art/{kind}/{key}", get(assets::art))
+        .merge(auth::routes())
 }
 
 /// Answers only direct loopback clients, never requests relayed by the edge.

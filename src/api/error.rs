@@ -45,6 +45,33 @@ impl ApiError {
         error: "timeout",
         message: "The request took too long.",
     };
+    pub const UNAUTHENTICATED: Self = Self {
+        status: StatusCode::UNAUTHORIZED,
+        error: "unauthenticated",
+        message: "Sign in to continue.",
+    };
+    /// A mutation without this origin's markers or the session's CSRF token.
+    pub const CSRF: Self = Self {
+        status: StatusCode::FORBIDDEN,
+        error: "csrf",
+        message: "The request did not come from this portal.",
+    };
+    /// Sign-in is not configured here, or the staff check cannot run right now.
+    pub const AUTH_UNAVAILABLE: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "auth_unavailable",
+        message: "Sign-in is unavailable right now.",
+    };
+    pub const INVALID_BODY: Self = Self {
+        status: StatusCode::BAD_REQUEST,
+        error: "invalid_body",
+        message: "The request body is not valid.",
+    };
+    pub const UNAVAILABLE: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "unavailable",
+        message: "The service is unavailable right now.",
+    };
     /// Public origin while the portal is closed: data and art answer this.
     pub const CLOSED: Self = Self {
         status: StatusCode::SERVICE_UNAVAILABLE,

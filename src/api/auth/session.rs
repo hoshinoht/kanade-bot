@@ -1,0 +1,207 @@
+//! The [`AdminSession`] extractor: bearer break-glass or the session cookie,
+//! idle/absolute expiry, per-method re-check, CSRF on unsafe methods.
+
+use std::sync::Arc;
+
+use axum::{
+    extract::FromRequestParts,
+    http::{header::AUTHORIZATION, request::Parts},
+};
+
+use super::{
+    AdminAuth, TAILSCALE_LOGIN, TAILSCALE_NAME, TOUCH_EVERY, actor_id,
+    audit::AuditEvent,
+    crypto, csrf,
+    staff::StaffCheck,
+    wire::{self, SESSION_COOKIE},
+};
+use crate::{
+    api::{error::ApiError, guard::proxy::Peer, listeners::Site},
+    domain::history::{Actor, Origin, Surface},
+    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdminSession {
+    pub actor: Actor,
+    pub method: LoginMethod,
+    pub display: String,
+    /// `None` for bearer (CLI) requests, which carry no ambient credential.
+    session_id: Option<String>,
+}
+
+impl AdminSession {
+    pub fn csrf_token(&self) -> Option<String> {
+        self.session_id.as_deref().map(csrf::token)
+    }
+
+    pub(crate) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    /// Attribution for history records.
+    pub fn origin(&self) -> Origin {
+        let surface = if self.session_id.is_some() {
+            Surface::AdminPortal
+        } else {
+            Surface::Cli
+        };
+        Origin::new(self.actor.clone(), surface)
+    }
+}
+
+impl FromRequestParts<Arc<Site>> for AdminSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, site: &Arc<Site>) -> Result<Self, ApiError> {
+        let auth = site.auth.as_ref().ok_or(ApiError::AUTH_UNAVAILABLE)?;
+        auth.authenticate(parts).await
+    }
+}
+
+impl AdminAuth {
+    /// The allow-listed Tailscale login (and name) the trusted edge vouches for.
+    pub(crate) fn tailscale_identity(&self, parts: &Parts) -> Option<(String, String)> {
+        // The proxy guard already stripped these headers from any other peer; check again anyway.
+        let trusted = parts
+            .extensions
+            .get::<Peer>()
+            .is_some_and(|peer| peer.trusted);
+        if !trusted || !self.tailscale_enabled() {
+            return None;
+        }
+        let single = |name: &str| {
+            let mut values = parts.headers.get_all(name).iter();
+            match (values.next(), values.next()) {
+                (Some(value), None) => value.to_str().ok().map(str::trim).map(str::to_owned),
+                _ => None,
+            }
+        };
+        let login = single(TAILSCALE_LOGIN)?.to_ascii_lowercase();
+        if login.is_empty() || login.len() > 320 || !self.tailscale_allows(&login) {
+            return None;
+        }
+        let name = single(TAILSCALE_NAME)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| login.clone());
+        Some((
+            login,
+            name.chars().filter(|c| !c.is_control()).take(100).collect(),
+        ))
+    }
+
+    pub(crate) async fn authenticate(&self, parts: &Parts) -> Result<AdminSession, ApiError> {
+        if let Some(header) = parts.headers.get(AUTHORIZATION) {
+            return self.bearer(header.as_bytes(), parts);
+        }
+        let id = wire::cookie(&parts.headers, SESSION_COOKIE).ok_or(ApiError::UNAUTHENTICATED)?;
+        let hash = crypto::sha256_hex(id.as_bytes());
+        let session = self
+            .sessions()
+            .load_session(&hash)
+            .await
+            .map_err(|_| ApiError::UNAVAILABLE)?
+            .filter(|session| session.origin == SessionOrigin::Admin)
+            .ok_or(ApiError::UNAUTHENTICATED)?;
+        let now = self.now();
+        let policy = self.policy();
+        if now >= session.expires_at {
+            return Err(self.end(&session, "expired").await);
+        }
+        if now - session.last_seen_at >= policy.idle {
+            return Err(self.end(&session, "idle").await);
+        }
+        let mut checked_at = session.checked_at;
+        let due = now - checked_at >= policy.recheck;
+        match session.method {
+            LoginMethod::Discord if due => match self.staff().check(&session.subject).await {
+                StaffCheck::Staff => checked_at = now,
+                StaffCheck::NotStaff => {
+                    let _ = self
+                        .sessions()
+                        .delete_subject_sessions(
+                            SessionOrigin::Admin,
+                            LoginMethod::Discord,
+                            &session.subject,
+                        )
+                        .await;
+                    self.audit(AuditEvent::SessionEnded {
+                        actor: actor_id(session.method, &session.subject),
+                        reason: "not_staff",
+                    });
+                    return Err(ApiError::UNAUTHENTICATED);
+                }
+                StaffCheck::Unavailable => return Err(ApiError::AUTH_UNAVAILABLE),
+            },
+            LoginMethod::Discord => {}
+            // Every request must still carry the same edge-vouched identity.
+            LoginMethod::Tailscale => match self.tailscale_identity(parts) {
+                Some((login, _)) if login == session.subject => {
+                    if due {
+                        checked_at = now;
+                    }
+                }
+                _ => return Err(self.end(&session, "identity_changed").await),
+            },
+            LoginMethod::Token => {
+                if self.breakglass_fingerprint() != Some(session.subject.as_str()) {
+                    return Err(self.end(&session, "token_rotated").await);
+                }
+            }
+        }
+        if csrf::is_unsafe(&parts.method)
+            && !(csrf::same_origin(&parts.headers) && csrf::token_matches(&parts.headers, &id))
+        {
+            return Err(ApiError::CSRF);
+        }
+        if (now - session.last_seen_at >= TOUCH_EVERY || checked_at != session.checked_at)
+            && !self
+                .sessions()
+                .touch_session(&hash, now, checked_at)
+                .await
+                .map_err(|_| ApiError::UNAVAILABLE)?
+        {
+            return Err(ApiError::UNAUTHENTICATED);
+        }
+        Ok(AdminSession {
+            actor: Actor::admin(actor_id(session.method, &session.subject)),
+            method: session.method,
+            display: session.display,
+            session_id: Some(id),
+        })
+    }
+
+    fn bearer(&self, header: &[u8], parts: &Parts) -> Result<AdminSession, ApiError> {
+        let token = header
+            .strip_prefix(b"Bearer ")
+            .or_else(|| header.strip_prefix(b"bearer "));
+        if let Some(token) = token
+            && self.breakglass_matches(token).is_some()
+        {
+            self.audit(AuditEvent::BreakGlassUsed {
+                via: "bearer",
+                request: format!("{} {}", parts.method, parts.uri.path()),
+            });
+            return Ok(AdminSession {
+                actor: Actor::admin(super::TOKEN_ACTOR),
+                method: LoginMethod::Token,
+                display: "Break-glass token".into(),
+                session_id: None,
+            });
+        }
+        self.audit(AuditEvent::LoginRefused {
+            method: "token",
+            reason: "bad_bearer",
+        });
+        Err(ApiError::UNAUTHENTICATED)
+    }
+
+    async fn end(&self, session: &WebSession, reason: &'static str) -> ApiError {
+        let _ = self.sessions().delete_session(&session.id_hash).await;
+        self.audit(AuditEvent::SessionEnded {
+            actor: actor_id(session.method, &session.subject),
+            reason,
+        });
+        ApiError::UNAUTHENTICATED
+    }
+}

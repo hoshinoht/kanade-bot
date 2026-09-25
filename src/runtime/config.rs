@@ -10,6 +10,10 @@ use chrono_tz::Tz;
 
 use super::error::Error;
 
+mod admin_auth;
+
+pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
+
 const DEFAULT_BIND: &str = "127.0.0.1:8080";
 const DEFAULT_SHUTDOWN_SECONDS: u64 = 10;
 const DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS: u64 = 3;
@@ -20,6 +24,7 @@ pub struct RuntimeConfig {
     /// The public listener exists only when this is set.
     pub public_bind: Option<SocketAddr>,
     pub http: HttpConfig,
+    pub admin_auth: AdminAuthSettings,
     pub timezone: Tz,
     pub shutdown_timeout: Duration,
 }
@@ -80,6 +85,7 @@ impl RuntimeConfig {
                 "KANADE_PUBLIC_HOST must differ from KANADE_ADMIN_HOST".into(),
             ));
         }
+        let admin_auth = AdminAuthSettings::from_mapping(values, &http)?;
         let timezone = values
             .get("KANADE_TIMEZONE")
             .ok_or_else(|| Error::Configuration("KANADE_TIMEZONE is required".into()))?
@@ -92,6 +98,7 @@ impl RuntimeConfig {
             admin_bind,
             public_bind,
             http,
+            admin_auth,
             timezone,
             shutdown_timeout: Duration::from_secs(parse_bounded_u64(
                 values,
