@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfigView } from '@kanade/api-types';
+  import { PendingLabel } from '@kanade/ui';
   import type { Save } from './save';
 
   let { pings, save }: { pings: ConfigView['pings']; save: Save } = $props();
@@ -11,6 +12,7 @@
   // svelte-ignore state_referenced_locally
   let countdowns = $state(pings.countdown_minutes.join(', '));
   let error = $state('');
+  let saving = $state(false);
   // Only the field that failed validation carries aria-invalid.
   let badTime = $state(false);
   let badCountdowns = $state(false);
@@ -33,7 +35,9 @@
       .split(/[\s,]+/)
       .filter(Boolean)
       .map(Number);
+    saving = true;
     error = await save({ pings: { day_of_ping_time: time.trim(), countdown_minutes: minutes } }, 'Pings saved; unsent pings were re-placed.');
+    saving = false;
     badTime = error.includes('HH:MM');
     badCountdowns = !badTime && error.includes('Countdown');
   }
@@ -43,7 +47,7 @@
 <form class="filters" onsubmit={submit} aria-describedby="{uid}-note">
   <label class="field"><span>Morning ping</span><input class="mono" bind:value={time} size="6" inputmode="numeric" autocomplete="off" aria-invalid={badTime} /></label>
   <label class="field"><span>Countdowns (minutes)</span><input class="mono" bind:value={countdowns} size="10" autocomplete="off" aria-invalid={badCountdowns} /></label>
-  <button class="btn btn--primary" type="submit">Save</button>
+  <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
 </form>
 <p class="field__error" role="alert">{error}</p>
 <p class="note" id="{uid}-note">Changing either re-places every ping that has not fired yet.</p>

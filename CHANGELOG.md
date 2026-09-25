@@ -297,6 +297,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, `/say`, staff-only `/nick`,
   `/debug ping|clear_test`, with v4's permissions and wording; `/bot`, `/pingtime`,
   `/debug status` and `/debug extract` are dropped in favour of the admin app.
+- v5: design experiments (on by default; `?experiments=off` or the command palette turns
+  them off): a small morphing loading indicator on buttons while they save, sign in,
+  reload or decide, and a gently waving progress bar on rescans; both stay still under
+  reduced motion.
 - v5: the week planner's cards are wide again (v4's 230px day columns) and the drag grip
   has its own column, so it never covers a boss name or difficulty badge; the Limits page
   says it isn't available yet instead of loading forever.

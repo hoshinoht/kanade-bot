@@ -5,11 +5,13 @@
     applyColorway,
     applyMode,
     COLORWAYS,
+    experiments,
     Freshness,
     Icon,
     Masthead,
     registerServiceWorker,
     runFullTitle,
+    setExperiments,
     ToastRegion,
     Toaster,
     whenLabel,
@@ -290,6 +292,13 @@
       keywords: 'theme dark light night',
       run: () => applyMode(mode),
     })),
+    {
+      id: 'experiments',
+      label: experiments.on ? 'Turn design experiments off' : 'Turn design experiments on',
+      group: 'Theme',
+      keywords: 'experiments loading indicator wavy progress',
+      run: () => setExperiments(!experiments.on),
+    },
   ]);
 
   function typing(target: EventTarget | null): boolean {

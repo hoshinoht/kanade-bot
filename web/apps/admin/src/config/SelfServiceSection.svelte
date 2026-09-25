@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import type { ConfigView, SelfServiceMode } from '@kanade/api-types';
+  import { PendingLabel } from '@kanade/ui';
   import type { Save } from './save';
   import Toggle from './Toggle.svelte';
 
@@ -19,11 +20,14 @@
   // svelte-ignore state_referenced_locally
   let mode = $state<SelfServiceMode>(selfService.mode);
   let error = $state('');
+  let saving = $state(false);
   const name = (id: SelfServiceMode) => MODES.find((m) => m.id === id)!.name.toLowerCase();
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
+    saving = true;
     error = await save({ self_service: { mode } }, `Self-service is ${name(mode)}.`);
+    saving = false;
   }
 </script>
 
@@ -59,7 +63,7 @@
       </label>
     {/each}
   </fieldset>
-  <button class="btn btn--primary" type="submit">Save</button>
+  <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
 </form>
 <p class="field__error" role="alert">{error}</p>
 <p class="note" id="{uid}-effect" role="status">

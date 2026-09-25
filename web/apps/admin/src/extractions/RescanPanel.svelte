@@ -6,6 +6,7 @@
 <script lang="ts">
   import type { Channel, RescanJob } from '@kanade/api-types';
   import { createClient, createPoller } from '@kanade/client';
+  import { experiments, WavyProgress } from '@kanade/ui';
   import { send } from '../resource.svelte';
 
   let { targets }: { targets: Channel[] } = $props();
@@ -80,6 +81,9 @@
       {:else}Cancelled after {done} of {job.channels.length} channels.{/if}
     {/if}
   </p>
+  {#if job && experiments.on}
+    <WavyProgress value={done} max={job.channels.length} label="Rescan progress" text="{done} of {job.channels.length} channels read" />
+  {/if}
   {#if job}
     <ul class="rescan__list">
       {#each job.channels as c (c.id)}

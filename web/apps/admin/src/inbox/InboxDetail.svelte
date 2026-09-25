@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { ApproveRequest, Proposal } from '@kanade/api-types';
-  import { BossTag } from '@kanade/ui';
+  import { BossTag, PendingLabel } from '@kanade/ui';
   import { editable } from './edit';
   import { blocked, DISCORD_ONLY, FLAG_LABEL, FLAG_TONE, isProposal, SOURCE_LABEL } from './flags';
 
@@ -32,6 +32,8 @@
   const uid = $props.id();
 
   let edit = $state('');
+  // Which action the shared `busy` belongs to, so only that button shows it.
+  let via = $state<'approve' | 'move'>('approve');
   let choices = $state<Record<string, 'update' | 'keep'>>({});
   const band = (c: number | null) => (c === null ? 'unknown' : c >= 0.8 ? 'high' : c >= 0.6 ? 'mid' : 'low');
   const stop = $derived(blocked(p));
@@ -42,6 +44,7 @@
     const body: ApproveRequest = { version: p.version };
     // A timing change always names its choices, `{}` when no run is listed.
     if (p.choices !== null) body.choices = { ...choices };
+    via = 'approve';
     onapprove(body);
   }
 </script>
@@ -132,13 +135,14 @@
 
   <div class="proposal__actions">
     <button class="btn btn--primary" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby="{uid}-why" onclick={approve}
-      >Approve</button
+      ><PendingLabel pending={busy && via === 'approve'} label="Approving…">Approve</PendingLabel></button
     >
     {#if editable(p) && !stop}
       <form
         class="proposal__edit"
         onsubmit={(event) => {
           event.preventDefault();
+          via = 'move';
           onmove(edit);
         }}
       >
@@ -146,7 +150,9 @@
           <span>Edit, then approve</span>
           <input class="mono" bind:value={edit} placeholder="wed 21:30" size="10" aria-invalid={error ? 'true' : undefined} aria-describedby="{uid}-err" />
         </label>
-        <button class="btn" type="submit" disabled={busy || refused} aria-describedby="{uid}-why">Move &amp; approve</button>
+        <button class="btn" type="submit" disabled={busy || refused} aria-describedby="{uid}-why"
+          ><PendingLabel pending={busy && via === 'move'} label="Approving…">Move &amp; approve</PendingLabel></button
+        >
       </form>
     {/if}
     <button class="btn btn--danger" type="button" disabled={refused} aria-describedby="{uid}-why" onclick={onreject}>Reject…</button>

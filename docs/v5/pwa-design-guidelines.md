@@ -172,3 +172,36 @@ choosing the stack (`docs/v5/pwa-stack.md`):
   test capture` writes placeholder-art captures to `web/e2e/.captures/synthetic/`;
   `KANADE_REAL_ART=1` writes real-art ones to `web/e2e/.captures/real/`.
   A v4-vs-v5 comparison with matching synthetic content is still outstanding.
+
+## Experiments
+
+Revertible design trials inspired by Material 3 Expressive and fitted to this
+theme. They are under review and on by default. One switch controls them all;
+with it off, every usage site renders exactly what it did before.
+
+- **Switch:** `?experiments=off` (or `=on`) on any admin URL, remembered in
+  `localStorage` as `kanade.experiments`; or the palette command "Turn design
+  experiments off/on". The state is mirrored on `<html data-experiments>`.
+  Code: `web/packages/ui/src/experiments/experiments.svelte.ts`, called from
+  `apps/admin/src/main.ts`; the command lives in `App.svelte`.
+- **A: morphing loading indicator** (`LoadingIndicator.svelte`, wrapped for
+  buttons by `PendingLabel.svelte`). Used for short waits (under ~5 s): the
+  Pings, Chatbot and Self-service Save buttons, Reload profiles, sign-in
+  (token and Tailscale), inbox Approve, Move & approve and Reject change. It
+  morphs circle → pill → rounded square (our own radius scale) while it turns.
+  Shape changes use the M3 standard spatial spring as a CSS `linear()` curve.
+  The hidden label keeps the button's width, and the button's name becomes
+  "Saving…" and so on. Reduced motion shows a still rounded square.
+  Revert: delete both components, replace each `<PendingLabel …>X</PendingLabel>`
+  with `X`, and drop the `saving`/`rejecting`/`via`/`signingIn` flags.
+- **B: wavy progress** (`WavyProgress.svelte`) on the rescan job in
+  `extractions/RescanPanel.svelte`: a determinate `progressbar` whose fill is a
+  slowly drifting sine wave, then a small gap and a flat track, with round
+  ends. It flattens when done and under reduced motion. The path is recomputed
+  per frame (SVG attributes, so it is CSP-safe). Revert: delete the component
+  and the `{#if job && experiments.on}` block.
+- Both experiments share `web/packages/ui/src/styles/_experiments.scss`, the
+  exports at the end of `packages/ui/src/index.ts`, the `@use "experiments"`
+  line in `admin.scss`, `packages/ui/test/experiments.test.ts` and
+  `web/e2e/experiments.spec.ts`. Remove these once neither experiment remains.
+  Captures from the e2e spec go to `web/e2e/.captures/experiments/`.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfigView } from '@kanade/api-types';
+  import { PendingLabel } from '@kanade/ui';
   import type { Save } from './save';
   import Toggle from './Toggle.svelte';
 
@@ -10,10 +11,13 @@
   // svelte-ignore state_referenced_locally
   let guild = $state({ ...chatbot.guild_rate });
   let error = $state('');
+  let saving = $state(false);
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
+    saving = true;
     error = await save({ chatbot: { member_rate: member, guild_rate: guild } }, 'Answer limits saved.');
+    saving = false;
   }
 </script>
 
@@ -41,7 +45,7 @@
   <label class="field"><span>Their window (s)</span><input type="number" min="10" max="86400" bind:value={member.window_s} /></label>
   <label class="field"><span>Answers per guild</span><input type="number" min="1" max="100" bind:value={guild.count} /></label>
   <label class="field"><span>Its window (s)</span><input type="number" min="10" max="86400" bind:value={guild.window_s} /></label>
-  <button class="btn btn--primary" type="submit">Save</button>
+  <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save</PendingLabel></button>
 </form>
 <p class="field__error" role="alert">{error}</p>
 <p class="note">Per-person overrides and live windows are on <a href="/limits">Limits</a>.</p>

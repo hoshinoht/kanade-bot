@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { ConfigView, ReplyProfile, RoleProfile } from '@kanade/api-types';
-  import type { Toaster } from '@kanade/ui';
+  import { PendingLabel, type Toaster } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import type { Save } from './save';
 
@@ -102,7 +102,9 @@
   edit. Publishing offers a profile when members pick their reply style on Members.
 </p>
 <div class="settings__actions">
-  <button class="btn" type="button" aria-disabled={reloading} onclick={() => void reload()}>Reload profiles</button>
+  <button class="btn" type="button" aria-disabled={reloading} onclick={() => void reload()}
+    ><PendingLabel pending={reloading} label="Reloading…">Reload profiles</PendingLabel></button
+  >
 </div>
 <ul class="settings__profiles">
   {#each profiles as p (p.key)}

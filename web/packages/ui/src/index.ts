@@ -22,3 +22,8 @@ export * from './format';
 export { applyColorway, applyMode, COLORWAYS, currentColorway, currentMode, THEME_MODES } from './theme/theme';
 export type { Colorway, ThemeMode } from './theme/theme';
 export { registerServiceWorker, serviceWorkerDisabled } from './sw/register';
+// Design experiments (pwa-design-guidelines "Experiments"); revert as a unit.
+export { experiments, initExperiments, setExperiments } from './experiments/experiments.svelte';
+export { default as LoadingIndicator } from './components/LoadingIndicator.svelte';
+export { default as PendingLabel } from './components/PendingLabel.svelte';
+export { default as WavyProgress } from './components/WavyProgress.svelte';

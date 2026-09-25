@@ -1,0 +1,129 @@
+// Revertible design experiments (pwa-design-guidelines "Experiments"): the
+// morphing LoadingIndicator (A) and WavyProgress (B). Components only render
+// these classes while the experiments switch is on.
+
+// M3 Expressive standard spatial spring (damping 0.9, stiffness 700), sampled.
+// Used for shape changes only; colour and opacity never overshoot.
+$spring: linear(0, 0.049, 0.16, 0.295, 0.429, 0.552, 0.658, 0.745, 0.814, 0.868, 0.908, 0.938, 0.959, 0.974, 0.985, 0.992, 0.996,
+    0.999, 1, 1.001, 1.001, 1.002, 1.001, 1.001, 1);
+
+// Shapes come from our own radius language: circle, pill (like the chips) and
+// a rounded square (like --r on a window). A pill is a squashed square whose
+// pre-scale radii compensate the scale, so it reads as a true stadium.
+@keyframes xp-morph {
+  0% {
+    border-radius: 50%;
+    transform: rotate(0deg) scale(1);
+  }
+
+  33% {
+    border-radius: 26.9% / 50%;
+    transform: rotate(120deg) scale(1.3, 0.7);
+  }
+
+  66% {
+    border-radius: 30%;
+    transform: rotate(240deg) scale(0.92);
+  }
+
+  // A circle looks the same at 360° and 0°, so the loop has no seam.
+  100% {
+    border-radius: 50%;
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes xp-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.xp-loading {
+  --xp-size: 1.5rem;
+
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--xp-size);
+  block-size: var(--xp-size);
+  flex: none;
+  color: var(--accent);
+  vertical-align: middle;
+  animation: xp-turn 5s linear infinite;
+}
+
+.xp-loading--sm {
+  --xp-size: 1rem;
+}
+
+.xp-loading__shape {
+  inline-size: 68%;
+  block-size: 68%;
+  background: currentColor;
+  border-radius: 50%;
+  animation: xp-morph 2.1s $spring infinite;
+}
+
+// Inside a button the indicator takes the button's own ink, so it stays
+// legible on primary (dark) and plain (cream) buttons alike.
+.btn .xp-loading {
+  color: inherit;
+}
+
+// Label and indicator share one cell: the hidden label holds the width, so a
+// pending button never changes size.
+.xp-pending {
+  display: inline-grid;
+  place-items: center;
+
+  > * {
+    grid-area: 1 / 1;
+  }
+}
+
+.xp-pending__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  visibility: hidden;
+}
+
+.xp-wavy {
+  inline-size: 100%;
+  min-inline-size: 6rem;
+  // Breathing room from the status line above and the channel list below.
+  margin-block: 0.45rem 0.6rem;
+}
+
+.xp-wavy__svg {
+  display: block;
+  inline-size: 100%;
+  overflow: visible;
+}
+
+.xp-wavy__wave,
+.xp-wavy__track {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.xp-wavy__wave {
+  stroke: var(--accent);
+}
+
+.xp-wavy__track {
+  stroke: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xp-loading,
+  .xp-loading__shape {
+    animation: none;
+  }
+
+  .xp-loading__shape {
+    border-radius: 30%;
+  }
+}

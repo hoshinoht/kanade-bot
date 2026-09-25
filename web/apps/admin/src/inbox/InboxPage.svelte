@@ -10,7 +10,7 @@
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
-  import { Icon, Modal, Toaster } from '@kanade/ui';
+  import { Icon, Modal, PendingLabel, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -61,6 +61,7 @@
   let busy = $state(false);
   let error = $state('');
   let rejectOpen = $state(false);
+  let rejecting = $state(false);
   let reason = $state('');
   let reasonError = $state('');
   const tabEls: Record<string, HTMLButtonElement> = {};
@@ -161,9 +162,11 @@
     if (reasonError) return;
     // Proposals take no reason: nothing would keep it.
     const text = isProposal(p) ? '' : reason.trim();
+    rejecting = true;
     const result = await send((c) =>
       c.post<{ message: string }>(`/api/admin/inbox/${encodeURIComponent(p.id)}/reject`, { version: p.version, ...(text ? { reason: text } : {}) }),
     );
+    rejecting = false;
     if (!result.ok) {
       reasonError = refused(result.code, result.message);
       return;
@@ -266,6 +269,8 @@
   <p class="field__error" id="{uid}-reason-err" role="alert">{reasonError}</p>
   {#snippet footer(close)}
     <button class="btn" type="button" onclick={close}>Keep it</button>
-    <button class="btn btn--primary" type="button" onclick={() => void reject()}><Icon name="x" /> Reject change</button>
+    <button class="btn btn--primary" type="button" onclick={() => void reject()}
+      ><PendingLabel pending={rejecting} label="Rejecting…"><Icon name="x" /> Reject change</PendingLabel></button
+    >
   {/snippet}
 </Modal>

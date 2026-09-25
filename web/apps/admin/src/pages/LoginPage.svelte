@@ -1,6 +1,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/gate.scss';
   import type { Identity, Session, SignInMethods } from '@kanade/api-types';
+  import { PendingLabel } from '@kanade/ui';
   import { tick } from 'svelte';
   import { discordStart, loginErrorText } from '../auth';
   import { send } from '../resource.svelte';
@@ -37,6 +38,8 @@
   let token = $state('');
   let tokenError = $state('');
   let busy = $state(false);
+  /** The sign-in path in flight, so only its button shows it. */
+  let signingIn = $state('');
   let tokenInput = $state<HTMLInputElement>();
   const TOKEN_REFUSED: Record<number, string> = {
     400: 'Enter the admin token.',
@@ -51,8 +54,10 @@
 
   async function signIn(path: string, body: object, refusals: Record<number, string>, onError: (message: string) => void) {
     busy = true;
+    signingIn = path;
     const result = await send((c) => c.post<Session>(path, body));
     busy = false;
+    signingIn = '';
     if (result.ok) onsignedin(result.value);
     else onError((result.status && refusals[result.status]) || result.message);
   }
@@ -104,7 +109,8 @@
           class="btn gate__primary"
           type="button"
           disabled={busy}
-          onclick={() => void signIn('/api/admin/auth/tailscale', {}, TAILSCALE_REFUSED, (message) => (methodsError = message))}>Sign in with Tailscale</button
+          onclick={() => void signIn('/api/admin/auth/tailscale', {}, TAILSCALE_REFUSED, (message) => (methodsError = message))}
+          ><PendingLabel pending={signingIn === '/api/admin/auth/tailscale'} label="Signing in…">Sign in with Tailscale</PendingLabel></button
         >
       {/if}
       {#if methods?.token}
@@ -125,7 +131,7 @@
               />
             </label>
             <p class="field__error" id="{uid}-token-err" role="alert">{tokenError}</p>
-            <button class="btn" type="submit" disabled={busy}>Sign in with the token</button>
+            <button class="btn" type="submit" disabled={busy}><PendingLabel pending={signingIn === '/api/admin/auth/token'} label="Signing in…">Sign in with the token</PendingLabel></button>
           </form>
         </details>
       {/if}
