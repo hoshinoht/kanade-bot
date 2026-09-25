@@ -1,15 +1,19 @@
 //! Replays the frozen v4 extraction vectors: the pure rules (gate, window,
 //! resolve, match, merge) and schema, prompt and burst planning (parse,
-//! prompt, plan), and commit through the v5 proposal path. Cards belong to a
-//! later slice.
+//! prompt, plan), and commit through the v5 proposal path. `pipeline` and
+//! `rescan` drive the orchestration over pipeline-level fakes (`fakes`).
+//! Cards belong to a later slice.
 
 mod commit;
+mod fakes;
 mod gate;
 mod matching;
 mod merge;
 mod parse;
+mod pipeline;
 mod plan;
 mod prompt;
+mod rescan;
 mod resolve;
 mod session;
 mod shaping;
