@@ -1,7 +1,12 @@
+mod authority;
+mod compiler;
 mod fallback;
 mod layout;
 mod loader;
+mod nudges;
+mod oracle;
 mod resolution;
 mod schema;
+mod staging;
 mod support;
 mod vectors;

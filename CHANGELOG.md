@@ -99,6 +99,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   first, extraction and follow-ups last), a request-rate ceiling, a capped retry
   budget and a circuit breaker that sheds new work during an outage and ramps back
   up with a single probe. Not yet wired into model calls.
+- v5: persona prompt compiler matching v4's assembled prompts byte for byte, with strict
+  staging lines (literal boss-name substitution), optional self-service nudge pools and a
+  nudge rewrite prompt per bundle/profile. Persona YAML no longer coerces unquoted
+  numbers or booleans into text.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard

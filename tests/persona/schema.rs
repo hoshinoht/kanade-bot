@@ -34,7 +34,8 @@ fn tracked_kanade_header_rewrite_is_the_approved_bytes() {
     let compact = root.load_bundle(&pid("kanade")).unwrap().value.compact;
     let text = compact
         .expect("tracked Kanade carries compact")
-        .header_rewrite;
+        .header_rewrite
+        .expect("tracked Kanade carries header_rewrite");
     let digest = ring::digest::digest(&ring::digest::SHA256, text.as_bytes())
         .as_ref()
         .iter()
@@ -294,7 +295,10 @@ fn file_identity_and_line_rules_are_enforced() {
         bundle("alpha", "Alpha")
     );
     let parsed = parse_bundle(&text, &pid("alpha")).unwrap();
-    assert_eq!(parsed.compact.unwrap().header_rewrite, "Rewrite.\n");
+    assert_eq!(
+        parsed.compact.unwrap().header_rewrite.as_deref(),
+        Some("Rewrite.\n")
+    );
 }
 
 #[test]

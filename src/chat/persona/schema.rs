@@ -8,6 +8,8 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 use super::{
     PersonaError, YamlIssue,
     id::{PersonaId, ProfileId, validate_alias},
+    nudges::{Nudges, RawNudges},
+    staging,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -26,6 +28,8 @@ fn from_yaml<T: for<'de> Deserialize<'de>>(text: &str) -> Result<T, PersonaError
         },
         duplicate_keys: DuplicateKeyPolicy::Error,
         merge_keys: MergeKeyPolicy::Error,
+        // Text fields must be strings: unquoted numbers and booleans are rejected, not coerced.
+        no_schema: true,
         reject_unsupported_tags: true,
         strict_booleans: true,
         with_snippet: false,
@@ -60,6 +64,8 @@ struct RawBundle {
     staging: RawStaging,
     #[serde(default)]
     compact: Option<RawCompact>,
+    #[serde(default)]
+    nudges: Option<RawNudges>,
 }
 
 #[derive(Deserialize)]
@@ -73,7 +79,10 @@ struct RawBehaviour {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawCompact {
-    header_rewrite: String,
+    #[serde(default)]
+    header_rewrite: Option<String>,
+    #[serde(default)]
+    nudge_rewrite: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -112,6 +121,8 @@ struct RawProfile {
     prompt: String,
     #[serde(default)]
     staging: Option<RawStagingOverride>,
+    #[serde(default)]
+    nudges: Option<RawNudges>,
 }
 
 fn check_version(version: u32) -> Result<(), PersonaError> {
@@ -267,13 +278,15 @@ impl TryFrom<RawStaging> for Staging {
     type Error = PersonaError;
 
     fn try_from(raw: RawStaging) -> Result<Self, Self::Error> {
-        Ok(Self {
+        let parsed = Self {
             schedule: non_empty(raw.schedule, STAGING_EMPTY)?,
             guide: non_empty(raw.guide, STAGING_EMPTY)?,
             guide_named: non_empty(raw.guide_named, STAGING_EMPTY)?,
             write: non_empty(raw.write, STAGING_EMPTY)?,
             generic: non_empty(raw.generic, STAGING_EMPTY)?,
-        })
+        };
+        staging::validate(&parsed)?;
+        Ok(parsed)
     }
 }
 
@@ -282,19 +295,43 @@ impl TryFrom<RawStagingOverride> for StagingOverride {
 
     fn try_from(raw: RawStagingOverride) -> Result<Self, Self::Error> {
         let line = |value: Option<String>| value.map(|v| non_empty(v, STAGING_EMPTY)).transpose();
-        Ok(Self {
+        let parsed = Self {
             schedule: line(raw.schedule)?,
             guide: line(raw.guide)?,
             guide_named: line(raw.guide_named)?,
             write: line(raw.write)?,
             generic: line(raw.generic)?,
-        })
+        };
+        staging::validate_override(&parsed)?;
+        Ok(parsed)
     }
 }
 
+/// One-line rewrite instructions for a small model; v5-only, no v4 oracle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Compact {
-    pub header_rewrite: String,
+    /// Reminder header-line rewrite.
+    pub header_rewrite: Option<String>,
+    /// Nudge lead-in rewrite; unset means the caller summarises identity and voice.
+    pub nudge_rewrite: Option<String>,
+}
+
+impl TryFrom<RawCompact> for Compact {
+    type Error = PersonaError;
+
+    fn try_from(raw: RawCompact) -> Result<Self, Self::Error> {
+        let text = |value: Option<String>, what| value.map(|v| non_empty(v, what)).transpose();
+        let compact = Self {
+            header_rewrite: text(raw.header_rewrite, "header_rewrite must be non-empty")?,
+            nudge_rewrite: text(raw.nudge_rewrite, "nudge_rewrite must be non-empty")?,
+        };
+        if compact.header_rewrite.is_none() && compact.nudge_rewrite.is_none() {
+            return Err(PersonaError::Invalid(
+                "compact must declare a rewrite prompt",
+            ));
+        }
+        Ok(compact)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -305,6 +342,7 @@ pub struct Bundle {
     pub prompt: String,
     pub staging: Staging,
     pub compact: Option<Compact>,
+    pub nudges: Option<Nudges>,
 }
 
 /// Parse a bundle whose file name was derived from `expected`.
@@ -322,13 +360,8 @@ pub fn parse_bundle(text: &str, expected: &PersonaId) -> Result<Bundle, PersonaE
         voice: voice(raw.behaviour.voice)?,
         prompt: non_empty(raw.behaviour.prompt, "behaviour prompt must be non-empty")?,
         staging: raw.staging.try_into()?,
-        compact: raw
-            .compact
-            .map(|compact| {
-                non_empty(compact.header_rewrite, "header_rewrite must be non-empty")
-                    .map(|header_rewrite| Compact { header_rewrite })
-            })
-            .transpose()?,
+        compact: raw.compact.map(Compact::try_from).transpose()?,
+        nudges: raw.nudges.map(Nudges::try_from).transpose()?,
     })
 }
 
@@ -339,6 +372,8 @@ pub struct Profile {
     pub voice: Option<String>,
     pub prompt: String,
     pub staging: StagingOverride,
+    /// Seed pools tried before the bundle's.
+    pub nudges: Option<Nudges>,
 }
 
 /// Parse a profile whose file name was derived from `expected`.
@@ -356,5 +391,6 @@ pub fn parse_profile(text: &str, expected: &ProfileId) -> Result<Profile, Person
         voice: voice(raw.voice)?,
         prompt: non_empty(raw.prompt, "profile prompt must be non-empty")?,
         staging: raw.staging.unwrap_or_default().try_into()?,
+        nudges: raw.nudges.map(Nudges::try_from).transpose()?,
     })
 }

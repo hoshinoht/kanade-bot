@@ -28,13 +28,64 @@ are rejected. Block scalars (`|`) keep their internal newlines.
   importing or configuring a selection; the stored selection is the ID.
 - **Bundle:** `id` (matching the filename), `identity`, `behaviour` with a
   required `prompt` and optional one-line `voice`, a complete `staging` map
-  (`schedule`, `guide`, `guide_named`, `write`, `generic`), and optional
-  `compact: {header_rewrite}`. The tracked Kanade bundle carries
-  `header_rewrite`: v5-only text for rewriting a compact header line, with no
-  v4 counterpart.
+  (`schedule`, `guide`, `guide_named`, `write`, `generic`), optional
+  `compact` and optional `nudges`. `compact` holds v5-only one-line rewrite
+  prompts for a small model, at least one of `header_rewrite` (reminder
+  header lines) and `nudge_rewrite` (self-service nudge lead-ins). The tracked
+  Kanade bundle carries `header_rewrite` only.
 - **Profile:** `id` (matching the filename), `label`, optional `voice`,
-  `prompt`, and optional partial `staging`; missing staging keys come from the
-  selected bundle.
+  `prompt`, optional partial `staging` and optional `nudges`; missing staging
+  keys come from the selected bundle.
+
+Text values must be strings: unquoted numbers, booleans and nulls are
+rejected, so quote them (`'5'`).
+
+### Staging lines
+
+Each line is one line of at most 200 characters after outer whitespace is
+trimmed, with no mentions (`<@…>`, `<#…>`, `@everyone`, `@here`).
+`guide_named` holds exactly one literal `{boss}` and no other braces; the other
+lines hold no braces at all. The boss name is substituted literally; an unsafe
+name or a result over 300 characters shows the `guide` line instead.
+
+### Nudges
+
+Lead-in lines for self-service tips. Code appends the action and link
+(`→ edit the run: <link>` / `→ request a change: <link>`), so lines never
+carry them.
+
+```yaml
+nudges:
+  playful:            # default mood
+    - "Eh? You want me to change it? ...fine, here's the button, do it yourself."
+    - "I already did the hard part, you know. Tweaking it is on you~"
+    - "Hmph. Everything you need is right here."
+  gentle:             # after a failure or a frustrated message
+    - "Ah... that didn't go well, did it. You can fix it here."
+    - …
+  request_form:       # optional pools for changes that need approval
+    playful: [...]
+    gentle: [...]
+```
+
+Every pool is optional but a section must declare one. Pools hold 3 to 20
+lines of at most 140 characters, one line each, without padding, links, URLs
+or mentions; the only placeholders are `{boss}`, `{day}` and `{time}`,
+substituted literally. For a given purpose and mood, the member's profile
+pools are used first, then the bundle's, then neutral built-in lines; a
+missing `gentle` pool never borrows `playful` lines.
+
+## Compiled prompt
+
+The chat prompt is compiled from the selected bundle and profile: identity,
+behaviour, profile prompt, `Good` examples (profile examples replace the
+behaviour's), then the code-owned policies in `src/chat/prompts/`, the
+per-turn clock/model/card lines and a voice cue. The effective voice is the
+profile `voice`, then the bundle `voice`, then a built-in default; `<...>`
+template values count as unset. The last message of every request is the
+fixed scheduler voice reminder. Persona files cannot change tools, access or
+policies, and file names, digests and selection sources never reach the
+model.
 
 ## Selection and fallback
 
