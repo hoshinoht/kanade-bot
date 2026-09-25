@@ -217,7 +217,11 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
     let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
     let compiled = CompiledPersona::compile(&kanade, None);
-    assert!(compiled.nudge_rewrite().is_some_and(|text| text.contains("Kanade")));
+    assert!(
+        compiled
+            .nudge_rewrite()
+            .is_some_and(|text| text.contains("Kanade"))
+    );
     let gentle = compiled.nudge_seeds(NudgePurpose::SelfService, NudgeMood::Gentle);
     assert_eq!(gentle.source, NudgeSource::Bundle);
     assert_eq!(
