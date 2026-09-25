@@ -81,7 +81,7 @@ pub struct ChatRequest {
     pub tools: Vec<ToolDefinition>,
     pub output_schema: Option<OutputSchema>,
     pub max_output_tokens: u32,
-    /// `None` omits `reasoning_effort`; `Off` sends `none` only where the alias publishes it.
+    /// `None` omits `reasoning_effort`; `Off` sends `none` unless a published effort list leaves it out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Effort>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
