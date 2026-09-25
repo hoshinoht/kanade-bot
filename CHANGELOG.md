@@ -150,7 +150,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   from the profile, bundle or built-in pools, at most one tip per member per boss week,
   with an optional 2-second rewrite on a small model that falls back to the seed line.
   Rewrites are refused (seed line used) for markdown, hidden format characters, invite
-  links, changed placeholders or a word on a built-in safe-for-work deny-list, and the
+  links, changed placeholders or a word on a built-in safe-for-work deny-list (including
+  sound-alike spellings such as "dih"/"bih" and common Malay, Indonesian, Singlish,
+  Tagalog, Thai and Vietnamese swears), and the
   filled line is checked again. Kanade has her own rewrite voice and request lines.
   Extraction now plans the redirect for each kept change (still cards only while the
   public portal is closed) and uses up the weekly tip only when a link is posted.

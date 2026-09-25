@@ -14,10 +14,11 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::chat::nudge::{
-    DENY_INSIDE, EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS, NUDGE_REWRITE_INSTRUCTION,
-    NoRewrite, Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD, RECENT_PER_CHANNEL,
-    REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt, SeedReason, SeedRotation,
-    accept_rewrite, denied_word, has_invite, has_markup, mood_for, render,
+    DENY_INSIDE, DENY_SEA, DENY_SOUNDALIKE, EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS,
+    NUDGE_REWRITE_INSTRUCTION, NoRewrite, Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD,
+    RECENT_PER_CHANNEL, REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt,
+    SeedReason, SeedRotation, accept_rewrite, denied_word, has_invite, has_markup, mood_for,
+    render,
 };
 use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
@@ -386,11 +387,11 @@ fn slurs_and_profanity_are_caught_inside_words_and_with_the_in_suffix() {
         ("Move {boss} yourself, motherfucker.", "fuck"),
         ("Move {boss} yourself, shithead.", "shit"),
         ("Move {boss} yourself, fuckin slowpoke.", "fuck"),
-        ("Move {boss} yourself, fvcking... no, fuuckin.", "fuck"),
+        ("Move {boss} yourself, fvcking... no, fuuckin.", "fvck"),
         ("Move {boss} yourself, bitchin.", "bitch"),
         ("Move {boss} yourself, sh1tty.", "shit"),
         ("Move {boss} yourself, n1ggers.", "nigger"),
-        ("Move {boss} yourself, niga? no: nigerz.", "niger"),
+        ("Move {boss} yourself, niga? no: nigerz.", "nigga"),
         ("Move {boss} yourself, fagg0ts.", "faggot"),
         ("Move {boss} yourself, fagot.", "faggot"),
         ("Move {boss} yourself, dumbfagot.", "fagot"),
@@ -446,6 +447,53 @@ fn the_deny_list_matches_whole_words_through_simple_obfuscation() {
     ] {
         assert!(accept_rewrite(clean, seed).is_ok(), "{clean:?}");
     }
+}
+
+#[test]
+fn sound_alikes_and_southeast_asian_swears_are_denied() {
+    let seed = "Move {boss} yourself.";
+    for output in [
+        "Move {boss} yourself, dih.",
+        "Move {boss} yourself, bih.",
+        "Move {boss} yourself, b!tch.",
+        "Move {boss} yourself, fk this.",
+        "Move {boss} yourself, phuq it.",
+        "Move {boss} yourself, stfu.",
+        "Move {boss} yourself, titties.",
+        "Move {boss} yourself, niggas.",
+        "Move {boss} yourself, pukimak.",
+        "Move {boss} yourself, pukimakkau.",
+        "Move {boss} yourself, kanina.",
+        "Move {boss} yourself, cheebye? no, cheebai.",
+        "Move {boss} yourself, lanjiao.",
+        "Move {boss} yourself, sohai.",
+        "Move {boss} yourself, anjing.",
+        "Move {boss} yourself, kontol.",
+        "Move {boss} yourself, tangina.",
+        "Move {boss} yourself, putanginamo.",
+        "Move {boss} yourself, gago.",
+        "Move {boss} yourself, kuay.",
+        "Move {boss} yourself, vcl.",
+        "Move {boss} yourself, địt.",
+    ] {
+        assert!(
+            matches!(accept_rewrite(output, seed), Err(Rejection::Denied(_))),
+            "{output:?}"
+        );
+    }
+    assert_eq!(denied_word("B!TCH"), Some("bitch"));
+    // `!` is punctuation at a word's end, and short ambiguous forms stay allowed.
+    for clean in [
+        "Move {boss} yourself!",
+        "Hmph! Move {boss} yourself, okay?",
+        "Move {boss} yourself, send a DM if stuck.",
+        "Move {boss} yourself, as usual.",
+        "Move {boss} yourself, don't be tardy.",
+        "Move {boss} yourself, then dinner.",
+    ] {
+        assert!(accept_rewrite(clean, seed).is_ok(), "{clean:?}");
+    }
+    assert!(DENY_SEA.contains(&"pukimak") && DENY_SOUNDALIKE.contains(&"dih"));
 }
 
 #[tokio::test(start_paused = true)]

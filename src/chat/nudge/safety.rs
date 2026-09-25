@@ -10,21 +10,140 @@ const MARKUP_PAIRS: [&str; 1] = ["~~"];
 const INVITES: [&str; 3] = ["discord.gg/", "discord.com/invite", "discordapp.com/invite"];
 
 /// Whole words (after normalisation), each also matched with a suffix from
-/// [`SUFFIXES`]. Kept small and readable: false positives only cost the seed line.
-pub const DENY_LIST: [&str; 35] = [
+/// [`SUFFIXES`]. Kept readable: false positives only cost the seed line.
+/// `ass` is absent on purpose: letter-collapsing makes it `as`.
+pub const DENY_LIST: &[&str] = &[
     "anal", "arse", "asshole", "bastard", "bitch", "blowjob", "boob", "cock", "cum", "cunt",
     "dick", "dildo", "erotic", "fap", "faggot", "fetish", "fuck", "hentai", "horny", "kinky",
     "lewd", "milf", "naked", "nigger", "nsfw", "nude", "orgasm", "penis", "porn", "pussy", "rape",
     "retard", "sex", "shit", "slut",
 ];
 
-const SUFFIXES: [&str; 8] = ["s", "es", "ed", "er", "ing", "in", "y", "ty"];
+/// Sound-alike and clipped spellings (user request 2026-09-25), whole-word.
+pub const DENY_SOUNDALIKE: &[&str] = &[
+    "bih", "biatch", "biotch", "boner", "cawk", "cooch", "coochie", "dih", "dik", "diq", "fag",
+    "fck", "fcuk", "fk", "fuk", "fuq", "fvck", "hoe", "jizz", "kys", "nigga", "nibba", "phuck",
+    "phuk", "phuq", "prick", "secks", "segs", "seggs", "shyt", "stfu", "thot", "tit", "twat",
+    "wank", "wtf",
+];
 
-/// Matched anywhere inside a normalised word (`bullshit`, `motherfucker`).
-/// Entries are already letter-collapsed, so `niger`/`fagot` also cover the
-/// double-g spellings. `cunt` stays whole-word only: as a substring it would
-/// reject "Scunthorpe".
-pub const DENY_INSIDE: [&str; 4] = ["fuck", "shit", "niger", "fagot"];
+/// Southeast Asian swears and slurs, romanised as typed in chat (user request
+/// 2026-09-25): Malay/Indonesian, Singlish/Hokkien/Cantonese, Tagalog, Thai
+/// and Vietnamese. Whole-word; ambiguous short forms (`dm`, `cb`, `knn`, bare
+/// Vietnamese without diacritics) are left out because they collide with
+/// everyday words once collapsed.
+pub const DENY_SEA: &[&str] = &[
+    // Malay / Indonesian / Javanese
+    "anjing",
+    "asu",
+    "babi",
+    "bajingan",
+    "bangsat",
+    "bodoh",
+    "brengsek",
+    "burit",
+    "butoh",
+    "celaka",
+    "entot",
+    "goblok",
+    "jadah",
+    "jancok",
+    "jancuk",
+    "jubur",
+    "kampang",
+    "keparat",
+    "kimak",
+    "konek",
+    "kontol",
+    "lahanat",
+    "memek",
+    "ngentot",
+    "pantat",
+    "pepek",
+    "puki",
+    "pukimak",
+    "sial",
+    "sundal",
+    "tahi",
+    "tai",
+    "tolol",
+    // Singlish / Hokkien / Cantonese
+    "cheebai",
+    "chibai",
+    "cibai",
+    "diu",
+    "jibai",
+    "kanasai",
+    "kanina",
+    "kaninabu",
+    "lanjiao",
+    "lanjiau",
+    "lancau",
+    "nabei",
+    "pundek",
+    "pundeh",
+    "sohai",
+    "sorhai",
+    // Tagalog
+    "bilat",
+    "burat",
+    "gago",
+    "hindot",
+    "jakol",
+    "kantot",
+    "kupal",
+    "pakshet",
+    "pakshit",
+    "pakyu",
+    "pekpek",
+    "punyeta",
+    "puta",
+    "putangina",
+    "tangina",
+    "tarantado",
+    "tite",
+    "ulol",
+    // Thai
+    "kuay",
+    "kuy",
+    "yed",
+    // Vietnamese
+    "cailon",
+    "cặc",
+    "clgt",
+    "ditme",
+    "dume",
+    "đéo",
+    "đĩ",
+    "địt",
+    "đmm",
+    "đụ",
+    "lồn",
+    "vcl",
+    "vkl",
+];
+
+const SUFFIXES: [&str; 9] = ["s", "es", "ed", "er", "ing", "in", "y", "ty", "ies"];
+
+/// Matched anywhere inside a normalised word (`bullshit`, `motherfucker`,
+/// `pukimakkau`). Entries are already letter-collapsed, so `niger`/`fagot`/
+/// `niga` also cover the double-g spellings. `cunt` stays whole-word only: as a
+/// substring it would reject "Scunthorpe".
+pub const DENY_INSIDE: &[&str] = &[
+    "fuck",
+    "shit",
+    "niger",
+    "niga",
+    "fagot",
+    "kontol",
+    "pukimak",
+    "ngentot",
+    "putangina",
+    "tangina",
+    "cibai",
+    "chibai",
+    "lanjiao",
+];
 
 /// Markdown syntax at the start of the line or anywhere inline.
 pub fn has_markup(line: &str) -> bool {
@@ -60,8 +179,15 @@ pub fn has_invite(line: &str) -> bool {
 /// (`sh1iiit` → `shit`); words split on anything that is not a letter.
 fn normalise(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for c in text.chars().flat_map(char::to_lowercase) {
+    let chars: Vec<char> = text.chars().flat_map(char::to_lowercase).collect();
+    for (at, &c) in chars.iter().enumerate() {
+        // `!` reads as `i` only inside a word (`b!tch`), not as punctuation.
+        let inside = |next: Option<&char>| {
+            out.chars().last().is_some_and(char::is_alphabetic)
+                && next.is_some_and(|n| n.is_alphabetic() || n.is_ascii_digit())
+        };
         let c = match c {
+            '!' if inside(chars.get(at + 1)) => 'i',
             '0' => 'o',
             '1' => 'i',
             '3' => 'e',
@@ -95,7 +221,12 @@ pub fn denied_word(line: &str) -> Option<&'static str> {
         .split(|c: char| !c.is_alphabetic())
         .filter(|word| !word.is_empty())
         .find_map(|word| {
-            let whole = DENY_LIST.iter().copied().find(|entry| {
+            let mut whole_words = DENY_LIST
+                .iter()
+                .chain(DENY_SOUNDALIKE)
+                .chain(DENY_SEA)
+                .copied();
+            let whole = whole_words.find(|entry| {
                 let entry = collapse(entry);
                 word == entry
                     || SUFFIXES.iter().any(|suffix| {
