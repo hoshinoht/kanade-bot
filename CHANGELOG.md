@@ -2,7 +2,7 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## 1.0.0b (in development)
+## 1.0.0-beta.1 (in development)
 
 **Added**
 
