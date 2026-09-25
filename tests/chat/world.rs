@@ -334,6 +334,21 @@ impl World {
         dispatch::run(ctx, &world, offer, &mut proposer, session, name, arguments).await
     }
 
+    /// The loop's static guild view alone (the scheduler is the caller's).
+    pub fn guild_view(&self) -> GuildView<'_> {
+        GuildView {
+            members: &self.guild.members,
+            directory: &self.guild,
+            catalog: &self.catalog,
+            channels: &self.channels,
+            pilot: &self.pilot,
+            zone: self.zone,
+            reset_weekday: self.policy.reset_weekday,
+            reset_time: self.policy.reset_time,
+            guides: Some(&self.guides),
+        }
+    }
+
     /// The loop's static guild view and the scheduler it proposes through.
     pub fn question_parts(
         &mut self,

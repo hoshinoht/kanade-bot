@@ -43,14 +43,20 @@ are C3. Discord wiring is later.
   the same reply gets a "next step" note). An added bundle spends one round
   of the cap; a request that would leave no round offering the bundle before
   the final no-tools round (round + 3 > remaining cap) is refused with
-  `NO_ROUND_LEFT`, adds nothing and is not charged. The last round, and the
+  `NO_ROUND_LEFT`, adds nothing and is not charged; nor is one beside a
+  posted card (every later round withholds tools, so the bundle is never
+  offered). The last round, and the
   round after a posted card, offer no tools and are still sent. A round with
   no tool calls ends the loop; running out of rounds is `KeptCallingTools`.
 - Deadline: the question session's deadline also bounds each tool call's
-  store load, `ChatPorts::pending`, the dispatch (proposals included) and
-  `ChatPorts::post_card`, as v4's `wait_for` bounded the whole loop. Expiry
-  ends the question as `Timeout` (`timeout` in the log); proposals created
-  before it are still reported.
+  store load, `ChatPorts::pending` and `ChatPorts::post_card`, as v4's
+  `wait_for` bounded the whole loop. The tool dispatch itself (staging a
+  proposal and superseding older cards) is never cancelled: a cut between a
+  committed proposal and its supersede would leave an unreported proposal
+  and stale cards live. The deadline is checked right after each call
+  instead; once past it the question ends as `Timeout` (`timeout` in the
+  log) with that call's outcome and created proposals reported and its cards
+  never posted.
 - Cards: proposal tools hand `ProposalCard`s to `ChatPorts::post_card`. A card
   that could not be posted turns that call into a refusal the model reads
   (`CARD_NOT_POSTED`, v4's wording) before the next round; a posted card sets

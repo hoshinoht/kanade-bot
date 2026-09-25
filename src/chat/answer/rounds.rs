@@ -326,6 +326,7 @@ where
                 })
                 .collect(),
         });
+        let mut requested_now = false;
         for call in &response.tool_calls {
             state.generation.tool_calls.push(call.name.clone());
             let started = Instant::now();
@@ -347,7 +348,9 @@ where
                         guides: guild.guides,
                     };
                     let arguments = Value::String(call.arguments.clone());
-                    let dispatched = within_deadline!('rounds, dispatch::run(
+                    // Never cancelled mid-flight: staging and supersede must
+                    // finish together; the deadline is checked right after.
+                    let dispatched = dispatch::run(
                         question.ctx,
                         &world,
                         &mut offer,
@@ -355,7 +358,8 @@ where
                         identity,
                         &call.name,
                         &arguments,
-                    ));
+                    )
+                    .await;
                     (
                         dispatched.outcome,
                         dispatched.model_content,
@@ -378,13 +382,25 @@ where
             };
             if requested.is_some() {
                 charged += 1;
+                requested_now = true;
             }
-            // Recorded before posting, so a deadline hit while posting still
-            // logs the proposal it created.
+            // Recorded before the deadline check and posting, so a timeout
+            // still logs the proposal this call created.
             state
                 .generation
                 .created
                 .extend(outcome.created.iter().cloned());
+            if Instant::now() >= deadline {
+                // Kept so the log's round shows the call; its cards stay unposted.
+                state.generation.tools_ms += millis(started);
+                state.generation.outcomes.push(RoundOutcome {
+                    round,
+                    outcome,
+                    posted: Vec::new(),
+                });
+                state.generation.failure = Some(AnswerFailure::Timeout { seconds });
+                break 'rounds None;
+            }
             let mut posted = Vec::new();
             let mut undelivered = false;
             for card in &outcome.cards {
@@ -413,6 +429,11 @@ where
                 outcome,
                 posted,
             });
+        }
+        // A posted write withholds tools from every later round, so a bundle
+        // requested beside it is never offered: don't charge for it.
+        if requested_now && !state.generation.posted.is_empty() {
+            charged -= 1;
         }
     };
 

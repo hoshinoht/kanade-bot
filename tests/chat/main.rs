@@ -14,6 +14,7 @@ mod model;
 mod propose;
 mod read_tools;
 mod sanitize;
+mod slow_store;
 mod support;
 mod tool_schemas;
 mod wire;

@@ -3,6 +3,7 @@
 //! filter, identity encoding across rounds, and the chat-log row.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use kanade::chat::answer::{
@@ -10,9 +11,13 @@ use kanade::chat::answer::{
     interaction,
 };
 use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
+use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
+use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
 use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
+use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::scheduler::Clock;
+use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
 use kanade::infrastructure::llm::identity::{
     IdentityCodec, Passthrough, TaggingCodec, find_request_leaks,
@@ -24,6 +29,7 @@ use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, roster, said, settings};
 use crate::model::{Scripted, capabilities, client};
+use crate::slow_store::SlowStore;
 use crate::support::load;
 use crate::wire::kanade;
 use crate::world::World;
@@ -194,6 +200,42 @@ async fn request_tools_spends_a_round_of_the_cap() {
         "the charged cap made round 3 last"
     );
     assert_eq!(run.generation.reply, "Dodge the lasers.");
+}
+
+/// A card posted beside `request_tools` withholds tools from every later
+/// round, so the bundle is never offered and the round is not charged: the
+/// question keeps all four rounds.
+#[tokio::test(start_paused = true)]
+async fn request_tools_beside_a_posted_write_is_not_charged() {
+    // Lenient chat validation dispatches these despite no tools being offered.
+    let bosses = |id: &str| wants(&[(id, "list_bosses", json!({}))]);
+    let run = run(
+        vec![
+            wants(&[
+                (
+                    "m1",
+                    "propose_move",
+                    json!({"run_query": "hstar", "to_when": "thu 22:00"}),
+                ),
+                ("r1", "request_tools", json!({"bundle": "strategy"})),
+            ]),
+            bosses("b2"),
+            bosses("b3"),
+            bosses("b4"),
+        ],
+        ToolOffer::dynamic([Bundle::RunWrites], false),
+        4,
+        "move hstar and tell me the strats",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let generation = &run.generation;
+    assert_eq!(generation.posted.len(), 1);
+    assert!(generation.outcomes[1].outcome.ok, "the bundle was added");
+    assert_eq!(run.requests.len(), 4, "no round was charged");
+    assert!(run.requests[1..].iter().all(|r| r.tools.is_empty()));
+    assert_eq!(generation.failure, Some(AnswerFailure::KeptCallingTools));
 }
 
 /// A request that would leave no round offering the bundle and no final
@@ -582,4 +624,140 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
     let store = run.world.service.store();
     store.record_chat(row.clone()).await.expect("recorded");
     assert_eq!(store.load_chat("chat-1").await.expect("load"), Some(row));
+}
+
+/// A deadline that passes while a proposal is being staged never cuts the
+/// staging short: the committed proposal is reported, the older card it
+/// replaces is retired, nothing is posted after the deadline, and the
+/// question ends as a timeout.
+#[tokio::test(start_paused = true)]
+async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
+    const HSTAR: &str = "a1a1a1a1-0000-4000-8000-000000000001";
+    let input = load("loop.json")["cases"][0]["input"].clone();
+    let mut world = World::new(&input).await;
+    let timeout = settings(&input, 8).timeout;
+
+    let mut older = ProposedChange::new(ChangeKind::Cancel);
+    older.run_id = Some(HSTAR.into());
+    older.channel_id = Some("900".into());
+    older.bosses = vec!["HMaleficStar".into(), "HFA".into()];
+    let older = world
+        .service
+        .propose(
+            ProposalRequest {
+                change: older,
+                source: ProposalSource::Chat,
+                source_id: "older".into(),
+                supersede: Supersede::Keep,
+            },
+            &world.policy,
+            &world.guild,
+        )
+        .await
+        .expect("an older live card")
+        .proposal
+        .id;
+
+    let mut slow = SchedulerService::new(
+        SlowStore {
+            inner: world.service.store(),
+            stall: timeout + Duration::from_secs(1),
+        },
+        world.ids.clone(),
+        world.clock.clone(),
+    );
+    let provider = Arc::new(Scripted {
+        fake: FakeProvider::new([
+            wants(&[(
+                "m1",
+                "propose_move",
+                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
+            )]),
+            words("never reached"),
+        ]),
+        caps: capabilities(&input["caps"]),
+    });
+    let (_governor, client) = client(Some(MODEL), provider.clone());
+    let ctx = world.context(&json!({"author_id": "11", "channel_id": "900"}));
+    let roster = roster(&world);
+    let deps = AnswerDeps {
+        client: &client,
+        codec: &Passthrough,
+        roster: &roster,
+    };
+    let ports = Ports::default();
+    let question = Question {
+        ctx: &ctx,
+        conversation: vec![
+            Message::System {
+                content: "SYSTEM".into(),
+            },
+            Message::User {
+                content: "Alvin tan: move hstar to thu 22:00".into(),
+            },
+        ],
+        reminder: kanade().voice_reminder(),
+        offer: ToolOffer::full_set(false),
+        settings: settings(&input, 8),
+    };
+    let guild = world.guild_view();
+    let mut proposer = Proposer {
+        service: &mut slow,
+        policy: &world.policy,
+    };
+    let generation = answer(&deps, question, &guild, &mut proposer, &ports).await;
+
+    assert_eq!(
+        generation.failure,
+        Some(AnswerFailure::Timeout {
+            seconds: timeout.as_secs()
+        })
+    );
+    assert_eq!(
+        provider.fake.requests().len(),
+        1,
+        "no round after the deadline"
+    );
+    let store = world.service.store();
+    let [created] = generation.created.as_slice() else {
+        panic!(
+            "the committed proposal is reported: {:?}",
+            generation.created
+        );
+    };
+    let (new, _) = store
+        .load_proposal(created)
+        .await
+        .expect("load")
+        .expect("stored");
+    assert_eq!(new.draft.status, DraftStatus::Submitted);
+    let (old, _) = store
+        .load_proposal(&older)
+        .await
+        .expect("load")
+        .expect("stored");
+    assert_eq!(
+        (old.draft.status, old.draft.close_reason.as_deref()),
+        (DraftStatus::Discarded, Some(SUPERSEDED)),
+        "supersede ran"
+    );
+    assert!(ports.posted.lock().unwrap().is_empty() && generation.posted.is_empty());
+    let staged = &generation.outcomes[0];
+    assert!(staged.outcome.ok && staged.posted.is_empty());
+    assert_eq!(staged.outcome.created, generation.created);
+    let row = interaction(
+        "chat-d".into(),
+        world.clock.now().with_timezone(&Utc),
+        &ctx,
+        "move hstar to thu 22:00",
+        &generation,
+        MODEL,
+        None,
+        61_000,
+    );
+    assert_eq!(row.outcome, ChatOutcome::Timeout);
+    assert_eq!(
+        row.rounds[0].tool_calls[0]["created"],
+        json!(generation.created)
+    );
 }
