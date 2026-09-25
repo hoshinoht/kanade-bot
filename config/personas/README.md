@@ -76,6 +76,12 @@ substituted literally. For a given purpose and mood, the member's profile
 pools are used first, then the bundle's, then neutral built-in lines; a
 missing `gentle` pool never borrows `playful` lines.
 
+Lines rotate per channel without immediate repeats. When a `rewrite` model is
+configured, the picked line (placeholders unfilled) may be rewritten by it,
+guided by `compact.nudge_rewrite` and the effective voice (profile, then
+bundle); the rewrite must pass the same line rules and keep exactly the
+seed's placeholders, otherwise the seed line is used as written.
+
 ## Compiled prompt
 
 The chat prompt is compiled from the selected bundle and profile: identity,

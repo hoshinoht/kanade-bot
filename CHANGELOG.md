@@ -134,6 +134,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   write path, replaces older proposals for the same target, and expires silently after
   24 hours. Proposed answers recount the run's status like v4; approved cancels win over
   status changes since the proposal, and an approved move revives a cancelled run.
+- v5: self-service redirect decisions (move it yourself, request it, or keep the card;
+  cards only while the public portal is closed) and persona nudges: rotating seed lines
+  from the profile, bundle or built-in pools, at most one tip per member per boss week,
+  with an optional 2-second rewrite on a small model that falls back to the seed line.
+  The rewrite's model session and pipeline wiring come next.
 - v5: chat gate, authority, read and proposal tools (proposals only through the
   scheduler, refused up front when unworkable), reply sanitising and injection guards,
   matching the frozen v4 chat vectors; tools load in bundles as needed instead of all

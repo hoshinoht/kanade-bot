@@ -13,6 +13,9 @@
 //! fixed rate) and `rescan` (queued re-reads of a window) drive them through
 //! governed model sessions, the scheduler's proposal API and the model-log
 //! store, behind ports with no Discord types.
+//!
+//! `redirect` (v5) decides the self-service link and whether a change's card
+//! is kept.
 
 mod amendment;
 pub mod backlog;
@@ -22,6 +25,7 @@ pub mod merge;
 pub mod pipeline;
 pub mod plan;
 pub mod prompt;
+pub mod redirect;
 pub mod rescan;
 pub mod resolve;
 pub mod schema;

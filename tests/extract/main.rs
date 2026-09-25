@@ -2,17 +2,20 @@
 //! resolve, match, merge) and schema, prompt and burst planning (parse,
 //! prompt, plan), and commit through the v5 proposal path. `pipeline` and
 //! `rescan` drive the orchestration over pipeline-level fakes (`fakes`).
-//! Cards belong to a later slice.
+//! `redirect` and `nudge` cover the v5 self-service redirect and its persona
+//! nudges (no v4 vectors). Cards belong to a later slice.
 
 mod commit;
 mod fakes;
 mod gate;
 mod matching;
 mod merge;
+mod nudge;
 mod parse;
 mod pipeline;
 mod plan;
 mod prompt;
+mod redirect;
 mod rescan;
 mod resolve;
 mod session;
