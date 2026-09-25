@@ -261,6 +261,12 @@ pub(super) struct MergeInput<'a> {
     /// conflicting with upstream (proposals only; empty for drafts and
     /// requests).
     pub status_at_apply: BTreeSet<String>,
+    /// Written to the outbox with the merge, after its summary notices (a
+    /// request's requester notice); never part of the record's kinds.
+    pub also_notify: Vec<Notice>,
+    /// Written to the outbox with the draft's close when the merge finds it
+    /// expired (a request's requester notice).
+    pub expired_notice: Option<Notice>,
 }
 
 pub(super) fn stale_of(id: &str, stale: DraftStale) -> DraftError {
@@ -780,6 +786,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             change: DraftChange::Close {
                 status: DraftStatus::Discarded,
                 reason,
+                notices: Vec::new(),
             },
         };
         match self.store.update_draft(update).await? {
@@ -840,6 +847,8 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 note: None,
                 authorise: None,
                 status_at_apply: BTreeSet::new(),
+                also_notify: Vec::new(),
+                expired_notice: None,
             },
             policy,
             directory,
@@ -871,12 +880,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             note,
             authorise,
             status_at_apply,
+            also_notify,
+            expired_notice,
         } = input;
         let draft_id = draft.id.as_str();
         // An expired draft is closed first (idempotently), so the window
         // between the reset and a failing tick expiry stays closed.
         if is_expired(draft.scope.expires_week(), policy, now)? {
-            return Err(self.close_expired(draft, now).await);
+            return Err(self.close_expired(draft, now, expired_notice).await);
         }
         if !draft.status.is_live() || draft.version != expected_version {
             return Err(stale_of(
@@ -897,7 +908,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             // Upstream may have moved a drafted run into a past week since the
             // scope was stored: re-derive it on the schedule being merged into.
             if expired_on_current(&flow.current, &ops, policy, directory, now)? {
-                return Err(self.close_expired(draft, now).await);
+                return Err(self.close_expired(draft, now, expired_notice).await);
             }
             if authorise.is_some_and(|allowed| !allowed(&flow.current)) {
                 return Err(DraftError::RequesterUnauthorised);
@@ -962,6 +973,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 refs: vec![draft.base.clone()],
                 request_digest: Some(request_digest.clone()),
                 expect: Default::default(),
+                outbox: notices.iter().chain(&also_notify).cloned().collect(),
             };
             match self
                 .store
@@ -1001,7 +1013,12 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
 
     /// Close `draft` as expired (idempotently) as the system `delivery`
     /// actor, as the tick does, and report [`DraftError::Expired`].
-    async fn close_expired(&mut self, draft: &StoredDraft, now: DateTime<Utc>) -> DraftError {
+    async fn close_expired(
+        &mut self,
+        draft: &StoredDraft,
+        now: DateTime<Utc>,
+        notice: Option<Notice>,
+    ) -> DraftError {
         let update = DraftUpdate {
             draft_id: draft.id.clone(),
             expected_version: draft.version,
@@ -1010,6 +1027,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             change: DraftChange::Close {
                 status: DraftStatus::Expired,
                 reason: None,
+                notices: notice.into_iter().collect(),
             },
         };
         match self.store.update_draft(update).await {
@@ -1022,7 +1040,8 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     /// Expire every live draft and member request whose boss week starts
     /// before the current one (weekly-timings-only ones never expire by
     /// week). Expired drafts stay in history. Each expired request's
-    /// requester notice is returned, not posted.
+    /// requester notice is planned first and written to the outbox by the
+    /// expiry itself; the notices are also returned.
     pub async fn expire_due_drafts(&mut self, policy: &SchedulePolicy) -> DraftResult<DraftExpiry> {
         self.check_policy(policy)?;
         let now = self.clock.now();
@@ -1030,27 +1049,56 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             .week_of(&now)
             .and_then(|start| crate::domain::schedule::utc_instant(&start))
             .map_err(crate::domain::schedule::ScheduleError::from)?;
+        let planned = self.expiry_notices(week).await?;
         let ids = self
             .store
-            .expire_drafts(week, now, &Actor::system(EXPIRY_ACTOR))
+            .expire_drafts(week, now, &Actor::system(EXPIRY_ACTOR), planned.clone())
             .await?;
+        let notices = planned
+            .into_iter()
+            .filter(|(id, _)| ids.contains(id))
+            .map(|(_, notice)| notice)
+            .collect();
+        Ok(DraftExpiry { ids, notices })
+    }
+
+    /// The requester notice of every live request due to expire before
+    /// `week`, by request id. Submitting or editing an expired request is
+    /// refused, so the set the expiry closes is the one read here.
+    async fn expiry_notices(&self, week: DateTime<Utc>) -> DraftResult<Vec<(String, Notice)>> {
+        let mut due = Vec::new();
+        for status in [DraftStatus::Open, DraftStatus::Submitted] {
+            due.extend(
+                self.store
+                    .list_drafts(Some(status))
+                    .await?
+                    .into_iter()
+                    .filter(|draft| {
+                        draft.kind == crate::domain::drafts::DraftKind::Request
+                            && draft.scope.expires_week().is_some_and(|at| at < week)
+                    }),
+            );
+        }
+        if due.is_empty() {
+            return Ok(Vec::new());
+        }
+        let snapshot = self.store.load(&super::ports::Scope::All).await?;
         let mut notices = Vec::new();
-        if !ids.is_empty() {
-            let snapshot = self.store.load(&super::ports::Scope::All).await?;
-            for id in &ids {
-                if let Some(loaded) = self.store.load_draft(id).await?
-                    && let Some(notice) = super::requests::decision_notice(
-                        &loaded,
-                        crate::domain::schedule::RequestDecision::Expired,
-                        None,
-                        &snapshot,
-                    )
-                {
-                    notices.push(notice);
-                }
+        for draft in due {
+            if let Some(loaded) = self.store.load_draft(&draft.id).await?
+                && let Some(notice) = super::requests::decision_notice(
+                    &loaded,
+                    crate::domain::schedule::RequestDecision::Expired,
+                    None,
+                    &snapshot,
+                )
+            {
+                notices.push((draft.id, notice));
             }
         }
-        Ok(DraftExpiry { ids, notices })
+        // The store expires in id order.
+        notices.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(notices)
     }
 }
 

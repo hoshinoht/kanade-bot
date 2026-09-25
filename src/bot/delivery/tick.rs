@@ -1,8 +1,9 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
 //! rollover (taking the week's automatic history checkpoint), mark finished
 //! runs done, recount attendance (v5 mode only), expire past-week drafts and
-//! proposals past their TTL, post the weekly digest, then dispatch due
-//! reminders. One clock reading and one journal lease per tick.
+//! proposals past their TTL, drain the notice outbox, post the weekly
+//! digest, then dispatch due reminders. One clock reading and one journal
+//! lease per tick.
 //!
 //! v5 deviation (user decision): the digest posts only when the current boss
 //! week is after the last recorded one. A clock that reads an earlier week
@@ -14,6 +15,7 @@ use chrono::{DateTime, Utc};
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
+use super::notices::NoticeReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::render;
 use crate::bot::transport::DiscordTransport;
@@ -24,8 +26,8 @@ use crate::domain::history::{
 use crate::domain::members::Directory;
 use crate::domain::notify::{
     ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestPostInput,
-    DispatchInput, JournalError, Lease, Queued, RecordReason, Recovery, SendDisposition, WeekReset,
-    plan_digest_post, plan_digest_tick, plan_dispatch,
+    DispatchInput, JournalError, Lease, NoticeOutbox, Queued, RecordReason, Recovery,
+    SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
 };
 use crate::domain::schedule::SchedulePolicy;
 use crate::domain::scheduler::{
@@ -58,7 +60,7 @@ impl DeliveryConfig {
         }
     }
 
-    fn settings(&self) -> DeliverySettings<'_> {
+    pub(super) fn settings(&self) -> DeliverySettings<'_> {
         DeliverySettings {
             post_channel_id: self.post_channel_id.as_deref(),
             quiet_mode: self.quiet_mode,
@@ -114,7 +116,9 @@ impl From<DateOutOfRange> for DeliveryError {
 /// Per-send error isolation (v4 `send_card` parity): a failed send is
 /// already alerted and reported as [`SendOutcome::Failed`]; only lease loss
 /// or an unavailable backend aborts the tick.
-fn settle(result: Result<SendOutcome, SendFailure>) -> Result<SendOutcome, DeliveryError> {
+pub(super) fn settle(
+    result: Result<SendOutcome, SendFailure>,
+) -> Result<SendOutcome, DeliveryError> {
     match result {
         Ok(outcome) => Ok(outcome),
         Err(failure) if failure.aborts() => Err(failure.error.into()),
@@ -180,6 +184,8 @@ pub struct TickReport {
     /// v5 attendance: runs whose status the recount changed (e.g. at risk
     /// once the unknown window opened); always empty in v4-compat mode.
     pub recounted: Vec<String>,
+    /// Outbox notices sent (or held) this tick.
+    pub notices: NoticeReport,
     pub digest: DigestReport,
     pub dispatch: DispatchReport,
 }
@@ -203,7 +209,7 @@ pub struct Delivery<'a, S, I, T, A> {
 
 impl<'a, S, I, T, A> Delivery<'a, S, I, T, A>
 where
-    S: ScheduleStore + DeliveryJournal + Checkpoints + ProposalStore + Sync,
+    S: ScheduleStore + DeliveryJournal + NoticeOutbox + Checkpoints + ProposalStore + Sync,
     I: IdSource,
     T: DiscordTransport,
     A: AlertSink,
@@ -247,7 +253,7 @@ where
             .with_attendance(self.config.policy.attendance)
     }
 
-    fn executor<'b>(&'b self, lease: &'b Lease) -> Executor<'b, S, T, A> {
+    pub(super) fn executor<'b>(&'b self, lease: &'b Lease) -> Executor<'b, S, T, A> {
         Executor {
             journal: self.store,
             transport: self.transport,
@@ -257,7 +263,7 @@ where
         }
     }
 
-    async fn leased<R>(
+    pub(super) async fn leased<R>(
         &mut self,
         now: DateTime<Utc>,
         work: impl AsyncFnOnce(&mut Self, &Lease) -> Result<R, DeliveryError>,
@@ -301,6 +307,7 @@ where
             let recounted = this.recount_attendance(now).await;
             this.expire_drafts(now).await;
             this.expire_proposals(now).await;
+            let notices = this.notices_in(lease, now).await?;
             let digest = this.digest_in(lease, now).await?;
             let dispatch = this.dispatch_in(lease, now).await?;
             Ok(TickReport {
@@ -308,6 +315,7 @@ where
                 materialised,
                 done,
                 recounted,
+                notices,
                 digest,
                 dispatch,
             })

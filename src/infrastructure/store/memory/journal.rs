@@ -103,7 +103,7 @@ impl JournalTables {
         })
     }
 
-    fn check_live(&self, lease: &Lease) -> Result<(), JournalError> {
+    pub(super) fn check_live(&self, lease: &Lease) -> Result<(), JournalError> {
         match self.leases.get(&lease.operation_id) {
             Some(row)
                 if row.lifecycle == Lifecycle::Live && row.token_hash == lease.token_hash() =>
@@ -178,7 +178,7 @@ fn retire(row: &mut AttemptRow, actor: &str, reason: &str) {
 
 impl MemoryScheduleStore {
     /// Apply `write` to a copy of the tables; keep it only on success.
-    fn journal_write<T>(
+    pub(super) fn journal_write<T>(
         &self,
         write: impl FnOnce(&mut Tables) -> Result<T, JournalError>,
     ) -> Result<T, JournalError> {
@@ -300,6 +300,55 @@ fn claim_in(
                     released: false,
                 })
                 .collect(),
+        },
+    );
+    Ok(Claim::Fresh(AttemptId(id)))
+}
+
+/// Held unless every attempt under the key was proven unsent.
+fn claim_source_in(
+    tables: &mut Tables,
+    lease: &Lease,
+    intent: &NotificationIntent,
+    source: &str,
+    source_ordinal: i64,
+) -> Result<Claim, JournalError> {
+    tables.journal.check_live(lease)?;
+    if !intent.targets.is_empty() {
+        return Err(JournalError::InvalidInput(
+            "source keys claim target-less effects only".into(),
+        ));
+    }
+    let key = DedupeKey::source(source, source_ordinal);
+    if tables.journal.attempts.values().any(|row| {
+        row.dedupe_key == key
+            && (row.dedupe_active || row.resolved_by.as_deref() != Some(NOT_SENT_ACTOR))
+    }) {
+        return Ok(Claim::Held);
+    }
+    let ordinal = tables
+        .journal
+        .attempts
+        .values()
+        .filter(|row| row.operation_id == lease.operation_id)
+        .map(|row| row.ordinal + 1)
+        .max()
+        .unwrap_or(0);
+    let id = uuid::Uuid::new_v4().to_string();
+    tables.journal.attempts.insert(
+        id.clone(),
+        AttemptRow {
+            operation_id: lease.operation_id.clone(),
+            ordinal,
+            effect: intent.effect.as_str().to_owned(),
+            dedupe_key: key,
+            dedupe_active: true,
+            state: AttemptState::Intent,
+            channel_id: intent.channel_id.clone(),
+            message_id: None,
+            resolved_by: None,
+            reason: String::new(),
+            targets: Vec::new(),
         },
     );
     Ok(Claim::Fresh(AttemptId(id)))
@@ -515,6 +564,17 @@ impl DeliveryJournal for MemoryScheduleStore {
         _at: DateTime<Utc>,
     ) -> Result<Claim, JournalError> {
         self.journal_write(|tables| claim_in(tables, lease, intent, effect_ordinal))
+    }
+
+    async fn claim_source(
+        &self,
+        lease: &Lease,
+        intent: &NotificationIntent,
+        source: &str,
+        ordinal: i64,
+        _at: DateTime<Utc>,
+    ) -> Result<Claim, JournalError> {
+        self.journal_write(|tables| claim_source_in(tables, lease, intent, source, ordinal))
     }
 
     async fn bind(

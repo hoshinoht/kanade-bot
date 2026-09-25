@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 use super::op::DraftOp;
 use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
-use crate::domain::schedule::{ChangeSet, ScheduleSnapshot};
+use crate::domain::schedule::{ChangeSet, Notice, ScheduleSnapshot};
 use crate::domain::scheduler::{Committed, StoreError};
 
 /// Who may merge a draft: an administrator's own draft, (S3) a member's
@@ -307,10 +307,13 @@ pub enum DraftChange {
         base_revision: u64,
         expires_week: Option<DateTime<Utc>>,
     },
-    /// Close it for good (discarded, rejected, withdrawn).
+    /// Close it for good (discarded, rejected, withdrawn, expired).
+    /// `notices` (a request's requester notice) are written to the notice
+    /// outbox in the same transaction, keyed by the draft's close.
     Close {
         status: DraftStatus,
         reason: Option<String>,
+        notices: Vec<Notice>,
     },
 }
 
@@ -432,12 +435,15 @@ pub trait DraftStore {
     ) -> impl Future<Output = Result<MergeCommit, StoreError>> + Send;
 
     /// Expire every live draft whose boss week starts before `week`, as
-    /// `actor` at `at`; returns their ids.
+    /// `actor` at `at`; returns their ids. The `notices` of each draft it
+    /// expires (by draft id; others are ignored) are written to the notice
+    /// outbox in the same transaction, keyed by that draft's close.
     fn expire_drafts(
         &self,
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
 }
 
@@ -522,8 +528,9 @@ impl<T: DraftStore + Sync> DraftStore for &T {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        (**self).expire_drafts(week, at, actor)
+        (**self).expire_drafts(week, at, actor, notices)
     }
 }
 
@@ -609,8 +616,9 @@ impl<T: DraftStore + Send + Sync> DraftStore for std::sync::Arc<T> {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        (**self).expire_drafts(week, at, actor)
+        (**self).expire_drafts(week, at, actor, notices)
     }
 }
 

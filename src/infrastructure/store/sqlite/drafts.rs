@@ -16,6 +16,8 @@ use crate::domain::drafts::{
     RequestLimits, StagedOp, StoredDraft, decode, encode,
 };
 use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
+use crate::domain::notify::draft_source;
+use crate::domain::schedule::Notice;
 use crate::domain::scheduler::{Committed, StoreError};
 use crate::infrastructure::store::history::touched_keys;
 
@@ -551,7 +553,11 @@ pub(super) async fn update_in(
             )
             .await?;
         }
-        DraftChange::Close { status, reason } => {
+        DraftChange::Close {
+            status,
+            reason,
+            notices,
+        } => {
             let kind = match status {
                 DraftStatus::Discarded => DraftEventKind::Discarded,
                 DraftStatus::Rejected => DraftEventKind::Rejected,
@@ -591,6 +597,8 @@ pub(super) async fn update_in(
                 reason.as_deref(),
             )
             .await?;
+            super::journal::enqueue(conn, &draft_source(&loaded.draft.id), notices, &update.at)
+                .await?;
         }
     }
     Ok(DraftWrite::Written(loaded.draft))
@@ -670,6 +678,7 @@ async fn expire_in(
     week: &chrono::DateTime<chrono::Utc>,
     at: &chrono::DateTime<chrono::Utc>,
     actor: &Actor,
+    notices: &[(String, Notice)],
 ) -> Result<Vec<String>, StoreError> {
     let rows: Vec<String> = sqlx::query_scalar(
         "SELECT id FROM drafts WHERE status IN ('open', 'submitted') \
@@ -709,6 +718,12 @@ async fn expire_in(
             None,
         )
         .await?;
+        let planned: Vec<Notice> = notices
+            .iter()
+            .filter(|(draft, _)| draft == id)
+            .map(|(_, notice)| notice.clone())
+            .collect();
+        super::journal::enqueue(conn, &draft_source(id), &planned, at).await?;
     }
     Ok(rows)
 }
@@ -874,7 +889,8 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
         week: chrono::DateTime<chrono::Utc>,
         at: chrono::DateTime<chrono::Utc>,
         actor: &Actor,
+        notices: Vec<(String, Notice)>,
     ) -> Result<Vec<String>, StoreError> {
-        write_txn!(self, tx, expire_in(&mut tx, &week, &at, actor))
+        write_txn!(self, tx, expire_in(&mut tx, &week, &at, actor, &notices))
     }
 }

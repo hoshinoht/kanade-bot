@@ -6,12 +6,14 @@
 
 mod alerts;
 mod executor;
+mod notices;
 mod ports;
 mod render;
 mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle};
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
+pub use notices::{NoticeReport, NoticeSend};
 pub use ports::{FixedClock, IdsRef, StoreRef};
 pub use render::render;
 pub use tick::{

@@ -144,10 +144,11 @@ until serve builds the extractor's `Rescans` queue (Discord `History`
 backfill, `Extractor` over the governed model client, `Proposer`, `Outbox`),
 spawns `Rescans::run` and passes `RescanDesk::new(RescanService::new(..))`;
 serve shutdown must call `Rescans::close`.
-Admin writes return but drop their Discord effects until then: A4 run and
-timing notices, and inbox approve/reject (A6): persist merge + requester
-notices atomically with the decision and refresh/close the Discord card
-(and its superseded siblings' cards).
+Admin writes' notices (A4 run and timing notices, rollbacks, inbox merge and
+requester notices) are written to the store's notice outbox with the change
+and posted by the delivery tick's outbox drain once serve runs the tick
+(`maintenance-contract.md`, *Notice outbox*). Still dropped until then: the
+inbox's Discord card refresh/close (and its superseded siblings' cards).
 Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
 `/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
 the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.

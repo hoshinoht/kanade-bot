@@ -140,11 +140,42 @@ where
             return Ok(SendOutcome::Suppressed);
         }
         let intent = &send.intent;
-        let attempt = match self
+        let claim = self
             .journal
             .claim(self.lease, intent, effect_ordinal, now)
-            .await
-        {
+            .await;
+        self.claimed(intent, claim, message, record_week, now).await
+    }
+
+    /// Execute one outbox notice, claimed by its durable `(source, ordinal)`
+    /// key ([`DeliveryJournal::claim_source`]) so no later lease resends it.
+    ///
+    /// # Errors
+    /// As [`Executor::execute`].
+    pub async fn execute_source(
+        &self,
+        intent: &NotificationIntent,
+        message: &OutgoingMessage,
+        source: &str,
+        ordinal: i64,
+        now: DateTime<Utc>,
+    ) -> Result<SendOutcome, SendFailure> {
+        let claim = self
+            .journal
+            .claim_source(self.lease, intent, source, ordinal, now)
+            .await;
+        self.claimed(intent, claim, message, None, now).await
+    }
+
+    async fn claimed(
+        &self,
+        intent: &NotificationIntent,
+        claim: Result<Claim, JournalError>,
+        message: &OutgoingMessage,
+        record_week: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> Result<SendOutcome, SendFailure> {
+        let attempt = match claim {
             Ok(Claim::Fresh(attempt)) => attempt,
             Ok(Claim::Held) => return Ok(SendOutcome::Suppressed),
             Err(JournalError::TargetUnavailable(detail)) => {

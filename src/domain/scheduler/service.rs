@@ -191,7 +191,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
         meta: ChangeMeta,
         scope: Scope,
         mut plan: impl FnMut(&mut Draft, &mut I, DateTime<Utc>) -> Result<T, ScheduleError>,
-        notices: impl Fn(&T) -> Vec<String>,
+        notices: impl Fn(&T) -> (Vec<String>, Vec<Notice>),
     ) -> SchedulerResult<T> {
         check_request(&self.store, &meta).await?;
         let now = self.clock.now();
@@ -209,9 +209,11 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
                 self.check_no_op(revision, &meta).await?;
                 return Ok(value);
             }
+            let (kinds, outbox) = notices(&value);
             let meta = ChangeMeta {
                 at: now,
-                notices: notices(&value),
+                notices: kinds,
+                outbox,
                 ..meta.clone()
             };
             match self.store.commit(revision, changes, meta).await {
@@ -386,6 +388,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             refs: self.expect.overrides.clone(),
             request_digest: self.origin.request_id.as_ref().map(|_| request),
             expect: self.expect,
+            outbox: Vec::new(),
         };
         self.service
             .transact_as(
@@ -398,7 +401,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                     if overriding {
                         kinds.push(EDIT_OVERRIDE.to_owned());
                     }
-                    kinds
+                    (kinds, outcome.notices.clone())
                 },
             )
             .await
@@ -488,6 +491,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             refs: self.expect.overrides.clone(),
             request_digest: self.origin.request_id.as_ref().map(|_| request),
             expect: self.expect,
+            outbox: Vec::new(),
         };
         let (run, user) = (run_id.to_owned(), user_id.to_owned());
         self.service
@@ -513,11 +517,12 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                     Ok(status != after.status)
                 },
                 |_| {
-                    if overriding {
+                    let kinds = if overriding {
                         vec![EDIT_OVERRIDE.to_owned()]
                     } else {
                         Vec::new()
-                    }
+                    };
+                    (kinds, Vec::new())
                 },
             )
             .await
@@ -1380,6 +1385,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
             refs: Vec::new(),
             request_digest,
             expect: Expect::default(),
+            outbox: Vec::new(),
         };
         if !rollback.preview {
             check_request(&self.store, &meta).await?;
@@ -1437,6 +1443,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                 return Ok(outcome);
             }
             meta.notices = notices.iter().map(Notice::effect_kind).collect();
+            meta.outbox = notices.clone();
             meta.refs = records.iter().map(ChangeRecord::reference).collect();
             meta.refs
                 .extend(rollback.checkpoint.as_ref().map(|(_, head)| head.clone()));

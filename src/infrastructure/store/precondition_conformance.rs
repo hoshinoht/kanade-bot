@@ -291,6 +291,7 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Upstream<'_, S> {
                 refs: Vec::new(),
                 request_digest: None,
                 expect: Expect::default(),
+                outbox: Vec::new(),
             };
             self.inner
                 .commit(
@@ -685,6 +686,7 @@ async fn unknown_fields_are_refused_by_service_and_store<
         refs: Vec::new(),
         request_digest: None,
         expect: bad,
+        outbox: Vec::new(),
     };
     let result = store.commit(revision, ChangeSet::default(), meta).await;
     assert!(
@@ -853,6 +855,7 @@ async fn overrides_must_change_their_field_and_be_admin<
         refs: vec![theirs.clone()],
         request_digest: None,
         expect: Expect::fields([slot]).overriding([theirs.clone()]),
+        outbox: Vec::new(),
     };
     let result = store.commit(revision, ChangeSet::default(), meta).await;
     assert!(
@@ -960,6 +963,7 @@ impl<S: ScheduleStore + Sync> ScheduleStore for ConflictOnce<'_, S> {
                 refs: Vec::new(),
                 request_digest: None,
                 expect: Expect::default(),
+                outbox: Vec::new(),
             };
             self.inner
                 .commit(

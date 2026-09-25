@@ -130,6 +130,7 @@ fn merge_meta(request_id: &str, digest: &str) -> ChangeMeta {
         refs: Vec::new(),
         request_digest: Some(digest.into()),
         expect: Default::default(),
+        outbox: Vec::new(),
     }
 }
 
@@ -418,6 +419,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
                     change: DraftChange::Close {
                         status,
                         reason: None,
+                        notices: Vec::new(),
                     },
                 })
                 .await,
@@ -434,6 +436,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
             change: DraftChange::Close {
                 status: DraftStatus::Discarded,
                 reason: Some("stale".into()),
+                notices: Vec::new(),
             },
         })
         .await
@@ -456,6 +459,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
                 change: DraftChange::Close {
                     status: DraftStatus::Withdrawn,
                     reason: None,
+                    notices: Vec::new(),
                 },
             })
             .await
@@ -783,7 +787,12 @@ async fn expiry_closes_only_past_weeks<S: ScheduleStore + ChangeHistory + DraftS
     };
     let expired = service
         .store()
-        .expire_drafts(utc(26, 16, 0), utc(27, 4, 0), &Actor::system("delivery"))
+        .expire_drafts(
+            utc(26, 16, 0),
+            utc(27, 4, 0),
+            &Actor::system("delivery"),
+            Vec::new(),
+        )
         .await
         .expect("expire");
     assert_eq!(expired, ["draft-past"]);
@@ -827,7 +836,12 @@ async fn expiry_closes_only_past_weeks<S: ScheduleStore + ChangeHistory + DraftS
     assert!(
         service
             .store()
-            .expire_drafts(utc(26, 16, 0), utc(27, 5, 0), &Actor::system("delivery"))
+            .expire_drafts(
+                utc(26, 16, 0),
+                utc(27, 5, 0),
+                &Actor::system("delivery"),
+                Vec::new()
+            )
             .await
             .expect("expire")
             .is_empty()
@@ -941,6 +955,7 @@ async fn withdraw<S: DraftStore>(store: &S, id: &str, at: DateTime<Utc>) {
             change: DraftChange::Close {
                 status: DraftStatus::Withdrawn,
                 reason: None,
+                notices: Vec::new(),
             },
         })
         .await

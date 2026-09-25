@@ -129,8 +129,9 @@ impl DraftStore for SlowStore<'_> {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, kanade::domain::schedule::Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        self.inner.expire_drafts(week, at, actor)
+        self.inner.expire_drafts(week, at, actor, notices)
     }
 }
 

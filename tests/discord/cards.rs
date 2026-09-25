@@ -421,6 +421,26 @@ async fn a_participant_approves_and_the_card_says_so() {
     assert_eq!(approved.len(), 1);
     assert!(problems.is_empty());
     assert_eq!(world.status(&id).await, DraftStatus::Merged);
+    // The merge's notices were written to the outbox with it.
+    let outbox = || async {
+        kanade::domain::notify::NoticeOutbox::outbox_notices(&*world.store)
+            .await
+            .expect("outbox")
+    };
+    let written = outbox().await;
+    assert!(!written.is_empty());
+    assert!(
+        written.iter().all(|row| {
+            row.source == kanade::domain::notify::change_source(approved[0].merge.seq)
+        })
+    );
+    assert_eq!(
+        written
+            .into_iter()
+            .map(|row| row.notice)
+            .collect::<Vec<_>>(),
+        approved[0].merge.notices
+    );
     let run = world
         .store
         .load(&Scope::Run(world.run.clone()))
@@ -442,6 +462,7 @@ async fn a_participant_approves_and_the_card_says_so() {
         CardReaction::Ignored,
         "a repeated ✅ writes and posts nothing"
     );
+    assert_eq!(outbox().await.len(), approved[0].merge.notices.len());
 }
 
 #[tokio::test]

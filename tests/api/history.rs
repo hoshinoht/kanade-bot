@@ -567,6 +567,7 @@ async fn strict_conflicts_list_all_selected_records() {
                 refs: Vec::new(),
                 request_digest: None,
                 expect: Default::default(),
+                outbox: Vec::new(),
             },
         )
         .await

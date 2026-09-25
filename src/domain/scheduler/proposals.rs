@@ -446,7 +446,11 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             expected_version: draft.version,
             actor,
             at: self.clock.now(),
-            change: DraftChange::Close { status, reason },
+            change: DraftChange::Close {
+                status,
+                reason,
+                notices: Vec::new(),
+            },
         };
         match self.store.update_draft(update).await? {
             DraftWrite::Written(draft) => Ok(draft),
@@ -710,6 +714,8 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     note,
                     authorise: Some(&still_allowed),
                     status_at_apply: status_at_apply(&ops),
+                    also_notify: Vec::new(),
+                    expired_notice: None,
                 },
                 policy,
                 directory,

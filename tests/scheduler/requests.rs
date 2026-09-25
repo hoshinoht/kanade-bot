@@ -726,6 +726,32 @@ async fn run_requests_expire_after_the_reset_and_weekly_ones_do_not() {
         NoticeChange::RequestDecided { decision: RequestDecision::Expired, request, .. }
             if *request == this_week.id
     ));
+    // Written by the expiry itself, keyed by the request's close; a second
+    // pass finds nothing and enqueues nothing.
+    let closes = async |f: &Fixture| {
+        kanade::domain::notify::NoticeOutbox::outbox_notices(f.service.store())
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.source.starts_with("draft:"))
+            .collect::<Vec<_>>()
+    };
+    let outbox = closes(&f).await;
+    assert_eq!(outbox.len(), 1);
+    assert_eq!(
+        outbox[0].source,
+        kanade::domain::notify::draft_source(&this_week.id)
+    );
+    assert_eq!(&outbox[0].notice, notice);
+    assert!(
+        f.service
+            .expire_due_drafts(&policy())
+            .await
+            .unwrap()
+            .ids
+            .is_empty()
+    );
+    assert_eq!(closes(&f).await.len(), 1);
     let still = f
         .service
         .store()
@@ -1222,6 +1248,7 @@ impl DraftStore for Twisted<'_> {
                 refs: Vec::new(),
                 request_digest: None,
                 expect: Default::default(),
+                outbox: Vec::new(),
             };
             self.inner
                 .commit(
@@ -1253,8 +1280,9 @@ impl DraftStore for Twisted<'_> {
         week: DateTime<chrono::Utc>,
         at: DateTime<chrono::Utc>,
         actor: &Actor,
+        notices: Vec<(String, kanade::domain::schedule::Notice)>,
     ) -> StoreResult<Vec<String>> {
-        self.inner.expire_drafts(week, at, actor).await
+        self.inner.expire_drafts(week, at, actor, notices).await
     }
 }
 

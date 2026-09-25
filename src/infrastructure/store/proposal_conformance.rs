@@ -332,6 +332,7 @@ async fn proposals_merge_through_commit_merge<S: ScheduleStore + ChangeHistory +
         refs: vec![base.0.clone()],
         request_digest: Some("digest".into()),
         expect: Default::default(),
+        outbox: Vec::new(),
     };
     let MergeCommit::Committed(committed) = store
         .commit_merge(

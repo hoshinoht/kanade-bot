@@ -135,6 +135,45 @@ backs the rule.
 - Because the digest uses `Debug` forms, a retry across a build that changes
   an argument type is refused as a mismatch rather than applied twice.
 
+## Notice outbox
+
+Every notice a decision asks for is written to the store's notice outbox
+(`notice_outbox`, migration 0012) in the decision's own transaction, never
+re-derived afterwards (parent decision 2026-09-25):
+
+- A commit or merge that appends a record writes `ChangeMeta.outbox` (the
+  full notices, beside the record like `request_digest`, not hashed; the
+  record's `notices` keeps only their kinds) as `(change:<seq>, 0..)`.
+- A draft close carries its notices in `DraftChange::Close.notices` and
+  `expire_drafts` takes the planned `(draft id, notice)` pairs; each draft
+  it closes writes its own as `(draft:<id>, 0..)` (a draft closes once).
+- A replayed request (`AlreadyApplied`), a refused, stale, conflicting or
+  empty write writes nothing, so a retry finds exactly the rows the first
+  attempt wrote: none are lost and none repeat.
+- The payload is the domain `Notice` (versioned JSON, `"v": 1`), not text:
+  channel choice (home channel, else the post channel), mentions, quiet mode
+  and rendering happen when the delivery tick drains it
+  (`maintenance-contract.md`, *Notice outbox*). A row goes `pending` →
+  `drained` once; a trigger refuses anything else.
+
+Which paths write what:
+
+| Path | Source | Notices |
+| --- | --- | --- |
+| mutations (`set_status` with `announce`, `amend_run`, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices` |
+| rollbacks (revert, week restore, actor revert, checkpoint restore) | `change:<seq>` | one `Rollback` per channel |
+| cherry-picks | `change:<seq>` | `Picked.notices` |
+| draft merges, proposal approvals (inbox, edited, card ✅) | `change:<seq>` | the `Merged` summaries |
+| request approval | `change:<seq>` | the `Merged` summaries, then the requester's `approved` |
+| request rejection | `draft:<id>` | the requester's `rejected` |
+| request expiry (tick, or found at approval) | `draft:<id>` | the requester's `expired` |
+
+Services still return the notices (`Outcome`, `MergeOutcome`, `Approved`,
+`Rejected`, `DraftExpiry`, `Picked`, `RevertOutcome`) for reports; callers
+must not enqueue them again. The tick's expiry plans each due request's
+notice before it expires them; submitting or editing an expired request is
+refused, so the set closed is the set planned.
+
 ## Rollbacks
 
 All rollbacks first honour the request id (above), then, inside the commit
@@ -614,13 +653,11 @@ and the delivery tick (expiry). Requests are S3, cherry-pick S4.
     week, existing runs by id, answers included). Runs of a timing the draft
     changes stay listed in that timing's channel summary, which is the
     channel a plain `FixedChanged` edit notifies.
-  - **Notices are returned, not posted.** `merge_draft` RETURNS the notices
-    in `MergeOutcome`; nothing enqueues them in the journal yet, and the
-    service never writes the journal. The caller must enqueue them. Serve
-    wiring must persist them atomically with the merge commit (an outbox
-    written in the same transaction) or re-derive them: a crash between the
-    commit and a separate enqueue would lose them, since the retry is
-    `AlreadyApplied` and returns no notices. Not built yet.
+  - **Notices are written with the merge.** `merge_draft` returns the
+    notices in `MergeOutcome`, and `commit_merge` has already written them
+    to the notice outbox in the merge's transaction (*Notice outbox*): a
+    crash after the commit loses none, and the `AlreadyApplied` retry adds
+    none. The service never writes the delivery journal.
   - Expiry scope is derived, never caller-supplied: a draft's
     `expires_week` is the earliest boss week (`policy.week_of`) touched by
     any run-level operation — `create_run` its slot; `amend_run` the source
@@ -759,9 +796,9 @@ draft of kind `request` (`request_type`, `subject` = `run:<id>` or
   run's own channel). It
   lists only the requester, so it mentions nobody else; its effect is
   `notice.request.<decision>` and its dedupe context
-  `request:<id>:<decision>`. Nothing enqueues it yet: serve wiring must
-  persist it atomically with the decision (the same outbox as merge
-  notices).
+  `request:<id>:<decision>`. The store writes it to the notice outbox with
+  the decision: after the merge's summaries in the merge record, or with
+  the rejecting or expiring close (*Notice outbox*).
 - **Kinds stay apart.** The administrator draft methods refuse request
   drafts (`RequestDraft`); the request methods refuse administrator drafts
   (`AdminDraft`).
@@ -879,7 +916,7 @@ enforced by the service, not the store; TTL 24 h.
   below are re-run first, so a crash between the merge and them is
   repaired by the next ✅; anyone else's repeat has no effect at all. The
   merge's summary notices (`NoticeChange::Merged`, title
-  `<kind> proposal`) take the draft-merge outbox path. After the commit
+  `<kind> proposal`) are written to the notice outbox with the merge. After the commit
   nothing returns an error: sibling live proposals about the same target
   that were created at or before the merge (the draft's merge time; never
   newer ones, on the first run or a re-run) are retired (v4 `commit`'s
@@ -1028,8 +1065,8 @@ target_week, mode, policy, directory)`; `mode` is `Strict` (default) or
   re-planned on a revision race. Blame shows `via: Referenced([picked])` for
   an unforced pick.
 - **Notices.** The replayed mutations' normal notices are RETURNED in
-  `Picked.notices`; nothing is posted or claimed before (or by) the commit.
-  Serve wiring enqueues them through the same outbox as merge notices.
+  `Picked.notices`; nothing is posted or claimed before (or by) the commit,
+  which writes them to the notice outbox (*Notice outbox*).
 - **Preview.** `preview_cherry_pick(seq, target_week, policy, directory)`
   returns the plan (source and resulting week, steps, conflicts), the
   notices, `no_effect`, `strict_refuses` and `force` (exactly what a forced

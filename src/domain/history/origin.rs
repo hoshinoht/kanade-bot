@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 
 use super::precondition::Expect;
 use super::record::ChangeRef;
+use crate::domain::schedule::Notice;
 
 /// Who a change is attributed to. Always derived server-side, never taken
 /// from a client.
@@ -170,4 +171,8 @@ pub struct ChangeMeta {
     /// Checked by the store inside the commit's transaction; never recorded
     /// (overrides are recorded as `refs`).
     pub expect: Expect,
+    /// The notices to deliver for this change: written to the notice outbox
+    /// in the commit's transaction, keyed by the record's seq and position.
+    /// Not part of the record's canonical body (`notices` holds their kinds).
+    pub outbox: Vec<Notice>,
 }

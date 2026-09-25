@@ -19,6 +19,7 @@ use crate::domain::history::{
     Checkpoints, FieldNow, LastChange, NewCheckpoint, PreconditionError, Versioned, changed_fields,
     check_checkpoint, check_field, target_key, validate_fields,
 };
+use crate::domain::notify::change_source;
 use crate::domain::scheduler::{Committed, RecordedRequest, StoreError};
 use crate::domain::time::from_iso;
 use crate::infrastructure::store::history::{changed_rows, touched_weeks};
@@ -402,6 +403,7 @@ pub(super) async fn append(
         .map_err(StoreError::Precondition)?;
     insert(conn, &record, request_digest.as_deref()).await?;
     insert_fields(conn, &record).await?;
+    super::journal::enqueue(conn, &change_source(record.seq), &meta.outbox, &meta.at).await?;
     Ok(Committed {
         seq: record.seq,
         revision: record.revision,

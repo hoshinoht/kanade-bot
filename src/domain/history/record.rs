@@ -485,6 +485,7 @@ impl ChangeRecord {
             refs: Vec::new(),
             request_digest: None,
             expect: Default::default(),
+            outbox: Vec::new(),
         };
         Self::seal(
             None,
@@ -699,6 +700,7 @@ mod tests {
             refs: vec![genesis.reference()],
             request_digest: None,
             expect: Default::default(),
+            outbox: Vec::new(),
         };
         let record = ChangeRecord::seal(
             Some((genesis.seq, genesis.hash.as_str())),
@@ -812,6 +814,7 @@ mod tests {
             refs: Vec::new(),
             request_digest: None,
             expect: Default::default(),
+            outbox: Vec::new(),
         };
         let sealed = ChangeRecord::seal(None, "x".into(), 1, meta, Vec::new(), Vec::new());
         assert!(sealed.is_err(), "{sealed:?}");

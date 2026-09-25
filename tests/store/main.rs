@@ -63,6 +63,27 @@ async fn sqlite_settings_conform() {
 }
 
 #[tokio::test]
+async fn memory_outbox_conforms() {
+    kanade::infrastructure::store::outbox_conformance::run_suite(async || {
+        MemoryScheduleStore::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_outbox_conforms() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    kanade::infrastructure::store::outbox_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("outbox-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn memory_web_sessions_conform() {
     web_sessions_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }

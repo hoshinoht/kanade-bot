@@ -10,6 +10,7 @@ mod dispatch;
 mod intent;
 mod journal;
 mod notice;
+mod outbox;
 mod policy;
 
 pub use audience::{
@@ -36,4 +37,5 @@ pub use journal::{
     request_fingerprint,
 };
 pub use notice::plan_notice;
+pub use outbox::{NoticeOutbox, OutboxNotice, change_source, draft_source};
 pub use policy::{AllowedMentions, PingKind, allowed_mentions, wants_mention};

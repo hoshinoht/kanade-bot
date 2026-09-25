@@ -351,6 +351,7 @@ impl<S: ScheduleStore + ChangeHistory + BlameIndex, I: IdSource, C: Clock>
                 refs,
                 request_digest: request_digest.clone(),
                 expect,
+                outbox: notices.clone(),
             };
             match self.store.commit(revision, changes, meta).await {
                 Ok(Some(committed)) if committed.replayed => {

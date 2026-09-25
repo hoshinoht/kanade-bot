@@ -519,6 +519,7 @@ mod tests {
             refs: Vec::new(),
             request_digest: None,
             expect: Expect::default(),
+            outbox: Vec::new(),
         };
         ChangeRecord::seal(
             Some((0, &"0".repeat(64))),

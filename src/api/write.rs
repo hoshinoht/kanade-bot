@@ -249,6 +249,7 @@ where
         Box::pin(async move {
             let mut service = self.service.lock().await;
             let handle = service.as_origin(origin).expecting(expect);
+            // Notices are already in the store's outbox, written with the change.
             match write {
                 RunWrite::Move { to } => handle.amend_run(run_id, to, &ctx.policy).await.map(drop),
                 RunWrite::Status(change) => handle

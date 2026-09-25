@@ -126,6 +126,12 @@ impl DedupeKey {
         Self::hash("operation", serde_json::json!([operation_id, ordinal]))
     }
 
+    /// Source scope: one effect of a durable source (an outbox notice's
+    /// `(source, ordinal)`), whatever lease claims it.
+    pub fn source(source: &str, ordinal: i64) -> Self {
+        Self::hash("source", serde_json::json!([source, ordinal]))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -391,6 +397,25 @@ pub trait DeliveryJournal {
         lease: &Lease,
         intent: &NotificationIntent,
         effect_ordinal: Option<i64>,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Claim, JournalError>> + Send;
+
+    /// Under a live lease, claim a target-less `intent` by its durable source
+    /// (an outbox notice) instead of the lease's operation, so a claim made
+    /// under an earlier lease (a crash) still holds it. [`Claim::Held`] while
+    /// any attempt with that key exists other than one released as
+    /// [`NOT_SENT_ACTOR`]: an active one (including bound and indeterminate)
+    /// or one retired rejected or unproven is never claimed again. The new
+    /// attempt takes the lease's next effect ordinal.
+    ///
+    /// # Errors
+    /// [`JournalError::InvalidInput`] for an intent with targets.
+    fn claim_source(
+        &self,
+        lease: &Lease,
+        intent: &NotificationIntent,
+        source: &str,
+        ordinal: i64,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<Claim, JournalError>> + Send;
 

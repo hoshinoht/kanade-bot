@@ -351,6 +351,7 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
                 refs: Vec::new(),
                 request_digest: None,
                 expect: Default::default(),
+                outbox: Vec::new(),
             },
         )
         .await

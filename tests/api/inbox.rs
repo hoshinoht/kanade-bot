@@ -1248,3 +1248,116 @@ async fn an_edited_approval_still_blocks_on_conflicts() {
         json!(["conflict"])
     );
 }
+
+fn decided(notice: &kanade::domain::schedule::Notice) -> Option<(String, &'static str)> {
+    match &notice.change {
+        kanade::domain::schedule::NoticeChange::RequestDecided {
+            request, decision, ..
+        } => Some((request.clone(), decision.as_str())),
+        _ => None,
+    }
+}
+
+async fn draft_notices(store: &SqliteStore, id: &str) -> Vec<kanade::domain::schedule::Notice> {
+    use kanade::domain::notify::{NoticeOutbox, draft_source};
+    let source = draft_source(id);
+    store
+        .outbox_notices()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.source == source)
+        .map(|row| row.notice)
+        .collect()
+}
+
+#[tokio::test]
+async fn request_decisions_enqueue_merge_and_requester_notices_with_the_decision() {
+    use kanade::domain::notify::NoticeOutbox;
+    let inbox = seeded().await;
+    let ids = &inbox.ids;
+    let store = &inbox.reads.store;
+    let head = inbox.head().await;
+    let v = inbox.item(&ids.join).await["version"].as_u64().unwrap();
+    let key = [("Idempotency-Key", "outbox-join")];
+    ok(&inbox
+        .token_call(&path(&ids.join, "approve"), json!({"version": v}), &key)
+        .await);
+    let merged = crate::outbox::written_by(store, head + 1).await;
+    let (last, summaries) = merged.split_last().expect("notices");
+    assert_eq!(decided(last), Some((ids.join.clone(), "approved")));
+    assert!(!summaries.is_empty() && summaries.iter().all(|n| decided(n).is_none()));
+    let total = store.outbox_notices().await.unwrap().len();
+    ok(&inbox
+        .token_call(&path(&ids.join, "approve"), json!({"version": v}), &key)
+        .await);
+    assert_eq!(
+        store.outbox_notices().await.unwrap().len(),
+        total,
+        "a replayed approval enqueues nothing"
+    );
+
+    let lv = inbox.item(&ids.leave).await["version"].as_u64().unwrap();
+    ok(&inbox
+        .token_call(
+            &path(&ids.leave, "reject"),
+            json!({"version": lv, "reason": "not this week"}),
+            &[],
+        )
+        .await);
+    let rejected = draft_notices(store, &ids.leave).await;
+    assert_eq!(
+        rejected.iter().map(decided).collect::<Vec<_>>(),
+        [Some((ids.leave.clone(), "rejected"))]
+    );
+
+    // Approving a request whose week passed closes it and enqueues "expired".
+    let ev = inbox.item(&ids.expired_request).await["version"]
+        .as_u64()
+        .unwrap();
+    let reply = inbox
+        .token_call(
+            &path(&ids.expired_request, "approve"),
+            json!({"version": ev}),
+            &[],
+        )
+        .await;
+    assert!(reply.status >= 400, "{}", reply.text());
+    let expired = draft_notices(store, &ids.expired_request).await;
+    assert_eq!(
+        expired.iter().map(decided).collect::<Vec<_>>(),
+        [Some((ids.expired_request.clone(), "expired"))]
+    );
+}
+
+#[tokio::test]
+async fn proposal_approvals_enqueue_their_merge_notices() {
+    // Each on a fresh inbox: both proposals are about r-kalos.
+    for edited in [false, true] {
+        let inbox = seeded().await;
+        let (id, body) = if edited {
+            (&inbox.ids.to_edit, json!({"day": 6, "time": "20:00"}))
+        } else {
+            (&inbox.ids.moved, json!({}))
+        };
+        let head = inbox.head().await;
+        ok(&inbox.discord(&path(id, "approve"), body, &[]).await);
+        let written = crate::outbox::written_by(&inbox.reads.store, head + 1).await;
+        let record = inbox
+            .reads
+            .store
+            .load_change(head + 1)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!written.is_empty(), "{id}");
+        assert_eq!(
+            written
+                .iter()
+                .map(kanade::domain::schedule::Notice::effect_kind)
+                .collect::<Vec<_>>(),
+            record.notices,
+            "{id}"
+        );
+    }
+}

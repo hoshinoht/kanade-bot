@@ -237,6 +237,7 @@ where
             change: DraftChange::Close {
                 status: DraftStatus::Rejected,
                 reason: None,
+                notices: Vec::new(),
             },
         })
         .await

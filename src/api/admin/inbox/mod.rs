@@ -1,7 +1,7 @@
 //! The Inbox (A6): extractor/chat proposals and member requests, listed with
-//! the domain's merge previews, approved or rejected per source. Discord side
-//! effects (card refresh, merge and requester notices) are returned by the
-//! domain and dropped until serve composition, as A4 drops its notices.
+//! the domain's merge previews, approved or rejected per source. Merge and
+//! requester notices are written to the notice outbox by the store with the
+//! decision; the card refresh is still dropped until serve composition.
 
 mod decide;
 mod list;

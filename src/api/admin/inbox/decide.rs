@@ -203,7 +203,7 @@ pub async fn approve(
             .approve_request(&session.actor, &id, version, choices, &ctx)
             .await
         {
-            // The requester notice and merge notices wait for serve composition.
+            // The store enqueued the merge and requester notices with the merge.
             Ok(_) | Err(RequestError::Draft(DraftError::AlreadyApplied { .. })) => {
                 Ok(message(decided("Approved", &loaded)))
             }

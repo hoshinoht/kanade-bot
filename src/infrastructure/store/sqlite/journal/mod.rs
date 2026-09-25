@@ -5,10 +5,13 @@
 mod card_index;
 mod claim;
 mod finalize;
+mod outbox;
+mod payload;
 mod recover;
 mod retire;
 
 pub(super) use claim::UNPROVEN_REMINDER;
+pub(super) use outbox::enqueue;
 
 use std::collections::BTreeSet;
 
@@ -18,8 +21,8 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
-    DeliveryJournal, DeliveryTarget, DigestLog, JournalError, Lease, NotificationIntent, Receipt,
-    Recovery, WeeklyDigest,
+    DeliveryJournal, DeliveryTarget, DigestLog, JournalError, Lease, NoticeOutbox,
+    NotificationIntent, OutboxNotice, Receipt, Recovery, WeeklyDigest,
 };
 use crate::domain::time::{from_iso, to_iso};
 
@@ -386,6 +389,17 @@ impl DeliveryJournal for SqliteStore {
         write_tx!(self, tx => claim::claim(&mut tx, lease, intent, effect_ordinal, at))
     }
 
+    async fn claim_source(
+        &self,
+        lease: &Lease,
+        intent: &NotificationIntent,
+        source: &str,
+        ordinal: i64,
+        at: DateTime<Utc>,
+    ) -> Result<Claim, JournalError> {
+        write_tx!(self, tx => claim::claim_source(&mut tx, lease, intent, source, ordinal, at))
+    }
+
     async fn bind(
         &self,
         lease: &Lease,
@@ -464,5 +478,27 @@ impl DeliveryJournal for SqliteStore {
 
     async fn recover_on_start(&self, at: DateTime<Utc>) -> Result<Recovery, JournalError> {
         write_tx!(self, tx => recover::on_start(&mut tx, at))
+    }
+}
+
+impl NoticeOutbox for SqliteStore {
+    async fn pending_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        outbox::pending(&mut conn).await
+    }
+
+    async fn outbox_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        outbox::all(&mut conn).await
+    }
+
+    async fn mark_drained(
+        &self,
+        lease: &Lease,
+        source: &str,
+        ordinal: i64,
+        at: DateTime<Utc>,
+    ) -> Result<(), JournalError> {
+        write_tx!(self, tx => outbox::mark_drained(&mut tx, lease, source, ordinal, at))
     }
 }

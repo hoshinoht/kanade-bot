@@ -342,8 +342,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             return Err(RequestRefusal::RequesterUnauthorised.into());
         }
         require_submitted(&loaded, expected_version)?;
-        self.close(&loaded, Actor::member(member), DraftStatus::Withdrawn, None)
-            .await
+        self.close(
+            &loaded,
+            Actor::member(member),
+            DraftStatus::Withdrawn,
+            None,
+            Vec::new(),
+        )
+        .await
     }
 
     /// An administrator replaces the request's operations before approving
@@ -504,9 +510,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         let still_allowed = |current: &ScheduleSnapshot| {
             authorise(kind, subject.as_ref(), &requester, current, directory).is_ok()
         };
-        // Built before committing: nothing after the commit may fail.
+        // Built before committing: nothing after the commit may fail, and
+        // the store writes them to the outbox with the merge or the close.
         let channel = home_channel(subject.as_ref(), &ops, &snapshot);
         let requester_frozen = gate.is_frozen(&requester);
+        let approved = requester_notice(
+            id,
+            &requester,
+            RequestDecision::Approved,
+            None,
+            channel.clone(),
+        );
+        let expired = requester_notice(id, &requester, RequestDecision::Expired, None, channel);
         let merged = self
             .merge_loaded(
                 MergeInput {
@@ -521,6 +536,8 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     note,
                     authorise: Some(&still_allowed),
                     status_at_apply: Default::default(),
+                    also_notify: vec![approved.clone()],
+                    expired_notice: Some(expired.clone()),
                 },
                 policy,
                 directory,
@@ -530,24 +547,12 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         match merged {
             Ok(merge) => Ok(Approved {
                 merge,
-                requester_notice: requester_notice(
-                    id,
-                    &requester,
-                    RequestDecision::Approved,
-                    None,
-                    channel,
-                ),
+                requester_notice: approved,
                 requester_frozen,
             }),
             // The merge closed it as expired (re-derived on the current
             // schedule): tell the requester.
-            Err(DraftError::Expired) => Err(RequestError::Expired(Box::new(requester_notice(
-                id,
-                &requester,
-                RequestDecision::Expired,
-                None,
-                channel,
-            )))),
+            Err(DraftError::Expired) => Err(RequestError::Expired(Box::new(expired))),
             Err(DraftError::RequesterUnauthorised) => {
                 Err(RequestRefusal::RequesterUnauthorised.into())
             }
@@ -580,23 +585,25 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &loaded.draft_ops(),
             &snapshot,
         );
+        let notice = requester_notice(
+            id,
+            &requester,
+            RequestDecision::Rejected,
+            Some(reason.clone()),
+            channel,
+        );
         let request = self
             .close(
                 &loaded,
                 actor.clone(),
                 DraftStatus::Rejected,
-                Some(reason.clone()),
+                Some(reason),
+                vec![notice.clone()],
             )
             .await?;
         Ok(Rejected {
             request,
-            requester_notice: requester_notice(
-                id,
-                &requester,
-                RequestDecision::Rejected,
-                Some(reason),
-                channel,
-            ),
+            requester_notice: notice,
         })
     }
 
@@ -606,13 +613,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         actor: Actor,
         status: DraftStatus,
         reason: Option<String>,
+        notices: Vec<Notice>,
     ) -> RequestResult<StoredDraft> {
         let update = DraftUpdate {
             draft_id: loaded.draft.id.clone(),
             expected_version: loaded.draft.version,
             actor,
             at: self.clock.now(),
-            change: DraftChange::Close { status, reason },
+            change: DraftChange::Close {
+                status,
+                reason,
+                notices,
+            },
         };
         match self.store.update_draft(update).await? {
             DraftWrite::Written(draft) => Ok(draft),
@@ -628,6 +640,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         now: DateTime<Utc>,
         snapshot: &ScheduleSnapshot,
     ) -> RequestError {
+        let notice = decision_notice(loaded, RequestDecision::Expired, None, snapshot);
         let update = DraftUpdate {
             draft_id: loaded.draft.id.clone(),
             expected_version: loaded.draft.version,
@@ -636,15 +649,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             change: DraftChange::Close {
                 status: DraftStatus::Expired,
                 reason: None,
+                notices: notice.iter().cloned().collect(),
             },
         };
         match self.store.update_draft(update).await {
-            Ok(DraftWrite::Written(_)) => {
-                match decision_notice(loaded, RequestDecision::Expired, None, snapshot) {
-                    Some(notice) => RequestError::Expired(Box::new(notice)),
-                    None => DraftError::Expired.into(),
-                }
-            }
+            Ok(DraftWrite::Written(_)) => match notice {
+                Some(notice) => RequestError::Expired(Box::new(notice)),
+                None => DraftError::Expired.into(),
+            },
             Ok(DraftWrite::Stale(stale)) => stale_of(&loaded.draft.id, stale).into(),
             Err(error) => error.into(),
         }

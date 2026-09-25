@@ -160,8 +160,9 @@ impl<S: DraftStore + Sync> DraftStore for StoreRef<'_, S> {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, crate::domain::schedule::Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        self.0.expire_drafts(week, at, actor)
+        self.0.expire_drafts(week, at, actor, notices)
     }
 }
 

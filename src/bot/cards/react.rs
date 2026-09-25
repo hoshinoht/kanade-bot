@@ -35,8 +35,8 @@ pub enum CardReaction {
 }
 
 impl CardReaction {
-    /// The merges' schedule notices; serve wiring enqueues them (draft-merge
-    /// outbox path), as for any merge.
+    /// The merges' schedule notices, already written to the notice outbox
+    /// by the store with each merge (for reports; never enqueue them again).
     pub fn notices(&self) -> Vec<Notice> {
         match self {
             Self::Approved { approved, .. } => approved

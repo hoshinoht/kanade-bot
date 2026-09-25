@@ -252,14 +252,16 @@ and none is open during a Discord call. Tests: `tests/delivery/` (target
 
 A planned `Suppressed` send, or a claim returning `Held`, posts nothing. A
 target that vanished before the claim is skipped. Bound reminder cards get ✅/❌
-reactions as a best effort, as in v4. A notice passes its operation's effect
-ordinal; tick sends pass none.
+reactions as a best effort, as in v4. A notice sent inside its own operation
+passes that operation's effect ordinal; tick sends pass none. Outbox notices
+are claimed by `(source, ordinal)` (`Executor::execute_source`).
 
 Tick (v4 order, one clock reading, one `scheduler_tick` lease, ended even on
 error): materialise the current and next two boss weeks when the week differs
 from the one this process last materialised (v4 kept `last_materialised_week`
-in config; re-materialising is idempotent), then `mark_done`, then the digest,
-then dispatch. Dispatch retires hopeless rows, then claims at most
+in config; re-materialising is idempotent), then `mark_done`, then the
+notice outbox drain (`delivery/notices.rs`, `maintenance-contract.md`
+*Notice outbox*), then the digest, then dispatch. Dispatch retires hopeless rows, then claims at most
 `max_sends_per_tick` (default 20) sends. Suppressed, held and vanished sends
 don't count toward the cap; sends past it wait for the next tick
 (`deferred`). Call
@@ -359,7 +361,8 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
   still needs changing." Any other failure (store, retries, id reuse) raises
   `AdminAlert::CardAnswerFailed` and posts nothing; on ❌, member-readable
   refusals (e.g. an expired card) stay silent. Merge notices are
-  returned (`CardReaction::notices`) for the draft-merge outbox path.
+  written to the notice outbox with the merge; `CardReaction::notices`
+  only reports them.
 - **Outbox** (`CardOutbox`): cards as above; link-first links as a
   journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
   pinged); chat answers through the reaction path (`apply_reaction` as the
@@ -373,8 +376,7 @@ Serve-mode wiring and logging (including sharing one `GuildCache` between
 the runner's router, the API, chat and delivery, and exposing
 `DroppedEvents` in health); startup roster sync over `list_members`;
 reaction and roster reconciliation; roster persistence; wiring the tick into
-serve mode and the admin-alert destination; notice delivery from mutation
-operations; routing gateway reactions to `CardDesk::on_reaction`;
+serve mode and the admin-alert destination; routing gateway reactions to `CardDesk::on_reaction`;
 opposite-reaction removal and decline notices (chat answers apply without
 them); card portraits/artwork; withdrawing a card whose message was deleted;
 converting `BotEvent::Message*` into the extraction/chat inputs and the

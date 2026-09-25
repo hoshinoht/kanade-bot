@@ -9,6 +9,7 @@ mod history;
 mod inbox;
 mod logs;
 mod origins;
+mod outbox;
 mod proxy;
 mod reads;
 mod schemas;

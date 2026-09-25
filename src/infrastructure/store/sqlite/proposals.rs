@@ -72,6 +72,7 @@ async fn close_in(
             change: DraftChange::Close {
                 status,
                 reason: reason.map(str::to_owned),
+                notices: Vec::new(),
             },
         },
     )

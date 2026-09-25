@@ -104,6 +104,7 @@ pub fn meta() -> ChangeMeta {
         refs: Vec::new(),
         request_digest: None,
         expect: Default::default(),
+        outbox: Vec::new(),
     }
 }
 

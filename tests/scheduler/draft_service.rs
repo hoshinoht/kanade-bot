@@ -1379,6 +1379,7 @@ impl DraftStore for Racy<'_> {
                         refs: Vec::new(),
                         request_digest: None,
                         expect: Default::default(),
+                        outbox: Vec::new(),
                     };
                     self.inner
                         .commit(
@@ -1398,6 +1399,7 @@ impl DraftStore for Racy<'_> {
                             far,
                             now(),
                             &kanade::domain::history::Actor::system("delivery"),
+                            Vec::new(),
                         )
                         .await
                         .expect("expire");
@@ -1421,8 +1423,9 @@ impl DraftStore for Racy<'_> {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &kanade::domain::history::Actor,
+        notices: Vec<(String, kanade::domain::schedule::Notice)>,
     ) -> Result<Vec<String>, StoreError> {
-        self.inner.expire_drafts(week, at, actor).await
+        self.inner.expire_drafts(week, at, actor, notices).await
     }
 }
 

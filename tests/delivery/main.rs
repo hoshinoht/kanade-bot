@@ -11,6 +11,7 @@ mod dispatch_replay;
 mod drafts;
 mod failures;
 mod intercept;
+mod notices;
 mod proposals;
 mod scenarios;
 

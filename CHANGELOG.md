@@ -122,6 +122,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: notices from schedule changes (admin edits, inbox and ✅ approvals, requests,
+  rollbacks, expiry) are saved with the change itself and posted once by the reminder
+  tick, surviving crashes without being lost or sent twice.
 - v5: container packaging in `deploy/`: a hardened ~50 MB distroless image (non-root,
   read-only, no toolchains) and a Compose stack that serves the admin portal on the
   tailnet through the existing edge site, with secrets from host files and a runbook

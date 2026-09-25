@@ -1190,6 +1190,7 @@ impl<S: ScheduleStore + Sync> Racing<'_, S> {
             refs: Vec::new(),
             request_digest: None,
             expect: Expect::default(),
+            outbox: Vec::new(),
         };
         self.inner
             .commit(

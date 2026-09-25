@@ -142,6 +142,45 @@ async fn check_targets(
     Ok(())
 }
 
+/// Retired attempts under a source key still hold it unless the transport
+/// proved them unsent.
+const SOURCE_HELD: &str = "SELECT 1 FROM delivery_attempts WHERE dedupe_key = ?1
+     AND (dedupe_active = 1 OR COALESCE(resolved_by, '') != 'service:delivery-not-sent')
+     LIMIT 1";
+
+pub(super) async fn claim_source(
+    tx: &mut SqliteConnection,
+    lease: &Lease,
+    intent: &NotificationIntent,
+    source: &str,
+    source_ordinal: i64,
+    at: DateTime<Utc>,
+) -> Result<Claim, JournalError> {
+    check_live(tx, lease).await?;
+    if !intent.targets.is_empty() {
+        return Err(JournalError::InvalidInput(
+            "source keys claim target-less effects only".into(),
+        ));
+    }
+    let key = DedupeKey::source(source, source_ordinal);
+    let held: Option<i64> = sqlx::query_scalar(SOURCE_HELD)
+        .bind(key.as_str())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(backend)?;
+    if held.is_some() {
+        return Ok(Claim::Held);
+    }
+    let next: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(effect_ordinal), -1) + 1 FROM delivery_attempts WHERE operation_id = ?1",
+    )
+    .bind(&lease.operation_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(backend)?;
+    insert_attempt(tx, lease, intent, next, "source", &key, at).await
+}
+
 pub(super) async fn claim(
     tx: &mut SqliteConnection,
     lease: &Lease,
@@ -174,7 +213,19 @@ pub(super) async fn claim(
         return Ok(Claim::Held);
     }
     check_targets(tx, &intent.targets).await?;
+    insert_attempt(tx, lease, intent, ordinal, scope, &key, at).await
+}
 
+/// Record a fresh `intent` attempt; `Held` when another claim won the key.
+async fn insert_attempt(
+    tx: &mut SqliteConnection,
+    lease: &Lease,
+    intent: &NotificationIntent,
+    ordinal: i64,
+    scope: &str,
+    key: &DedupeKey,
+    at: DateTime<Utc>,
+) -> Result<Claim, JournalError> {
     let attempt = AttemptId(uuid::Uuid::new_v4().to_string());
     let guild: Option<String> = sqlx::query_scalar("SELECT guild_id FROM store_meta WHERE id = 1")
         .fetch_one(&mut *tx)

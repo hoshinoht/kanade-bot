@@ -356,3 +356,49 @@ implements the ownership rules above differently from the v4 reference.
   publication already happened (then the validated database stays and the
   task closes the store). Only process death mid-restore can leave the
   hidden staging directory.
+
+## Notice outbox (v5)
+
+v4 announced a mutation from inside its own leased operation (operation
+scope, effect ordinal). v5 mutations run outside any delivery lease, so their
+notices go through a durable outbox instead (migration 0012; parent decision
+2026-09-25, same-transaction outbox rather than re-derivation):
+
+- `notice_outbox`: `id` (write order), `source` (`change:<seq>` or
+  `draft:<id>`), `ordinal`, `effect_kind`, `payload` (the domain notice,
+  versioned JSON, no rendered text), `created_at`, `state`
+  `pending|drained`, `drained_at`. Unique `(source, ordinal)`; a trigger
+  allows only `pending` → `drained`, once, and no other column change. It
+  is written in the deciding transaction (record append, draft close,
+  expiry); `docs/v5/history.md` *Notice outbox* lists the paths.
+- The tick drains after draft/proposal expiry and before the digest, under
+  its lease: each pending notice is planned (`plan_notice`: home channel,
+  else the post channel, mentions, quiet mode) and rendered now, then
+  claimed with `claim_source(lease, intent, source, ordinal)`. That claim is
+  `dedupe_scope = 'source'`, `dedupe_key = DedupeKey::source(source,
+  ordinal)` (SHA-256 of `[namespace, "source", [source, ordinal]]`), and
+  takes the lease's next `effect_ordinal`. It is `Held` while any attempt
+  with the key exists except one released as `service:delivery-not-sent`:
+  active (intent, indeterminate, bound) or retired rejected or unproven
+  attempts all hold it. The attempt then follows the executor table
+  (`bind`, `mark_indeterminate`, `release_unsent`, `retire_rejected`).
+- After the send the notice is marked drained, except when the transport
+  proved it unsent (`NotSent`, rate limited: pending, claimed afresh next
+  tick) or a journal write failed (pending; the next claim is `Held` if the
+  attempt exists). A notice with no reachable channel stays pending (as a
+  queued reminder does) and does not use the per-tick cap; claimed notices
+  use a cap of `max_sends_per_tick` of their own.
+
+Crash windows:
+
+| Crash after | Restart | Result |
+| --- | --- | --- |
+| the commit, before any claim | row pending, no attempt | claimed fresh, sent once |
+| the claim, before or during the send | `recover_on_start`: `intent` → `indeterminate` | claim `Held`: drained, never resent |
+| an ambiguous send | attempt `indeterminate` | `Held`: never resent |
+| `bind`, before `mark_drained` | attempt `bound` | `Held`: drained, not resent |
+| `retire_rejected`, before `mark_drained` | attempt retired rejected | `Held`: drained, not retried |
+| `release_unsent` | attempt retired not-sent | claimed fresh, sent once |
+
+Tests: `tests/delivery/notices.rs` (memory and SQLite, including real SQLite
+reopen), `outbox_conformance` (both stores).

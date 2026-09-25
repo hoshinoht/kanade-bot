@@ -139,8 +139,9 @@ impl DraftStore for Flaky {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
+        notices: Vec<(String, kanade::domain::schedule::Notice)>,
     ) -> Result<Vec<String>, StoreError> {
-        self.inner.expire_drafts(week, at, actor).await
+        self.inner.expire_drafts(week, at, actor, notices).await
     }
 }
 

@@ -1096,6 +1096,7 @@ async fn repeated_requests_apply_once<S: ScheduleStore + ChangeHistory>(store: S
         refs: Vec::new(),
         request_digest: digest,
         expect: Default::default(),
+        outbox: Vec::new(),
     };
     let changes = || ChangeSet {
         changes: vec![Change::DeleteRsvp {

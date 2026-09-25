@@ -17,6 +17,7 @@ use crate::domain::history::{
     LastChange, NewCheckpoint, PreconditionError, Versioned, changed_fields, check_checkpoint,
     check_field, target_key, validate_fields,
 };
+use crate::domain::notify::{change_source, draft_source};
 use crate::domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, Run, RunStatus, ScheduleSnapshot,
 };
@@ -30,6 +31,7 @@ use super::order::sort_snapshot;
 mod journal;
 mod members;
 mod model_log;
+mod outbox;
 mod proposal_cards;
 mod proposals;
 mod settings;
@@ -60,6 +62,7 @@ struct Tables {
     journal: JournalTables,
     history: History,
     drafts: DraftTables,
+    outbox: outbox::OutboxTable,
 }
 
 /// The change records (from genesis), the request digests stored beside
@@ -262,6 +265,8 @@ impl ScheduleStore for MemoryScheduleStore {
         for key in changed_fields(&record) {
             next.history.fields.insert(key, record.seq);
         }
+        next.outbox
+            .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
         next.history.records.push(record);
         *tables = next;
         Ok(Some(committed))
@@ -968,7 +973,11 @@ impl DraftStore for MemoryScheduleStore {
                     Some(format!("{} {}", base.seq, base.hash)),
                 );
             }
-            DraftChange::Close { status, reason } => {
+            DraftChange::Close {
+                status,
+                reason,
+                notices,
+            } => {
                 let kind = match status {
                     crate::domain::drafts::DraftStatus::Discarded => DraftEventKind::Discarded,
                     crate::domain::drafts::DraftStatus::Rejected => DraftEventKind::Rejected,
@@ -993,6 +1002,8 @@ impl DraftStore for MemoryScheduleStore {
                     update.at,
                     reason.clone(),
                 );
+                next.outbox
+                    .enqueue(&draft_source(&draft.id), notices, update.at)?;
             }
         }
         next.drafts.drafts.insert(draft.id.clone(), draft.clone());
@@ -1073,6 +1084,8 @@ impl DraftStore for MemoryScheduleStore {
         for key in changed_fields(&record) {
             next.history.fields.insert(key, record.seq);
         }
+        next.outbox
+            .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
         next.history.records.push(record);
         let mut draft = draft;
         draft.status = crate::domain::drafts::DraftStatus::Merged;
@@ -1099,6 +1112,7 @@ impl DraftStore for MemoryScheduleStore {
         week: chrono::DateTime<chrono::Utc>,
         at: chrono::DateTime<chrono::Utc>,
         actor: &Actor,
+        notices: Vec<(String, crate::domain::schedule::Notice)>,
     ) -> Result<Vec<String>, StoreError> {
         let mut tables = self.tables();
         let mut due: Vec<String> = tables
@@ -1133,6 +1147,12 @@ impl DraftStore for MemoryScheduleStore {
                 at,
                 None,
             );
+            let planned: Vec<_> = notices
+                .iter()
+                .filter(|(draft, _)| draft == id)
+                .map(|(_, notice)| notice.clone())
+                .collect();
+            next.outbox.enqueue(&draft_source(id), &planned, at)?;
         }
         *tables = next;
         Ok(due)
