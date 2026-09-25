@@ -12,7 +12,7 @@
   import { Tabs, Toaster, weekStartLabel, type TabItem } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
-  import { SURFACE_LABELS, actorName, describe, localAt } from './describe';
+  import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
 
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
@@ -87,8 +87,10 @@
     dialog = { title: `Revert #${r.seq}?`, path: '/api/admin/history/revert', body: { seqs: [r.seq] } };
     dialogOpen = true;
   }
+  // Records name a week by its starting instant; people read its guild-local start date.
+  const weekLabel = (w: string) => weekStartLabel(weekDate(w, tz));
   function restore(w: string, r: ChangeRecord) {
-    dialog = { title: `Restore the week of ${weekStartLabel(w)} to just after #${r.seq}?`, path: '/api/admin/history/restore-week', body: { week: w, revision: r.revision } };
+    dialog = { title: `Restore the week of ${weekLabel(w)} to just after #${r.seq}?`, path: '/api/admin/history/restore-week', body: { week: w, revision: r.revision } };
     dialogOpen = true;
   }
   let who = $state('');
@@ -164,7 +166,7 @@
             {#if r.refs.length}<span class="chip">reverts {r.refs.map((x) => `#${x.seq}`).join(', ')}</span>{/if}
             <span class="id">{localAt(r.at, tz)}</span>
           </div>
-          <ul class="change__lines">{#each describe(r, names) as line, i (i)}<li>{line}</li>{/each}</ul>
+          <ul class="change__lines">{#each describe(r, names, tz) as line, i (i)}<li>{line}</li>{/each}</ul>
           <details class="change__diff">
             <summary>Rows ({r.rows.length})</summary>
             <table>
@@ -184,15 +186,15 @@
           <div class="rowbtns">
             <button class="btn" type="button" onclick={() => revert(r)} aria-label="Revert #{r.seq}">Revert…</button>
             {#if w}
-              <button class="btn btn--ghost" type="button" onclick={() => restore(w, r)} aria-label="Restore week {w} to just after #{r.seq}">Restore week to here…</button>
+              <button class="btn btn--ghost" type="button" onclick={() => restore(w, r)} aria-label="Restore week {weekLabel(w)} to just after #{r.seq}">Restore week to here…</button>
             {/if}
           </div>
         </li>
       {/snippet}
       {#each groups as g (g.week)}
         {#if g.records.length}
-          <section class="history__week" aria-labelledby="w-{g.week}">
-            <h3 class="pane__section" id="w-{g.week}">{g.week ? `Boss week of ${weekStartLabel(g.week)}` : 'Changes'}</h3>
+          <section class="history__week" aria-labelledby="w-{weekDate(g.week, tz)}">
+            <h3 class="pane__section" id="w-{weekDate(g.week, tz)}">{g.week ? `Boss week of ${weekLabel(g.week)}` : 'Changes'}</h3>
             <ol class="timeline">{#each g.records as r (r.seq)}{@render entry(r, g.week)}{/each}</ol>
           </section>
         {/if}
@@ -233,7 +235,7 @@
   {/snippet}
 </Tabs>
 
-<RevertDialog bind:open={dialogOpen} title={dialog.title} path={dialog.path} body={dialog.body} {names} ondone={done} />
+<RevertDialog bind:open={dialogOpen} title={dialog.title} path={dialog.path} body={dialog.body} {names} timezone={tz} ondone={done} />
 
 <style>
   .history__filters {

@@ -894,16 +894,90 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     }
     let newest = &records[0];
     let week_key = s(&newest["weeks"][0]).to_owned();
-    h.ok(
-        "GET",
-        &format!(
-            "/api/admin/history?limit=2&week={week_key}&actor=admin:{}",
-            s(&newest["actor"]["id"])
-        ),
-        None,
-        "history.json#/$defs/HistoryPage",
-    )
-    .await;
+    // Records name weeks by the instant they start, as the server does.
+    assert!(
+        week_key.len() == 25 && week_key.ends_with("+00:00"),
+        "{week_key}"
+    );
+    assert!(
+        records
+            .iter()
+            .flat_map(|r| r["rows"].as_array().unwrap())
+            .any(|row| row["key"]["table"] == "reminders"),
+        "reminder rows are recorded"
+    );
+    let filtered = h
+        .ok(
+            "GET",
+            &format!(
+                "/api/admin/history?limit=2&week={}&actor=admin:{}",
+                week_key.replace('+', "%2B"),
+                s(&newest["actor"]["id"])
+            ),
+            None,
+            "history.json#/$defs/HistoryPage",
+        )
+        .await;
+    assert!(
+        filtered["total"].as_u64().unwrap() > 0,
+        "week filter by instant"
+    );
+
+    // Blame speaks the domain's field names.
+    let blame = h
+        .ok(
+            "GET",
+            &format!("/api/admin/runs/{id}/blame"),
+            None,
+            "history.json#/$defs/BlameEntries",
+        )
+        .await;
+    let fields: Vec<&str> = blame
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| s(&e["field"]))
+        .collect();
+    assert!(
+        fields.contains(&"slot") && fields.contains(&"status"),
+        "{fields:?}"
+    );
+    assert!(
+        fields.iter().all(|f| matches!(
+            *f,
+            "slot" | "bosses" | "participants" | "channel" | "status" | "status_pin"
+        ) || f.starts_with("rsvp:")
+            || f.starts_with("attended:")),
+        "{fields:?}"
+    );
+
+    // A strict revert of the first move conflicts with every later edit of
+    // that run: 200, no rows, the requested record named.
+    let first_move = records
+        .iter()
+        .rev()
+        .find(|r| {
+            r["surface"] == "admin_portal"
+                && r["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|row| row["key"]["id"] == id)
+        })
+        .expect("the run edits above")["seq"]
+        .clone();
+    let strict = h
+        .ok(
+            "POST",
+            "/api/admin/history/revert",
+            Some(json!({ "seqs": [first_move], "preview": true })),
+            "history.json#/$defs/RevertPlan",
+        )
+        .await;
+    assert_eq!(strict["outcome"], "conflicts", "{strict}");
+    assert_eq!(strict["rows"], json!([]));
+    assert_eq!(strict["reverts"], json!([first_move]));
+    assert!(!strict["conflicts"].as_array().unwrap().is_empty());
     h.ok(
         "POST",
         "/api/admin/history/revert",

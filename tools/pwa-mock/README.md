@@ -25,6 +25,13 @@ is `409 stale` when the week moved since, checked like run edits (whole week,
 where the server checks per field). Unit tests pin their own clock and ignore
 `KANADE_MOCK_NOW`.
 
+History records carry domain rows as the server encodes them (run instants
+in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`
+rows derived from each run's cards), name weeks by their starting RFC 3339
+instant (the `week` query also takes the local start date), blame under the
+domain's field names, and answer a strict rollback conflict with `rows: []`.
+The hash is still a stand-in.
+
 `cargo test` also walks every endpoint the PWAs call and validates each
 response against `docs/v5/api-schemas` (`src/contract.rs`).
 

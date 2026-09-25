@@ -359,11 +359,19 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   const latest = page.getByRole('listitem').filter({ hasText: '#9' }).first();
   await expect(latest).toContainText('reverts #8');
   await expect(latest).toContainText('rollback');
+  // Records carry reminder rows; a move's re-placed cards fold into one line.
+  const moved = page.getByRole('listitem').filter({ hasText: '#3' }).first();
+  await expect(moved).toContainText('XKalos: 2 reminders re-placed');
 
   // Tsubame's answer (#2) was followed by an admin moving that run (#3): conflict.
   await page.getByRole('button', { name: 'Revert #2' }).click();
   const dialog = page.getByRole('dialog', { name: 'Revert #2?' });
   await expect(dialog.getByRole('alert')).toContainText('Changed again since');
+  await expect(dialog.getByRole('alert')).toContainText('#2: XKalos');
+  // A strict refusal plans no rows; the dialog shows what forcing would do instead.
+  await expect(dialog.getByRole('heading', { name: 'Would change', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('heading', { name: 'Forcing it would change' })).toBeVisible();
+  await expect(dialog.getByText('XKalos: at risk → unconfirmed')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Force revert' })).toBeDisabled();
   await dialog.getByRole('checkbox', { name: /Force it/ }).check();
   await dialog.getByRole('button', { name: 'Force revert' }).click();
@@ -401,8 +409,9 @@ test('history: restore a week to a point, revert a member, and blame in the run 
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
   const sheet = page.getByRole('dialog', { name: 'XKalos' });
   await sheet.getByText('Who changed this').click();
-  await expect(sheet.getByRole('row', { name: /^Time/ })).toContainText('via extraction approval');
-  await expect(sheet.getByRole('row', { name: /Tsubame's answer/ })).toContainText('Tsubame');
+  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('via extraction approval');
+  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Fri 25 22:00');
+  await expect(sheet.getByRole('row', { name: /Tsubame's answer/ })).toContainText('out');
 });
 
 test('config: pings, watching, chatbot, persona catalog, models, self-service, portal gate, notifications save', async ({ page }) => {

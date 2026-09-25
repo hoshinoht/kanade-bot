@@ -3,6 +3,7 @@
   import { Icon } from '@kanade/ui';
   import { actorName, localAt, SURFACE_LABELS } from '../history/describe';
   import { send } from '../resource.svelte';
+  import { blameField, blameValue } from './blame';
 
   let { runId, members, timezone }: { runId: string; members: Member[]; timezone: string } = $props();
 
@@ -13,9 +14,8 @@
     const name = members.find((m) => m.id === id)?.name ?? `member ${id}`;
     return members.filter((m) => m.name === name).length > 1 ? `${name} #${id}` : name;
   };
-  const FIELD: Record<string, string> = { day: 'Day', time: 'Time', status: 'Status', participants: 'Roster' };
-  const field = (f: string) => FIELD[f] ?? (f.startsWith('answer:') ? `${names(f.slice(7))}'s answer` : f);
-  const value = (v: unknown) => (Array.isArray(v) ? `${v.length} people` : v === null ? 'cleared' : String(v));
+  const field = (f: string) => blameField(f, names);
+  const value = (f: string, v: unknown) => blameValue(f, v, timezone);
 
   async function load(event: Event) {
     if (!(event.currentTarget as HTMLDetailsElement).open || entries) return;
@@ -40,7 +40,7 @@
           {#each entries as e (e.field)}
             <tr>
               <th scope="row">{field(e.field)}</th>
-              <td class="mono">{value(e.value)}</td>
+              <td class="mono">{value(e.field, e.value)}</td>
               <td>{actorName(e.actor, names)} <span class="id">via {SURFACE_LABELS[e.surface] ?? e.surface}</span></td>
               <td class="mono"><a href="/history">#{e.seq}</a> · {localAt(e.at, timezone)}</td>
             </tr>

@@ -624,9 +624,12 @@ export type Surface =
   | 'extraction_approval'
   | 'delivery_tick'
   | 'rollback'
-  | 'import';
+  | 'import'
+  | 'draft_merge'
+  | 'request_merge'
+  | 'cherry_pick';
 
-export type RowKey = { table: 'runs' | 'fixed_runs'; id: string } | { table: 'rsvps'; run_id: string; user_id: string };
+export type RowKey = { table: 'runs' | 'fixed_runs' | 'reminders'; id: string } | { table: 'rsvps'; run_id: string; user_id: string };
 
 export interface RowChange {
   key: RowKey;
@@ -644,7 +647,7 @@ export interface ChangeRecord {
   actor: { kind: ActorKind; id: string };
   surface: Surface;
   request_id: string | null;
-  /** Boss weeks (start dates) the change touched. */
+  /** Boss weeks the change touched, each the RFC 3339 instant it starts (UTC, e.g. `2026-09-23T16:00:00+00:00`). */
   weeks: string[];
   rows: RowChange[];
   notices: string[];
@@ -664,7 +667,9 @@ export interface HistoryPage {
 
 export interface RevertPlan {
   outcome: 'preview' | 'applied' | 'unchanged' | 'conflicts';
+  /** The requested records (a refused week or actor rollback: the conflicting ones). */
   reverts: number[];
+  /** Empty when `outcome` is `conflicts`: a strict refusal plans nothing. */
   rows: RowChange[];
   conflicts: { seq: number; key: RowKey; expected: unknown; found: unknown }[];
   skipped: { key: RowKey; reason: string }[];
@@ -691,9 +696,11 @@ export interface Checkpoints {
   }[];
 }
 
-/** `GET /api/admin/runs/{id}/blame`: who last changed each field (`answer:<member id>` per answer). */
+/** `GET /api/admin/runs/{id}/blame`: who last changed each field some record set. */
 export interface BlameEntry {
+  /** `slot`, `bosses`, `participants`, `channel`, `status`, `status_pin`, `rsvp:<member id>`, `attended:<member id>`. */
   field: string;
+  /** Current value: `slot` is `{datetime, week_start, source, fixed_run_id}`, `channel` the channel id, `rsvp:`/`attended:` the row or entry (null once cleared). */
   value: unknown;
   seq: number;
   at: string;

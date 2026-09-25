@@ -4,7 +4,7 @@
 //! canonical encoding; the API shape is what the PWA is built against.
 
 use super::catalog::boss_ref;
-use super::clock::{iso_date, now_secs};
+use super::clock::{TZ_OFFSET_SECS, clock, iso_date, minutes, now_secs, parse_instant};
 use super::dto::Participant;
 use super::seed::{self, Rec};
 use super::{MoveError, Store};
@@ -157,52 +157,121 @@ fn static_status(s: &str) -> &'static str {
     .unwrap_or("planned")
 }
 
-fn owner(name: &str) -> &'static str {
+/// A timing's owner as a member id (the mock stores names).
+fn owner_id(name: &str) -> &'static str {
     seed::members()
         .into_iter()
         .find(|m| m.name == name)
-        .map_or("admin token", |m| m.name)
+        .map_or("admin-token", |m| m.id)
+}
+
+fn owner(id: &str) -> &'static str {
+    seed::member_name(id).map_or("admin token", |m| m.1)
+}
+
+/// UTC instant text for an absolute guild-local minute.
+fn instant(local_minute: i64) -> String {
+    iso(local_minute * 60 - TZ_OFFSET_SECS)
+}
+
+/// Absolute guild-local minute of an instant the mock wrote.
+fn local_minute(text: &str) -> Option<i64> {
+    let utc = parse_instant(&format!("{}Z", text.strip_suffix("+00:00")?))?;
+    Some((utc + TZ_OFFSET_SECS).div_euclid(60))
+}
+
+/// The domain's reminder kinds for the mock's card labels.
+fn reminder_kind(label: &str) -> &'static str {
+    match label {
+        "T-1h" => "countdown_60",
+        "T-15m" => "countdown_15",
+        _ => "day_of",
+    }
+}
+
+/// The run a key belongs to (reminder ids are `{run}:{kind}` here).
+pub fn run_of(key: &Value) -> Option<&str> {
+    match key["table"].as_str()? {
+        "runs" => key["id"].as_str(),
+        "rsvps" => key["run_id"].as_str(),
+        "reminders" => key["id"].as_str()?.rsplit_once(':').map(|(run, _)| run),
+        _ => None,
+    }
 }
 
 impl Store {
+    /// A boss week as records name it: the RFC 3339 instant it starts.
     fn week_of(next: bool) -> String {
-        iso_date(Self::start(next))
+        instant(Self::start(next) * 1440)
     }
 
-    /// Every schedule row as history.md keys them.
+    /// A week given as the instant or as the guild-local start date (`Week.starts`).
+    pub fn week_key(text: &str) -> String {
+        if text.len() == 10
+            && let Some(utc) = parse_instant(&format!("{text}T00:00:00Z"))
+        {
+            return iso(utc - TZ_OFFSET_SECS);
+        }
+        text.to_owned()
+    }
+
+    /// Every schedule row as history.md keys and encodes them (domain rows).
     pub fn rows(&self) -> Rows {
         let mut rows = Rows::new();
         for r in &self.runs {
+            let week_start = Self::week_of(r.next_week);
             let key = json!({ "table": "runs", "id": r.id });
             let value = json!({
-                "short_id": r.short_id,
-                "week": Self::week_of(r.next_week),
-                "day": r.day,
-                "time": r.time,
-                "status": r.status,
+                "id": r.id,
+                "fixed_run_id": r.fixed_id,
+                "channel_id": r.channel,
+                "week_start": week_start,
+                "datetime": instant(Self::start_minute(r)),
                 "bosses": r.bosses.iter().map(|b| b.token.clone()).collect::<Vec<_>>(),
-                "channel": r.channel,
-                "fixed_id": r.fixed_id,
                 "participants": r.participants.iter().map(|p| p.id).collect::<Vec<_>>(),
+                "status": r.status,
+                "source": if r.fixed_id.is_some() && !self.amended(r) { "fixed" } else { "amend" },
             });
             rows.insert(key_text(&key), (key, value));
             for p in r.participants.iter().filter(|p| p.answer != "waiting") {
                 let key = json!({ "table": "rsvps", "run_id": r.id, "user_id": p.id });
-                rows.insert(key_text(&key), (key, json!({ "answer": p.answer })));
+                let value = json!({
+                    "run_id": r.id,
+                    "user_id": p.id,
+                    "state": p.answer,
+                    "source": "chat",
+                    "at": week_start,
+                });
+                rows.insert(key_text(&key), (key, value));
+            }
+            // Unsent cards only: sending is the delivery tick's record, not the mock's.
+            let day = (Self::start(r.next_week) + i64::from(r.day)) * 1440;
+            for card in Self::cards(r) {
+                let kind = reminder_kind(card.label);
+                let id = format!("{}:{kind}", r.id);
+                let key = json!({ "table": "reminders", "id": id });
+                let value = json!({
+                    "id": id,
+                    "run_id": r.id,
+                    "kind": kind,
+                    "fire_at": instant(day + minutes(&card.at)),
+                    "sent_at": null,
+                    "message_id": null,
+                });
+                rows.insert(key_text(&key), (key, value));
             }
         }
-        for f in &self.fixed {
+        for f in self.fixed.iter().filter(|f| !f.retired) {
             let key = json!({ "table": "fixed_runs", "id": f.id });
             let value = json!({
-                "short_id": f.short_id,
-                "weekday": f.weekday,
-                "time": f.time,
+                "id": f.id,
+                "owner_id": owner_id(f.owner),
+                "channel_id": f.channel,
                 "bosses": f.bosses.iter().map(|b| b.token.clone()).collect::<Vec<_>>(),
+                "weekday": f.weekday,
+                "time": format!("{}:00", f.time),
                 "participants": f.participants,
-                "channel": f.channel,
                 "note": f.note,
-                "owner": f.owner,
-                "retired": f.retired,
             });
             rows.insert(key_text(&key), (key, value));
         }
@@ -234,15 +303,13 @@ impl Store {
         let mut weeks: Vec<String> = rows
             .iter()
             .filter_map(|row| match row.key["table"].as_str()? {
-                "runs" => row.after["week"]
+                "runs" => row.after["week_start"]
                     .as_str()
-                    .or(row.before["week"].as_str())
+                    .or(row.before["week_start"].as_str())
                     .map(str::to_owned),
-                "rsvps" => {
-                    let run = self
-                        .runs
-                        .iter()
-                        .find(|r| Some(r.id.as_str()) == row.key["run_id"].as_str())?;
+                "rsvps" | "reminders" => {
+                    let id = run_of(&row.key)?;
+                    let run = self.runs.iter().find(|r| r.id == id)?;
                     Some(Self::week_of(run.next_week))
                 }
                 _ => None,
@@ -324,18 +391,25 @@ impl Store {
                     run.status = "cancelled";
                     return;
                 }
-                run.day = value["day"].as_u64().unwrap_or(0) as u8;
-                run.time = text(&value["time"]);
                 run.status = static_status(value["status"].as_str().unwrap_or("planned"));
+                if let Some(at) = value["datetime"].as_str().and_then(local_minute) {
+                    let week = value["week_start"].as_str().unwrap_or_default();
+                    run.next_week = week == Self::week_of(true);
+                    run.day = (at.div_euclid(1440) - Self::start(run.next_week)).clamp(0, 6) as u8;
+                    // An own-time run's instant is its day; its time stays as the mock holds it.
+                    if run.status != "otot" {
+                        run.time = Some(clock(at.rem_euclid(1440)));
+                    }
+                }
                 run.bosses = value["bosses"]
                     .as_array()
                     .into_iter()
                     .flatten()
                     .filter_map(|t| boss_ref(t.as_str()?))
                     .collect();
-                run.channel = seed::channel(value["channel"].as_str().unwrap_or_default())
+                run.channel = seed::channel(value["channel_id"].as_str().unwrap_or_default())
                     .map_or(run.channel, |c| c.0);
-                run.fixed_id = text(&value["fixed_id"]);
+                run.fixed_id = text(&value["fixed_run_id"]);
                 let before = std::mem::take(&mut run.participants);
                 run.participants = value["participants"]
                     .as_array()
@@ -356,7 +430,7 @@ impl Store {
             Some("rsvps") => {
                 let run_id = key["run_id"].as_str().unwrap_or_default();
                 let user = key["user_id"].as_str().unwrap_or_default();
-                let answer = match value["answer"].as_str() {
+                let answer = match value["state"].as_str() {
                     Some("yes") => "yes",
                     Some("no") => "no",
                     Some("maybe") => "maybe",
@@ -381,7 +455,9 @@ impl Store {
                     return;
                 }
                 f.weekday = value["weekday"].as_u64().unwrap_or(0) as u8;
-                f.time = text(&value["time"]).unwrap_or_default();
+                f.time = text(&value["time"])
+                    .map(|t| t.get(..5).unwrap_or_default().to_owned())
+                    .unwrap_or_default();
                 f.bosses = value["bosses"]
                     .as_array()
                     .into_iter()
@@ -394,12 +470,13 @@ impl Store {
                     .flatten()
                     .filter_map(|id| seed::member_name(id.as_str()?).map(|m| m.0))
                     .collect();
-                f.channel = seed::channel(value["channel"].as_str().unwrap_or_default())
+                f.channel = seed::channel(value["channel_id"].as_str().unwrap_or_default())
                     .map_or(f.channel, |c| c.0);
                 f.note = text(&value["note"]);
-                f.owner = owner(value["owner"].as_str().unwrap_or_default());
-                f.retired = value["retired"].as_bool().unwrap_or(false);
+                f.owner = owner(value["owner_id"].as_str().unwrap_or_default());
+                f.retired = false;
             }
+            // Reminders follow their run's slot.
             _ => {}
         }
     }
@@ -409,6 +486,7 @@ impl Store {
     fn rollback(
         &mut self,
         mut seqs: Vec<u64>,
+        by_seqs: bool,
         scope: impl Fn(&Value, &Self) -> Option<&'static str>,
         mode: &Mode,
     ) -> Plan {
@@ -462,6 +540,25 @@ impl Store {
         } else {
             "applied"
         };
+        if outcome == "conflicts" {
+            // As the server: a strict refusal lists no rows, and names the
+            // requested records (or, for a week or actor, the conflicting ones).
+            let mut reverts: Vec<u64> = if by_seqs {
+                seqs
+            } else {
+                conflicts.iter().map(|c| c.seq).collect()
+            };
+            reverts.sort_unstable_by(|a, b| b.cmp(a));
+            reverts.dedup();
+            return Plan {
+                outcome,
+                reverts,
+                rows: Vec::new(),
+                conflicts,
+                skipped: Vec::new(),
+                record: None,
+            };
+        }
         let mut record = None;
         if outcome == "applied" {
             for row in &rows {
@@ -510,7 +607,7 @@ impl Store {
 
     pub fn revert_changes(&mut self, seqs: Vec<u64>, mode: &Mode) -> Result<Plan, MoveError> {
         self.check_seqs(&seqs)?;
-        Ok(self.rollback(seqs, |_, _| None, mode))
+        Ok(self.rollback(seqs, true, |_, _| None, mode))
     }
 
     /// Every later change touching `week`, limited to that week's runs and RSVPs.
@@ -520,23 +617,21 @@ impl Store {
         revision: u64,
         mode: &Mode,
     ) -> Result<Plan, MoveError> {
+        let week = Self::week_key(week);
         let seqs: Vec<u64> = self
             .history
             .iter()
-            .filter(|r| r.seq > 0 && r.revision > revision && r.weeks.iter().any(|w| w == week))
+            .filter(|r| r.seq > 0 && r.revision > revision && r.weeks.contains(&week))
             .map(|r| r.seq)
             .collect();
-        let week = week.to_owned();
         let in_week = move |key: &Value, store: &Self| -> Option<&'static str> {
-            let run_id = match key["table"].as_str() {
-                Some("runs") => key["id"].as_str(),
-                Some("rsvps") => key["run_id"].as_str(),
-                _ => return Some("outside week"),
-            }?;
+            let Some(run_id) = run_of(key) else {
+                return Some("outside week");
+            };
             let run = store.runs.iter().find(|r| r.id == run_id)?;
             (Self::week_of(run.next_week) != week).then_some("outside week")
         };
-        Ok(self.rollback(seqs, in_week, mode))
+        Ok(self.rollback(seqs, false, in_week, mode))
     }
 
     pub fn revert_by_actor(
@@ -551,7 +646,7 @@ impl Store {
             .filter(|r| r.seq > 0 && &r.actor == actor && r.at.as_str() >= since)
             .map(|r| r.seq)
             .collect();
-        Ok(self.rollback(seqs, |_, _| None, mode))
+        Ok(self.rollback(seqs, false, |_, _| None, mode))
     }
 
     fn head(&self) -> Ref {
@@ -570,12 +665,13 @@ impl Store {
         before: Option<u64>,
         limit: usize,
     ) -> Page {
+        let week = week.map(Self::week_key);
         let matching: Vec<&Record> = self
             .history
             .iter()
             .rev()
             .filter(|r| r.seq > 0)
-            .filter(|r| week.is_none_or(|w| r.weeks.iter().any(|x| x == w)))
+            .filter(|r| week.as_ref().is_none_or(|w| r.weeks.contains(w)))
             .filter(|r| actor.is_none_or(|a| &r.actor == a))
             .collect();
         let total = matching.len();
@@ -598,7 +694,8 @@ impl Store {
         self.history.get(seq as usize).cloned()
     }
 
-    /// Who last changed each field of a run (and each member's answer).
+    /// Who last changed each field of a run, under the domain's blame names
+    /// (`slot`, `bosses`, `participants`, `channel`, `status`, `rsvp:<id>`).
     pub fn blame(&self, run_id: &str) -> Vec<Blame> {
         let mut out: BTreeMap<String, Blame> = BTreeMap::new();
         for record in self.history.iter().filter(|r| r.seq > 0) {
@@ -618,21 +715,47 @@ impl Store {
                 };
                 match row.key["table"].as_str() {
                     Some("runs") if row.key["id"] == run_id => {
-                        for field in ["day", "time", "status", "participants"] {
-                            if row.before.get(field) != row.after.get(field) {
-                                note(
-                                    field.to_owned(),
-                                    row.after.get(field).cloned().unwrap_or(Value::Null),
-                                );
+                        let pick = |row: &Value, keys: &[&str]| -> Value {
+                            keys.iter()
+                                .map(|k| {
+                                    ((*k).to_owned(), row.get(*k).cloned().unwrap_or(Value::Null))
+                                })
+                                .collect::<serde_json::Map<_, _>>()
+                                .into()
+                        };
+                        let slot = ["datetime", "week_start", "source", "fixed_run_id"];
+                        let fields: [(&str, Value, Value); 5] = [
+                            ("slot", pick(&row.before, &slot), pick(&row.after, &slot)),
+                            (
+                                "bosses",
+                                row.before["bosses"].clone(),
+                                row.after["bosses"].clone(),
+                            ),
+                            (
+                                "participants",
+                                row.before["participants"].clone(),
+                                row.after["participants"].clone(),
+                            ),
+                            (
+                                "channel",
+                                row.before["channel_id"].clone(),
+                                row.after["channel_id"].clone(),
+                            ),
+                            (
+                                "status",
+                                row.before["status"].clone(),
+                                row.after["status"].clone(),
+                            ),
+                        ];
+                        for (field, before, after) in fields {
+                            if row.before.is_null() || before != after {
+                                note(field.to_owned(), after);
                             }
                         }
                     }
                     Some("rsvps") if row.key["run_id"] == run_id => {
                         let user = row.key["user_id"].as_str().unwrap_or_default();
-                        note(
-                            format!("answer:{user}"),
-                            row.after.get("answer").cloned().unwrap_or(Value::Null),
-                        );
+                        note(format!("rsvp:{user}"), row.after.clone());
                     }
                     _ => {}
                 }
@@ -852,7 +975,17 @@ mod tests {
         .ok()
         .unwrap();
         let seq = s.history.last().unwrap().seq;
-        assert_eq!(s.history.last().unwrap().rows.len(), 1);
+        // The run row, and its reminders re-placed with it (as the server records them).
+        let rows = &s.history.last().unwrap().rows;
+        let tables: Vec<&str> = rows
+            .iter()
+            .filter_map(|r| r.key["table"].as_str())
+            .collect();
+        assert_eq!(tables, ["runs", "reminders", "reminders", "reminders"]);
+        assert!(
+            rows.iter()
+                .all(|r| super::run_of(&r.key) == Some("r-limbo"))
+        );
 
         let preview = s
             .revert_changes(vec![seq], &mode(false, true))
@@ -884,7 +1017,18 @@ mod tests {
             .ok()
             .unwrap();
         assert_eq!(strict.outcome, "conflicts");
-        assert_eq!(strict.conflicts.len(), 1);
+        assert_eq!(
+            (strict.reverts.as_slice(), strict.rows.len()),
+            (&[seq][..], 0)
+        );
+        // The run row and the reminders that followed it moved again.
+        assert!(
+            strict
+                .conflicts
+                .iter()
+                .all(|c| super::run_of(&c.key) == Some("r-limbo"))
+        );
+        assert!(strict.conflicts.iter().any(|c| c.key["table"] == "runs"));
         let forced = s
             .revert_changes(vec![seq], &mode(true, false))
             .ok()
@@ -919,7 +1063,13 @@ mod tests {
             .ok()
             .unwrap();
         assert_eq!(strict.outcome, "conflicts");
-        assert!(strict.conflicts.iter().all(|c| c.key["id"] == "r-kalos"));
+        assert!(
+            strict
+                .conflicts
+                .iter()
+                .all(|c| super::run_of(&c.key) == Some("r-kalos"))
+        );
+        assert!(strict.rows.is_empty());
         let plan = s
             .revert_by_actor(&member, "1970-01-01", &mode(true, false))
             .ok()
@@ -946,9 +1096,11 @@ mod tests {
     fn blame_names_the_last_change_per_field() {
         let s = store();
         let blame = s.blame("r-kalos");
-        let time = blame.iter().find(|b| b.field == "time").unwrap();
-        assert_eq!(time.surface, "extraction_approval");
-        let answer = blame.iter().find(|b| b.field == "answer:1005").unwrap();
+        let slot = blame.iter().find(|b| b.field == "slot").unwrap();
+        assert_eq!(slot.surface, "extraction_approval");
+        assert!(slot.value["datetime"].as_str().unwrap().ends_with("+00:00"));
+        let answer = blame.iter().find(|b| b.field == "rsvp:1005").unwrap();
         assert_eq!(answer.actor, Actor::new("member", "1005"));
+        assert_eq!(answer.value["state"], "no");
     }
 }

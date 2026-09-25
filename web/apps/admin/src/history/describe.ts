@@ -1,12 +1,12 @@
 /**
  * Plain-language lines for a change record's rows (docs/v5/history.md).
- * Row values are full domain rows, so a line never needs another lookup;
+ * Row values are full domain rows (`kanade.change.v1`: run instants in UTC,
+ * weekly timings with Monday = 0), so a line never needs another lookup;
  * member names come from the roster when it is loaded.
  */
 import type { ChangeRecord, RowChange } from '@kanade/api-types';
 
 type Row = Record<string, unknown> | null;
-const DOW = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'];
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const STATUS: Record<string, string> = {
   planned: 'unconfirmed',
@@ -22,78 +22,167 @@ export type Names = (id: string) => string;
 
 const str = (v: unknown) => (typeof v === 'string' ? v : v === null || v === undefined ? '' : String(v));
 const list = (v: unknown) => (Array.isArray(v) ? v.map(str) : []);
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+export const statusWord = (v: unknown) => STATUS[str(v)] ?? str(v);
+export const answerWord = (v: unknown) => ANSWER[str(v)] ?? str(v);
 
-/** "Tue 29" from a run row's boss week start and day index. */
-export function dayOf(row: Row): string {
-  if (!row) return '';
-  const day = Number(row.day ?? 0);
-  const start = str(row.week);
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(start) ? new Date(`${start}T00:00:00Z`) : null;
-  if (date) date.setUTCDate(date.getUTCDate() + day);
-  return `${DOW[day] ?? '?'}${date ? ` ${String(date.getUTCDate()).padStart(2, '0')}` : ''}`;
+function parts(iso: string, timeZone: string): Record<string, string> | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const out: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date))
+    out[p.type] = p.value;
+  return out;
 }
+
+/** Guild-local "Fri 25 21:30" for an instant. */
+export function shortAt(iso: string, timeZone: string, time = true): string {
+  const p = parts(iso, timeZone);
+  if (!p) return iso;
+  return `${p.weekday} ${p.day}${time ? ` ${p.hour}:${p.minute}` : ''}`;
+}
+
+/**
+ * A record's boss week as its guild-local start date (`YYYY-MM-DD`), which is
+ * what `weekStartLabel` and `Week.starts` use; records name it by instant.
+ */
+export function weekDate(week: string, timeZone: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(week)) return week;
+  const date = new Date(week);
+  if (Number.isNaN(date.getTime())) return week;
+  // en-CA formats dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
+/** "morning card", "T-1h card": the reminder kinds as the Reminders page names cards. */
+export function reminderKind(kind: string): string {
+  if (kind === 'day_of') return 'morning card';
+  const minutes = Number(/^countdown_(\d+)$/.exec(kind)?.[1]);
+  if (!Number.isFinite(minutes)) return `${kind} reminder`;
+  return `T-${minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`} card`;
+}
+
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 function title(row: Row): string {
   return list(row?.bosses).join(' + ') || 'a run';
 }
 
-function slot(row: Row): string {
-  if (!row) return '';
-  return `${dayOf(row)} ${row.status === 'otot' || !row.time ? 'own time' : str(row.time)}`;
+interface Ctx {
+  names: Names;
+  timeZone: string;
+  runTitle: (id: string) => string;
 }
 
-function runLines(change: RowChange, names: Names): string[] {
+function slot(row: Row, ctx: Ctx): string {
+  if (!row) return '';
+  const own = row.status === 'otot';
+  return `${shortAt(str(row.datetime), ctx.timeZone, !own)}${own ? ' own time' : ''}`;
+}
+
+function runLines(change: RowChange, ctx: Ctx, reminders: number): string[] {
   const { before, after } = change;
-  if (!before) return [`${title(after)} added on ${slot(after)}`];
+  if (!before) return [`${title(after)} added on ${slot(after, ctx)}`];
   if (!after) return [`${title(before)} removed`];
   const lines: string[] = [];
   const name = title(after);
-  if (before.day !== after.day || before.time !== after.time) lines.push(`${name}: ${slot(before)} → ${slot(after)}`);
-  if (before.status !== after.status) lines.push(`${name}: ${STATUS[str(before.status)] ?? before.status} → ${STATUS[str(after.status)] ?? after.status}`);
+  if (!same(before.datetime, after.datetime) || (before.status === 'otot') !== (after.status === 'otot')) {
+    lines.push(`${name}: ${slot(before, ctx)} → ${slot(after, ctx)}`);
+  }
+  if (before.status !== after.status) lines.push(`${name}: ${statusWord(before.status)} → ${statusWord(after.status)}`);
+  if (!same(before.bosses, after.bosses)) lines.push(`${title(before)} → ${name}`);
   const was = list(before.participants);
   const now = list(after.participants);
-  const added = now.filter((id) => !was.includes(id)).map(names);
-  const removed = was.filter((id) => !now.includes(id)).map(names);
+  const added = now.filter((id) => !was.includes(id)).map(ctx.names);
+  const removed = was.filter((id) => !now.includes(id)).map(ctx.names);
   if (added.length || removed.length) {
     lines.push(`${name} roster: ${[...added.map((n) => `+${n}`), ...removed.map((n) => `−${n}`)].join(' ')}`);
   }
+  if (!same(before.channel_id, after.channel_id)) lines.push(`${name}: home channel changed`);
+  if (!same(before.status_pin, after.status_pin)) {
+    const pin = after.status_pin as Row;
+    lines.push(pin ? `${name}: status held at ${statusWord(pin.status)}` : `${name}: status no longer held`);
+  }
+  const marks = (row: Row) => (Array.isArray(row?.attendance) ? (row.attendance as Row[]) : []);
+  for (const entry of marks(after)) {
+    const earlier = marks(before).find((e) => e?.user_id === entry?.user_id);
+    if (!same(earlier, entry)) lines.push(`${ctx.names(str(entry?.user_id))} ${entry?.attended ? 'attended' : 'missed'} ${name}`);
+  }
+  if (reminders) lines.push(`${name}: ${reminders} reminder${reminders === 1 ? '' : 's'} re-placed`);
   return lines.length ? lines : [`${name} updated`];
 }
 
-function rsvpLine(change: RowChange, names: Names, runTitle: (id: string) => string): string {
+function rsvpLine(change: RowChange, ctx: Ctx): string {
   if (!('user_id' in change.key)) return '';
-  const who = names(change.key.user_id);
-  const answer = change.after ? (ANSWER[str(change.after.answer)] ?? str(change.after.answer)) : 'no answer';
-  const was = change.before ? ` (was ${ANSWER[str(change.before.answer)] ?? str(change.before.answer)})` : '';
-  return `${who} → ${answer} on ${runTitle(change.key.run_id)}${was}`;
+  const who = ctx.names(change.key.user_id);
+  const answer = change.after ? answerWord(change.after.state) : 'no answer';
+  const was = change.before ? ` (was ${answerWord(change.before.state)})` : '';
+  return `${who} → ${answer} on ${ctx.runTitle(change.key.run_id)}${was}`;
 }
+
+function reminderLine(change: RowChange, ctx: Ctx): string {
+  const { before, after } = change;
+  const row = after ?? before;
+  const what = `${capital(reminderKind(str(row?.kind)))} for ${ctx.runTitle(str(row?.run_id))}`;
+  const at = (v: unknown) => shortAt(str(v), ctx.timeZone);
+  if (!before) return `${what} set for ${at(after?.fire_at)}`;
+  if (!after) return `${what} withdrawn`;
+  if (!before.sent_at && after.sent_at) return `${what} sent ${at(after.sent_at)}`;
+  if (!same(before.fire_at, after.fire_at)) return `${what}: ${at(before.fire_at)} → ${at(after.fire_at)}`;
+  return `${what} updated`;
+}
+
+const wall = (v: unknown) => str(v).slice(0, 5);
 
 function fixedLines(change: RowChange): string[] {
   const { before, after } = change;
   const name = `Weekly timing ${title(after ?? before)}`;
-  if (!before) return [`${name} added: ${WEEKDAYS[Number(after?.weekday)] ?? ''} ${str(after?.time)}`];
-  if (!after || after.retired) return [`${name} retired`];
+  if (!before) return [`${name} added: ${WEEKDAYS[Number(after?.weekday)] ?? ''} ${wall(after?.time)}`];
+  if (!after) return [`${name} retired`];
   const lines: string[] = [];
   if (before.weekday !== after.weekday || before.time !== after.time) {
-    lines.push(`${name}: ${WEEKDAYS[Number(before.weekday)]} ${str(before.time)} → ${WEEKDAYS[Number(after.weekday)]} ${str(after.time)}`);
+    lines.push(`${name}: ${WEEKDAYS[Number(before.weekday)]} ${wall(before.time)} → ${WEEKDAYS[Number(after.weekday)]} ${wall(after.time)}`);
   }
+  if (!same(before.bosses, after.bosses)) lines.push(`Weekly timing ${title(before)} → ${title(after)}`);
   if (list(before.participants).join() !== list(after.participants).join()) lines.push(`${name}: party changed`);
+  if (!same(before.channel_id, after.channel_id)) lines.push(`${name}: home channel changed`);
+  if (!same(before.note, after.note)) lines.push(`${name}: note ${after.note ? 'changed' : 'removed'}`);
   return lines.length ? lines : [`${name} updated`];
 }
 
-export function describe(record: ChangeRecord, names: Names): string[] {
-  // An RSVP row names its run by id; the same record usually carries that run's row.
+export function describe(record: ChangeRecord, names: Names, timeZone: string): string[] {
+  // Answers and reminders name their run by id; the same record usually carries that run's row.
   const titles = new Map<string, string>();
   for (const row of record.rows) {
     if (row.key.table === 'runs') titles.set(row.key.id, title(row.after ?? row.before));
   }
-  const runTitle = (id: string) => titles.get(id) ?? `run ${id}`;
+  const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? `run ${id}` };
+  // A move re-places its reminders: one line on the run, not one per card.
+  const followers = new Map<string, number>();
+  for (const row of record.rows) {
+    const run = str((row.after ?? row.before)?.run_id);
+    if (row.key.table === 'reminders' && titles.has(run) && row.before && row.after && !(!row.before.sent_at && row.after.sent_at)) {
+      followers.set(run, (followers.get(run) ?? 0) + 1);
+    }
+  }
   return record.rows.flatMap((row) => {
     switch (row.key.table) {
       case 'runs':
-        return runLines(row, names);
+        return runLines(row, ctx, followers.get(row.key.id) ?? 0);
       case 'rsvps':
-        return [rsvpLine(row, names, runTitle)];
+        return [rsvpLine(row, ctx)];
+      case 'reminders': {
+        const run = str((row.after ?? row.before)?.run_id);
+        const folded = followers.has(run) && row.before && row.after && !(!row.before.sent_at && row.after.sent_at);
+        return folded ? [] : [reminderLine(row, ctx)];
+      }
       default:
         return fixedLines(row);
     }
@@ -110,6 +199,9 @@ export const SURFACE_LABELS: Record<string, string> = {
   delivery_tick: 'reminder delivery',
   rollback: 'rollback',
   import: 'import',
+  draft_merge: 'draft merge',
+  request_merge: 'request approval',
+  cherry_pick: 'week-to-week copy',
 };
 
 export function actorName(actor: ChangeRecord['actor'], names: Names): string {

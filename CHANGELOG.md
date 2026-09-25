@@ -219,6 +219,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   through the journal in v4's order, never twice; sends that never left are retried,
   refused ones retire with a throttled admin alert, a digest is replaced only after
   the old card is confirmed deleted, and a clock that moved backwards posts nothing.
+- v5: the admin app's history follows the Rust history API: plain labels for who changed
+  each run field, reminder changes described (a move's re-placed reminders fold into one
+  line), guild-local week headings, and a revert dialog that lists conflicts and previews
+  what forcing would change. Reverts no longer send a conflicting request id.
 - v5: the admin app now sends the CSRF token and a retry key with every save, and the
   week version with weekly-timing edits (an out-of-date form shows the reload message
   and keeps what was typed); the dev mock enforces the same rules.

@@ -2,13 +2,14 @@
   One dialog for the three rollbacks in docs/v5/history.md: revert records,
   restore a week to a point, revert one actor's changes. It always previews
   first; strict apply is offered when nothing conflicts, otherwise the
-  conflict report is shown and Force needs an explicit acknowledgement.
+  conflict report is shown and Force needs an explicit acknowledgement. A
+  strict refusal plans no rows, so a forced preview says what Force would do.
 -->
 <script lang="ts">
   import type { RevertPlan, RollbackMode, RowChange } from '@kanade/api-types';
   import { Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
-  import { describe, type Names } from './describe';
+  import { describe, reminderKind, type Names } from './describe';
 
   let {
     open = $bindable(false),
@@ -16,6 +17,7 @@
     path,
     body,
     names,
+    timezone,
     ondone,
   }: {
     open: boolean;
@@ -24,10 +26,13 @@
     path: string;
     body: Record<string, unknown>;
     names: Names;
+    timezone: string;
     ondone: (plan: RevertPlan) => void;
   } = $props();
 
   let plan = $state<RevertPlan | null>(null);
+  /** What Force would change, when the strict plan was refused. */
+  let forced = $state<RevertPlan | null>(null);
   let error = $state('');
   let busy = $state(false);
   let acknowledged = $state(false);
@@ -51,17 +56,27 @@
     if (open && requested !== key) {
       requested = key;
       plan = null;
+      forced = null;
       acknowledged = false;
-      void run({ preview: true }).then((p) => (plan = p));
+      void preview();
     }
     if (!open) requested = null;
   });
 
+  async function preview() {
+    const strict = await run({ preview: true });
+    plan = strict;
+    forced = strict?.outcome === 'conflicts' ? await run({ preview: true, force: true }) : null;
+  }
+
+  // The client's Idempotency-Key is the request id; a body `request_id` that differed would be refused.
   async function apply(force: boolean) {
-    const result = await run({ force, request_id: crypto.randomUUID() });
+    const result = await run({ force });
     if (!result) return;
     if (result.outcome === 'conflicts') {
       plan = result;
+      acknowledged = false;
+      forced = await run({ preview: true, force: true });
       return;
     }
     open = false;
@@ -69,9 +84,25 @@
   }
 
   const lines = (rows: RowChange[]) =>
-    describe({ format: 'kanade.change.v1', seq: 0, id: '', revision: 0, at: '', actor: { kind: 'admin', id: '' }, surface: 'rollback', request_id: null, weeks: [], rows, notices: [], refs: [], prev_hash: '', hash: '' }, names);
-  const keyText = (key: RevertPlan['conflicts'][number]['key']) =>
-    'id' in key ? `${key.table} ${key.id}` : `answer ${names(key.user_id)} on ${key.run_id}`;
+    describe(
+      { format: 'kanade.change.v1', seq: 0, id: '', revision: 0, at: '', actor: { kind: 'admin', id: '' }, surface: 'rollback', request_id: null, weeks: [], rows, notices: [], refs: [], prev_hash: '', hash: '' },
+      names,
+      timezone,
+    );
+  const refused = $derived(plan?.outcome === 'conflicts');
+  /** Rows to show: the plan's own, or on a strict refusal what Force would change. */
+  const changes = $derived(refused ? (forced?.rows ?? []) : (plan?.rows ?? []));
+  type Conflict = RevertPlan['conflicts'][number];
+  const bossesOf = (row: unknown) => (row && typeof row === 'object' && Array.isArray((row as { bosses?: unknown }).bosses) ? (row as { bosses: string[] }).bosses.join(' + ') : '');
+  // Name the row as people know it: bosses for runs and timings, the card for reminders.
+  function conflictText(c: Conflict, all: Conflict[]): string {
+    const row = (c.found ?? c.expected) as Record<string, unknown> | null;
+    const runName = (id: string) => bossesOf(all.find((o) => 'id' in o.key && o.key.table === 'runs' && o.key.id === id)?.found) || `run ${id}`;
+    if (!('id' in c.key)) return `${names(c.key.user_id)}'s answer on ${runName(c.key.run_id)}`;
+    if (c.key.table === 'reminders') return `${reminderKind(String(row?.kind ?? ''))} for ${runName(String(row?.run_id ?? ''))}`;
+    const name = bossesOf(row) || c.key.id;
+    return c.key.table === 'fixed_runs' ? `weekly timing ${name}` : name;
+  }
 </script>
 
 <Modal bind:open {title} eyebrow="History" narrow>
@@ -85,8 +116,10 @@
       Reverts {plan.reverts.map((s) => `#${s}`).join(', ')}; the result is a new change that refers to
       {plan.reverts.length === 1 ? 'it' : 'them'}. Nothing already sent is sent again.
     </p>
-    <h3 class="pane__section">Would change</h3>
-    <ul class="plan">{#each lines(plan.rows) as line, i (i)}<li>{line}</li>{/each}</ul>
+    {#if changes.length}
+      <h3 class="pane__section">{refused ? 'Forcing it would change' : 'Would change'}</h3>
+      <ul class="plan">{#each lines(changes) as line, i (i)}<li>{line}</li>{/each}</ul>
+    {/if}
     {#if plan.skipped.length}
       <p class="note">Left alone ({plan.skipped[0]?.reason}): {plan.skipped.length} row{plan.skipped.length === 1 ? '' : 's'}.</p>
     {/if}
@@ -95,7 +128,7 @@
         <strong>Changed again since.</strong> A strict revert is refused because {plan.conflicts.length}
         row{plan.conflicts.length === 1 ? ' no longer matches' : 's no longer match'} what the change left:
         <ul>
-          {#each plan.conflicts as c, i (i)}<li>#{c.seq}: {keyText(c.key)}</li>{/each}
+          {#each plan.conflicts as c, i (i)}<li>#{c.seq}: {conflictText(c, plan.conflicts)}</li>{/each}
         </ul>
       </div>
       <label class="ack">
