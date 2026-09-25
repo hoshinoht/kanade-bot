@@ -15,21 +15,25 @@ KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
 
 The admin listener binds `127.0.0.1:8080` by default; `GET /healthz` reports
 offline mode plus unavailable scheduler, storage, and Discord capabilities.
-All non-loopback IPv4 and IPv6 binds are rejected (container networking gets an
-explicit opt-in in harden-and-package). Runtime configuration comes only from
-the process environment; `.env` is not loaded automatically. `healthcheck`
-accepts only a loopback `http://HOST:PORT/healthz` URL and has a bounded
-timeout.
+Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
+private address (RFC 1918, IPv4 link-local, IPv6 `fc00::/7` and `fe80::/10`)
+on the internal edge network; wildcard (`0.0.0.0`, `::`) and public addresses
+are always refused. Runtime configuration comes only from the process
+environment; `.env` is not loaded automatically. `healthcheck` accepts only a
+loopback `http://HOST:PORT/healthz` URL (or, with the opt-in, a private one:
+the container's own listener address) and has a bounded timeout.
 
 ### HTTP environment
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_ADMIN_BIND` | `127.0.0.1:8080` | Admin listener, loopback only. Replaces `KANADE_BIND`, which is now refused with a rename error. |
-| `KANADE_PUBLIC_BIND` | unset | Public listener, loopback only; it exists only when set and must differ from the admin bind. |
+| `KANADE_ADMIN_BIND` | `127.0.0.1:8080` | Admin listener, loopback (or private with the opt-in). Replaces `KANADE_BIND`, which is now refused with a rename error. |
+| `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; it exists only when set and must differ from the admin bind. |
+| `KANADE_ALLOW_PRIVATE_BIND` | `0` | `1` lets both listeners bind a private address on an internal container network. Never wildcard or public. |
+| `KANADE_EDGE_SECRET_FILE` | unset | Shared secret (≥ 32 bytes, one line) the edge sends in `X-Kanade-Edge-Auth`; requires `KANADE_TRUSTED_PROXY`. See "Edge contract". |
 | `KANADE_ADMIN_HOST` | unset | Exact `host[:port]` the admin listener serves; unset accepts only `localhost`, `127.0.0.1`, `[::1]` (any port). |
 | `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; required with `KANADE_PUBLIC_BIND`, must differ from the admin host. |
-| `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` and `Tailscale-*` headers to admin. |
+| `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With `KANADE_EDGE_SECRET_FILE` set it is trusted only when it presents the secret. |
 | `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. |
 | `KANADE_WEB_DIR` | unset | Web workspace root; serves `apps/admin/dist` and `apps/public/dist` (same layout as `tools/pwa-mock`). Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
@@ -38,7 +42,7 @@ timeout.
 | `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | unset | File holding the client secret (one line, ≤ 4 KiB). |
 | `KANADE_ADMIN_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_ADMIN_HOST/api/admin/auth/discord/callback` (`http:` only for loopback dev hosts); needs `KANADE_ADMIN_HOST`. |
 | `KANADE_ADMIN_TOKEN_FILE` | unset | Break-glass token file (≥ 32 bytes). Changing the token ends sessions made with the old one. |
-| `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires `KANADE_TRUSTED_PROXY`. |
+| `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires a non-loopback `KANADE_TRUSTED_PROXY` and `KANADE_EDGE_SECRET_FILE`. |
 | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | `60` | Idle timeout, 5–720, not above the absolute lifetime. |
 | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | `12` | Absolute session lifetime, 1–168. |
 
@@ -67,7 +71,7 @@ CORS headers are ever sent.
 
 | Route | Admin | Public |
 |---|---|---|
-| `GET /healthz` | Direct loopback peers only (any loopback Host name); relayed requests 404 | 404 |
+| `GET /healthz` | Clients on this host only: a loopback peer or the listener's own address, whatever the trusted-proxy setting (any loopback Host name); requests the authenticated edge relays get 404 | 404 |
 | `GET /api/identity`, `/identity/{avatar,banner}` | yes | yes |
 | `GET /api/public/status` | 404 | `{portal: "closed"}` |
 | `/api/public/*`, `/art/*` | 404 / art | `503 closed` |
@@ -82,6 +86,40 @@ root, so symlinks cannot escape it.
 Known gap: `axum::serve` sets no header-read timeout, so slow-header clients
 are bounded by the edge/cloudflared in front of the loopback listeners until
 harden-and-package revisits connection limits.
+
+### Edge contract (admin origin)
+
+For the shared edge (`sites/kanade`); owned and applied by the edge owner.
+
+- Topology: the admin listener binds a private address on the internal
+  `kanade_edge` network (`KANADE_ALLOW_PRIVATE_BIND=1`,
+  `KANADE_ADMIN_BIND=<kanade's address>:8080`), and `KANADE_TRUSTED_PROXY` is
+  the edge container's fixed address on that network. Kanade refuses a
+  loopback `KANADE_TRUSTED_PROXY` whenever Tailscale sign-in is enabled,
+  because every local process shares the loopback address.
+- Shared secret: at least 32 random bytes (for example `openssl rand -base64
+  48`), one line, stored as a secret file on both sides; kanade reads it from
+  `KANADE_EDGE_SECRET_FILE`. Rotate by replacing both files and restarting
+  both services.
+- On every request it forwards to kanade, the edge must:
+  1. remove any client-supplied `X-Kanade-Edge-Auth`, `Tailscale-User-*`,
+     `X-Forwarded-*`, `Forwarded`, `X-Real-IP` and `CF-*` headers;
+  2. set `X-Kanade-Edge-Auth: <secret>`;
+  3. set `Tailscale-User-Login` (and optionally `Tailscale-User-Name`) only
+     from its own Tailscale `whois` of the connecting peer, and omit them when
+     the peer is not a tailnet user;
+  4. set `X-Forwarded-For` to the client address it saw (kanade reads the last
+     entry) and pass `Host` through unchanged (`KANADE_ADMIN_HOST`).
+- Kanade honours `Tailscale-User-*` only when the TCP peer is
+  `KANADE_TRUSTED_PROXY` **and** `X-Kanade-Edge-Auth` matches (constant-time);
+  otherwise it strips them. With the secret configured, a peer that omits it
+  gets no forwarding trust either. `X-Kanade-Edge-Auth` is always stripped
+  before handlers.
+- The edge must not forward `/healthz`; the container healthcheck calls kanade
+  directly (loopback or its own address) without the secret. A relayed
+  `/healthz` carrying the secret answers 404.
+- The public origin (cloudflared) is unchanged: `CF-Connecting-IP` from
+  `KANADE_CLOUDFLARED_PEER`; no identity headers are ever read there.
 
 `SIGINT` and `SIGTERM` stop accepting work and drain HTTP requests up to
 `KANADE_SHUTDOWN_TIMEOUT_SECONDS` (default 10, range 1–120). Logs are JSON and

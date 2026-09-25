@@ -7,7 +7,8 @@ use kanade::{
 };
 
 use super::{
-    ADMIN_ROLE, CLIENT_SECRET, Harness, ORIGIN, TAILSCALE_ADMIN, TOKEN, cookie, member, user,
+    ADMIN_ROLE, CLIENT_SECRET, EDGE_AUTH, Harness, ORIGIN, TAILSCALE_ADMIN, TOKEN, cookie, member,
+    user,
 };
 
 const EDGE: [u8; 4] = [127, 0, 0, 1];
@@ -18,7 +19,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     let methods = harness
         .get(
             "/api/admin/auth/methods",
-            &[("Tailscale-User-Login", TAILSCALE_ADMIN)],
+            &[EDGE_AUTH, ("Tailscale-User-Login", TAILSCALE_ADMIN)],
         )
         .await;
     assert_eq!(
@@ -29,7 +30,11 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     let refused = harness
         .post(
             "/api/admin/auth/tailscale",
-            &[ORIGIN, ("Tailscale-User-Login", "intruder@example.com")],
+            &[
+                ORIGIN,
+                EDGE_AUTH,
+                ("Tailscale-User-Login", "intruder@example.com"),
+            ],
             None,
         )
         .await;
@@ -40,6 +45,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             "/api/admin/auth/tailscale",
             &[
                 ORIGIN,
+                EDGE_AUTH,
                 ("Tailscale-User-Login", TAILSCALE_ADMIN),
                 ("Tailscale-User-Name", "Ops Person"),
             ],
@@ -52,6 +58,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     let (name, value) = cookie(&id);
     let with_identity = [
         (name, value.as_str()),
+        EDGE_AUTH,
         ("Tailscale-User-Login", TAILSCALE_ADMIN),
     ];
     assert_eq!(
@@ -68,6 +75,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             "/api/admin/session",
             &[
                 (name, &value),
+                EDGE_AUTH,
                 ("Tailscale-User-Login", "other@example.com"),
             ],
         )
@@ -87,6 +95,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             "/api/admin/auth/tailscale",
             &[
                 ("Origin", "https://evil.example"),
+                EDGE_AUTH,
                 ("Tailscale-User-Login", TAILSCALE_ADMIN),
             ],
             None,
@@ -96,32 +105,71 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
 }
 
 #[tokio::test]
-async fn spoofed_tailscale_headers_from_a_non_edge_peer_are_ignored() {
-    // The edge is 127.0.0.2; this client (127.0.0.1) is not it.
-    let harness = Harness::with(Some([127, 0, 0, 2].into()), TOKEN).await;
-    let methods = harness
-        .get(
-            "/api/admin/auth/methods",
-            &[("Tailscale-User-Login", TAILSCALE_ADMIN)],
-        )
-        .await;
-    assert_eq!(methods.json()["tailscale"], false);
-    let reply = harness
-        .post(
-            "/api/admin/auth/tailscale",
-            &[ORIGIN, ("Tailscale-User-Login", TAILSCALE_ADMIN)],
-            None,
-        )
-        .await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (401, "unauthenticated".into())
-    );
-    assert!(reply.cookie(wire::SESSION_COOKIE).is_none());
-    assert!(harness.audit.events().contains(&AuditEvent::LoginRefused {
-        method: "tailscale",
-        reason: "no_identity",
-    }));
+async fn tailscale_headers_need_both_the_edge_peer_and_the_edge_secret() {
+    // Same address as the edge but no or a wrong secret: any local process looks like this.
+    let same_peer = Harness::with(Some(EDGE.into()), TOKEN).await;
+    // Right secret from the wrong peer.
+    let other_peer = Harness::with(Some([127, 0, 0, 2].into()), TOKEN).await;
+    for (case, harness, secret) in [
+        ("no secret", &same_peer, None),
+        (
+            "wrong secret",
+            &same_peer,
+            Some("not-the-edge-secret-at-all-no-no-no!!"),
+        ),
+        ("edge secret twice", &same_peer, Some("twice")),
+        ("wrong peer", &other_peer, Some(EDGE_AUTH.1)),
+    ] {
+        let mut extra = vec![ORIGIN, ("Tailscale-User-Login", TAILSCALE_ADMIN)];
+        match secret {
+            Some("twice") => extra.extend([EDGE_AUTH, EDGE_AUTH]),
+            Some(value) => extra.push((EDGE_AUTH.0, value)),
+            None => {}
+        }
+        let methods = harness.get("/api/admin/auth/methods", &extra).await;
+        assert_eq!(methods.json()["tailscale"], false, "{case}");
+        let reply = harness
+            .post("/api/admin/auth/tailscale", &extra, None)
+            .await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (401, "unauthenticated".into()),
+            "{case}"
+        );
+        assert!(reply.cookie(wire::SESSION_COOKIE).is_none(), "{case}");
+    }
+    let refused = same_peer.audit.records();
+    let refusal = refused
+        .iter()
+        .find(|record| {
+            record.event
+                == AuditEvent::LoginRefused {
+                    method: "tailscale",
+                    reason: "no_identity",
+                    user: None,
+                }
+        })
+        .unwrap();
+    assert_eq!(refusal.client.as_deref(), Some("127.0.0.1"));
+    assert_eq!(refusal.request_id.len(), 16);
+}
+
+#[tokio::test]
+async fn the_edge_secret_never_reaches_handlers() {
+    let harness = Harness::with(Some(EDGE.into()), TOKEN).await;
+    let probe = super::header_probe(harness.site.clone()).await;
+    let seen = crate::support::request(
+        probe,
+        "GET",
+        crate::support::ADMIN_HOST,
+        "/headers",
+        &[EDGE_AUTH, ("Tailscale-User-Login", TAILSCALE_ADMIN)],
+    )
+    .await
+    .text();
+    assert!(!seen.contains("x-kanade-edge-auth"), "{seen}");
+    assert!(!seen.contains(EDGE_AUTH.1), "{seen}");
+    assert!(seen.contains("tailscale-user-login"), "{seen}");
 }
 
 #[tokio::test]

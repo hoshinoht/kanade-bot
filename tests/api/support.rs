@@ -77,6 +77,7 @@ impl Fixture {
             web_dir: Some(self.root.join("web")),
             boss_dir: Some(self.root.join("boss")),
             identity_dir: None,
+            edge_secret_file: None,
         }
     }
 
@@ -147,6 +148,24 @@ impl Reply {
             let (key, value) = pair.split_once('=')?;
             (key == name).then(|| value.to_owned())
         })
+    }
+
+    /// Where the browser goes next: a `303` Location, or the landing page's meta refresh target.
+    pub fn destination(&self) -> Option<String> {
+        if self.status == 303 {
+            return self.header("location").map(str::to_owned);
+        }
+        let text = self.text();
+        let start = text.find("url=")? + 4;
+        let end = start + text[start..].find('"')?;
+        Some(
+            text[start..end]
+                .replace("&#39;", "'")
+                .replace("&quot;", "\"")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&"),
+        )
     }
 
     /// Every header and the body, for leak checks.

@@ -44,6 +44,9 @@ pub struct HttpConfig {
     pub web_dir: Option<PathBuf>,
     pub boss_dir: Option<PathBuf>,
     pub identity_dir: Option<PathBuf>,
+    /// Secret the edge proves itself with (`X-Kanade-Edge-Auth`); when set,
+    /// admin trusts the proxy's headers only with it.
+    pub edge_secret_file: Option<PathBuf>,
 }
 
 impl RuntimeConfig {
@@ -54,12 +57,14 @@ impl RuntimeConfig {
                 "KANADE_BIND was renamed to KANADE_ADMIN_BIND".into(),
             ));
         }
-        let admin_bind = loopback_bind(
+        let private = allow_private_bind(values)?;
+        let admin_bind = listener_bind(
             "KANADE_ADMIN_BIND",
             non_empty(values, "KANADE_ADMIN_BIND").unwrap_or(DEFAULT_BIND),
+            private,
         )?;
         let public_bind = non_empty(values, "KANADE_PUBLIC_BIND")
-            .map(|value| loopback_bind("KANADE_PUBLIC_BIND", value))
+            .map(|value| listener_bind("KANADE_PUBLIC_BIND", value, private))
             .transpose()?;
         if public_bind.is_some_and(|public| public == admin_bind && public.port() != 0) {
             return Err(Error::Configuration(
@@ -74,7 +79,13 @@ impl RuntimeConfig {
             web_dir: non_empty(values, "KANADE_WEB_DIR").map(PathBuf::from),
             boss_dir: non_empty(values, "KANADE_BOSS_DIR").map(PathBuf::from),
             identity_dir: non_empty(values, "KANADE_IDENTITY_DIR").map(PathBuf::from),
+            edge_secret_file: non_empty(values, "KANADE_EDGE_SECRET_FILE").map(PathBuf::from),
         };
+        if http.edge_secret_file.is_some() && http.trusted_proxy.is_none() {
+            return Err(Error::Configuration(
+                "KANADE_EDGE_SECRET_FILE requires KANADE_TRUSTED_PROXY".into(),
+            ));
+        }
         if public_bind.is_some() && http.public_host.is_none() {
             return Err(Error::Configuration(
                 "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set".into(),
@@ -131,7 +142,7 @@ impl HealthcheckConfig {
                 )
             })?;
         Ok(Self {
-            target: parse_loopback_health_url(&target)?,
+            target: parse_health_url(&target, allow_private_bind(values)?)?,
             timeout: Duration::from_secs(parse_bounded_u64(
                 values,
                 "KANADE_HEALTHCHECK_TIMEOUT_SECONDS",
@@ -151,16 +162,42 @@ fn non_empty<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Option<&'a 
         .filter(|value| !value.is_empty())
 }
 
-fn loopback_bind(key: &str, value: &str) -> Result<SocketAddr, Error> {
+/// `KANADE_ALLOW_PRIVATE_BIND=1` lets listeners bind a private address on an
+/// internal container network (the edge's); loopback stays the default.
+fn allow_private_bind(values: &BTreeMap<String, String>) -> Result<bool, Error> {
+    match non_empty(values, "KANADE_ALLOW_PRIVATE_BIND") {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => Err(Error::Configuration(
+            "KANADE_ALLOW_PRIVATE_BIND must be 0 or 1".into(),
+        )),
+    }
+}
+
+/// RFC 1918 and IPv4 link-local; IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
+pub fn is_private(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            first & 0xfe00 == 0xfc00 || first & 0xffc0 == 0xfe80
+        }
+    }
+}
+
+fn listener_bind(key: &str, value: &str, private: bool) -> Result<SocketAddr, Error> {
     let bind = value
         .parse::<SocketAddr>()
         .map_err(|_| Error::Configuration(format!("{key} must be an IP address and port")))?;
-    if !bind.ip().is_loopback() {
-        return Err(Error::Configuration(format!(
-            "{key} must be a loopback address"
-        )));
+    let ip = bind.ip();
+    if ip.is_loopback() || (private && is_private(ip)) {
+        return Ok(bind);
     }
-    Ok(bind)
+    Err(Error::Configuration(if private {
+        format!("{key} must be a loopback or private address")
+    } else {
+        format!("{key} must be a loopback address")
+    }))
 }
 
 fn peer(values: &BTreeMap<String, String>, key: &str) -> Result<Option<IpAddr>, Error> {
@@ -250,7 +287,8 @@ fn parse_bounded_u64(
     Ok(value)
 }
 
-fn parse_loopback_health_url(value: &str) -> Result<SocketAddr, Error> {
+/// Loopback, or with the private-bind opt-in the listener's own private address.
+fn parse_health_url(value: &str, private: bool) -> Result<SocketAddr, Error> {
     let address = value
         .strip_prefix("http://")
         .and_then(|remainder| remainder.strip_suffix("/healthz"))
@@ -258,7 +296,7 @@ fn parse_loopback_health_url(value: &str) -> Result<SocketAddr, Error> {
         .ok_or_else(|| {
             Error::Configuration("healthcheck URL must be http://LOOPBACK:PORT/healthz".into())
         })?;
-    if !address.ip().is_loopback() {
+    if !(address.ip().is_loopback() || (private && is_private(address.ip()))) {
         return Err(Error::Configuration(
             "healthcheck target must be loopback".into(),
         ));
@@ -412,5 +450,63 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.to_string(), "healthcheck target must be loopback");
+    }
+
+    #[test]
+    fn private_binds_need_the_opt_in_and_never_include_wildcards_or_public_addresses() {
+        assert_eq!(
+            error_for(&[("KANADE_ADMIN_BIND", "172.18.0.5:8080")]),
+            "KANADE_ADMIN_BIND must be a loopback address"
+        );
+        for good in [
+            "172.18.0.5:8080",
+            "10.1.2.3:8080",
+            "192.168.1.9:80",
+            "[fd00::5]:8080",
+            "[fe80::1]:80",
+            "127.0.0.1:8080",
+        ] {
+            let mut input = values();
+            input.insert("KANADE_ALLOW_PRIVATE_BIND".into(), "1".into());
+            input.insert("KANADE_ADMIN_BIND".into(), good.into());
+            assert!(RuntimeConfig::from_mapping(&input).is_ok(), "{good}");
+        }
+        for bad in [
+            "0.0.0.0:8080",
+            "[::]:8080",
+            "203.0.113.4:8080",
+            "[2001:db8::1]:80",
+            "[::ffff:10.0.0.1]:80",
+        ] {
+            assert_eq!(
+                error_for(&[
+                    ("KANADE_ALLOW_PRIVATE_BIND", "1"),
+                    ("KANADE_ADMIN_BIND", bad)
+                ]),
+                "KANADE_ADMIN_BIND must be a loopback or private address",
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            error_for(&[("KANADE_ALLOW_PRIVATE_BIND", "yes")]),
+            "KANADE_ALLOW_PRIVATE_BIND must be 0 or 1"
+        );
+        let private = BTreeMap::from([("KANADE_ALLOW_PRIVATE_BIND".into(), "1".into())]);
+        assert!(
+            HealthcheckConfig::from_mapping(&private, Some("http://172.18.0.5:8080/healthz"))
+                .is_ok()
+        );
+        assert!(
+            HealthcheckConfig::from_mapping(&private, Some("http://203.0.113.4:8080/healthz"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn edge_secret_needs_a_trusted_proxy() {
+        assert_eq!(
+            error_for(&[("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge")]),
+            "KANADE_EDGE_SECRET_FILE requires KANADE_TRUSTED_PROXY"
+        );
     }
 }

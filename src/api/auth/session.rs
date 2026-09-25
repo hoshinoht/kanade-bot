@@ -10,8 +10,9 @@ use axum::{
 
 use super::{
     AdminAuth, TAILSCALE_LOGIN, TAILSCALE_NAME, TOUCH_EVERY, actor_id,
-    audit::AuditEvent,
+    audit::{AuditContext, AuditEvent},
     crypto, csrf,
+    rate::Route,
     staff::StaffCheck,
     wire::{self, SESSION_COOKIE},
 };
@@ -62,12 +63,13 @@ impl FromRequestParts<Arc<Site>> for AdminSession {
 impl AdminAuth {
     /// The allow-listed Tailscale login (and name) the trusted edge vouches for.
     pub(crate) fn tailscale_identity(&self, parts: &Parts) -> Option<(String, String)> {
-        // The proxy guard already stripped these headers from any other peer; check again anyway.
-        let trusted = parts
+        // The proxy guard already stripped these headers unless the edge proved
+        // itself with the edge secret; check again anyway.
+        let edge = parts
             .extensions
             .get::<Peer>()
-            .is_some_and(|peer| peer.trusted);
-        if !trusted || !self.tailscale_enabled() {
+            .is_some_and(|peer| peer.edge_authenticated);
+        if !edge || !self.tailscale_enabled() {
             return None;
         }
         let single = |name: &str| {
@@ -91,8 +93,9 @@ impl AdminAuth {
     }
 
     pub(crate) async fn authenticate(&self, parts: &Parts) -> Result<AdminSession, ApiError> {
+        let context = AuditContext::of(parts);
         if let Some(header) = parts.headers.get(AUTHORIZATION) {
-            return self.bearer(header.as_bytes(), parts);
+            return self.bearer(header.as_bytes(), parts, &context);
         }
         let id = wire::cookie(&parts.headers, SESSION_COOKIE).ok_or(ApiError::UNAUTHENTICATED)?;
         let hash = crypto::sha256_hex(id.as_bytes());
@@ -106,10 +109,10 @@ impl AdminAuth {
         let now = self.now();
         let policy = self.policy();
         if now >= session.expires_at {
-            return Err(self.end(&session, "expired").await);
+            return Err(self.end(&context, &session, "expired").await);
         }
         if now - session.last_seen_at >= policy.idle {
-            return Err(self.end(&session, "idle").await);
+            return Err(self.end(&context, &session, "idle").await);
         }
         let mut checked_at = session.checked_at;
         let due = now - checked_at >= policy.recheck;
@@ -125,10 +128,13 @@ impl AdminAuth {
                             &session.subject,
                         )
                         .await;
-                    self.audit(AuditEvent::SessionEnded {
-                        actor: actor_id(session.method, &session.subject),
-                        reason: "not_staff",
-                    });
+                    self.audit(
+                        &context,
+                        AuditEvent::SessionEnded {
+                            actor: actor_id(session.method, &session.subject),
+                            reason: "not_staff",
+                        },
+                    );
                     return Err(ApiError::UNAUTHENTICATED);
                 }
                 StaffCheck::Unavailable => return Err(ApiError::AUTH_UNAVAILABLE),
@@ -141,11 +147,11 @@ impl AdminAuth {
                         checked_at = now;
                     }
                 }
-                _ => return Err(self.end(&session, "identity_changed").await),
+                _ => return Err(self.end(&context, &session, "identity_changed").await),
             },
             LoginMethod::Token => {
                 if self.breakglass_fingerprint() != Some(session.subject.as_str()) {
-                    return Err(self.end(&session, "token_rotated").await);
+                    return Err(self.end(&context, &session, "token_rotated").await);
                 }
             }
         }
@@ -171,17 +177,39 @@ impl AdminAuth {
         })
     }
 
-    fn bearer(&self, header: &[u8], parts: &Parts) -> Result<AdminSession, ApiError> {
+    fn bearer(
+        &self,
+        header: &[u8],
+        parts: &Parts,
+        context: &AuditContext,
+    ) -> Result<AdminSession, ApiError> {
+        let now = self.now();
+        // Checked before comparing, so a client out of failures cannot keep guessing.
+        if !self
+            .rate()
+            .allows(Route::BearerFailure, context.client, now)
+        {
+            self.audit(
+                context,
+                AuditEvent::RateLimited {
+                    route: Route::BearerFailure.as_str(),
+                },
+            );
+            return Err(ApiError::RATE_LIMITED);
+        }
         let token = header
             .strip_prefix(b"Bearer ")
             .or_else(|| header.strip_prefix(b"bearer "));
         if let Some(token) = token
             && self.breakglass_matches(token).is_some()
         {
-            self.audit(AuditEvent::BreakGlassUsed {
-                via: "bearer",
-                request: format!("{} {}", parts.method, parts.uri.path()),
-            });
+            self.audit(
+                context,
+                AuditEvent::BreakGlassUsed {
+                    via: "bearer",
+                    request: format!("{} {}", parts.method, parts.uri.path()),
+                },
+            );
             return Ok(AdminSession {
                 actor: Actor::admin(super::TOKEN_ACTOR),
                 method: LoginMethod::Token,
@@ -189,19 +217,32 @@ impl AdminAuth {
                 session_id: None,
             });
         }
-        self.audit(AuditEvent::LoginRefused {
-            method: "token",
-            reason: "bad_bearer",
-        });
+        self.rate().take(Route::BearerFailure, context.client, now);
+        self.audit(
+            context,
+            AuditEvent::LoginRefused {
+                method: "token",
+                reason: "bad_bearer",
+                user: None,
+            },
+        );
         Err(ApiError::UNAUTHENTICATED)
     }
 
-    async fn end(&self, session: &WebSession, reason: &'static str) -> ApiError {
+    async fn end(
+        &self,
+        context: &AuditContext,
+        session: &WebSession,
+        reason: &'static str,
+    ) -> ApiError {
         let _ = self.sessions().delete_session(&session.id_hash).await;
-        self.audit(AuditEvent::SessionEnded {
-            actor: actor_id(session.method, &session.subject),
-            reason,
-        });
+        self.audit(
+            context,
+            AuditEvent::SessionEnded {
+                actor: actor_id(session.method, &session.subject),
+                reason,
+            },
+        );
         ApiError::UNAUTHENTICATED
     }
 }

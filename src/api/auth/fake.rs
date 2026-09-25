@@ -12,7 +12,7 @@ use super::{
     crypto,
     discord::{
         AccessToken, CodeExchange, DiscordApi, DiscordClient, DiscordError, DiscordFuture,
-        DiscordUser,
+        DiscordUser, TokenGrant,
     },
     staff::{GateFuture, GuildMembers},
 };
@@ -32,6 +32,11 @@ struct DiscordState {
     revoked: u32,
     redirect_uris: Vec<String>,
     unavailable: bool,
+    /// Scope the next grants report; `None` means `identify`.
+    scope: Option<String>,
+    /// The next exchange answers 429 with this `retry_after`.
+    rate_limit: Option<std::time::Duration>,
+    revoke_fails: bool,
 }
 
 /// Codes work once and only with the verifier whose S256 challenge they were issued for.
@@ -60,6 +65,18 @@ impl FakeDiscord {
         self.state().unavailable = unavailable;
     }
 
+    pub fn grant_scope(&self, scope: &str) {
+        self.state().scope = Some(scope.into());
+    }
+
+    pub fn rate_limit_next(&self, retry_after: std::time::Duration) {
+        self.state().rate_limit = Some(retry_after);
+    }
+
+    pub fn fail_revocation(&self, fails: bool) {
+        self.state().revoke_fails = fails;
+    }
+
     pub fn exchanges(&self) -> u32 {
         self.state().exchanges
     }
@@ -82,7 +99,7 @@ impl DiscordApi for FakeDiscord {
     fn exchange_code<'a>(
         &'a self,
         exchange: CodeExchange<'a>,
-    ) -> DiscordFuture<'a, Result<AccessToken, DiscordError>> {
+    ) -> DiscordFuture<'a, Result<TokenGrant, DiscordError>> {
         Box::pin(async move {
             let mut state = self.state();
             state.exchanges += 1;
@@ -91,6 +108,9 @@ impl DiscordApi for FakeDiscord {
                 .push(exchange.client.redirect_uri.clone());
             if state.unavailable {
                 return Err(DiscordError::Unavailable);
+            }
+            if let Some(wait) = state.rate_limit.take() {
+                return Err(DiscordError::RateLimited(wait));
             }
             let grant = state
                 .grants
@@ -101,7 +121,10 @@ impl DiscordApi for FakeDiscord {
             }
             let token = crypto::random_token().ok_or(DiscordError::Unavailable)?;
             state.tokens.insert(token.clone(), grant.user);
-            Ok(AccessToken::new(token))
+            Ok(TokenGrant {
+                token: AccessToken::new(token),
+                scope: state.scope.clone().unwrap_or_else(|| "identify".into()),
+            })
         })
     }
 
@@ -122,11 +145,19 @@ impl DiscordApi for FakeDiscord {
         })
     }
 
-    fn revoke<'a>(&'a self, _: &'a DiscordClient, token: AccessToken) -> DiscordFuture<'a, ()> {
+    fn revoke<'a>(
+        &'a self,
+        _: &'a DiscordClient,
+        token: AccessToken,
+    ) -> DiscordFuture<'a, Result<(), DiscordError>> {
         Box::pin(async move {
             let mut state = self.state();
+            if state.revoke_fails {
+                return Err(DiscordError::Unavailable);
+            }
             state.revoked += 1;
             state.tokens.remove(token.expose());
+            Ok(())
         })
     }
 }

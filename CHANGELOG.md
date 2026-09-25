@@ -124,6 +124,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   token read from a file; server-side sessions with idle/absolute timeouts, a staff
   re-check every 5 minutes and CSRF checks on every change. Not yet wired into
   `serve` (it answers "sign-in unavailable" until the store and bot member cache are).
+  Hardened after review: rate limits on sign-in, only `identify` scope and no bot
+  accounts accepted, the client secret sent with HTTP Basic, an edge secret required
+  before Tailscale identity is trusted (listeners may bind a private address by
+  opt-in), and a same-origin landing page after Discord sign-in.
 - v5: extractor and chat proposals: each amendment becomes a proposal only if it can
   apply now (otherwise it's refused with v4's reason and no card), is approved with ✅ by
   a run participant, an admin or the timing's owner, merges through the shared schedule

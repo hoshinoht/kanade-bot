@@ -11,6 +11,7 @@ pub mod discord;
 pub mod discord_http;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
+pub mod rate;
 mod secrets;
 mod session;
 pub mod staff;
@@ -20,14 +21,15 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-pub use secrets::from_settings;
+pub use secrets::{edge_secret, from_settings};
 pub use session::AdminSession;
 
 use self::{
-    audit::{AuditEvent, AuditSink, StderrAudit},
+    audit::{AuditContext, AuditEvent, AuditRecord, AuditSink, StderrAudit},
     crypto::SealedSecret,
     discord::DiscordLogin,
-    staff::StaffGate,
+    rate::RateLimits,
+    staff::{StaffCheck, StaffGate},
 };
 use crate::infrastructure::store::web_sessions::{
     LoginMethod, SessionOrigin, WebSession, WebSessionStore,
@@ -77,6 +79,7 @@ pub struct AdminAuth {
     policy: SessionPolicy,
     clock: Clock,
     audit: Arc<dyn AuditSink>,
+    rate: RateLimits,
 }
 
 impl std::fmt::Debug for AdminAuth {
@@ -101,7 +104,13 @@ impl AdminAuth {
             policy: SessionPolicy::default(),
             clock: Arc::new(system_now),
             audit: Arc::new(StderrAudit),
+            rate: RateLimits::default(),
         }
+    }
+
+    pub fn with_rate_limits(mut self, rate: RateLimits) -> Self {
+        self.rate = rate;
+        self
     }
 
     pub fn with_discord(mut self, login: DiscordLogin) -> Self {
@@ -163,8 +172,62 @@ impl AdminAuth {
         self.sessions.as_ref()
     }
 
-    pub(crate) fn audit(&self, event: AuditEvent) {
-        self.audit.record(event);
+    pub(crate) fn audit(&self, context: &AuditContext, event: AuditEvent) {
+        self.audit.record(AuditRecord::new(context, event));
+    }
+
+    pub(crate) fn rate(&self) -> &RateLimits {
+        &self.rate
+    }
+
+    /// Gateway hook (A3): the member left the guild or was banned; every
+    /// Discord session of theirs ends now rather than at the next re-check.
+    pub async fn member_left(&self, discord_user_id: &str) -> u64 {
+        let ended = self
+            .sessions
+            .delete_subject_sessions(SessionOrigin::Admin, LoginMethod::Discord, discord_user_id)
+            .await
+            .unwrap_or(0);
+        if ended > 0 {
+            self.audit(
+                &AuditContext::gateway(),
+                AuditEvent::SessionEnded {
+                    actor: actor_id(LoginMethod::Discord, discord_user_id),
+                    reason: "member_left",
+                },
+            );
+        }
+        ended
+    }
+
+    /// Gateway hook (A3): roles or permissions changed; re-applies the staff
+    /// rule at once and ends the member's sessions if they no longer qualify.
+    /// Unavailable member data leaves sessions to the next re-check.
+    pub async fn member_changed(&self, discord_user_id: &str) -> u64 {
+        match self.staff.check(discord_user_id).await {
+            StaffCheck::NotStaff => {
+                let ended = self
+                    .sessions
+                    .delete_subject_sessions(
+                        SessionOrigin::Admin,
+                        LoginMethod::Discord,
+                        discord_user_id,
+                    )
+                    .await
+                    .unwrap_or(0);
+                if ended > 0 {
+                    self.audit(
+                        &AuditContext::gateway(),
+                        AuditEvent::SessionEnded {
+                            actor: actor_id(LoginMethod::Discord, discord_user_id),
+                            reason: "not_staff",
+                        },
+                    );
+                }
+                ended
+            }
+            StaffCheck::Staff | StaffCheck::Unavailable => 0,
+        }
     }
 
     pub(crate) fn tailscale_enabled(&self) -> bool {
@@ -197,6 +260,7 @@ impl AdminAuth {
     /// the same write: a login always rotates the id. Returns the cookie value.
     pub(crate) async fn start_session(
         &self,
+        context: &AuditContext,
         method: LoginMethod,
         subject: &str,
         display: &str,
@@ -224,10 +288,13 @@ impl AdminAuth {
             .put_session(&session, replaces.as_deref())
             .await
             .ok()?;
-        self.audit(AuditEvent::LoginSucceeded {
-            method: method.as_str(),
-            actor: actor_id(method, subject),
-        });
+        self.audit(
+            context,
+            AuditEvent::LoginSucceeded {
+                method: method.as_str(),
+                actor: actor_id(method, subject),
+            },
+        );
         Some(id)
     }
 }

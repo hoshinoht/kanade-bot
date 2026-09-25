@@ -62,6 +62,11 @@ impl ApiError {
         error: "auth_unavailable",
         message: "Sign-in is unavailable right now.",
     };
+    pub const RATE_LIMITED: Self = Self {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        error: "rate_limited",
+        message: "Too many attempts; try again shortly.",
+    };
     pub const INVALID_BODY: Self = Self {
         status: StatusCode::BAD_REQUEST,
         error: "invalid_body",

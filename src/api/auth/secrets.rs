@@ -7,6 +7,7 @@ use chrono::TimeDelta;
 
 use super::{
     AdminAuth, SessionPolicy,
+    crypto::SealedSecret,
     discord::{DiscordClient, DiscordLogin, Secret},
     discord_http::HttpsDiscord,
     staff::StaffGate,
@@ -34,6 +35,18 @@ fn read_secret(path: &Path, variable: &str) -> Result<String, Error> {
         )));
     }
     Ok(secret)
+}
+
+/// The secret the edge sends in `X-Kanade-Edge-Auth`, sealed for constant-time checks.
+pub fn edge_secret(path: &Path) -> Result<SealedSecret, Error> {
+    let secret = read_secret(path, "KANADE_EDGE_SECRET_FILE")?;
+    if secret.len() < MIN_TOKEN_BYTES {
+        return Err(Error::Configuration(format!(
+            "KANADE_EDGE_SECRET_FILE must hold at least {MIN_TOKEN_BYTES} bytes"
+        )));
+    }
+    SealedSecret::new(secret.as_bytes())
+        .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))
 }
 
 pub fn from_settings(
@@ -140,5 +153,19 @@ mod tests {
             error,
             "KANADE_ADMIN_TOKEN_FILE must name a readable secret file"
         );
+    }
+
+    #[test]
+    fn edge_secrets_are_long_and_sealed() {
+        let path = std::env::temp_dir().join(format!("kanade-edge-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, "too-short\n").unwrap();
+        let error = edge_secret(&path).unwrap_err().to_string();
+        assert_eq!(error, "KANADE_EDGE_SECRET_FILE must hold at least 32 bytes");
+        let secret = "e".repeat(48);
+        std::fs::write(&path, format!("{secret}\n")).unwrap();
+        let sealed = edge_secret(&path).unwrap();
+        assert!(sealed.matches(secret.as_bytes()));
+        assert!(!sealed.matches(b"e"));
+        std::fs::remove_file(path).unwrap();
     }
 }

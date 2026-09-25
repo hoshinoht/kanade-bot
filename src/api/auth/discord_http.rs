@@ -6,10 +6,10 @@ use std::{pin::pin, sync::Arc, time::Duration};
 
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{
-    Method, Request, StatusCode,
+    HeaderMap, Method, Request, StatusCode,
     body::Bytes,
     client::conn::http1,
-    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, USER_AGENT},
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, RETRY_AFTER, USER_AGENT},
 };
 use hyper_util::rt::TokioIo;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider, pki_types::ServerName};
@@ -18,9 +18,10 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
 use super::{
+    crypto,
     discord::{
         AccessToken, CodeExchange, DiscordApi, DiscordClient, DiscordError, DiscordFuture,
-        DiscordUser,
+        DiscordUser, TokenGrant,
     },
     wire,
 };
@@ -31,9 +32,82 @@ const REVOKE_PATH: &str = "/api/v10/oauth2/token/revoke";
 const USER_PATH: &str = "/api/v10/users/@me";
 const MAX_BODY: usize = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(10);
+/// Used when a 429 carries no usable `retry_after`.
+const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 pub struct HttpsDiscord {
     tls: TlsConnector,
+}
+
+enum Credential<'a> {
+    Bearer(&'a AccessToken),
+    /// RFC 6749 §2.3.1: form-encoded id and secret, then base64.
+    Client(&'a DiscordClient),
+}
+
+fn build(
+    method: Method,
+    path: &str,
+    credential: Credential<'_>,
+    form: Option<String>,
+) -> Result<Request<Full<Bytes>>, DiscordError> {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(HOST, HOST_NAME)
+        .header(ACCEPT, "application/json")
+        .header(USER_AGENT, concat!("kanade/", env!("CARGO_PKG_VERSION")));
+    if form.is_some() {
+        builder = builder.header(CONTENT_TYPE, "application/x-www-form-urlencoded");
+    }
+    match credential {
+        Credential::Bearer(token) => {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token.expose()));
+        }
+        Credential::Client(client) => {
+            let pair = format!(
+                "{}:{}",
+                wire::encode(&client.client_id),
+                wire::encode(client.client_secret.expose())
+            );
+            builder = builder.header(
+                AUTHORIZATION,
+                format!("Basic {}", crypto::base64_standard(pair.as_bytes())),
+            );
+        }
+    }
+    builder
+        .body(Full::new(Bytes::from(form.unwrap_or_default())))
+        .map_err(|_| DiscordError::Invalid)
+}
+
+pub fn token_request(exchange: &CodeExchange<'_>) -> Result<Request<Full<Bytes>>, DiscordError> {
+    build(
+        Method::POST,
+        TOKEN_PATH,
+        Credential::Client(exchange.client),
+        Some(wire::form(&[
+            ("grant_type", "authorization_code"),
+            ("code", exchange.code),
+            ("redirect_uri", &exchange.client.redirect_uri),
+            ("code_verifier", exchange.code_verifier),
+        ])),
+    )
+}
+
+pub fn revoke_request(
+    client: &DiscordClient,
+    token: &AccessToken,
+) -> Result<Request<Full<Bytes>>, DiscordError> {
+    build(
+        Method::POST,
+        REVOKE_PATH,
+        Credential::Client(client),
+        Some(wire::form(&[
+            ("token", token.expose()),
+            ("token_type_hint", "access_token"),
+        ])),
+    )
 }
 
 impl HttpsDiscord {
@@ -54,28 +128,7 @@ impl HttpsDiscord {
         })
     }
 
-    async fn call(
-        &self,
-        method: Method,
-        path: &str,
-        bearer: Option<&str>,
-        form: Option<String>,
-    ) -> Result<(StatusCode, Bytes), DiscordError> {
-        let mut builder = Request::builder()
-            .method(method)
-            .uri(path)
-            .header(HOST, HOST_NAME)
-            .header(ACCEPT, "application/json")
-            .header(USER_AGENT, concat!("kanade/", env!("CARGO_PKG_VERSION")));
-        if form.is_some() {
-            builder = builder.header(CONTENT_TYPE, "application/x-www-form-urlencoded");
-        }
-        if let Some(token) = bearer {
-            builder = builder.header(AUTHORIZATION, format!("Bearer {token}"));
-        }
-        let request = builder
-            .body(Full::new(Bytes::from(form.unwrap_or_default())))
-            .map_err(|_| DiscordError::Invalid)?;
+    async fn send(&self, request: Request<Full<Bytes>>) -> Result<Bytes, DiscordError> {
         tokio::time::timeout(TIMEOUT, async {
             let tcp = TcpStream::connect((HOST_NAME, 443))
                 .await
@@ -98,12 +151,14 @@ impl HttpsDiscord {
                     .await
                     .map_err(|_| DiscordError::Unavailable)?;
                 let status = response.status();
+                let header_wait = retry_after_header(response.headers());
                 let body = Limited::new(response.into_body(), MAX_BODY)
                     .collect()
                     .await
                     .map_err(|_| DiscordError::Invalid)?
                     .to_bytes();
-                Ok((status, body))
+                classify(status, header_wait, &body)?;
+                Ok(body)
             });
             tokio::select! {
                 biased;
@@ -116,10 +171,39 @@ impl HttpsDiscord {
     }
 }
 
-fn classify(status: StatusCode) -> Result<(), DiscordError> {
+fn retry_after_header(headers: &HeaderMap) -> Option<Duration> {
+    let seconds: f64 = headers
+        .get(RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (seconds.is_finite() && seconds >= 0.0).then(|| Duration::from_secs_f64(seconds.min(3600.0)))
+}
+
+#[derive(Deserialize)]
+struct RateLimitBody {
+    retry_after: f64,
+}
+
+pub fn classify(
+    status: StatusCode,
+    header_wait: Option<Duration>,
+    body: &[u8],
+) -> Result<(), DiscordError> {
     if status.is_success() {
         Ok(())
-    } else if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
+    } else if status == StatusCode::TOO_MANY_REQUESTS {
+        let body_wait = serde_json::from_slice::<RateLimitBody>(body)
+            .ok()
+            .map(|body| body.retry_after)
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .map(|seconds| Duration::from_secs_f64(seconds.min(3600.0)));
+        Err(DiscordError::RateLimited(
+            body_wait.or(header_wait).unwrap_or(DEFAULT_RETRY_AFTER),
+        ))
+    } else if status.is_server_error() {
         Err(DiscordError::Unavailable)
     } else {
         // 3xx is never followed; 4xx means the code or credentials were refused.
@@ -131,6 +215,8 @@ fn classify(status: StatusCode) -> Result<(), DiscordError> {
 struct TokenReply {
     access_token: String,
     token_type: String,
+    #[serde(default)]
+    scope: String,
 }
 
 #[derive(Deserialize)]
@@ -138,35 +224,26 @@ struct UserReply {
     id: String,
     username: String,
     global_name: Option<String>,
-}
-
-pub fn token_form(exchange: &CodeExchange<'_>) -> String {
-    wire::form(&[
-        ("grant_type", "authorization_code"),
-        ("code", exchange.code),
-        ("redirect_uri", &exchange.client.redirect_uri),
-        ("code_verifier", exchange.code_verifier),
-        ("client_id", &exchange.client.client_id),
-        ("client_secret", exchange.client.client_secret.expose()),
-    ])
+    #[serde(default)]
+    bot: bool,
 }
 
 impl DiscordApi for HttpsDiscord {
     fn exchange_code<'a>(
         &'a self,
         exchange: CodeExchange<'a>,
-    ) -> DiscordFuture<'a, Result<AccessToken, DiscordError>> {
+    ) -> DiscordFuture<'a, Result<TokenGrant, DiscordError>> {
         Box::pin(async move {
-            let (status, body) = self
-                .call(Method::POST, TOKEN_PATH, None, Some(token_form(&exchange)))
-                .await?;
-            classify(status)?;
+            let body = self.send(token_request(&exchange)?).await?;
             let reply: TokenReply =
                 serde_json::from_slice(&body).map_err(|_| DiscordError::Invalid)?;
             if !reply.token_type.eq_ignore_ascii_case("bearer") {
                 return Err(DiscordError::Invalid);
             }
-            Ok(AccessToken::new(reply.access_token))
+            Ok(TokenGrant {
+                token: AccessToken::new(reply.access_token),
+                scope: reply.scope,
+            })
         })
     }
 
@@ -175,10 +252,8 @@ impl DiscordApi for HttpsDiscord {
         token: &'a AccessToken,
     ) -> DiscordFuture<'a, Result<DiscordUser, DiscordError>> {
         Box::pin(async move {
-            let (status, body) = self
-                .call(Method::GET, USER_PATH, Some(token.expose()), None)
-                .await?;
-            classify(status)?;
+            let request = build(Method::GET, USER_PATH, Credential::Bearer(token), None)?;
+            let body = self.send(request).await?;
             let reply: UserReply =
                 serde_json::from_slice(&body).map_err(|_| DiscordError::Invalid)?;
             if reply.id.is_empty() || !reply.id.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -188,6 +263,7 @@ impl DiscordApi for HttpsDiscord {
                 id: reply.id,
                 username: reply.username,
                 global_name: reply.global_name,
+                bot: reply.bot,
             })
         })
     }
@@ -196,49 +272,133 @@ impl DiscordApi for HttpsDiscord {
         &'a self,
         client: &'a DiscordClient,
         token: AccessToken,
-    ) -> DiscordFuture<'a, ()> {
+    ) -> DiscordFuture<'a, Result<(), DiscordError>> {
         Box::pin(async move {
-            let form = wire::form(&[
-                ("token", token.expose()),
-                ("token_type_hint", "access_token"),
-                ("client_id", &client.client_id),
-                ("client_secret", client.client_secret.expose()),
-            ]);
-            let _ = self.call(Method::POST, REVOKE_PATH, None, Some(form)).await;
+            self.send(revoke_request(client, &token)?).await?;
+            Ok(())
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use http_body_util::BodyExt;
+
     use super::*;
     use crate::api::auth::discord::Secret;
 
-    #[test]
-    fn token_request_is_a_form_with_verifier_and_exact_redirect() {
-        let client = DiscordClient {
+    fn client() -> DiscordClient {
+        DiscordClient {
             client_id: "42".into(),
-            client_secret: Secret::new("s3cret"),
+            client_secret: Secret::new("s3cret:+/"),
             redirect_uri: "https://kanade.test/api/admin/auth/discord/callback".into(),
-        };
-        let form = token_form(&CodeExchange {
+        }
+    }
+
+    async fn body(request: Request<Full<Bytes>>) -> String {
+        String::from_utf8(
+            request
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn client_credentials_travel_only_in_http_basic() {
+        let client = client();
+        let request = token_request(&CodeExchange {
             client: &client,
             code: "abc",
             code_verifier: "verifier",
-        });
+        })
+        .unwrap();
+        assert_eq!(request.method(), Method::POST);
+        assert_eq!(request.uri(), TOKEN_PATH);
         assert_eq!(
-            form,
-            "grant_type=authorization_code&code=abc&redirect_uri=https%3A%2F%2Fkanade.test%2Fapi%2Fadmin%2Fauth%2Fdiscord%2Fcallback\
-             &code_verifier=verifier&client_id=42&client_secret=s3cret"
+            request.headers()[CONTENT_TYPE],
+            "application/x-www-form-urlencoded"
+        );
+        // base64("42:s3cret%3A%2B%2F")
+        assert_eq!(
+            request.headers()[AUTHORIZATION],
+            format!("Basic {}", crypto::base64_standard(b"42:s3cret%3A%2B%2F"))
         );
         assert_eq!(
-            classify(StatusCode::BAD_REQUEST),
+            body(request).await,
+            "grant_type=authorization_code&code=abc&redirect_uri=https%3A%2F%2Fkanade.test%2Fapi%2Fadmin%2Fauth%2Fdiscord%2Fcallback\
+             &code_verifier=verifier"
+        );
+
+        let revoke = revoke_request(&client, &AccessToken::new("tok")).unwrap();
+        assert_eq!(revoke.uri(), REVOKE_PATH);
+        assert!(
+            revoke.headers()[AUTHORIZATION]
+                .to_str()
+                .unwrap()
+                .starts_with("Basic ")
+        );
+        let form = body(revoke).await;
+        assert_eq!(form, "token=tok&token_type_hint=access_token");
+        assert!(!form.contains("s3cret"));
+    }
+
+    #[test]
+    fn statuses_and_rate_limits_classify() {
+        assert_eq!(classify(StatusCode::OK, None, b""), Ok(()));
+        assert_eq!(
+            classify(StatusCode::BAD_REQUEST, None, b""),
             Err(DiscordError::Rejected)
         );
-        assert_eq!(classify(StatusCode::FOUND), Err(DiscordError::Rejected));
         assert_eq!(
-            classify(StatusCode::BAD_GATEWAY),
+            classify(StatusCode::FOUND, None, b""),
+            Err(DiscordError::Rejected)
+        );
+        assert_eq!(
+            classify(StatusCode::BAD_GATEWAY, None, b""),
             Err(DiscordError::Unavailable)
         );
+        assert_eq!(
+            classify(
+                StatusCode::TOO_MANY_REQUESTS,
+                Some(Duration::from_secs(9)),
+                br#"{"retry_after": 2.5}"#
+            ),
+            Err(DiscordError::RateLimited(Duration::from_millis(2500)))
+        );
+        assert_eq!(
+            classify(
+                StatusCode::TOO_MANY_REQUESTS,
+                Some(Duration::from_secs(9)),
+                b"x"
+            ),
+            Err(DiscordError::RateLimited(Duration::from_secs(9)))
+        );
+        assert_eq!(
+            classify(
+                StatusCode::TOO_MANY_REQUESTS,
+                None,
+                br#"{"retry_after": -1}"#
+            ),
+            Err(DiscordError::RateLimited(DEFAULT_RETRY_AFTER))
+        );
+    }
+
+    #[test]
+    fn user_reply_carries_the_bot_flag() {
+        let reply: UserReply =
+            serde_json::from_str(r#"{"id":"1","username":"b","global_name":null,"bot":true}"#)
+                .unwrap();
+        assert!(reply.bot);
+        let reply: UserReply =
+            serde_json::from_str(r#"{"id":"1","username":"u","global_name":null}"#).unwrap();
+        assert!(!reply.bot);
+        let reply: TokenReply =
+            serde_json::from_str(r#"{"access_token":"a","token_type":"Bearer"}"#).unwrap();
+        assert_eq!(reply.scope, "", "a missing scope is not identify");
     }
 }

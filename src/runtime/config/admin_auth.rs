@@ -51,10 +51,27 @@ impl AdminAuthSettings {
             }
         }
         let tailscale_logins = tailscale_logins(values)?;
-        if !tailscale_logins.is_empty() && http.trusted_proxy.is_none() {
-            return Err(Error::Configuration(
-                "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_TRUSTED_PROXY".into(),
-            ));
+        if !tailscale_logins.is_empty() {
+            match http.trusted_proxy {
+                None => {
+                    return Err(Error::Configuration(
+                        "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_TRUSTED_PROXY".into(),
+                    ));
+                }
+                // Any local process shares a loopback peer address with the edge.
+                Some(proxy) if proxy.is_loopback() => {
+                    return Err(Error::Configuration(
+                        "KANADE_ADMIN_TAILSCALE_LOGINS needs a non-loopback KANADE_TRUSTED_PROXY"
+                            .into(),
+                    ));
+                }
+                Some(_) => {}
+            }
+            if http.edge_secret_file.is_none() {
+                return Err(Error::Configuration(
+                    "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_EDGE_SECRET_FILE".into(),
+                ));
+            }
         }
         let idle_minutes =
             parse_bounded_u64(values, "KANADE_ADMIN_SESSION_IDLE_MINUTES", 60, 5, 720)?;
@@ -217,8 +234,26 @@ mod tests {
                 .unwrap_err()
                 .contains("requires KANADE_TRUSTED_PROXY")
         );
+        assert_eq!(
+            config(&[
+                ("KANADE_TRUSTED_PROXY", "127.0.0.1"),
+                ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
+                ("KANADE_ADMIN_TAILSCALE_LOGINS", "a@example.com"),
+            ])
+            .unwrap_err(),
+            "KANADE_ADMIN_TAILSCALE_LOGINS needs a non-loopback KANADE_TRUSTED_PROXY"
+        );
+        assert_eq!(
+            config(&[
+                ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
+                ("KANADE_ADMIN_TAILSCALE_LOGINS", "a@example.com"),
+            ])
+            .unwrap_err(),
+            "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_EDGE_SECRET_FILE"
+        );
         let auth = config(&[
-            ("KANADE_TRUSTED_PROXY", "127.0.0.1"),
+            ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
+            ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
             (
                 "KANADE_ADMIN_TAILSCALE_LOGINS",
                 " A@Example.com , b@github ",
@@ -229,7 +264,8 @@ mod tests {
         assert_eq!(auth.tailscale_logins, ["a@example.com", "b@github"]);
         assert!(
             config(&[
-                ("KANADE_TRUSTED_PROXY", "127.0.0.1"),
+                ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
+                ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
                 ("KANADE_ADMIN_TAILSCALE_LOGINS", "not a login"),
             ])
             .is_err()

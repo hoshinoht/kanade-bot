@@ -7,6 +7,7 @@ use axum::{
     Extension, Json, Router, http::HeaderMap, middleware::from_fn_with_state, routing::get,
 };
 use kanade::api::{
+    auth::crypto::SealedSecret,
     guard::proxy::{self, ClientIp, Peer},
     listeners::Site,
 };
@@ -68,7 +69,35 @@ async fn the_edge_keeps_forwarding_and_tailscale_but_never_cloudflare_headers() 
     let fixture = Fixture::new();
     let mut http = fixture.http();
     http.trusted_proxy = Some([127, 0, 0, 1].into());
+    // Without an edge secret the peer supplies forwarding only, never identity.
     let seen = observe(Site::admin(&http)).await;
+    assert_eq!(seen["trusted"], true);
+    assert_eq!(
+        seen["headers"],
+        json!([
+            "connection",
+            "forwarded",
+            "host",
+            "x-forwarded-for",
+            "x-real-ip"
+        ])
+    );
+
+    let secret = b"edge-secret-shared-with-the-caddy-edge!!";
+    let mut site = Site::admin(&http);
+    site.edge_secret = Some(Arc::new(SealedSecret::new(secret).unwrap()));
+    // With a configured secret, a peer that does not present it is not trusted at all.
+    let seen = observe(site.clone()).await;
+    assert_eq!(seen["trusted"], false);
+    assert_eq!(seen["headers"], json!(["connection", "host"]));
+
+    let router = Router::new()
+        .route("/echo", get(echo))
+        .layer(from_fn_with_state(Arc::new(site), proxy::sanitize));
+    let address = spawn_router(router).await;
+    let mut extra = SPOOFED.to_vec();
+    extra.push(("X-Kanade-Edge-Auth", std::str::from_utf8(secret).unwrap()));
+    let seen = request(address, "GET", "x", "/echo", &extra).await.json();
     assert_eq!(seen["trusted"], true);
     assert_eq!(seen["client"], "203.0.113.7");
     assert_eq!(

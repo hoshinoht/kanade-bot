@@ -18,9 +18,9 @@ session (below) and answers `401 unauthenticated` without one.
 |---|---|---|---|
 | `GET /api/admin/auth/methods` | — | `{discord, tailscale, token}` booleans | `tailscale` is true only when this request carries an allow-listed identity from the trusted edge. |
 | `GET /api/admin/auth/discord/start?next=/path` | — | `303` to Discord | Sets the pre-auth cookie. `next` must be a same-origin path (else `/`; never `//…`, `\`, schemes or `/api/…`). |
-| `GET /api/admin/auth/discord/callback` | Discord's `code`, `state` | `303` to `next` + session cookie | Failures: `303 /?login_error=state\|denied\|forbidden\|discord\|unavailable` (bad/expired/replayed state; cancelled; not staff; code refused; Discord or member data unavailable). |
+| `GET /api/admin/auth/discord/callback` | Discord's `code`, `state` | `200` HTML landing page (meta refresh + link to `next`, no script) + session cookie | Failures: `303 /?login_error=state\|denied\|forbidden\|discord\|unavailable\|rate_limited` (bad/expired/replayed state; cancelled; not staff or a bot account; code refused or a scope other than exactly `identify`; Discord (incl. its 429 cooldown) or member data unavailable; too many attempts). |
 | `POST /api/admin/auth/tailscale` | `{}` or no body | `Session` + cookie + `X-Kanade-CSRF` | 401 unless the edge vouches for an allow-listed login. |
-| `POST /api/admin/auth/token` | `{token}` | `Session` + cookie + `X-Kanade-CSRF` | Break-glass; every use is logged at WARN. 401 on a wrong token, 400 `invalid_body`. |
+| `POST /api/admin/auth/token` | `{token}` | `Session` + cookie + `X-Kanade-CSRF` | Break-glass; every use is logged at WARN. 401 on a wrong token, 400 `invalid_body`, 429 `rate_limited`. |
 | `POST /api/admin/auth/logout` | — | `204` + cleared cookie | Needs CSRF. Deletes the session server-side. |
 | `GET /api/admin/session` | — | `Session` (`{display}`) + `X-Kanade-CSRF` | 401 `unauthenticated` when signed out. |
 
@@ -30,7 +30,10 @@ Contract for the frontend (API-5):
   `Max-Age` = absolute lifetime). The PWA never reads it; `fetch` sends it
   with `credentials: 'same-origin'`. The pre-auth cookie
   `__Host-kanade_admin_login` is `SameSite=Lax` (it must survive Discord's
-  redirect back) and lives 10 minutes.
+  redirect back) and lives 10 minutes. The callback answers a same-origin
+  `200` landing page that navigates on to `next`, so the first page load
+  already carries the Strict cookie (a `303` chain begun cross-site would
+  not). Real-browser confirmation belongs to the A10 browser e2e.
 - CSRF: read `X-Kanade-CSRF` from `GET /api/admin/session` (or the tailscale/
   token login response) and send it as `X-Kanade-CSRF` on every `POST`,
   `PATCH`, `PUT` and `DELETE`. It is fixed for the session's lifetime and
@@ -48,6 +51,14 @@ Contract for the frontend (API-5):
 - `Authorization: Bearer <ADMIN_TOKEN>` is accepted on any admin route for
   the CLI; it needs no CSRF token, is attributed to `token`, and a bad bearer
   never falls back to the cookie.
+- Rate limits (token buckets per client IP and global, per route): Discord
+  start and callback 10/min per IP, 60/min overall; token login 5/min per IP,
+  20/min overall; wrong bearers 5/min per IP, 30/min overall (only failures
+  count, but an exhausted client waits even with the right token). Answers:
+  `429 rate_limited`, or `/?login_error=rate_limited` on browser flows. A
+  client holds at most 5 unfinished Discord logins (its oldest yields); when
+  256 are pending, new logins are refused. A Discord `429` pauses Discord
+  sign-in for its `retry_after` (1 s–1 h) with `login_error=unavailable`.
 - History attribution: `admin` actors `discord:<user id>`,
   `tailscale:<login>` or `token`.
 

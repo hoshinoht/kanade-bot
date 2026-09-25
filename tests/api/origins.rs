@@ -1,9 +1,13 @@
 //! Host allow-lists, authorization by mounting, `/healthz` locality and the
 //! closed public portal.
 
-use kanade::api::listeners::Site;
+use std::sync::Arc;
+
+use kanade::api::{auth::crypto::SealedSecret, listeners::Site};
 
 use crate::support::{self, ADMIN_HOST, Fixture, PUBLIC_HOST, get, raw, request};
+
+const EDGE_SECRET: &[u8] = b"edge-secret-shared-with-the-caddy-edge!!";
 
 const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
@@ -176,12 +180,43 @@ async fn healthz_answers_only_direct_loopback_clients_of_the_admin_listener() {
     assert_eq!(get(admin, ADMIN_HOST, "/healthz").await.status, 200);
     assert_eq!(get(admin, "evil.example", "/healthz").await.status, 421);
 
-    // Relayed by the edge: not local, so not answered.
+    // The local healthcheck works whatever the trusted-proxy setting.
     http.trusted_proxy = Some([127, 0, 0, 1].into());
-    let relayed = support::admin(&http).await;
-    let reply = get(relayed, ADMIN_HOST, "/healthz").await;
+    let mut site = Site::admin(&http);
+    site.edge_secret = Some(Arc::new(SealedSecret::new(EDGE_SECRET).unwrap()));
+    let behind_edge = support::spawn(site).await;
+    assert_eq!(get(behind_edge, "localhost", "/healthz").await.status, 200);
+    // Relayed by the authenticated edge: not local, so not answered.
+    let edge = std::str::from_utf8(EDGE_SECRET).unwrap();
+    let reply = request(
+        behind_edge,
+        "GET",
+        ADMIN_HOST,
+        "/healthz",
+        &[("X-Kanade-Edge-Auth", edge)],
+    )
+    .await;
     assert_eq!(reply.status, 404);
     assert_eq!(reply.api_error(), "not_found");
+
+    // A client on the listener's own private address is local too (container healthcheck).
+    assert!(
+        kanade::api::guard::proxy::Peer {
+            addr: Some(([172, 18, 0, 5], 40000).into()),
+            trusted: false,
+            edge_authenticated: false,
+        }
+        .is_local(Some([172, 18, 0, 5].into()))
+    );
+    assert!(
+        !kanade::api::guard::proxy::Peer {
+            addr: Some(([172, 18, 0, 2], 40000).into()),
+            trusted: true,
+            edge_authenticated: false,
+        }
+        .is_local(Some([172, 18, 0, 5].into())),
+        "the edge's address is not this host"
+    );
 
     let public = support::public(&fixture.http()).await;
     assert_eq!(get(public, PUBLIC_HOST, "/healthz").await.status, 404);

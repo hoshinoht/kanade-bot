@@ -43,6 +43,29 @@ pub fn decode_base64url(text: &str) -> Option<Vec<u8>> {
     (base64url(&out) == text).then_some(out)
 }
 
+/// Padded standard base64 (RFC 4648 §4), for HTTP Basic credentials.
+pub fn base64_standard(bytes: &[u8]) -> String {
+    let mut out: String = base64url(bytes)
+        .chars()
+        .map(|c| match c {
+            '-' => '+',
+            '_' => '/',
+            other => other,
+        })
+        .collect();
+    while !out.len().is_multiple_of(4) {
+        out.push('=');
+    }
+    out
+}
+
+/// 12 random bytes as 16 base64url characters: a request id, not a secret.
+pub fn random_id() -> Option<String> {
+    let mut bytes = [0u8; 12];
+    SystemRandom::new().fill(&mut bytes).ok()?;
+    Some(base64url(&bytes))
+}
+
 /// 32 random bytes as 43 base64url characters.
 pub fn random_token() -> Option<String> {
     let mut bytes = [0u8; 32];
@@ -122,6 +145,12 @@ mod tests {
             assert_eq!(decode_base64url(encoded).unwrap(), plain.as_bytes());
         }
         assert_eq!(base64url(&[0xfb, 0xff]), "-_8");
+        assert_eq!(base64_standard(&[0xfb, 0xff]), "+/8=");
+        assert_eq!(
+            base64_standard(b"Aladdin:open sesame"),
+            "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        );
+        assert_eq!(random_id().unwrap().len(), 16);
         assert_eq!(decode_base64url("Zh"), None, "non-canonical tail");
         assert_eq!(decode_base64url("Z"), None);
         assert_eq!(decode_base64url("Zm9v!"), None);

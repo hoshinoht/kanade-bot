@@ -27,8 +27,16 @@ async fn staff_sign_in_with_pkce_uses_the_token_once_and_lands_on_next() {
     assert!(!location.contains(CLIENT_SECRET));
 
     let callback = harness.discord_login(user(111, "Alice"), "%2Fweek").await;
-    assert_eq!(callback.status, 303, "{}", callback.dump());
-    assert_eq!(callback.header("location"), Some("/week"));
+    // A same-origin landing page, so the Strict cookie rides the next navigation.
+    assert_eq!(callback.status, 200, "{}", callback.dump());
+    assert_eq!(
+        callback.header("content-type"),
+        Some("text/html; charset=utf-8")
+    );
+    assert_eq!(callback.header("cache-control"), Some("no-store"));
+    assert_eq!(callback.header("referrer-policy"), Some("no-referrer"));
+    assert!(!callback.text().contains("<script"));
+    assert_eq!(callback.destination().as_deref(), Some("/week"));
     let session_line = callback
         .all("set-cookie")
         .into_iter()
@@ -64,7 +72,7 @@ async fn members_without_a_staff_grant_are_refused() {
     for (id, name) in [(222, "Stranger"), (333, "Bosser")] {
         let reply = harness.discord_login(user(id, name), "%2F").await;
         assert_eq!(
-            reply.header("location"),
+            reply.destination().as_deref(),
             Some("/?login_error=forbidden"),
             "{name}"
         );
@@ -84,14 +92,17 @@ async fn members_without_a_staff_grant_are_refused() {
     harness.guild.put(member(555, &[], true));
     for (id, name) in [(444, "Owner"), (555, "Administrator")] {
         let reply = harness.discord_login(user(id, name), "%2F").await;
-        assert_eq!(reply.header("location"), Some("/"), "{name}");
+        assert_eq!(reply.destination().as_deref(), Some("/"), "{name}");
         assert!(reply.cookie(wire::SESSION_COOKIE).is_some());
     }
 
     harness.guild.set_unavailable(true);
     harness.guild.put(member(666, &[ADMIN_ROLE], false));
     let reply = harness.discord_login(user(666, "Later"), "%2F").await;
-    assert_eq!(reply.header("location"), Some("/?login_error=unavailable"));
+    assert_eq!(
+        reply.destination().as_deref(),
+        Some("/?login_error=unavailable")
+    );
 }
 
 #[tokio::test]
@@ -117,7 +128,7 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
             &[],
         )
         .await;
-    assert_eq!(reply.header("location"), Some("/?login_error=state"));
+    assert_eq!(reply.destination().as_deref(), Some("/?login_error=state"));
 
     // Missing or forged state consumes the pending login.
     for query in ["code=code-a", "code=code-a&state=forged"] {
@@ -128,7 +139,7 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
             )
             .await;
         assert_eq!(
-            reply.header("location"),
+            reply.destination().as_deref(),
             Some("/?login_error=state"),
             "{query}"
         );
@@ -140,7 +151,7 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
         )
         .await;
     assert_eq!(
-        reply.header("location"),
+        reply.destination().as_deref(),
         Some("/?login_error=state"),
         "one-time"
     );
@@ -149,10 +160,10 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
     // A successful callback replayed verbatim is refused before Discord is asked again.
     let (path, login_cookie) = harness.discord_approved(user(111, "Alice"), "%2F").await;
     let first = harness.get(&path, &[("Cookie", &login_cookie)]).await;
-    assert_eq!(first.header("location"), Some("/"));
+    assert_eq!(first.destination().as_deref(), Some("/"));
     assert_eq!(harness.discord.exchanges(), 1);
     let replay = harness.get(&path, &[("Cookie", &login_cookie)]).await;
-    assert_eq!(replay.header("location"), Some("/?login_error=state"));
+    assert_eq!(replay.destination().as_deref(), Some("/?login_error=state"));
     assert_eq!(harness.discord.exchanges(), 1);
 
     // A code issued for another login's PKCE challenge is refused by Discord; generic failure.
@@ -167,7 +178,10 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
             &[("Cookie", &format!("{}={login}", wire::LOGIN_COOKIE))],
         )
         .await;
-    assert_eq!(reply.header("location"), Some("/?login_error=discord"));
+    assert_eq!(
+        reply.destination().as_deref(),
+        Some("/?login_error=discord")
+    );
 
     // The user cancelled on Discord.
     let start = harness.get("/api/admin/auth/discord/start", &[]).await;
@@ -181,7 +195,7 @@ async fn bad_missing_or_replayed_state_and_codes_are_refused() {
             &[("Cookie", &format!("{}={login}", wire::LOGIN_COOKIE))],
         )
         .await;
-    assert_eq!(reply.header("location"), Some("/?login_error=denied"));
+    assert_eq!(reply.destination().as_deref(), Some("/?login_error=denied"));
 }
 
 #[tokio::test]
@@ -195,6 +209,6 @@ async fn next_is_restricted_to_same_origin_paths() {
         "%2Fapi%2Fadmin%2Fauth%2Flogout",
     ] {
         let reply = harness.discord_login(user(111, "Alice"), next).await;
-        assert_eq!(reply.header("location"), Some("/"), "{next}");
+        assert_eq!(reply.destination().as_deref(), Some("/"), "{next}");
     }
 }

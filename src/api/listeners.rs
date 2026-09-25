@@ -5,7 +5,11 @@ use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
 use axum::{Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, routing::get};
 
-use super::{admin, assets, auth::AdminAuth, error, guard, public};
+use super::{
+    admin, assets,
+    auth::{AdminAuth, crypto::SealedSecret},
+    error, guard, public,
+};
 use crate::runtime::config::HttpConfig;
 
 /// Offline mode has no Discord bot user to name the masthead after.
@@ -48,6 +52,10 @@ pub struct Site {
     pub limits: guard::limits::Limits,
     /// Admin sign-in; `None` answers `auth_unavailable`. Never set on the public site.
     pub auth: Option<Arc<AdminAuth>>,
+    /// Admin only: the edge must present this in `X-Kanade-Edge-Auth` to be trusted.
+    pub edge_secret: Option<Arc<SealedSecret>>,
+    /// The listener's bound address: a client there is on this host (healthcheck).
+    pub listener_ip: Option<IpAddr>,
 }
 
 impl Site {
@@ -92,6 +100,8 @@ impl Site {
             identity_name: OFFLINE_IDENTITY_NAME.into(),
             limits: guard::limits::Limits::default(),
             auth: None,
+            edge_secret: None,
+            listener_ip: None,
         }
     }
 }
@@ -100,6 +110,7 @@ pub fn router(mut site: Site) -> Router {
     if site.origin == Origin::Public {
         // Admin credentials must mean nothing on the public origin.
         site.auth = None;
+        site.edge_secret = None;
     }
     let site = Arc::new(site);
     let routes = match site.origin {

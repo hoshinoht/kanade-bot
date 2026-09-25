@@ -43,7 +43,10 @@ for the public origin when it opens.
 13. The staff gate reads bot data: roles plus computed Administrator permission
     and guild ownership (interactions get `is_guild_admin` directly; the web
     must compute it). Short-TTL recheck, and sessions are invalidated on
-    member-remove or role-update gateway events.
+    member-remove or role-update gateway events. *Status (A2 fix):* the hooks
+    `AdminAuth::member_left` / `member_changed` exist and are tested with the
+    fake guild; calling them from gateway events, and the computed
+    Administrator permission, are wired with the real member cache in A3.
 14. Rate limits on `/login` and the callback, per client IP and globally;
     Discord 429s honour `retry_after` and fail closed.
 15. Never log the code, state, verifier, tokens or cookies; log the user id,

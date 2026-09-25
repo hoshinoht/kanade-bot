@@ -1,15 +1,26 @@
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, sync::Arc};
 
 use axum::Router;
 use tokio::{net::TcpListener, sync::watch, time::timeout};
 
-use super::listeners::{self, Site};
+use super::{
+    auth,
+    listeners::{self, Site},
+};
 use crate::runtime::{config::RuntimeConfig, error::Error, logging};
 
 pub async fn serve_offline(config: RuntimeConfig) -> Result<(), Error> {
+    let mut admin_site = Site::admin(&config.http);
+    if let Some(path) = &config.http.edge_secret_file {
+        admin_site.edge_secret = Some(Arc::new(auth::edge_secret(path)?));
+    }
+    admin_site.listener_ip = Some(config.admin_bind.ip());
     let admin = bind(config.admin_bind).await?;
     let public = match (config.public_bind, Site::public(&config.http)) {
-        (Some(address), Some(site)) => Some((bind(address).await?, site)),
+        (Some(address), Some(mut site)) => {
+            site.listener_ip = Some(address.ip());
+            Some((bind(address).await?, site))
+        }
         (Some(_), None) => {
             return Err(Error::Configuration(
                 "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set".into(),
@@ -19,11 +30,7 @@ pub async fn serve_offline(config: RuntimeConfig) -> Result<(), Error> {
     };
 
     let (stop, stopped) = watch::channel(());
-    let admin_server = serve(
-        admin,
-        listeners::router(Site::admin(&config.http)),
-        stopped.clone(),
-    );
+    let admin_server = serve(admin, listeners::router(admin_site), stopped.clone());
     let public_server = async move {
         match public {
             Some((listener, site)) => serve(listener, listeners::router(site), stopped).await,

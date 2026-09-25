@@ -3,6 +3,7 @@
 
 mod discord;
 mod fallbacks;
+mod hardening;
 mod sessions;
 
 use std::{
@@ -17,6 +18,7 @@ use kanade::{
         auth::{
             AdminAuth, AdminSession,
             audit::RecordingAudit,
+            crypto::SealedSecret,
             discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
             fake::{FakeDiscord, FakeGuild},
             staff::GuildStaffGate,
@@ -38,6 +40,9 @@ pub const REDIRECT: &str = "https://kanade.test/api/admin/auth/discord/callback"
 pub const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 pub const ADMIN_ROLE: u64 = 20;
 pub const TAILSCALE_ADMIN: &str = "ops@example.com";
+pub const EDGE_SECRET: &str = "edge-secret-shared-with-the-caddy-edge!!";
+/// What the authenticated edge adds to every request it relays.
+pub const EDGE_AUTH: (&str, &str) = ("X-Kanade-Edge-Auth", EDGE_SECRET);
 
 pub struct Harness {
     pub admin: SocketAddr,
@@ -56,6 +61,7 @@ pub fn user(id: u64, name: &str) -> DiscordUser {
         id: id.to_string(),
         username: name.to_lowercase(),
         global_name: Some(name.into()),
+        bot: false,
     }
 }
 
@@ -116,6 +122,9 @@ impl Harness {
             .with_audit(audit.clone());
         let mut site = Site::admin(&http);
         site.auth = Some(Arc::new(auth));
+        if edge.is_some() {
+            site.edge_secret = Some(Arc::new(SealedSecret::new(EDGE_SECRET.as_bytes()).unwrap()));
+        }
         let admin = support::spawn(site.clone()).await;
         let mut public_site = Site::public(&http).unwrap();
         // Even a misassigned auth must mean nothing on the public origin.
@@ -193,6 +202,24 @@ impl Harness {
 
 pub fn cookie(value: &str) -> (&'static str, String) {
     ("Cookie", format!("{}={value}", wire::SESSION_COOKIE))
+}
+
+/// Echoes every header a handler behind the proxy guard can see.
+pub async fn header_probe(site: Site) -> SocketAddr {
+    let site = Arc::new(site);
+    let router = Router::new()
+        .route(
+            "/headers",
+            axum::routing::get(|headers: axum::http::HeaderMap| async move {
+                headers
+                    .iter()
+                    .map(|(name, value)| format!("{name}: {}", value.to_str().unwrap_or("?")))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }),
+        )
+        .layer(from_fn_with_state(site, proxy::sanitize));
+    spawn_router(router).await
 }
 
 /// A mutation route standing in for later admin endpoints: returns the actor id.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kanade::api::auth::wire;
 
-use super::{ADMIN_ROLE, Harness, ORIGIN, TOKEN, actor_probe, cookie, member, user};
+use super::{ADMIN_ROLE, EDGE_AUTH, Harness, ORIGIN, TOKEN, actor_probe, cookie, member, user};
 use crate::support::{PUBLIC_HOST, request, send};
 
 #[tokio::test]
@@ -258,7 +258,11 @@ async fn actors_are_attributed_per_method() {
     let ts = harness
         .post(
             "/api/admin/auth/tailscale",
-            &[ORIGIN, ("Tailscale-User-Login", "Ops@Example.com")],
+            &[
+                ORIGIN,
+                EDGE_AUTH,
+                ("Tailscale-User-Login", "Ops@Example.com"),
+            ],
             None,
         )
         .await;
@@ -273,6 +277,7 @@ async fn actors_are_attributed_per_method() {
             cookie(&ts_id).as_pair(),
             ORIGIN,
             ("X-Kanade-CSRF", &ts_csrf),
+            EDGE_AUTH,
             ("Tailscale-User-Login", "ops@example.com"),
         ],
         None,
