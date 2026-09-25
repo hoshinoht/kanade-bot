@@ -114,6 +114,13 @@ Admin writes return but drop their Discord effects until then: A4 run and
 timing notices, and inbox approve/reject (A6): persist merge + requester
 notices atomically with the decision and refresh/close the Discord card
 (and its superseded siblings' cards).
+Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
+`/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
+the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.
+v5 reuses the production bot application, so it must never run while v4 is
+connected (one gateway session per token), and it must act only in its
+configured guild: ignore every event from other guilds and register commands
+per guild, never globally (the production guild keeps v4's commands).
 
 ### Edge contract (admin origin)
 
