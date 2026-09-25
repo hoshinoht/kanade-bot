@@ -13,6 +13,8 @@ mod runner;
 mod safety;
 mod schema;
 mod setup;
+mod setup_probe;
+mod setup_trust;
 mod stub;
 mod support;
 mod tool_rounds;

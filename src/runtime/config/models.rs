@@ -10,6 +10,7 @@ use super::{Error, non_empty, parse_bounded_u64};
 use crate::runtime::secrets::Redacted;
 
 const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
+const UNMASKED: &str = "KANADE_ALLOW_EXTERNAL_UNMASKED";
 const ALIASES: [&str; 3] = [
     "KANADE_EXTRACT_MODEL",
     "KANADE_CHAT_MODEL",
@@ -26,10 +27,13 @@ pub struct ModelSettings {
     pub chat_model: Option<String>,
     pub rewrite_model: Option<String>,
     pub permits: u16,
+    /// `KANADE_ALLOW_EXTERNAL_UNMASKED=1`: external routes may run without
+    /// pseudonymization (provider testing only).
+    pub allow_external_unmasked: bool,
 }
 
 impl ModelSettings {
-    pub(super) fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+    pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
         if non_empty(values, "KANADE_MODEL_KEY").is_some() {
             return Err(Error::Configuration(format!(
                 "KANADE_MODEL_KEY is not read; use {KEY_FILE}"
@@ -52,6 +56,13 @@ impl ModelSettings {
             chat_model: chat_model?,
             rewrite_model: rewrite_model?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
+            allow_external_unmasked: match non_empty(values, UNMASKED) {
+                None | Some("0") => false,
+                Some("1") => true,
+                Some(_) => {
+                    return Err(Error::Configuration(format!("{UNMASKED} must be 0 or 1")));
+                }
+            },
             base_url,
         };
         if settings.base_url.is_none() {

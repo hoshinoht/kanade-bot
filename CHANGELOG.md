@@ -122,6 +122,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: models follow Kanata: each role's model and reasoning level come from settings and
+  are checked against what Kanata publishes, a role counts as cloud when Kanata's trust
+  zone says so (or is unknown), `KANADE_ALLOW_EXTERNAL_UNMASKED=1` lets such calls through
+  for testing with loud warnings and flagged log rows, and `kanade models check [--probe]`
+  lists Kanata's models and sends one tiny test request per role.
 - v5: `kanade import v4` brings v4's weekly fixed runs and recent chat and extraction logs
   (with the messages they reference) into v5 from a read-only v4 snapshot, previewing by
   default and adding nothing when run again; the image now carries the boss catalogue.

@@ -41,18 +41,21 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 alias: "local-a".into(),
                 group: Some("gpu".into()),
                 external: false,
+                unmasked_allowed: false,
             },
             RoleRoute {
                 role: Role::Chat,
                 alias: "cloud-a".into(),
                 group: Some("cloud".into()),
                 external: true,
+                unmasked_allowed: false,
             },
             RoleRoute {
                 role: Role::Rewrite,
                 alias: "local-a".into(),
                 group: Some("gpu".into()),
                 external: false,
+                unmasked_allowed: false,
             },
         ]
     );

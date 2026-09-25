@@ -84,6 +84,19 @@ async fn run(
     codec: &dyn IdentityCodec,
     ports: &Ports,
 ) -> Run {
+    run_routed(actions, offer, tool_rounds, question, codec, ports, |_| {}).await
+}
+
+/// `route` adjusts the governor before the question (trust zone, override).
+async fn run_routed(
+    actions: Vec<FakeAction>,
+    offer: ToolOffer,
+    tool_rounds: u8,
+    question: &str,
+    codec: &dyn IdentityCodec,
+    ports: &Ports,
+    route: impl FnOnce(&Governor),
+) -> Run {
     let input = load("loop.json")["cases"][0]["input"].clone();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
@@ -91,6 +104,7 @@ async fn run(
         caps: capabilities(&input["caps"]),
     });
     let (governor, client) = client(Some(MODEL), provider.clone());
+    route(&governor);
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "900"}));
     let persona = kanade();
     let roster = roster(&world);
@@ -766,4 +780,48 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
         row.rounds[0].tool_calls[0]["created"],
         json!(generation.created)
     );
+}
+
+/// An external chat route runs unmasked only with the operator override, and
+/// the logged row says so.
+#[tokio::test(start_paused = true)]
+async fn external_unmasked_chat_is_refused_by_default_and_marked_when_allowed() {
+    use kanade::infrastructure::llm::governor::Role;
+    let ports = Ports::default();
+    let ask = |allowed: bool| {
+        run_routed(
+            vec![words("Nothing on.")],
+            ToolOffer::dynamic([], false),
+            8,
+            "what's on?",
+            &Passthrough,
+            &ports,
+            move |governor: &Governor| {
+                governor.set_external(Role::Chat, true);
+                governor.allow_external_unmasked(allowed);
+            },
+        )
+    };
+    let refused = ask(false).await;
+    assert!(matches!(
+        refused.generation.failure,
+        Some(AnswerFailure::Route(_))
+    ));
+    assert!(refused.requests.is_empty());
+
+    let run = ask(true).await;
+    assert_eq!(run.generation.reply, "Nothing on.");
+    assert!(run.generation.external_unmasked);
+    let at = run.world.clock.now().with_timezone(&Utc);
+    let row = interaction(
+        "chat-x".into(),
+        at,
+        &run.ctx,
+        "what's on?",
+        &run.generation,
+        MODEL,
+        None,
+        10,
+    );
+    assert_eq!(row.guardrail, json!({"external_unmasked": true}));
 }

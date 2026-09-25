@@ -25,7 +25,7 @@ use crate::extract::prompt::{
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use crate::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::{IdentitySession, Member, open_session};
+use crate::infrastructure::llm::identity::{IdentitySession, Member, open_session, unmasked};
 use crate::infrastructure::llm::{ErrorCode, LlmProvider, Message};
 
 /// Why a call produced no answer.
@@ -131,6 +131,8 @@ pub(crate) struct CallRecord {
     pub redirected: usize,
     /// How each lead-in of this call was made (`LineSource::as_str`), for the log.
     pub nudges: Vec<&'static str>,
+    /// Sent to an external route without pseudonymization (operator override).
+    pub external_unmasked: bool,
 }
 
 impl CallRecord {
@@ -243,7 +245,7 @@ where
                 .client
                 .governor()
                 .route(Role::Extraction)
-                .map(|route| route.alias.clone())
+                .map(|route| route.alias)
                 .unwrap_or_default(),
             prompt: String::new(),
             raw: String::new(),
@@ -266,6 +268,7 @@ where
             refusals: Vec::new(),
             redirected: 0,
             nudges: Vec::new(),
+            external_unmasked: false,
         }
     }
 
@@ -377,7 +380,7 @@ where
         chunk: &[WatchedMessage],
     ) -> CallRecord {
         let mut record = self.record(chunk);
-        let Some(route) = self.client.governor().route(Role::Extraction).cloned() else {
+        let Some(route) = self.client.governor().route(Role::Extraction) else {
             record.fail(
                 Failure::Failed,
                 "the extraction model is not configured".into(),
@@ -391,6 +394,7 @@ where
                 return record;
             }
         };
+        record.external_unmasked = unmasked(&route, self.codec.as_ref());
         let prepared = self.prepare(channel_id, loaded, chunk, identity.as_mut());
         record.prompt = prompt_text(&prepared.messages);
         record.authors.extend(prepared.author_ids.clone());

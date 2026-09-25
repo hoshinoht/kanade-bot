@@ -1,4 +1,5 @@
 pub mod healthcheck;
+pub mod models;
 
 use std::path::PathBuf;
 
@@ -11,6 +12,7 @@ pub enum Command {
     Serve { offline: bool },
     Healthcheck { url: Option<String> },
     ImportV4(ImportV4Args),
+    Models(models::Args),
     Reserved { name: &'static str },
 }
 
@@ -22,6 +24,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
     match command {
         "serve" => parse_serve(&arguments[1..]),
         "healthcheck" => parse_healthcheck(&arguments[1..]),
+        "models" => models::parse(&arguments[1..]).map(Command::Models),
         "ctl" if arguments.len() == 1 => Ok(Command::Reserved { name: "ctl" }),
         "import" => parse_import(&arguments[1..]),
         "export" if arguments.len() == 1 => Ok(Command::Reserved { name: "export" }),
@@ -94,7 +97,7 @@ fn parse_import(arguments: &[String]) -> Result<Command, Error> {
 }
 
 fn usage() -> Error {
-    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|import v4 --from PATH [--since YYYY-MM-DD] [--apply]|ctl|export}".into())
+    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--apply]|ctl|export}".into())
 }
 
 #[cfg(test)]

@@ -5,7 +5,8 @@ use crate::infrastructure::llm::governor::{Role, RoleRoute};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RouteRefused {
-    /// An `external` route needs pseudonymization on; fails closed otherwise.
+    /// An `external` route needs pseudonymization on (or the operator override);
+    /// fails closed otherwise.
     ExternalWithoutPseudonymization { role: Role, alias: String },
 }
 
@@ -24,13 +25,19 @@ impl fmt::Display for RouteRefused {
 impl std::error::Error for RouteRefused {}
 
 pub fn guard(route: &RoleRoute, codec: &dyn IdentityCodec) -> Result<(), RouteRefused> {
-    if route.external && codec.mode() == CodecMode::Passthrough {
+    if unmasked(route, codec) && !route.unmasked_allowed {
         return Err(RouteRefused::ExternalWithoutPseudonymization {
             role: route.role,
             alias: route.alias.clone(),
         });
     }
     Ok(())
+}
+
+/// Member data would leave the homelab in plain text; callers mark the
+/// model-log row (`external_unmasked`) when the override let it through.
+pub fn unmasked(route: &RoleRoute, codec: &dyn IdentityCodec) -> bool {
+    route.external && codec.mode() == CodecMode::Passthrough
 }
 
 /// Startup check over every resolved route; the first refusal wins.

@@ -219,8 +219,9 @@ the A4 table.
   rule and warns for every such alias, and for a saved alias the catalog no
   longer lists (shown selected as "(not listed)").
 - Reasoning: `off` is always legal; otherwise the level must be in the
-  alias's `reasoning_efforts`, and `null` there means the model decides
-  (`low`/`medium`/`high` accepted, as v4 offered). `""` (chat/rewrite only)
+  alias's `reasoning_efforts`, and `null` there means Kanata restricts
+  nothing (every level accepted; Kanata sends a list only when a provider
+  restricts levels). `""` (chat/rewrite only)
   inherits extraction's effort and is legal only when that effort is legal
   for the role's alias. Validation runs after every role in the request is
   applied, so inheritance resolves against the FINAL extraction effort and

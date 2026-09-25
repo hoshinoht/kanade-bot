@@ -640,3 +640,35 @@ fn an_unpublished_extraction_effort_is_caught_at_startup() {
     };
     assert!(check_reasoning_effort("kanata/x", Some(Effort::High), &decides).is_ok());
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_external_route_is_refused_by_default_and_marked_when_allowed() {
+    use kanade::infrastructure::llm::governor::Role;
+    let refused = World::new(vec![moved("9:30pm", "101")]).await;
+    refused
+        .client
+        .governor()
+        .set_external(Role::Extraction, true);
+    let (events, _loop) = refused.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+    let logs = refused.logs().await;
+    assert_eq!(logs[0].outcome, ExtractionOutcome::Failed);
+    assert_eq!(logs[0].guardrail, serde_json::json!({}));
+    assert_eq!(refused.requests(), 0);
+
+    let world = World::new(vec![moved("9:30pm", "101")]).await;
+    let governor = world.client.governor();
+    governor.set_external(Role::Extraction, true);
+    governor.allow_external_unmasked(true);
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+    let logs = world.logs().await;
+    assert_eq!(logs[0].outcome, ExtractionOutcome::Proposed);
+    assert_eq!(
+        logs[0].guardrail,
+        serde_json::json!({"external_unmasked": true})
+    );
+    assert_eq!(world.requests(), 1);
+}

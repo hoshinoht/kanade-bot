@@ -2,7 +2,12 @@ mod config;
 mod endpoint;
 mod transport;
 
-use std::{collections::BTreeMap, fmt, sync::Arc, sync::Mutex, time::Duration};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
 
 use hyper::{Method, StatusCode};
 use serde_json::Value;
@@ -20,6 +25,7 @@ use endpoint::Endpoint;
 use transport::{Reply, Transport};
 
 type Models = Arc<BTreeMap<String, Option<ModelCapabilities>>>;
+type ListingObserver = Box<dyn Fn(&[ListedModel]) + Send + Sync>;
 
 #[derive(Default)]
 struct Catalog {
@@ -43,6 +49,7 @@ pub struct OpenAiCompatibleProvider {
     /// Single-flight guard so concurrent lookups share one listing fetch.
     refresh: tokio::sync::Mutex<()>,
     downgrades: DowngradeCache,
+    observer: OnceLock<ListingObserver>,
 }
 
 enum PostError {
@@ -71,7 +78,17 @@ impl OpenAiCompatibleProvider {
             catalog: Mutex::new(Catalog::default()),
             refresh: tokio::sync::Mutex::new(()),
             downgrades: DowngradeCache::default(),
+            observer: OnceLock::new(),
         })
+    }
+
+    /// Called after every successful listing, including the runner's own
+    /// refreshes. Only one observer; returns false if one is already set.
+    pub fn observe_listings(
+        &self,
+        observer: impl Fn(&[ListedModel]) + Send + Sync + 'static,
+    ) -> bool {
+        self.observer.set(Box::new(observer)).is_ok()
     }
 
     /// `GET {base}/models`; a successful listing refreshes the capability catalog.
@@ -98,6 +115,9 @@ impl OpenAiCompatibleProvider {
             listing: Some((Instant::now(), catalog_of(&models))),
             failed_at: None,
         };
+        if let Some(observer) = self.observer.get() {
+            observer(&models);
+        }
         Ok(models)
     }
 

@@ -1,36 +1,52 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use kanade::infrastructure::llm::{
     Effort, HttpConfigError,
-    governor::{ConfigWarning, Role, XorShift},
-    setup::{Listing, ModelSetup, ModelStack, Models, SetupError, StartupWarning, build},
+    governor::{Role, XorShift},
+    setup::{
+        Listing, ModelRoles, ModelSetup, ModelStack, Models, RoleEffort, RoleModel, SetupError,
+        build,
+    },
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use serde_json::json;
 use tokio_rustls::TlsAcceptor;
 
-use super::stub::{Reply, Stub, gateway, kanata_models, ollama_models};
+use super::stub::{Stub, gateway, kanata_models, ollama_models};
 
 const KEY: &str = "sk-setup-secret-sentinel";
 const CERT: &[u8] = include_bytes!("../fixtures/provider/tls/loopback-cert.der");
 
-fn setup(base_url: Option<String>) -> ModelSetup {
+pub(super) fn role(alias: &str, effort: RoleEffort) -> RoleModel {
+    RoleModel {
+        alias: Some(alias.into()),
+        effort,
+    }
+}
+
+/// Extraction and chat on `alias`, efforts off and inherit.
+pub(super) fn roles(alias: &str) -> ModelRoles {
+    ModelRoles {
+        extraction: role(alias, RoleEffort::Level(Effort::Off)),
+        chat: role(alias, RoleEffort::Inherit),
+        rewrite: RoleModel::default(),
+    }
+}
+
+pub(super) fn setup(base_url: Option<String>) -> ModelSetup {
     ModelSetup {
         base_url,
         key: None,
         ca_file: None,
-        aliases: BTreeMap::from([
-            (Role::Extraction, "qwen3:8b".to_owned()),
-            (Role::Chat, "qwen3:8b".to_owned()),
-        ]),
+        roles: roles("sumi-structured"),
         permits: 2,
+        allow_external_unmasked: false,
     }
 }
 
-fn ready(setup: ModelSetup) -> ModelStack {
+pub(super) fn ready(setup: ModelSetup) -> ModelStack {
     let _ = kanade::runtime::tls::install_ring_provider();
     match build(setup, Arc::new(XorShift::new(7))).unwrap() {
-        Models::Ready(stack) => stack,
+        Models::Ready(stack) => *stack,
         Models::Unavailable => panic!("models unavailable"),
     }
 }
@@ -40,7 +56,7 @@ fn build_error(setup: ModelSetup) -> SetupError {
     build(setup, Arc::new(XorShift::new(7))).unwrap_err()
 }
 
-fn temp_file(bytes: &[u8]) -> PathBuf {
+pub(super) fn temp_file(bytes: &[u8]) -> PathBuf {
     let path = std::env::temp_dir().join(format!("kanade-setup-{}", uuid::Uuid::new_v4()));
     std::fs::write(&path, bytes).unwrap();
     path
@@ -93,7 +109,7 @@ fn no_base_url_leaves_models_unavailable() {
 }
 
 #[test]
-fn the_provider_parser_refuses_bad_urls() {
+fn construction_refuses_bad_urls_keys_and_an_inheriting_extraction() {
     for (url, expected) in [
         ("http://10.0.0.5:11434", HttpConfigError::InsecureHttp),
         ("ftp://127.0.0.1", HttpConfigError::InvalidBaseUrl),
@@ -110,11 +126,17 @@ fn the_provider_parser_refuses_bad_urls() {
         build_error(bad_key),
         SetupError::Http(HttpConfigError::InvalidBearerKey)
     ));
+    let mut inherits = setup(Some("http://127.0.0.1:1".into()));
+    inherits.roles.extraction.effort = RoleEffort::Inherit;
+    assert!(matches!(
+        build_error(inherits),
+        SetupError::ExtractionInherits
+    ));
 }
 
 #[tokio::test]
 async fn builds_with_a_key_and_sends_it_only_as_a_header() {
-    let stub = Stub::start(gateway(ollama_models(), "{}")).await;
+    let stub = Stub::start(gateway(kanata_models(), "{}")).await;
     let mut input = setup(Some(stub.url()));
     input.key = Some(format!("{KEY}\n").into_bytes());
     assert!(!format!("{input:?}").contains(KEY));
@@ -122,12 +144,11 @@ async fn builds_with_a_key_and_sends_it_only_as_a_header() {
     assert!(!format!("{stack:?}").contains(KEY));
     assert!(stack.has_role(Role::Extraction) && stack.has_role(Role::Chat));
     assert!(!stack.has_role(Role::Rewrite));
-    let report = stack.check_startup(&BTreeMap::new()).await;
+    let report = stack.check_startup().await;
     assert!(matches!(report.listing, Listing::Listed { .. }));
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
-    let requests = stub.requests();
     assert_eq!(
-        requests[0].header("authorization"),
+        stub.requests()[0].header("authorization"),
         Some(format!("Bearer {KEY}").as_str())
     );
 }
@@ -136,7 +157,7 @@ async fn builds_with_a_key_and_sends_it_only_as_a_header() {
 async fn builds_without_a_key() {
     let stub = Stub::start(gateway(ollama_models(), "{}")).await;
     let stack = ready(setup(Some(format!("{}/v1", stub.url()))));
-    let report = stack.check_startup(&BTreeMap::new()).await;
+    let report = stack.check_startup().await;
     assert!(matches!(report.listing, Listing::Listed { .. }));
     assert_eq!(stub.requests()[0].header("authorization"), None);
 }
@@ -148,7 +169,7 @@ async fn a_ca_file_in_pem_or_der_verifies_the_gateway() {
         let path = temp_file(&bytes);
         let mut input = setup(Some(format!("https://localhost:{}", stub.addr.port())));
         input.ca_file = Some(path.clone());
-        let report = ready(input).check_startup(&BTreeMap::new()).await;
+        let report = ready(input).check_startup().await;
         std::fs::remove_file(path).unwrap();
         assert!(matches!(report.listing, Listing::Listed { .. }));
     }
@@ -157,7 +178,7 @@ async fn a_ca_file_in_pem_or_der_verifies_the_gateway() {
         stub.addr.port()
     ))));
     assert_eq!(
-        without_ca.check_startup(&BTreeMap::new()).await.listing,
+        without_ca.check_startup().await.listing,
         Listing::Degraded { reason_code: "tls" }
     );
 }
@@ -173,70 +194,33 @@ fn an_unusable_ca_file_is_refused() {
     std::fs::remove_file(garbage).unwrap();
 }
 
-#[tokio::test]
-async fn a_listing_failure_degrades_without_failing_and_calls_refetch() {
-    let stub = Stub::start(|request| {
-        if request.path.ends_with("/models") {
-            Reply::Json(500, json!({"error": {"message": "down"}}))
-        } else {
-            Reply::Json(500, json!({}))
-        }
-    })
-    .await;
-    let stack = ready(setup(Some(stub.url())));
-    let report = stack
-        .check_startup(&BTreeMap::from([(Role::Extraction, Effort::Max)]))
-        .await;
+#[test]
+fn stored_settings_map_onto_setup_roles() {
+    use kanade::domain::settings::{Models as Stored, Reasoning, RoleModel as StoredRole};
+    let stored = Stored {
+        extraction: StoredRole {
+            alias: Some("kanata/extract".into()),
+            reasoning: Reasoning::High,
+        },
+        chat: StoredRole {
+            alias: Some("kanata/chat".into()),
+            reasoning: Reasoning::Inherit,
+        },
+        rewrite: StoredRole {
+            alias: None,
+            reasoning: Reasoning::Off,
+        },
+    };
     assert_eq!(
-        report.listing,
-        Listing::Degraded {
-            reason_code: "server-error"
-        }
-    );
-    assert!(report.warnings.is_empty());
-    stack.provider.model_capabilities("qwen3:8b").await;
-    assert_eq!(stub.requests().len(), 2, "first use lists again");
-
-    let closed = ready(setup(Some("http://127.0.0.1:1".into())));
-    let report = closed.check_startup(&BTreeMap::new()).await;
-    assert!(matches!(report.listing, Listing::Degraded { .. }));
-}
-
-#[tokio::test]
-async fn startup_reports_stranded_efforts_capacity_and_external_routes() {
-    let stub = Stub::start(gateway(kanata_models(), "{}")).await;
-    let mut input = setup(Some(stub.url()));
-    input.aliases = BTreeMap::from([
-        (Role::Extraction, "codex-like".to_owned()),
-        (Role::Chat, "sumi-structured".to_owned()),
-    ]);
-    input.permits = 4;
-    let stack = ready(input);
-    let efforts = BTreeMap::from([(Role::Extraction, Effort::Max), (Role::Chat, Effort::High)]);
-    let report = stack.check_startup(&efforts).await;
-    assert!(matches!(report.listing, Listing::Listed { .. }));
-    assert_eq!(
-        report.warnings,
-        vec![
-            StartupWarning::Governor(ConfigWarning::PermitsAboveGateway {
-                group: "gateway".into(),
-                alias: "sumi-structured".into(),
-                permits: 4,
-                gateway: 2,
-            }),
-            StartupWarning::UnpublishedEffort {
-                role: Role::Extraction,
-                alias: "codex-like".into(),
-                effort: Effort::Max,
+        ModelRoles::from(&stored),
+        ModelRoles {
+            extraction: role("kanata/extract", RoleEffort::Level(Effort::High)),
+            chat: role("kanata/chat", RoleEffort::Inherit),
+            rewrite: RoleModel {
+                alias: None,
+                effort: RoleEffort::Level(Effort::Off),
             },
-            StartupWarning::ExternalUnmarked {
-                role: Role::Extraction,
-                alias: "codex-like".into(),
-            },
-        ]
+        }
     );
-    assert_eq!(
-        report.warnings[1].to_string(),
-        "extraction reasoning max is not published by codex-like"
-    );
+    assert_eq!(ModelRoles::from(&Stored::default()), ModelRoles::default());
 }

@@ -50,6 +50,7 @@ pub async fn run(
             print!("{report}");
             Ok(())
         }
+        Command::Models(args) => cli::models::run(args, &environment).await,
         Command::Reserved { name } => Err(Error::Unavailable(format!(
             "{name} is not implemented in the runtime bootstrap"
         ))),

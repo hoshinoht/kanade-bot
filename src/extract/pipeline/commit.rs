@@ -368,10 +368,15 @@ where
                 ),
                 error: record.error.clone(),
                 // How each lead-in was made; labels only, never model text.
-                guardrail: if record.nudges.is_empty() {
-                    json!({})
-                } else {
-                    json!({ "nudges": record.nudges })
+                guardrail: {
+                    let mut guardrail = serde_json::Map::new();
+                    if !record.nudges.is_empty() {
+                        guardrail.insert("nudges".into(), json!(record.nudges));
+                    }
+                    if record.external_unmasked {
+                        guardrail.insert("external_unmasked".into(), json!(true));
+                    }
+                    serde_json::Value::Object(guardrail)
                 },
                 message_ids: record.message_ids,
                 proposal_ids: record.proposal_ids,

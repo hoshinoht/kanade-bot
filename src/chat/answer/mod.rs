@@ -184,6 +184,8 @@ pub struct Generation {
     pub requests: u32,
     pub model_ms: u64,
     pub tools_ms: u64,
+    /// Sent to an external route without pseudonymization (operator override).
+    pub external_unmasked: bool,
 }
 
 impl Generation {

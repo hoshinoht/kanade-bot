@@ -13,6 +13,17 @@ use crate::infrastructure::llm::{Effort, ErrorCode};
 
 /// How the question ended. `rate_limited` and `withheld` are decided before
 /// the loop runs (gate, pre-screen) and are the caller's to record.
+fn chat_guardrail(generation: &Generation) -> Value {
+    let mut guardrail = serde_json::Map::new();
+    if generation.is_blocked() || generation.failure == Some(AnswerFailure::ContentBlocked) {
+        guardrail.insert("content_filter".into(), Value::Bool(true));
+    }
+    if generation.external_unmasked {
+        guardrail.insert("external_unmasked".into(), Value::Bool(true));
+    }
+    Value::Object(guardrail)
+}
+
 pub fn chat_outcome(generation: &Generation) -> ChatOutcome {
     if let Some(failure) = &generation.failure {
         return match failure {
@@ -109,13 +120,7 @@ pub fn interaction(
         error: generation.failure.as_ref().map(ToString::to_string),
         clean_retry: generation.clean_retry,
         withheld: false,
-        guardrail: if generation.is_blocked()
-            || generation.failure == Some(AnswerFailure::ContentBlocked)
-        {
-            json!({"content_filter": true})
-        } else {
-            json!({})
-        },
+        guardrail: chat_guardrail(generation),
         request_count: generation.requests,
         latency_ms: Some(latency_ms),
         model_ms: Some(generation.model_ms),

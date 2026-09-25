@@ -100,6 +100,8 @@ pub struct RoleRoute {
     pub alias: String,
     pub group: Option<String>,
     pub external: bool,
+    /// Operator override: an `external` route may run without pseudonymization.
+    pub unmasked_allowed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,6 +254,7 @@ impl GovernorConfig {
                 alias: config.alias.clone(),
                 group,
                 external: config.external,
+                unmasked_allowed: false,
             });
         }
         Ok((routes, warnings))

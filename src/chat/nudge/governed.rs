@@ -64,7 +64,7 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
         // The prompt carries no member data, so the roster is empty; the guard
         // still refuses an external route while pseudonymisation is off, which
         // is an operator setting like the governor's own `ExternalForbidden`.
-        let _identity = open_session(self.codec.as_ref(), route, &[])
+        let _identity = open_session(self.codec.as_ref(), &route, &[])
             .map_err(|_| RewriteFailure::Misconfigured)?;
         let mut session = self
             .client

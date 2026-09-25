@@ -9,7 +9,7 @@ use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::{
     Charge, ModelClient, QuestionLimits, Refused, Role, SessionError, SessionFailure,
 };
-use crate::infrastructure::llm::identity::{IdentityCodec, Member, open_session};
+use crate::infrastructure::llm::identity::{IdentityCodec, Member, open_session, unmasked};
 
 /// The model side of a question.
 pub struct AnswerDeps<'a, P> {
@@ -36,7 +36,7 @@ where
     C: Clock,
     X: ChatPorts,
 {
-    let Some(route) = deps.client.governor().route(Role::Chat).cloned() else {
+    let Some(route) = deps.client.governor().route(Role::Chat) else {
         return Generation::failed(AnswerFailure::Session(SessionError {
             failure: SessionFailure::Refused(Refused::UnknownRole),
             charge: Charge::Refunded,
@@ -59,7 +59,7 @@ where
         Ok(session) => session,
         Err(error) => return Generation::failed(AnswerFailure::Session(error)),
     };
-    run_question(
+    let mut generation = run_question(
         question,
         &mut session,
         identity.as_mut(),
@@ -67,5 +67,7 @@ where
         proposer,
         ports,
     )
-    .await
+    .await;
+    generation.external_unmasked = unmasked(&route, deps.codec);
+    generation
 }

@@ -427,6 +427,7 @@ pub fn client(
 pub struct World {
     pub store: Arc<MemoryScheduleStore>,
     pub provider: Arc<FakeProvider>,
+    pub client: Arc<ModelClient<FakeProvider>>,
     pub outbox: Arc<Recorder>,
     pub guild: Arc<FakeGuild>,
     pub scheduler: Arc<Scheduler>,
@@ -512,6 +513,7 @@ impl World {
             runs.push(id);
         }
         let (provider, client) = client(actions, grouped);
+        let model_client = client.clone();
         let outbox = Arc::new(Recorder::default());
         let mut config = config();
         tune(&mut config);
@@ -543,6 +545,7 @@ impl World {
         Self {
             store,
             provider,
+            client: model_client,
             outbox,
             guild,
             scheduler,

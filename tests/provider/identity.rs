@@ -4,7 +4,7 @@ use kanade::infrastructure::llm::{
     governor::{Role, RoleRoute},
     identity::{
         CodecMode, DecodeError, IdentityCodec, IdentitySession, Member, Passthrough, RouteRefused,
-        TaggingCodec, check_routes, find_request_leaks, guard, open_session,
+        TaggingCodec, check_routes, find_request_leaks, guard, open_session, unmasked,
     },
 };
 use serde_json::json;
@@ -160,6 +160,7 @@ fn route(external: bool) -> RoleRoute {
         alias: "cloud-chat".into(),
         group: Some("cloud".into()),
         external,
+        unmasked_allowed: false,
     }
 }
 
@@ -256,6 +257,24 @@ fn local_routes_pass_and_pseudonymizing_codec_unlocks_external() {
     assert_eq!(check_routes(&[route(false)], &Passthrough), Ok(()));
     assert_eq!(guard(&route(true), &TaggingCodec), Ok(()));
     assert!(open_session(&TaggingCodec, &route(true), &roster()).is_ok());
+}
+
+#[test]
+fn the_operator_override_lets_external_routes_through_unmasked() {
+    let allowed = RoleRoute {
+        unmasked_allowed: true,
+        ..route(true)
+    };
+    assert_eq!(guard(&allowed, &Passthrough), Ok(()));
+    assert!(open_session(&Passthrough, &allowed, &roster()).is_ok());
+    assert_eq!(
+        check_routes(std::slice::from_ref(&allowed), &Passthrough),
+        Ok(())
+    );
+    assert!(unmasked(&allowed, &Passthrough));
+    assert!(!unmasked(&allowed, &TaggingCodec));
+    assert!(!unmasked(&route(false), &Passthrough));
+    assert!(guard(&route(true), &Passthrough).is_err(), "off by default");
 }
 
 #[tokio::test]
