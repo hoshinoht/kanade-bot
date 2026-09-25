@@ -17,8 +17,8 @@ use kanade::infrastructure::llm::identity::{TaggingCodec, find_request_leaks};
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{
-    ALIAS, CHANNEL, MY, OTHER, PRIYA, STRANGER, World, after, local, message, nothing, replayed,
-    reply,
+    ALIAS, CHANNEL, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local, message, nothing,
+    replayed, reply,
 };
 
 fn moved(time: &str, evidence: &str) -> FakeAction {
@@ -574,6 +574,19 @@ async fn a_misconfigured_route_fails_without_a_backlog_retry() {
     assert_eq!(logs[0].outcome, ExtractionOutcome::Failed);
     assert_eq!(world.requests(), 0);
     assert!(!world.processed("101").await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_content_filter_is_logged_as_content_blocked_without_a_retry() {
+    let world = World::new(vec![filtered()]).await;
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+    after(120).await;
+    let logs = world.logs().await;
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].outcome, ExtractionOutcome::ContentBlocked);
+    assert_eq!(world.requests(), 1, "no answer retry or requeue");
 }
 
 #[tokio::test(start_paused = true)]

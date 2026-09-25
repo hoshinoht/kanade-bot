@@ -308,6 +308,20 @@ pub fn reply(content: &str) -> FakeAction {
     })
 }
 
+/// A reply stopped by the provider's content filter.
+pub fn filtered() -> FakeAction {
+    FakeAction::Response(CompletionResponse {
+        model: ALIAS.into(),
+        content: None,
+        tool_calls: Vec::new(),
+        finish_reason: FinishReason::ContentFilter,
+        usage: Some(Usage {
+            prompt_tokens: 1,
+            completion_tokens: 1,
+        }),
+    })
+}
+
 /// No amendments.
 pub fn nothing() -> FakeAction {
     reply(r#"{"amendments": [], "summary": "no schedule change"}"#)

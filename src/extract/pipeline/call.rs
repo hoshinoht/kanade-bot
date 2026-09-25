@@ -35,8 +35,7 @@ pub enum Failure {
     TurnedAway {
         retry_at: Option<Instant>,
     },
-    /// The provider blocked the content. The runner reports a content filter
-    /// and a length cut-off alike (`Incomplete`), so nothing maps here yet.
+    /// The provider's content filter stopped the answer (`ContentFiltered`).
     ContentBlocked,
     Failed,
 }
@@ -206,6 +205,7 @@ fn classify(error: &SessionError, limit: Duration) -> (AttemptOutcome, Failure) 
             ErrorCode::DeadlineExceeded | ErrorCode::UpstreamTimeout => {
                 (AttemptOutcome::TimedOut { limit }, Failure::Failed)
             }
+            ErrorCode::ContentFiltered => (failed(), Failure::ContentBlocked),
             ErrorCode::UnsupportedCapability
             | ErrorCode::ProviderAuthentication
             | ErrorCode::ModelMismatch => (

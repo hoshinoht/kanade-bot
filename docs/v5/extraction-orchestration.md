@@ -98,7 +98,7 @@ authors, proposal ids. `outcome`:
 | outcome | when |
 |---|---|
 | `turned_away` | governor refusal that clears by waiting (breaker open, queue wait, rate ceiling), gateway admission refusal, or backend unavailable: nothing ran upstream; the messages are read again later |
-| `content_blocked` | reserved: the runner reports a content filter and a length cut-off alike (`Incomplete`), so nothing maps here yet |
+| `content_blocked` | the provider's content filter stopped the answer (`ContentFiltered`); no answer retry, never requeued |
 | `failed` | any other failure, including permanent governor refusals (unknown role, ungrouped alias, forbidden route, may-not-wait, retry budget exhausted: never requeued), or a reply still invalid after the answer retry |
 | `proposed` | at least one proposal was created |
 | `self_service_link` | none created, but the redirect took at least one change |
