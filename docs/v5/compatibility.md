@@ -142,9 +142,10 @@ create a second write path.
 
 The public origin exposes only the PWA shell, Discord OAuth login/callback, and
 read-only schedule/digest JSON. Everything else is absent/404 there by
-construction. The exact OAuth scope/callback configuration still needs owner
-ratification; the exposure, guild gate, bossing-role gate, and admin-origin
-separation are decided scope.
+construction. OAuth is ratified (2026-09-25): scope `identify` only, a fixed
+callback per origin and a separate Discord application for the public origin;
+see `oauth-security.md`. The exposure, guild gate, bossing-role gate, and
+admin-origin separation are decided scope.
 
 ## Discord and CLI boundary
 
