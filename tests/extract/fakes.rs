@@ -245,12 +245,16 @@ pub struct Recorder {
     pub redirects: Mutex<Vec<Redirected>>,
     /// Report every card and link as never posted.
     pub fail_posts: AtomicBool,
+    /// Report every card and link as saved for a later pass.
+    pub pending_posts: AtomicBool,
 }
 
 impl Recorder {
     fn result(&self) -> PostResult {
         if self.fail_posts.load(Ordering::SeqCst) {
             PostResult::NotPosted
+        } else if self.pending_posts.load(Ordering::SeqCst) {
+            PostResult::Pending
         } else {
             PostResult::Posted
         }

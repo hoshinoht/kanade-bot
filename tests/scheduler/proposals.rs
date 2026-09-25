@@ -509,6 +509,28 @@ async fn a_proposed_answer_recounts_an_unpinned_run() {
 }
 
 #[tokio::test]
+async fn a_stranger_on_a_past_ttl_proposal_changes_nothing() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.clock.set(kl(8, 28, 1, 0));
+    let stranger = member("9999");
+    assert_eq!(
+        f.approve(&id, &stranger).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(
+        f.service.reject_proposal(&id, &stranger).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(
+        f.status(&id).await,
+        DraftStatus::Submitted,
+        "authority is checked before expiry closes it"
+    );
+}
+
+#[tokio::test]
 async fn a_proposal_past_its_ttl_is_refused_and_closed() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();

@@ -842,8 +842,10 @@ enforced by the service, not the store; TTL 24 h.
   owner of the run's (or the edited timing's) weekly timing, or, with the
   bossing role, a participant of the run (or timing), or for a change
   without one a named member (anyone with the role when it names nobody).
-  Anyone else is `Unauthorised`, nothing written. A proposal past its TTL
-  is closed `expired` (system `delivery`) and refused (`Expired`;
+  Anyone else is `Unauthorised`, nothing written; this is checked first, so
+  their ✅/❌ never closes anything (the same for reject). A proposal past its
+  TTL answered by an allowed member is closed `expired` (system `delivery`)
+  and refused (`Expired`;
   `D-EXPIRED-REFUSED`, v4 applied it). A vanished target or an answer for a
   member no longer on the run is refused with v4's text. Then the shared
   draft merge (`merge_loaded`) commits one record through

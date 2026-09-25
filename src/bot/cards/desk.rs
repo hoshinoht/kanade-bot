@@ -17,7 +17,7 @@ use super::format::{
     unanswered,
 };
 use crate::bot::delivery::{
-    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendOutcome, StoreRef,
+    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
 };
 use crate::bot::ids::parse_id;
 use crate::bot::mentions;
@@ -27,8 +27,8 @@ use crate::domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
 use crate::domain::history::Actor;
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, PlannedSend,
-    SendDisposition,
+    DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, JournalView, NotificationIntent,
+    PlannedSend, SendDisposition,
 };
 use crate::domain::proposals::{
     Approver, CardDetails, CardPayload, Payload, ProposalCardStore, StoredCard,
@@ -96,11 +96,14 @@ fn weekday_index(weekday: chrono::Weekday) -> u8 {
 }
 
 /// A delivered, held or maybe-delivered post counts as posted.
-fn posted(outcome: Option<SendOutcome>) -> PostResult {
+/// A journal write that failed after Discord took (or may have taken) the
+/// post still counts: the message may be visible.
+fn posted(outcome: Option<Result<SendOutcome, SendFailure>>) -> PostResult {
     match outcome {
-        Some(SendOutcome::Bound(_) | SendOutcome::Uncertain | SendOutcome::Suppressed) => {
+        Some(Ok(SendOutcome::Bound(_) | SendOutcome::Uncertain | SendOutcome::Suppressed)) => {
             PostResult::Posted
         }
+        Some(Err(failure)) if failure.maybe_delivered => PostResult::Posted,
         _ => PostResult::NotPosted,
     }
 }
@@ -174,7 +177,9 @@ where
         &self,
         now: DateTime<Utc>,
     ) -> SchedulerService<StoreRef<'_, S>, I, FixedClock> {
+        // The service refuses a policy whose attendance mode differs from its own.
         SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), FixedClock(now))
+            .with_attendance(self.settings.policy.attendance)
     }
 
     pub(super) fn raise(&self, alert: AdminAlert, now: DateTime<Utc>) {
@@ -332,7 +337,7 @@ where
         intent: NotificationIntent,
         message: &OutgoingMessage,
         now: DateTime<Utc>,
-    ) -> Option<SendOutcome> {
+    ) -> Option<Result<SendOutcome, SendFailure>> {
         let lease = match self
             .store
             .begin_lease(&self.settings.instance_id, intent.effect.as_str(), now)
@@ -366,7 +371,7 @@ where
         let outcome = executor.execute(&send, message, None, None, now).await;
         // Best effort: an unended lease is orphaned by restart recovery.
         let _ = self.store.end_lease(&lease, now).await;
-        outcome.ok()
+        Some(outcome)
     }
 
     async fn send_cards(
@@ -420,27 +425,53 @@ where
             }
         }
         let ids: Vec<String> = card.entries.iter().map(|e| e.proposal_id.clone()).collect();
-        if let Ok(stranded) = self.store.unposted_cards(channel).await {
-            let stranded: Vec<StoredCard> = stranded
-                .into_iter()
-                .filter(|stored| !ids.contains(&stored.proposal_id))
-                .collect();
-            if !stranded.is_empty() {
-                self.send_cards(channel, &stranded, now).await;
-            }
-        }
+        self.repost_stranded(channel, &ids, now).await;
         let result = if ids.is_empty() {
             PostResult::Posted
         } else if !saved {
             PostResult::NotPosted
         } else {
             match self.store.load_cards(&ids).await {
-                Ok(cards) if !cards.is_empty() => self.send_cards(channel, &cards, now).await,
+                // Saved details (link included) are reposted by a later pass.
+                Ok(cards) if !cards.is_empty() => {
+                    match self.send_cards(channel, &cards, now).await {
+                        PostResult::NotPosted => PostResult::Pending,
+                        result => result,
+                    }
+                }
                 _ => PostResult::NotPosted,
             }
         };
         self.refresh_proposals(&card.superseded).await;
         result
+    }
+
+    /// v4 `_repost_stranded`: live, unexpired cards in the channel never
+    /// posted, one message each so a held (maybe posted) or unavailable card
+    /// never blocks another; held ones are skipped outright.
+    async fn repost_stranded(&self, channel: &str, fresh: &[String], now: DateTime<Utc>) {
+        let Ok(stranded) = self.store.unposted_cards(channel).await else {
+            return;
+        };
+        let Ok(view) = self.store.load_view().await else {
+            return;
+        };
+        for card in stranded {
+            if fresh.contains(&card.proposal_id)
+                || view.holds(&DeliveryTarget::Card(card.proposal_id.clone()))
+            {
+                continue;
+            }
+            let expired = match self.store.load_proposal(&card.proposal_id).await {
+                Ok(Some((_, info))) => info.expires_at <= now,
+                _ => true,
+            };
+            if expired {
+                continue;
+            }
+            self.send_cards(channel, std::slice::from_ref(&card), now)
+                .await;
+        }
     }
 
     /// Re-render the cards these proposals are on.
@@ -463,6 +494,12 @@ where
     /// taken on it (v4's appended "applied by" / "rejected by" / superseded).
     /// `false` when it could not be edited.
     pub async fn refresh(&self, message_id: &str) -> bool {
+        self.refresh_with(message_id, &[]).await
+    }
+
+    /// [`Self::refresh`] with extra lines after the decisions (the stale
+    /// note after a refused ✅).
+    pub async fn refresh_with(&self, message_id: &str, extra: &[&str]) -> bool {
         let Ok(cards) = self.store.cards_on_message(message_id).await else {
             return false;
         };
@@ -491,6 +528,11 @@ where
             };
             if !notices.contains(&notice) {
                 notices.push(notice);
+            }
+        }
+        for line in extra {
+            if !notices.iter().any(|notice| notice == line) {
+                notices.push((*line).to_owned());
             }
         }
         let Ok(view) = self.view(&cards).await else {

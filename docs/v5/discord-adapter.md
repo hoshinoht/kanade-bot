@@ -228,6 +228,7 @@ A clock that moved backwards never suppresses one. The alerts are:
 - `DigestClockRollback`.
 - `JournalFailure`.
 - `BacklogDropped` (extraction backlog overflow).
+- `CardAnswerFailed` (a ✅/❌ failure members must not see).
 
 Quiet mode is never announced publicly: the rendered text has no mention tags
 and the allow-list is empty.
@@ -257,29 +258,45 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
   of a live proposal with no unproven retirement; `bind` writes
   `message_id`/`posted_at` in the same transaction. Ambiguous sends stay held
   and are never replayed; a refused or unsent card stays unposted and is
-  posted, as v4's stranded rows, before the next card in its channel. Bound
-  cards get ✅/❌. Allowed mentions are empty: people are named, not pinged.
-  `PostResult` tells the pipeline whether the post went out.
+  posted, as v4's stranded rows, before the next card in its channel: each
+  stranded card as its own message, skipping cards still held by an
+  unresolved attempt and proposals past their TTL, so one held or
+  unavailable card never blocks another. Bound cards get ✅/❌. Allowed
+  mentions are empty: people are named, not pinged. `PostResult` tells the
+  pipeline what happened: `Posted` (bound, held, or a journal write failed
+  after Discord took or may have taken it), `Pending` (details saved, a later
+  pass reposts it with its link; tips stay spent), `NotPosted` (details not
+  saved; tips are given back).
 - **Refresh.** Re-render content and embed and append one line per decision
   on the card, from the proposals' states: merged → `✅ applied by <name>`,
   rejected → `❌ rejected by <name>`, superseded → `↪ superseded by a newer
   card`. The edit mentions nobody. A card's retired siblings are refreshed
-  after every pass and every approval.
+  after every pass and every approval. A ✅ refused because the run changed
+  after the card went up adds `⚠️ out of date` at that refresh (not
+  persisted: a later refresh shows only the decisions).
 - **Reactions** (`CardDesk::on_reaction`): only added ✅/❌ on a message
   with stored cards (else `NotACard`, routed as an RSVP). `Authority` gives
   the member's `Approver` (role, Administrator or guild owner). ❌ rejects
   and ✅ approves every proposal on the card through
   `SchedulerService::{reject_proposal, approve_proposal}`, so the approval
   rules, the 24 h TTL, move revival, repeat-✅ follow-ups and v4's ✅-time
-  refusal wording are the scheduler's. Unauthorised or already answered
-  proposals are silent; refusals are posted once as `⚠️ <reason>; …`
-  (journalled notice, no mentions). Merge notices are returned
-  (`CardReaction::notices`) for the draft-merge outbox path.
+  refusal wording are the scheduler's. The scheduler checks the member's
+  authority before anything else, so a stranger's reaction never expires,
+  closes or posts anything. Unauthorised or already answered proposals are
+  silent. Only member-readable refusals are posted, once, as
+  `⚠️ <reason>; …` (journalled notice, no mentions): v4's refusal texts,
+  "that is already the case", "that proposal has expired", and (user
+  decision 2026-09-25) for a draft conflict "That run was changed after this
+  card went up, so I didn't apply it. Check the run and ask again if it
+  still needs changing." Any other failure (store, retries, id reuse) raises
+  `AdminAlert::CardAnswerFailed` and posts nothing. Merge notices are
+  returned (`CardReaction::notices`) for the draft-merge outbox path.
 - **Outbox** (`CardOutbox`): cards as above; link-first links as a
   journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
   pinged); chat answers through the reaction path (`apply_reaction` as the
-  member, then the answer's source set to `chat`, v4 `_apply_rsvp`); backlog
-  drops as `AdminAlert::BacklogDropped`.
+  member, then the answer's source set to `chat`, v4 `_apply_rsvp`: two
+  history records, both attributed to the member on the Discord surface);
+  backlog drops as `AdminAlert::BacklogDropped`.
 
 ## Deferred
 

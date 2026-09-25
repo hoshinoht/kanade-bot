@@ -156,7 +156,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   admin or the owner), and refreshed when applied, rejected or superseded. Card details
   are stored with each proposal (migration 0011) so cards re-render after a restart;
   extraction logs record refused changes in a structured field. A post that never went
-  out gives the weekly nudge tip back.
+  out gives the weekly nudge tip back. A ✅ on a run edited by hand after the card went
+  up is refused in plain words and the card is marked out of date; reactions from
+  people who may not answer change nothing, and internal errors go to admins, never
+  the channel.
 - v5: self-service redirect decisions (move it yourself, request it, or keep the card;
   cards only while the public portal is closed) and persona nudges: rotating seed lines
   from the profile, bundle or built-in pools, at most one tip per member per boss week,

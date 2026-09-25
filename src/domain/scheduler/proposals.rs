@@ -303,19 +303,25 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         })
     }
 
-    /// Load a live proposal; one past its TTL is closed as expired first
-    /// (`D-EXPIRED-REFUSED`: v4 applied it).
+    /// Load a live proposal `approver` may answer; one past its TTL is then
+    /// closed as expired (`D-EXPIRED-REFUSED`: v4 applied it). Authority is
+    /// checked first, so anyone else's reaction changes nothing.
     async fn live_proposal(
         &mut self,
         id: &str,
+        approver: &Approver,
         now: DateTime<Utc>,
-    ) -> ProposalResult<(LoadedDraft, ProposalInfo, ProposalSubject)> {
+    ) -> ProposalResult<(LoadedDraft, ProposalInfo, ProposalSubject, ScheduleSnapshot)> {
         let (loaded, info) = self
             .store
             .load_proposal(id)
             .await?
             .ok_or_else(|| DraftError::UnknownDraft(id.to_owned()))?;
         let subject = subject_of(&loaded)?;
+        let snapshot = self.store.load(&Scope::All).await?;
+        if !allowed(&subject, approver, &snapshot) {
+            return Err(ProposalError::Unauthorised);
+        }
         let draft = &loaded.draft;
         if draft.status.is_live() && info.expires_at <= now {
             self.close_proposal(
@@ -338,7 +344,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             )
             .into());
         }
-        Ok((loaded, info, subject))
+        Ok((loaded, info, subject, snapshot))
     }
 
     async fn close_proposal(
@@ -504,11 +510,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                 .into(),
             );
         }
-        let (loaded, info, subject) = self.live_proposal(id, now).await?;
-        let snapshot = self.store.load(&Scope::All).await?;
-        if !allowed(&subject, approver, &snapshot) {
-            return Err(ProposalError::Unauthorised);
-        }
+        let (loaded, info, subject, snapshot) = self.live_proposal(id, approver, now).await?;
         let mut ops = loaded.draft_ops();
         still_applies(&subject, &ops, &snapshot)?;
         fill_approver(&mut ops, &approver.user_id);
@@ -624,11 +626,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         approver: &Approver,
     ) -> ProposalResult<StoredDraft> {
         let now = self.clock.now();
-        let (loaded, _, subject) = self.live_proposal(id, now).await?;
-        let snapshot = self.store.load(&Scope::All).await?;
-        if !allowed(&subject, approver, &snapshot) {
-            return Err(ProposalError::Unauthorised);
-        }
+        let (loaded, ..) = self.live_proposal(id, approver, now).await?;
         self.close_proposal(
             &loaded.draft,
             Actor::member(approver.user_id.clone()),

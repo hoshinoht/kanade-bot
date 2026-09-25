@@ -13,13 +13,20 @@ use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDe
 use kanade::bot::delivery::AdminAlert;
 use kanade::bot::delivery::{AlertRecorder, FixedClock, StoreRef};
 use kanade::bot::events::RsvpAnswer;
-use kanade::bot::transport::{AmbiguousKind, Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
+use kanade::bot::transport::{
+    AmbiguousKind, Call, ChannelId, DiscordTransport, FakeDiscord, InteractionRef,
+    InteractionReply, MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
+    RejectionKind, Step,
+};
 use kanade::chat::persona::NudgePurpose;
 use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
 use kanade::domain::history::Origin;
+use kanade::domain::history::{Actor, Surface};
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{Directory, Member};
+use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
+use kanade::domain::schedule::RsvpSource;
 use kanade::domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
@@ -32,6 +39,8 @@ use kanade::extract::pipeline::{
 };
 use kanade::extract::redirect::RedirectLink;
 use kanade::infrastructure::store::MemoryScheduleStore;
+use twilight_model::application::command::Command;
+use twilight_model::id::{Id, marker::GuildMarker};
 
 const CHANNEL: &str = "300";
 const MY: &str = "1001";
@@ -129,12 +138,22 @@ fn desk(
     alerts: &Arc<AlertRecorder>,
     ids: &Ids,
 ) -> Desk {
+    desk_at(store, discord, alerts, ids, now())
+}
+
+fn desk_at(
+    store: &Arc<MemoryScheduleStore>,
+    discord: &Arc<FakeDiscord>,
+    alerts: &Arc<AlertRecorder>,
+    ids: &Ids,
+    at: DateTime<Utc>,
+) -> Desk {
     CardDesk::new(
         DeskDeps {
             store: store.clone(),
             transport: discord.clone(),
             ids: ids.clone(),
-            clock: Arc::new(FixedClock(now())),
+            clock: Arc::new(FixedClock(at)),
             directory: Arc::new(Roster),
             authority: Arc::new(Staff),
             alerts: alerts.clone(),
@@ -350,7 +369,8 @@ async fn a_refused_card_is_not_posted_and_rides_with_the_next_one() {
     let first_id = first.proposal_id.clone();
     assert_eq!(
         world.desk.post_card(&card(vec![first], Vec::new())).await,
-        PostResult::NotPosted
+        PostResult::Pending,
+        "saved and reposted later, so its tips stay spent"
     );
     assert!(
         !world.alerts.alerts().is_empty(),
@@ -628,4 +648,290 @@ async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
         messages: 2,
         capacity: 2
     }));
+}
+
+#[tokio::test]
+async fn a_released_card_posts_even_beside_a_held_one() {
+    let world = World::new().await;
+    world.discord.script(
+        Op::Create,
+        Step::Ambiguous {
+            kind: AmbiguousKind::Timeout,
+            applied: false,
+        },
+    );
+    let held = world.propose(local(9, 2, 21, 30)).await;
+    let held_id = held.proposal_id.clone();
+    world.desk.post_card(&card(vec![held], Vec::new())).await;
+    world
+        .discord
+        .script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
+    let released = world.propose(local(9, 2, 22, 0)).await;
+    let released_id = released.proposal_id.clone();
+    world
+        .desk
+        .post_card(&card(vec![released], Vec::new()))
+        .await;
+    let fresh = world.propose(local(9, 2, 22, 30)).await;
+    world.desk.post_card(&card(vec![fresh], Vec::new())).await;
+
+    assert!(world.message_of(&released_id).await.is_some(), "reposted");
+    assert_eq!(world.message_of(&held_id).await, None, "held, never resent");
+    assert_eq!(world.creates().len(), 4);
+}
+
+#[tokio::test]
+async fn a_stranded_card_past_its_ttl_is_not_reposted() {
+    let world = World::new().await;
+    world
+        .discord
+        .script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
+    let first = world.propose(local(9, 2, 21, 30)).await;
+    let first_id = first.proposal_id.clone();
+    world.desk.post_card(&card(vec![first], Vec::new())).await;
+    let later = desk_at(
+        &world.store,
+        &world.discord,
+        &world.alerts,
+        &world.ids,
+        now() + chrono::TimeDelta::hours(25),
+    );
+    let second = world.propose(local(9, 2, 22, 30)).await;
+    later.post_card(&card(vec![second], Vec::new())).await;
+    assert_eq!(world.creates().len(), 2, "only the new card");
+    assert_eq!(world.message_of(&first_id).await, None);
+}
+
+#[tokio::test]
+async fn a_strangers_reaction_on_a_past_ttl_card_changes_and_posts_nothing() {
+    let world = World::new().await;
+    let entry = world.propose(local(9, 2, 21, 30)).await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let message = world.message_of(&id).await.expect("posted");
+    let later = desk_at(
+        &world.store,
+        &world.discord,
+        &world.alerts,
+        &world.ids,
+        now() + chrono::TimeDelta::hours(25),
+    );
+    let calls = world.discord.calls().len();
+    for answer in [RsvpAnswer::Yes, RsvpAnswer::No] {
+        assert_eq!(
+            later.on_reaction(&message, STRANGER, answer, true).await,
+            CardReaction::Ignored
+        );
+    }
+    assert_eq!(world.status(&id).await, DraftStatus::Submitted);
+    assert_eq!(world.discord.calls().len(), calls, "no post, no edit");
+}
+
+#[tokio::test]
+async fn a_hand_edited_run_leaves_the_card_out_of_date() {
+    let world = World::new().await;
+    let entry = world.propose(local(9, 2, 21, 30)).await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let message = world.message_of(&id).await.expect("posted");
+    service(&world.store, &world.ids)
+        .as_origin(Origin::for_tests())
+        .amend_run(&world.run, local(9, 1, 22, 0), &policy())
+        .await
+        .expect("moved by hand");
+    let reaction = world
+        .desk
+        .on_reaction(&message, MY, RsvpAnswer::Yes, true)
+        .await;
+    assert!(matches!(
+        reaction,
+        CardReaction::Approved { ref approved, .. } if approved.is_empty()
+    ));
+    let posted = world.creates().pop().expect("a notice");
+    let Call::Create {
+        message: notice, ..
+    } = posted
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        notice.content.as_deref(),
+        Some(
+            "⚠️ That run was changed after this card went up, so I didn't apply it. \
+             Check the run and ask again if it still needs changing."
+        )
+    );
+    assert!(world.last_edit_content().ends_with("\n⚠️ out of date"));
+    assert_eq!(world.status(&id).await, DraftStatus::Submitted);
+}
+
+#[tokio::test]
+async fn a_failure_members_must_not_see_is_alerted_not_posted() {
+    let world = World::new().await;
+    let entry = world.propose(local(9, 2, 21, 30)).await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let message = world.message_of(&id).await.expect("posted");
+    // The member's approval request id already names another change.
+    service(&world.store, &world.ids)
+        .as_origin(
+            Origin::new(Actor::member(MY), Surface::Discord)
+                .with_request_id(format!("approve:{id}")),
+        )
+        .set_rsvp(&world.run, MY, RsvpState::Yes, RsvpSource::Reaction)
+        .await
+        .expect("unrelated change");
+    let calls = world.discord.calls().len();
+    assert_eq!(
+        world
+            .desk
+            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
+            .await,
+        CardReaction::Ignored
+    );
+    assert_eq!(world.discord.calls().len(), calls, "nothing public");
+    assert!(world.alerts.alerts().iter().any(|alert| matches!(
+        alert,
+        AdminAlert::CardAnswerFailed { proposal_id, .. } if *proposal_id == id
+    )));
+}
+
+/// `FakeDiscord` whose creates orphan every live lease first (a restart
+/// recovery racing the send), so the journal write after the send fails.
+struct LeaseLost {
+    fake: Arc<FakeDiscord>,
+    store: Arc<MemoryScheduleStore>,
+}
+
+impl DiscordTransport for LeaseLost {
+    async fn create_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+    ) -> Outcome<MessageId> {
+        let outcome = self.fake.create_message(channel, message).await;
+        self.store.recover_on_start(now()).await.expect("recover");
+        outcome
+    }
+
+    fn edit_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        edit: &MessageEdit,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.edit_message(channel, message, edit)
+    }
+
+    fn delete_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.delete_message(channel, message)
+    }
+
+    fn add_own_reaction(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.add_own_reaction(channel, message, emoji)
+    }
+
+    fn remove_own_reaction(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.remove_own_reaction(channel, message, emoji)
+    }
+
+    fn message_presence(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl std::future::Future<Output = Outcome<Presence>> + Send {
+        self.fake.message_presence(channel, message)
+    }
+
+    fn respond(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.respond(interaction, reply)
+    }
+
+    fn defer(
+        &self,
+        interaction: &InteractionRef,
+        ephemeral: bool,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.defer(interaction, ephemeral)
+    }
+
+    fn complete_deferred(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.complete_deferred(interaction, reply)
+    }
+
+    fn register_guild_commands(
+        &self,
+        guild: Id<GuildMarker>,
+        commands: &[Command],
+    ) -> impl std::future::Future<Output = Outcome<()>> + Send {
+        self.fake.register_guild_commands(guild, commands)
+    }
+}
+
+#[tokio::test]
+async fn a_send_whose_journal_write_failed_still_counts_as_posted() {
+    for step in [
+        Step::Ambiguous {
+            kind: AmbiguousKind::Timeout,
+            applied: true,
+        },
+        Step::Succeed,
+    ] {
+        let world = World::new().await;
+        world.discord.script(Op::Create, step);
+        let desk = CardDesk::new(
+            DeskDeps {
+                store: world.store.clone(),
+                transport: Arc::new(LeaseLost {
+                    fake: world.discord.clone(),
+                    store: world.store.clone(),
+                }),
+                ids: world.ids.clone(),
+                clock: Arc::new(FixedClock(now())),
+                directory: Arc::new(Roster),
+                authority: Arc::new(Staff),
+                alerts: world.alerts.clone(),
+            },
+            CardSettings {
+                zone: zone(),
+                policy: policy(),
+                instance_id: "instance-1".into(),
+            },
+        );
+        let entry = world.propose(local(9, 2, 21, 30)).await;
+        assert_eq!(
+            desk.post_card(&card(vec![entry], Vec::new())).await,
+            PostResult::Posted,
+            "it may be visible, so its tip stays spent"
+        );
+        assert!(world.alerts.alerts().iter().any(|alert| matches!(
+            alert,
+            AdminAlert::JournalFailure {
+                attempt: Some(_),
+                ..
+            }
+        )));
+    }
 }

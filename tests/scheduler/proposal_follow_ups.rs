@@ -299,14 +299,17 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
             has_role,
             is_admin: false,
         };
+        // Authority is checked before the proposal's state, so someone who
+        // may not answer it now is simply unauthorised.
         assert!(matches!(
             service
                 .approve_proposal(&ids[0], &refused, &policy, &Guild)
                 .await
                 .unwrap_err(),
-            ProposalError::Draft(
-                DraftError::AlreadyMerged { .. } | DraftError::AlreadyApplied { .. }
-            )
+            ProposalError::Unauthorised
+                | ProposalError::Draft(
+                    DraftError::AlreadyMerged { .. } | DraftError::AlreadyApplied { .. }
+                )
         ));
         let after = (
             store.load(&Scope::All).await.unwrap(),

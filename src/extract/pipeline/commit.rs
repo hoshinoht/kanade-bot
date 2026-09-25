@@ -289,8 +289,9 @@ where
                 }
                 Err(error) => {
                     let change = kept.amendment.kind.as_str();
-                    records[origin].refusals.push(refusal(change, &error));
-                    report.refused.push(format!("{change}: {error}"));
+                    let logged = refusal(change, &error);
+                    report.refused.push(format!("{change}: {}", logged.message));
+                    records[origin].refusals.push(logged);
                 }
             }
         }

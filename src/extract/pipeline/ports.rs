@@ -197,6 +197,9 @@ pub struct BacklogDrop {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PostResult {
     Posted,
+    /// Not posted yet but kept (card details saved): a later pass posts it
+    /// with its link, so its tips stay spent.
+    Pending,
     NotPosted,
 }
 

@@ -26,9 +26,12 @@ No Twilight types cross into `src/extract`:
   A card entry carries the staged `ProposedChange` and may carry
   `self_service: Option<SelfServiceTip>` (link, optional lead-in, how the
   lead-in was made, and the weekly tip it `claimed`). `card` and `redirect`
-  return `PostResult`: `NotPosted` (never sent, refused) gives every tip the
-  post carried back (`ModelLogStore::release_tip`); a send whose outcome is
-  unknown counts as posted.
+  return `PostResult`: only `NotPosted` (nothing sent and nothing kept for a
+  later pass) gives every tip the post carried back
+  (`ModelLogStore::release_tip`); `Posted` (including a send whose outcome
+  is unknown) and `Pending` (a card saved for the stranded repost, link
+  included) keep them spent. A refusal's logged `message` never carries
+  store text: a store failure logs "the change could not be staged".
 - **`SelfServiceDeps`** (optional in `Deps`; absent means cards only):
   `PortalLinks`, a `Nudger<SharedRewriter>` (production:
   `GovernedRewriter`) and `Personas` (the member's resolved persona).

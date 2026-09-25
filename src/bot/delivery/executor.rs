@@ -59,6 +59,9 @@ impl SendOutcome {
 pub struct SendFailure {
     pub attempt: Option<AttemptId>,
     pub error: JournalError,
+    /// Discord accepted the post or its outcome is unknown (the journal
+    /// write after it failed): it may be visible.
+    pub maybe_delivered: bool,
 }
 
 impl SendFailure {
@@ -152,7 +155,11 @@ where
         self.warn(intent, now);
         self.deliver(intent, &attempt, message, record_week, now)
             .await
-            .map_err(|error| self.failed(intent, Some(attempt), error, now))
+            .map_err(|(error, maybe_delivered)| {
+                let mut failure = self.failed(intent, Some(attempt), error, now);
+                failure.maybe_delivered = maybe_delivered;
+                failure
+            })
     }
 
     fn failed(
@@ -171,7 +178,11 @@ where
             },
             now,
         );
-        SendFailure { attempt, error }
+        SendFailure {
+            attempt,
+            error,
+            maybe_delivered: false,
+        }
     }
 
     async fn deliver(
@@ -181,30 +192,37 @@ where
         message: &OutgoingMessage,
         record_week: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
-    ) -> Result<SendOutcome, JournalError> {
+    ) -> Result<SendOutcome, (JournalError, bool)> {
         let outcome = match parse_id(&intent.channel_id) {
             Some(channel) => self.transport.create_message(channel, message).await,
             None => Outcome::DefinitelyRejected(RejectionKind::Invalid),
         };
+        let maybe = |error| (error, true);
+        let refused = |error| (error, false);
         match outcome {
-            Outcome::Delivered(message_id) => {
-                self.bind(intent, attempt, message_id, record_week, now)
-                    .await
-            }
+            Outcome::Delivered(message_id) => self
+                .bind(intent, attempt, message_id, record_week, now)
+                .await
+                .map_err(maybe),
             Outcome::Ambiguous(_) => {
-                self.journal.mark_indeterminate(self.lease, attempt).await?;
+                self.journal
+                    .mark_indeterminate(self.lease, attempt)
+                    .await
+                    .map_err(maybe)?;
                 Ok(SendOutcome::Uncertain)
             }
             Outcome::DefinitelyRejected(kind) if retryable(&kind) => {
                 self.journal
                     .release_unsent(self.lease, attempt, &reason_text(&kind), now)
-                    .await?;
+                    .await
+                    .map_err(refused)?;
                 Ok(SendOutcome::Released(kind))
             }
             Outcome::DefinitelyRejected(kind) => {
                 self.journal
                     .retire_rejected(self.lease, attempt, &reason_text(&kind), now)
-                    .await?;
+                    .await
+                    .map_err(refused)?;
                 self.raise(
                     AdminAlert::SendRejected {
                         effect: intent.effect.clone(),

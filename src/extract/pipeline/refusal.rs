@@ -35,10 +35,34 @@ pub fn refusal_code(error: &ProposalError) -> &'static str {
     }
 }
 
+/// Shown by the admin portal, so a store failure's own text (paths, SQLite
+/// messages) is replaced by a generic line.
+pub const STORE_REFUSAL: &str = "the change could not be staged";
+
 pub fn refusal(change: &str, error: &ProposalError) -> ExtractionRefusal {
+    let message = match error {
+        ProposalError::Draft(_) => STORE_REFUSAL.to_owned(),
+        other => other.to_string(),
+    };
     ExtractionRefusal {
         change: change.to_owned(),
         code: refusal_code(error).to_owned(),
-        message: error.to_string(),
+        message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::scheduler::{DraftError, StoreError};
+
+    #[test]
+    fn a_store_failure_is_logged_without_its_backend_text() {
+        let error = ProposalError::Draft(DraftError::Store(StoreError::Backend(
+            "/private/var/db.sqlite3: disk I/O error".into(),
+        )));
+        let logged = refusal("move", &error);
+        assert_eq!(logged.code, "store");
+        assert_eq!(logged.message, STORE_REFUSAL);
     }
 }

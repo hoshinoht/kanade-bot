@@ -4,7 +4,7 @@
 //! scheduler's (`approve_proposal`); this re-renders the cards and posts one
 //! "⚠️" notice for changes that no longer apply.
 
-use crate::bot::delivery::AlertSink;
+use crate::bot::delivery::{AdminAlert, AlertSink};
 use crate::bot::events::RsvpAnswer;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::ProposalStore;
@@ -48,19 +48,46 @@ impl CardReaction {
     }
 }
 
-/// Nothing to say: the proposal was answered, closed or is not theirs.
-fn silent(error: &ProposalError) -> bool {
-    matches!(
-        error,
+/// User decision 2026-09-25: a ✅ refused because the run was edited after
+/// the card went up (a draft conflict).
+pub const CHANGED_SINCE_CARD: &str = "That run was changed after this card went up, so I didn't \
+     apply it. Check the run and ask again if it still needs changing.";
+
+/// The line such a card gets, beside "✅ applied by X" and the rest.
+pub const OUT_OF_DATE_NOTICE: &str = "⚠️ out of date";
+
+/// What an answer's failure means in the channel.
+enum Failure {
+    /// Answered, closed or not theirs: say nothing.
+    Silent,
+    /// A refusal members may read (v4 wording or the stale sentence).
+    Public { text: String, stale: bool },
+    /// Anything else (store, retries, history): admins only.
+    Private,
+}
+
+fn failure(error: &ProposalError) -> Failure {
+    match error {
         ProposalError::Unauthorised
-            | ProposalError::NotAProposal
-            | ProposalError::Draft(
-                DraftError::Stale { .. }
-                    | DraftError::AlreadyApplied { .. }
-                    | DraftError::AlreadyMerged { .. }
-                    | DraftError::UnknownDraft(_)
-            )
-    )
+        | ProposalError::NotAProposal
+        | ProposalError::Draft(
+            DraftError::Stale { .. }
+            | DraftError::AlreadyApplied { .. }
+            | DraftError::AlreadyMerged { .. }
+            | DraftError::UnknownDraft(_),
+        ) => Failure::Silent,
+        ProposalError::Refused(_) | ProposalError::NoEffect | ProposalError::Expired => {
+            Failure::Public {
+                text: error.to_string(),
+                stale: false,
+            }
+        }
+        ProposalError::Draft(DraftError::Conflicts(_)) => Failure::Public {
+            text: CHANGED_SINCE_CARD.to_owned(),
+            stale: true,
+        },
+        ProposalError::Draft(_) => Failure::Private,
+    }
 }
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
@@ -94,12 +121,13 @@ where
             RsvpAnswer::No => {
                 let mut rejected = Vec::new();
                 for card in &cards {
-                    if service
-                        .reject_proposal(&card.proposal_id, &approver)
-                        .await
-                        .is_ok()
-                    {
-                        rejected.push(card.proposal_id.clone());
+                    match service.reject_proposal(&card.proposal_id, &approver).await {
+                        Ok(_) => rejected.push(card.proposal_id.clone()),
+                        Err(error) => {
+                            if let Failure::Private | Failure::Public { .. } = failure(&error) {
+                                self.alert_failure(&card.proposal_id, &error, now);
+                            }
+                        }
                     }
                 }
                 drop(service);
@@ -114,8 +142,9 @@ where
             RsvpAnswer::Yes => {
                 let mut approved: Vec<ProposalApproved> = Vec::new();
                 let mut problems: Vec<String> = Vec::new();
+                let mut stale = false;
                 for card in &cards {
-                    match service
+                    let error = match service
                         .approve_proposal(
                             &card.proposal_id,
                             &approver,
@@ -124,17 +153,30 @@ where
                         )
                         .await
                     {
-                        Ok(done) => approved.push(done),
-                        Err(error) if silent(&error) => {}
-                        Err(error) => problems.push(error.to_string()),
+                        Ok(done) => {
+                            approved.push(done);
+                            continue;
+                        }
+                        Err(error) => error,
+                    };
+                    match failure(&error) {
+                        Failure::Silent => {}
+                        Failure::Public { text, stale: out } => {
+                            stale |= out;
+                            if !problems.contains(&text) {
+                                problems.push(text);
+                            }
+                        }
+                        Failure::Private => self.alert_failure(&card.proposal_id, &error, now),
                     }
                 }
                 drop(service);
                 if approved.is_empty() && problems.is_empty() {
                     return CardReaction::Ignored;
                 }
-                if !approved.is_empty() {
-                    self.refresh(message_id).await;
+                let extra: &[&str] = if stale { &[OUT_OF_DATE_NOTICE] } else { &[] };
+                if !approved.is_empty() || stale {
+                    self.refresh_with(message_id, extra).await;
                     let superseded: Vec<String> = approved
                         .iter()
                         .flat_map(|done| done.superseded.clone())
@@ -153,5 +195,20 @@ where
                 CardReaction::Approved { approved, problems }
             }
         }
+    }
+
+    fn alert_failure(
+        &self,
+        proposal_id: &str,
+        error: &ProposalError,
+        now: chrono::DateTime<chrono::Utc>,
+    ) {
+        self.raise(
+            AdminAlert::CardAnswerFailed {
+                proposal_id: proposal_id.to_owned(),
+                detail: error.to_string(),
+            },
+            now,
+        );
     }
 }
