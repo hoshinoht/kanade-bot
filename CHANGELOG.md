@@ -103,6 +103,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   staging lines (literal boss-name substitution), optional self-service nudge pools and a
   nudge rewrite prompt per bundle/profile. Persona YAML no longer coerces unquoted
   numbers or booleans into text.
+- v5: storage for extraction and chat logs (per-round chat detail, filterable by model,
+  date, outcome, channel, member, tool and text with keyset paging), rescan jobs,
+  allowance overrides and one self-service tip per member per week, plus extractor/chat
+  proposals stored as system drafts that expire and supersede older ones.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard

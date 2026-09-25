@@ -14,8 +14,45 @@ mod support;
 
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, cherry_pick_conformance, conformance,
-    draft_conformance, history_conformance, journal_conformance, precondition_conformance,
+    draft_conformance, history_conformance, journal_conformance, model_log_conformance,
+    precondition_conformance, proposal_conformance,
 };
+
+#[tokio::test]
+async fn memory_model_logs_conform() {
+    model_log_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_model_logs_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    model_log_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("logs-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn memory_proposals_conform() {
+    proposal_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_proposals_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    proposal_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("proposals-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
 
 #[tokio::test]
 async fn sqlite_store_conforms() {

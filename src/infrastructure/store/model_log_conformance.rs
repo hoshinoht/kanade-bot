@@ -1,0 +1,684 @@
+//! The model-log storage every store must keep: the message cache, the
+//! extraction and chat logs with their filters and keyset pages, rescan
+//! jobs, allowance overrides and self-service tips. Each check runs against
+//! a fresh store; failures panic with the check name.
+
+use chrono::{DateTime, TimeZone, Utc};
+use serde_json::json;
+
+use crate::domain::model_log::{
+    AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
+    ExtractionLog, ExtractionOutcome, LogFacets, MessageUpsert, ModelLogStore, RescanJob,
+    RescanStatus, WatchedMessage,
+};
+use crate::domain::scheduler::StoreError;
+
+/// Run every check, each against a fresh store from `make`.
+pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
+    messages_cache_edits_and_windows(make().await).await;
+    extraction_logs_round_trip_and_refuse_bad_rows(make().await).await;
+    extraction_filters_combine_and_page(make().await).await;
+    chat_logs_round_trip_with_rounds(make().await).await;
+    chat_filters_match_rounds_flags_and_latency(make().await).await;
+    rescan_jobs_stop_changing_once_final(make().await).await;
+    allowance_overrides_replace_and_clear(make().await).await;
+    tips_are_claimed_once_per_member_and_week(make().await).await;
+}
+
+fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0)
+        .single()
+        .expect("valid instant")
+}
+
+fn message(id: &str, channel: &str, at: DateTime<Utc>, content: &str) -> WatchedMessage {
+    WatchedMessage {
+        id: id.into(),
+        channel_id: channel.into(),
+        author_id: "7".into(),
+        created_at: at,
+        edited_at: None,
+        content: content.into(),
+        processed_at: None,
+    }
+}
+
+fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
+    ExtractionLog {
+        id: id.into(),
+        at,
+        channel_id: Some("900".into()),
+        member_ids: vec!["1".into(), "2".into()],
+        model: "kanata/extract".into(),
+        reasoning: Some("low".into()),
+        prompt: "Messages: Lotus moved to Friday".into(),
+        raw_response: "{\"changes\": []}".into(),
+        latency_ms: Some(1200),
+        request_count: 1,
+        outcome: ExtractionOutcome::NoChange,
+        error: None,
+        guardrail: json!({}),
+        message_ids: vec!["m-1".into()],
+        proposal_ids: Vec::new(),
+    }
+}
+
+fn round(model: &str, tools: &[&str]) -> ChatRound {
+    ChatRound {
+        model: model.into(),
+        reasoning: None,
+        finish_reason: Some("stop".into()),
+        latency_ms: Some(300),
+        tool_bundles: vec!["schedule".into()],
+        tools: tools.iter().map(|tool| (*tool).to_owned()).collect(),
+        tool_calls: json!([]),
+        response: None,
+    }
+}
+
+fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
+    ChatInteraction {
+        id: id.into(),
+        at,
+        channel_id: Some("900".into()),
+        message_id: Some(format!("msg-{id}")),
+        member_id: Some("1".into()),
+        question: "When is Lotus?".into(),
+        reply: "Friday at 20:00.".into(),
+        outcome: ChatOutcome::Answered,
+        error: None,
+        clean_retry: false,
+        withheld: false,
+        guardrail: json!({}),
+        request_count: 1,
+        latency_ms: Some(900),
+        model_ms: Some(800),
+        tools_ms: Some(100),
+        prompt_tokens: Some(1000),
+        completion_tokens: Some(40),
+        rounds: vec![round("kanata/chat", &[])],
+    }
+}
+
+fn ids<T>(items: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
+    items.iter().map(|item| id(item).to_owned()).collect()
+}
+
+async fn messages_cache_edits_and_windows<S: ModelLogStore>(store: S) {
+    let at = utc(20, 12, 0);
+    assert_eq!(
+        store
+            .upsert_message(message("m-1", "900", at, "Lotus Friday?"))
+            .await
+            .expect("insert"),
+        MessageUpsert::Inserted
+    );
+    store
+        .upsert_message(message("m-2", "900", utc(20, 12, 5), "ok"))
+        .await
+        .expect("insert");
+    store
+        .upsert_message(message("m-3", "901", at, "elsewhere"))
+        .await
+        .expect("insert");
+    store
+        .upsert_message(message("m-0", "900", utc(19, 12, 0), "too old"))
+        .await
+        .expect("insert");
+    assert_eq!(
+        store
+            .mark_processed(
+                &["m-1".into(), "m-1".into(), "m-2".into(), "absent".into()],
+                at
+            )
+            .await
+            .expect("mark"),
+        2,
+        "messages: duplicates and unknown ids count once / not at all"
+    );
+    assert_eq!(
+        store
+            .upsert_message(message("m-1", "900", at, "Lotus Friday?"))
+            .await
+            .expect("same"),
+        MessageUpsert::Unchanged
+    );
+    let mut edit = message("m-1", "999", utc(21, 0, 0), "Lotus Saturday?");
+    edit.edited_at = Some(utc(20, 13, 0));
+    assert_eq!(
+        store.upsert_message(edit).await.expect("edit"),
+        MessageUpsert::Edited
+    );
+    let window = store
+        .channel_messages("900", utc(20, 0, 0), false)
+        .await
+        .expect("window");
+    assert_eq!(ids(&window, |m| &m.id), ["m-1", "m-2"], "messages: window");
+    let edited = &window[0];
+    assert_eq!(edited.content, "Lotus Saturday?");
+    assert_eq!(edited.edited_at, Some(utc(20, 13, 0)));
+    assert_eq!(edited.created_at, at, "messages: an edit keeps created_at");
+    assert_eq!(
+        edited.channel_id, "900",
+        "messages: an edit keeps the channel"
+    );
+    assert_eq!(edited.processed_at, None, "messages: an edit is read again");
+    assert_eq!(window[1].processed_at, Some(at));
+    let pending = store
+        .channel_messages("900", utc(1, 0, 0), true)
+        .await
+        .expect("pending");
+    assert_eq!(
+        ids(&pending, |m| &m.id),
+        ["m-0", "m-1"],
+        "messages: pending"
+    );
+    assert!(store.delete_message("m-1").await.expect("delete"));
+    assert!(!store.delete_message("m-1").await.expect("delete again"));
+}
+
+async fn extraction_logs_round_trip_and_refuse_bad_rows<S: ModelLogStore>(store: S) {
+    let mut log = extraction("x-1", utc(20, 12, 0) + chrono::TimeDelta::microseconds(5));
+    log.guardrail = json!({"content_filter": false, "prescreen": "clean"});
+    log.proposal_ids = vec!["p-1".into()];
+    log.outcome = ExtractionOutcome::Proposed;
+    store.record_extraction(log.clone()).await.expect("record");
+    assert_eq!(
+        store.load_extraction("x-1").await.expect("load"),
+        Some(log.clone()),
+        "extractions: round trip"
+    );
+    assert!(
+        matches!(
+            store.record_extraction(log.clone()).await,
+            Err(StoreError::Constraint(_))
+        ),
+        "extractions: a duplicate id is refused"
+    );
+    let mut bad = extraction("x-2", utc(20, 12, 0));
+    bad.guardrail = json!(["not", "an", "object"]);
+    assert!(
+        matches!(
+            store.record_extraction(bad).await,
+            Err(StoreError::Constraint(_))
+        ),
+        "extractions: guardrail must be an object"
+    );
+    assert_eq!(store.load_extraction("x-2").await.expect("load"), None);
+    assert_eq!(store.load_extraction("absent").await.expect("load"), None);
+}
+
+async fn extraction_filters_combine_and_page<S: ModelLogStore>(store: S) {
+    let rows = [
+        (
+            "x-a",
+            utc(20, 9, 0),
+            "kanata/extract",
+            ExtractionOutcome::Proposed,
+            "900",
+            "1",
+        ),
+        (
+            "x-b",
+            utc(21, 9, 0),
+            "kanata/small",
+            ExtractionOutcome::NoChange,
+            "900",
+            "2",
+        ),
+        (
+            "x-c",
+            utc(22, 9, 0),
+            "kanata/extract",
+            ExtractionOutcome::Failed,
+            "901",
+            "3",
+        ),
+        (
+            "x-d",
+            utc(22, 9, 0),
+            "kanata/extract",
+            ExtractionOutcome::TurnedAway,
+            "900",
+            "1",
+        ),
+        (
+            "x-e",
+            utc(23, 9, 0),
+            "kanata/extract",
+            ExtractionOutcome::Unknown,
+            "902",
+            "4",
+        ),
+    ];
+    for (id, at, model, outcome, channel, member) in rows {
+        let mut log = extraction(id, at);
+        log.model = model.into();
+        log.outcome = outcome;
+        log.channel_id = Some(channel.into());
+        log.member_ids = vec![member.into()];
+        if id == "x-c" {
+            log.raw_response = "HELLO Lotus".into();
+        }
+        store.record_extraction(log).await.expect("record");
+    }
+    let list = |filter: ExtractionFilter| {
+        let store = &store;
+        async move {
+            let page = store.list_extractions(&filter).await.expect("list");
+            (ids(&page.items, |log| &log.id), page.next)
+        }
+    };
+    let all = ExtractionFilter {
+        limit: 50,
+        ..ExtractionFilter::default()
+    };
+    assert_eq!(
+        list(all.clone()).await.0,
+        ["x-e", "x-d", "x-c", "x-b", "x-a"],
+        "extractions: newest first, id breaks ties"
+    );
+    let model = ExtractionFilter {
+        model: Some("kanata/small".into()),
+        ..all.clone()
+    };
+    assert_eq!(list(model).await.0, ["x-b"]);
+    let range = ExtractionFilter {
+        from: Some(utc(21, 9, 0)),
+        to: Some(utc(23, 9, 0)),
+        ..all.clone()
+    };
+    assert_eq!(
+        list(range).await.0,
+        ["x-d", "x-c", "x-b"],
+        "extractions: from inclusive, to exclusive"
+    );
+    let outcomes = ExtractionFilter {
+        outcomes: vec![ExtractionOutcome::Failed, ExtractionOutcome::Proposed],
+        ..all.clone()
+    };
+    assert_eq!(
+        list(outcomes).await.0,
+        ["x-c", "x-a"],
+        "extractions: any of"
+    );
+    let combined = ExtractionFilter {
+        channel: Some("900".into()),
+        member: Some("1".into()),
+        ..all.clone()
+    };
+    assert_eq!(list(combined).await.0, ["x-d", "x-a"], "extractions: AND");
+    let q = ExtractionFilter {
+        q: Some("hello lotus".into()),
+        ..all.clone()
+    };
+    assert_eq!(list(q).await.0, ["x-c"], "extractions: q folds ASCII case");
+    let injection = ExtractionFilter {
+        q: Some("') OR 1=1 --".into()),
+        model: Some("x' OR '1'='1".into()),
+        ..all.clone()
+    };
+    assert!(
+        list(injection).await.0.is_empty(),
+        "extractions: filter text is bound, never SQL"
+    );
+    // Keyset pages across the x-c/x-d tie.
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    loop {
+        let (page, next) = list(ExtractionFilter {
+            limit: 2,
+            cursor: cursor.clone(),
+            ..all.clone()
+        })
+        .await;
+        assert!(page.len() <= 2);
+        seen.extend(page);
+        match next {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(
+        seen,
+        ["x-e", "x-d", "x-c", "x-b", "x-a"],
+        "extractions: pages cover every row once"
+    );
+    let (exact, next) = list(ExtractionFilter { limit: 5, ..all }).await;
+    assert_eq!(exact.len(), 5);
+    assert_eq!(next, None, "extractions: no cursor when nothing follows");
+    assert_eq!(
+        store.extraction_facets().await.expect("facets"),
+        LogFacets {
+            total: 5,
+            models: vec!["kanata/extract".into(), "kanata/small".into()],
+            tools: Vec::new(),
+            outcomes: vec![
+                "failed".into(),
+                "no_change".into(),
+                "proposed".into(),
+                "turned_away".into(),
+                "unknown".into(),
+            ],
+            channels: vec!["900".into(), "901".into(), "902".into()],
+        }
+    );
+}
+
+async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
+    let mut interaction = chat("c-1", utc(20, 12, 0));
+    interaction.rounds = vec![
+        round("kanata/chat", &["runs_this_week", "runs_this_week"]),
+        ChatRound {
+            reasoning: Some("high".into()),
+            finish_reason: Some("content_filter".into()),
+            tool_calls: json!([{"name": "runs_this_week", "ms": 40}]),
+            response: Some("{\"choices\": []}".into()),
+            ..round("kanata/chat-big", &[])
+        },
+    ];
+    interaction.guardrail = json!({"refusal": true});
+    interaction.clean_retry = true;
+    interaction.request_count = 3;
+    store
+        .record_chat(interaction.clone())
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_chat("c-1").await.expect("load"),
+        Some(interaction.clone()),
+        "chat: round trip keeps rounds in order"
+    );
+    assert!(matches!(
+        store.record_chat(interaction.clone()).await,
+        Err(StoreError::Constraint(_))
+    ));
+    let mut bad = chat("c-2", utc(20, 12, 0));
+    bad.rounds[0].tool_calls = json!({});
+    assert!(
+        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
+        "chat: tool_calls must be an array"
+    );
+    assert_eq!(store.load_chat("c-2").await.expect("load"), None);
+}
+
+async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S) {
+    let mut a = chat("c-a", utc(20, 9, 0));
+    a.rounds = vec![
+        round("kanata/chat", &["bosses"]),
+        round("kanata/big", &["runs"]),
+    ];
+    a.latency_ms = Some(5000);
+    let mut b = chat("c-b", utc(21, 9, 0));
+    b.outcome = ChatOutcome::Answered;
+    b.clean_retry = true;
+    b.latency_ms = None;
+    let mut c = chat("c-c", utc(21, 9, 0));
+    c.outcome = ChatOutcome::ContentBlocked;
+    c.withheld = true;
+    c.member_id = Some("2".into());
+    c.question = "Something RUDE".into();
+    let mut d = chat("c-d", utc(22, 9, 0));
+    d.outcome = ChatOutcome::TurnedAway;
+    d.channel_id = None;
+    d.rounds = Vec::new();
+    d.latency_ms = Some(10);
+    for interaction in [a, b, c, d] {
+        store.record_chat(interaction).await.expect("record");
+    }
+    let list = |filter: ChatFilter| {
+        let store = &store;
+        async move {
+            let page = store.list_chats(&filter).await.expect("list");
+            ids(&page.items, |chat| &chat.id)
+        }
+    };
+    let all = ChatFilter {
+        limit: 10,
+        ..ChatFilter::default()
+    };
+    assert_eq!(list(all.clone()).await, ["c-d", "c-c", "c-b", "c-a"]);
+    assert_eq!(
+        list(ChatFilter {
+            model: Some("kanata/big".into()),
+            ..all.clone()
+        })
+        .await,
+        ["c-a"],
+        "chat: model matches any round"
+    );
+    assert_eq!(
+        list(ChatFilter {
+            tool: Some("runs".into()),
+            ..all.clone()
+        })
+        .await,
+        ["c-a"],
+        "chat: tool matches any round"
+    );
+    assert_eq!(
+        list(ChatFilter {
+            min_ms: Some(900),
+            ..all.clone()
+        })
+        .await,
+        ["c-c", "c-a"],
+        "chat: min_ms skips unknown latency"
+    );
+    assert_eq!(
+        list(ChatFilter {
+            outcomes: vec![ChatOutcome::CleanRetry, ChatOutcome::Withheld],
+            ..all.clone()
+        })
+        .await,
+        ["c-c", "c-b"],
+        "chat: flags match their outcome names"
+    );
+    assert_eq!(
+        list(ChatFilter {
+            outcomes: vec![ChatOutcome::TurnedAway],
+            ..all.clone()
+        })
+        .await,
+        ["c-d"]
+    );
+    assert_eq!(
+        list(ChatFilter {
+            member: Some("2".into()),
+            q: Some("rude".into()),
+            ..all.clone()
+        })
+        .await,
+        ["c-c"]
+    );
+    assert_eq!(
+        list(ChatFilter {
+            channel: Some("900".into()),
+            from: Some(utc(21, 9, 0)),
+            ..all.clone()
+        })
+        .await,
+        ["c-c", "c-b"]
+    );
+    let first = store
+        .list_chats(&ChatFilter {
+            limit: 2,
+            ..all.clone()
+        })
+        .await
+        .expect("page");
+    assert_eq!(ids(&first.items, |chat| &chat.id), ["c-d", "c-c"]);
+    let second = store
+        .list_chats(&ChatFilter {
+            limit: 2,
+            cursor: first.next.clone(),
+            ..all.clone()
+        })
+        .await
+        .expect("page");
+    assert_eq!(
+        ids(&second.items, |chat| &chat.id),
+        ["c-b", "c-a"],
+        "chat: the cursor resumes inside a tie"
+    );
+    assert_eq!(second.next, None);
+    assert_eq!(
+        second.items[1].rounds.len(),
+        2,
+        "chat: listed items carry their rounds"
+    );
+    assert_eq!(
+        store.chat_facets().await.expect("facets"),
+        LogFacets {
+            total: 4,
+            models: vec!["kanata/big".into(), "kanata/chat".into()],
+            tools: vec!["bosses".into(), "runs".into()],
+            outcomes: vec![
+                "answered".into(),
+                "clean_retry".into(),
+                "content_blocked".into(),
+                "turned_away".into(),
+                "withheld".into(),
+            ],
+            channels: vec!["900".into()],
+        }
+    );
+}
+
+fn rescan(id: &str, at: DateTime<Utc>) -> RescanJob {
+    RescanJob {
+        id: id.into(),
+        channels: vec!["900".into(), "901".into()],
+        window: "week".into(),
+        source: "manual".into(),
+        automated: false,
+        requested_by: Some("root".into()),
+        status: RescanStatus::Queued,
+        created_at: at,
+        started_at: None,
+        finished_at: None,
+        results: json!([]),
+        error: None,
+    }
+}
+
+async fn rescan_jobs_stop_changing_once_final<S: ModelLogStore>(store: S) {
+    store
+        .insert_rescan_job(rescan("r-1", utc(20, 9, 0)))
+        .await
+        .expect("insert");
+    store
+        .insert_rescan_job(rescan("r-2", utc(21, 9, 0)))
+        .await
+        .expect("insert");
+    assert!(matches!(
+        store.insert_rescan_job(rescan("r-1", utc(22, 9, 0))).await,
+        Err(StoreError::Constraint(_))
+    ));
+    let mut running = rescan("r-1", utc(20, 9, 0));
+    running.status = RescanStatus::Running;
+    running.started_at = Some(utc(20, 9, 1));
+    assert!(store.update_rescan_job(running.clone()).await.expect("run"));
+    let mut done = running.clone();
+    done.status = RescanStatus::Done;
+    done.finished_at = Some(utc(20, 9, 5));
+    done.results = json!([{"channel": "900", "messages": 12}]);
+    assert!(store.update_rescan_job(done.clone()).await.expect("done"));
+    let mut again = done.clone();
+    again.status = RescanStatus::Running;
+    assert!(
+        !store.update_rescan_job(again).await.expect("final"),
+        "rescan: a final job never changes"
+    );
+    assert!(
+        !store
+            .update_rescan_job(rescan("absent", utc(20, 9, 0)))
+            .await
+            .expect("missing")
+    );
+    assert_eq!(
+        store.load_rescan_job("r-1").await.expect("load"),
+        Some(done)
+    );
+    let recent = store.recent_rescan_jobs(1).await.expect("recent");
+    assert_eq!(ids(&recent, |job| &job.id), ["r-2"], "rescan: newest first");
+}
+
+async fn allowance_overrides_replace_and_clear<S: ModelLogStore>(store: S) {
+    let entry = |member: &str, count| AllowanceOverride {
+        member_id: member.into(),
+        count,
+        window_ms: 300_000,
+        updated_at: utc(20, 9, 0),
+    };
+    store
+        .set_allowance_override(entry("2", 4))
+        .await
+        .expect("set");
+    store
+        .set_allowance_override(entry("1", 4))
+        .await
+        .expect("set");
+    store
+        .set_allowance_override(entry("2", 10))
+        .await
+        .expect("replace");
+    assert_eq!(
+        store.allowance_overrides().await.expect("list"),
+        [entry("1", 4), entry("2", 10)]
+    );
+    let mut zero = entry("3", 1);
+    zero.window_ms = 0;
+    assert!(matches!(
+        store.set_allowance_override(zero).await,
+        Err(StoreError::Constraint(_))
+    ));
+    assert!(store.clear_allowance_override("1").await.expect("clear"));
+    assert!(
+        !store
+            .clear_allowance_override("1")
+            .await
+            .expect("clear again")
+    );
+    assert_eq!(
+        store.allowance_overrides().await.expect("list"),
+        [entry("2", 10)]
+    );
+}
+
+async fn tips_are_claimed_once_per_member_and_week<S: ModelLogStore + Sync>(store: S) {
+    let week = utc(17, 0, 0);
+    let claims = concurrent_claims(&store, week).await;
+    assert_eq!(
+        claims.iter().filter(|granted| **granted).count(),
+        1,
+        "tips: concurrent claims grant exactly one"
+    );
+    assert!(
+        store
+            .claim_tip("2", week, utc(20, 9, 0))
+            .await
+            .expect("other member")
+    );
+    assert!(
+        store
+            .claim_tip("1", utc(24, 0, 0), utc(24, 9, 0))
+            .await
+            .expect("next week")
+    );
+    assert!(
+        !store
+            .claim_tip("1", week, utc(21, 9, 0))
+            .await
+            .expect("again")
+    );
+}
+
+async fn concurrent_claims<S: ModelLogStore + Sync>(store: &S, week: DateTime<Utc>) -> Vec<bool> {
+    let (a, b, c) = tokio::join!(
+        store.claim_tip("1", week, utc(20, 9, 0)),
+        store.claim_tip("1", week, utc(20, 9, 1)),
+        store.claim_tip("1", week, utc(20, 9, 2)),
+    );
+    vec![a.expect("claim"), b.expect("claim"), c.expect("claim")]
+}

@@ -12,12 +12,14 @@ use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use crate::domain::schedule::{ChangeSet, ScheduleSnapshot};
 use crate::domain::scheduler::{Committed, StoreError};
 
-/// Who may merge a draft: an administrator's own draft, or (S3) a member's
-/// request an administrator approves.
+/// Who may merge a draft: an administrator's own draft, (S3) a member's
+/// request an administrator approves, or a proposal the extractor or
+/// chatbot staged (see [`ProposalStore`](super::ProposalStore)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DraftKind {
     Admin,
     Request,
+    Proposal,
 }
 
 impl DraftKind {
@@ -25,11 +27,12 @@ impl DraftKind {
         match self {
             Self::Admin => "admin",
             Self::Request => "request",
+            Self::Proposal => "proposal",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        [Self::Admin, Self::Request]
+        [Self::Admin, Self::Request, Self::Proposal]
             .into_iter()
             .find(|kind| kind.as_str() == value)
     }

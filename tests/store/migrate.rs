@@ -34,12 +34,12 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 6);
+    assert_eq!(store.schema_version().await.expect("version"), 7);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
     store.close().await.expect("close");
-    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6, 7]);
 }
 
 #[tokio::test]
@@ -52,11 +52,11 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 6);
+        assert_eq!(store.schema_version().await.expect("version"), 7);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
-    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6, 7]);
 }
 
 #[tokio::test]
@@ -89,20 +89,20 @@ async fn future_schema_version_refuses_to_open() {
         .expect("close");
     tamper(
         &config,
-        "INSERT INTO schema_migrations VALUES (7, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (8, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
     assert!(
         matches!(
             error,
-            SqliteStoreError::FutureVersion { found: 7, known: 6 }
+            SqliteStoreError::FutureVersion { found: 8, known: 7 }
         ),
         "{error}"
     );
     assert_eq!(
         ledger(&config).await,
-        [1, 2, 3, 4, 5, 6, 7],
+        [1, 2, 3, 4, 5, 6, 7, 8],
         "a refused open writes nothing"
     );
 }
@@ -173,7 +173,17 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     // Roll the file back to what a version-1 build left behind.
     tamper(
         &config,
-        "DROP TABLE run_status_pins;
+        "DROP TABLE draft_proposals;
+         DROP TABLE self_service_tips;
+         DROP TABLE chat_allowance_overrides;
+         DROP TABLE rescan_jobs;
+         DROP TABLE chat_tools;
+         DROP TABLE chat_rounds;
+         DROP TABLE chat_interactions;
+         DROP TABLE extraction_members;
+         DROP TABLE extractions;
+         DROP TABLE messages;
+         DROP TABLE run_status_pins;
          DROP TABLE run_attendance;
          DROP TABLE standing_answers;
          ALTER TABLE fixed_runs DROP COLUMN attendance_default;
@@ -192,10 +202,10 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 6);
+    assert_eq!(store.schema_version().await.expect("version"), 7);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
-    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6]);
+    assert_eq!(ledger(&config).await, [1, 2, 3, 4, 5, 6, 7]);
     let mut conn = SqliteConnectOptions::new()
         .filename(&config.db_path)
         .read_only(true)

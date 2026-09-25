@@ -21,7 +21,11 @@ pub mod journal_conformance;
 #[cfg(any(test, feature = "test-support"))]
 mod memory;
 #[cfg(any(test, feature = "test-support"))]
+pub mod model_log_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod precondition_conformance;
+#[cfg(any(test, feature = "test-support"))]
+pub mod proposal_conformance;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::MemoryScheduleStore;

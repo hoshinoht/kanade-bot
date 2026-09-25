@@ -19,9 +19,21 @@ use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use crate::domain::scheduler::{Committed, StoreError};
 use crate::infrastructure::store::history::touched_keys;
 
-const DRAFT_COLUMNS: &str = "id, kind, title, author_kind, author_id, base_seq, base_hash, \
-    base_revision, version, status, request_type, subject, merged_seq, closed_by_kind, \
-    closed_by_id, close_reason, created_at, updated_at, expires_week";
+/// Selected `FROM drafts` (unaliased): a `draft_proposals` row (0007) makes
+/// a stored `admin` draft a proposal.
+pub(super) const DRAFT_COLUMNS: &str = "id, kind, title, author_kind, author_id, base_seq, \
+    base_hash, base_revision, version, status, request_type, subject, merged_seq, \
+    closed_by_kind, closed_by_id, close_reason, created_at, updated_at, expires_week, \
+    EXISTS (SELECT 1 FROM draft_proposals WHERE draft_proposals.draft_id = drafts.id) \
+    AS proposal";
+
+/// The `drafts.kind` spelling: proposals are stored as `admin` rows.
+pub(super) fn stored_kind(kind: DraftKind) -> &'static str {
+    match kind {
+        DraftKind::Proposal => DraftKind::Admin.as_str(),
+        other => other.as_str(),
+    }
+}
 
 fn backend(_row: &SqliteRow, column: &str) -> StoreError {
     StoreError::Backend(format!("drafts.{column} missing"))
@@ -31,7 +43,7 @@ fn unsigned(value: i64, column: &str) -> Result<u64, StoreError> {
     u64::try_from(value).map_err(|_| StoreError::Backend(format!("drafts.{column} negative")))
 }
 
-fn signed(value: u64, column: &str) -> Result<i64, StoreError> {
+pub(super) fn signed(value: u64, column: &str) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| StoreError::Backend(format!("drafts.{column} too large")))
 }
 
@@ -39,12 +51,15 @@ fn actor(kind: &str, id: &str) -> Result<Actor, StoreError> {
     Actor::from_parts(kind, id).ok_or_else(|| StoreError::Backend(format!("actor {kind}")))
 }
 
-fn instant(text: &str, column: &str) -> Result<chrono::DateTime<chrono::Utc>, StoreError> {
+pub(super) fn instant(
+    text: &str,
+    column: &str,
+) -> Result<chrono::DateTime<chrono::Utc>, StoreError> {
     crate::domain::time::from_iso(text)
         .map_err(|error| StoreError::Backend(format!("drafts.{column}: {error}")))
 }
 
-fn draft_of(row: &SqliteRow) -> Result<StoredDraft, StoreError> {
+pub(super) fn draft_of(row: &SqliteRow) -> Result<StoredDraft, StoreError> {
     let text = |column: &str| {
         row.try_get::<String, _>(column)
             .map_err(|_| backend(row, column))
@@ -61,10 +76,17 @@ fn draft_of(row: &SqliteRow) -> Result<StoredDraft, StoreError> {
         (None, None) => None,
         _ => return Err(StoreError::Backend("drafts.closed_by is half set".into())),
     };
+    let proposal: bool = row
+        .try_get("proposal")
+        .map_err(|_| backend(row, "proposal"))?;
+    let kind = match (DraftKind::parse(&kind), proposal) {
+        (Some(DraftKind::Admin), true) => DraftKind::Proposal,
+        (Some(kind @ (DraftKind::Admin | DraftKind::Request)), false) => kind,
+        _ => return Err(StoreError::Backend(format!("draft kind {kind}"))),
+    };
     Ok(StoredDraft {
         id: text("id")?,
-        kind: DraftKind::parse(&kind)
-            .ok_or_else(|| StoreError::Backend(format!("draft kind {kind}")))?,
+        kind,
         title: text("title")?,
         author,
         base: ChangeRef {
@@ -158,7 +180,10 @@ async fn staged_ops(
 }
 
 /// Inside a transaction: the draft with its operations in position order.
-async fn load_in(conn: &mut SqliteConnection, id: &str) -> Result<Option<LoadedDraft>, StoreError> {
+pub(super) async fn load_in(
+    conn: &mut SqliteConnection,
+    id: &str,
+) -> Result<Option<LoadedDraft>, StoreError> {
     let row = sqlx::query(&format!("SELECT {DRAFT_COLUMNS} FROM drafts WHERE id = ?1"))
         .bind(id)
         .fetch_optional(&mut *conn)
@@ -181,14 +206,14 @@ fn stale_of(draft: &StoredDraft) -> DraftStale {
     }
 }
 
-async fn execute<'q>(
+pub(super) async fn execute<'q>(
     tx: &mut SqliteConnection,
     query: sqlx::query::Query<'q, Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
 ) -> Result<(), StoreError> {
     query.execute(tx).await.map(|_| ()).map_err(store_error)
 }
 
-async fn append_event(
+pub(super) async fn append_event(
     conn: &mut SqliteConnection,
     draft_id: &str,
     version: u64,
@@ -212,50 +237,6 @@ async fn append_event(
         .bind(detail),
     )
     .await
-}
-
-/// One write transaction on the writer lease. The body plans against the
-/// open transaction; the lease is consumed only after the transaction is
-/// committed or rolled back, as schedule commits do.
-macro_rules! write_txn {
-    ($store:expr, $tx:ident, $body:expr) => {{
-        let mut lease = $store
-            .writer_lease()
-            .await
-            .map_err(|error| StoreError::Backend(error.to_string()))?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut $tx) => match $body.await {
-                Ok(value) => match $tx.commit().await {
-                    Ok(()) => (Ok(value), true),
-                    Err(error) => (Err(store_error(error)), false),
-                },
-                Err(error) => {
-                    let healthy = $tx.rollback().await.is_ok();
-                    (Err(error), healthy)
-                }
-            },
-            Err(error) => (Err(store_error(error)), false),
-        };
-        lease.finish(healthy);
-        result
-    }};
-}
-
-/// One read transaction over a reader connection.
-macro_rules! read_txn {
-    ($store:expr, $tx:ident, $body:expr) => {{
-        let mut conn = $store
-            .reader()
-            .await
-            .map_err(|error| StoreError::Backend(error.to_string()))?;
-        let mut $tx = conn.begin().await.map_err(store_error)?;
-        let value = $body.await;
-        let ended = $tx.rollback().await.is_ok();
-        if !ended {
-            conn.close_on_drop();
-        }
-        value
-    }};
 }
 
 async fn create_in(
@@ -299,51 +280,7 @@ async fn create_in(
         DraftStatus::Open
     };
     let expires_week = new.submit.as_ref().and_then(|submit| submit.expires_week);
-    let stored = StoredDraft {
-        id: new.id.clone(),
-        kind: new.kind,
-        title: new.title.clone(),
-        author: new.author.clone(),
-        base: new.base.clone(),
-        base_revision: new.base_revision,
-        version: 1,
-        status,
-        request_type: new.request_type.clone(),
-        subject: new.subject.clone(),
-        merged_seq: None,
-        closed_by: None,
-        close_reason: None,
-        created_at: new.at,
-        updated_at: new.at,
-        scope: match expires_week {
-            None => DraftScope::Weekly,
-            Some(week) => DraftScope::Week(week),
-        },
-    };
-    execute(
-        conn,
-        sqlx::query(
-            "INSERT INTO drafts (id, kind, title, author_kind, author_id, base_seq, base_hash, \
-             base_revision, version, status, request_type, subject, merged_seq, closed_by_kind, \
-             closed_by_id, close_reason, created_at, updated_at, expires_week) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?13, ?9, ?10, NULL, NULL, NULL, NULL, \
-             ?11, ?11, ?12)",
-        )
-        .bind(&stored.id)
-        .bind(stored.kind.as_str())
-        .bind(&stored.title)
-        .bind(stored.author.kind())
-        .bind(stored.author.id())
-        .bind(signed(stored.base.seq, "id")?)
-        .bind(&stored.base.hash)
-        .bind(signed(stored.base_revision, "id")?)
-        .bind(&stored.request_type)
-        .bind(&stored.subject)
-        .bind(rows::instant(&stored.created_at)?)
-        .bind(expires_week.as_ref().map(rows::instant).transpose()?)
-        .bind(stored.status.as_str()),
-    )
-    .await?;
+    let stored = insert_draft(conn, new, status, expires_week).await?;
     if let Some(submit) = &new.submit {
         insert_ops(conn, &stored.id, &submit.ops).await?;
     }
@@ -387,6 +324,61 @@ async fn create_in(
         .await?;
     }
     Ok(DraftCreated::Created(stored))
+}
+
+/// Inside a transaction: the `drafts` row alone, at version 1.
+pub(super) async fn insert_draft(
+    conn: &mut SqliteConnection,
+    new: &NewDraft,
+    status: DraftStatus,
+    expires_week: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<StoredDraft, StoreError> {
+    let stored = StoredDraft {
+        id: new.id.clone(),
+        kind: new.kind,
+        title: new.title.clone(),
+        author: new.author.clone(),
+        base: new.base.clone(),
+        base_revision: new.base_revision,
+        version: 1,
+        status,
+        request_type: new.request_type.clone(),
+        subject: new.subject.clone(),
+        merged_seq: None,
+        closed_by: None,
+        close_reason: None,
+        created_at: new.at,
+        updated_at: new.at,
+        scope: match expires_week {
+            None => DraftScope::Weekly,
+            Some(week) => DraftScope::Week(week),
+        },
+    };
+    execute(
+        conn,
+        sqlx::query(
+            "INSERT INTO drafts (id, kind, title, author_kind, author_id, base_seq, base_hash, \
+             base_revision, version, status, request_type, subject, merged_seq, closed_by_kind, \
+             closed_by_id, close_reason, created_at, updated_at, expires_week) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?13, ?9, ?10, NULL, NULL, NULL, NULL, \
+             ?11, ?11, ?12)",
+        )
+        .bind(&stored.id)
+        .bind(stored_kind(stored.kind))
+        .bind(&stored.title)
+        .bind(stored.author.kind())
+        .bind(stored.author.id())
+        .bind(signed(stored.base.seq, "id")?)
+        .bind(&stored.base.hash)
+        .bind(signed(stored.base_revision, "id")?)
+        .bind(&stored.request_type)
+        .bind(&stored.subject)
+        .bind(rows::instant(&stored.created_at)?)
+        .bind(expires_week.as_ref().map(rows::instant).transpose()?)
+        .bind(stored.status.as_str()),
+    )
+    .await?;
+    Ok(stored)
 }
 
 /// Inside the insert transaction: the author's pending requests and the
@@ -433,7 +425,7 @@ async fn over_limit(
     Ok(None)
 }
 
-async fn insert_ops(
+pub(super) async fn insert_ops(
     conn: &mut SqliteConnection,
     draft_id: &str,
     ops: &[StagedOp],
@@ -464,7 +456,7 @@ async fn insert_ops(
     Ok(())
 }
 
-async fn update_in(
+pub(super) async fn update_in(
     conn: &mut SqliteConnection,
     update: &DraftUpdate,
 ) -> Result<crate::domain::drafts::DraftWrite, StoreError> {
@@ -763,6 +755,11 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
     }
 
     async fn create_draft(&self, new: NewDraft) -> Result<DraftCreated, StoreError> {
+        if new.kind == DraftKind::Proposal {
+            return Err(StoreError::Constraint(
+                "proposals are created with create_proposal".into(),
+            ));
+        }
         write_txn!(self, tx, create_in(&mut tx, &new))
     }
 

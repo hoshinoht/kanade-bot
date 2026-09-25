@@ -8,6 +8,7 @@ mod expiry;
 mod merge;
 mod op;
 mod port;
+mod proposal;
 mod replay;
 
 pub use crate::domain::schedule::party_delta;
@@ -20,6 +21,10 @@ pub use port::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftRequest, DraftScope,
     DraftStale, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit,
     NewDraft, RequestLimit, RequestLimits, StagedOp, StoredDraft, Submission,
+};
+pub use proposal::{
+    DEFAULT_PROPOSAL_TTL, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
+    ProposalStore, SUPERSEDED, StoredProposal, check_new as check_new_proposal,
 };
 pub use replay::{
     PREVIEW_ID_PREFIX, PreviewIds, Rejected, Replay, StagedError, check_staged, replay,

@@ -28,6 +28,8 @@ use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
 mod journal;
+mod model_log;
+mod proposals;
 
 use journal::JournalTables;
 
@@ -39,6 +41,7 @@ struct DraftTables {
     ops: BTreeMap<String, Vec<crate::domain::drafts::StagedOp>>,
     events: BTreeMap<String, Vec<DraftEvent>>,
     requests: BTreeMap<(String, String, String), (String, String)>,
+    proposals: BTreeMap<String, crate::domain::drafts::ProposalInfo>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -114,6 +117,7 @@ impl Tables {
 #[derive(Debug, Default)]
 pub struct MemoryScheduleStore {
     tables: Mutex<Tables>,
+    logs: Mutex<model_log::LogTables>,
 }
 
 impl MemoryScheduleStore {
@@ -696,6 +700,11 @@ impl DraftStore for MemoryScheduleStore {
     }
 
     async fn create_draft(&self, new: NewDraft) -> Result<DraftCreated, StoreError> {
+        if new.kind == crate::domain::drafts::DraftKind::Proposal {
+            return Err(StoreError::Constraint(
+                "proposals are created with create_proposal".into(),
+            ));
+        }
         let mut tables = self.tables();
         if let Some(request) = &new.request {
             let key = (

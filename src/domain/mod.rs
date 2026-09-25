@@ -9,6 +9,7 @@ pub mod drafts;
 pub mod history;
 pub mod ids;
 pub mod members;
+pub mod model_log;
 pub mod notify;
 mod pytext;
 pub mod requests;

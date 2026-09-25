@@ -747,6 +747,40 @@ draft of kind `request` (`request_type`, `subject` = `run:<id>` or
   no one can probe which runs, timings or requests exist. `Backend` error
   text (it may hold paths) is never surfaced to anyone.
 
+## Proposals (extractor and chatbot)
+
+Status: storage only — `src/domain/drafts/proposal.rs` (`ProposalStore`),
+both stores, migration `0007`. The proposal service (amendment → `DraftOp`
+translation, approval, supersede policy, expiry in the delivery tick) is
+E3; approval authority and the TTL value await a user decision.
+
+- **A proposal is a draft** of kind `DraftKind::Proposal`, created
+  `submitted` with its operations (`created` + `submitted` events) and
+  merged only through `DraftStore::commit_merge` (no second write path).
+  Every existing draft/request service method refuses it, since they check
+  for their own kind.
+- **Storage (decision D-1).** The `0005` `drafts.kind` CHECK is not
+  rebuilt: a proposal is stored as an `admin` row plus a `draft_proposals`
+  row (`source` `extraction|chat`, `source_id`, nullable `supersede_key`,
+  `expires_at`), inserted in the same transaction. Reads report
+  `Proposal` when that row exists. Triggers refuse a `draft_proposals` row
+  for anything but a system-authored `admin` row, and refuse UPDATE/DELETE.
+  `create_draft` refuses the proposal kind in both stores.
+- **Author.** Always a system actor (the extractor or chatbot component);
+  anything else is `StoreError::Constraint`.
+- **Idempotency.** Creating an existing id returns `Replayed` when it is a
+  proposal with the same source and source id; any other existing draft id
+  is `Constraint`.
+- **Supersede.** In the create transaction, every live proposal with the
+  same non-null `supersede_key` is closed `discarded`, reason `superseded`
+  (event detail the same), by the new proposal's system author, version
+  unchanged. The ids are returned. Closed proposals are left alone.
+- **TTL.** `expires_at = created_at + ttl`; `ttl` is a per-proposal
+  parameter (positive; `DEFAULT_PROPOSAL_TTL` = 24 h until configured).
+  `expire_proposals(now, actor)` closes live proposals with
+  `expires_at <= now` as `expired` (version unchanged). The week expiry
+  (`expire_drafts`) still applies to a proposal's `expires_week`.
+
 ## Cherry-pick
 
 Status: implemented in `src/domain/history/cherry_pick.rs` (pure planning,

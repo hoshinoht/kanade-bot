@@ -1,0 +1,164 @@
+//! Stored rows. Instants keep microsecond precision; JSON fields hold what
+//! the pipeline recorded and are opaque to the store beyond their shape.
+
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
+use super::outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
+use crate::domain::scheduler::StoreError;
+
+/// One watched Discord message (the extraction window cache, v4
+/// `messages`). An edit with different content clears `processed_at`, so
+/// the message is read again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WatchedMessage {
+    pub id: String,
+    pub channel_id: String,
+    pub author_id: String,
+    pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+    pub content: String,
+    pub processed_at: Option<DateTime<Utc>>,
+}
+
+/// One extraction pass (v4 `extractions`, plus the v5 filter fields).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtractionLog {
+    pub id: String,
+    pub at: DateTime<Utc>,
+    pub channel_id: Option<String>,
+    /// Authors of the messages read (the `member` filter).
+    pub member_ids: Vec<String>,
+    /// Model alias.
+    pub model: String,
+    pub reasoning: Option<String>,
+    pub prompt: String,
+    pub raw_response: String,
+    pub latency_ms: Option<u64>,
+    pub request_count: u32,
+    pub outcome: ExtractionOutcome,
+    pub error: Option<String>,
+    /// Guardrail signals; always a JSON object (`{}` when none).
+    pub guardrail: Value,
+    pub message_ids: Vec<String>,
+    /// Proposal draft ids (v4 `amendment_ids`).
+    pub proposal_ids: Vec<String>,
+}
+
+/// One model request within a chat question.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatRound {
+    /// Model alias.
+    pub model: String,
+    pub reasoning: Option<String>,
+    pub finish_reason: Option<String>,
+    pub latency_ms: Option<u64>,
+    /// Tool bundles offered this round.
+    pub tool_bundles: Vec<String>,
+    /// Tools called this round, in call order (the `tool` filter).
+    pub tools: Vec<String>,
+    /// Tool-call diagnostics; always a JSON array.
+    pub tool_calls: Value,
+    /// The provider's response for the round (prompts are never stored).
+    pub response: Option<String>,
+}
+
+/// One chat question (v4 `chat_interactions`, plus the v5 filter fields).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatInteraction {
+    pub id: String,
+    pub at: DateTime<Utc>,
+    pub channel_id: Option<String>,
+    pub message_id: Option<String>,
+    pub member_id: Option<String>,
+    pub question: String,
+    pub reply: String,
+    pub outcome: ChatOutcome,
+    pub error: Option<String>,
+    /// A clean-context retry was used.
+    pub clean_retry: bool,
+    /// The turn was withheld from shared context.
+    pub withheld: bool,
+    /// Guardrail signals; always a JSON object (`{}` when none).
+    pub guardrail: Value,
+    pub request_count: u32,
+    pub latency_ms: Option<u64>,
+    pub model_ms: Option<u64>,
+    pub tools_ms: Option<u64>,
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    /// Model rounds in order.
+    pub rounds: Vec<ChatRound>,
+}
+
+/// One rescan job (v4 `rescan_jobs`). `window` is kept as given (v4 and v5
+/// spell windows differently); the API validates it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RescanJob {
+    pub id: String,
+    pub channels: Vec<String>,
+    pub window: String,
+    pub source: String,
+    pub automated: bool,
+    pub requested_by: Option<String>,
+    pub status: RescanStatus,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Per-channel results; always a JSON array.
+    pub results: Value,
+    pub error: Option<String>,
+}
+
+/// A member's chat allowance override (v4 `chat_rate_limits`; the window
+/// is whole milliseconds instead of v4's float seconds).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AllowanceOverride {
+    pub member_id: String,
+    pub count: u32,
+    pub window_ms: u64,
+    pub updated_at: DateTime<Utc>,
+}
+
+fn shape(ok: bool, what: &str) -> Result<(), StoreError> {
+    if ok {
+        Ok(())
+    } else {
+        Err(StoreError::Constraint(format!(
+            "{what} has the wrong shape"
+        )))
+    }
+}
+
+impl ExtractionLog {
+    /// The shape every store refuses to write otherwise.
+    pub fn check_shape(&self) -> Result<(), StoreError> {
+        shape(self.guardrail.is_object(), "extraction guardrail")
+    }
+}
+
+impl ChatInteraction {
+    /// The shape every store refuses to write otherwise.
+    pub fn check_shape(&self) -> Result<(), StoreError> {
+        shape(self.guardrail.is_object(), "chat guardrail")?;
+        for round in &self.rounds {
+            shape(round.tool_calls.is_array(), "chat round tool_calls")?;
+        }
+        Ok(())
+    }
+}
+
+impl RescanJob {
+    /// The shape every store refuses to write otherwise.
+    pub fn check_shape(&self) -> Result<(), StoreError> {
+        shape(self.results.is_array(), "rescan results")?;
+        shape(!self.window.is_empty(), "rescan window")
+    }
+}
+
+impl AllowanceOverride {
+    /// The shape every store refuses to write otherwise.
+    pub fn check_shape(&self) -> Result<(), StoreError> {
+        shape(self.window_ms > 0, "allowance window")
+    }
+}

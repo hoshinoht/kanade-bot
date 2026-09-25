@@ -5,13 +5,18 @@
 //! `kanade ctl` and every other writer stay HTTP clients of the owning process;
 //! nothing else opens the file for writing.
 
+#[macro_use]
+mod txn;
+
 mod backup;
 mod connect;
 mod drafts;
 mod history;
 mod journal;
 mod migrate;
+mod model_log;
 mod owner;
+mod proposals;
 mod rows;
 mod schedule;
 pub(super) mod writer;
