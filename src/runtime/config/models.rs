@@ -6,8 +6,11 @@ use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 
 use hyper::Uri;
 
-use super::{Error, non_empty, parse_bounded_u64};
-use crate::{domain::settings::Reasoning, runtime::secrets::Redacted};
+use super::{Error, groups, non_empty, parse_bounded_u64};
+use crate::{
+    domain::settings::Reasoning, infrastructure::llm::setup::CapacityGroup,
+    runtime::secrets::Redacted,
+};
 
 const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
 const UNMASKED: &str = "KANADE_ALLOW_EXTERNAL_UNMASKED";
@@ -37,6 +40,8 @@ pub struct ModelSettings {
     pub chat_reasoning: Option<Reasoning>,
     pub rewrite_reasoning: Option<Reasoning>,
     pub permits: u16,
+    /// Non-empty replaces the single gateway group of `permits`.
+    pub groups: Vec<CapacityGroup>,
     /// `KANADE_ALLOW_EXTERNAL_UNMASKED=1`: external routes may run without
     /// pseudonymization (provider testing only).
     pub allow_external_unmasked: bool,
@@ -71,6 +76,7 @@ impl ModelSettings {
             chat_reasoning: chat_reasoning?,
             rewrite_reasoning: rewrite_reasoning?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
+            groups: groups::parse(values)?,
             allow_external_unmasked: match non_empty(values, UNMASKED) {
                 None | Some("0") => false,
                 Some("1") => true,
@@ -81,7 +87,7 @@ impl ModelSettings {
             base_url,
         };
         if settings.base_url.is_none() {
-            let dependent = [KEY_FILE, "KANADE_MODEL_CA_FILE"]
+            let dependent = [KEY_FILE, "KANADE_MODEL_CA_FILE", groups::GROUPS]
                 .into_iter()
                 .chain(ALIASES)
                 .chain(REASONING)

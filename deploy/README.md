@@ -29,7 +29,8 @@ resolve from it.
 
 | Input | Path | Notes |
 |---|---|---|
-| Settings | `.env.v5` (or `KANADE_ENV_FILE=/path`) | Non-secret env only (see `docs/v5/runtime-bootstrap.md` "Serve environment"). Required: `KANADE_TIMEZONE`, `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID`, and `KANADE_MODEL_BASE_URL` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `KANADE_ADMIN_ROLE_ID` and the settings seeds (`KANADE_POST_CHANNEL_ID`, `KANADE_WATCH_CHANNEL_IDS`, `KANADE_WATCH_CATEGORY_IDS`, `KANADE_CHAT_CATEGORY_IDS`, `KANADE_EXTRACTION_ENABLED`, `KANADE_CHAT_ENABLED`, `KANADE_BOSS_WEEK_RESET_WEEKDAY`, `KANADE_BOSS_WEEK_RESET_TIME`, `KANADE_DAY_OF_PING_TIME`, `KANADE_COUNTDOWN_MINUTES`), which apply only until the store holds a value. Compose overrides bind, host, trusted proxy, healthcheck URL and container paths, so values for those in the file are ignored. Keep the three `KANADE_ADMIN_DISCORD_*` settings all set or all unset. |
+| Settings | `kanade.toml` (or `KANADE_CONFIG_FILE=/path`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only (key → variable table: `docs/v5/runtime-bootstrap.md` "Config file"). Required: `runtime.timezone`, `discord.guild_id`, `discord.bossing_role_id`, and `models.base_url` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `discord.admin_role_id`, `[models.*]` roles and `[[models.groups]]`, and `[settings]` (starting settings, applied only until the store holds a value). Compose's `environment:` fixes bind, host, trusted proxy, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden. Keep the three `admin.discord_*` keys all set or all unset. |
+| Legacy env | `.env.v5` (or `KANADE_ENV_FILE=/path`) | Optional (back-compat). Every non-empty `KANADE_*` variable in it overrides the matching `kanade.toml` key; move its settings into `kanade.toml` and delete it so there is one source. |
 | Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, and `model_api_key` (a symlink to the Kanata key file v4 uses). Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
 | Personas | `config/personas/` | Mounted read-only at `/config/personas`. |
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
@@ -48,12 +49,13 @@ docker compose -f deploy/compose.yaml build
 
 v4 and v5 share the production bot token (one gateway session per token) and
 the edge alias `kanade-bot`, so they never run together. v5 refuses to start
-its gateway unless `KANADE_EXPECT_V4_STOPPED=1` is in `.env.v5`; set it only
-after v4 is stopped.
+its gateway unless `discord.expect_v4_stopped = true` is in `kanade.toml` (or
+`KANADE_EXPECT_V4_STOPPED=1` in the environment); set it only after v4 is
+stopped.
 
 ```sh
 docker stop kanade-bot                           # v4
-# then set KANADE_EXPECT_V4_STOPPED=1 in .env.v5
+# then set discord.expect_v4_stopped = true in kanade.toml
 docker compose -f deploy/compose.yaml up -d
 docker compose -f deploy/compose.yaml ps         # wait for "healthy"
 docker compose -f deploy/compose.yaml logs -f bot
@@ -80,7 +82,7 @@ Server Members and Message Content on the Developer Portal's Bot page) is
 logged once (`gateway_closed_for_good`) and the container keeps running the
 portal with `discord: closed` (unhealthy) but never reconnects, so a restart
 loop cannot burn the shared token's IDENTIFY budget; fix the cause, then
-restart it. `KANADE_DISCORD_GATEWAY=0` runs the admin
+restart it. `discord.gateway = false` runs the admin
 API alone (no gateway, no tick); for the old shell-only mode set
 `command: ["serve", "--offline"]`.
 
@@ -88,7 +90,7 @@ API alone (no gateway, no tick); for the old shell-only mode set
 
 ```sh
 docker compose -f deploy/compose.yaml stop       # or down (keeps kanade_v5_data)
-# set KANADE_EXPECT_V4_STOPPED=0 in .env.v5 so v5 cannot reconnect by accident
+# set discord.expect_v4_stopped = false in kanade.toml so v5 cannot reconnect by accident
 docker start kanade-bot                          # v4 back; the edge needs no change
 ```
 
@@ -149,5 +151,6 @@ seen by kanade are the edge's, so per-IP rate limits pool all admins.
 
 Discord sign-in needs the redirect
 `https://kanade.hoshinoht.dev/api/admin/auth/discord/callback` registered on
-the Discord application (OAuth2 → Redirects), the client id and redirect in
-`.env.v5`, and the `discord_client_secret` file.
+the Discord application (OAuth2 → Redirects), `admin.discord_client_id` and
+`admin.discord_redirect_uri` in `kanade.toml`, and the `discord_client_secret`
+file.

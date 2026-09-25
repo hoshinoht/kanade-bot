@@ -13,7 +13,7 @@ use crate::{
         identity::Passthrough,
         setup::{
             CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
-            build,
+            build_with_groups,
         },
     },
     runtime::{config::ModelSettings, error::Error},
@@ -85,7 +85,7 @@ pub async fn check(
         allow_external_unmasked: settings.allow_external_unmasked,
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
-    let stack = match build(setup, random) {
+    let stack = match build_with_groups(setup, &settings.groups, random) {
         Ok(Models::Ready(stack)) => stack,
         Ok(Models::Unavailable) => return Err(Error::Configuration("models are disabled".into())),
         Err(error) => return Err(Error::Configuration(format!("model setup: {error}"))),

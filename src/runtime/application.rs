@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    config::{HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
+    config::{self, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
     error::Error,
     serve,
 };
@@ -18,22 +18,30 @@ pub async fn run(
     arguments: Vec<String>,
     environment: BTreeMap<String, String>,
 ) -> Result<(), Error> {
-    match cli::parse(arguments)? {
+    let command = cli::parse(arguments)?;
+    let resolved = config::resolve(environment)?;
+    dispatch(command, &resolved.values)
+        .await
+        .map_err(|error| resolved.annotate(error))
+}
+
+async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> Result<(), Error> {
+    match command {
         Command::Serve { offline: true } => {
-            server::serve_offline(RuntimeConfig::from_mapping(&environment)?).await
+            server::serve_offline(RuntimeConfig::from_mapping(environment)?).await
         }
         Command::Serve { offline: false } => {
-            serve::run(ServeConfig::from_mapping(&environment)?).await
+            serve::run(ServeConfig::from_mapping(environment)?).await
         }
         Command::Healthcheck { url } => {
             healthcheck::check(HealthcheckConfig::from_mapping(
-                &environment,
+                environment,
                 url.as_deref(),
             )?)
             .await
         }
         Command::ImportV4(args) => {
-            let config = ImportConfig::from_mapping(&environment)?;
+            let config = ImportConfig::from_mapping(environment)?;
             let options = import::v4::Options {
                 from: args.from,
                 since: args.since,
@@ -50,7 +58,7 @@ pub async fn run(
             print!("{report}");
             Ok(())
         }
-        Command::Models(args) => cli::models::run(args, &environment).await,
+        Command::Models(args) => cli::models::run(args, environment).await,
         Command::Reserved { name } => Err(Error::Unavailable(format!(
             "{name} is not implemented in the runtime bootstrap"
         ))),

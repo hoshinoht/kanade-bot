@@ -1,0 +1,132 @@
+# Kanade v5 settings. Copy to the private, git-ignored `kanade.toml` and point
+# KANADE_CONFIG at it (Compose mounts ../kanade.toml at /config/kanade.toml).
+#
+# Rules:
+# - Non-secret settings only. Secrets stay in one-line files named by `*_file`
+#   keys; a key that looks like a secret (token, secret, key, password without
+#   `_file`) stops startup.
+# - Any non-empty KANADE_* environment variable overrides its key here (the
+#   table in docs/v5/runtime-bootstrap.md maps each key to its variable).
+# - Unknown keys and bad values stop startup naming the key, never the value.
+# - Commented keys show their default or an optional feature; all values
+#   below are placeholders.
+
+[runtime]
+# IANA timezone (required).
+timezone = "Asia/Kuala_Lumpur"
+# At most 64 of [A-Za-z0-9._-]; default kanade-<random>.
+instance_id = "kanade-example"
+# Scheduler tick, 5-300.
+tick_seconds = 30
+# HTTP drain on SIGTERM, 1-120.
+shutdown_timeout_seconds = 10
+# true lets listeners bind a private address (internal container network).
+# allow_private_bind = false
+# Target of `kanade healthcheck`: http://LOOPBACK:PORT/healthz.
+healthcheck_url = "http://127.0.0.1:8080/healthz"
+# healthcheck_timeout_seconds = 3
+
+[admin]
+# Admin listener, loopback (or private with allow_private_bind).
+bind = "127.0.0.1:8080"
+# Exact host[:port] served; unset accepts only localhost names.
+host = "kanade.example"
+# Edge peer allowed to send forwarding headers, and the shared edge secret.
+# trusted_proxy = "192.168.97.2"
+# edge_secret_file = "/run/secrets/kanade_edge_secret"
+# Web workspace root (apps/admin/dist, apps/public/dist) and private art.
+# web_dir = "/app/web"
+# boss_dir = "/app/boss"
+# identity_dir = "/app/identity"
+# Break-glass sign-in token file (at least 32 bytes).
+token_file = "/run/secrets/kanade_admin_token"
+# Discord sign-in: all three or none; the redirect must be
+# https://<admin.host>/api/admin/auth/discord/callback.
+discord_client_id = "123456789012345678"
+discord_client_secret_file = "/run/secrets/kanade_discord_client_secret"
+discord_redirect_uri = "https://kanade.example/api/admin/auth/discord/callback"
+# Tailscale logins (needs a non-loopback trusted_proxy and edge_secret_file).
+# tailscale_logins = ["someone@example.com"]
+# Session idle timeout (5-720 minutes) and absolute lifetime (1-168 hours).
+session_idle_minutes = 60
+session_absolute_hours = 12
+
+[public]
+# The public listener exists only when bind is set; host is then required.
+# bind = "127.0.0.1:8081"
+# host = "kanade-public.example"
+# cloudflared_peer = "127.0.0.1"
+
+[discord]
+# Bot token file (required).
+token_file = "/run/secrets/kanade_discord_token"
+# Must be true before the gateway connects: stop the v4 container first.
+expect_v4_stopped = false
+# false serves the admin API only (no gateway, roster sync or tick).
+gateway = true
+# Snowflakes, as strings (or integers).
+guild_id = "123456789012345678"
+bossing_role_id = "223456789012345678"
+# admin_role_id = "323456789012345678"
+# chat_pilot_role_id = "423456789012345678"
+debug_user_ids = []
+
+[store]
+# Absolute paths without `..`.
+db_path = "/data/db/kanade.sqlite"
+owner_lock_dir = "/data/run"
+
+[files]
+catalog_file = "boss/bosses.yaml"
+# knowledge_dir = "boss/knowledge"
+persona_dir = "config/personas"
+
+[models]
+# https, or http only to loopback, localhost or host.docker.internal; unset
+# disables every model feature.
+base_url = "https://kanata.example/v1"
+# Bearer key file and an optional CA bundle replacing the compiled roots.
+key_file = "/run/secrets/kanade_model_api_key"
+# ca_file = "/run/kanade/kanata-ca.pem"
+# Concurrent calls in the single `gateway` group, 1-16 (default 2). Exclusive
+# with [[models.groups]], which replace that group.
+# permits = 2
+# true lets roles whose model leaves the homelab run without pseudonymization
+# (provider testing only).
+# allow_external_unmasked = false
+
+# Per-role seeds, used only where no saved setting exists. Reasoning: off,
+# minimal, low, medium, high, xhigh, max; chat and rewrite also inherit.
+[models.extraction]
+model = "kanata/extract"
+reasoning = "off"
+
+[models.chat]
+model = "kanata/chat"
+reasoning = "inherit"
+
+[models.rewrite]
+# model = "kanata/chat"
+# reasoning = "inherit"
+
+# Capacity groups: aliases sharing hardware share permits (1-16). A role
+# whose alias is in no group has its calls refused.
+[[models.groups]]
+name = "local"
+permits = 2
+aliases = ["kanata/extract", "kanata/chat"]
+
+# Starting settings: applied only where the store has no saved value.
+[settings]
+# post_channel_id = "523456789012345678"
+watch_channel_ids = []
+watch_category_ids = []
+chat_category_ids = []
+# extraction_enabled = false
+# chat_enabled = false
+# Boss week reset: mon..sun and HH:MM (24-hour).
+# boss_week_reset_weekday = "thu"
+# boss_week_reset_time = "00:00"
+# day_of_ping_time = "09:00"
+# Countdown reminders in minutes.
+# countdown_minutes = [60, 15]

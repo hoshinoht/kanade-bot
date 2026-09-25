@@ -2,6 +2,8 @@
 # Environment variants may contain the same secrets.
 .env.*
 !.env.example
+# Private v5 settings; kanade.example.toml is the tracked template.
+/kanade.toml
 data/
 .venv/
 target/

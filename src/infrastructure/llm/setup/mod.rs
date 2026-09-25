@@ -104,6 +104,14 @@ pub struct ModelSetup {
     pub allow_external_unmasked: bool,
 }
 
+/// Operator-declared backend group; aliases sharing hardware share its permits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapacityGroup {
+    pub name: String,
+    pub permits: u32,
+    pub aliases: Vec<String>,
+}
+
 impl fmt::Debug for ModelSetup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ModelSetup")
@@ -163,6 +171,17 @@ pub struct ModelStack {
 /// through the provider's own endpoint parser. Every route starts external
 /// (fail closed) until a listing shows its trust zone.
 pub fn build(setup: ModelSetup, random: Arc<dyn Random>) -> Result<Models, SetupError> {
+    build_with_groups(setup, &[], random)
+}
+
+/// As [`build`]; non-empty `groups` replace the single `gateway` group
+/// (`setup.permits` is then unused). A role whose alias is in no group is
+/// reported ungrouped at startup and its calls are refused.
+pub fn build_with_groups(
+    setup: ModelSetup,
+    groups: &[CapacityGroup],
+    random: Arc<dyn Random>,
+) -> Result<Models, SetupError> {
     let Some(base_url) = setup.base_url else {
         return Ok(Models::Unavailable);
     };
@@ -181,7 +200,7 @@ pub fn build(setup: ModelSetup, random: Arc<dyn Random>) -> Result<Models, Setup
     }
     let provider = Arc::new(OpenAiCompatibleProvider::new(config).map_err(SetupError::Http)?);
     let aliases = setup.roles.aliases();
-    let config = governor_config(&aliases, setup.permits);
+    let config = governor_config(&aliases, setup.permits, groups);
     let governor = Arc::new(Governor::new(&config, random).map_err(SetupError::Governor)?);
     governor.allow_external_unmasked(setup.allow_external_unmasked);
     let catalog = Arc::new(CatalogState::default());
@@ -206,9 +225,25 @@ pub fn build(setup: ModelSetup, random: Arc<dyn Random>) -> Result<Models, Setup
     })))
 }
 
-fn governor_config(aliases: &BTreeMap<Role, String>, permits: u32) -> GovernorConfig {
+fn governor_config(
+    aliases: &BTreeMap<Role, String>,
+    permits: u32,
+    declared: &[CapacityGroup],
+) -> GovernorConfig {
     let distinct: BTreeSet<&String> = aliases.values().collect();
-    let groups = if distinct.is_empty() {
+    let groups = if !declared.is_empty() {
+        declared
+            .iter()
+            .map(|group| GroupConfig {
+                name: group.name.clone(),
+                backend: "model gateway".into(),
+                permits: group.permits,
+                requests_per_min: group.permits.saturating_mul(REQUESTS_PER_MIN_PER_PERMIT),
+                burst: None,
+                aliases: group.aliases.clone(),
+            })
+            .collect()
+    } else if distinct.is_empty() {
         Vec::new()
     } else {
         vec![GroupConfig {

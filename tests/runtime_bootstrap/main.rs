@@ -190,6 +190,41 @@ fn invalid_configuration_fails_without_echoing_values() {
     assert!(!stderr.contains("not-a-timezone"));
 }
 
+#[test]
+fn config_file_errors_name_the_key_without_the_value() {
+    let _serial = serial();
+    let path = std::env::temp_dir().join(format!("kanade-toml-{}", std::process::id()));
+    std::fs::write(&path, "[runtime]\ntimezone = \"Not/A-sentinel\"\n").unwrap();
+    let run = |timezone: &str| {
+        Command::new(binary())
+            .args(["serve", "--offline"])
+            .env("KANADE_CONFIG", &path)
+            .env("KANADE_TIMEZONE", timezone)
+            .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
+            .output()
+            .unwrap()
+    };
+    let output = run("");
+    assert_eq!(output.status.code(), Some(78));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(
+        "KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml `runtime.timezone`)"
+    ));
+    assert!(!stderr.contains("sentinel"));
+
+    std::fs::write(
+        &path,
+        "[runtime]\ntimezone = \"UTC\"\n[discord]\ntoken = \"sentinel\"\n",
+    )
+    .unwrap();
+    let output = run("Asia/Kuala_Lumpur");
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(output.status.code(), Some(78));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("kanade.toml `discord.token` looks like a secret"));
+    assert!(!stderr.contains("sentinel"));
+}
+
 trait ChildTimeout {
     fn wait_timeout(&mut self, timeout: Duration) -> Option<std::process::ExitStatus>;
 }

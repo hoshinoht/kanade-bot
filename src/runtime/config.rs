@@ -12,7 +12,9 @@ use super::error::Error;
 
 mod admin_auth;
 mod discord;
+mod file;
 mod files;
+mod groups;
 mod guild;
 mod import;
 mod models;
@@ -21,6 +23,7 @@ mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
 pub use discord::DiscordSettings;
+pub use file::{Resolved, resolve};
 pub use files::FileSettings;
 pub use guild::GuildSettings;
 pub use import::ImportConfig;

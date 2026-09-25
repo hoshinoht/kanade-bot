@@ -51,8 +51,9 @@ and `storage` `ok`, ignoring extra fields.
 Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
 private address (RFC 1918, IPv4 link-local, IPv6 `fc00::/7` and `fe80::/10`)
 on the internal edge network; wildcard (`0.0.0.0`, `::`) and public addresses
-are always refused. Runtime configuration comes only from the process
-environment; `.env` is not loaded automatically. `healthcheck` accepts only a
+are always refused. Runtime configuration comes from the process
+environment and, when `KANADE_CONFIG` names one, the `kanade.toml` file
+("Config file" below); `.env` is not loaded automatically. `healthcheck` accepts only a
 loopback `http://HOST:PORT/healthz` URL (or, with the opt-in, a private one:
 the container's own listener address) and has a bounded timeout.
 
@@ -107,7 +108,8 @@ lists are comma-separated.
 | `KANADE_MODEL_KEY_FILE`, `KANADE_MODEL_CA_FILE` | unset | Bearer key file (plain `KANADE_MODEL_KEY` is refused) and a CA file (PEM bundle or one DER certificate) that replaces the compiled webpki roots. |
 | `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200); seeds for a role with no saved alias. |
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
-| `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls, 1–16. |
+| `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
+| `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused. The admin config view still reports the single `gateway` group (`models.groups` stays `read_only`). |
 | `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
@@ -125,6 +127,98 @@ that does not decode (or a `persona` that is not a persona id) fails startup
 naming the key, never the value. `KANADE_PILOT_CHANNEL_IDS` is refused with a
 pointer to `KANADE_CHAT_CATEGORY_IDS`. Other unknown `KANADE_*` variables are
 ignored, as for the HTTP settings.
+
+### Config file
+
+`KANADE_CONFIG` names a TOML file (in Compose: the private, git-ignored
+`kanade.toml` at the checkout root, mounted read-only at
+`/config/kanade.toml`; the tracked `kanade.example.toml` documents every key)
+for non-secret settings. Unset or empty keeps the environment-only behaviour.
+Each key sets one variable below, whose rules apply unchanged
+(`src/runtime/config/file/`); all commands (`serve`, `healthcheck`, `import`,
+`models check`) read it.
+
+- Precedence: a non-empty `KANADE_*` environment variable (Compose
+  `environment:` or `env_file`) overrides its key; an empty one does not, so a
+  blank Compose variable cannot clear a file value.
+- Secrets never go in the file: a key containing `token`, `secret`, `key`,
+  `password`, `passwd` or `credential` that does not end in `_file` stops
+  startup; `*_file` keys name the secret files.
+- Unknown keys or tables, wrong TOML types (e.g. `tick_seconds = "30"`) and
+  syntax errors stop startup with exit `78`, naming the key (or the line for
+  syntax), never the value. A value that fails the variable's own rule names
+  both, e.g. ``KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml
+  `runtime.timezone`)``. The file is at most 1 MiB.
+- Booleans are `true`/`false` (written as `1`/`0`); lists are TOML arrays
+  (joined with commas, so string items may not contain one); snowflakes may be
+  strings or integers (strings keep ids above `i64` exact).
+- `[[models.groups]]` takes exactly `name`, `permits` and `aliases`.
+
+| Key | Variable | TOML type |
+|---|---|---|
+| `runtime.timezone` | `KANADE_TIMEZONE` | string |
+| `runtime.instance_id` | `KANADE_INSTANCE_ID` | string |
+| `runtime.tick_seconds` | `KANADE_TICK_SECONDS` | integer |
+| `runtime.shutdown_timeout_seconds` | `KANADE_SHUTDOWN_TIMEOUT_SECONDS` | integer |
+| `runtime.allow_private_bind` | `KANADE_ALLOW_PRIVATE_BIND` | bool |
+| `runtime.healthcheck_url` | `KANADE_HEALTHCHECK_URL` | string |
+| `runtime.healthcheck_timeout_seconds` | `KANADE_HEALTHCHECK_TIMEOUT_SECONDS` | integer |
+| `admin.bind` | `KANADE_ADMIN_BIND` | string |
+| `admin.host` | `KANADE_ADMIN_HOST` | string |
+| `admin.trusted_proxy` | `KANADE_TRUSTED_PROXY` | string |
+| `admin.edge_secret_file` | `KANADE_EDGE_SECRET_FILE` | string |
+| `admin.web_dir` | `KANADE_WEB_DIR` | string |
+| `admin.boss_dir` | `KANADE_BOSS_DIR` | string |
+| `admin.identity_dir` | `KANADE_IDENTITY_DIR` | string |
+| `admin.token_file` | `KANADE_ADMIN_TOKEN_FILE` | string |
+| `admin.discord_client_id` | `KANADE_ADMIN_DISCORD_CLIENT_ID` | snowflake (string or integer) |
+| `admin.discord_client_secret_file` | `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | string |
+| `admin.discord_redirect_uri` | `KANADE_ADMIN_DISCORD_REDIRECT_URI` | string |
+| `admin.tailscale_logins` | `KANADE_ADMIN_TAILSCALE_LOGINS` | string list |
+| `admin.session_idle_minutes` | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | integer |
+| `admin.session_absolute_hours` | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | integer |
+| `public.bind` | `KANADE_PUBLIC_BIND` | string |
+| `public.host` | `KANADE_PUBLIC_HOST` | string |
+| `public.cloudflared_peer` | `KANADE_CLOUDFLARED_PEER` | string |
+| `discord.token_file` | `KANADE_DISCORD_TOKEN_FILE` | string |
+| `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
+| `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
+| `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
+| `discord.admin_role_id` | `KANADE_ADMIN_ROLE_ID` | snowflake (string or integer) |
+| `discord.chat_pilot_role_id` | `KANADE_CHAT_PILOT_ROLE_ID` | snowflake (string or integer) |
+| `discord.debug_user_ids` | `KANADE_DEBUG_USER_IDS` | snowflake list |
+| `store.db_path` | `KANADE_DB_PATH` | string |
+| `store.owner_lock_dir` | `KANADE_OWNER_LOCK_DIR` | string |
+| `files.catalog_file` | `KANADE_CATALOG_FILE` | string |
+| `files.knowledge_dir` | `KANADE_KNOWLEDGE_DIR` | string |
+| `files.persona_dir` | `KANADE_PERSONA_DIR` | string |
+| `models.base_url` | `KANADE_MODEL_BASE_URL` | string |
+| `models.key_file` | `KANADE_MODEL_KEY_FILE` | string |
+| `models.ca_file` | `KANADE_MODEL_CA_FILE` | string |
+| `models.permits` | `KANADE_MODEL_PERMITS` | integer |
+| `models.allow_external_unmasked` | `KANADE_ALLOW_EXTERNAL_UNMASKED` | bool |
+| `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
+| `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
+| `models.extraction.reasoning` | `KANADE_EXTRACT_REASONING` | string |
+| `models.chat.model` | `KANADE_CHAT_MODEL` | string |
+| `models.chat.reasoning` | `KANADE_CHAT_REASONING` | string |
+| `models.rewrite.model` | `KANADE_REWRITE_MODEL` | string |
+| `models.rewrite.reasoning` | `KANADE_REWRITE_REASONING` | string |
+| `settings.post_channel_id` | `KANADE_POST_CHANNEL_ID` | snowflake (string or integer) |
+| `settings.watch_channel_ids` | `KANADE_WATCH_CHANNEL_IDS` | snowflake list |
+| `settings.watch_category_ids` | `KANADE_WATCH_CATEGORY_IDS` | snowflake list |
+| `settings.chat_category_ids` | `KANADE_CHAT_CATEGORY_IDS` | snowflake list |
+| `settings.extraction_enabled` | `KANADE_EXTRACTION_ENABLED` | bool |
+| `settings.chat_enabled` | `KANADE_CHAT_ENABLED` | bool |
+| `settings.boss_week_reset_weekday` | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | string |
+| `settings.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
+| `settings.day_of_ping_time` | `KANADE_DAY_OF_PING_TIME` | string |
+| `settings.countdown_minutes` | `KANADE_COUNTDOWN_MINUTES` | integer list |
+
+Variables without a key: `KANADE_CONFIG` itself; the refused plain
+secrets (`KANADE_DISCORD_TOKEN`, `KANADE_MODEL_KEY`, `KANADE_ADMIN_TOKEN`,
+`KANADE_ADMIN_DISCORD_CLIENT_SECRET`) and the renamed `KANADE_BIND` /
+`KANADE_PILOT_CHANNEL_IDS`.
 
 ### Live serve
 

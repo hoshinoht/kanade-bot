@@ -4,8 +4,8 @@ use kanade::infrastructure::llm::{
     Effort, HttpConfigError,
     governor::{Role, XorShift},
     setup::{
-        Listing, ModelRoles, ModelSetup, ModelStack, Models, RoleEffort, RoleModel, SetupError,
-        build,
+        CapacityGroup, Listing, ModelRoles, ModelSetup, ModelStack, Models, RoleEffort, RoleModel,
+        SetupError, build, build_with_groups,
     },
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -106,6 +106,50 @@ fn tls_acceptor() -> TlsAcceptor {
 fn no_base_url_leaves_models_unavailable() {
     let models = build(setup(None), Arc::new(XorShift::new(7))).unwrap();
     assert!(matches!(models, Models::Unavailable));
+}
+
+#[test]
+fn declared_groups_replace_the_gateway_group() {
+    let _ = kanade::runtime::tls::install_ring_provider();
+    let mut input = setup(Some("http://127.0.0.1:1".into()));
+    input.roles.chat = role("codex-like", RoleEffort::Inherit);
+    input.roles.rewrite = role("stray", RoleEffort::Inherit);
+    let groups = [
+        CapacityGroup {
+            name: "local".into(),
+            permits: 3,
+            aliases: vec!["sumi-structured".into()],
+        },
+        CapacityGroup {
+            name: "cloud".into(),
+            permits: 5,
+            aliases: vec!["codex-like".into(), "unused".into()],
+        },
+    ];
+    let Models::Ready(stack) =
+        build_with_groups(input, &groups, Arc::new(XorShift::new(7))).unwrap()
+    else {
+        panic!("models unavailable");
+    };
+    let snapshot = stack.governor.snapshot(chrono::DateTime::UNIX_EPOCH);
+    let shape: Vec<_> = snapshot
+        .iter()
+        .map(|group| (group.name.as_str(), group.permits.total))
+        .collect();
+    assert_eq!(shape, [("local", 3), ("cloud", 5)]);
+    let group = |role| stack.governor.route(role).unwrap().group;
+    assert_eq!(group(Role::Extraction).as_deref(), Some("local"));
+    assert_eq!(group(Role::Chat).as_deref(), Some("cloud"));
+    assert_eq!(group(Role::Rewrite), None);
+
+    let default = ready(setup(Some("http://127.0.0.1:1".into())));
+    let names: Vec<_> = default
+        .governor
+        .snapshot(chrono::DateTime::UNIX_EPOCH)
+        .into_iter()
+        .map(|group| (group.name, group.permits.total))
+        .collect();
+    assert_eq!(names, [("gateway".to_owned(), 2)]);
 }
 
 #[test]

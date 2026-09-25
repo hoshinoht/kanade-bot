@@ -32,7 +32,7 @@ use crate::{
         files::{LoadError, load_catalog, load_knowledge_dir, load_personas},
         llm::{
             governor::XorShift,
-            setup::{ModelRoles, ModelSetup, ModelStack, Models, build},
+            setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
         },
         store::SqliteStore,
     },
@@ -91,7 +91,7 @@ fn model_stack(
         allow_external_unmasked: models.allow_external_unmasked,
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
-    match build(setup, random) {
+    match build_with_groups(setup, &models.groups, random) {
         Ok(Models::Ready(stack)) => Ok(Some(Arc::from(stack))),
         Ok(Models::Unavailable) => Ok(None),
         Err(error) => Err(Error::Startup(format!("model setup: {error}"))),

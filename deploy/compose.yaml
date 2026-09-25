@@ -12,13 +12,16 @@ services:
     container_name: kanade-v5
     # Live serve: owns the store and connects the gateway (KANADE_EXPECT_V4_STOPPED=1).
     command: ["serve"]
+    # Settings live in the private ../kanade.toml (template: kanade.example.toml),
+    # mounted below. Any non-empty KANADE_* variable (this env_file or
+    # `environment:`) overrides its key there; never secrets.
     env_file:
-      # KANADE_TIMEZONE, KANADE_GUILD_ID, KANADE_BOSSING_ROLE_ID (required),
-      # roles, settings seeds, sign-in and tuning; never secrets.
+      # Optional, for back-compat; remove keys here once they are in kanade.toml.
       - path: ${KANADE_ENV_FILE:-../.env.v5}
-        required: true
-    # Overrides env_file: topology and container paths are fixed here.
+        required: false
+    # Overrides env_file and kanade.toml: topology and container paths are fixed here.
     environment:
+      KANADE_CONFIG: /config/kanade.toml
       KANADE_ALLOW_PRIVATE_BIND: "1"
       KANADE_ADMIN_BIND: 192.168.97.10:8080
       KANADE_ADMIN_HOST: kanade.hoshinoht.dev
@@ -56,6 +59,13 @@ services:
       # SQLite on a named volume, not a macOS bind mount.
       - data:/data
       - ../config/personas:/config/personas:ro
+      # Fails the start when the file is missing instead of creating a directory.
+      - type: bind
+        source: ${KANADE_CONFIG_FILE:-../kanade.toml}
+        target: /config/kanade.toml
+        read_only: true
+        bind:
+          create_host_path: false
       # Private art (git-ignored) stays on the host.
       - ../boss/portraits:/app/boss/portraits:ro
       - ../boss/artwork:/app/boss/artwork:ro
