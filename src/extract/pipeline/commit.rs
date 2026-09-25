@@ -124,6 +124,13 @@ where
         consolidated: bool,
     ) -> PassReport {
         let mut report = PassReport::default();
+        // Switched off while the calls ran: log them, propose and post nothing.
+        if !self.guild.extraction_enabled() {
+            for record in records.iter_mut().filter(|record| record.ok()) {
+                record.kept.clear();
+                record.fail(Failure::Failed, super::extractor::CALL_SWITCHED_OFF.into());
+            }
+        }
         let entries = collect(&records, consolidated);
         let now = self.clock.now();
         // Changes read from the same message count as one multi-change message.

@@ -181,6 +181,7 @@ pub async fn submit(
             source: source.to_owned(),
             automated: false,
             requested_by: Some(actor.clone()),
+            unprocessed_only: false,
         })
         .await
         .map_err(refused)?;

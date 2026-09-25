@@ -9,7 +9,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tokio::time::Instant;
 
-use super::extractor::{CALL_CANCELLED, Extractor, utc};
+use super::extractor::{CALL_SWITCHED_OFF, Extractor, utc};
 use super::ports::{Outbox, Proposer};
 use crate::domain::catalog::BossTable;
 use crate::domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
@@ -400,16 +400,25 @@ where
         record.authors.extend(prepared.author_ids.clone());
 
         let timeout = self.config.call_timeout;
+        let mark = self.cut_mark();
+        // No request once extraction is off.
+        if !self.guild.extraction_enabled() {
+            record.fail(Failure::Failed, CALL_SWITCHED_OFF.into());
+            return record;
+        }
         let opened = tokio::select! {
             biased;
-            () = self.cancelled() => None,
+            cut = self.cut(mark) => Err(cut),
             opened = self
                 .client
-                .open_extraction(channel_id, self.config.permit_wait, timeout) => Some(opened),
+                .open_extraction(channel_id, self.config.permit_wait, timeout) => Ok(opened),
         };
-        let Some(opened) = opened else {
-            record.fail(Failure::Failed, CALL_CANCELLED.into());
-            return record;
+        let opened = match opened {
+            Ok(opened) => opened,
+            Err(cut) => {
+                record.fail(Failure::Failed, cut.into());
+                return record;
+            }
         };
         let mut session = match opened {
             Ok(session) => session,
@@ -440,16 +449,19 @@ where
             };
             let sent = tokio::select! {
                 biased;
-                () = self.cancelled() => None,
-                sent = sending => Some(sent),
+                cut = self.cut(mark) => Err(cut),
+                sent = sending => Ok(sent),
             };
-            let Some(sent) = sent else {
-                record.model = alias;
-                record.requests = session.requests_used();
-                record.latency_ms =
-                    Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
-                record.fail(Failure::Failed, CALL_CANCELLED.into());
-                return record;
+            let sent = match sent {
+                Ok(sent) => sent,
+                Err(cut) => {
+                    record.model = alias;
+                    record.requests = session.requests_used();
+                    record.latency_ms =
+                        Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+                    record.fail(Failure::Failed, cut.into());
+                    return record;
+                }
             };
             first = false;
             let outcome = match sent {

@@ -273,11 +273,16 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                     message,
                     self_id: self.self_id,
                     handled_by_chat,
+                    received_at: crate::api::auth::system_now(),
                 });
             }
             BotEvent::MessageUpdated(message) => {
                 self.messages.bump(1, 1);
-                self.forward(FeedItem::Edited(message, self.self_id));
+                self.forward(FeedItem::Edited {
+                    message,
+                    self_id: self.self_id,
+                    received_at: crate::api::auth::system_now(),
+                });
             }
             BotEvent::MessagesDeleted(deleted) => {
                 if let Some(chat) = &self.chat {

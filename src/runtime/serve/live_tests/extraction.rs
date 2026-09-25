@@ -430,6 +430,7 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
                 source: "portal".into(),
                 automated: false,
                 requested_by: None,
+                unprocessed_only: false,
             })
             .await;
         assert_eq!(refused.unwrap_err(), RescanError::Closed);
@@ -927,6 +928,7 @@ async fn shutdown_stops_rescans_before_the_store_closes() {
                 source: "portal".into(),
                 automated: false,
                 requested_by: None,
+                unprocessed_only: false,
             })
             .await
             .unwrap();
@@ -1108,4 +1110,292 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
 
 fn snowflake_of(row: &crate::domain::model_log::ExtractionLog) -> u64 {
     row.message_ids[0].parse().unwrap()
+}
+
+fn creates(fake: &FakeDiscord) -> usize {
+    fake.count(crate::bot::transport::Op::Create)
+}
+
+#[tokio::test]
+async fn switching_off_mid_rescan_cuts_the_call_and_cancels_every_job() {
+    let model = Model::start("local").await;
+    // Far longer than the test waits: only a cut ends the call in flight.
+    *model.delay.lock().unwrap() = Duration::from_secs(30);
+    let harness = harness(&model, true);
+    let now = auth::system_now();
+    // Three conversations (gaps over 3 h): three calls if nothing stopped it.
+    harness.fake.seed_history(
+        [20, 15, 10]
+            .into_iter()
+            .map(|hours| {
+                let at = now - chrono::Duration::hours(hours);
+                let id = snowflake(at, u64::try_from(hours).unwrap());
+                parse(message_json(
+                    id,
+                    HOME_A,
+                    (ALICE, false),
+                    "nkalos amend to 10pm",
+                    at,
+                ))
+            })
+            .collect(),
+    );
+    let (mut discord, ctx) = started(&harness).await;
+    drive(&mut discord, async {
+        connect(&ctx).await;
+        eventually!("the first rescan call", model.chats() == 1);
+        let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
+        let queued = runner
+            .submit(RescanRequest {
+                channels: vec![HOME_B.to_string()],
+                window: "week".into(),
+                source: "portal".into(),
+                automated: false,
+                requested_by: None,
+                unprocessed_only: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(queued.job.status, RescanStatus::Queued);
+        let before = creates(&harness.fake);
+        let admin = Admin::start(&ctx, &harness).await;
+        let switched = Instant::now();
+        let (status, body) = admin
+            .send(
+                "PATCH",
+                "/api/admin/config",
+                Some(json!({"watching": {"extract_enabled": false}})),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        eventually!(
+            "every job ended",
+            jobs(&ctx).await.iter().all(|job| job.status.is_final())
+        );
+        assert!(
+            switched.elapsed() < Duration::from_secs(3),
+            "the call was cut"
+        );
+        for source in ["startup", "portal"] {
+            let ended = job(&ctx, source).await.unwrap();
+            assert_eq!(ended.status, RescanStatus::Cancelled, "{ended:?}");
+            assert_eq!(
+                ended.error.as_deref(),
+                Some(crate::extract::rescan::SWITCHED_OFF)
+            );
+        }
+        sleep(Duration::from_millis(900)).await;
+        assert_eq!(model.chats(), 1, "no call after the switch");
+        let rows = logs(&ctx).await;
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].outcome, ExtractionOutcome::Failed);
+        assert_eq!(
+            rows[0].error.as_deref(),
+            Some(crate::extract::pipeline::CALL_SWITCHED_OFF)
+        );
+        assert_eq!(creates(&harness.fake), before, "no card");
+        assert_eq!(ctx.health.health().await.extraction, Some("disabled"));
+        admin.stop().await;
+    })
+    .await;
+    finish(&harness, ctx).await;
+}
+
+#[tokio::test]
+async fn a_restart_neither_reposts_cards_nor_extracts_chat_questions() {
+    let model = Model::start("local").await;
+    let harness = harness_with(
+        &model,
+        true,
+        &[
+            ("KANADE_CHAT_ENABLED", "1"),
+            ("KANADE_CHAT_CATEGORY_IDS", "400"),
+            ("KANADE_CHAT_PILOT_ROLE_ID", "30"),
+            ("KANADE_CHAT_MODEL", ALIAS),
+        ],
+    );
+    let policy = policy(&harness);
+    let zone = harness.config.runtime.timezone;
+    let now = auth::system_now();
+    let tomorrow = now.with_timezone(&zone).date_naive() + chrono::Days::new(1);
+    let at = zone
+        .from_local_datetime(&tomorrow.and_time(NaiveTime::from_hms_opt(20, 0, 0).unwrap()))
+        .single()
+        .unwrap()
+        .with_timezone(&Utc);
+    let (evidence, asked) = (snowflake(now, 10), snowflake(now, 11));
+    let evidence_json = message_json(evidence, PARTY, (ALICE, false), "nkalos amend to 10pm", now);
+    let question_json = question(
+        asked,
+        PARTY,
+        &format!("<@{SELF}> nkalos amend to 10pm"),
+        now,
+    );
+
+    // First run: a card for the move, and a chat question.
+    let (mut discord, ctx) = started(&harness).await;
+    let proposal = std::sync::Arc::new(Mutex::new(String::new()));
+    drive(&mut discord, async {
+        SchedulerService::new(&*ctx.store, RandomIds, FixedClock(now))
+            .with_attendance(policy.attendance)
+            .as_origin(Origin::for_tests())
+            .create_run(NewRun {
+                fixed_run_id: None,
+                channel_id: Some(PARTY.to_string()),
+                week_start: week_of(&policy, at),
+                datetime: at,
+                bosses: vec!["NKalos".into()],
+                participants: vec![ALICE.to_string()],
+                status: RunStatus::Planned,
+                source: RunSource::Fixed,
+            })
+            .await
+            .unwrap();
+        connect(&ctx).await;
+        eventually!(
+            "the startup rescan",
+            job(&ctx, "startup")
+                .await
+                .is_some_and(|job| job.status.is_final())
+        );
+        model.answer(moved(evidence));
+        ctx.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                question_json.clone(),
+            ))))
+            .unwrap();
+        eventually!("the chat answer", !chat_rows(&ctx).await.is_empty());
+        ctx.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                evidence_json.clone(),
+            ))))
+            .unwrap();
+        eventually!("the extraction", !logs(&ctx).await.is_empty());
+        let id = logs(&ctx).await[0].proposal_ids[0].clone();
+        eventually!(
+            "the card",
+            ctx.store
+                .load_cards(std::slice::from_ref(&id))
+                .await
+                .unwrap()
+                .first()
+                .is_some_and(|card| card.message_id.is_some())
+        );
+        let row = cached(&ctx, asked).await.unwrap();
+        assert!(row.processed_at.is_some(), "chat's question is never read");
+        *proposal.lock().unwrap() = id;
+    })
+    .await;
+    finish(&harness, ctx).await;
+    let proposal = proposal.lock().unwrap().clone();
+
+    // Restart within 24 h: Discord still has both messages.
+    harness
+        .fake
+        .seed_history(vec![parse(evidence_json), parse(question_json)]);
+    let (calls, posts) = (model.chats(), creates(&harness.fake));
+    let (mut discord, ctx) = started(&harness).await;
+    drive(&mut discord, async {
+        connect(&ctx).await;
+        eventually!(
+            "the second startup rescan",
+            jobs(&ctx)
+                .await
+                .iter()
+                .filter(|job| job.source == "startup" && job.status.is_final())
+                .count()
+                == 2
+        );
+        let latest = job(&ctx, "startup").await.unwrap();
+        assert_eq!(latest.status, RescanStatus::Done, "{latest:?}");
+        let gated: u64 = latest
+            .results
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|channel| channel["gated"].as_u64().unwrap())
+            .sum();
+        assert_eq!(gated, 0, "{latest:?}");
+        assert_eq!(model.chats(), calls, "nothing re-read");
+        assert_eq!(creates(&harness.fake), posts, "no card reposted");
+        let (stored, _) = ctx.store.load_proposal(&proposal).await.unwrap().unwrap();
+        assert_eq!(
+            stored.draft.status,
+            DraftStatus::Submitted,
+            "never superseded"
+        );
+        assert_eq!(logs(&ctx).await.len(), 1);
+    })
+    .await;
+    finish(&harness, ctx).await;
+}
+
+#[tokio::test]
+async fn stale_jobs_are_interrupted_and_system_messages_never_read() {
+    let model = Model::start("local").await;
+    let harness = harness(&model, true);
+    let left = RescanJob {
+        id: "00000000-0000-4000-8000-00000000abcd".into(),
+        channels: vec![HOME_A.to_string()],
+        window: "24h".into(),
+        source: "portal".into(),
+        automated: false,
+        requested_by: None,
+        status: RescanStatus::Running,
+        created_at: auth::system_now() - chrono::Duration::hours(1),
+        started_at: Some(auth::system_now() - chrono::Duration::hours(1)),
+        finished_at: None,
+        results: json!([]),
+        error: None,
+    };
+    harness
+        .seed(async |store| store.insert_rescan_job(left.clone()).await.unwrap())
+        .await;
+    let (mut discord, ctx) = started(&harness).await;
+    drive(&mut discord, async {
+        eventually!(
+            "the interrupted job",
+            ctx.store
+                .load_rescan_job(&left.id)
+                .await
+                .unwrap()
+                .is_some_and(|job| job.status.is_final())
+        );
+        let ended = ctx.store.load_rescan_job(&left.id).await.unwrap().unwrap();
+        assert_eq!(ended.status, RescanStatus::Cancelled);
+        assert_eq!(
+            ended.error.as_deref(),
+            Some(crate::extract::rescan::INTERRUPTED)
+        );
+        connect(&ctx).await;
+        eventually!(
+            "the startup rescan",
+            job(&ctx, "startup")
+                .await
+                .is_some_and(|job| job.status.is_final())
+        );
+        assert_eq!(ctx.health.health().await.extraction, Some("idle"));
+        // A thread's creation notice carries its name as content.
+        let now = auth::system_now();
+        let id = snowflake(now, 3);
+        let mut notice = message_json(id, HOME_A, (ALICE, false), "nkalos wed 10pm", now);
+        notice["type"] = json!(18);
+        ctx.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                notice,
+            ))))
+            .unwrap();
+        let reply = snowflake(now, 4);
+        let mut answer = message_json(reply, HOME_A, (ALICE, false), "nkalos amend to 10pm", now);
+        answer["type"] = json!(19);
+        ctx.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                answer,
+            ))))
+            .unwrap();
+        eventually!("the reply is read", cached(&ctx, reply).await.is_some());
+        assert!(cached(&ctx, id).await.is_none());
+    })
+    .await;
+    finish(&harness, ctx).await;
 }

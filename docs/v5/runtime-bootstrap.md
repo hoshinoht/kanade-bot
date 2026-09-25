@@ -329,12 +329,14 @@ The Discord side (`serve/discord/`) runs one gateway session for
   `external` route is refused unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` and
   the refusal is logged as a `failed` call). Chat sees each created message
   first: one it handles (answered, queued, shed or rate-limited; v4
-  `Handling(True)`) is `handled_by_chat`, cached but never extracted, and
-  so are its later edits (the live guild's chat and watch categories are
-  the same). Watched = the settings' channel
+  `Handling(True)`) is `handled_by_chat`, cached as processed and never
+  extracted, and so are its later edits (the live guild's chat and watch
+  categories are the same). Only regular messages and replies are read.
+  Watched = the settings' channel
   ids plus every channel and thread under the watched categories (thread
-  messages are filed under their parent). A message or edit first seen more
-  than 60 s after it happened is `Replay`: cached for rescans, never offered
+  messages are filed under their parent). A message or edit the handler
+  received more than 60 s after it happened is `Replay`: cached for
+  rescans, never offered
   to the pipeline, so stale history (RESUME replays included) makes no card
   until a rescan (parent decision). Cards only (the public portal is
   closed), posted and refreshed through the one `CardDesk` chat and the
@@ -342,16 +344,22 @@ The Discord side (`serve/discord/`) runs one gateway session for
   the notice outbox. `extract_enabled` and `paused` apply live through
   `ConfigDesk::subscribe` (the watch list too); while off, messages are
   cached, nothing calls the model and rescan submits are refused (`/rescan`
-  "not available", API `503`; parent decision). When on at startup, once
-  the guild is available the stored roster is loaded and one automated
-  `24h` rescan (`source: startup`) of every watched channel is queued.
+  "not available", API `503`; parent decision). Switching off cuts calls in
+  flight and ends queued and running rescans (`cancelled` / `switched off`),
+  so no call and no card follow it. When on at startup, once the guild is
+  available, the model listing has named the routes' trust zones and the
+  roster task has reconciled (each waited for at most 60 s), one automated
+  `24h` rescan (`source: startup`) of every watched channel is queued; it
+  reads only messages no pass has read (`processed_at` unset), so a restart
+  reposts no card and supersedes nothing. Rescan jobs a crash left open are
+  ended `cancelled` / `interrupted` when the runner starts.
   Without a model gateway or extraction alias nothing is composed
   (`extraction_unavailable` logged; rescans `503`); messages are then only
   counted. `ApiState.rescans` and `/rescan` share one runner
   (`RescanService` over `Rescans`, backfill via `channel_messages` `After`
   pages of 100). The extraction effort sent is the configured level at
-  startup (the runner floors `off`). A rescan re-reads cached messages
-  whatever chat did with them (as v4).
+  startup (the runner floors `off`). A manual or API rescan re-reads cached
+  messages, processed or not, whatever chat did with them (as v4).
 - A fatal close (4004: the token; 4014: enable the Server Members and
   Message Content privileged intents in the Developer Portal) is logged once
   (`gateway_closed_for_good`), stops the Discord side (workers, tick) and
@@ -373,8 +381,8 @@ flight are cut and logged `failed` with `cancelled: serve shut down`
 (`extraction_calls_cancelled`), and anything left after 2 s more is
 aborted (`extraction_aborted`), so extraction adds about 3 s), the roster
 and reaction workers drain, the running tick finishes (a tick is never cut
-midway, and it keeps being polled during the steps before so none of them
-waits on a store write it holds), then HTTP
+midway, and it is polled from the start of shutdown, the gateway close
+included, so no step waits on a store write it holds), then HTTP
 drains, then the store closes (logged `store_closed`) so ownership is
 released only after SQLite closes. A startup failure after the store opened
 closes it too.

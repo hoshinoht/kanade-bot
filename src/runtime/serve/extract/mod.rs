@@ -139,17 +139,22 @@ pub struct Extraction {
     settings: Option<JoinHandle<()>>,
 }
 
-pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
+/// Run when extraction is switched off: cut calls, end rescans.
+type SwitchedOff = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
     let (stop, stopped) = watch::channel(false);
     inputs.status.set_enabled(switched_on(&inputs.settings));
-    let settings = inputs.changes.map(|changes| {
-        tokio::spawn(follow(
-            changes,
-            Arc::clone(&inputs.status),
-            Arc::clone(&inputs.cache),
-            stopped.clone(),
-        ))
-    });
+    let (status, cache, halted) = (
+        Arc::clone(&inputs.status),
+        Arc::clone(&inputs.cache),
+        stopped.clone(),
+    );
+    let follow_with =
+        move |hook: Option<SwitchedOff>, changes: Option<watch::Receiver<SettingsChanged>>| {
+            changes.map(|changes| tokio::spawn(follow(changes, status, cache, hook, halted)))
+        };
+    let changes = inputs.changes.take();
     let mut extraction = Extraction {
         feed: None,
         rescans: None,
@@ -160,12 +165,14 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
         close: None,
         cancel: None,
         worker: None,
-        settings,
+        settings: None,
     };
     let Some(stack) = inputs
         .models
+        .clone()
         .filter(|stack| stack.has_role(Role::Extraction))
     else {
+        extraction.settings = follow_with(None, changes);
         logging::event(
             "INFO",
             "extraction_unavailable",
@@ -203,7 +210,7 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
                 directory: Arc::clone(&inputs.roster),
             }),
             outbox: Arc::new(CardOutbox(inputs.desk)),
-            clock: clock.clone(),
+            clock,
             ids: Box::new(RandomIds),
             self_service: None,
         },
@@ -220,13 +227,13 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
         Feed {
             events,
             stale: ExtractorCache(Arc::clone(&extractor)),
-            clock,
         }
         .run(items),
     ));
 
     let cutting = Arc::clone(&extractor);
     extraction.cancel = Some(Box::new(move || cutting.cancel_calls()));
+    let interrupting = Arc::clone(&extractor);
     let rescans = Arc::new(Rescans::new(
         extractor,
         Arc::new(DiscordHistory {
@@ -235,7 +242,21 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
         }),
     ));
     let worker = Arc::clone(&rescans);
-    extraction.worker = Some(tokio::spawn(async move { worker.run().await }));
+    extraction.worker = Some(tokio::spawn(async move {
+        match worker.recover().await {
+            Ok(0) => {}
+            Ok(jobs) => logging::event("INFO", "rescans_interrupted", json!({"jobs": jobs})),
+            Err(_) => logging::event("WARN", "rescans_recover_failed", json!({})),
+        }
+        worker.run().await;
+    }));
+    let ending = Arc::clone(&rescans);
+    let hook: SwitchedOff = Arc::new(move || {
+        interrupting.interrupt_calls();
+        let ending = Arc::clone(&ending);
+        Box::pin(async move { ending.switched_off().await })
+    });
+    extraction.settings = follow_with(Some(hook), changes);
     let closing = Arc::clone(&rescans);
     extraction.close = Some(Box::new(move || {
         Box::pin(async move { closing.close().await })
@@ -250,7 +271,7 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
             status: inputs.status,
             cache: inputs.cache,
             roster: inputs.roster,
-            store: inputs.store,
+            models: stack,
         }
         .run(inputs.guild_ready, stopped),
     ));
@@ -259,11 +280,13 @@ pub fn start<T: GatewayTransport>(inputs: Inputs<T>) -> Extraction {
 }
 
 /// Saved settings apply at once: the switch (`extract_enabled`, `paused`)
-/// and the watch list.
+/// and the watch list. Switching off also cuts calls in flight and ends
+/// queued and running rescans, so nothing reaches the model afterwards.
 async fn follow(
     mut changes: watch::Receiver<SettingsChanged>,
     status: Arc<ExtractionStatus>,
     cache: Arc<GuildCache>,
+    switched_off: Option<SwitchedOff>,
     mut stop: watch::Receiver<bool>,
 ) {
     loop {
@@ -279,6 +302,9 @@ async fn follow(
         let on = switched_on(&settings);
         if status.set_enabled(on) != on {
             logging::event("INFO", "extraction_switched", json!({"enabled": on}));
+            if !on && let Some(switched_off) = &switched_off {
+                switched_off().await;
+            }
         }
     }
 }

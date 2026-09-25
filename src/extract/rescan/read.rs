@@ -62,6 +62,8 @@ pub(super) struct Reader<'a, S, P, X, O, H> {
     pub history: &'a H,
     pub stop: &'a AtomicBool,
     pub pace: &'a mut Pace,
+    /// The startup rescan: messages a pass already read are skipped.
+    pub unprocessed_only: bool,
 }
 
 impl<S, P, X, O, H> Reader<'_, S, P, X, O, H>
@@ -72,7 +74,11 @@ where
     O: Outbox,
     H: History,
 {
+    /// Asked to stop, or extraction switched off (which stops the job).
     fn stopped(&self) -> bool {
+        if !self.extractor.guild().extraction_enabled() {
+            self.stop.store(true, Ordering::SeqCst);
+        }
         self.stop.load(Ordering::SeqCst)
     }
 
@@ -83,7 +89,10 @@ where
         errors: &mut Vec<String>,
     ) -> usize {
         let messages = match self.history.backfill(channel_id, since).await {
-            Ok(messages) => messages,
+            Ok(backfilled) => {
+                errors.extend(backfilled.skipped);
+                backfilled.messages
+            }
             Err(error) => {
                 // A rescan still reads what is cached.
                 errors.push(format!("backfill: {error}"));
@@ -124,7 +133,7 @@ where
         let mut backfilled = self.backfill(channel_id, since, &mut errors).await;
         let (mut stored, mut gated) = self
             .extractor
-            .gated_since(channel_id, since)
+            .gated_since(channel_id, since, self.unprocessed_only)
             .await
             .map_err(|error| error.to_string())?;
         let mut widened = false;
@@ -146,7 +155,7 @@ where
             backfilled += self.backfill(channel_id, since, &mut errors).await;
             (stored, gated) = self
                 .extractor
-                .gated_since(channel_id, since)
+                .gated_since(channel_id, since, self.unprocessed_only)
                 .await
                 .map_err(|error| error.to_string())?;
         }
@@ -167,10 +176,11 @@ where
                     cancelled = true;
                     break 'groups;
                 }
-                // A breaker wait can be long; shutdown cuts it.
+                // A breaker wait can be long; shutdown or a switch-off cuts it.
+                let mark = self.extractor.cut_mark();
                 tokio::select! {
                     biased;
-                    () = self.extractor.cancelled() => {}
+                    _ = self.extractor.cut(mark) => {}
                     () = self.pace.wait(not_before) => {}
                 }
                 if self.stopped() {

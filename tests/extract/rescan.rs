@@ -36,6 +36,7 @@ fn request(channels: &[&str], window: &str) -> RescanRequest {
         source: "portal".into(),
         automated: false,
         requested_by: Some(MY.into()),
+        unprocessed_only: false,
     }
 }
 

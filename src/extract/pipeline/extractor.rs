@@ -30,6 +30,17 @@ pub const HISTORY_UNREADABLE: &str = "the channel history could not be read";
 /// The error of a call cut by [`Extractor::cancel_calls`] (logged `failed`;
 /// its messages stay unprocessed for a later read).
 pub const CALL_CANCELLED: &str = "cancelled: serve shut down";
+/// The error of a call cut, or discarded before proposing, because
+/// extraction was switched off meanwhile.
+pub const CALL_SWITCHED_OFF: &str = "cancelled: extraction switched off";
+
+/// What cuts calls in flight: shutdown (for good) or a switch-off (each one
+/// cuts only the calls started before it).
+#[derive(Clone, Copy, Debug, Default)]
+struct Cut {
+    closed: bool,
+    switched_off: u64,
+}
 
 /// The fixed sentence for a call log; the store's own text goes to stderr
 /// as a structured event.
@@ -92,8 +103,7 @@ pub struct Extractor<S, P, X, O> {
     ids: Mutex<Box<dyn IdSource + Send>>,
     pub(super) self_service: Option<SelfServiceDeps>,
     pub(super) config: PipelineConfig,
-    /// Set once at shutdown: calls and permit waits in flight end at once.
-    cancel: tokio::sync::watch::Sender<bool>,
+    cancel: tokio::sync::watch::Sender<Cut>,
 }
 
 impl<S, P, X, O> std::fmt::Debug for Extractor<S, P, X, O> {
@@ -154,20 +164,39 @@ where
             ids: Mutex::new(deps.ids),
             self_service: deps.self_service,
             config,
-            cancel: tokio::sync::watch::Sender::new(false),
+            cancel: tokio::sync::watch::Sender::new(Cut::default()),
         }
     }
 
     /// Cut every model call and permit wait in flight, and any started
     /// later: each is logged with [`CALL_CANCELLED`]. For a bounded stop.
     pub fn cancel_calls(&self) {
-        self.cancel.send_replace(true);
+        self.cancel.send_modify(|cut| cut.closed = true);
     }
 
-    /// Resolves once [`Self::cancel_calls`] was called.
-    pub(crate) async fn cancelled(&self) {
+    /// Extraction was switched off: cut the calls and permit waits in flight
+    /// (logged with [`CALL_SWITCHED_OFF`]); later calls check the switch.
+    pub fn interrupt_calls(&self) {
+        self.cancel.send_modify(|cut| cut.switched_off += 1);
+    }
+
+    /// Taken when a call starts; [`Self::cut`] resolves on any later cut.
+    pub(crate) fn cut_mark(&self) -> u64 {
+        self.cancel.borrow().switched_off
+    }
+
+    /// Resolves with the log error once a cut after `mark` happened.
+    pub(crate) async fn cut(&self, mark: u64) -> &'static str {
         let mut cancel = self.cancel.subscribe();
-        let _ = cancel.wait_for(|cancelled| *cancelled).await;
+        let closed = cancel
+            .wait_for(|cut| cut.closed || cut.switched_off != mark)
+            .await
+            .map_or(true, |cut| cut.closed);
+        if closed {
+            CALL_CANCELLED
+        } else {
+            CALL_SWITCHED_OFF
+        }
     }
 
     pub fn config(&self) -> &PipelineConfig {
@@ -209,7 +238,15 @@ where
             content: message.content.clone(),
             processed_at: None,
         };
-        self.store.upsert_message(row).await.map(Some)
+        let stored = self.store.upsert_message(row).await?;
+        // Chat's question (and its later edits) is never extracted, not even
+        // by the startup rescan, which reads unprocessed messages only.
+        if message.handled_by_chat && stored != MessageUpsert::Unchanged {
+            self.store
+                .mark_processed(std::slice::from_ref(&message.id), self.clock.now())
+                .await?;
+        }
+        Ok(Some(stored))
     }
 
     /// The gate result for a cached message, when it may join a burst.
@@ -370,16 +407,18 @@ where
         self.guild.as_ref()
     }
 
-    /// A channel's cached messages since `since`, processed or not (a rescan
+    /// A channel's cached messages since `since`, processed or not unless
+    /// `unprocessed_only` (a rescan
     /// re-reads what the live pass handled): `(stored, gated)`.
     pub(crate) async fn gated_since(
         &self,
         channel_id: &str,
         since: DateTime<Utc>,
+        unprocessed_only: bool,
     ) -> Result<(usize, Vec<WatchedMessage>), StoreError> {
         let rows = self
             .store
-            .channel_messages(channel_id, since, false)
+            .channel_messages(channel_id, since, unprocessed_only)
             .await?;
         let bosses = self.guild.bosses();
         let lexicon = BossLexicon::new(&bosses);

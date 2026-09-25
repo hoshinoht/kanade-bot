@@ -442,29 +442,35 @@ impl Discord {
 
     /// Idempotent ordered stop; see the module docs.
     pub async fn stop(&mut self) {
-        if let Some(stop) = self.stop_gateway.take() {
-            let _ = stop.send(());
-        }
-        if let Some(gateway) = self.gateway.take() {
-            self.exit = Some(gateway.await.map_err(drop));
-        }
-        if !self.steps.contains(&"gateway_closed") {
-            self.steps.push("gateway_closed");
-            logging::event(
-                "INFO",
-                "gateway_closed",
-                json!({"exit": format!("{:?}", self.exit)}),
-            );
-        }
-        // The tick is polled meanwhile: a tick suspended inside a store write
-        // would otherwise block every write below.
+        // The tick is polled from the start: a tick suspended inside a store
+        // write would otherwise block every write below (the gateway's
+        // spawned tasks, chat, extraction, workers).
         let tick = self.tick.take();
         let steps = &mut self.steps;
+        let (stop_gateway, gateway, exit) = (
+            self.stop_gateway.take(),
+            self.gateway.take(),
+            &mut self.exit,
+        );
         let chat = self.chat.take();
         let extraction = &mut self.extraction;
         let stop_workers = &self.stop_workers;
         let workers = &mut self.workers;
         let rest = async move {
+            if let Some(stop) = stop_gateway {
+                let _ = stop.send(());
+            }
+            if let Some(gateway) = gateway {
+                *exit = Some(gateway.await.map_err(drop));
+            }
+            if !steps.contains(&"gateway_closed") {
+                steps.push("gateway_closed");
+                logging::event(
+                    "INFO",
+                    "gateway_closed",
+                    json!({"exit": format!("{:?}", exit)}),
+                );
+            }
             // No message can reach chat or extraction any more; their cards
             // and replies go out before the workers stop.
             if let Some(mut chat) = chat {

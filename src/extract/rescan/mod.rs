@@ -12,7 +12,7 @@ use std::future::Future;
 
 use chrono::{DateTime, Utc};
 
-pub use jobs::{JobView, KEEP_JOBS, Rescans};
+pub use jobs::{INTERRUPTED, JobView, KEEP_JOBS, Rescans, SWITCHED_OFF};
 
 use crate::domain::scheduler::StoreError;
 use crate::extract::pipeline::IncomingMessage;
@@ -56,14 +56,22 @@ pub fn resolve_window(window: &str, automated: bool) -> Result<ResolvedWindow, W
     })
 }
 
+/// What a backfill read, and the sources (threads) it had to skip, each
+/// counted in the job's errors.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Backfilled {
+    pub messages: Vec<IncomingMessage>,
+    pub skipped: Vec<String>,
+}
+
 /// Pulls a channel's history from Discord (v4 `backfill_channel`); the
-/// rescan caches what comes back.
+/// rescan caches what comes back. `Err`: the channel itself was unreadable.
 pub trait History: Send + Sync {
     fn backfill(
         &self,
         channel_id: &str,
         since: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<IncomingMessage>, String>> + Send;
+    ) -> impl Future<Output = Result<Backfilled, String>> + Send;
 }
 
 /// A rescan request (v4 `RescanWorker.submit`).
@@ -75,6 +83,9 @@ pub struct RescanRequest {
     pub source: String,
     pub automated: bool,
     pub requested_by: Option<String>,
+    /// Read only messages no pass has read yet (the startup rescan, so a
+    /// restart never re-proposes or reposts cards). Manual rescans re-read.
+    pub unprocessed_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

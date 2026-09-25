@@ -156,6 +156,7 @@ impl RescanCommand {
                 source: "slash".to_owned(),
                 automated: false,
                 requested_by: Some(id_text(invocation.invoker.user_id)),
+                unprocessed_only: false,
             })
             .await
             .map_err(Self::failed)?;

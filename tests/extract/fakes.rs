@@ -31,7 +31,7 @@ use kanade::extract::pipeline::{
     Redirected, SelfServiceDeps,
 };
 use kanade::extract::redirect::PublicPortalLinks;
-use kanade::extract::rescan::History;
+use kanade::extract::rescan::{Backfilled, History};
 use kanade::infrastructure::llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };
@@ -290,16 +290,12 @@ pub struct FakeHistory {
 }
 
 impl History for FakeHistory {
-    async fn backfill(
-        &self,
-        channel_id: &str,
-        since: DateTime<Utc>,
-    ) -> Result<Vec<IncomingMessage>, String> {
+    async fn backfill(&self, channel_id: &str, since: DateTime<Utc>) -> Result<Backfilled, String> {
         self.calls
             .lock()
             .unwrap()
             .push((channel_id.to_owned(), since));
-        Ok(self
+        let messages = self
             .messages
             .lock()
             .unwrap()
@@ -311,7 +307,11 @@ impl History for FakeHistory {
                     .cloned()
                     .collect()
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+        Ok(Backfilled {
+            messages,
+            skipped: Vec::new(),
+        })
     }
 }
 

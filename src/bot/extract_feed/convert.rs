@@ -1,7 +1,7 @@
 //! Twilight messages as the extraction pipeline's `IncomingMessage`.
 
 use chrono::{DateTime, TimeDelta, Utc};
-use twilight_model::channel::Message;
+use twilight_model::channel::{Message, message::MessageType};
 use twilight_model::id::{
     Id,
     marker::{ChannelMarker, UserMarker},
@@ -14,6 +14,13 @@ use crate::extract::pipeline::{AuthorKind, IncomingMessage, MessageOrigin};
 /// A message (or edit) older than this when the gateway hands it over is
 /// history (a RESUME replay, a late delivery), not live chat.
 pub const STALE_AFTER: TimeDelta = TimeDelta::seconds(60);
+
+/// Only members' own chat is read: a system message (a thread created, a
+/// pin, a join) can carry text such as a thread's name, which must never
+/// become a proposal. v4 filtered nothing here (deviation).
+pub fn extractable(message: &Message) -> bool {
+    matches!(message.kind, MessageType::Regular | MessageType::Reply)
+}
 
 /// Loop guard input: the bot's own posts, other bots and webhooks are never
 /// read.

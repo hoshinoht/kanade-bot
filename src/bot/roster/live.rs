@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError, RwLock};
 
+use tokio::sync::watch;
+
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::parse_id;
 use crate::domain::members::{Directory, Member, MemberProfile};
@@ -14,6 +16,8 @@ use crate::domain::members::{Directory, Member, MemberProfile};
 pub struct LiveRoster {
     cache: Arc<GuildCache>,
     rows: RwLock<Arc<BTreeMap<String, MemberProfile>>>,
+    /// Set after the first startup reconcile (success or not) was applied.
+    reconciled: watch::Sender<bool>,
 }
 
 impl LiveRoster {
@@ -21,7 +25,17 @@ impl LiveRoster {
         Self {
             cache,
             rows: RwLock::default(),
+            reconciled: watch::Sender::new(false),
         }
+    }
+
+    pub fn mark_reconciled(&self) {
+        self.reconciled.send_replace(true);
+    }
+
+    /// Resolves once the roster task has reconciled with the guild.
+    pub async fn reconciled(&self) {
+        let _ = self.reconciled.subscribe().wait_for(|done| *done).await;
     }
 
     pub fn replace(&self, profiles: Vec<MemberProfile>) {

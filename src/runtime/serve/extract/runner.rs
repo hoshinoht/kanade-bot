@@ -2,6 +2,7 @@
 //! is switched off, and the automated startup rescan.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::json;
 use tokio::sync::watch;
@@ -10,9 +11,8 @@ use super::status::ExtractionStatus;
 use crate::{
     api::rescan::{RescanFuture, RescanRunner, RescanView},
     bot::{commands::GuildChannels, guild_cache::GuildCache, roster::LiveRoster},
-    domain::members::MemberStore,
     extract::rescan::{RescanError, RescanRequest},
-    infrastructure::store::SqliteStore,
+    infrastructure::llm::setup::ModelStack,
     runtime::logging,
 };
 
@@ -44,22 +44,44 @@ impl RescanRunner for Gated {
     }
 }
 
+/// How long the startup rescan waits for the first model listing and the
+/// first roster reconcile before going ahead without them.
+const STARTUP_WAIT: Duration = Duration::from_secs(60);
+const LISTING_POLL: Duration = Duration::from_millis(200);
+
 pub struct Startup {
     pub runner: Arc<dyn RescanRunner>,
     pub status: Arc<ExtractionStatus>,
     pub cache: Arc<GuildCache>,
     pub roster: Arc<LiveRoster>,
-    pub store: Arc<SqliteStore>,
+    pub models: Arc<ModelStack>,
 }
 
 impl Startup {
-    /// Once the guild is available: re-read the last 24 h of every watched
-    /// channel, if extraction is on.
+    /// Once the guild is available, the model listing has named the routes'
+    /// trust zones and the roster has reconciled: read the last 24 h of every
+    /// watched channel that no pass has read yet, if extraction is on.
     pub async fn run(self, mut ready: watch::Receiver<bool>, mut stop: watch::Receiver<bool>) {
+        let prepared = async {
+            if ready.wait_for(|ready| *ready).await.is_err() {
+                return false;
+            }
+            let listed = async {
+                while !self.models.catalog().listed {
+                    tokio::time::sleep(LISTING_POLL).await;
+                }
+            };
+            let _ = tokio::time::timeout(STARTUP_WAIT, async {
+                listed.await;
+                self.roster.reconciled().await;
+            })
+            .await;
+            true
+        };
         tokio::select! {
             biased;
             _ = stop.wait_for(|stop| *stop) => return,
-            ready = ready.wait_for(|ready| *ready) => if ready.is_err() {
+            prepared = prepared => if !prepared {
                 return;
             },
         }
@@ -70,11 +92,6 @@ impl Startup {
                 json!({"reason": "disabled"}),
             );
             return;
-        }
-        // The roster task may not have reconciled yet; the stored rows say
-        // who holds the bossing role meanwhile.
-        if let Ok(rows) = self.store.list_members().await {
-            self.roster.replace(rows);
         }
         let channels = GuildChannels::watched(&*self.cache);
         if channels.is_empty() {
@@ -92,6 +109,7 @@ impl Startup {
             source: "startup".to_owned(),
             automated: true,
             requested_by: None,
+            unprocessed_only: true,
         };
         match self.runner.submit(request).await {
             Ok(view) => logging::event(

@@ -11,11 +11,25 @@ messages and the rescan `History`); see `runtime-bootstrap.md` *Live
 serve*. Not wired yet: the Limits view, self-service links (cards only
 while the public portal is closed) and `check_reasoning_effort` at startup.
 Serve sets `handled_by_chat` from the chat driver's verdict (answered,
-queued, shed or rate-limited) and keeps it for that message's later edits.
+queued, shed or rate-limited) and keeps it for that message's later edits;
+`store_message` caches such a message as processed, so neither a live pass
+nor the startup rescan reads it (a manual rescan still may, as v4). Only
+regular messages and replies are offered or backfilled (system messages
+such as a thread's creation carry its name as content; v4 did not filter).
 `Extractor::cancel_calls` (shutdown) cuts calls and permit waits in flight,
 and any started later: each is logged `failed` with `CALL_CANCELLED`
 (`cancelled: serve shut down`) and its messages stay unprocessed; a rescan's
 turned-away wait is cut too.
+
+**The off switch** (`Guild::extraction_enabled`) is read before every call
+(none is sent while off), before every rescan burst and channel, and before
+proposing: a pass whose calls answered after the switch went off logs them
+`failed` with `CALL_SWITCHED_OFF` (`cancelled: extraction switched off`),
+proposes nothing and posts no card. Serve's settings hook, on on→off, also
+calls `Extractor::interrupt_calls` (cuts the calls and permit waits in
+flight, same log) and `Rescans::switched_off` (queued and running jobs end
+`cancelled` with `error` `switched off`; unlike `close`, new jobs are taken
+again once back on).
 
 ## Ports
 
@@ -187,6 +201,8 @@ its new burst.
 - **Worker**: one job at a time, in order; `running` with `started_at`,
   then channels one after another, `results` written after each channel,
   and a final `done` | `failed` (every channel failed) | `cancelled`.
+  Before it starts, `Rescans::recover` ends jobs a previous process left
+  `queued` or `running` (a crash, an abort) as `cancelled` / `interrupted`.
 - **Cancel**: a queued job is cancelled at once; a running one stops before
   its next burst or channel (a call in flight finishes; what was read is
   still proposed and logged). `close()` cancels queued jobs (`shut down`)
@@ -200,7 +216,9 @@ its new burst.
   never widen. The stored `window` is the requested spelling.
 - **Per channel** (v4 `rescan_window`): backfill through `History` (new or
   changed messages are cached), read every cached role-holder message the
-  gate hits since the window start — processed or not — cut into
+  gate hits since the window start — processed or not, unless the request
+  says `unprocessed_only` (the startup rescan: a restart never re-reads,
+  re-proposes or reposts what a pass already read) — cut into
   conversations (`group_for_rescan`), one call per conversation spaced by
   `drain_interval`; only the turned-away pieces of a conversation are read
   again, at most 3 attempts in all, each after the governor's wait; what is
@@ -214,7 +232,8 @@ its new burst.
   `calls`, `extracted`, `proposals`, `refused`, `dropped`, `stale`,
   `cancelled`, `unread`, `errors`. `errors` hold failed calls and what
   could not be written; turned-away calls are not failures (read again, or
-  counted in `unread`).
+  counted in `unread`). A thread whose history cannot be read is skipped
+  (`thread_history_skipped` {thread_id, kind}) and named in `errors`.
 
 ## Startup check
 

@@ -151,6 +151,9 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
                 if !*self.stop.borrow() {
                     self.reconcile().await;
                 }
+                // Readers waiting for it see the reconciled rows.
+                self.refresh().await;
+                self.live.mark_reconciled();
             }
         }
     }

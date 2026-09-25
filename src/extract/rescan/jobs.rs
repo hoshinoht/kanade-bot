@@ -20,6 +20,12 @@ use crate::infrastructure::llm::LlmProvider;
 /// Finished jobs kept in memory for progress polling (v4 `KEEP_JOBS`); the
 /// store keeps them all.
 pub const KEEP_JOBS: usize = 20;
+/// Why jobs ended when extraction was switched off.
+pub const SWITCHED_OFF: &str = "switched off";
+/// Why a job a previous process left queued or running ended.
+pub const INTERRUPTED: &str = "interrupted";
+/// Enough rows to reach every job a crash could have left open.
+const RECOVER_ROWS: u32 = 10_000;
 
 /// A job and, while it runs, the channel being read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +38,9 @@ struct Tracked {
     job: RescanJob,
     stop: Arc<AtomicBool>,
     current: Option<String>,
+    /// The cancelled job's `error` when a stop had a reason.
+    reason: Option<String>,
+    unprocessed_only: bool,
 }
 
 #[derive(Default)]
@@ -77,6 +86,9 @@ impl State {
         if let Some(tracked) = self.jobs.get_mut(&job.id) {
             if tracked.stop.load(Ordering::SeqCst) {
                 job.status = RescanStatus::Cancelled;
+                if let Some(reason) = &tracked.reason {
+                    job.error = Some(reason.clone());
+                }
             }
             tracked.job = job.clone();
             tracked.current = None;
@@ -217,6 +229,8 @@ where
                 job,
                 stop: Arc::new(AtomicBool::new(false)),
                 current: None,
+                reason: None,
+                unprocessed_only: request.unprocessed_only,
             });
         }
         self.wake.notify_one();
@@ -279,6 +293,51 @@ where
         self.wake.notify_one();
     }
 
+    /// Extraction was switched off: queued jobs end now and the running one
+    /// before its next burst, each `cancelled` with [`SWITCHED_OFF`]. Unlike
+    /// [`Self::close`], new jobs are accepted again.
+    pub async fn switched_off(&self) {
+        let _admission = self.admission.lock().await;
+        let queued: Vec<String> = {
+            let mut state = self.state();
+            for tracked in state.jobs.values_mut() {
+                if tracked.job.status == RescanStatus::Running {
+                    tracked.reason = Some(SWITCHED_OFF.to_owned());
+                    tracked.stop.store(true, Ordering::SeqCst);
+                }
+            }
+            state.queue.iter().cloned().collect()
+        };
+        for id in queued {
+            let _ = self.finish_queued(&id, SWITCHED_OFF).await;
+        }
+    }
+
+    /// Before the worker starts: jobs a previous process left queued or
+    /// running (a crash, an abort) end `cancelled` with [`INTERRUPTED`], so
+    /// neither the API nor health shows them as live. Jobs of this process
+    /// are left alone.
+    pub async fn recover(&self) -> Result<usize, RescanError> {
+        let rows = self
+            .extractor
+            .store()
+            .recent_rescan_jobs(RECOVER_ROWS)
+            .await?;
+        let mut ended = 0;
+        for mut job in rows.into_iter().filter(|job| !job.status.is_final()) {
+            if self.state().jobs.contains_key(&job.id) {
+                continue;
+            }
+            job.status = RescanStatus::Cancelled;
+            job.finished_at = Some(self.extractor.now());
+            job.error = Some(INTERRUPTED.to_owned());
+            if self.extractor.store().update_rescan_job(job).await? {
+                ended += 1;
+            }
+        }
+        Ok(ended)
+    }
+
     /// `false` when the job was no longer queued (the worker took it).
     async fn finish_queued(&self, id: &str, reason: &str) -> Result<bool, RescanError> {
         let job = {
@@ -327,9 +386,13 @@ where
             }
             tracked.job.status = RescanStatus::Running;
             tracked.job.started_at = Some(self.extractor.now());
-            (tracked.job.clone(), tracked.stop.clone())
+            (
+                tracked.job.clone(),
+                tracked.stop.clone(),
+                tracked.unprocessed_only,
+            )
         };
-        let (mut job, stop) = started;
+        let (mut job, stop, unprocessed_only) = started;
         // A job whose row cannot be written still runs; its end is retried.
         let _ = self.extractor.store().update_rescan_job(job.clone()).await;
 
@@ -345,6 +408,9 @@ where
         let mut results: Vec<Value> = Vec::new();
         let mut failure: Option<String> = None;
         for channel in job.channels.clone() {
+            if !self.extractor.guild().extraction_enabled() {
+                stop.store(true, Ordering::SeqCst);
+            }
             if stop.load(Ordering::SeqCst) {
                 break;
             }
@@ -354,6 +420,7 @@ where
                 history: self.history.as_ref(),
                 stop: stop.as_ref(),
                 pace: &mut pace,
+                unprocessed_only,
             };
             match reader.read(&channel, window, job.automated).await {
                 Ok(result) => results.push(result),
@@ -365,6 +432,15 @@ where
             job.results = Value::Array(results.clone());
             self.set_results(id, job.results.clone());
             let _ = self.extractor.store().update_rescan_job(job.clone()).await;
+        }
+        // The reader stops itself when it sees the switch off first.
+        if stop.load(Ordering::SeqCst)
+            && !self.extractor.guild().extraction_enabled()
+            && let Some(tracked) = self.state().jobs.get_mut(id)
+        {
+            tracked
+                .reason
+                .get_or_insert_with(|| SWITCHED_OFF.to_owned());
         }
         // A stop is applied by `finish`, under the lock `cancel` reads.
         let status = if failure.is_some() && results.is_empty() {
@@ -420,6 +496,8 @@ mod tests {
             job: job.clone(),
             stop: Arc::new(AtomicBool::new(false)),
             current: Some("900".into()),
+            reason: None,
+            unprocessed_only: false,
         });
         job
     }
