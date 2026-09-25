@@ -64,13 +64,23 @@ for the public origin when it opens.
     the login page.
 21. Public logout and any public POST check Origin/Sec-Fetch-Site and a CSRF
     token.
+22. Session hardening (owner decision 2026-09-25) for public sessions:
+    - a member-facing "Signed-in devices" list with sign out one or all, and an
+      audit event for each new sign-in;
+    - shorter lifetimes than admin (for example 30 min idle, 8 h absolute;
+      final values set with the public plan);
+    - a fresh Discord sign-in for member writes once the last sign-in is older
+      than a short window (see item 24);
+    - a client-IP change does not end the session (mobile networks change
+      addresses constantly) but rotates the session id and re-checks
+      eligibility before the next request is served.
 
 ## Later
 
-22. Link Discord ids to roster members by snowflake only, never by name.
-23. Public member writes need per-member authorization on every write, CSRF and
+23. Link Discord ids to roster members by snowflake only, never by name.
+24. Public member writes need per-member authorization on every write, CSRF and
     Idempotency-Key, stricter cookies, short absolute timeouts and a fresh OAuth
     round trip for sensitive changes (Discord has no `max_age`).
-24. Alert on callback failure spikes.
-25. `Cache-Control: no-store` and `Referrer-Policy: no-referrer` on login and
+25. Alert on callback failure spikes.
+26. `Cache-Control: no-store` and `Referrer-Policy: no-referrer` on login and
     callback responses.
