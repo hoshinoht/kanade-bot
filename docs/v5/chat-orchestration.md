@@ -1,0 +1,90 @@
+# Chat orchestration
+
+Status: `src/chat/context/` and `src/chat/answer/` (slice C2). v4 reference:
+`bot/chat/agent.py` (`ChatPilot.build_conversation`/`assemble`/`generate`/
+`_loop`/`_chat`/`_budgeted_messages`). Gate, tools and reply hygiene are C1
+(`src/chat/{gate,authority,tools,sanitize}`); the pre-screen, pollution
+containment, persona-voiced failure lines, queueing and allowance refunds
+are C3. Discord wiring is later.
+
+## Context (`chat::context`)
+
+- In memory, per channel, forgotten on restart: history of at most
+  `HISTORY_EXCHANGES` (6) exchanges, dropped once `CHAT_PILOT_HISTORY_TTL_S`
+  old; the last posted card (`focus`, same TTL, `>=`); up to `ANCHOR_CACHE`
+  (64) answered exchanges keyed by the bot's reply id, re-injected when a
+  member replies to an aged-out answer; `REFERENCE_CACHE` (256) replied
+  authors. Monotonic seconds are passed in.
+- A question's turns: the anchored exchange, live history, the resolved reply
+  chain (`REPLY_CHAIN_DEPTH` 4, cached parents only; the bot's own parents
+  are assistant turns), deduplicated by message id, then the question. Member
+  turns are `Name: text` with forged scheduler notes defused.
+- `assemble`: the persona system prompt (clock header, runtime model, focus
+  line) and the latest turns within `min(2500, prompt budget − system)`
+  tokens, never below 256; the question always stays.
+- `budgeted`: per request, prior history is dropped oldest first until the
+  whole request (turns, tool calls, the offered tools' JSON) plus
+  `COMPLETION_RESERVE_TOKENS` (1024) fits `MODEL_CONTEXT_TOKENS`; the trim
+  sticks for later rounds. Nothing left to drop is `ContextBudgetError`.
+
+## The question loop (`chat::answer`)
+
+- `answer` opens one identity session (`identity::open_session`, so an
+  external route fails closed while pseudonymization is off) and one governed
+  question session (`ModelClient::open_question`: one permit for every
+  round, `tool_rounds` + 1 requests, the timeout bounding the whole
+  question, one requeue). Every conversation message, tool result and the
+  voice reminder is encoded through the identity session; tool arguments are
+  decoded by the dispatcher; the final reply is decoded (an unknown token is
+  a malformed answer).
+- Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). Each round
+  offers the tools snapshotted at its start, so a `request_tools` result
+  applies from the next round; each `request_tools` that adds a bundle
+  spends one round of the cap. The last round, and the round after a posted
+  card, offer no tools. A round with no tool calls ends the loop; running out
+  of rounds is `KeptCallingTools`.
+- Cards: proposal tools hand `ProposalCard`s to `ChatPorts::post_card`. A card
+  that could not be posted turns that call into a refusal the model reads
+  (`CARD_NOT_POSTED`, v4's wording) before the next round; a posted card sets
+  the channel focus (`Generation::focus`, for `Conversations::note_card`).
+  `ChatPorts::pending` supplies the inbox for `get_pending` each call;
+  intent labels and card context reach bundle routing through `ToolOffer`.
+- Clean retry (reserved request): a malformed, empty or undecodable answer
+  (including a reply the runner rejects: unknown tool, duplicate call id,
+  schema-invalid arguments) or a content-filtered one (`ContentFiltered`) is
+  resent once with the system prompt, the asker's message and the reminder,
+  no tools, through `Session::clean_retry` (group retry budget, closed
+  breaker). If it is refused or also fails, the question fails with
+  `Malformed` or `ContentBlocked`; C3 supplies the member-facing line.
+- Finishing (v4 order): an unposted write overwrites a claiming reply unless
+  it already asks a question; new-card claims are stripped on turns that
+  posted nothing; then schedule regrounding, member-facing scrubbing and
+  bounds (`sanitize::shape_reply`).
+- Failures are typed (`AnswerFailure`) with their allowance charge; timeouts
+  read v4's `no answer within Ns`.
+
+## Chat log
+
+`answer::interaction` builds one `chat_interactions` row with a
+`chat_rounds` row per model request (alias, reasoning, finish reason,
+latency, bundles offered, tools called with outcomes, response text; never
+the prompt). Outcomes: `answered`; `refused`/`clarified` when a write was
+refused (clarified if the reply asks); `content_blocked` (guardrail
+`{"content_filter": true}`), `timeout`, `turned_away` (governor refusals,
+gateway admission, backend down), else `error`. `clean_retry` is a flag;
+`rate_limited` and `withheld` are recorded by the caller (gate, pre-screen).
+
+## Vectors and named differences
+
+`tests/chat/{context,looping}.rs` replay `context` (6/58, exact) and `loop`
+(12/22) through `answer` with the fake provider and the tool-round setting at
+v4's 4. Named: `D-SHAPING` (sampled requests carry the runner's
+`max_tokens`), `D-CLEAN-RETRY` (empty/malformed answers use the clean retry;
+`D-NO-THINKING`: responses carry no reasoning text), `D-STRICT-TOOL-CALLS`
+(folded into `D-CLEAN-RETRY`: the runner rejects a reply naming unoffered
+tools, duplicate ids or schema-invalid arguments as a whole), `D-USAGE-PAIRS`
+(a round's usage counts only when both counts are integers),
+`D-TYPED-FAILURES` (governor/runner error text), and **`B-WITHHELD-TOOLS`
+(blocked)**: the runner refuses any transcript whose tool calls name tools
+the request does not offer, so the tools-withheld round fails with
+`RequestInvalid`; pinned until the runner accepts it.

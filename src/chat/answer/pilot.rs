@@ -1,0 +1,71 @@
+//! Opening a question: the identity session (guarded route) and the
+//! governed question session, then the loop.
+
+use super::{AnswerFailure, ChatPorts, Generation, GuildView, Question, run_question};
+use crate::chat::tools::propose::Proposer;
+use crate::domain::drafts::ProposalStore;
+use crate::domain::scheduler::{Clock, IdSource, ScheduleStore};
+use crate::infrastructure::llm::LlmProvider;
+use crate::infrastructure::llm::governor::{
+    Charge, ModelClient, QuestionLimits, Refused, Role, SessionError, SessionFailure,
+};
+use crate::infrastructure::llm::identity::{IdentityCodec, Member, open_session};
+
+/// The model side of a question.
+pub struct AnswerDeps<'a, P> {
+    pub client: &'a ModelClient<P>,
+    pub codec: &'a dyn IdentityCodec,
+    /// Roster for the identity session.
+    pub roster: &'a [Member],
+}
+
+/// Answer one question: one identity session and one question session
+/// (a permit across every round, `tool_rounds` + 1 requests, the timeout
+/// bounding the whole question). Never fails.
+pub async fn answer<P, S, I, C, X>(
+    deps: &AnswerDeps<'_, P>,
+    question: Question<'_>,
+    guild: &GuildView<'_>,
+    proposer: &mut Proposer<'_, S, I, C>,
+    ports: &X,
+) -> Generation
+where
+    P: LlmProvider,
+    S: ScheduleStore + ProposalStore + Sync,
+    I: IdSource,
+    C: Clock,
+    X: ChatPorts,
+{
+    let Some(route) = deps.client.governor().route(Role::Chat).cloned() else {
+        return Generation::failed(AnswerFailure::Session(SessionError {
+            failure: SessionFailure::Refused(Refused::UnknownRole),
+            charge: Charge::Refunded,
+        }));
+    };
+    let mut identity = match open_session(deps.codec, &route, deps.roster) {
+        Ok(identity) => identity,
+        Err(refused) => return Generation::failed(AnswerFailure::Route(refused.to_string())),
+    };
+    let limits = QuestionLimits {
+        tool_rounds: question.settings.tool_rounds,
+        timeout: question.settings.timeout,
+    };
+    let ctx = question.ctx;
+    let mut session = match deps
+        .client
+        .open_question(ctx.author_id.clone(), ctx.is_admin, limits)
+        .await
+    {
+        Ok(session) => session,
+        Err(error) => return Generation::failed(AnswerFailure::Session(error)),
+    };
+    run_question(
+        question,
+        &mut session,
+        identity.as_mut(),
+        guild,
+        proposer,
+        ports,
+    )
+    .await
+}

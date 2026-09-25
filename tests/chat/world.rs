@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use chrono::Utc;
 use chrono_tz::Tz;
+use kanade::chat::answer::GuildView;
 use kanade::chat::gate::{ChannelDirectory, ChannelInfo, PilotSettings};
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::dispatch::{self, Dispatched};
@@ -20,6 +21,7 @@ use kanade::domain::schedule::{
 };
 use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
 use kanade::infrastructure::llm::identity::IdentitySession;
+use kanade::infrastructure::store::MemoryScheduleStore;
 use kanade::infrastructure::store::conformance::meta;
 use serde_json::Value;
 
@@ -330,6 +332,39 @@ impl World {
         };
         let mut proposer = Proposer { service, policy };
         dispatch::run(ctx, &world, offer, &mut proposer, session, name, arguments).await
+    }
+
+    /// The loop's static guild view and the scheduler it proposes through.
+    pub fn question_parts(
+        &mut self,
+    ) -> (
+        GuildView<'_>,
+        Proposer<'_, MemoryScheduleStore, SeqIds, TestClock>,
+    ) {
+        let Self {
+            service,
+            policy,
+            zone,
+            guild,
+            catalog,
+            channels,
+            pilot,
+            guides,
+            ..
+        } = self;
+        let (guild, policy) = (&*guild, &*policy);
+        let view = GuildView {
+            members: &guild.members,
+            directory: guild,
+            catalog: &*catalog,
+            channels: &*channels,
+            pilot: &*pilot,
+            zone: *zone,
+            reset_weekday: policy.reset_weekday,
+            reset_time: policy.reset_time,
+            guides: Some(&*guides),
+        };
+        (view, Proposer { service, policy })
     }
 
     pub fn tool_world<'a>(&'a self, snapshot: &'a ScheduleSnapshot) -> ToolWorld<'a> {

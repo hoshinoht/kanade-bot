@@ -152,6 +152,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   filled line is checked again. Kanade has her own rewrite voice and request lines.
   Extraction now plans the redirect for each kept change (still cards only while the
   public portal is closed) and uses up the weekly tip only when a link is posted.
+- v5: chat question loop and context: history, reply chains and anchors trimmed to a
+  token budget, one limiter slot per question with a round cap plus one clean retry
+  (also used when the content filter stops a reply), a failed card post told to the
+  model, and one chat log row per question with a round per request. Not yet wired to
+  Discord.
 - v5: chat gate, authority, read and proposal tools (proposals only through the
   scheduler, refused up front when unworkable), reply sanitising and injection guards,
   matching the frozen v4 chat vectors; tools load in bundles as needed instead of all

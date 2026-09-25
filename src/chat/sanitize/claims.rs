@@ -15,6 +15,11 @@ static READ_FALSE_CLAIM: LazyLock<Regex> = LazyLock::new(|| {
     pattern_i(r"proposal card is ready|card (is|’s|'s) (ready|up|posted)|a card (has been )?posted")
 });
 
+/// A reply claims a new card (checked only on turns that posted none).
+pub fn claims_new_card(text: &str) -> bool {
+    READ_FALSE_CLAIM.is_match(text)
+}
+
 /// Drop lines claiming a new card when none was posted.
 pub fn strip_false_card_claim(text: &str) -> String {
     let kept: Vec<&str> = splitlines(text)

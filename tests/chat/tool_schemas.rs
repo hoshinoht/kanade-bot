@@ -1,6 +1,10 @@
-//! `tool_schemas.json`: the full-set surface is v4's bytes; constants are
-//! C1's own, the loop/context ones are C2's (named below).
+//! `tool_schemas.json`: the full-set surface is v4's bytes, and every loop,
+//! context and reply constant is the crate's own.
 
+use kanade::chat::context::{
+    ANCHOR_CACHE, COMPLETION_RESERVE_TOKENS, CONVERSATION_BUDGET_TOKENS, HISTORY_EXCHANGES,
+    REFERENCE_CACHE, REPLY_CHAIN_DEPTH,
+};
 use kanade::chat::gate::{
     CHANNEL_BUSY_REACTION, POOL_SPENT, POOL_SPENT_REPLY, RATE_LIMITED_REACTION, RATE_LIMITED_REPLY,
     SEEN_REACTION,
@@ -12,16 +16,6 @@ use serde_json::{Value, json};
 
 use crate::common::text;
 use crate::support::{Named, check_family, dev, unknown_op, value};
-
-/// Owned by slice C2 (loop and context assembly); C1 does not define them.
-const CONTEXT_CONSTANTS: [(&str, u64); 6] = [
-    ("anchor_cache", 64),
-    ("completion_reserve_tokens", 1024),
-    ("conversation_budget_tokens", 2500),
-    ("history_exchanges", 6),
-    ("reference_cache", 256),
-    ("reply_chain_depth", 4),
-];
 
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);
@@ -38,7 +32,11 @@ fn surface(read_only: bool) -> Value {
 
 fn constants() -> Value {
     json!({
+        "anchor_cache": ANCHOR_CACHE,
+        "completion_reserve_tokens": COMPLETION_RESERVE_TOKENS,
+        "conversation_budget_tokens": CONVERSATION_BUDGET_TOKENS,
         "failure_reply": FAILURE_REPLY,
+        "history_exchanges": HISTORY_EXCHANGES,
         "max_member_reply": MAX_MEMBER_REPLY,
         "max_runs": MAX_RUNS,
         "max_tool_rounds": DEFAULT_TOOL_ROUNDS,
@@ -51,6 +49,8 @@ fn constants() -> Value {
             "seen": SEEN_REACTION,
         },
         "read_only_turn": READ_ONLY_TURN,
+        "reference_cache": REFERENCE_CACHE,
+        "reply_chain_depth": REPLY_CHAIN_DEPTH,
         "spoofed_note": SPOOFED_NOTE,
         "strategy_grounding_failure_reply": STRATEGY_GROUNDING_FAILURE_REPLY,
         "unknown_tool": UNKNOWN_TOOL,
@@ -58,33 +58,16 @@ fn constants() -> Value {
 }
 
 fn named() -> Vec<Named> {
-    let case = "surface";
-    vec![
-        Named {
-            // User decision 2026-09-25: 8 tool rounds by default (v4: 4).
-            name: "D-TOOL-ROUNDS",
-            entries: vec![dev(
-                case,
-                "/steps/2/value/max_tool_rounds",
-                json!(V4_MAX_TOOL_ROUNDS),
-                json!(DEFAULT_TOOL_ROUNDS),
-            )],
-        },
-        Named {
-            name: "C2-CONTEXT-CONSTANTS",
-            entries: CONTEXT_CONSTANTS
-                .iter()
-                .map(|(key, v4)| {
-                    dev(
-                        case,
-                        format!("/steps/2/value/{key}"),
-                        json!(v4),
-                        Value::Null,
-                    )
-                })
-                .collect(),
-        },
-    ]
+    vec![Named {
+        // User decision 2026-09-25: 8 tool rounds by default (v4: 4).
+        name: "D-TOOL-ROUNDS",
+        entries: vec![dev(
+            "surface",
+            "/steps/2/value/max_tool_rounds",
+            json!(V4_MAX_TOOL_ROUNDS),
+            json!(DEFAULT_TOOL_ROUNDS),
+        )],
+    }]
 }
 
 async fn replay(case: Value) -> Vec<Value> {
@@ -94,13 +77,7 @@ async fn replay(case: Value) -> Vec<Value> {
         .iter()
         .map(|step| match text(&step["op"]) {
             "surface" => value(surface(step["read_only"].as_bool().expect("read_only"))),
-            "constants" => {
-                let mut values = constants();
-                for (key, _) in CONTEXT_CONSTANTS {
-                    values[key] = Value::Null;
-                }
-                value(values)
-            }
+            "constants" => value(constants()),
             other => unknown_op("tool_schemas", other),
         })
         .collect()

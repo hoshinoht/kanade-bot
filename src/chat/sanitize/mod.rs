@@ -12,7 +12,7 @@ mod member;
 mod notes;
 mod tidy;
 
-pub use claims::{looks_like_clarification, strip_false_card_claim};
+pub use claims::{claims_new_card, looks_like_clarification, strip_false_card_claim};
 pub use defaults::{ScheduleDefaults, schedule_defaults};
 pub use ground::{canonical_schedule_output, ground_schedule_reply, shape_reply};
 pub use member::member_facing;
