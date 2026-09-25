@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use kanade::chat::nudge::{
@@ -18,8 +19,8 @@ use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::MessageEvent;
 use kanade::extract::redirect::SelfServiceMode;
 use kanade::infrastructure::llm::governor::{
-    CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role,
-    RoleConfig,
+    BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
+    Outcome, Random, Role, RoleConfig,
 };
 use kanade::infrastructure::llm::identity::{Member, Passthrough, find_request_leaks};
 use kanade::infrastructure::llm::{
@@ -352,4 +353,126 @@ async fn a_refused_rewrite_is_logged_by_label_and_the_seed_is_used() {
         world.logs().await[0].guardrail,
         json!({"nudges": ["seed_refused"]})
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
+    // The same self-service move that gets a link beside its card in
+    // `cards_and_link_keeps_the_card_and_gives_the_lead_in_once_a_week`, but
+    // the scheduler refuses the proposal up front.
+    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
+        config.self_service.public_portal_open = true;
+    })
+    .await;
+    world.scheduler.refuse.store(true, Ordering::SeqCst);
+    let (events, _loop) = world.pipeline();
+    events.send(post("101")).await.expect("send");
+    after(91).await;
+
+    let log = &world.logs().await[0];
+    assert!(
+        log.error
+            .as_deref()
+            .is_some_and(|error| error.starts_with("refused up front: move")),
+        "{:?}",
+        log.error
+    );
+    assert!(world.live_proposals().await.is_empty());
+    assert!(world.outbox.cards.lock().unwrap().is_empty());
+    assert!(world.outbox.redirects.lock().unwrap().is_empty());
+    assert_eq!(world.requests(), 1, "no rewrite for a link never posted");
+    assert_eq!(log.guardrail, json!({}));
+    let week = reset().current_week(now()).unwrap();
+    assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
+}
+
+fn group(
+    client: &ModelClient<FakeProvider>,
+) -> kanade::infrastructure::llm::governor::GroupSnapshot {
+    let wall = chrono::DateTime::<chrono::Utc>::from_timestamp(1_790_000_000, 0).unwrap();
+    client.governor().snapshot(wall).remove(0)
+}
+
+fn hanging() -> FakeAction {
+    FakeAction::Delayed {
+        delay: Duration::from_secs(60),
+        action: Box::new(reply("far too late")),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rewrite_cut_off_mid_request_frees_its_permit_and_leaves_the_breaker_alone() {
+    let (provider, client) = rewrite_client(true, false, vec![hanging(), hanging()]);
+    let adapter = adapter(client.clone());
+    // The caller's deadline, not the adapter's, drops the request mid-flight.
+    let started = Instant::now();
+    let prompt = rewrite_prompt();
+    let cut = tokio::time::timeout(DEADLINE, adapter.rewrite(&prompt, DEADLINE * 30));
+    assert!(cut.await.is_err(), "dropped by the outer timeout");
+    assert_eq!(started.elapsed(), DEADLINE);
+    assert_eq!(provider.requests().len(), 1, "the request was in flight");
+    let after_cut = group(&client);
+    assert_eq!(after_cut.permits.in_use, 0);
+    assert_eq!(after_cut.breaker.state, BreakerState::Closed);
+    assert_eq!(after_cut.breaker.failures, 0);
+
+    // Through the nudge: the seed is used and the group is left as found.
+    let started = Instant::now();
+    let nudge = Nudger::new(Arc::new(Fixed), adapter)
+        .lead_in(&kanade(), &facts())
+        .await;
+    assert_eq!(started.elapsed(), DEADLINE);
+    assert!(
+        matches!(nudge.line, LineSource::Seed(_)),
+        "{:?}",
+        nudge.line
+    );
+    let seeds = kanade();
+    let pool = seeds.nudge_seeds(NudgePurpose::SelfService, NudgeMood::Playful);
+    assert!(pool.lines.contains(&nudge.lead_in.as_str()));
+    let after_nudge = group(&client);
+    assert_eq!(after_nudge.permits.in_use, 0);
+    assert_eq!(after_nudge.breaker.state, BreakerState::Closed);
+    assert_eq!(after_nudge.breaker.failures, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cut_off_half_open_probe_frees_the_probe_slot() {
+    let (provider, client) = rewrite_client(true, false, vec![hanging()]);
+    let governor = client.governor().clone();
+    // Trip the breaker from the rewrite role, then wait for the half-open probe.
+    let permit = governor
+        .try_acquire(Role::Rewrite, CallKind::Rewrite, "tripper")
+        .unwrap();
+    for _ in 0..5 {
+        permit
+            .begin_request(Duration::from_secs(60))
+            .await
+            .unwrap()
+            .finish(Outcome::TransientFailure);
+    }
+    drop(permit);
+    assert_eq!(group(&client).breaker.state, BreakerState::Open);
+    tokio::time::advance(Duration::from_secs(46)).await;
+    assert_eq!(group(&client).breaker.state, BreakerState::HalfOpen);
+
+    // The nudge's rewrite takes the single slot and its request is the probe;
+    // cut off at 2 s, the probe is abandoned, not failed.
+    let nudge = Nudger::new(Arc::new(Fixed), adapter(client.clone()))
+        .lead_in(&kanade(), &facts())
+        .await;
+    assert!(
+        matches!(nudge.line, LineSource::Seed(_)),
+        "{:?}",
+        nudge.line
+    );
+    assert_eq!(provider.requests().len(), 1, "the probe was sent");
+    let snapshot = group(&client);
+    assert_eq!(snapshot.permits.in_use, 0);
+    assert_eq!(snapshot.breaker.state, BreakerState::HalfOpen);
+    // The probe slot is free again: the next holder's request is the probe.
+    let next = governor
+        .try_acquire(Role::Rewrite, CallKind::Rewrite, "next")
+        .expect("probe slot freed");
+    assert!(next.try_begin_request().expect("admitted").is_probe());
 }

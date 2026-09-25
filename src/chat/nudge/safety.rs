@@ -2,8 +2,10 @@
 //! skip them): no Discord markdown, no invisible format characters, no invite
 //! links, and a small code-owned SFW deny-list (user decision 2026-09-25).
 
-/// Characters Discord renders as formatting.
-const MARKUP_CHARS: [char; 6] = ['`', '*', '_', '~', '|', '\\'];
+/// Characters Discord renders as formatting. A single `~` is plain text (a
+/// persona's "on you~"); only `~~` strikes through.
+const MARKUP_CHARS: [char; 5] = ['`', '*', '_', '|', '\\'];
+const MARKUP_PAIRS: [&str; 1] = ["~~"];
 
 const INVITES: [&str; 3] = ["discord.gg/", "discord.com/invite", "discordapp.com/invite"];
 
@@ -16,7 +18,13 @@ pub const DENY_LIST: [&str; 35] = [
     "retard", "sex", "shit", "slut",
 ];
 
-const SUFFIXES: [&str; 7] = ["s", "es", "ed", "er", "ing", "y", "ty"];
+const SUFFIXES: [&str; 8] = ["s", "es", "ed", "er", "ing", "in", "y", "ty"];
+
+/// Matched anywhere inside a normalised word (`bullshit`, `motherfucker`).
+/// Entries are already letter-collapsed, so `niger`/`fagot` also cover the
+/// double-g spellings. `cunt` stays whole-word only: as a substring it would
+/// reject "Scunthorpe".
+pub const DENY_INSIDE: [&str; 4] = ["fuck", "shit", "niger", "fagot"];
 
 /// Markdown syntax at the start of the line or anywhere inline.
 pub fn has_markup(line: &str) -> bool {
@@ -26,7 +34,10 @@ pub fn has_markup(line: &str) -> bool {
         .any(|prefix| start.starts_with(prefix));
     let digits = start.chars().take_while(char::is_ascii_digit).count();
     let numbered = digits > 0 && start[digits..].starts_with(". ");
-    block || numbered || line.contains(MARKUP_CHARS)
+    block
+        || numbered
+        || line.contains(MARKUP_CHARS)
+        || MARKUP_PAIRS.iter().any(|pair| line.contains(pair))
 }
 
 /// Unicode general category Cf (bidi controls, zero-width characters, tags...).
@@ -84,13 +95,19 @@ pub fn denied_word(line: &str) -> Option<&'static str> {
         .split(|c: char| !c.is_alphabetic())
         .filter(|word| !word.is_empty())
         .find_map(|word| {
-            DENY_LIST.iter().copied().find(|entry| {
+            let whole = DENY_LIST.iter().copied().find(|entry| {
                 let entry = collapse(entry);
                 word == entry
                     || SUFFIXES.iter().any(|suffix| {
                         word.strip_prefix(entry.as_str())
                             .is_some_and(|rest| rest == collapse(suffix))
                     })
+            });
+            whole.or_else(|| {
+                DENY_INSIDE
+                    .iter()
+                    .copied()
+                    .find(|entry| word.contains(entry))
             })
         })
 }

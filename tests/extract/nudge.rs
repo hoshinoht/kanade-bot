@@ -14,10 +14,10 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::chat::nudge::{
-    EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS, NUDGE_REWRITE_INSTRUCTION, NoRewrite,
-    Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD, RECENT_PER_CHANNEL,
+    DENY_INSIDE, EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS, NUDGE_REWRITE_INSTRUCTION,
+    NoRewrite, Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD, RECENT_PER_CHANNEL,
     REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt, SeedReason, SeedRotation,
-    accept_rewrite, denied_word, mood_for, render,
+    accept_rewrite, denied_word, has_invite, has_markup, mood_for, render,
 };
 use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
@@ -357,6 +357,67 @@ fn markdown_format_characters_and_invites_are_rejected() {
 }
 
 #[test]
+fn a_single_tilde_is_voice_but_a_double_tilde_is_strikethrough() {
+    let seed = "Move {boss} yourself.";
+    assert_eq!(
+        accept_rewrite("Moving {boss} is on you~", seed).as_deref(),
+        Ok("Moving {boss} is on you~")
+    );
+    assert!(accept_rewrite("Move {boss}~ yourself~", seed).is_ok());
+    for output in [
+        "Move ~~{boss}~~ yourself.",
+        "Move {boss} yourself~~",
+        "~~Move~~ {boss} yourself.",
+    ] {
+        assert_eq!(
+            accept_rewrite(output, seed),
+            Err(Rejection::Markup),
+            "{output:?}"
+        );
+    }
+    assert!(!has_markup("on you~") && has_markup("on you~~"));
+}
+
+#[test]
+fn slurs_and_profanity_are_caught_inside_words_and_with_the_in_suffix() {
+    let seed = "Move {boss} yourself.";
+    for (output, entry) in [
+        ("Move {boss} yourself, bullshit.", "shit"),
+        ("Move {boss} yourself, motherfucker.", "fuck"),
+        ("Move {boss} yourself, shithead.", "shit"),
+        ("Move {boss} yourself, fuckin slowpoke.", "fuck"),
+        ("Move {boss} yourself, fvcking... no, fuuckin.", "fuck"),
+        ("Move {boss} yourself, bitchin.", "bitch"),
+        ("Move {boss} yourself, sh1tty.", "shit"),
+        ("Move {boss} yourself, n1ggers.", "nigger"),
+        ("Move {boss} yourself, niga? no: nigerz.", "niger"),
+        ("Move {boss} yourself, fagg0ts.", "faggot"),
+        ("Move {boss} yourself, fagot.", "faggot"),
+        ("Move {boss} yourself, dumbfagot.", "fagot"),
+    ] {
+        assert_eq!(
+            accept_rewrite(output, seed),
+            Err(Rejection::Denied(entry)),
+            "{output:?}"
+        );
+    }
+    // `cunt` is whole-word only, so this town survives; the whole word does not.
+    assert!(accept_rewrite("Move {boss} yourself, Scunthorpe.", seed).is_ok());
+    assert_eq!(
+        accept_rewrite("Move {boss} yourself, cunt.", seed),
+        Err(Rejection::Denied("cunt"))
+    );
+    for clean in [
+        "Move {boss} yourself, shift it.",
+        "Move {boss} yourself, it's fun.",
+        "Move {boss} yourself, begin now.",
+    ] {
+        assert!(accept_rewrite(clean, seed).is_ok(), "{clean:?}");
+    }
+    assert!(DENY_INSIDE.contains(&"fuck"));
+}
+
+#[test]
 fn the_deny_list_matches_whole_words_through_simple_obfuscation() {
     let seed = "Move {boss} yourself.";
     for output in [
@@ -515,6 +576,49 @@ async fn a_rewrite_unsafe_only_once_filled_uses_the_filled_seed() {
         .await;
     assert_eq!(nudge.line, LineSource::Seed(SeedReason::UnsafeFill));
     assert_eq!(nudge.lead_in, "Move Chosen Seren the Very Long yourself.");
+}
+
+fn pool_of(line: &str) -> String {
+    format!("nudges:\n  playful:\n    - '{line}'\n    - '{line} Go.'\n    - '{line} Now.'\n")
+}
+
+#[tokio::test(start_paused = true)]
+async fn filling_must_not_create_markup_or_an_invite() {
+    // Each value is harmless alone; the template around it completes the markup.
+    for (line, boss, day) in [
+        ("Join discord.{boss} to plan.", "gg/raid", "Sat"),
+        ("See discordapp.com/{boss} later.", "invite/raid", "Sat"),
+        ("Move ~{boss} now.", "~Lucid", "Sat"),
+        ("{day}. Move {boss}.", "Lucid", "12"),
+    ] {
+        let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
+        let nudge = nudger
+            .lead_in(&persona(&pool_of(line)), &hostile(boss, day, "21:00"))
+            .await;
+        assert_eq!(nudge.line, LineSource::FieldFree, "{line:?} + {boss:?}");
+        assert!(!has_markup(&nudge.lead_in) && !has_invite(&nudge.lead_in));
+    }
+
+    // A seed's own approved markup is kept when the values add none.
+    let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
+    let starred = persona(&pool_of("Move *{boss}* now."));
+    let nudge = nudger
+        .lead_in(&starred, &hostile("Lucid", "Sat", "21:00"))
+        .await;
+    assert_eq!(nudge.line, LineSource::Seed(SeedReason::Unavailable));
+    assert_eq!(nudge.lead_in, "Move *Lucid* now.");
+
+    // A rewrite that only becomes an invite once filled drops to the filled seed.
+    let fake = GovernedFake::new(governor(), vec![Step::Reply("Join discord.{boss} now.")]);
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake);
+    let nudge = nudger
+        .lead_in(
+            &persona(&pool_of("Move {boss} yourself.")),
+            &hostile("gg/raid", "Sat", "21:00"),
+        )
+        .await;
+    assert_eq!(nudge.line, LineSource::Seed(SeedReason::UnsafeFill));
+    assert_eq!(nudge.lead_in, "Move gg/raid yourself.");
 }
 
 #[tokio::test(start_paused = true)]

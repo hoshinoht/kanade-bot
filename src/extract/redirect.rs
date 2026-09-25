@@ -148,9 +148,10 @@ impl FixedChange {
 
 /// Public-portal deep links. They carry only ids and the proposed slot, never
 /// a secret; the portal signs the member in and the server re-validates.
+/// `None` means no link can be built safely: the change keeps its card.
 pub trait PortalLinks {
     /// Opens the run with the move pre-filled for confirmation.
-    fn move_run(&self, run_id: &str, to: DateTime<Utc>) -> String;
+    fn move_run(&self, run_id: &str, to: DateTime<Utc>) -> Option<String>;
     /// Opens the request form for a weekly timing, pre-filled.
     fn request_fixed(
         &self,
@@ -158,7 +159,17 @@ pub trait PortalLinks {
         change: FixedChange,
         weekday: Option<Weekday>,
         time: Option<NaiveTime>,
-    ) -> String;
+    ) -> Option<String>;
+}
+
+/// Row ids are UUIDs (v4 and v5 alike); anything outside `[A-Za-z0-9_-]` gets
+/// no link. Percent-encoding is not enough: WHATWG URL parsing reads `%2E`
+/// segments as `.`, so `/runs/%2E%2E` still collapses to the parent path.
+pub fn is_link_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -202,13 +213,9 @@ impl PublicPortalLinks {
 }
 
 impl PortalLinks for PublicPortalLinks {
-    fn move_run(&self, run_id: &str, to: DateTime<Utc>) -> String {
-        format!(
-            "{}/runs/{}?move_to={}",
-            self.origin,
-            encode(run_id),
-            utc_stamp(to)
-        )
+    fn move_run(&self, run_id: &str, to: DateTime<Utc>) -> Option<String> {
+        is_link_id(run_id)
+            .then(|| format!("{}/runs/{run_id}?move_to={}", self.origin, utc_stamp(to)))
     }
 
     fn request_fixed(
@@ -217,11 +224,13 @@ impl PortalLinks for PublicPortalLinks {
         change: FixedChange,
         weekday: Option<Weekday>,
         time: Option<NaiveTime>,
-    ) -> String {
+    ) -> Option<String> {
+        if !is_link_id(fixed_run_id) {
+            return None;
+        }
         let mut link = format!(
-            "{}/requests/new?fixed={}&change={}",
+            "{}/requests/new?fixed={fixed_run_id}&change={}",
             self.origin,
-            encode(fixed_run_id),
             change.as_str()
         );
         if let Some(weekday) = weekday {
@@ -231,26 +240,8 @@ impl PortalLinks for PublicPortalLinks {
         if let Some(time) = time {
             link.push_str(&format!("&time={:02}:{:02}", time.hour(), time.minute()));
         }
-        link
+        Some(link)
     }
-}
-
-/// RFC 3986 unreserved characters pass; every other byte is percent-encoded.
-/// An all-dot id keeps its dots encoded so `.`/`..` segments cannot normalise.
-fn encode(value: &str) -> String {
-    let all_dots = !value.is_empty() && value.bytes().all(|byte| byte == b'.');
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        let keep = byte.is_ascii_alphanumeric()
-            || matches!(byte, b'-' | b'_' | b'~')
-            || (byte == b'.' && !all_dots);
-        if keep {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
 }
 
 fn utc_stamp(at: DateTime<Utc>) -> String {
@@ -315,12 +306,15 @@ pub fn plan<L: PortalLinks + ?Sized>(
             let (Some(run_id), Some(to)) = (change.run_id.as_deref(), change.new_datetime) else {
                 return unchanged;
             };
+            let Some(url) = links.move_run(run_id, to) else {
+                return unchanged;
+            };
             Redirect {
                 case,
                 keep_card: mode != SelfServiceMode::LinkFirst,
                 link: Some(RedirectLink {
                     purpose: NudgePurpose::SelfService,
-                    url: links.move_run(run_id, to),
+                    url,
                 }),
             }
         }
@@ -335,7 +329,10 @@ pub fn plan<L: PortalLinks + ?Sized>(
                 Payload::FixRemove {
                     fixed_run_id: Some(id),
                 } => links.request_fixed(id, FixedChange::Remove, None, None),
-                _ => return unchanged,
+                _ => None,
+            };
+            let Some(url) = url else {
+                return unchanged;
             };
             Redirect {
                 case,

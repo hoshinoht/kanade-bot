@@ -23,4 +23,4 @@ pub use rewrite::{
     NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure, accept_rewrite,
 };
 pub use rotation::{MAX_CHANNELS, RECENT_PER_CHANNEL, SeedRotation};
-pub use safety::{DENY_LIST, denied_word, has_format_char, has_invite, has_markup};
+pub use safety::{DENY_INSIDE, DENY_LIST, denied_word, has_format_char, has_invite, has_markup};

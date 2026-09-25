@@ -226,7 +226,15 @@ fn safe_fill(template: &str, filled: &str, facts: &NudgeFacts<'_>) -> bool {
         .iter()
         .filter(|(field, _)| template.contains(field))
         .all(|(_, value)| safe_value(value));
-    values_safe && check_nudge_line(filled).is_ok() && !safety::has_format_char(filled)
+    // Markup is judged against the template: a human-approved seed may carry
+    // some, but filling must not create it (`{boss}` + `*` values, `_{day}_`).
+    // An invite is never allowed, whoever wrote it.
+    let new_markup = safety::has_markup(filled) && !safety::has_markup(template);
+    values_safe
+        && check_nudge_line(filled).is_ok()
+        && !safety::has_format_char(filled)
+        && !new_markup
+        && !safety::has_invite(filled)
 }
 
 fn safe_value(value: &str) -> bool {

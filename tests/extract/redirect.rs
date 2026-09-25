@@ -8,7 +8,7 @@ use kanade::domain::proposals::{ChangeKind, Payload, ProposedChange};
 use kanade::domain::schedule::{Run, RunSource, RunStatus};
 use kanade::extract::redirect::{
     FixedChange, PortalLinks, PublicPortalLinks, RedirectCase, RedirectFacts, RedirectLink,
-    SelfServiceMode, classify, effective_mode, plan,
+    SelfServiceMode, classify, effective_mode, is_link_id, plan,
 };
 
 const AUTHOR: &str = "111111111111111111";
@@ -307,36 +307,70 @@ fn other_cases_never_get_a_link_or_lose_their_card() {
 }
 
 #[test]
-fn all_dot_ids_are_encoded_so_segments_cannot_normalise() {
+fn ids_outside_the_uuid_alphabet_get_no_link_and_keep_their_card() {
     let links = links();
     let at = utc(9, 27, 20);
-    assert_eq!(
-        links.move_run(".", at),
-        format!("{ORIGIN}/runs/%2E?move_to=2026-09-27T20:00:00Z")
-    );
-    assert_eq!(
-        links.move_run("..", at),
-        format!("{ORIGIN}/runs/%2E%2E?move_to=2026-09-27T20:00:00Z")
-    );
-    assert_eq!(
-        links.request_fixed("...", FixedChange::Remove, None, None),
-        format!("{ORIGIN}/requests/new?fixed=%2E%2E%2E&change=remove")
-    );
-    // Dots inside an ordinary id stay readable.
-    assert_eq!(
-        links.move_run("r.1", at),
-        format!("{ORIGIN}/runs/r.1?move_to=2026-09-27T20:00:00Z")
-    );
+    // `%2E` would not help: URL parsers read it as `.` and collapse the path.
+    let hostile = [
+        "",
+        ".",
+        "..",
+        "...",
+        "%2E%2E",
+        "%2e",
+        "r.1",
+        "r 1",
+        "r/../x",
+        "r?y",
+        "r#z",
+        "r~1",
+        "ü",
+        "r\u{202E}1",
+    ];
+    for id in hostile {
+        assert!(!is_link_id(id), "{id:?}");
+        assert_eq!(links.move_run(id, at), None, "{id:?}");
+        assert_eq!(
+            links.request_fixed(id, FixedChange::Remove, None, None),
+            None,
+            "{id:?}"
+        );
+    }
+    for id in [
+        "0f8fad5b-d9cb-469f-a165-70867728950e",
+        "00000106-0000-4000-8000-000000000001",
+        "r-1",
+        "f_1",
+    ] {
+        assert!(is_link_id(id), "{id:?}");
+    }
+
+    // A self-service move and a weekly edit on such ids keep today's card.
+    let mut mine = run(&[AUTHOR]);
+    mine.id = "..".into();
+    let change = ProposedChange {
+        run_id: Some("..".into()),
+        ..move_to(utc(9, 27, 20))
+    };
+    for mode in [SelfServiceMode::CardsAndLink, SelfServiceMode::LinkFirst] {
+        let redirect = plan(&facts(&change, Some(&mine)), mode, &links);
+        assert_eq!(redirect.case, RedirectCase::SelfService);
+        assert!(redirect.keep_card && redirect.link.is_none(), "{mode:?}");
+    }
+    let edit = fix_edit(Some("."));
+    let redirect = plan(&facts(&edit, None), SelfServiceMode::LinkFirst, &links);
+    assert_eq!(redirect.case, RedirectCase::FixedRun);
+    assert!(redirect.keep_card && redirect.link.is_none());
 }
 
 #[test]
 fn links_carry_only_ids_and_the_slot() {
     let links = PublicPortalLinks::new("https://Kanade-Pub.example.dev/").unwrap();
     assert_eq!(links.origin(), ORIGIN);
-    let url = links.move_run("r 1/../x?y#z", utc(9, 27, 20));
+    let uuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
     assert_eq!(
-        url,
-        format!("{ORIGIN}/runs/r%201%2F..%2Fx%3Fy%23z?move_to=2026-09-27T20:00:00Z")
+        links.move_run(uuid, utc(9, 27, 20)).as_deref(),
+        Some(format!("{ORIGIN}/runs/{uuid}?move_to=2026-09-27T20:00:00Z").as_str())
     );
     let mine = run(&[AUTHOR]);
     let change = move_to(utc(9, 27, 20));
@@ -348,8 +382,10 @@ fn links_carry_only_ids_and_the_slot() {
     let url = redirect.link.unwrap().url;
     assert!(!url.contains(AUTHOR) && !url.contains("900") && !url.contains("token"));
     assert_eq!(
-        links.request_fixed("f 1", FixedChange::Remove, None, None),
-        format!("{ORIGIN}/requests/new?fixed=f%201&change=remove")
+        links
+            .request_fixed(uuid, FixedChange::Remove, None, None)
+            .as_deref(),
+        Some(format!("{ORIGIN}/requests/new?fixed={uuid}&change=remove").as_str())
     );
 }
 

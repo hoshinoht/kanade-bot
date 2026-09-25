@@ -22,7 +22,8 @@ use kanade::domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
 use kanade::domain::proposals::Approver;
 use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
 use kanade::domain::scheduler::{
-    ProposalApproved, ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope,
+    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
+    SupersedeScope,
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage,
@@ -200,6 +201,8 @@ pub struct Scheduler {
     pub clock: TestClock,
     pub ids: Ids,
     pub directory: Roster,
+    /// Answer every `propose` with `NoEffect`, as an up-front refusal.
+    pub refuse: AtomicBool,
 }
 
 impl Scheduler {
@@ -225,6 +228,9 @@ impl Proposer for Scheduler {
     }
 
     async fn propose(&self, request: ProposalRequest) -> ProposalResult<Proposed> {
+        if self.refuse.load(Ordering::SeqCst) {
+            return Err(ProposalError::NoEffect);
+        }
         self.service()
             .propose(request, &policy(), &self.directory)
             .await
@@ -454,6 +460,7 @@ impl World {
             clock: clock.clone(),
             ids: Ids::new(0xd4af),
             directory: Roster(guild.roles.clone()),
+            refuse: AtomicBool::new(false),
         });
         let week = local(8, 27, 0, 0);
         let mut runs = Vec::new();
