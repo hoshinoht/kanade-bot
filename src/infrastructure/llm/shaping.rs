@@ -37,9 +37,8 @@ pub fn prepare(
     if capabilities.structured_output {
         return Ok(None);
     }
-    let schema = serde_json::to_string(&output.schema)
+    let instruction = schema_instruction(&output.schema)
         .map_err(|_| LlmError::new(ErrorCode::RequestInvalid, "schema"))?;
-    let instruction = format!("{SCHEMA_INSTRUCTION}{schema}");
     let mut shaped = request.clone();
     match shaped.messages.first_mut() {
         Some(Message::System { content }) => {
@@ -54,6 +53,28 @@ pub fn prepare(
         ),
     }
     Ok(Some(shaped))
+}
+
+/// The system instruction [`prepare`] adds for a model without structured
+/// output, so callers can budget for it before sending.
+pub fn schema_instruction(schema: &serde_json::Value) -> Result<String, serde_json::Error> {
+    Ok(format!(
+        "{SCHEMA_INSTRUCTION}{}",
+        serde_json::to_string(schema)?
+    ))
+}
+
+/// Test support: the wire body the HTTP adapter would send for `request`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn wire_body(
+    request: &ChatRequest,
+    capabilities: &ModelCapabilities,
+) -> Result<serde_json::Value, LlmError> {
+    let shaped = prepare(request, capabilities)?;
+    Ok(super::wire::chat_body(
+        shaped.as_ref().unwrap_or(request),
+        capabilities,
+    ))
 }
 
 fn uses_tools(request: &ChatRequest) -> bool {

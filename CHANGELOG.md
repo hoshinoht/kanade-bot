@@ -111,7 +111,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   proposals stored as system drafts that expire and supersede older ones. Logs are
   pruned after 90 days in small batches.
 - v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
-  resolution, run matching, per-run merge), matching the frozen v4 vectors exactly.
+  resolution, run matching, per-run merge), matching the frozen v4 vectors exactly,
+  plus the extractor's answer schema, prompt, one-retry answer handling and burst
+  planning. Member identities in extraction prompts go through the identity codec.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard

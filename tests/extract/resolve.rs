@@ -1,19 +1,9 @@
-use kanade::extract::resolve::{self, PM_CUTOFF, Resolved};
+use kanade::extract::resolve::{self, PM_CUTOFF};
 use serde_json::{Value, json};
 
 use crate::support::{
-    Outcome, clock_iso, instant, opt_text, replay_family, text, unknown_op, zone,
+    Outcome, clock_iso, instant, opt_text, replay_family, resolved_json, text, unknown_op, zone,
 };
-
-fn resolved_json(value: &Resolved) -> Value {
-    json!({
-        "day": value.day.map(|day| day.to_string()),
-        "clock": value.clock.map(clock_iso),
-        "at": value.at.map(|at| at.isoformat()),
-        "assumed_pm": value.assumed_pm,
-        "known": value.known(),
-    })
-}
 
 fn replay(input: &Value, step: &Value) -> Outcome {
     let tz = zone(input);

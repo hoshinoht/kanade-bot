@@ -1,41 +1,11 @@
-use chrono::Utc;
-use kanade::domain::schedule::{Run, RunSource, RunStatus};
+use kanade::domain::schedule::Run;
 use kanade::extract::AmendmentKind;
 use kanade::extract::matching::{self, MatchResult};
 use serde_json::{Value, json};
 
 use crate::support::{
-    Outcome, amendment, date, instant, opt_text, replay_family, strings, text, unknown_op, zone,
+    Outcome, amendment, date, opt_text, replay_family, run, select, strings, text, unknown_op, zone,
 };
-
-/// A fixture run as a stored v5 row; `source` and `attendance` are not read by matching.
-fn run(raw: &Value) -> Run {
-    let utc = |value: &Value| instant(value).with_timezone(&Utc);
-    Run {
-        id: text(&raw["id"]).to_owned(),
-        fixed_run_id: None,
-        channel_id: opt_text(&raw["channel_id"]).map(str::to_owned),
-        week_start: utc(&raw["week_start"]),
-        datetime: utc(&raw["datetime"]),
-        bosses: strings(&raw["bosses"]),
-        participants: strings(&raw["participants"]),
-        status: RunStatus::parse(text(&raw["status"])).expect("run status"),
-        source: RunSource::Amend,
-        attendance: Vec::new(),
-        status_pin: None,
-    }
-}
-
-fn select<'a>(pool: &'a [Run], ids: &Value) -> Vec<&'a Run> {
-    strings(ids)
-        .iter()
-        .map(|id| {
-            pool.iter()
-                .find(|run| &run.id == id)
-                .unwrap_or_else(|| panic!("undeclared run id {id}"))
-        })
-        .collect()
-}
 
 fn run_ids(runs: &[&Run]) -> Value {
     json!(runs.iter().map(|run| run.id.as_str()).collect::<Vec<_>>())

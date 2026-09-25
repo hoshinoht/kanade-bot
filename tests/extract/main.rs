@@ -1,15 +1,21 @@
-//! Replays the frozen v4 extraction vectors for the pure rules: gate, window,
-//! resolve, match and merge. Prompt, parse, plan, commit and cards belong to
-//! later slices.
+//! Replays the frozen v4 extraction vectors: the pure rules (gate, window,
+//! resolve, match, merge) and schema, prompt and burst planning (parse,
+//! prompt, plan). Commit and cards belong to later slices.
 
 mod gate;
 mod matching;
 mod merge;
+mod parse;
+mod plan;
+mod prompt;
 mod resolve;
+mod shaping;
 mod support;
 mod window;
 
-const REPLAYED: [&str; 5] = ["gate", "window", "resolve", "match", "merge"];
+const REPLAYED: [&str; 8] = [
+    "gate", "window", "resolve", "match", "merge", "prompt", "parse", "plan",
+];
 
 #[test]
 fn index_lists_the_replayed_families_with_their_schemas() {

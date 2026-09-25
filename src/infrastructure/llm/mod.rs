@@ -31,3 +31,6 @@ pub use provider::{
 pub use request::{ChatRequest, Message, OutputSchema, Sampling, ToolCallRequest, ToolDefinition};
 pub use response::{CompletionResponse, FinishReason, ToolCall, Usage};
 pub use shaping::prepare as shape_request;
+pub use shaping::schema_instruction;
+#[cfg(any(test, feature = "test-support"))]
+pub use shaping::wire_body;
