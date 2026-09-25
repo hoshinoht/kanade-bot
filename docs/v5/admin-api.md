@@ -163,14 +163,14 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/inbox` | — | `Proposal[]` | Extractor/chat proposals and member requests together. **Implemented (A6)**, see "Inbox (A6)". |
 | `POST /api/admin/inbox/{id}/approve` | `{version?, choices?, day?, time?}` | `{message}` | **Implemented (A6)**; `day`/`time` edit a proposal's time before approving; no `force`. |
 | `POST /api/admin/inbox/{id}/reject` | `{version?, reason?}` | `{message}` | **Implemented (A6)**; `reason` required for member requests only. |
-| `GET /api/admin/extractions` | — | `Extractions` | Paged client-side. |
-| `GET /api/admin/extractions/{id}` | — | `Extraction` | Tabs: changes, chat read, prompt, raw. |
-| `GET /api/admin/rescan/targets` | — | `Channel[]` | Watched channels only. |
-| `POST /api/admin/rescan` | `{channels[], window}` | `RescanJob` | `window`: `week`, `since_reset`, `two_weeks`. |
-| `GET /api/admin/rescan/{id}` | — | `RescanJob` | Polled per channel. |
-| `DELETE /api/admin/rescan/{id}` | — | `RescanJob` | Cancel. v4 `POST …/cancel`. |
-| `GET /api/admin/chat` | — | `Chat` | |
-| `GET /api/admin/chat/{id}` | — | `ChatTurn` | |
+| `GET /api/admin/extractions` | — | `Extractions` | Paged client-side. **Implemented (A7)**, see "Logs and rescans (A7)". |
+| `GET /api/admin/extractions/{id}` | — | `Extraction` | Tabs: changes, chat read, prompt, raw. **Implemented (A7)**; adds `refusals`. |
+| `GET /api/admin/rescan/targets` | — | `Channel[]` | Watched channels only. **Implemented (A7)**. |
+| `POST /api/admin/rescan` | `{channels[], window}` | `RescanJob` | `window`: `week`, `since_reset`, `two_weeks`. **Implemented (A7)**: queues and answers at once. |
+| `GET /api/admin/rescan/{id}` | — | `RescanJob` | Polled per channel. **Implemented (A7)**. |
+| `DELETE /api/admin/rescan/{id}` | — | `RescanJob` | Cancel. v4 `POST …/cancel`. **Implemented (A7)**; safe to repeat. |
+| `GET /api/admin/chat` | — | `Chat` | **Implemented (A7)**. |
+| `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7)**; a withheld question is not shown. |
 | `GET /api/admin/limits` | — | `Limits` | See `limits-contract.md` (**proposed**). |
 | `DELETE /api/admin/limits/windows/{id}` | — | `{message}` | Clear one member's window. v4 `POST …/reset`. |
 
@@ -336,9 +336,72 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   takes raw draft operations; no UI contract, like drafts under API-6),
   closed-request history (`?state=`), and every public member route (API-3).
 
+## Logs and rescans (A7)
+
+**Implemented (A7)** over `ModelLogStore` (logs) and a rescan port.
+
+- **Lists** return every match, newest first (the store's keyset pages are
+  walked server-side; the PWA pages client-side, so `cursor`/`next_cursor`
+  stay proposed and a `cursor` key is `422 invalid_filter`). `total` is the
+  unfiltered row count; `facets` are the distinct values stored (`outcomes`
+  lists only outcomes that occur, with `withheld`/`clean_retry` when a row is
+  flagged so; channel names from the guild's channel list, else the id). An
+  outcome of `unknown` (v4-imported rows) is listed and filterable. Empty
+  filter values are unset. Chat `summary` is per model over the listed rows
+  (`errors` = `error` + `timeout`, `p50_ms` = median latency of answered
+  questions). Extractions `model` is the newest call's alias until runtime
+  settings (A9) name the configured one. Known limit: every match is read
+  (bounded by the 90-day log retention).
+- **Chat rows**: `model` is the first round's alias (`—` when no model ran),
+  `latency_ms` 0 when unrecorded, `member` `{id: "", name: "unknown"}`
+  when the row has none. The turn's `tools` come from the rounds' logged
+  calls (the log keeps no tool results or per-call timings: `result` is
+  `""`, `took_ms` 0), `rounds[].finish` is the finish reason (`""` when
+  none), `cards` link the proposals the turn created once their card is
+  posted, `raw` joins the rounds' non-empty responses. **Withheld**
+  (`chat-orchestration.md`, pollution containment): the question shows as
+  `[message withheld]` in the list and the detail, and so do that turn's
+  `raw` and tool `arguments` (they can quote it); `said` (the fixed failure
+  line) is kept. A withheld row matches `q` on its reply only, so the text
+  cannot be found by search either.
+- **Extraction detail**: `messages` are the read messages still in the
+  watched-message cache (pruned ones are left out; authors by roster name);
+  `amendments` are the call's proposals from their stored cards (`when` in
+  guild time, else the day/time words), `status` `proposed` | `confirmed` |
+  `rejected` | `expired` | `withdrawn` | `superseded` | `discarded`, or
+  `missing` for an id no draft has; `refusals` (additive) are the changes
+  refused up front (`[{change, code, message}]`, migration `0011`). `error`
+  is the log's own typed failure text (provider errors are redacted
+  upstream), never store or backend text.
+- **Rescans.** `POST` validates `{channels, window}` (unknown fields `400
+  invalid_body`; empty, unwatched or unknown channels and other windows,
+  v4's `2weeks` included, `422 invalid`), then only queues the job
+  (`extraction-orchestration.md` "Rescan jobs": a job already covering the
+  channels is attached to) and answers `RescanJob`; the runner reads in its
+  own task. `state`: queued/running → `running`, done/failed → `done`,
+  `cancelled`. Channel `state`: `reading` while read, `done` once read (or
+  failed: `errors` = `This channel could not be read.`), else `queued`;
+  `messages` = the gated messages of that channel's window. Additive:
+  per-channel `unread` (messages the model kept turning away) and `errors`
+  (fixed sentences for unread messages, a failed Discord backfill and other
+  failures — never the recorded text), and the job's `unread` total. A job
+  the bot or `/rescan` started may carry `window` `24h` | `48h` (`2weeks`
+  reads `two_weeks`). `DELETE` cancels: a queued job at once, a running one
+  after the call in flight (answered `cancelled` at once, since that is how
+  it ends); a finished job is answered as it is, an unknown id is 404.
+- **Retries.** `POST` and `DELETE` honour `Idempotency-Key` (A4 rules): a
+  replay answers the recorded job's current state without submitting or
+  cancelling again; the same key with another request (other channels or
+  window, another job, or the other verb) is `422 idempotency_mismatch`.
+  Keys are kept in memory per admin actor (the newest 1024): jobs do not
+  outlive the process either. `DELETE` is also naturally repeatable.
+- Every route needs an admin session; `POST`/`DELETE` need CSRF. No rescan
+  runner composed: `503 unavailable`.
+
 ## Inbox and log filters (built against the mock)
 
-- The inbox contract is "Inbox (A6)" above.
+- The inbox contract is "Inbox (A6)" above; the log contract as served is
+  "Logs and rescans (A7)".
 - `GET /api/admin/chat` and `GET /api/admin/extractions` take `model`,
   `from`, `to` (guild-local `YYYY-MM-DD`, inclusive), `outcome`
   (comma-separated, any of), `channel`, `member`, `q`; Chat also `tool` and
@@ -349,8 +412,10 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   `no_change`, `failed`, `turned_away`, `content_blocked`,
   `self_service_link`. An unknown outcome, a malformed date, a `min_ms`
   that is not whole non-negative milliseconds (`1e3`, `-5`) or a Chat-only
-  filter on Extractions is 422 `invalid_filter`, never a bare 400. Cursor paging
-  (`cursor`, `next_cursor`) is **proposed**; the mock returns every match.
+  filter on Extractions is 422 `invalid_filter`, never a bare 400 (A7 also:
+  an unknown, repeated or undecodable key and an inverted range). Cursor paging
+  (`cursor`, `next_cursor`) is **proposed**; the mock and the server return
+  every match.
   Backend requirement: both logs persist the model alias per request round,
   reasoning level, the typed outcome, guardrail signals, tools used, request
   count and latency, indexed for these filters; v4-imported history maps to

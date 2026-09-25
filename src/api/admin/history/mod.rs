@@ -3,7 +3,7 @@
 //! Reads use the store's readers; rollbacks and their previews go through
 //! the one scheduler writer.
 
-mod parse;
+pub(super) mod parse;
 mod rollback;
 
 use std::sync::Arc;

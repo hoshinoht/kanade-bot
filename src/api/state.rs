@@ -25,7 +25,10 @@ use crate::{
             changed_fields,
         },
         members::{MemberProfile, MemberStore, PortalEdit},
-        model_log::{ModelLogStore, WatchedMessage},
+        model_log::{
+            ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
+            ModelLogStore, WatchedMessage,
+        },
         notify::DeliveryJournal,
         proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
@@ -93,6 +96,12 @@ pub trait ReadStore: Send + Sync {
     fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>>;
     /// Reminders unresolved delivery attempts hold (rollbacks keep them).
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>>;
+    fn extraction_logs(&self, filter: ExtractionFilter) -> ReadFuture<'_, LogPage<ExtractionLog>>;
+    fn extraction_log(&self, id: String) -> ReadFuture<'_, Option<ExtractionLog>>;
+    fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets>;
+    fn chat_logs(&self, filter: ChatFilter) -> ReadFuture<'_, LogPage<ChatInteraction>>;
+    fn chat_log(&self, id: String) -> ReadFuture<'_, Option<ChatInteraction>>;
+    fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets>;
 }
 
 /// One history page: records and whether older ones exist.
@@ -289,6 +298,30 @@ where
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>> {
         Box::pin(async move { JournalHeld(self).held_reminders().await })
     }
+
+    fn extraction_logs(&self, filter: ExtractionFilter) -> ReadFuture<'_, LogPage<ExtractionLog>> {
+        Box::pin(async move { self.list_extractions(&filter).await })
+    }
+
+    fn extraction_log(&self, id: String) -> ReadFuture<'_, Option<ExtractionLog>> {
+        Box::pin(async move { self.load_extraction(&id).await })
+    }
+
+    fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets> {
+        Box::pin(self.extraction_facets())
+    }
+
+    fn chat_logs(&self, filter: ChatFilter) -> ReadFuture<'_, LogPage<ChatInteraction>> {
+        Box::pin(async move { self.list_chats(&filter).await })
+    }
+
+    fn chat_log(&self, id: String) -> ReadFuture<'_, Option<ChatInteraction>> {
+        Box::pin(async move { self.load_chat(&id).await })
+    }
+
+    fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets> {
+        Box::pin(self.chat_facets())
+    }
 }
 
 /// A channel the admin may pick (home channels, digest override).
@@ -406,6 +439,8 @@ pub struct ApiState {
     /// For message links on posted cards.
     pub guild_id: Option<String>,
     pub clock: Clock,
+    /// Rescan jobs; `None` until the extractor is composed (503).
+    pub rescans: Option<Arc<super::rescan::RescanDesk>>,
 }
 
 impl std::fmt::Debug for ApiState {

@@ -7,6 +7,7 @@ mod auth;
 mod headers;
 mod history;
 mod inbox;
+mod logs;
 mod origins;
 mod proxy;
 mod reads;

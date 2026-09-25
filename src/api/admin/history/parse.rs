@@ -10,7 +10,7 @@ use crate::domain::{
 
 /// `YYYY-MM-DD` with ASCII digits only (chrono alone accepts signs and
 /// other widths).
-fn date(text: &str) -> Option<NaiveDate> {
+pub fn date(text: &str) -> Option<NaiveDate> {
     let bytes = text.as_bytes();
     let shaped = bytes.len() == 10
         && bytes[4] == b'-'

@@ -86,3 +86,8 @@ Pointers are `<file>#/$defs/<Name>`.
 - A6: `inbox.json` `Proposal.kind` adds the request types
   (`new_fixed`, `change_fixed`, `join`, `leave`, `swap`), `source` adds
   `chat`, `flags` adds `requester_unauthorised`.
+- A7 (all optional, so earlier responses stay valid): `extractions.json`
+  `Extraction.refusals` (`[{change, code, message}]`), `RescanJob.unread`
+  and per-channel `unread`/`errors`, `RescanJob.window` adds `24h`/`48h`
+  (bot-started jobs); `ExtractionOutcome` and `chat.json` `ChatOutcome` add
+  `unknown` (v4-imported rows).

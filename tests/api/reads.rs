@@ -19,6 +19,7 @@ use kanade::{
             wire,
         },
         listeners::Site,
+        rescan::RescanDesk,
         state::{ApiState, ChannelEntry, GuildAccess, PersonaOption, StaticChannels},
         write::{ApiClock, SchedulerWriter},
     },
@@ -42,6 +43,7 @@ use serde_json::Value;
 use twilight_model::id::Id;
 
 use crate::{
+    logs::fake::FakeRescans,
     schemas::assert_valid,
     support::{ADMIN_HOST, Fixture, request, send, spawn},
 };
@@ -155,6 +157,7 @@ pub struct Reads {
     pub store: Arc<SqliteStore>,
     /// Discord and Tailscale sign-in, when built `with_logins`.
     pub discord: Arc<FakeDiscord>,
+    pub rescans: Arc<FakeRescans>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -424,6 +427,7 @@ impl Reads {
             RandomIds,
             ApiClock(Arc::new(move || pinned)),
         )));
+        let rescans = FakeRescans::new(pinned);
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -448,6 +452,11 @@ impl Reads {
                     name: "#star".into(),
                     watched: false,
                 },
+                ChannelEntry {
+                    id: "limbo-trio".into(),
+                    name: "#limbo-trio".into(),
+                    watched: true,
+                },
             ])),
             personas: vec![
                 PersonaOption {
@@ -463,6 +472,7 @@ impl Reads {
             knowledge_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge")),
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
+            rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
         };
         let mut http = fixture.http();
         if logins {
@@ -494,6 +504,7 @@ impl Reads {
             csrf,
             store,
             discord,
+            rescans,
             _fixture: fixture,
             _dir: dir,
         }

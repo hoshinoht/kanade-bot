@@ -4,7 +4,8 @@
   "title": "Extraction log, call detail and rescan jobs",
   "$defs": {
     "ExtractionOutcome": {
-      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link"]
+      "description": "`unknown`: a v4-imported call that maps to no other outcome (never a filter the PWA offers).",
+      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link", "unknown"]
     },
     "ExtractionRow": {
       "type": "object",
@@ -83,6 +84,20 @@
               "content": { "type": "string" }
             }
           }
+        },
+        "refusals": {
+          "description": "A7, additive (the Rust server always sends it): changes the scheduler refused to stage for this call.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["change", "code", "message"],
+            "properties": {
+              "change": { "type": "string" },
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
         }
       }
     },
@@ -93,7 +108,10 @@
       "properties": {
         "id": { "type": "string" },
         "state": { "enum": ["running", "done", "cancelled"] },
-        "window": { "enum": ["week", "since_reset", "two_weeks"] },
+        "window": {
+          "description": "`24h`/`48h`: a job the bot or `/rescan` started (never sent by the PWA).",
+          "enum": ["week", "since_reset", "two_weeks", "24h", "48h"]
+        },
         "channels": {
           "type": "array",
           "items": {
@@ -104,11 +122,14 @@
               "id": { "type": "string" },
               "name": { "type": "string" },
               "state": { "enum": ["queued", "reading", "done"] },
-              "messages": { "type": "integer", "minimum": 0 }
+              "messages": { "type": "integer", "minimum": 0 },
+              "unread": { "description": "A7, additive: messages never read (the model kept turning the rescan away).", "type": "integer", "minimum": 0 },
+              "errors": { "description": "A7, additive: fixed sentences, never backend text.", "type": "array", "items": { "type": "string" } }
             }
           }
         },
-        "proposals": { "type": "integer", "minimum": 0 }
+        "proposals": { "type": "integer", "minimum": 0 },
+        "unread": { "description": "A7, additive: the channels' unread messages.", "type": "integer", "minimum": 0 }
       }
     }
   }

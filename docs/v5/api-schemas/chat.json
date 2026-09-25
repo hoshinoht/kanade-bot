@@ -4,6 +4,7 @@
   "title": "Chatbot log and turn detail",
   "$defs": {
     "ChatOutcome": {
+      "description": "`unknown`: a v4-imported question that maps to no other outcome.",
       "enum": [
         "answered",
         "refused",
@@ -14,7 +15,8 @@
         "turned_away",
         "content_blocked",
         "withheld",
-        "clean_retry"
+        "clean_retry",
+        "unknown"
       ]
     },
     "ChatRow": {
