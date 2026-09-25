@@ -20,7 +20,9 @@ pub const INTENTS: Intents = Intents::GUILDS
     .union(Intents::GUILD_MESSAGE_REACTIONS);
 
 /// Events deserialized for the adapter; everything else is skipped unparsed.
+/// `RESUMED` only marks the connection ready again for health.
 pub const WANTED_EVENTS: EventTypeFlags = EventTypeFlags::READY
+    .union(EventTypeFlags::RESUMED)
     .union(EventTypeFlags::GUILD_CREATE)
     .union(EventTypeFlags::GUILD_UPDATE)
     .union(EventTypeFlags::ROLE_CREATE)

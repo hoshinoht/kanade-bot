@@ -106,6 +106,7 @@ pub async fn compose(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     channels: Arc<dyn ChannelList>,
+    health: LiveHealth,
 ) -> Result<Composition, Error> {
     let catalog = load_catalog(&config.files.catalog_file).map_err(file_error)?;
     let knowledge = config
@@ -157,7 +158,7 @@ pub async fn compose(
             .with_attendance(policy.attendance),
     );
     let state = ApiState {
-        store: store.clone(),
+        store,
         writer: Arc::new(writer),
         policy,
         catalog: Arc::new(catalog),
@@ -174,7 +175,7 @@ pub async fn compose(
         admin: LiveAdmin {
             auth: Arc::new(auth),
             state: Arc::new(state),
-            health: Arc::new(LiveHealth::new(store)),
+            health: Arc::new(health),
         },
         access,
         settings,

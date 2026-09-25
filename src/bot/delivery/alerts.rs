@@ -151,6 +151,21 @@ pub trait AlertSink: Send + Sync {
     fn alert(&self, alert: AdminAlert);
 }
 
+/// The beta destination: one structured `admin_alert` log line per alert
+/// (after the caller's throttle).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LogAlerts;
+
+impl AlertSink for LogAlerts {
+    fn alert(&self, alert: AdminAlert) {
+        crate::runtime::logging::event(
+            "WARN",
+            "admin_alert",
+            serde_json::json!({"key": alert.key(), "alert": format!("{alert:?}")}),
+        );
+    }
+}
+
 /// Keeps every alert in memory, in order.
 #[derive(Debug, Default)]
 pub struct AlertRecorder {

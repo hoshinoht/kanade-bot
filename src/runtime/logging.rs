@@ -55,13 +55,26 @@ pub fn store_closed(closed: bool) {
     }));
 }
 
-/// Live serve runs without the Discord gateway until it is wired.
+/// Live serve runs without the Discord gateway (`KANADE_DISCORD_GATEWAY=0`).
 pub fn discord_disabled() {
     emit(&serde_json::json!({"level":"INFO", "event":"discord_disabled"}));
 }
 
 pub fn shutdown_started() {
     emit(&serde_json::json!({"level":"INFO", "event":"shutdown_started"}));
+}
+
+/// One structured line: `level`, `event`, then `fields` (an object) merged in.
+/// Callers must never pass tokens, message content or store error text that
+/// could carry secrets.
+pub fn event(level: &'static str, event: &'static str, fields: serde_json::Value) {
+    let mut line = serde_json::json!({"level": level, "event": event});
+    if let (Some(line), serde_json::Value::Object(fields)) = (line.as_object_mut(), fields) {
+        for (key, value) in fields {
+            line.entry(key).or_insert(value);
+        }
+    }
+    emit(&line);
 }
 
 fn emit(event: &impl Serialize) {

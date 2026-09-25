@@ -12,25 +12,31 @@ pub struct DiscordSettings {
     pub token_file: PathBuf,
     /// `KANADE_EXPECT_V4_STOPPED=1`; checked only before the gateway connects.
     pub v4_stopped: bool,
+    /// `KANADE_DISCORD_GATEWAY` (default `1`); `0` serves the admin API only,
+    /// with no gateway, roster sync or delivery tick.
+    pub gateway: bool,
+}
+
+fn flag(values: &BTreeMap<String, String>, key: &str, default: bool) -> Result<bool, Error> {
+    match non_empty(values, key) {
+        None => Ok(default),
+        Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
+    }
 }
 
 impl DiscordSettings {
     pub(super) fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
         refuse_plain_token(values)?;
-        let v4_stopped = match non_empty(values, "KANADE_EXPECT_V4_STOPPED") {
-            None | Some("0") => false,
-            Some("1") => true,
-            Some(_) => {
-                return Err(Error::Configuration(
-                    "KANADE_EXPECT_V4_STOPPED must be 0 or 1".into(),
-                ));
-            }
-        };
+        let v4_stopped = flag(values, "KANADE_EXPECT_V4_STOPPED", false)?;
+        let gateway = flag(values, "KANADE_DISCORD_GATEWAY", true)?;
         let token_file = non_empty(values, TOKEN_FILE)
             .ok_or_else(|| Error::Configuration(format!("{TOKEN_FILE} is required")))?;
         Ok(Self {
             token_file: PathBuf::from(token_file),
             v4_stopped,
+            gateway,
         })
     }
 

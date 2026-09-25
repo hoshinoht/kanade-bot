@@ -70,6 +70,18 @@ pub struct Health {
     pub scheduler: &'static str,
     pub storage: &'static str,
     pub discord: &'static str,
+    /// Live gateway only: events refused for another guild or no guild.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dropped_events: Option<DroppedHealth>,
+    /// Live tick only: seconds since the last completed tick.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_tick_age_seconds: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct DroppedHealth {
+    pub other_guild: u64,
+    pub no_guild: u64,
 }
 
 impl Health {
@@ -93,6 +105,8 @@ impl OfflineApplication {
             scheduler: "unavailable",
             storage: "unavailable",
             discord: "unavailable",
+            dropped_events: None,
+            last_tick_age_seconds: None,
         }
     }
 }

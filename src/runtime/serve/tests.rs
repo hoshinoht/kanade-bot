@@ -10,10 +10,10 @@ use chrono::{NaiveTime, Weekday};
 use super::*;
 use crate::domain::settings::{Section, SettingsStore, keys, save_section};
 
-struct Temp(PathBuf);
+pub(super) struct Temp(pub(super) PathBuf);
 
 impl Temp {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let base = fs::canonicalize(std::env::temp_dir()).unwrap();
         let root = base.join(format!("kanade-serve-{}", uuid::Uuid::new_v4()));
         fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
@@ -28,7 +28,7 @@ impl Temp {
         Self(root)
     }
 
-    fn config(&self, extra: &[(&str, &str)]) -> ServeConfig {
+    pub(super) fn config(&self, extra: &[(&str, &str)]) -> ServeConfig {
         let path = |relative: &str| self.0.join(relative).display().to_string();
         let mut values: BTreeMap<String, String> = [
             ("KANADE_TIMEZONE", "Asia/Kuala_Lumpur".to_owned()),
@@ -43,6 +43,7 @@ impl Temp {
                 repo("boss/bosses.yaml").display().to_string(),
             ),
             ("KANADE_PERSONA_DIR", path("Personas")),
+            ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
         ]
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
@@ -194,9 +195,15 @@ async fn compose_builds_the_model_stack_and_seeds_unset_role_aliases_from_env() 
     // A stored alias beats its env seed.
     with_rows(&config, &[(keys::CHAT_MODEL, "kanata/stored")]).await;
     let store = store::open(&config.store).await.unwrap();
-    let composition = api::compose(&config, store.clone(), Arc::new(StaticChannels(Vec::new())))
-        .await
-        .unwrap();
+    let health = LiveHealth::new(store.clone());
+    let composition = api::compose(
+        &config,
+        store.clone(),
+        Arc::new(StaticChannels(Vec::new())),
+        health,
+    )
+    .await
+    .unwrap();
     let models = &composition.settings.models;
     assert_eq!(models.extraction.alias.as_deref(), Some("kanata/extract"));
     assert_eq!(models.chat.alias.as_deref(), Some("kanata/stored"));

@@ -1,5 +1,6 @@
-//! Live `serve` (Discord not wired): a temp store, break-glass sign-in and
-//! the admin API over real state, run as the shipped binary.
+//! Live `serve` with the gateway off (`KANADE_DISCORD_GATEWAY=0`): a temp
+//! store, break-glass sign-in and the admin API over real state, run as the
+//! shipped binary.
 
 use std::{
     fs,
@@ -51,6 +52,8 @@ impl Live {
             .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
             .env("KANADE_ADMIN_BIND", format!("127.0.0.1:{admin}"))
             .env("KANADE_DISCORD_TOKEN_FILE", path("discord_token"))
+            // No gateway: these tests never contact Discord.
+            .env("KANADE_DISCORD_GATEWAY", "0")
             .env("KANADE_ADMIN_TOKEN_FILE", path("admin_token"))
             .env("KANADE_GUILD_ID", "900")
             .env("KANADE_BOSSING_ROLE_ID", "10")

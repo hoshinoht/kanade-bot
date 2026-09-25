@@ -166,7 +166,9 @@ async fn routes_guild_events_and_survives_receive_errors() {
     assert_eq!(
         handler.events[0],
         BotEvent::Ready {
-            self_id: user(SELF_ID)
+            self_id: user(SELF_ID),
+            application_id: twilight_model::id::Id::new(9),
+            name: "kanade".into(),
         }
     );
     assert!(matches!(handler.events[1], BotEvent::Roster(_)));

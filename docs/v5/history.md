@@ -160,7 +160,7 @@ Which paths write what:
 
 | Path | Source | Notices |
 | --- | --- | --- |
-| mutations (`set_status` with `announce`, `amend_run`, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices` |
+| mutations (`set_status` with `announce`, `amend_run`, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices`; by surface (v4 parity, parent decision 2026-09-25): a move, fixed edit or party change made in Discord has no `(via portal)` mark, other surfaces keep it, and a Discord fixed edit (`/fixed edit`) writes none |
 | rollbacks (revert, week restore, actor revert, checkpoint restore) | `change:<seq>` | one `Rollback` per channel |
 | cherry-picks | `change:<seq>` | `Picked.notices` |
 | draft merges | `change:<seq>` | the `Merged` summaries |
@@ -171,7 +171,8 @@ Which paths write what:
 
 Services still return the notices (`Outcome`, `MergeOutcome`, `Approved`,
 `Rejected`, `DraftExpiry`, `Picked`, `RevertOutcome`) for reports; callers
-must not enqueue them again. Nothing about the actor suppresses a notice:
+must not enqueue them again. Nothing about the actor suppresses a notice
+(only the Discord surface, for fixed edits, above):
 a write that must stay quiet (the v4 import, routine materialisation) uses
 an operation that emits none (`add_fixed_run`, `materialise_weeks`,
 `StatusChange { announce: false, .. }`) or commits with an empty

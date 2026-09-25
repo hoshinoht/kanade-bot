@@ -10,6 +10,7 @@ mod ports;
 mod registry;
 mod runs;
 mod schedule;
+mod surface;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};

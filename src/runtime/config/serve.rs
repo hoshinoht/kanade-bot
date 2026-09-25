@@ -245,6 +245,16 @@ mod tests {
             config(&[("KANADE_EXPECT_V4_STOPPED", "yes")]).unwrap_err(),
             "KANADE_EXPECT_V4_STOPPED must be 0 or 1"
         );
+        for (value, gateway) in [("", true), ("1", true), ("0", false)] {
+            let discord = config(&[("KANADE_DISCORD_GATEWAY", value)])
+                .unwrap()
+                .discord;
+            assert_eq!(discord.gateway, gateway);
+        }
+        assert_eq!(
+            config(&[("KANADE_DISCORD_GATEWAY", "off")]).unwrap_err(),
+            "KANADE_DISCORD_GATEWAY must be 0 or 1"
+        );
         assert_eq!(
             config(&[("KANADE_DISCORD_TOKEN_FILE", "")]).unwrap_err(),
             "KANADE_DISCORD_TOKEN_FILE is required"

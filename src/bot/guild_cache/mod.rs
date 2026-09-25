@@ -6,7 +6,7 @@
 mod permissions;
 mod views;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use twilight_model::channel::permission_overwrite::PermissionOverwrite;
@@ -267,5 +267,13 @@ impl GuildCache {
 
     pub fn set_watch(&self, watch: WatchList) {
         self.write().watch = watch;
+    }
+
+    /// The guild's current role ids; `None` until `GUILD_CREATE`.
+    pub fn role_ids(&self) -> Option<BTreeSet<Id<RoleMarker>>> {
+        let state = self.read();
+        state
+            .available
+            .then(|| state.roles.keys().copied().collect())
     }
 }

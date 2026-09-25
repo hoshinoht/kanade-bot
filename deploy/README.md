@@ -47,10 +47,13 @@ docker compose -f deploy/compose.yaml build
 ## Start (cut over from v4)
 
 v4 and v5 share the production bot token (one gateway session per token) and
-the edge alias `kanade-bot`, so they never run together.
+the edge alias `kanade-bot`, so they never run together. v5 refuses to start
+its gateway unless `KANADE_EXPECT_V4_STOPPED=1` is in `.env.v5`; set it only
+after v4 is stopped.
 
 ```sh
 docker stop kanade-bot                           # v4
+# then set KANADE_EXPECT_V4_STOPPED=1 in .env.v5
 docker compose -f deploy/compose.yaml up -d
 docker compose -f deploy/compose.yaml ps         # wait for "healthy"
 docker compose -f deploy/compose.yaml logs -f bot
@@ -62,22 +65,31 @@ answers it only for the container's own address, so it is 404 via the edge
 (v4's handover used it). Sign in with the break-glass admin token; the admin
 app then works against the real (initially empty) store.
 
-The stack runs live `serve`: it owns the store and serves the admin API, but
-the Discord gateway, roster sync and delivery tick are not wired yet, so the
-bot stays offline in Discord, channel pickers are empty, nothing is posted,
-and Discord sign-in refuses everyone as not staff (no member data reaches
-the store yet) — use the break-glass token until the gateway lands. The
-container healthcheck accepts the live `/healthz` (`mode: live`, `storage:
-ok`); a store that stops answering turns it unhealthy. `KANADE_EXPECT_V4_STOPPED`
-is not needed until the gateway is wired. For the old shell-only mode set
+The stack runs live `serve`: it owns the store, serves the admin API and
+connects the Discord gateway for `KANADE_GUILD_ID` only (events from other
+guilds and DMs are ignored). On connect it overwrites the guild's slash
+commands (never global ones), reconciles the member roster, and starts the
+delivery tick (reminders, digests, the notice outbox). Discord sign-in works
+for members with the admin role, Administrator or ownership once the roster
+is reconciled. Chat and extraction stay off. Admin alerts are `admin_alert`
+lines in the container log. The container healthcheck needs `/healthz`
+`status: ok`: storage answering, the gateway `ready` and the tick
+`running`; a disconnect or a stalled tick turns it unhealthy. A gateway
+close for a bad token (4004) or missing privileged intents (4014: enable
+Server Members and Message Content on the Developer Portal's Bot page) stops
+the container with that message. `KANADE_DISCORD_GATEWAY=0` runs the admin
+API alone (no gateway, no tick); for the old shell-only mode set
 `command: ["serve", "--offline"]`.
 
 ## Stop and roll back
 
 ```sh
 docker compose -f deploy/compose.yaml stop       # or down (keeps kanade_v5_data)
+# set KANADE_EXPECT_V4_STOPPED=0 in .env.v5 so v5 cannot reconnect by accident
 docker start kanade-bot                          # v4 back; the edge needs no change
 ```
+
+v4 re-registers its own guild slash commands when it starts, replacing v5's.
 
 Never run `down -v` unless the v5 store may be discarded. v4 data lives in
 `kanade_botdata`, which v5 never mounts.

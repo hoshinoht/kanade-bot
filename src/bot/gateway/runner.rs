@@ -17,6 +17,7 @@ use twilight_gateway::{CloseFrame, Event, Shard};
 
 use super::close::CloseReason;
 use super::intents::WANTED_EVENTS;
+use super::status::ConnectionStatus;
 use crate::bot::events::{EventHandler, GuildScope, Router};
 
 /// A receive failure with the payload stripped: Twilight's own error text can
@@ -85,6 +86,42 @@ pub async fn run<S, H>(
     handler: &mut H,
     config: RunnerConfig,
     shutdown: impl Future<Output = ()>,
+    on_error: impl FnMut(GatewayError),
+) -> RunExit
+where
+    S: EventSource,
+    H: EventHandler,
+{
+    let live = Live {
+        router: Router::new(config.scope),
+        status: ConnectionStatus::new(),
+    };
+    run_live(
+        source,
+        handler,
+        live,
+        config.drain_timeout,
+        shutdown,
+        on_error,
+    )
+    .await
+}
+
+/// What serve shares with the loop: a router feeding the shared guild cache
+/// (`Router::with_cache`) and the connection state health reads.
+#[derive(Debug)]
+pub struct Live {
+    pub router: Router,
+    pub status: ConnectionStatus,
+}
+
+/// [`run`] with a prepared router and connection status.
+pub async fn run_live<S, H>(
+    source: &mut S,
+    handler: &mut H,
+    live: Live,
+    drain_timeout: Duration,
+    shutdown: impl Future<Output = ()>,
     mut on_error: impl FnMut(GatewayError),
 ) -> RunExit
 where
@@ -92,7 +129,7 @@ where
     H: EventHandler,
 {
     tokio::pin!(shutdown);
-    let mut router = Router::new(config.scope);
+    let Live { mut router, status } = live;
     // The code of the latest close frame, cleared by any later event.
     let mut last_close = None;
     loop {
@@ -103,6 +140,7 @@ where
                 None => return RunExit::Closed { reason: CloseReason::from_code(last_close) },
                 Some(Err(error)) => on_error(error),
                 Some(Ok(event)) => {
+                    status.observe(&event);
                     last_close = match &event {
                         Event::GatewayClose(frame) => frame.as_ref().map(|frame| frame.code),
                         _ => None,
@@ -125,8 +163,7 @@ where
             }
         }
     };
-    let drained = tokio::time::timeout(config.drain_timeout, drain)
-        .await
-        .is_ok();
+    let drained = tokio::time::timeout(drain_timeout, drain).await.is_ok();
+    status.observe(&Event::GatewayClose(None));
     RunExit::Shutdown { drained, dropped }
 }

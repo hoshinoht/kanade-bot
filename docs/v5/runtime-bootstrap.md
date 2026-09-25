@@ -6,7 +6,8 @@ latter as a semver version.
 
 ## Available now
 
-The offline development server and live `serve` without Discord:
+The offline development server and live `serve` (Discord gateway, roster
+sync and delivery tick for the configured guild; chat and extraction off):
 
 ```sh
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
@@ -34,9 +35,15 @@ probe:
 The admin listener binds `127.0.0.1:8080` by default. `GET /healthz` answers
 `{status, mode, scheduler, storage, discord}`: offline mode reports `ok`,
 `offline` and `unavailable` for the rest; live mode reports `mode: "live"`,
-`storage: "ok"` when the store answers a read (else `status: "degraded"`,
-`storage: "error"` and HTTP 503), and `scheduler`/`discord` `disabled` until
-the gateway and delivery tick are wired (later fields may be added).
+`storage: "ok"` when the store answers a read (else `storage: "error"`),
+`discord` (`connecting`, `ready`, `disconnected`) with `dropped_events:
+{other_guild, no_guild}`, and `scheduler` (`starting` until the guild is
+available and restart recovery ran, `running`, `stalled` after three tick
+periods plus five minutes without a completed tick, `stopped`) with
+`last_tick_age_seconds`. `status` is `ok` (HTTP 200) only when storage is ok,
+Discord is `ready` and the scheduler `running`; otherwise `degraded` (503).
+With `KANADE_DISCORD_GATEWAY=0`, `scheduler`/`discord` are `disabled` and
+only storage decides.
 `healthcheck` accepts the exact offline document or a live one with `status`
 and `storage` `ok`, ignoring extra fields.
 Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
@@ -84,8 +91,9 @@ lists are comma-separated.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB); read at startup even while the gateway is not wired, so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
-| `KANADE_EXPECT_V4_STOPPED` | `0` | `0` or `1`. Required to be `1` only before the Discord gateway connects ("stop the v4 container first"); serve without the gateway does not check it. |
+| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB); read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
+| `KANADE_EXPECT_V4_STOPPED` | `0` | `0` or `1`. Must be `1` before the gateway connects ("stop the v4 container first"): checked before the store opens. Set it only after `docker stop kanade-bot`. Not checked with `KANADE_DISCORD_GATEWAY=0`. |
+| `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
@@ -115,23 +123,71 @@ naming the key, never the value. `KANADE_PILOT_CHANNEL_IDS` is refused with a
 pointer to `KANADE_CHAT_CATEGORY_IDS`. Other unknown `KANADE_*` variables are
 ignored, as for the HTTP settings.
 
-### Live serve (Discord not wired yet)
+### Live serve
 
-`serve` (`src/runtime/serve/`) reads the bot token file, opens and owns the
-store, loads the catalog, knowledge and personas, resolves settings, then
-serves both listeners: one shared `SchedulerWriter`, `ApiState` (schedule
-policy from settings, one `GuildAccess` shared with the staff gate, guild id
-for card links) and `AdminAuth` (Discord OAuth, Tailscale and break-glass per
-the HTTP environment) with `GuildStaffGate` over `StoreGuildMembers`. On
-`SIGINT`/`SIGTERM` it drains HTTP, then closes the store (logged
-`store_closed`) so ownership is released only after SQLite closes; a startup
-failure after the store opened closes it too.
+`serve` (`src/runtime/serve/`) reads the bot token file, checks
+`KANADE_EXPECT_V4_STOPPED`, opens and owns the store, loads the catalog,
+knowledge and personas, resolves settings, then serves both listeners: one
+shared `SchedulerWriter`, `ApiState` (schedule policy from settings, one
+`GuildAccess` shared with the staff gate, guild id for card links, the
+gateway's `GuildCache` as the channel list) and `AdminAuth` (Discord OAuth,
+Tailscale and break-glass per the HTTP environment) with `GuildStaffGate`
+over `StoreGuildMembers`.
 
-Until the gateway is wired: the channel list is empty (pickers and rescan
-targets show nothing); no member rows arrive, so Discord sign-in refuses
-everyone as not staff (fail-closed) and the break-glass token is the way in;
-`rescans` is `None` (`503`); admin writes persist but send no Discord
-effects; nothing is delivered (no tick).
+The Discord side (`serve/discord/`) runs one gateway session for
+`KANADE_GUILD_ID` with the production bot token:
+
+- Events from other guilds and DMs are dropped and counted (health
+  `dropped_events`); interactions are handled only when both the interaction
+  and its command are registered to this guild.
+- On every `READY` the transport learns the application id; on the guild's
+  first `GUILD_CREATE` after it, the command registry
+  (`serve/commands.rs`: the retained v4 commands, `register_retained`)
+  is bulk-overwritten for the
+  guild (never globally; v4 re-syncs its own guild commands when it starts
+  again, the rollback), then startup roster reconciliation pages
+  `list_members` (1000 per page until a short page) and applies `Seen` for
+  changed members and `Left` for stored members no longer in the guild.
+- One sequential roster task applies `GuildAvailable`
+  (`on_guild_available`), member events (`on_roster_update`) and the
+  reconciliation in gateway order. `GuildAvailable` also fires on every role
+  deletion: stored role lists are filtered against the guild's current roles
+  (Discord sends no member updates then), so deleting the configured admin
+  role revokes its holders. Discord OAuth sign-in works for members holding
+  the admin role or Administrator (and the owner) once reconciled.
+- Card ✅/❌ go to `CardDesk` (the approver is the member, `via_portal:
+  false`); other ✅/❌ on reminder/digest cards are RSVPs. One sequential
+  reaction worker keeps a member's add/remove in order.
+- The delivery tick waits for the guild, runs `recover_on_start` once (an
+  attempt a previous process left in flight becomes indeterminate and is
+  never resent), then ticks every `KANADE_TICK_SECONDS` under one lease per
+  tick in v4's order (materialise, mark done, expiry, notice outbox drain
+  with `DEFAULT_MAX_NOTICE_AGE`, digest, reminders). The post channel, quiet
+  mode, watch list and members are re-read each tick; the schedule policy
+  is fixed at startup, as in the API. Reachability is the shared
+  `GuildCache`.
+- Admin alerts go to the structured log (`admin_alert`, throttled per key
+  per hour) for the beta.
+- Message events are counted only: chat and extraction stay off (S9/S10).
+  `Composition.settings.chatbot.category_ids` is the chat gate's input.
+- A fatal close stops serve with the reason (4004: the token; 4014: enable
+  the Server Members and Message Content privileged intents in the
+  Developer Portal). Other disconnects reconnect with Twilight's backoff
+  (health `discord: disconnected` meanwhile).
+
+Shutdown (`SIGINT`/`SIGTERM`): the gateway closes (and its spawned
+interaction/registration tasks finish), the roster and reaction workers
+drain, the running tick finishes (a tick is never cut midway), then HTTP
+drains, then the store closes (logged `store_closed`) so ownership is
+released only after SQLite closes. A startup failure after the store opened
+closes it too.
+
+Runbook (production token, real guild): `docker stop kanade-bot` (v4) first,
+then set `KANADE_EXPECT_V4_STOPPED=1` and start v5; to roll back, stop v5,
+set it back to `0` and `docker start kanade-bot`.
+
+Still not wired: `rescans` is `None` (`503`); the inbox's Discord card
+refresh/close; chat and extraction.
 
 ### Listeners
 
@@ -171,20 +227,12 @@ harden-and-package revisits connection limits.
 ### Admin composition: what remains
 
 `serve --offline` builds neither `AdminAuth` nor `ApiState`, so admin reads
-answer `503 auth_unavailable`. Live `serve` composes both (above); still
-missing: the guild's `ChannelList` (pass the gateway's `GuildCache` to
-`runtime::serve::api::compose` instead of the empty list). Gateway wiring: `BotEvent::Roster` →
-`api::auth::roster::on_roster_update`, `BotEvent::GuildAvailable` →
-`on_guild_available(auth, access, members, owner_id, &admin_roles)` (async;
-`GuildAvailable` also fires when the owner or the set of Administrator roles
-changes). `RosterUpdate::Seen` carries role ids and the computed
-Administrator flag from the gateway `Router`'s role-permission cache.
-Preconditions before Discord admin sign-in is enabled in `serve`: both roster
-handlers run on one sequential task (a concurrent `on_guild_available` could
-write back a stale row over a newer `Seen`); startup roster reconciliation
-refreshes members changed while the bot was offline; and deleting the
-configured admin role revokes its holders (verify Discord sends member
-updates, or filter stored roles against the known role set).
+answer `503 auth_unavailable`. Live `serve` composes both (above) with
+the gateway's `GuildCache` as the channel list. Gateway wiring (see
+"Live serve"): `BotEvent::Roster` → `api::auth::roster::on_roster_update`,
+`BotEvent::GuildAvailable` → role pruning then `on_guild_available`, both on
+one sequential roster task with startup reconciliation, so the Discord
+sign-in preconditions (ordering, reconciliation, admin-role deletion) hold.
 Rescans (A7): `ApiState.rescans` is `None` (rescan routes answer `503`)
 until serve builds the extractor's `Rescans` queue (Discord `History`
 backfill, `Extractor` over the governed model client, `Proposer`, `Outbox`),
@@ -197,8 +245,8 @@ and posted by the delivery tick's outbox drain once serve runs the tick
 (default `DEFAULT_MAX_NOTICE_AGE`, 6 h; parent decision 2026-09-25) retires
 older notices unsent at drain time, so the backlog written before serve
 first ticks (admin edits, an import) never floods the channels; serve builds
-it with that default. Still dropped until serve: the inbox's Discord card
-refresh/close (and its superseded siblings' cards).
+it with that default. Still dropped: the inbox's Discord card refresh/close
+(and its superseded siblings' cards).
 Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
 `/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
 the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.
@@ -256,7 +304,8 @@ emit only safe configuration-error descriptions, not environment values.
 
 ## Deliberate boundaries
 
-Live `serve` runs without Discord (see "Live serve"). `ctl` and `export`
+Live `serve` runs the Discord gateway, roster sync and delivery tick, with
+chat and extraction off (see "Live serve"). `ctl` and `export`
 are reserved commands that return a nonzero not-implemented result.
 `import v4` is the one-off testing import from a v4 snapshot
 (`v4-import.md`). `serve --offline` wires no scheduler, persistence,
@@ -291,7 +340,7 @@ src/
 └── runtime/
     ├── mod.rs
     ├── application.rs   # command dispatch, `/healthz` document
-    ├── serve/           # live serve: store, settings, API composition, health
+    ├── serve/           # live serve: store, settings, API composition, health, discord/ (gateway, roster, tick)
     ├── config.rs
     ├── error.rs
     ├── logging.rs

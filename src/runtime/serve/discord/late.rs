@@ -1,0 +1,163 @@
+//! The production transport, built once `READY` names the application.
+//! Nothing calls Discord before the gateway is ready (registration,
+//! interactions, roster paging and the tick all wait for it); a call that
+//! did is refused unsent.
+
+use std::sync::OnceLock;
+
+use twilight_model::application::command::{Command, CommandOptionChoice};
+use twilight_model::channel::{Channel, Message};
+use twilight_model::guild::Member;
+use twilight_model::id::{
+    Id,
+    marker::{ApplicationMarker, GuildMarker, UserMarker},
+};
+
+use crate::bot::transport::{
+    ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit,
+    MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig,
+    TwilightTransport,
+};
+use crate::runtime::secrets::Redacted;
+
+/// A transport the gateway hands the application id on every `READY`.
+pub trait GatewayTransport: DiscordTransport + 'static {
+    fn application_ready(&self, _application: Id<ApplicationMarker>) {}
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl GatewayTransport for crate::bot::transport::FakeDiscord {}
+
+pub struct LateTransport {
+    token: Redacted,
+    inner: OnceLock<TwilightTransport>,
+}
+
+impl LateTransport {
+    pub fn new(token: Redacted) -> Self {
+        Self {
+            token,
+            inner: OnceLock::new(),
+        }
+    }
+}
+
+impl GatewayTransport for LateTransport {
+    fn application_ready(&self, application: Id<ApplicationMarker>) {
+        self.inner.get_or_init(|| {
+            TwilightTransport::new(
+                self.token.expose().to_owned(),
+                application,
+                TransportConfig::default(),
+            )
+        });
+    }
+}
+
+macro_rules! delegate {
+    ($self:ident, $call:ident($($arg:expr),*)) => {
+        match $self.inner.get() {
+            Some(inner) => inner.$call($($arg),*).await,
+            None => Outcome::DefinitelyRejected(RejectionKind::NotSent),
+        }
+    };
+}
+
+impl DiscordTransport for LateTransport {
+    async fn create_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+    ) -> Outcome<MessageId> {
+        delegate!(self, create_message(channel, message))
+    }
+
+    async fn edit_message(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        edit: &MessageEdit,
+    ) -> Outcome<()> {
+        delegate!(self, edit_message(channel, message, edit))
+    }
+
+    async fn delete_message(&self, channel: ChannelId, message: MessageId) -> Outcome<()> {
+        delegate!(self, delete_message(channel, message))
+    }
+
+    async fn add_own_reaction(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+    ) -> Outcome<()> {
+        delegate!(self, add_own_reaction(channel, message, emoji))
+    }
+
+    async fn remove_own_reaction(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+    ) -> Outcome<()> {
+        delegate!(self, remove_own_reaction(channel, message, emoji))
+    }
+
+    async fn message_presence(&self, channel: ChannelId, message: MessageId) -> Outcome<Presence> {
+        delegate!(self, message_presence(channel, message))
+    }
+
+    async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
+        delegate!(self, respond(interaction, reply))
+    }
+
+    async fn autocomplete(
+        &self,
+        interaction: &InteractionRef,
+        choices: &[CommandOptionChoice],
+    ) -> Outcome<()> {
+        delegate!(self, autocomplete(interaction, choices))
+    }
+
+    async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
+        delegate!(self, defer(interaction, ephemeral))
+    }
+
+    async fn complete_deferred(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> Outcome<()> {
+        delegate!(self, complete_deferred(interaction, reply))
+    }
+
+    async fn register_guild_commands(
+        &self,
+        guild: Id<GuildMarker>,
+        commands: &[Command],
+    ) -> Outcome<()> {
+        delegate!(self, register_guild_commands(guild, commands))
+    }
+
+    async fn list_members(
+        &self,
+        guild: Id<GuildMarker>,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Member>> {
+        delegate!(self, list_members(guild, after, limit))
+    }
+
+    async fn channel_messages(
+        &self,
+        channel: ChannelId,
+        page: HistoryPage,
+        limit: u16,
+    ) -> Outcome<Vec<Message>> {
+        delegate!(self, channel_messages(channel, page, limit))
+    }
+
+    async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
+        delegate!(self, guild_channels(guild))
+    }
+}

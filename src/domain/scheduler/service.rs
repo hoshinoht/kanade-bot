@@ -359,6 +359,24 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     }
 }
 
+/// v4 parity (parent decision 2026-09-25): a move or weekly-timing change
+/// made in Discord carries no "(via portal)" mark, and a Discord `/fixed
+/// edit` announces nothing (v4's slash edit posted nothing). Every other
+/// surface keeps the mark and the announcement.
+fn on_surface(op: &Op<'_>, surface: Surface, mut outcome: Outcome<OpResult>) -> Outcome<OpResult> {
+    let discord = surface == Surface::Discord;
+    match op {
+        Op::ApplyFixedEdit { .. } if discord => outcome.notices.clear(),
+        Op::AmendRun { .. } | Op::ApplyFixedEdit { .. } | Op::FixedParticipants { .. } => {
+            for notice in &mut outcome.notices {
+                notice.via_portal = !discord;
+            }
+        }
+        _ => {}
+    }
+    outcome
+}
+
 impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     /// Declare what the caller saw of the fields this edit changes; the
     /// store refuses the commit with [`SchedulerError::StaleEdit`] when any
@@ -381,6 +399,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             .map_err(SchedulerError::Precondition)?;
         let request = edit_digest(&op, &self.expect)?;
         let overriding = !self.expect.overrides.is_empty();
+        let surface = self.origin.surface;
         let meta = ChangeMeta {
             origin: self.origin.clone(),
             at: DateTime::UNIX_EPOCH,
@@ -394,7 +413,9 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             .transact_as(
                 meta,
                 scope,
-                |draft, ids, now| apply_op(draft, ids, &op, now),
+                |draft, ids, now| {
+                    apply_op(draft, ids, &op, now).map(|outcome| on_surface(&op, surface, outcome))
+                },
                 |outcome: &Outcome<OpResult>| {
                     let mut kinds: Vec<String> =
                         outcome.notices.iter().map(Notice::effect_kind).collect();

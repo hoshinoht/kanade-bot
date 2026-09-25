@@ -17,7 +17,7 @@ use twilight_model::gateway::GatewayReaction;
 use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::id::{
     Id,
-    marker::{GuildMarker, RoleMarker, UserMarker},
+    marker::{ApplicationMarker, GuildMarker, RoleMarker, UserMarker},
 };
 
 use super::guild_cache::GuildCache;
@@ -42,12 +42,17 @@ pub struct GuildScope {
 /// An event for the configured guild. `Debug` omits the interaction token.
 #[derive(Clone, PartialEq)]
 pub enum BotEvent {
-    /// The session is ready; the bot's own user id.
+    /// The session is ready: the bot's own user id and its application
+    /// (interaction responses and command registration need it).
     Ready {
         self_id: Id<UserMarker>,
+        application_id: Id<ApplicationMarker>,
+        /// The bot's user name (command replies about its access).
+        name: String,
     },
-    /// The guild became available, or its owner or Administrator roles
-    /// changed. The owner counts as staff.
+    /// The guild became available, its owner or Administrator roles
+    /// changed, or a role was deleted (stored role lists may name it). The
+    /// owner counts as staff.
     GuildAvailable {
         owner_id: Id<UserMarker>,
         admin_roles: AdminRoles,
@@ -68,7 +73,16 @@ pub enum BotEvent {
 impl fmt::Debug for BotEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Ready { self_id } => f.debug_struct("Ready").field("self_id", self_id).finish(),
+            Self::Ready {
+                self_id,
+                application_id,
+                name,
+            } => f
+                .debug_struct("Ready")
+                .field("self_id", self_id)
+                .field("application_id", application_id)
+                .field("name", name)
+                .finish(),
             Self::GuildAvailable {
                 owner_id,
                 admin_roles,
@@ -147,6 +161,8 @@ impl Router {
             self.cache.set_self(ready.user.id);
             return Some(BotEvent::Ready {
                 self_id: ready.user.id,
+                application_id: ready.application.id,
+                name: ready.user.name.clone(),
             });
         }
         match event.guild_id() {
@@ -186,9 +202,12 @@ impl Router {
                 cache.put_role(&update.role);
                 self.changed(|guild| guild.put_role(&update.role))
             }
+            // Always reported: Discord sends no member updates for a deleted
+            // role, so stored role lists (the admin role) must be pruned.
             Event::RoleDelete(delete) => {
                 cache.remove_role(delete.role_id);
-                self.changed(|guild| guild.remove_role(delete.role_id))
+                self.guild.remove_role(delete.role_id);
+                self.guild_access()
             }
             Event::ChannelCreate(channel) => {
                 cache.put_channel(&channel);

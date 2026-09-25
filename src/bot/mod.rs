@@ -3,8 +3,8 @@
 //! and the slash-command framework.
 //!
 //! Storage-independent: card lookups, roster persistence and the delivery
-//! journal are ports implemented later. Nothing here connects to Discord
-//! unless a caller hands the runner a real shard.
+//! journal are ports implemented by the store. Nothing here connects to
+//! Discord unless a caller hands the runner a real shard.
 
 pub mod cards;
 pub mod commands;
@@ -12,6 +12,8 @@ pub mod delivery;
 pub mod events;
 pub mod gateway;
 pub mod guild_cache;
+pub mod handler;
 pub mod ids;
 pub mod mentions;
+pub mod roster;
 pub mod transport;

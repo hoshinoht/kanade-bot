@@ -132,7 +132,8 @@ interaction create, message create/update/delete/delete-bulk, channel
 create/update/delete, thread create/update/delete/list-sync.
 
 One shard (`ShardId::ONE`). Twilight reconnects with exponential backoff and
-resumes on its own; the loop hands payload-free receive errors to a callback
+resumes on its own (`RESUMED` is deserialized only so `ConnectionStatus`
+reads `ready` again; a close frame reads `disconnected`); the loop hands payload-free receive errors to a callback
 and continues. When the stream ends after a fatal close it returns
 `Closed { reason }`, taken from the close frame just before the end: 4004
 (token), 4010/4011 (sharding), 4012 (API version), 4013 (invalid intents) and
@@ -182,8 +183,11 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   (role id = guild id) or one of their roles has the `ADMINISTRATOR` bit; a
   role id the cache has not seen never grants it, and nothing does before
   `GUILD_CREATE`. `BotEvent::GuildAvailable { owner_id, admin_roles }` is
-  emitted on `GUILD_CREATE` and whenever the owner or the set of
-  Administrator roles changes.
+  emitted on `GUILD_CREATE`, whenever the owner or the set of
+  Administrator roles changes, and on every role deletion (Discord sends no
+  member updates then; serve prunes stored role lists against the guild's
+  roles, `GuildCache::role_ids`). `BotEvent::Ready` carries the bot's user
+  id and the application id.
 - `api::auth::roster` applies both: `on_roster_update` stores `Seen`'s roles
   and Administrator, then re-checks staff; `on_guild_available` records the
   owner, clears the stored Administrator of every row whose roles no longer
@@ -370,15 +374,32 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
   history records, both attributed to the member on the Discord surface);
   backlog drops as `AdminAlert::BacklogDropped`.
 
+## Serve wiring
+
+`runtime::serve::discord` composes the adapter (details and shutdown order:
+`runtime-bootstrap.md`, "Live serve"): `gateway::run_live` with a
+`Router::with_cache` over the one `GuildCache` shared with the API and the
+tick, and a `ConnectionStatus` for health; `handler::Fanout` (the
+`EventHandler`) sends roster jobs to `roster::RosterTask`, RSVP reactions to
+`handler::Reactions` (card ✅/❌ → `CardDesk::on_reaction`, else the
+`ReactionRouter`), spawns interaction and command-registration tasks, and
+counts message events. `roster::reconcile` pages `list_members` and diffs it
+against the stored rows (`Seen` for changed members, `Left` for rows still
+holding a role, roles or Administrator); `roster::LiveRoster` is the
+in-memory member snapshot (`Directory`) the tick and cards read.
+`delivery::LogAlerts` is the beta alert destination (structured log).
+Commands: `runtime::serve::commands` builds a `CommandContext` from the
+API's own store, writer, policy, catalog, personas, access and clock (the
+gateway cache as `GuildChannels`, the bot's name from `READY`; rescans,
+allowance and test cards `None`) and `register_retained`; the dispatcher is
+built on the first `READY` and every guild-registered command and
+autocomplete goes through `commands::spawn_interaction`.
+
 ## Deferred
 
-Serve-mode wiring and logging (including sharing one `GuildCache` between
-the runner's router, the API, chat and delivery, and exposing
-`DroppedEvents` in health); startup roster sync over `list_members`;
-reaction and roster reconciliation; roster persistence; wiring the tick into
-serve mode and the admin-alert destination; routing gateway reactions to `CardDesk::on_reaction`;
-opposite-reaction removal and decline notices (chat answers apply without
+Opposite-reaction removal and decline notices (chat answers apply without
 them); card portraits/artwork; withdrawing a card whose message was deleted;
 converting `BotEvent::Message*` into the extraction/chat inputs and the
-rescan `History` over `channel_messages`; attachments; the other command
-definitions; an authenticated gateway/TLS smoke test against Discord.
+rescan `History` over `channel_messages`; attachments; an admin-alert
+destination beyond the log; an
+authenticated gateway/TLS smoke test against Discord (L1, run by hand).

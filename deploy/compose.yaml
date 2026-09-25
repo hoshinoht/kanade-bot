@@ -10,7 +10,7 @@ services:
       dockerfile: deploy/Dockerfile
     image: kanade-v5:local
     container_name: kanade-v5
-    # Live serve: owns the store; Discord is not wired yet (runs disabled).
+    # Live serve: owns the store and connects the gateway (KANADE_EXPECT_V4_STOPPED=1).
     command: ["serve"]
     env_file:
       # KANADE_TIMEZONE, KANADE_GUILD_ID, KANADE_BOSSING_ROLE_ID (required),
