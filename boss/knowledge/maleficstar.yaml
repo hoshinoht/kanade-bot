@@ -1,0 +1,70 @@
+boss: MaleficStar
+summary: Keep party Predation below 1000 by having the designated player catch every Essence of Illusion, and choose deliberately how much Illusion Magic to carry in Reality in exchange for final damage.
+core:
+- Predation is shared, starts at 0 and fails the run at 1000; a normal 5-life count also applies. Every Essence caught removes 40 Predation.
+- One designated player (also called the Awakener; picked at the preparation-room statue, otherwise the party leader) is the only one who can catch Essences and swap rooms with the NPC key. The role cannot move to someone else unless that player dies out, disconnects or leaves.
+- 'Illusion room: Illusion Magic starts at 1000 and each Essence caught removes 200. Any hit on any player pushes the next Essence back (base 15s, capped at 35s).'
+- 'Reality room: Essences come every 15s regardless of hits. Each catch opens two altars (also called cores) for 7s: left lowers Illusion Magic by 250 and costs 5-15% final damage, right raises it by 250 for +5-15%, within an overall -10% to +30% range.'
+- 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins, from 750 you take more damage.'
+- Each room forces a swap after roughly 3:40. Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 40%).
+danger:
+- A missed Essence adds 100/200 Illusion Magic in Illusion or 50/60 Predation in Reality, and the Essence patterns themselves add Predation when they connect.
+- In the final minute of an Illusion stay Predation rises 2 per second. At 1000 Illusion Magic in Reality you cannot swap out, a 40s countdown starts, Predation rises 1 per second, and the forced swap costs 160/200 Predation.
+- Swapping into Reality with any Illusion Magic left starts you at -10% final damage.
+- Ready to Eat (Phase 3, Reality) sends one minion per player toward her; body-block every one. If any arrive she follows up with a full-map blast whose only safe spot is the small triangle directly beneath her.
+- Breath of Radiance (Phase 3) and Hard-only Sonata of the Nebula spawn two Essences, and both must be caught to count.
+tips:
+- 'Designated player: stay near her so Essence patterns fire and you can reach each Essence in its roughly 1-1.5s window, and bind the NPC key somewhere you cannot hit by accident; a misclick swaps rooms early.'
+- Dodge carefully in Illusion; every hit delays Essences for the whole party.
+- 'Safe route: empty Illusion Magic in Illusion (or leave with a minute to spare), then take left altars in Reality whenever Predation starts climbing.'
+- 'Damage route: stack right altars toward +30% for bursts but work a left altar in before Illusion Magic reaches 1000; practised runs cycle right, right, left.'
+- 'Heavenly Waltz tell: both arms raised means spikes in front of her, one arm raised means spikes behind.'
+- Do not bind her during a burst if the designated player still needs an Essence and altar in that window.
+notes:
+- 30-minute limit and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
+difficulties:
+- name: Normal
+  entry_level: 280
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 400}
+  hp:
+  - {phase: total, value: 3.288q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: Trio 49k, duo 57k, solo 76k (post Sol Hecate), assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
+  notes:
+  - 'Uncertain for MapleSEA: 3.288q is the KMS value after its Feb 2026 Normal HP cut (about 30%). MapleSEA launched the boss on 25 Jun 2026 and its notes give no HP, so it is unconfirmed whether SEA has the cut. Pre-cut: 4.697q, trio 57k, duo 66k, solo 88k.'
+- name: Hard
+  entry_level: 280
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 550}
+  hp:
+  - {phase: total, value: 14.74q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: Trio 89k, duo 104k, solo 123k (post Sol Hecate), assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
+sources:
+- url: https://docs.google.com/document/d/1qGre_k2_m68imDiKPzoyEQaVv7XO0RTea0mGct-TXH4/edit
+  title: MapleStory Complete Malefic Star Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+- url: https://www.maplesea.com/updates/view/v251_RMS/
+  title: MapleSEA v251 New Boss - Radiant Malefic Star
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-09-24'
+- url: https://mapletools.app/bosses/maleficstar
+  title: MapleTools - Malefic Star
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'
+- url: https://maplestorywiki.net/w/Radiant_Malefic_Star
+  title: MapleStory Wiki - Radiant Malefic Star
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-09-05'

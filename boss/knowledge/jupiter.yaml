@@ -1,0 +1,66 @@
+boss: Jupiter
+summary: Keep the shared Magic Synchronization gauge inside 401-600 at every Command and merge; letting it drift stacks Disruption and forces the harsher Auspicious or Ruinous merged forms.
+core:
+- Disruption (also called Rupture) is personal, starts at 0 and ejects you at 1000. A death adds 150 while separated or 200 while combined.
+- 'Separated state: Jupiter on the left, the Alchemical Entity (also called Alchemic Matter) on the right, at most two players per side. Hits on the Jupiter side push the shared 0-1000 Magic Synchronization gauge (also called Mana Sync) down; hits on the Entity side push it up. Ether Warp (NPC key) swaps sides, cooldown 15/20/30s solo/duo/trio.'
+- Three Commands check the gauge in each separated state (every 50/40/30s in Phases 1/2/3). Centred, a Command removes 10 Disruption; off-centre it adds 60, 80 or 100 the further out the needle is. Off-centre the needle also keeps sliding outward every 3s and you take up to 10/15% extra damage.
+- After the third Command the party merges for 100s into Balanced (centred), Auspicious (0-400; also called Perfection) or Ruinous (601-1000; also called Destruction) Jupiter. Balanced has its own -7..+7 Deflection needle; finishing within one of 0 removes 40 Disruption, finishing far out adds up to 60.
+- The Bond Initiative gauge (also called Combination Initiative) rises a stage after each Auspicious/Ruinous merge and falls one after Balanced. At stage 2/3 every hit adds 5/10 Disruption and reaching stage 3 adds 100 at once; getting back to stage 1 quickly refunds part of the hit Disruption.
+- Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 50%); separated time shrinks from 150s to 120s to 90s.
+danger:
+- In Phase 3 every Command also shoves the needle 150 away from centre, so the party must re-centre within 30 seconds each time.
+- Lance Protocol laser sets on the Jupiter side swing the gauge hardest, which is why only one player should normally fight Jupiter.
+- 'Phase 3 Alchemical Entity chain: each hit during the combo brands you (brands are also called Stigma), and the closing execution deals 200% HP at two brands. Ruinous Jupiter runs the same branded combo from Phase 1.'
+- Phase 3 Auspicious adds Colossus Impact and Phase 3 Ruinous adds Illusion Kill; both track you and then detonate for 200% HP over a wide radius.
+- Auspicious Commands mark a destination above each head twice; if anyone misses, the whole party gains 50 Disruption.
+- Ruinous is the fastest and hardest merged form; overlapping Refraction Cannon bounces or Reverb Distortion portals can also chain into a death.
+tips:
+- Keep someone watching the needle and calling drift before each Command, above all in Phase 3.
+- Put one strong, steady-uptime player on Jupiter and the rest on the Entity, whose movement suits burst-heavy classes.
+- Correct drift with chosen hits at full HP, e.g. Arcane Rift (pushes the needle down) or Tracking Instinct pillars (push it up) while healing on Holy Fountain, which can be installed on both sides.
+- Use Ether Warp deliberately when one side is taking too many hits; your debuffs on the boss persist after warping.
+- Crouch Double Sided Attack, Tackle, Cruel Claw and Execution A; step between Mana Plum pillars in Balanced.
+- On Hard, keep i-frames and Ascent skills for the forced Auspicious/Ruinous merges.
+difficulty_notes:
+  h: Every third merge is forced to Auspicious or Ruinous even when the needle is centred (odd gauge value gives Auspicious, even gives Ruinous).
+notes:
+- 30-minute limit and 10-second potion cooldown; Jupiter cannot be slowed or critically bound. The five bodies share one HP bar, and bind resistance carries over between separated and merged rooms.
+difficulties:
+- name: Normal
+  entry_level: 295
+  boss_level: 295
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 810}
+  hp:
+  - {phase: total, value: 10.266q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: Trio 80k, duo 95k, solo 117k, measured at 860 Sacred Force, level 300 and a maxed Geardock symbol (post Sol Hecate).
+- name: Hard
+  entry_level: 295
+  boss_level: 295
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 810}
+  hp:
+  - {phase: total, value: 49.4q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: Trio 130k, duo 142k, solo not estimated; same assumptions as Normal.
+sources:
+- url: https://docs.google.com/document/d/1DwlX_-lXPA6-KRKCxGZ2g6Xzwl3DPniq-BcBudOyr98/edit
+  title: MapleStory Complete Jupiter Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+- url: https://mapletools.app/bosses/jupiter
+  title: MapleTools - Jupiter
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'
+- url: https://www.maplesea.com/updates/view/v252_Jupiter/
+  title: MapleSEA v252 Jupiter update notes
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-09-24'

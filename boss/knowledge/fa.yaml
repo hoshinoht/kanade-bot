@@ -1,0 +1,92 @@
+boss: FA
+summary: 'The First Adversary is a parry fight: time Immortal Will on the right attacks to keep the shared Power of Order high, which protects everyone''s Will and sets the party''s final damage.'
+core:
+- Each player has 1000 Enemy's Will (also called Adversary's Will; MapleSEA patch notes say Will of the Adversary); a death costs 200 and reaching 0 removes you.
+- Power of Order is shared, starts each phase at 500, drains 5 per second, and scales final damage from -40% (under 200) through 0% (400-599) to +20% (800+). Gains and losses are scaled down in duo and trio.
+- 'Cycle of Power every 2:18 (5s warning): under 400 Power of Order everyone loses 100 Will (200-399) or 200 Will (under 200), and a low gauge is pulled back to 500.'
+- Immortal Will (NPC key; also called Indomitable Will) is a 0.5s parry against his attacks. Base cooldown 6s; each rewarded parry cuts 4.5s and raises Power of Order. It still works while you are i-framed, but not during Origin or Ascent casts.
+- 'Phase 1 (warrior/thief): parry the red strengthened hits; Shadow Partner copies swing before him. Phase 2 (mage/archer): each player gets Fire, Ice or Holy, re-rolled every Cycle, and only matching attacks are rewarding parries. Phase 3 mixes both, with strengthened hits glowing rainbow.'
+- HP is split 30/30/40 across the phases; he can be bound (which cancels his current pattern) but not critically bound. The clear counts after Phase 3.
+danger:
+- On Easy/Normal only the hits you were meant to parry drain Power of Order; on Hard/Extreme every hit, map patterns included, drains it.
+- 'Intense Strike (Phase 1): he hides between two clones and hits the whole map; the real body, whose daggers briefly glow red, deals 999%. With no parry ready, i-frame, take a clone hit at full HP, or crouch in a far corner.'
+- Greatsword Shower's second slam deals 1000% unless parried or cleared with a high enough jump; it is his opener when he is not bound on entry.
+- Phase 2 Altar drops on a marked player and drains the gauge quickly on Hard/Extreme, so that player should take it to a corner before it lands.
+- Phase 3 Elemental Flow and Arrow Rain overlap with his other attacks; they are good slots for Genesis or class i-frames and Ascent skills.
+- Extreme adds much heavier hits, including a 999% final Sniping arrow and 200% last swings in Phase 3.
+tips:
+- Reliable correct parries matter more than damage greed; Power of Order is a party resource.
+- Call attributes clearly in Phases 2-3 and parry only your own colour.
+- Stay on the same side as whoever holds aggro; he can turn around just before strengthened swings.
+- Many parties parry the opening Greatsword Shower to reach stage 4 before the first burst.
+- 'Summon Evolve tell: both wings folded hits the centre, both spread hits both sides, one wing folded hits that side.'
+- For Sniping, steer the crossbow away from you during the regular shots, then parry the final attribute arrow for a large gauge gain.
+notes:
+- KMS 1.2.407 lets a gauge already at stage 4 or higher keep that stage through the Cycle of Power. The MapleSEA launch notes (v247) still say the Cycle resets the gauge, so this is unconfirmed for MapleSEA.
+- 30-minute limit and 10-second potion cooldown.
+difficulties:
+- name: Easy
+  entry_level: 270
+  boss_level: 270
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 220}
+  hp:
+  - {phase: '1', value: 171t}
+  - {phase: '2', value: 171t}
+  - {phase: '3', value: 228t}
+  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 25k, duo 30k, solo 40k.'}
+- name: Normal
+  entry_level: 270
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 320}
+  hp:
+  - {phase: '1', value: 495t}
+  - {phase: '2', value: 495t}
+  - {phase: '3', value: 660t}
+  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 40k, duo 45k, solo 60k.'}
+- name: Hard
+  entry_level: 270
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 340}
+  hp:
+  - {phase: '1', value: 3.135q}
+  - {phase: '2', value: 3.135q}
+  - {phase: '3', value: 4.18q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 85k, duo 100k, solo 118k.'}
+- name: Extreme
+  entry_level: 270
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 460}
+  hp:
+  - {phase: '1', value: 9.655q}
+  - {phase: '2', value: 9.655q}
+  - {phase: '3', value: 12.87q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'Strongly composition-dependent; roughly 112-113k with a Lynn for a minimum clear.'}
+sources:
+- url: https://docs.google.com/document/d/1kVb7FMPvHtntji69dnfAsU025yT_hqdDM1aWVRodxXU/edit
+  title: MapleStory Complete First Adversary Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+- url: https://www.maplesea.com/updates/view/v247_Patch/
+  title: MapleSEA v247 - Ascent Skills & The First Adversary
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-09-24'
+- url: https://mapletools.app/bosses/first-adversary/guide
+  title: MapleTools - First Adversary guide
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'
+- url: https://maplestorywiki.net/w/First_Adversary
+  title: MapleStory Wiki - First Adversary
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-09-05'

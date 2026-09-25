@@ -1,0 +1,62 @@
+boss: Baldrix
+summary: Magic Erosion is permanent and 1000 ends the run, so keep room gauges low through the forced rotations of Phases 1-2, avoid Magic Marks, and burn off Squeezing Magic with afterimages in Phase 3.
+core:
+- Magic Erosion (also called Encroachment) is shared, starts at 0, never goes down, and fails the run at 1000. A death adds 200 solo, 100 in a duo, or 70 in a trio.
+- 'Phase 1: party-list order sends players to Baldrix, his steed Sleipnir (also called the Minion), or the Ancient God. Each room has a 0-1000 gauge that drains 12/10 per second while occupied, fills 8 per second while empty, and rises when you are hit. Solo and duo players get a portal (NPC key) to an empty room.'
+- 'Every 120s in Phases 1-2 the party is moved by force and room gauges convert into Erosion: 20 at 250, 50 at 500, 70 at 750, 90 at 1000 per room.'
+- 'Phase 2 splits players across the Centre, East and West sides, and Baldrix cannot be bound. Your personal gauge overflowing at 1000 adds a stack to the Overflow bar (turned into Erosion at each 2-minute swap) and to the permanent Magic Mark bar, which copies extra patterns between sides.'
+- 'Phase 3 is fought together: personal Squeezing Magic rises 6/7 per second. From 300 his direct attacks leave purple afterimages, and taking an afterimage lowers the gauge. At 1000 it drops to 600 and starts Soul Execution.'
+- Ragnarok, every two minutes in Phase 3, deals no damage but adds 300 Squeezing Magic to everyone while he is invulnerable. HP is split roughly 26/28/46% across the phases.
+danger:
+- 'Above 750 a room''s penalty spreads to every room until it falls back; at 1000 it worsens and sticks until the rotation. Baldrix: hitting him away from the weak point costs 25/30% final damage. Sleipnir: corrupted zones deal 10% HP per second. Ancient God: 15/20% of the damage you take is shared onto allies.'
+- Soul Execution makes his direct attacks deal 100% HP until afterimages bring your gauge to 0 (or you die); reaching 1000 again while in it kills you through i-frames and revive skills.
+- Ancient God room gains 250 gauge if the mirror light fails to hit the possessed statue twice within six shots, and 500 once 4/3 rifts are fully open.
+- Phase 2 Magic Storm passes through all three sides in turn (crouch it), and purple attacks must be faced and taken rather than dodged.
+- Sleipnir's chains can stun-lock you; keep Hero's Will or a stun cleanse ready.
+tips:
+- Order the party list before entry to choose who starts in which room; in a trio keep one player per room so every gauge drains.
+- Call room gauges before each rotation and stop trading gauge for damage near a threshold.
+- Fight Baldrix inside his Zone and from the side his weak point shows; a Heavy Rainfall hit hides the weak point for a few seconds.
+- Finishing Phase 2 with zero Magic Marks grants a one-time shield that blocks one Ragnarok's gauge gain.
+- In Phase 3, take afterimages on purpose to keep Squeezing Magic low, especially just before Ragnarok.
+- Close Ancient God rifts early with your attack stacks; they cost 1, 2 and then 3 stacks as they widen.
+notes:
+- 30-minute limit and 10-second potion cooldown. Phases 1-2 keep players in separate rooms, so party buffs do not reach each other until Phase 3.
+difficulties:
+- name: Normal
+  entry_level: 290
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 700}
+  hp:
+  - {phase: '1', value: 2.379q}
+  - {phase: '2', value: 2.531q}
+  - {phase: '3', value: 4.145q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: About 87k-92k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
+- name: Hard
+  entry_level: 290
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 700}
+  hp:
+  - {phase: '1', value: 5.344q}
+  - {phase: '2', value: 5.685q}
+  - {phase: '3', value: 9.309q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: About 108k-113k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
+sources:
+- url: https://docs.google.com/document/d/1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY/edit
+  title: MapleStory Complete Baldrix Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+- url: https://mapletools.app/bosses/baldrix
+  title: MapleTools - Baldrix
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'

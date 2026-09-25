@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hoshinoht/kanade-bot/boss/knowledge/schema.json",
+  "title": "Kanade v5 boss knowledge document (schema v2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["boss", "summary", "core", "danger", "tips", "sources"],
+  "properties": {
+    "boss": {
+      "description": "Canonical catalog key (e.g. 'MaleficStar'); file stem is its lowercase form. Event bosses use their own key.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
+    "summary": { "$ref": "#/$defs/text" },
+    "core": { "$ref": "#/$defs/bullets" },
+    "danger": { "$ref": "#/$defs/bullets" },
+    "tips": { "$ref": "#/$defs/bullets" },
+    "difficulty_notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "patternProperties": { "^[enhcx]$": { "$ref": "#/$defs/text" } }
+    },
+    "notes": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/text" } },
+    "event": { "$ref": "#/$defs/event" },
+    "difficulties": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/difficulty" }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/source" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 500, "pattern": "\\S" },
+    "short": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "\\S" },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+    },
+    "bullets": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/text" } },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "availability"],
+      "properties": {
+        "name": { "$ref": "#/$defs/short" },
+        "availability": { "$ref": "#/$defs/text" }
+      }
+    },
+    "difficulty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "enum": ["Easy", "Normal", "Hard", "Chaos", "Extreme"] },
+        "entry_level": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "boss_level": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "pdr_percent": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "party_max": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "force": {
+          "description": "Symbol force requirement (Arcane or Sacred).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "enum": ["arcane", "sacred"] },
+            "value": { "type": "integer", "minimum": 1, "maximum": 2000 }
+          }
+        },
+        "hp": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phase", "value"],
+            "properties": {
+              "phase": {
+                "description": "Phase label: '1', '2-1', or 'total' when phases are HP thresholds on one bar.",
+                "type": "string",
+                "pattern": "^([1-9](-[1-9])?|total)$"
+              },
+              "value": {
+                "description": "Unit-suffixed game value, e.g. '241.5t' or '10.266q'.",
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]+)?[bmtq]$"
+              }
+            }
+          }
+        },
+        "recommended_spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "$ref": "#/$defs/short" },
+            "text": { "$ref": "#/$defs/text" }
+          }
+        },
+        "notes": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/text" } }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "author", "kind", "fetched"],
+      "properties": {
+        "url": { "type": "string", "maxLength": 2048, "pattern": "^https://[^\\s/]+(/\\S*)?$" },
+        "title": { "$ref": "#/$defs/short" },
+        "author": { "$ref": "#/$defs/short" },
+        "kind": { "enum": ["guide", "wiki", "tool", "official"] },
+        "fetched": { "$ref": "#/$defs/date" },
+        "updated": { "$ref": "#/$defs/date" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "researched_as_of"],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "researched_as_of": { "$ref": "#/$defs/date" },
+        "intended_use": { "$ref": "#/$defs/text" }
+      }
+    }
+  }
+}

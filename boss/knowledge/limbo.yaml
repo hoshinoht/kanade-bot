@@ -1,0 +1,64 @@
+boss: Limbo
+summary: 'Purification is the fight''s currency: avoid chip hits so it charges, press it the moment it fills to clear Risk and each phase''s hazards, and keep your personal Erosion under 1000.'
+core:
+- Erosion is personal, starts at 0 and removes you at 1000; a death adds 150.
+- Purification Aura (NPC key; also called Spirit Purification) charges over time and loses charge whenever you are hit. Besides lowering Risk, each use has a room-specific effect such as restoring floor or clearing hazards.
+- Phases 1 and 3 alternate between two forms every 100s (Specters A/B, then Limbo Black/White). Risk is personal in these phases (per MapleTools); it starts full each rotation, each Purification removes 10%, and whatever is left turns into Erosion at the swap (30% left = +30).
+- 'Phase 2 (Specter C, then Specter D): Risk is shared by the party (per MapleTools), starts at 0 and climbs 4% per second, and each Purification removes less the bigger the party. At 100% a special pattern runs and the boss cannot be damaged for a while.'
+- Between Specters C and D, the Passageway gives 30s to bounce spikes into the Shadow of Origin three times; success removes 150 Erosion.
+- HP is split 30/30/40 across the phases; Limbo cannot be slowed but can be bound.
+danger:
+- Specter B knocks out a floor section every 30s and falling through adds 50 Erosion; Purification restores floor. Its bouncing slime can land five hits in a row.
+- 'Specter D walls off the map at 25/50/75/100% Risk (left, right, bottom, top); being inside a section as it closes deals 300% HP, and 100% starts the Endless Abyss test, the most dangerous pattern in the fight.'
+- 'Limbo Black: a pink contamination pool appears every 7s and six at once trigger a special pattern; purify next to a pool to remove it. His grab adds 50/100 Erosion and leaves you open to follow-ups.'
+- 'Limbo White: six Walls of Thought trigger a special pattern, and Monster of Truth ticks every 0.2s; on Hard with the sphere debuff it can add hundreds of Erosion per second.'
+- Specter C fuses with its Flowers at exactly 80% of Phase 2 HP and again 20% later, invulnerable for about 30s each time.
+- Leaving the bubble around Specter A or Limbo Black makes Erosion tick up every second.
+tips:
+- Use Purification as soon as it is full; the fight expects repeated casts before every swap.
+- In Phase 2, stagger party Purifications so Risk never reaches 100%.
+- Watch Phase 2 HP and hold burst until Specter C finishes fusing.
+- Fight Specter A and Limbo Black inside the bubble; crouch Grasp of Truth and stand on top of him for Dimensional Collapse.
+- Unbound Limbo Black usually grabs after about four other attacks; after a fifth, expect the grab next.
+- Risk Taker is usable here except against Specter D and Limbo Black.
+notes:
+- 30-minute limit and 10-second potion cooldown.
+difficulties:
+- name: Normal
+  entry_level: 285
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 500}
+  hp:
+  - {phase: '1', value: 1.945q}
+  - {phase: 2-1, value: 972.5t}
+  - {phase: 2-2, value: 972.5t}
+  - {phase: '3', value: 2.625q}
+  notes:
+  - 550 Sacred Force (the full 1.25x damage tier) is strongly recommended.
+- name: Hard
+  entry_level: 285
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 500}
+  hp:
+  - {phase: '1', value: 3.78q}
+  - {phase: 2-1, value: 1.89q}
+  - {phase: 2-2, value: 1.89q}
+  - {phase: '3', value: 4.993q}
+  notes:
+  - 550 Sacred Force (the full 1.25x damage tier) is strongly recommended.
+sources:
+- url: https://docs.google.com/document/d/1OJ9-xZvQVaXZ4p1DmhnIjYurSuK1gtUZlZdzoFk6fHA/edit
+  title: MapleStory Complete Limbo Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+  updated: '2025-04-04'
+- url: https://mapletools.app/bosses/limbo
+  title: MapleTools - Limbo
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'
