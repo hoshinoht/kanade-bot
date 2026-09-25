@@ -1,0 +1,271 @@
+// Ported from v4 portal/_board.scss. v4 sized the tracks with an inline
+// `grid-template-columns` (banned under style-src 'self'); v5 gets the same
+// "empty days collapse to a spine" shape from flex classes instead. Below
+// 900px the board stacks days vertically inside the scrolling panel, under
+// the week rail (`_week-rail.scss`, sticky there; v4 body-scrolled both).
+
+.board {
+  display: flex;
+  gap: 0.5rem;
+  min-height: 100%;
+  padding-top: 0.2rem;
+}
+
+// v4's rule: a week too busy for seven readable columns scrolls sideways
+// rather than squeezing a column below what a card needs.
+@media (min-width: 900px) {
+  .board {
+    overflow-x: auto;
+  }
+
+  .board__col:not(.board__col--empty) {
+    min-width: 11.75rem;
+  }
+}
+
+.board__col {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+.board__col--empty {
+  flex: 0 0 3.6rem;
+  background: color-mix(in srgb, var(--ground) 22%, var(--surface));
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.board__col--today {
+  border-color: var(--accent);
+}
+
+.board__head {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  background: var(--raise);
+  border-bottom: 2px solid var(--line);
+  border-radius: var(--r-in) var(--r-in) 0 0;
+  font: inherit;
+}
+
+.board__col--empty .board__head {
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0.4rem 0.15rem;
+  background: transparent;
+  border-bottom: 0;
+}
+
+.board__col--today .board__head {
+  background: var(--accent-wash);
+}
+
+.board__dow {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  // v4 --dim; ink keeps 4.5:1 on the raised and today-washed heads.
+  color: var(--ink);
+}
+
+.board__date {
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.board__col--empty .board__date {
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+
+.board__count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--dim);
+}
+
+.board__reset {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  // v4 used --accent text, under 4.5:1 on the today wash; the accent moves to an underline.
+  color: var(--ink);
+  border-bottom: 2px solid var(--accent);
+}
+
+.board__runs {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  grid-auto-rows: min-content;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  margin: 0;
+  list-style: none;
+}
+
+.board__col--empty .board__runs {
+  display: block;
+  padding: 0.3rem 0.2rem;
+  text-align: center;
+}
+
+.board__none {
+  margin: 0;
+  color: var(--faint);
+}
+
+// A run, compact: the clock loudest, then the bosses, then the tally.
+.runcard {
+  position: relative;
+  // The entry-art veil's z-index: -1 lands above this background, below the text.
+  isolation: isolate;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  --card-face: var(--surface);
+  background: var(--card-face);
+  border: 2px solid var(--line);
+  border-left: 5px solid var(--off);
+  border-radius: var(--r-sm);
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+}
+
+button.runcard,
+.runcard--interactive {
+  cursor: pointer;
+}
+
+button.runcard:hover,
+.runcard--interactive:hover {
+  --card-face: var(--raise);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.runcard--planned {
+  border-left-color: var(--warn);
+}
+.runcard--confirmed {
+  border-left-color: var(--ok);
+}
+.runcard--at_risk {
+  border-left-color: var(--risk);
+}
+.runcard--otot {
+  border-left-color: var(--own);
+}
+// v4 faded finished runs to 62% opacity, below 4.5:1; v5 quiets them with a
+// dashed frame and the recessed face instead, keeping text at full contrast.
+.runcard--cancelled,
+.runcard--done {
+  border-left-color: var(--faint);
+  border-style: dashed;
+  --card-face: var(--raise);
+}
+
+// Compact marks for the eye; the card's full sentence is in a .vh sibling.
+.runcard__visual {
+  display: contents;
+}
+
+.runcard__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.runcard__time {
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.runcard__meta {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+.runcard__meta .status {
+  font-size: var(--fs-mini);
+  letter-spacing: 0;
+}
+
+.runcard__tally {
+  font-family: var(--mono);
+  color: var(--dim);
+}
+
+.runcard__bosses {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: var(--fs-small);
+}
+
+.runcard__bosses .boss {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.runcard__bosses .pill {
+  flex: none;
+}
+
+@media (max-width: 899px) {
+  .board {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .board__col,
+  .board__col--empty {
+    flex: none;
+  }
+
+  .board__col--empty {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .board__col--empty .board__head {
+    flex-direction: row;
+    gap: 0.35rem;
+    padding: 0.3rem 0.55rem;
+  }
+
+  .board__col--empty .board__runs {
+    padding: 0.3rem 0.55rem;
+  }
+}

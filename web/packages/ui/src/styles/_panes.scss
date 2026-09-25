@@ -1,0 +1,160 @@
+// Ported from v4 portal/_panes.scss: a table page is one window whose body
+// scrolls while the page head and the title bar (with its search) stay put.
+// v5 applies the framed layout at every width.
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.pane > .card__head {
+  flex: none;
+}
+
+.pane__body {
+  overflow-x: auto;
+}
+
+.pane__search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* No fixed height: it holds body-size text, and a box shorter than its own
+   line clips the descenders (the lesson `.filters` learned in package one). */
+.pane__search input {
+  width: min(20rem, 42vw);
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+}
+
+/* A sub-heading inside a pane -- the Reminders page puts two tables in one. */
+.pane__section {
+  margin: 0.2rem 0 0.5rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.pane__section:not(:first-child) {
+  margin-top: 1.4rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  padding: 0.5rem 0.9rem;
+  border-top: 2px solid var(--line);
+  background: var(--raise);
+}
+
+.pager__at {
+  font-size: var(--fs-small);
+  color: var(--dim);
+}
+
+/* The pager's own links push the "page N of M" to the middle, so the two
+   directions stay on the outside edges where they are the same shape as the
+   window they page. */
+.pager .btn:last-child {
+  margin-left: auto;
+}
+
+.pager .btn:first-child + .pager__at {
+  margin-left: 0;
+}
+
+.pane__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -1.1rem;
+  padding: 0 1.1rem 1rem;
+}
+
+.pane__body thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  border-bottom: 0;
+  box-shadow: inset 0 -2px 0 var(--line);
+}
+
+.rowbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .pane__search {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .pane__search input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .pane__body {
+    margin: 0 -0.7rem;
+    padding: 0 0.7rem 0.8rem;
+  }
+}
+
+// Log filters (Chat, Extractions): one row of "Filters (n)" and chips under
+// the title bar; the fields only while open.
+.logfilters {
+  margin: 0 0 0.5rem;
+}
+
+.logfilters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.45rem;
+}
+
+.logfilters__chip {
+  cursor: pointer;
+}
+
+.logfilters__panel {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--raise);
+}
+
+.logfilters__presets {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.logfilters__outcomes {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+}
+
+.logfilters__outcomes legend {
+  flex: 1 0 100%;
+  margin-bottom: 0.2rem;
+}
+
+.logfilters__outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--fs-small);
+}

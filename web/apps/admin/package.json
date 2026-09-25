@@ -1,0 +1,19 @@
+{
+  "name": "@kanade/app-admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.sw.json"
+  },
+  "dependencies": {
+    "@kanade/api-types": "workspace:*",
+    "@kanade/client": "workspace:*",
+    "@kanade/tokens": "workspace:*",
+    "@kanade/ui": "workspace:*",
+    "@dnd-kit/dom": "0.5.0",
+    "uplot": "1.6.32"
+  }
+}

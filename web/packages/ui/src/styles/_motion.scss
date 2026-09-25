@@ -1,0 +1,38 @@
+// Ported from v4 portal/_motion.scss. Class-driven @keyframes only: Svelte
+// transitions and style attributes are banned under style-src 'self'.
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+.runcard,
+.card,
+.toast {
+  animation: settle 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+dialog.modal[open] {
+  animation: lift 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

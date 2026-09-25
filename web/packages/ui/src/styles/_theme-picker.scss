@@ -1,0 +1,99 @@
+// Ported from v4 portal/_theme-picker.scss. v4 fed each lozenge its colours
+// through an inline `style` attribute; v5 names them per colourway instead.
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.4rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.swatch--plain {
+  padding: 0.3rem 0.8rem;
+}
+
+.swatch:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.swatch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.swatch:has(input:checked) {
+  color: var(--ink);
+  border-color: var(--win);
+  background: var(--raise);
+}
+
+// Selection said by weight and a tick as well as the border.
+.swatch:has(input:checked) .swatch__name::after {
+  content: " ✓";
+}
+
+.swatch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch__dots {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--sw-ground);
+  border: 2px solid color-mix(in srgb, var(--sw-accent) 40%, var(--line));
+}
+
+.swatch__dots::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 12px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+}
+
+// Values mirror COLORWAYS in @kanade/tokens/colorways (v4 templating.py).
+.swatch__dots--marigold {
+  --sw-ground: #eec75f;
+  --sw-accent: #4d5c9e;
+}
+.swatch__dots--blossom {
+  --sw-ground: #f2a8b8;
+  --sw-accent: #d5537a;
+}
+.swatch__dots--periwinkle {
+  --sw-ground: #9fb0e4;
+  --sw-accent: #4a5fae;
+}
+.swatch__dots--coral {
+  --sw-ground: #e87d85;
+  --sw-accent: #d95965;
+}
+.swatch__dots--twilight {
+  --sw-ground: #8b7ad2;
+  --sw-accent: #6446ab;
+}

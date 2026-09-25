@@ -1,0 +1,27 @@
+// The admin app's initial stylesheet: everything public uses plus the Week
+// page's partials. Page-only partials (panes, boss-grid, members, evidence,
+// gate) are imported by the lazily loaded pages that use them, via
+// `@kanade/ui/styles/<name>.scss`. Order mirrors v4 portal.scss.
+@use "base";
+@use "shell";
+@use "nav";
+@use "frame";
+@use "page-furniture";
+@use "forms";
+@use "buttons";
+@use "chips-status";
+@use "bosses";
+@use "now";
+@use "runs";
+@use "card-window";
+@use "tabs";
+@use "board";
+@use "week-head";
+@use "week-rail"; // the phone's shape of the week (v4 partials/rail.html)
+@use "stats-tables";
+@use "theme-picker";
+@use "modal";
+@use "toast";
+@use "icons";
+@use "../nap/nap-theme";
+@use "motion";

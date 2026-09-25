@@ -24,6 +24,91 @@ Never edit or copy the ignored generated `portal.css` as the source of truth.
 The legacy CSS concatenation build remains untouched by the PWA migration;
 the v5 build must produce its own versioned static assets without Python.
 
+## Design principles (carried from v4)
+
+Ported from `legacy/python/bot/api/templates/AGENTS.md`; v5 deviations are marked.
+
+- **Kanade's Desktop:** a saturated coloured desktop holds cream content windows
+  with solid chrome title bars, rounded frames, restrained shadows and the shared
+  three-dot motif. Never place readable content directly on the coloured ground,
+  and don't nest cards where one window boundary already establishes the region.
+- **One window, title-bar tabs:** related sections on a page become tabs in one
+  window's title bar, not stacked chrome-topped cards. Each tab is one coherent
+  section, keeps its count or state visible when useful, and swaps within the
+  window so only the active panel owns the content area and its scrolling. No
+  second row of tab-like controls inside that window; never make users scroll the
+  document between sibling sections. Exception (user-confirmed, as in v4 3.0):
+  Config's many sections use a contents list beside the panel (a scrolling strip on
+  phones) instead of title-bar tabs.
+  Summary stat cards inside a window (Week tiles, Limits summary) are also an
+  accepted v4 pattern, not nested-card clutter.
+- **Accepted patterns (user decision, 2026-09-25):** summary cards inside a
+  window are allowed where each card summarises one peer object — Limits'
+  backend groups, as v4's limits.html does. Config keeps its side contents
+  list (a vertical tablist inside the Settings window; a sideways strip on
+  phones) rather than title-bar tabs, because twelve sections do not fit a
+  title bar.
+- **Fixed frame:** the masthead, page caption, window title bar and bottom status
+  stay put; the window, pane, table, board column or sidebar that owns the content
+  scrolls. Prefer flex sizing over viewport-height arithmetic, and the frame must
+  yield when it would make fallback content unreachable. *v5 deviation:* this holds
+  at every width (v4 let phones use document flow).
+- **Task-first hierarchy:** keep the current scope and primary state visible, give
+  the main working surface the remaining space, and demote one-time explanation
+  before shrinking controls or data. Times and key counts are the loudest row-level
+  values; member and boss names lead machine IDs.
+- **Area follows importance (user rule, 2026-09-25):** screen area is a budget spent
+  in order of importance. Each page names its primary surface and gives it the
+  largest share of the viewport; supporting context (headers, summary tiles,
+  filters, status lines) takes the least height that keeps it legible, and one-time
+  help lives behind a disclosure. Never add chrome (an extra title bar, help line
+  or padding) above the primary surface without taking the same height from
+  something less important. Budgets per page:
+  - *Week:* board ≥ 55% of a 1280×800 viewport and never shorter than v4's board
+    at the same size; week header and tiles ≈ one compact row each; filters one
+    row (active filters as chips); status line last.
+  - *Inbox:* selected item's detail > side list > tabs/counts.
+  - *Chat / Extractions:* result rows > filter bar > summary line; details open in
+    their own view.
+  - *Config:* the open section's panel > contents list.
+  - *Run sheet:* time, bosses, party and status > roster edits > card timeline, ids.
+  Layout tests assert the primary surface's share where it is measurable.
+  Because the document never scrolls (fixed frame; only the owning window or
+  panel scrolls), every pixel of fixed chrome is taken straight from the one
+  scrolling area. So: the scrolling area must keep at least 55% of the viewport
+  height and never less than 360 px on any supported size; when height is short
+  (laptops ≈ 670 px, phone landscape, zoomed text), supporting rows degrade in
+  order of least importance — help and explanations fold first, summary tiles
+  collapse to one line then to a single summary chip, filters collapse to a
+  "Filters (n)" button, and the status line shortens — before the primary
+  surface gives up any height. Layout tests cover 1280×800, 1000×670, 1280×600,
+  390×844 and 844×390 and fail if the scrolling area drops below the budget or the
+  document itself becomes scrollable.
+- **The boss week's shape:** wide screens use the seven-day board and return space
+  from empty days to busy ones; narrow screens use the seven-cell summary rail plus
+  a readable vertical run list. Scroll horizontally rather than compressing
+  meaningful columns beyond legibility.
+- **Type by role:** Solway for identity and titles, Zilla Slab for prose and
+  controls, Sometype Mono for times, IDs, counts, latencies and aligned numbers.
+  Use the shared type-scale tokens, never component-local sizes.
+- **Colour:** only shared tokens; all five browser-local colourways (marigold
+  default, blossom, periwinkle, coral, twilight) with System/Light/Dark, stamped
+  before first paint, kept out of server state, and every light/dark set updated
+  together. The bot's Discord avatar and banner supply identity (masthead, favicon,
+  login) with monogram/colour fallbacks.
+- **Never colour alone** for navigation, status, selection or risk: pair it with
+  text, weight, borders, shapes, symbols and programmatic state, with visible focus
+  and readable contrast in every colourway and mode.
+- **Predictable navigation:** grouped destinations on desktop; Week and Inbox
+  pinned on phones with the rest in a native disclosure. Frequent actions stay
+  visible, labels name outcomes, destructive actions stay visually separated, and
+  every control is keyboard- and touch-usable.
+- **Quiet motion:** only a short opacity/transform settle and clear busy feedback
+  (v4's HTMX swap feedback becomes request/pending states). Never animate layout;
+  honour reduced motion.
+- **Boss art is scenery:** entry art is a faded, masked veil behind a card's text,
+  never a banner or a free-standing image; missing art renders nothing.
+
 ## Component and layout rules
 
 1. Carry forward existing custom-property tokens and their semantic roles.
@@ -64,3 +149,26 @@ synthetic content, themes and narrow/wide viewports. Exercise keyboard/focus,
 panel scrolling, failed forms, offline recovery and service-worker updates.
 Record intentional differences and rendered evidence; source inspection alone
 does not establish visual parity. New PWA states must look native to Kanade.
+
+## Token and component map (PWA addendum)
+
+The extracted map lives with the code in `web/packages/tokens/README.md`:
+every v4 token group, its v5 status, and each `@kanade/ui` component against
+the v4 partial it ports. Summary of deliberate differences found while
+choosing the stack (`docs/v5/pwa-stack.md`):
+
+- Contrast: v4's `--win` (blossom, periwinkle, coral), `--dim` (marigold,
+  periwinkle, all dark faces), `--faint`, two light pill fills, and signal
+  colours used as small text fall below 4.5:1. v5 corrects them in one file,
+  `web/packages/tokens/src/_contrast.scss`, and adds `--*-text` variants so
+  borders and fills keep their v4 values. Approved by the user (2026-09-24).
+- Opacity-as-quietness (unselected tabs at 72%, finished runs at 62%, eyebrows
+  mixed into title bars) is replaced by shape and surface cues.
+- The fixed `100dvh` frame and single scrolling panel apply at every width; v4
+  let phones scroll the body and stacked tab panels.
+- No inline `style` anywhere (CSP): board track sizing and swatch colours move
+  to classes; the nap SVG's `<style>` moves to component CSS.
+- Reference captures are generated, not committed: `cd web && bunx playwright
+  test capture` writes placeholder-art captures to `web/e2e/.captures/synthetic/`;
+  `KANADE_REAL_ART=1` writes real-art ones to `web/e2e/.captures/real/`.
+  A v4-vs-v5 comparison with matching synthetic content is still outstanding.

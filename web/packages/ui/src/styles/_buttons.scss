@@ -1,0 +1,77 @@
+// Ported from v4 portal/_buttons.scss. Height floor added for WCAG 2.5.8 targets.
+
+.btn {
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  min-height: 2rem;
+  padding: 0.32rem 0.7rem;
+  border-radius: var(--r-sm);
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent-text);
+}
+
+.btn--primary {
+  background: var(--win);
+  border-color: var(--win);
+  color: var(--win-ink);
+}
+
+.btn--primary:hover {
+  background: color-mix(in srgb, var(--win) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--win) 88%, var(--ink));
+  color: var(--win-ink);
+}
+
+.btn--danger:hover {
+  border-color: var(--risk);
+  color: var(--risk);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+.btn[disabled],
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--raise);
+  color: var(--dim);
+}
+
+// A button that reads as a link inside prose (v4 used real links for these).
+.linklike {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

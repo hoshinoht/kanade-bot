@@ -1,0 +1,31 @@
+{
+  "name": "@kanade/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "svelte": "./src/index.ts",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./vite": "./src/vite/index.ts",
+    "./nap.svg": "./src/nap/nap.svg",
+    "./theme-boot.js": "./src/theme/theme-boot.js",
+    "./public.scss": "./src/styles/public.scss",
+    "./admin.scss": "./src/styles/admin.scss",
+    "./palette": "./src/components/CommandPalette.svelte",
+    "./styles/*.scss": "./src/styles/_*.scss"
+  },
+  "dependencies": {
+    "@kanade/tokens": "workspace:*",
+    "@kanade/api-types": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.0"
+  },
+  "sideEffects": [
+    "**/*.css",
+    "**/*.scss"
+  ]
+}

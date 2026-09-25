@@ -1,0 +1,99 @@
+//! Security and caching headers applied to every response on both origins.
+
+use axum::{
+    extract::Request,
+    http::{HeaderMap, HeaderValue, header},
+    middleware::Next,
+    response::Response,
+};
+
+/// The production policy under test, verbatim, plus `report-uri`. `report-to`
+/// is deliberately absent: Chrome ignores `report-uri` whenever `report-to` is
+/// present and batches Reporting API deliveries for up to a minute, which
+/// would make "zero reports" unobservable in the e2e suite.
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
+font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; \
+form-action 'self'; frame-ancestors 'none'; report-uri /csp-report";
+
+/// Same policy in report-only mode, adding Trusted Types. `trusted-types kanade-sw`
+/// allow-lists the one policy the apps create, so any pass-through policy a
+/// dependency registers is reported too.
+pub const CSP_REPORT_ONLY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
+img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
+base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
+trusted-types kanade-sw; report-uri /csp-report";
+
+fn cache_policy(path: &str) -> &'static str {
+    if path.starts_with("/api/") || path.starts_with("/__mock/") || path == "/csp-report" {
+        "no-store"
+    } else if path.starts_with("/art/") || path.starts_with("/identity/") {
+        // Unhashed, deployment-replaceable art: short-lived, never immutable.
+        "public, max-age=3600"
+    } else if path.starts_with("/assets/") {
+        // Content-hashed by Vite; a changed file is a new URL.
+        "public, max-age=31536000, immutable"
+    } else {
+        // index.html, offline.html, sw.js, manifest and icons must revalidate so updates land.
+        "no-cache"
+    }
+}
+
+fn set(headers: &mut HeaderMap, name: &'static str, value: &'static str) {
+    headers.insert(name, HeaderValue::from_static(value));
+}
+
+pub async fn apply(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_owned();
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    set(headers, "content-security-policy", CSP);
+    set(
+        headers,
+        "content-security-policy-report-only",
+        CSP_REPORT_ONLY,
+    );
+    set(headers, "x-content-type-options", "nosniff");
+    set(headers, "referrer-policy", "no-referrer");
+    set(headers, "cross-origin-opener-policy", "same-origin");
+    set(headers, "cross-origin-resource-policy", "same-origin");
+    set(
+        headers,
+        "permissions-policy",
+        "camera=(), microphone=(), geolocation=()",
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_policy(&path)),
+    );
+    if path.ends_with(".webmanifest") {
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/manifest+json"),
+        );
+    }
+    response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cache_policy;
+
+    #[test]
+    fn hashed_assets_are_immutable_and_entrypoints_revalidate() {
+        assert_eq!(
+            cache_policy("/assets/index-abc123.js"),
+            "public, max-age=31536000, immutable"
+        );
+        for path in [
+            "/",
+            "/index.html",
+            "/sw.js",
+            "/offline.html",
+            "/manifest.webmanifest",
+        ] {
+            assert_eq!(cache_policy(path), "no-cache", "{path}");
+        }
+        assert_eq!(cache_policy("/api/admin/week"), "no-store");
+        assert_eq!(cache_policy("/art/entry/Carling"), "public, max-age=3600");
+    }
+}

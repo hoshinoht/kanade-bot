@@ -1,0 +1,142 @@
+<script lang="ts">
+  import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
+  import { Modal } from '@kanade/ui';
+  import { send } from '../resource.svelte';
+
+  let {
+    open = $bindable(false),
+    member,
+    personas,
+    onchange,
+  }: { open: boolean; member: MemberRow | null; personas: Persona[]; onchange: (row: MemberRow) => void } = $props();
+
+  const uid = $props.id();
+  const LEVELS: { key: PingLevel; label: string; hint: string }[] = [
+    { key: 'essential', label: 'Essential', hint: 'only where they have to act' },
+    { key: 'all', label: 'All', hint: 'every post that names them' },
+    { key: 'off', label: 'Off', hint: 'named, never notified' },
+  ];
+  const ACCESS = { staff: 'Staff — exempt from chatbot budgets', pilot: 'Chat pilot', none: 'No chatbot access' };
+
+  let alias = $state('');
+  let notice = $state<{ ok: boolean; message: string } | null>(null);
+  let busy = $state(false);
+  let seeded: string | null = null;
+
+  $effect(() => {
+    if (open && member && seeded !== member.id) {
+      seeded = member.id;
+      alias = '';
+      notice = null;
+    }
+    if (!open) seeded = null;
+  });
+
+  async function patch(change: MemberPatch, done: string) {
+    if (!member) return;
+    busy = true;
+    const id = member.id;
+    const result = await send((c) => c.patch<MemberRow>(`/api/admin/members/${encodeURIComponent(id)}`, change));
+    busy = false;
+    notice = result.ok ? { ok: true, message: done } : { ok: false, message: result.message };
+    if (result.ok) onchange(result.value);
+  }
+
+  async function addAlias(event: SubmitEvent) {
+    event.preventDefault();
+    if (!member) return;
+    busy = true;
+    const id = member.id;
+    const result = await send((c) => c.post<MemberRow>(`/api/admin/members/${encodeURIComponent(id)}/aliases`, { alias }));
+    busy = false;
+    if (result.ok) {
+      notice = { ok: true, message: `Alias “${alias.trim().toLowerCase()}” added.` };
+      alias = '';
+      onchange(result.value);
+    } else {
+      notice = { ok: false, message: result.message };
+    }
+  }
+</script>
+
+<!-- v4 partials/member_sheet.html, with v5's editable ping level and reply style. -->
+<Modal bind:open title={member?.name ?? 'Member'} eyebrow={member?.bossing ? 'Member' : 'Chat access only'} narrow>
+  {#if member}
+    <dl class="membersheet__grid">
+      <dt>User ID</dt>
+      <dd class="mono">{member.id}</dd>
+      <dt>Server nickname</dt>
+      <dd>{member.nickname ?? '—'}</dd>
+      <dt>Runs this week</dt>
+      <dd class="mono">{member.runs_this_week}</dd>
+      <dt>Bossing role</dt>
+      <dd>{member.bossing ? 'Yes — on the roster' : 'No — not on the roster'}</dd>
+      <dt>Chatbot</dt>
+      <dd>{ACCESS[member.access]}</dd>
+    </dl>
+
+    <div class="membersheet__section">
+      <p class="membersheet__label" id="{uid}-ping">@mentions</p>
+      <div class="seg seg--answer" role="group" aria-labelledby="{uid}-ping">
+        {#each LEVELS as level (level.key)}
+          <button
+            type="button"
+            class="seg__btn"
+            aria-pressed={member.ping_level === level.key}
+            disabled={busy}
+            title={level.hint}
+            onclick={() => member.ping_level !== level.key && void patch({ ping_level: level.key }, `Pings set to ${level.label.toLowerCase()}.`)}
+            >{level.label}</button
+          >
+        {/each}
+      </div>
+      <p class="note">{LEVELS.find((l) => l.key === member.ping_level)?.hint}</p>
+    </div>
+
+    <div class="membersheet__section">
+      <label class="field">
+        <span>Reply style</span>
+        <select
+          value={member.persona ?? ''}
+          disabled={busy}
+          onchange={(event) => {
+            const key = event.currentTarget.value;
+            void patch({ persona: key }, key ? `Reply style set to ${personas.find((p) => p.key === key)?.name ?? key}.` : 'Back to the default reply style.');
+          }}
+        >
+          <option value="">Default</option>
+          {#each personas.filter((p) => p.key !== 'default') as persona (persona.key)}
+            <option value={persona.key}>{persona.name}</option>
+          {/each}
+          {#if member.persona && !member.persona_available}<option value={member.persona}>{member.persona} (unavailable)</option>{/if}
+        </select>
+      </label>
+      {#if member.persona && !member.persona_available}
+        <p class="status status--at_risk">“{member.persona}” is no longer offered; replies use the default.</p>
+      {/if}
+    </div>
+
+    <div class="membersheet__section">
+      <p class="membersheet__label">Chat aliases</p>
+      <div class="membersheet__aliases">
+        {#each member.aliases as name (name)}<span class="chip chip--mono">{name}</span>{:else}<span class="id">none</span>{/each}
+      </div>
+      <form class="membersheet__alias-form" onsubmit={addAlias}>
+        <input bind:value={alias} placeholder="New alias" size="12" required aria-label="New alias for {member.name}" />
+        <button class="btn" type="submit" disabled={busy}>Add</button>
+      </form>
+    </div>
+    <p class="membersheet__notice" class:field__error={notice && !notice.ok} role="status">{notice?.message ?? ''}</p>
+  {/if}
+  {#snippet footer(close)}
+    <button class="btn" type="button" onclick={close}>Close</button>
+  {/snippet}
+</Modal>
+
+<style>
+  .membersheet__notice {
+    margin: 0.6rem 0 0;
+    font-size: var(--fs-small);
+    color: var(--ok-text);
+  }
+</style>

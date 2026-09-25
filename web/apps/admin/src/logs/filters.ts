@@ -1,0 +1,88 @@
+/**
+ * Chat and Extractions log filters (user request 2026-09-25): server-side,
+ * deep-linked through the page's query string, combinable. Pure, so the
+ * parse/serialise round trip and the date presets are unit-tested.
+ */
+
+export interface LogFilter {
+  model: string;
+  from: string;
+  to: string;
+  outcome: string[];
+  channel: string;
+  member: string;
+  q: string;
+  tool: string;
+  min_ms: string;
+}
+
+export const NO_LOG_FILTER: LogFilter = { model: '', from: '', to: '', outcome: [], channel: '', member: '', q: '', tool: '', min_ms: '' };
+
+const KEYS = ['model', 'from', 'to', 'channel', 'member', 'q', 'tool', 'min_ms'] as const;
+
+export function parseFilter(search: string): LogFilter {
+  const params = new URLSearchParams(search);
+  const out: LogFilter = { ...NO_LOG_FILTER, outcome: [] };
+  for (const key of KEYS) out[key] = params.get(key) ?? '';
+  out.outcome = (params.get('outcome') ?? '').split(',').filter(Boolean);
+  return out;
+}
+
+/** `?model=…&outcome=a,b`: only what is set, in a stable order. */
+export function toSearch(filter: LogFilter): string {
+  const params = new URLSearchParams();
+  for (const key of KEYS) {
+    const value = filter[key].trim();
+    if (value) params.set(key, value);
+  }
+  if (filter.outcome.length) params.set('outcome', filter.outcome.join(','));
+  const text = params.toString();
+  return text ? `?${text}` : '';
+}
+
+/** How many filters are on (text search included). */
+export function activeCount(filter: LogFilter): number {
+  return KEYS.filter((k) => filter[k].trim()).length + (filter.outcome.length ? 1 : 0);
+}
+
+function shift(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
+}
+
+export type Preset = 'today' | 'week' | '7d';
+
+/** Guild-timezone date presets from the week the server sent (its dates are guild-local). */
+export function preset(which: Preset, week: { days: { date: string; is_today: boolean }[] }): { from: string; to: string } | null {
+  const today = week.days.find((d) => d.is_today)?.date;
+  const first = week.days[0]?.date;
+  const last = week.days[week.days.length - 1]?.date;
+  if (which === 'week') return first && last ? { from: first, to: last } : null;
+  if (!today) return null;
+  return which === 'today' ? { from: today, to: today } : { from: shift(today, -6), to: today };
+}
+
+export const OUTCOME_LABEL: Record<string, string> = {
+  answered: 'answered',
+  refused: 'refused',
+  clarified: 'clarified',
+  error: 'error',
+  timeout: 'timeout',
+  rate_limited: 'rate-limited',
+  turned_away: 'turned away',
+  content_blocked: 'content-blocked',
+  withheld: 'withheld',
+  clean_retry: 'clean retry',
+  proposed: 'proposed',
+  no_change: 'no change',
+  failed: 'failed',
+  self_service_link: 'self-service link sent',
+};
+
+/** Status tone for an outcome chip (the word is always shown too). */
+export function outcomeTone(outcome: string): string {
+  if (['answered', 'proposed', 'clean_retry'].includes(outcome)) return 'confirmed';
+  if (['error', 'timeout', 'failed', 'content_blocked'].includes(outcome)) return 'at_risk';
+  if (['no_change', 'withheld'].includes(outcome)) return 'waiting';
+  return 'planned';
+}

@@ -1,0 +1,106 @@
+// Ported from v4 portal/_login-footnote.scss (the sign-in window).
+
+.gate__bar::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 1.75rem;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.55;
+  box-shadow:
+    13px 0 0 currentcolor,
+    26px 0 0 currentcolor;
+}
+
+/* ── login: the one window on an empty desktop ──────────────────────────── */
+
+.gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.gate__window {
+  width: min(27rem, 100%);
+  background: var(--surface);
+  border: 2px solid var(--win);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.gate__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--win);
+  color: var(--win-ink);
+}
+
+.gate__bar-title {
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* The bot's profile banner, or -- with nothing cached -- a wash of its accent.
+   A background image rather than an <img> for the same reason as the avatar:
+   a 404 has to be an absence, not a broken glyph. */
+/* v5: the banner is an <img> from /identity/banner (a generated stand-in when
+   nothing is cached, so there is never a broken image). */
+.gate__hero {
+  display: block;
+  width: 100%;
+  height: 104px;
+  object-fit: cover;
+  background-color: color-mix(in srgb, var(--accent) 28%, var(--surface));
+}
+
+.gate__body {
+  padding: 0 1.4rem 1.5rem;
+}
+
+.gate__avatar {
+  width: 64px;
+  height: 64px;
+  margin-top: -32px;
+  border-radius: 16px;
+  font-size: var(--fs-avatar);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.gate__name {
+  margin: 0.55rem 0 0.1rem;
+}
+
+.gate__sub {
+  margin: 0 0 1rem;
+  font-size: var(--fs-body-sm);
+  color: var(--dim);
+}
+
+.gate__body p {
+  color: var(--dim);
+  font-size: var(--fs-body-sm);
+  margin-top: 0;
+}
+
+.gate__body label {
+  display: block;
+}
+
+.gate__body input {
+  width: 100%;
+  font-family: var(--mono);
+}
+
+.gate__body .btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.7rem;
+}
+

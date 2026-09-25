@@ -1,0 +1,244 @@
+<!--
+  Add or edit a weekly timing (v4 fixed.html / fixed_rows.html editor). Saving
+  an edit whose timing has amended runs this week or next asks, per run,
+  whether it follows the new timing or keeps its own change (v5).
+-->
+<script lang="ts">
+  import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
+  import { BossTag, Modal, dayLabel } from '@kanade/ui';
+  import BossGrid from '../bosses/BossGrid.svelte';
+  import { send } from '../resource.svelte';
+  import type { Week } from '@kanade/api-types';
+
+  let {
+    open = $bindable(false),
+    row,
+    bosses,
+    channels,
+    members,
+    week,
+    onsaved,
+  }: {
+    open: boolean;
+    /** null = add a new timing. */
+    row: FixedRow | null;
+    bosses: BossRow[];
+    channels: Channel[];
+    members: MemberRow[];
+    week: Week | null;
+    onsaved: (row: FixedRow, message: string) => void;
+  } = $props();
+
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const uid = $props.id();
+
+  let weekday = $state(0);
+  let time = $state('');
+  let channel = $state('');
+  let note = $state('');
+  let party = $state<string[]>([]);
+  let selected = $state<string[]>([]);
+  let typed = $state('');
+  let check = $state<{ bosses: Boss[] } | { error: string } | null>(null);
+  let error = $state('');
+  let busy = $state(false);
+  let step = $state<'edit' | 'choose'>('edit');
+  let decisions = $state<Record<string, 'update' | 'keep'>>({});
+  let seeded: string | null = null;
+
+  $effect(() => {
+    const key = row?.id ?? 'new';
+    if (open && seeded !== key) {
+      seeded = key;
+      weekday = row?.weekday ?? 0;
+      time = row?.time ?? '';
+      channel = row?.channel_id ?? channels[0]?.id ?? '';
+      note = row?.note ?? '';
+      party = row?.participants.map((p) => p.id) ?? [];
+      selected = row?.bosses.map((b) => b.token) ?? [];
+      typed = '';
+      check = null;
+      error = '';
+      step = 'edit';
+      decisions = {};
+    }
+    if (!open) seeded = null;
+  });
+
+  // v4 bosscheck: the typed field is validated as you type (debounced).
+  $effect(() => {
+    const text = typed.trim();
+    if (!text) {
+      check = null;
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const result = await send((c) => c.post<ValidateResult>('/api/admin/validate/bosses', { text }));
+      if (typed.trim() === text) check = result.ok ? { bosses: result.value.bosses } : { error: result.message };
+    }, 400);
+    return () => clearTimeout(timer);
+  });
+
+  const amended = $derived(row?.runs.filter((r) => r.amended) ?? []);
+  const roster = $derived(members.filter((m) => m.bossing));
+
+  function request(): FixedRequest {
+    return {
+      weekday: Number(weekday),
+      time: time.trim(),
+      bosses: [...selected, typed.trim()].filter(Boolean).join(' '),
+      participants: party,
+      channel_id: channel,
+      note: note.trim() || null,
+      decisions,
+    };
+  }
+
+  async function save() {
+    busy = true;
+    error = '';
+    const body = request();
+    const result = row
+      ? await send((c) => c.patch<FixedRow>(`/api/admin/fixed/${encodeURIComponent(row.id)}`, body))
+      : await send((c) => c.post<FixedRow>('/api/admin/fixed', body));
+    busy = false;
+    if (!result.ok) {
+      error = result.message;
+      step = 'edit';
+      return;
+    }
+    const title = `${result.value.weekday_name} ${result.value.time} — ${result.value.bosses.map((b) => b.token).join(' + ')}`;
+    open = false;
+    onsaved(result.value, row ? `Saved ${title}.` : `Added ${title}; its runs are on the board.`);
+  }
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (step === 'edit' && amended.length > 0) {
+      decisions = Object.fromEntries(amended.map((r) => [r.run_id, decisions[r.run_id] ?? 'keep']));
+      step = 'choose';
+      return;
+    }
+    void save();
+  }
+
+  function when(run: FixedRow['runs'][number]): string {
+    const day = week && run.week === 'this' ? dayLabel(week, run.day) : `${run.week} week, day ${run.day + 1}`;
+    return `${day} ${run.time ?? 'own time'}`;
+  }
+</script>
+
+<Modal
+  bind:open
+  title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'}
+  eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'}
+>
+  <form id="{uid}-form" onsubmit={submit} novalidate>
+    {#if step === 'edit'}
+      <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
+      <div class="modal__well"><BossGrid rows={bosses} bind:selected /></div>
+      <div class="filters">
+        <label class="field field--grow">
+          <span>…or type them</span>
+          <input bind:value={typed} placeholder="hstar, hfa" aria-describedby="{uid}-check" />
+        </label>
+        <span class="boss-check" id="{uid}-check" role="status">
+          {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
+          {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
+        </span>
+        <label class="field">
+          <span>Day</span>
+          <select bind:value={weekday}>
+            {#each WEEKDAYS as name, index (name)}<option value={index}>{name}</option>{/each}
+          </select>
+        </label>
+        <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
+        <label class="field field--grow">
+          <span>Home channel</span>
+          <select bind:value={channel}>
+            {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+          </select>
+        </label>
+        <label class="field field--grow"><span>Note</span><input bind:value={note} /></label>
+      </div>
+      <fieldset class="field">
+        <legend class="label">Party</legend>
+        <div class="run__people">
+          {#each roster as member (member.id)}
+            <label class="chip">
+              <input type="checkbox" value={member.id} bind:group={party} />
+              {member.name}{#if roster.filter((m) => m.name === member.name).length > 1}<span class="chip__id">#{member.id}</span>{/if}
+            </label>
+          {/each}
+        </div>
+      </fieldset>
+    {:else}
+      <p>
+        {amended.length === 1 ? 'One run from this timing was' : `${amended.length} runs from this timing were`} changed
+        for their week. Choose what each does with the new timing:
+      </p>
+      {#each amended as run (run.run_id)}
+        <fieldset class="field choice">
+          <legend class="label">#{run.short_id} · {when(run)}</legend>
+          <label class="choice__opt">
+            <input type="radio" name="{uid}-{run.run_id}" value="update" bind:group={decisions[run.run_id]} />
+            Update to the new timing
+          </label>
+          <label class="choice__opt">
+            <input type="radio" name="{uid}-{run.run_id}" value="keep" bind:group={decisions[run.run_id]} />
+            Keep this week's change
+          </label>
+        </fieldset>
+      {/each}
+    {/if}
+    <p class="field__error" role="alert">{error}</p>
+  </form>
+  {#snippet footer(close)}
+    {#if step === 'choose'}
+      <button class="btn" type="button" onclick={() => (step = 'edit')}>Back</button>
+    {:else}
+      <button class="btn" type="button" onclick={close}>Cancel</button>
+    {/if}
+    <button class="btn btn--primary" type="submit" form="{uid}-form" disabled={busy}>
+      {row ? (step === 'edit' && amended.length ? 'Save…' : 'Save changes') : 'Add timing'}
+    </button>
+  {/snippet}
+</Modal>
+
+<style>
+  .boss-check {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 2.5rem;
+  }
+
+  .choice {
+    margin: 0.6rem 0;
+    padding: 0.5rem 0.7rem;
+    border: 2px solid var(--line-soft);
+    border-radius: var(--r-sm);
+  }
+
+  .choice__opt {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2rem;
+  }
+
+  .field--grow {
+    flex: 1 1 10rem;
+  }
+
+  .modal__well {
+    max-height: 40dvh;
+    overflow-y: auto;
+    margin-top: 0.35rem;
+    padding: 0.5rem;
+    background: var(--raise);
+    border: 2px solid var(--line-soft);
+    border-radius: var(--r-sm);
+  }
+</style>

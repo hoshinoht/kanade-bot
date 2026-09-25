@@ -1,0 +1,176 @@
+// Ported from v4 portal/_shell.scss (grouped nav) and _phone.scss (pinned links + More).
+// v5: links are client-side routes; aria-current marks the page as in v4.
+
+/* ── nav ─────────────────────────────────────────────────────────────────
+ *
+ * Three labelled groups on a desktop; on a phone, Week and Inbox stay in reach
+ * and the rest fold into a <details>. The two layouts are separate markup and
+ * exactly one is ever displayed, which is what lets the disclosure be a real
+ * <details> -- forcing one open at a width is a fight with the user agent that
+ * some of them now win. */
+
+.nav {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin-top: 0.4rem;
+}
+
+.nav__desk {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.2rem 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav__desk::-webkit-scrollbar {
+  display: none;
+}
+
+.nav__phone {
+  display: none;
+}
+
+.nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+/* The group labels stay small -- they are labels, not destinations -- but not
+   so small that they read as noise beside links this size. */
+.nav__eyebrow {
+  padding-left: 0.7rem;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.nav__links {
+  display: flex;
+  gap: 0.1rem;
+}
+
+/* Nearly body size. These are the eleven things the portal can show you, read
+   at arm's length on a phone at night; at 0.8rem they were the smallest type in
+   the masthead, which is the wrong end of the scale for the only navigation
+   there is. */
+.nav__link {
+  flex: none;
+  padding: 0.42rem 0.7rem 0.5rem;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  white-space: nowrap;
+}
+
+.nav__link:hover {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+/* Where you are, said three ways -- ink, weight and the accent underline -- so
+   it does not rest on telling two greys apart in a row of eleven. */
+.nav__link[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--raise);
+  border-bottom-color: var(--accent);
+}
+
+// Phones, and phone landscape (short enough that two nav rows would eat the board).
+@media (max-width: 640px), (max-height: 500px) {
+  .nav__desk {
+    display: none;
+  }
+
+  /* Week and Inbox stay in reach; everything else is behind the disclosure.
+     Both are real links and it is a real <details>, so this works with the
+     script blocked -- portal.js only closes the menu on an outside tap. */
+  .nav__phone {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
+  .nav__more {
+    margin-left: auto;
+  }
+
+  /* Sized as a link, because that is what it stands in for. */
+  .nav__more-btn {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0.42rem 0.7rem 0.5rem;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--dim);
+  }
+
+  .nav__more-btn::-webkit-details-marker {
+    display: none;
+  }
+
+  .nav__more[open] > .nav__more-btn {
+    color: var(--ink);
+  }
+
+  .nav__sheet {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 30;
+    display: grid;
+    gap: 0.7rem;
+    min-width: 13.5rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--surface);
+    border: 2px solid var(--win);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+  }
+
+  .nav__sheet .nav__links {
+    flex-wrap: wrap;
+  }
+
+}
+
+// Short frames: the group labels are the first thing the nav gives back.
+@media (max-height: 700px) and (min-width: 641px) {
+  .nav {
+    margin-top: 0.1rem;
+  }
+
+  .nav__eyebrow {
+    display: none;
+  }
+
+  .nav__link {
+    padding: 0.3rem 0.6rem 0.35rem;
+  }
+}
+
+// Phone landscape: one masthead row -- brand, freshness, then Week, Inbox, More.
+@media (max-height: 500px) {
+  .nav {
+    flex: 0 1 auto;
+    margin-top: 0;
+  }
+
+  .nav__phone {
+    flex-wrap: nowrap;
+  }
+}

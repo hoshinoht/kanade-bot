@@ -1,0 +1,152 @@
+// Ported from v4 portal/_shell.scss (masthead, brand). v5 has no multi-page
+// nav: each PWA is one window, so the nav rows are not carried over.
+
+.masthead {
+  flex: none;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 2px solid var(--win);
+}
+
+.masthead__inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.6rem var(--gutter);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  min-width: 0;
+}
+
+.masthead__inner > * {
+  min-width: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--fs-brand);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+// The bot's avatar (same-origin /identity/avatar, a generated stand-in when
+// nothing is cached), or its initial when no identity has loaded.
+.brand__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: var(--fs-small);
+}
+
+.brand__by {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 400;
+  color: var(--dim);
+}
+
+// v4: the by-line in the meta row is a dotted link to the project.
+a.brand__by {
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, var(--dim) 70%, transparent);
+}
+
+a.brand__by:hover {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+}
+
+a.brand {
+  text-decoration: none;
+}
+
+img.brand__avatar {
+  object-fit: cover;
+}
+
+.masthead__meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--dim);
+  letter-spacing: 0.02em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.75rem;
+  align-items: center;
+}
+
+.pip {
+  display: inline-block;
+  min-width: 1.15em;
+  margin-left: 0.35em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  text-align: center;
+}
+
+@media (max-width: 640px), (max-height: 500px) {
+  // The footnote already names the timezone, the phone "More" sheet carries
+  // sign-out, and a touch screen has no Ctrl-K: the masthead keeps one row.
+  .masthead__tz,
+  .masthead__meta .kbd,
+  .masthead__meta .brand__by,
+  .masthead__meta .masthead__desk-only {
+    display: none;
+  }
+}
+
+/* ── area budget (docs/v5/pwa-design-guidelines.md "Area follows importance")
+ * The masthead is fixed chrome taken straight from the one scrolling area, so
+ * it gives height back as the frame gets short: quieter meta first, then the
+ * group labels, then (phone landscape) the phone nav on the brand row. */
+
+.masthead__meta .btn {
+  padding: 0.1rem 0.5rem;
+  min-height: 0;
+}
+
+@media (max-width: 1120px) {
+  .masthead__meta .brand__by,
+  .masthead__meta .kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  // "Live 12:00:00": the words go, the state and time stay.
+  .fresh__words {
+    display: none;
+  }
+}
+
+@media (max-height: 700px) {
+  .masthead__inner {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+}
+
+@media (max-height: 500px) {
+  .fresh__words {
+    display: none;
+  }
+}

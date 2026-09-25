@@ -1,0 +1,256 @@
+// Ported from v4 portal/_settings.scss: Config is one window, a table of
+// contents down the left and one section at a time on the right. v4 switched
+// with `:target`; v5 drives a vertical ARIA tablist, and on phones the list
+// becomes a sideways strip while only the selected section scrolls (v4
+// stacked every section in a scrolling page, which the fixed frame forbids).
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings > .card__head {
+  flex: none;
+  margin: 0;
+}
+
+.settings__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+}
+
+.settings__toc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.5rem;
+  border-right: 2px solid var(--line);
+  background: var(--raise);
+  overflow-y: auto;
+}
+
+.settings__tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.38rem 0.6rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--dim-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings__tab:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.settings__tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.settings__flag {
+  flex: none;
+  color: var(--risk-text);
+}
+
+.settings__detail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem 1.05rem 1.1rem;
+}
+
+.settings__title {
+  margin: 0 0 0.7rem;
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.settings__subtitle {
+  margin: 1.1rem 0 0.3rem;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.4rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.settings__detail fieldset {
+  border: 0;
+  margin: 0 0 0.8rem;
+  padding: 0;
+  min-width: 0;
+}
+
+.settings__detail .note {
+  margin: 0.5rem 0 0;
+}
+
+.settings__detail .note + .note {
+  margin-top: 0.4rem;
+}
+
+.settings__role {
+  padding: 0.7rem 0 0.8rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings__role legend {
+  font-weight: 700;
+}
+
+.settings__caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+// A model that sends guild chat off the homelab: said in words, not colour alone.
+.settings__warn {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--line);
+  border-left: 4px solid var(--warn);
+  border-radius: var(--r-sm);
+  background: var(--raise);
+  font-size: var(--fs-body-sm);
+}
+
+.settings__warn .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.settings__checks {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-body-sm);
+}
+
+.settings__checks li {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.settings__checks .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.settings__choices {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings__choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.1rem 0.5rem;
+  align-items: baseline;
+  padding: 0.45rem 0.6rem;
+  border: 2px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.settings__choice:has(input:checked) {
+  border-color: var(--accent);
+}
+
+.settings__choice small {
+  grid-column: 2;
+  color: var(--dim-text);
+}
+
+.settings__detail input[type="number"] {
+  width: 6rem;
+}
+
+.settings__detail td input,
+.settings__detail td select {
+  width: 100%;
+  min-width: 6rem;
+}
+
+@media (max-width: 899px) {
+  .settings__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  // The strip scrolls inside itself (the _tabs pattern); the frame's shell
+  // never scrolls, and only the selected section's panel scrolls below it.
+  .settings__toc {
+    flex-direction: row;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    border-right: 0;
+    border-bottom: 2px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .settings__tab {
+    flex: none;
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--fs-small);
+    white-space: nowrap;
+  }
+
+  .settings__tab[aria-selected="true"] {
+    box-shadow: none;
+    border-color: var(--accent);
+    // The border colour alone is not the indicator: the name underlines too.
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+  }
+
+  .settings__detail {
+    padding: 0.8rem 0.8rem 1rem;
+  }
+}
+
+// Above the window on every section (v4 config.html); the one line and the fix
+// stay on phones, the why is left to wider screens so the window keeps the page.
+.settings__banner {
+  flex: none;
+  margin: 0 0 0.6rem;
+}
+
+@media (max-width: 599px) {
+  .settings__banner-why {
+    display: none;
+  }
+}

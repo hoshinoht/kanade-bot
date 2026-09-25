@@ -1,0 +1,94 @@
+import type { Page } from '@playwright/test';
+import { ADMIN, PUBLIC, expect, test } from './support';
+
+// docs/v5/pwa-design-guidelines.md "Area follows importance" (user rule): the
+// one scrolling area keeps ≥ 55% of the viewport height and never less than
+// 360 px where the viewport can hold that (below 655 px tall the 55% share
+// is the floor), and the document itself never scrolls.
+export const SIZES = [
+  { width: 1280, height: 800 },
+  { width: 1000, height: 670 },
+  { width: 1280, height: 600 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+] as const;
+
+/** The primary surface each page gives its area to, in priority order. */
+const SURFACE = [
+  '.week-surface',
+  '.inbox__detail:not([hidden])',
+  '.inbox__list:not([hidden])',
+  '.settings__detail',
+  '.tabs__panel:not([hidden])',
+  '.pane__body',
+  '.window-fill',
+].join(', ');
+
+export async function area(page: Page) {
+  return page.evaluate((selector) => {
+    const surface = [...document.querySelectorAll<HTMLElement>(selector)].find((el) => el.getClientRects().length > 0);
+    const before = document.scrollingElement!.scrollTop;
+    window.scrollTo(0, 400);
+    const scrolled = document.scrollingElement!.scrollTop;
+    window.scrollTo(0, before);
+    return { height: surface ? surface.getBoundingClientRect().height : 0, name: surface?.className ?? 'none', scrolled };
+  }, SURFACE);
+}
+
+export function budget(height: number): number {
+  return Math.max(0.55 * height, height >= 655 ? 360 : 0);
+}
+
+const SCREENS: [string, string, string][] = [
+  ['admin', ADMIN, '/'],
+  ['admin', ADMIN, '/fixed'],
+  ['admin', ADMIN, '/bosses'],
+  ['admin', ADMIN, '/bosses/Carling/knowledge'],
+  ['admin', ADMIN, '/members'],
+  ['admin', ADMIN, '/reminders'],
+  ['admin', ADMIN, '/inbox'],
+  ['admin', ADMIN, '/extractions'],
+  ['admin', ADMIN, '/extractions/x-kalos'],
+  ['admin', ADMIN, '/chat'],
+  ['admin', ADMIN, '/chat/c-move'],
+  ['admin', ADMIN, '/limits'],
+  ['admin', ADMIN, '/history'],
+  ['admin', ADMIN, '/config'],
+  ['admin', ADMIN, '/config?section=models'],
+  ['public', PUBLIC, '/'],
+];
+
+for (const size of SIZES) {
+  test(`layout ${size.width}×${size.height}: every screen keeps its area and never scrolls the document`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize(size);
+    const failures: string[] = [];
+    for (const [app, origin, path] of SCREENS) {
+      await page.goto(`${origin}${path}${path.includes('?') ? '&' : '?'}sw=off`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.waitForTimeout(250);
+      const got = await area(page);
+      const need = budget(size.height);
+      if (got.scrolled !== 0) failures.push(`${app}${path}: the document scrolled`);
+      if (got.height < need) failures.push(`${app}${path}: ${Math.round(got.height)} px < ${Math.round(need)} (${got.name})`);
+    }
+    expect(failures).toEqual([]);
+  });
+}
+
+// v4's board at 1280×800 starts at y≈378 (v4-live/v4-week-wide.png), so it
+// shows ≈422 px; the same stack at 1000×670 leaves it ≈292 px.
+test('week: the board sits under the filters and beats v4 at 1280×800 and 1000×670', async ({ page }) => {
+  for (const [size, v4] of [
+    [{ width: 1280, height: 800 }, 422],
+    [{ width: 1000, height: 670 }, 292],
+  ] as const) {
+    await page.setViewportSize(size);
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+    const board = (await page.locator('.week-surface').boundingBox())!;
+    expect(board.height).toBeGreaterThanOrEqual(Math.max(v4, budget(size.height)));
+    // No window chrome between the filters (or the header) and the board.
+    expect(await page.locator('.week-surface').evaluate((el) => el.closest('.card'))).toBeNull();
+  }
+});
