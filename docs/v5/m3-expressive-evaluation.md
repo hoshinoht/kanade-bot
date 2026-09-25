@@ -1,8 +1,10 @@
 # Material 3 Expressive: evaluation for the admin PWA
 
-Status: **proposal** (research 2026-09-26; nothing adopted beyond what
-`pwa-design-guidelines.md` already records). Adoption starts next session with
-the "fold into window" layout; step 5 below needs a user decision.
+Status: **proposal** (research 2026-09-26, checked against the live M3 site
+the same day — values and sources in `m3-expressive-verification.md`; nothing
+adopted beyond what `pwa-design-guidelines.md` already records). Adoption
+starts next session with the "fold into window" layout; step 5 below needs a
+user decision.
 
 Question: is it worth bringing Material 3 (M3) Expressive into the admin PWA,
 inside the windows and across the overall layout, while keeping the fixed
@@ -48,23 +50,31 @@ already working, in the accent colour, and always labelled:
 
 ## Inside the windows
 
-1. **Title bar as a docked toolbar.** The folded stats strip and the ⓘ note
-   live in the existing title bar/toolbar row, adding no height ("Area follows
-   importance"). Use the standard (low-emphasis) scheme; the strip collapses to
-   one chip when space is short. No floating toolbars over the panel: they
-   cover rows and blur which area scrolls.
-2. **One emphasized number per window** (e.g. "428 interactions"): a weight or
-   size step within the existing type scale; numbers in the mono face.
-3. **Selected-row containment:** a filled surface and a larger radius from the
-   radius scale, alongside the existing text, border and state cues (never
-   colour alone).
+1. **Title bar as an action row** (a Kanade adaptation, not M3 docked-toolbar
+   compliance: M3's docked toolbar is 64 dp, bottom-placed, with 48×48 dp
+   targets and overflow into a trailing menu). The folded stats strip and the ⓘ
+   note live in the existing title bar/toolbar row, adding no height ("Area
+   follows importance"). Use the standard (low-emphasis) scheme; the strip
+   collapses to one chip when space is short. No floating toolbars over the
+   panel: they cover rows and blur which area scrolls.
+2. **One emphasized number per window** (e.g. "428 interactions"): M3's
+   emphasized roles keep the baseline sizes and raise the weight (Medium, or
+   Bold for title/label roles), so this is a weight step within the existing
+   type scale; numbers in the mono face.
+3. **Active-row containment:** a filled surface and a larger radius (M3 list
+   specs: selected rows 16 dp all round on the primary-container role,
+   unselected contained rows 4 dp inner / 16 dp outer), alongside the existing
+   text, border and state cues (never colour alone). In list-detail this marks
+   the row whose detail is open; it must not look like bulk selection.
 4. **List-detail at 840 px and wider** (M3: two panes for Expanded and Large,
    one for Compact and Medium, not two panes at Medium when content is dense).
    A fixed list pane and a flexible detail pane, each scrolling on its own.
    Inbox already works this way; Chat and Extractions open details in their own
    view today, so changing them is a user decision (step 5).
-5. **Filters** stay one row of connected buttons or segmented controls and
-   collapse to "Filters (n)".
+5. **Filters** stay one row of connected button groups (Expressive replaces
+   segmented buttons, now "no longer recommended") and collapse to
+   "Filters (n)". Connected groups are for selectable options; plain actions use
+   standard groups.
 6. **Sticky headers inside the panel** (`position: sticky` on table heads and
    the week rail within the scrolling panel, never on the body).
 7. **Loading indicator:** nothing under 200 ms; the indicator for 200 ms–5 s
@@ -86,13 +96,18 @@ already working, in the accent colour, and always labelled:
   (e.g. 844×390, compact height) keep one pane.
 - A collapsed navigation rail could help at about 1000×670, but it changes the
   navigation rule, so it would be an experiment.
-- Margins: the existing `--gutter: clamp(0.9rem, 3vw, 2rem)` is already close
-  to M3; "smaller outer margins" fits.
+- Margins: M3 uses 16 dp side margins at Compact and 24 dp from Medium up,
+  with a 24 dp gap between panes; fixed list panes default to 360 dp
+  (Expanded) or 412 dp (Large and up), and at least one pane stays flexible.
+  The existing `--gutter: clamp(0.9rem, 3vw, 2rem)` is already close;
+  "smaller outer margins" fits.
 - Keeping `100dvh` on phones: keep `height: 100dvh` on `.frame`; add
   `viewport-fit=cover` with `env(safe-area-inset-*)` padding on the masthead and
-  the frame's bottom edge; consider `interactive-widget=resizes-content` so the
-  on-screen keyboard shrinks the layout instead of hiding inputs. Cover it with
-  an e2e at 390×844 with a focused input.
+  the frame's bottom edge. `interactive-widget=resizes-content` helps Chromium
+  but is **unsupported on iOS Safari**, and `dvh` is not guaranteed to shrink
+  for the keyboard, so handle keyboard overlap with `window.visualViewport`
+  measurements as well. Cover it with an e2e at 390×844 with a focused input
+  and a real-device Safari check.
 
 ## Motion and shape
 
@@ -100,13 +115,17 @@ already working, in the accent colour, and always labelled:
   `linear()`); a press shape-morph (radius step, ~150–250 ms); the morphing
   shape inside the loading indicator.
 - **Marginal:** the planner pick-up overshoot (keep it small, dragged card
-  only); a list-row → detail container transform via the View Transitions API
-  (CSP-compatible, but it conflicts with "never animate layout"; last, if at
-  all).
+  only).
+- **Row → detail:** use M3's simple forward/backward transition (standard
+  easing `cubic-bezier(0.2, 0, 0, 1)`, about 250 ms enter / 200 ms exit); in
+  two-pane layouts keep the list still and change only the detail. M3 cautions
+  against container transforms in deep, utility-focused navigation, so reserve
+  one (e.g. via the View Transitions API, our own choice) for a rare hero view,
+  if at all.
 - **Guardrails:** animate only `transform`, `opacity`, and radius or colour on
   small elements; never width/height or per-frame layout reads (the wavy
-  progress path stays one element and stops when hidden); reduced motion shows
-  a still state for every loop; check 60 fps with a Playwright trace at 390×844.
+  progress path stays one element and stops when hidden); reduced motion uses subtle fades and disables shape morphing and other
+  decorative effects (M3), with a still state for every loop; check 60 fps with a Playwright trace at 390×844.
 
 ## Adoption plan
 
@@ -123,8 +142,8 @@ which stays a user choice because a strong minority prefers calmer designs.
    switch if the user approves.
 5. **User decision:** list-detail at ≥ 840 px for Chat and Extractions, and
    lifting the 1180 px cap.
-6. **Experiment E (optional):** planner overshoot, then a View Transitions
-   container transform.
+6. **Experiment E (optional):** planner overshoot, then forward/backward
+   row → detail transitions (a container transform only for a rare hero view).
 
 Judge each step on before/after screenshots with a small rubric in the spirit
 of Google's attribute scales: can the key element be found at once, is the
@@ -140,7 +159,9 @@ or familiar pattern lost.
 - FAB or FAB menu.
 - Floating toolbars over the panel; a bottom nav bar on phones.
 - Large or hero type in operational windows.
-- Automatic density scaling (M3: density is opt-in; targets stay ≥ 48 px).
+- Automatic density scaling. M3 makes compact density opt-in (steps 0 to −3,
+  about 4 dp each) and allows cautious targets below 48 px for dense scanning;
+  48 px stays the default and the density control itself stays 48 px.
 - Removing text labels, or replacing tables and lists with novel layouts.
 
 ## Risks
@@ -150,15 +171,17 @@ or familiar pattern lost.
 - A weaker Kanade identity.
 - Guideline churn (M3 changed its layout guidance again in May 2026).
 
-## Not verified
+## Still unconfirmed
 
-- M3's "emphasized" type specs.
-- The 2026 margin values per width class (older values: 16 dp compact, 24 dp
-  medium and up, 24 dp between panes).
-- M3's container transform / View Transitions guidance.
-- Safari's handling of `interactive-widget`.
-- The linked "M3 Expressive design tactics" post (not read; m3.material.io does
-  not render for automated reading).
+Most earlier gaps are resolved in `m3-expressive-verification.md` (emphasized
+type values, margins and pane widths, transition guidance, the seven design
+tactics, component specs, iOS `interactive-widget` support). Still open:
+
+- The exact 2026 search app-bar height and a universal expanded-rail width.
+- Durations for reduced-motion springs and loading loops (M3 gives none).
+- Safari and standalone-PWA keyboard behaviour across iOS versions.
+- A maximum number of emphasized elements per screen (M3 states none; the
+  "1–2 hero moments" limit is per product).
 
 ## Sources
 
