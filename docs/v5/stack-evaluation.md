@@ -48,6 +48,9 @@ Do not turn spike numbers into release promises. Parent accepts these as the arc
 
 ## Licensing, advisories, and security review
 
+The `spikes/stack/` prototype referenced here was removed after the stack was
+chosen; it is preserved in git history at commit `6aecff4`.
+
 The captured spike metadata/license inventory below predates the user's switch
 of the project and spike to `GPL-3.0-only`. Third-party licenses are unchanged;
 retain this historical evidence and refresh the license inventory, compatibility

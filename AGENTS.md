@@ -7,7 +7,7 @@
 - Feature code: `src/domain/` (pure rules), `src/extract/` (pure extraction rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
 - `tests/<target>/main.rs` integration suites (see `tests/AGENTS.md`); `docs/v5/` contracts, decisions and frozen v4 vectors (see `docs/v5/AGENTS.md`).
 - `config/personas/` tracks only `README.md`, `catalog.example.yaml`, `bundles/kanade.yaml`, `profiles/example.yaml`; everything else there (and `config/personas-v4/`, mounted by the v4 container) is private.
-- `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `tools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); `spikes/stack/` is the finished stack-evaluation prototype; `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
+- `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `tools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); the stack-evaluation spike was removed (restore from commit `6aecff4` if needed); `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
 - `boss/knowledge/` is the tracked v5 boss knowledge (schema v2); v4's copy under `legacy/python/boss/knowledge/` must not change because the frozen v4 container validates it at startup. Root `boss/portraits` and `boss/artwork` are private, git-ignored art.
 - Planning state lives in git-ignored `.opencode/workplan/rust-rewrite-v5.{json,md}`; its `## Decision register` records user decisions that override older plan text.
 
