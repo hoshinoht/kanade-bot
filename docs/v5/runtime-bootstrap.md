@@ -568,3 +568,20 @@ the bootstrap does not create empty placeholders:
 - `api/` — routes, authentication, and wire types.
 - `runtime/` — process start, configuration, and lifecycle.
 - `cli/` — operational commands and outbound healthcheck client.
+
+## Log events
+
+JSON lines on stderr (`level`, `event`, fields). None carries question or reply text, member ids, persona text or secrets; `interaction_id` is the chat-log row id.
+
+| Event | Level | Fields | When |
+| --- | --- | --- | --- |
+| `persona_selected` | INFO; WARN on a fallback source, any candidate issue, unreadable profiles or `profiles_issue` | `configured`, `effective`, `source` (`configured`/`catalog_default`/`tracked_fallback`), `bundle_file`, `profiles`, `profile_ids`, `unreadable_profiles` [{`file`,`error`}], `profiles_issue`, `issues` [{`candidate`,`error`}] | serve startup, after the persona files load |
+| `persona_unavailable` | ERROR | `configured`, `issues` | serve startup when no persona validates (chat stays off) |
+| `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor_kind`, `surface` (`admin_portal`) | every saved config `PATCH` that changed something |
+| `persona_switched` | INFO | `from`, `to`, `profiles` | a persona switch was saved and swapped in |
+| `personas_reloaded` | INFO; WARN with unreadable profiles | `persona`, `profiles`, `issues` [{`file`,`error`}] | profile reload |
+| `chat_setup_changed` | INFO; WARN when enabled but not ready | `enabled`, `ready`, `not_ready` (`no_model_route`/`no_persona`) | chat start, then when either flag flips (read on the next message, status read or settings change) |
+| `chat_admitted` | INFO | `interaction_id`, `channel` (`thread`/`channel`), `position` (null when it runs at once) | the gate took a question |
+| `chat_ignored` | INFO | `reason` (`disabled`/`not_ready`/`not_chat_category`/`no_pilot_role`/`staff_only`/`rate_limited`/`shed`/`bot_author`) | a message that summoned the bot was not taken; never for ordinary chatter |
+| `chat_answered` / `chat_failed` | INFO / WARN | `interaction_id`, `outcome`, `persona`, `profile`, `profile_source` (`saved`/`role`/`default`), `saved_style_unavailable`, `model`, `reasoning`, `route` (`homelab`/`external_unmasked`), `rounds`, `tools`, `latency_ms`, `model_ms`, `tools_ms`, `clean_retry`, `withheld` | a question concluded after a model attempt |
+| `chat_cancelled` | INFO | `interaction_id`, `reason` (`deleted`/`shutdown`/`expired`/`not_admitted`/`not_ready`/`aborted`) | an admitted question ended without an answer |

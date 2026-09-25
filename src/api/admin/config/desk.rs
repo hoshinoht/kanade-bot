@@ -146,7 +146,12 @@ impl ConfigDesk {
         self.current.lock().await
     }
 
-    pub(super) fn publish(&self, section: &'static str, actor: String, settings: &RuntimeSettings) {
+    pub(super) fn publish(
+        &self,
+        section: &'static str,
+        actor: String,
+        settings: &RuntimeSettings,
+    ) -> u64 {
         let revision = self.changes.borrow().revision + 1;
         self.changes.send_replace(SettingsChanged {
             revision,
@@ -154,6 +159,7 @@ impl ConfigDesk {
             actor: Some(actor),
             settings: Arc::new(settings.clone()),
         });
+        revision
     }
 
     pub(super) fn recall(&self, actor: &str, key: &str) -> Option<Remembered> {

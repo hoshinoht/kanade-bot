@@ -233,7 +233,14 @@ async fn model_gateway(listing: serde_json::Value) -> String {
     format!("http://{addr}/v1")
 }
 
+/// The model report lines only.
 async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
+    let mut lines = compose_lines(config).await;
+    lines.retain(|line| !line["event"].as_str().unwrap_or("").starts_with("persona_"));
+    lines
+}
+
+async fn compose_lines(config: &ServeConfig) -> Vec<serde_json::Value> {
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
     crate::runtime::logging::capture();
@@ -250,6 +257,18 @@ async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
     drop(composition);
     store::close(store, Duration::ZERO).await;
     lines
+}
+
+#[tokio::test]
+async fn compose_logs_the_persona_selection() {
+    let temp = Temp::new();
+    let lines = compose_lines(&temp.config(&[])).await;
+    let persona = lines
+        .iter()
+        .find(|line| line["event"] == "persona_selected" || line["event"] == "persona_unavailable")
+        .expect("a persona line");
+    let text = persona.to_string();
+    assert!(!text.contains(temp.0.to_str().unwrap()), "no paths: {text}");
 }
 
 #[tokio::test]

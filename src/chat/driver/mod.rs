@@ -5,6 +5,7 @@
 //! chat-log row. The model side is an [`Answerer`], Discord a [`Surface`]
 //! (`docs/v5/chat-orchestration.md`, "Serve composition").
 
+mod events;
 mod ports;
 mod run;
 mod view;
@@ -21,6 +22,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
+pub use events::ChatEvent;
 pub use ports::{Answerer, Asked, Job, Prepared, Setup, Surface};
 pub use view::{ChatHandle, ChatView};
 
@@ -137,6 +139,8 @@ pub fn position_reaction(position: usize) -> &'static str {
 #[derive(Clone)]
 struct Queued {
     asked: Asked,
+    /// The chat-log row id, fixed at admission so log lines link to it.
+    row_id: String,
     spent_at: Option<f64>,
     /// Its queue position reaction, if it waited.
     position: Option<usize>,
@@ -151,6 +155,8 @@ struct State {
     /// Running questions by message id → deleted.
     running: HashMap<String, Arc<AtomicBool>>,
     persona_key: Option<String>,
+    /// Last `(enabled, ready)` seen, for `SetupChanged`.
+    setup_seen: Option<(bool, bool)>,
     closed: bool,
 }
 
@@ -215,6 +221,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     waiting: HashMap::new(),
                     running: HashMap::new(),
                     persona_key: None,
+                    setup_seen: None,
                     closed: false,
                 }),
                 tasks: Mutex::new(Vec::new()),
@@ -228,6 +235,17 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn watch_setup(&self, state: &mut State, setup: &Setup) {
+        let seen = Some((setup.enabled, setup.ready));
+        if state.setup_seen != seen {
+            state.setup_seen = seen;
+            self.shared.answerer.observe(&ChatEvent::SetupChanged {
+                enabled: setup.enabled,
+                ready: setup.ready,
+            });
+        }
     }
 
     fn now(&self) -> f64 {
@@ -259,6 +277,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         if state.closed {
             return false;
         }
+        self.watch_setup(state, &setup);
         let pilot = &mut state.pilot;
         pilot
             .allowance
@@ -278,6 +297,15 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             pilot.allowance.budgets(now),
         );
         if !decision.act {
+            let summoned = crate::chat::gate::mentions_bot(
+                &asked.gate,
+                summons.bot_user_id,
+                summons.self_role_id,
+                summons.replied_author_id,
+            );
+            if summoned && let Some(reason) = events::ignored_reason(&decision, &setup) {
+                self.shared.answerer.observe(&ChatEvent::Ignored { reason });
+            }
             if decision.busy {
                 self.limited(pilot, &setup, &asked, &decision, now);
                 return true;
@@ -286,6 +314,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         }
         let spent_at = (!asked.is_admin).then_some(now);
         let message_id = asked.message.id.clone();
+        let row_id = new_row_id();
+        let thread = asked.channel_id != asked.origin_id;
         let admission = pilot.traffic.admit(
             &asked.origin_id,
             &message_id,
@@ -297,8 +327,14 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 state.running.insert(message_id, Arc::clone(&cancelled));
                 drop(guard);
+                self.shared.answerer.observe(&ChatEvent::Admitted {
+                    interaction_id: &row_id,
+                    thread,
+                    position: None,
+                });
                 let job = Queued {
                     asked,
+                    row_id,
                     spent_at,
                     position: None,
                     reacted: None,
@@ -308,10 +344,16 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             Admission::Queued { position } => {
                 let (channel, emoji) = (asked.channel_id.clone(), position_reaction(position));
                 let (reacted, done) = watch::channel(false);
+                self.shared.answerer.observe(&ChatEvent::Admitted {
+                    interaction_id: &row_id,
+                    thread,
+                    position: Some(position),
+                });
                 state.waiting.insert(
                     message_id.clone(),
                     Queued {
                         asked,
+                        row_id,
                         spent_at,
                         position: Some(position),
                         reacted: Some(done),
@@ -333,6 +375,9 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     pilot.allowance.refund(&asked.message.author_id, stamp);
                 }
                 drop(guard);
+                self.shared
+                    .answerer
+                    .observe(&ChatEvent::Ignored { reason: "shed" });
                 let driver = self.clone();
                 self.spawn(async move {
                     let surface = &driver.shared.surface;
@@ -392,7 +437,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         let state = &mut *guard;
         for id in message_ids {
             if let Some(waiting) = state.pilot.traffic.cancel(id) {
-                state.waiting.remove(id);
+                if let Some(queued) = state.waiting.remove(id) {
+                    self.shared.answerer.observe(&ChatEvent::Cancelled {
+                        interaction_id: &queued.row_id,
+                        reason: "deleted",
+                    });
+                }
                 if let Some(stamp) = waiting.spent_at {
                     state.pilot.allowance.refund(&waiting.member_id, stamp);
                 }
@@ -420,6 +470,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 })
                 .collect()
         };
+        for queued in &dropped {
+            self.shared.answerer.observe(&ChatEvent::Cancelled {
+                interaction_id: &queued.row_id,
+                reason: "shutdown",
+            });
+        }
         let config = &self.shared.config;
         let deadline = Instant::now() + config.stop_grace;
         for queued in &dropped {
@@ -483,6 +539,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
     /// answer, or clean retries suspended by the storm guard).
     pub fn status(&self) -> &'static str {
         let setup = self.shared.answerer.setup();
+        self.watch_setup(&mut self.state(), &setup);
         if !setup.enabled {
             return "disabled";
         }

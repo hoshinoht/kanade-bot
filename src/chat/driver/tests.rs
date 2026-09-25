@@ -87,6 +87,8 @@ struct Fake {
     rows: Mutex<Vec<ChatInteraction>>,
     /// `prepare` waits for this once, when set.
     prepare_gate: Mutex<Option<Arc<Notify>>>,
+    /// Observed lifecycle events, one short line each.
+    observed: Mutex<Vec<String>>,
 }
 
 impl Fake {
@@ -99,6 +101,7 @@ impl Fake {
             seen: Mutex::default(),
             rows: Mutex::default(),
             prepare_gate: Mutex::default(),
+            observed: Mutex::default(),
         }
     }
 }
@@ -177,6 +180,25 @@ impl Answerer for Arc<Fake> {
     }
 
     fn storm(&self, _alert: &crate::chat::pilot::StormAlert) {}
+
+    fn observe(&self, event: &ChatEvent<'_>) {
+        let line = match event {
+            ChatEvent::Admitted { position, .. } => format!("admitted {position:?}"),
+            ChatEvent::Ignored { reason } => format!("ignored {reason}"),
+            ChatEvent::Finished {
+                interaction,
+                persona,
+                model,
+                ..
+            } => format!(
+                "finished {} {} {model} {}",
+                interaction.outcome, persona.bundle, interaction.id
+            ),
+            ChatEvent::Cancelled { reason, .. } => format!("cancelled {reason}"),
+            ChatEvent::SetupChanged { enabled, ready } => format!("setup {enabled} {ready}"),
+        };
+        self.observed.lock().unwrap().push(line);
+    }
 }
 
 #[derive(Default)]
@@ -837,4 +859,38 @@ async fn shutdown_is_bounded_even_when_discord_hangs() {
     assert_eq!(rows[0].error.as_deref(), Some("cancelled: serve shut down"));
     assert_eq!(rig.pool_used(), 0);
     assert_eq!(rig.driver.limits().clean_retry.pending, 0);
+}
+
+#[tokio::test]
+async fn lifecycle_events_cover_summons_only_and_link_the_log_row() {
+    let rig = rig(vec![Step::Reply("hi")]).await;
+    let mut unmentioned = asked("1001", "11", CHANNEL, &[ROLE]);
+    unmentioned.gate.mentions.clear();
+    assert!(!rig.driver.offer(unmentioned));
+    assert!(!rig.driver.offer(asked("1002", "12", CHANNEL, &[])));
+    assert!(rig.driver.offer(asked("1003", "13", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    let observed = rig.fake.observed.lock().unwrap().clone();
+    let row = rig.rows().pop().expect("row");
+    assert_eq!(
+        observed,
+        vec![
+            "setup true true".to_owned(),
+            "ignored no_pilot_role".to_owned(),
+            "admitted None".to_owned(),
+            format!("finished answered kanade chat-model {}", row.id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_disabled_chat_logs_ignored_only_for_summons() {
+    let rig = rig(Vec::new()).await;
+    rig.fake.enabled.store(false, Ordering::SeqCst);
+    let mut chatter = asked("1001", "11", CHANNEL, &[ROLE]);
+    chatter.gate.mentions.clear();
+    rig.driver.offer(chatter);
+    rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE]));
+    let observed = rig.fake.observed.lock().unwrap().clone();
+    assert_eq!(observed, ["setup false true", "ignored disabled"]);
 }

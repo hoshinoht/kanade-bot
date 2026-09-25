@@ -126,6 +126,7 @@ pub async fn compose(
         settings::persona(&settings)?.as_ref(),
     )
     .map_err(file_error)?;
+    super::persona_log::persona_selected(&personas.snapshot);
     let policy = settings.schedule_policy(config.runtime.timezone);
 
     let access = Arc::new(access(&config.guild));

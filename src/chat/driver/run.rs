@@ -13,7 +13,7 @@ use std::task::{Context, Poll, Waker};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use super::{Answerer, Asked, ChatDriver, Job, Prepared, Queued, State, Surface, new_row_id};
+use super::{Answerer, Asked, ChatDriver, ChatEvent, Job, Prepared, Queued, State, Surface};
 use crate::chat::answer::{AnswerFailure, AnswerSettings, Generation, Question};
 use crate::chat::context::{assemble, build_turns, system_prompt};
 use crate::chat::gate::{CHANNEL_BUSY_REACTION, SEEN_REACTION, is_chat_channel};
@@ -188,6 +188,10 @@ impl<A: Answerer, S: Surface> Drop for Held<A, S> {
             return;
         }
         let concluded = self.conclude(&ended(), Err("not posted".into()), false);
+        self.driver.shared.answerer.observe(&ChatEvent::Cancelled {
+            interaction_id: &self.row_id,
+            reason: "aborted",
+        });
         let driver = self.driver.clone();
         let (channel, message) = (self.asked.channel_id.clone(), self.asked.message.id.clone());
         self.driver.spawn(async move {
@@ -255,6 +259,10 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     state.pilot.allowance.refund(&expired.member_id, stamp);
                 }
                 if let Some(queued) = state.waiting.remove(&expired.message_id) {
+                    self.shared.answerer.observe(&ChatEvent::Cancelled {
+                        interaction_id: &queued.row_id,
+                        reason: "expired",
+                    });
                     let driver = self.clone();
                     self.spawn(async move {
                         driver.keycap_off(&queued).await;
@@ -290,6 +298,13 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         }
     }
 
+    fn cancelled(&self, job: &Queued, reason: &'static str) {
+        self.shared.answerer.observe(&ChatEvent::Cancelled {
+            interaction_id: &job.row_id,
+            reason,
+        });
+    }
+
     /// Chat is still on and this channel still in a chat category (both may
     /// have changed while the question waited).
     fn still_admitted(&self, asked: &Asked) -> bool {
@@ -310,6 +325,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         let (asked, surface) = (&job.asked, &shared.surface);
         let (channel, message_id) = (asked.channel_id.as_str(), asked.message.id.as_str());
         if !self.still_admitted(asked) {
+            self.cancelled(job, "not_admitted");
             self.refund(job);
             self.keycap_off(job).await;
             return;
@@ -320,6 +336,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         let prepared = shared.answerer.prepare(asked).await;
         // Deleted while it was being prepared: no model call.
         let Some(prepared) = prepared.filter(|_| !cancelled.load(Ordering::SeqCst)) else {
+            let reason = if cancelled.load(Ordering::SeqCst) {
+                "deleted"
+            } else {
+                "not_ready"
+            };
+            self.cancelled(job, reason);
             self.refund(job);
             surface.unreact(channel, message_id, SEEN_REACTION).await;
             return;
@@ -348,7 +370,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             );
             (reserved, turns, focus)
         };
-        let row_id = new_row_id();
+        let row_id = job.row_id.clone();
         // From here every path, a panic or an abort included, concludes.
         let mut held = Held {
             driver: self.clone(),
@@ -416,6 +438,21 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             } else if was_cut {
                 row.error = Some(CUT.to_owned());
             }
+            let event = if deleted || was_cut {
+                ChatEvent::Cancelled {
+                    interaction_id: &row.id,
+                    reason: if deleted { "deleted" } else { "shutdown" },
+                }
+            } else {
+                ChatEvent::Finished {
+                    interaction: &row,
+                    generation: &generation,
+                    persona: prepared.persona.provenance(),
+                    model: &prepared.model,
+                    reasoning: prepared.reasoning,
+                }
+            };
+            shared.answerer.observe(&event);
             shared.answerer.record(row).await;
             if let Some(alert) = &concluded.alert {
                 shared.answerer.storm(alert);

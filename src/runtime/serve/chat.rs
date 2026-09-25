@@ -24,7 +24,9 @@ use crate::{
     },
     chat::{
         answer::{AnswerDeps, Generation, GuildView, answer},
-        driver::{Answerer, Asked, ChatDriver, ChatHandle, DriverConfig, Job, Prepared, Setup},
+        driver::{
+            Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, Job, Prepared, Setup,
+        },
         gate::{ChannelDirectory, PilotSettings},
         persona::{PersonaStore, ProfileId, ProfileQuery},
         pilot::{AllowanceSnapshot, StormAlert},
@@ -51,6 +53,7 @@ use crate::{
 };
 
 use super::chat_cards::{self as cards, ChatDesk};
+use super::chat_log;
 use super::discord::GatewayTransport;
 
 impl ChatAllowance for ChatHandle {
@@ -230,6 +233,13 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         }
     }
 
+    fn observe(&self, event: &ChatEvent<'_>) {
+        chat_log::observe(event, || chat_log::Readiness {
+            model_route: self.route().is_some(),
+            persona: self.personas.pin().active().is_some(),
+        });
+    }
+
     fn storm(&self, alert: &StormAlert) {
         logging::event(
             "WARN",
@@ -317,9 +327,12 @@ pub async fn start<T: GatewayTransport>(
     if let Some(handle) = handle {
         handle.set(Arc::new(driver.clone()));
     }
+    // Logs the starting setup; later flips log on the next read.
+    driver.status();
     let refresh = driver.clone();
     let overrides = tokio::spawn(async move {
         while changes.changed().await.is_ok() {
+            refresh.status();
             if let Ok(rows) = store.allowance_overrides().await {
                 refresh.set_overrides(rows);
             }

@@ -5,6 +5,7 @@
 //! for another body is `422 idempotency_mismatch`); the reload is naturally
 //! repeatable.
 
+mod changes;
 mod desk;
 mod models;
 mod patch;
@@ -200,8 +201,15 @@ async fn update(
         desk.store.save(section).await.map_err(stored)?;
     }
     if next != *current {
+        let revision = desk.publish(name_of(name), actor.clone(), &next);
+        changes::settings_changed(
+            revision,
+            name_of(name),
+            session.actor.kind(),
+            &current,
+            &next,
+        );
         *current = next.clone();
-        desk.publish(name_of(name), actor.clone(), &next);
     }
     drop(current);
     if let Some(key) = key {
@@ -241,6 +249,7 @@ async fn switch_persona(desk: &ConfigDesk, active: &str, section: Section) -> Re
     let id = PersonaId::parse(active)
         .map_err(|_| Refusal::invalid("No such persona in the catalog."))?;
     let (dir, personas, port) = (files.dir.clone(), files.store.clone(), desk.store.clone());
+    let before = files.store.pin();
     let handle = tokio::runtime::Handle::current();
     let outcome = tokio::task::spawn_blocking(move || {
         let root = PersonaRoot::open(&dir).map_err(ReloadError::Invalid)?;
@@ -249,7 +258,10 @@ async fn switch_persona(desk: &ConfigDesk, active: &str, section: Section) -> Re
     .await
     .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
     match outcome {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            changes::persona_switched(&before, &files.store.pin());
+            Ok(())
+        }
         Err(ReloadError::Invalid(_)) => Err(Refusal::invalid(
             "That persona is not in the catalog or its files do not validate; nothing changed.",
         )),
@@ -291,6 +303,7 @@ async fn reload_profiles(State(site): State<Arc<Site>>, _: AdminSession) -> Repl
         ));
     }
     let snapshot = files.store.pin();
+    changes::personas_reloaded(&snapshot);
     let (reloaded, skipped) = snapshot.active().map_or((0, 0), |active| {
         (
             active.profiles.readable.len(),

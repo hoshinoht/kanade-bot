@@ -6,11 +6,13 @@
 pub mod api;
 pub mod chat;
 mod chat_cards;
+mod chat_log;
 mod commands;
 pub mod discord;
 pub mod extract;
 mod health;
 pub mod models;
+mod persona_log;
 pub mod settings;
 mod store;
 mod tick;

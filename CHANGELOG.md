@@ -273,6 +273,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 container logs explain persona and chat behaviour: `persona_selected` at startup (fallbacks
+  and profile load problems warn), `settings_changed` with keys and before/after values,
+  `persona_switched`/`personas_reloaded`, and chat lifecycle events (`chat_admitted`,
+  `chat_ignored` for summons only, `chat_answered`/`chat_failed` with persona, profile, model
+  and route, `chat_cancelled`, `chat_setup_changed`), never with message text or member ids.
 - v5 serve runs extraction live (S9): watched messages feed the pipeline, proposal cards post
   and resolve with ✅/❌ (one card desk for extraction and chat cards), `/rescan` and the admin
   Rescan panel page Discord history, a 24 h startup rescan runs when extraction is on, chat

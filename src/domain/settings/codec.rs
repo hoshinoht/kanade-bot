@@ -240,7 +240,7 @@ fn list_text(ids: &[String]) -> String {
 
 /// The rows a section writes. `None` aliases write `""` (unset: the seed
 /// applies, as in v4).
-fn encode(section: &Section) -> Rows {
+pub(super) fn encode(section: &Section) -> Rows {
     match section {
         Section::Pings(pings) => vec![
             (keys::DAY_OF_PING_TIME, clock_text(pings.day_of_ping_time)),

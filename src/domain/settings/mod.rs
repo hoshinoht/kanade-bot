@@ -21,6 +21,11 @@ pub use model::{
 
 use crate::domain::scheduler::StoreError;
 
+/// The stored `(key, text)` rows a section writes, for diffing saved changes.
+pub fn section_rows(section: &Section) -> Vec<(&'static str, String)> {
+    codec::encode(section)
+}
+
 /// Raw access to the settings rows of the `config` table.
 pub trait SettingsStore {
     /// Every stored row whose key is in [`keys::ALL`].

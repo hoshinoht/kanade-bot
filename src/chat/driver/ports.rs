@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use chrono_tz::Tz;
 
+use super::ChatEvent;
 use crate::chat::answer::{Generation, Question};
 use crate::chat::context::QuestionMessage;
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
@@ -94,6 +95,9 @@ pub trait Answerer: Send + Sync + 'static {
     fn record(&self, row: ChatInteraction) -> impl Future<Output = ()> + Send;
 
     fn storm(&self, alert: &StormAlert);
+
+    /// Lifecycle facts for the operator log.
+    fn observe(&self, _event: &ChatEvent<'_>) {}
 }
 
 /// Reactions and replies on the asking message. Replies are outside the
