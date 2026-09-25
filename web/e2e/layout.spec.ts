@@ -90,5 +90,12 @@ test('week: the board sits under the filters and beats v4 at 1280×800 and 1000�
     expect(board.height).toBeGreaterThanOrEqual(Math.max(v4, budget(size.height)));
     // No window chrome between the filters (or the header) and the board.
     expect(await page.locator('.week-surface').evaluate((el) => el.closest('.card'))).toBeNull();
+    // The header is one row: every visible control shares a line (nothing wraps below).
+    const rows = await page.locator('.week-head').evaluate((head) => {
+      const items = [...head.children].flatMap((c) => (getComputedStyle(c).display === 'contents' ? [...c.children] : [c]));
+      const rects = items.map((c) => c.getBoundingClientRect()).filter((r) => r.height > 0);
+      return { lowestTop: Math.max(...rects.map((r) => r.top)), highestBottom: Math.min(...rects.map((r) => r.bottom)) };
+    });
+    expect(rows.lowestTop, `week header wraps at ${size.width}×${size.height}`).toBeLessThan(rows.highestBottom);
   }
 });

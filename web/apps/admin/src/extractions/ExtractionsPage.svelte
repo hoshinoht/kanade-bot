@@ -16,8 +16,13 @@
 
   let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
 
-  const filter = $derived(parseFilter(search));
-  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch({ ...filter, tool: '', min_ms: '' })}`));
+  const filter = $derived(parseFilter(search, { chat: false }));
+  // A pasted Chat link's tool/latency keys leave the URL rather than linger as dead chips.
+  $effect(() => {
+    const clean = toSearch(filter);
+    if (clean !== toSearch(parseFilter(search))) onsearch?.(clean);
+  });
+  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`));
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
   $effect(() => void extractions.load());
   $effect(() => void targets.load());
@@ -25,6 +30,8 @@
   $effect(() => {
     if (extractions.data) last = extractions.data;
   });
+  // A refused filter shows its error alone; `last` still feeds the filter facets.
+  const view = $derived(extractions.error ? null : last);
 
   function apply(next: LogFilter) {
     onsearch?.(toSearch(next));
@@ -53,7 +60,7 @@
     void search;
     page = 1;
   });
-  const rows = $derived(last?.rows ?? []);
+  const rows = $derived(view?.rows ?? []);
   const shown = $derived(paged(rows, page));
   const filtered = $derived(activeCount(filter) > 0);
 </script>
@@ -61,9 +68,9 @@
 <div class="page-head">
   <div>
     <p class="eyebrow">Prompt tuning</p>
-    <h1>{last ? (filtered ? `${rows.length} of ${last.total} model calls` : `${last.total} model calls`) : 'Extractions'}</h1>
+    <h1>{view ? (filtered ? `${rows.length} of ${view.total} model calls` : `${view.total} model calls`) : 'Extractions'}</h1>
   </div>
-  {#if last}<span class="chip chip--mono">{last.model}</span>{/if}
+  {#if view}<span class="chip chip--mono">{view.model}</span>{/if}
 </div>
 
 <PaneWindow title="Calls" bind:query searchLabel="Search calls" placeholder="message, id…">
@@ -75,7 +82,7 @@
   {#if extractions.error}
     <p class="flash flash--error" role="alert">{extractions.error}</p>
   {/if}
-  {#if last}
+  {#if view}
     {#if rows.length === 0}
       <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
     {:else}

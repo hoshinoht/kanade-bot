@@ -137,6 +137,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 planner cards: the drag-handle column is gone; a small grip sits in the corner,
   the whole card drags (after a short move, or a long press on touch), `M` picks a
   card up from the keyboard, and a press made before the drag code loads still drags.
+- v5 admin app: Inbox works by keyboard on phones (arrows browse, Enter opens, Back
+  returns to the item), empty tabs explain themselves, the week header fits one row
+  at laptop widths, and Chat/Extractions filters show only valid chips and no stale
+  rows after an error.
 - v5 public app: while the portal is closed only the app shell, status and bot
   identity are served, and the page keeps checking so a reopened portal appears.
 - v5: `boss/knowledge/` schema v2 with per-difficulty facts (levels, force, HP, spec)

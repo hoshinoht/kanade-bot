@@ -1,28 +1,54 @@
 <!--
-  The tab's items as a keyboard-navigable listbox (selection follows focus):
-  boss and type lead, then who and when, then status badges in words.
+  The tab's items as a keyboard-navigable listbox: boss and type lead, then
+  who and when, then status badges in words. Wide (`follow`): selection
+  follows the arrows. Phones: opening an item hides the list, so arrows move
+  a focus-only active option and Enter/Space/click opens it.
 -->
 <script lang="ts">
   import type { Proposal } from '@kanade/api-types';
+  import { tick } from 'svelte';
   import { FLAG_LABEL, FLAG_TONE, title, who } from './flags';
 
   let {
     items,
     selected,
     label,
+    follow,
+    empty,
     onpick,
-  }: { items: Proposal[]; selected: string; label: string; onpick: (id: string, open: boolean) => void } = $props();
+  }: {
+    items: Proposal[];
+    selected: string;
+    label: string;
+    follow: boolean;
+    /** Why the tab is empty, after "Nothing waiting here." */
+    empty: string;
+    onpick: (id: string, open: boolean) => void;
+  } = $props();
   const uid = $props.id();
+  let active = $state('');
+  let listEl = $state<HTMLUListElement>();
+  const current = $derived(follow ? selected : items.some((p) => p.id === active) ? active : '');
+
+  const reveal = (id: string) => document.getElementById(`${uid}-${id}`)?.scrollIntoView({ block: 'nearest' });
+
+  /** Focus the listbox with `id` (when still listed) as its active option. */
+  export async function focusOn(id: string) {
+    active = id;
+    await tick();
+    listEl?.focus();
+    if (current) reveal(current);
+  }
 
   function onKeydown(event: KeyboardEvent) {
-    const index = items.findIndex((p) => p.id === selected);
+    const index = items.findIndex((p) => p.id === current);
     const moves: Record<string, number> = {
-      ArrowDown: Math.min(items.length - 1, index + 1),
+      ArrowDown: index < 0 ? 0 : Math.min(items.length - 1, index + 1),
       ArrowUp: Math.max(0, index - 1),
       Home: 0,
       End: items.length - 1,
     };
-    if (event.key === 'Enter' && index >= 0) {
+    if ((event.key === 'Enter' || event.key === ' ') && index >= 0) {
       event.preventDefault();
       onpick(items[index]!.id, true);
       return;
@@ -30,8 +56,10 @@
     const target = moves[event.key];
     if (target === undefined || !items[target]) return;
     event.preventDefault();
-    onpick(items[target]!.id, false);
-    document.getElementById(`${uid}-${items[target]!.id}`)?.scrollIntoView({ block: 'nearest' });
+    const id = items[target]!.id;
+    if (follow) onpick(id, false);
+    else active = id;
+    reveal(id);
   }
 </script>
 
@@ -41,16 +69,20 @@
     role="listbox"
     aria-label={label}
     tabindex="0"
-    aria-activedescendant={selected ? `${uid}-${selected}` : undefined}
+    aria-activedescendant={current ? `${uid}-${current}` : undefined}
+    bind:this={listEl}
     onkeydown={onKeydown}
     onclick={(event) => {
       const option = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-item]') : null;
-      if (option?.dataset.item) onpick(option.dataset.item, true);
+      if (!option?.dataset.item) return;
+      active = option.dataset.item;
+      onpick(option.dataset.item, true);
     }}
   >
     {#each items as p (p.id)}
       <li
         class="inbox__option"
+        class:inbox__option--active={!follow && p.id === current}
         id="{uid}-{p.id}"
         role="option"
         aria-selected={p.id === selected}
@@ -68,5 +100,5 @@
     {/each}
   </ul>
 {:else}
-  <p class="note inbox__none">Nothing waiting here.</p>
+  <p class="note inbox__none">Nothing waiting here. {empty}</p>
 {/if}

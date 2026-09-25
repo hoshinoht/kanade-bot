@@ -137,8 +137,9 @@ whole; unknown or read-only keys are refused with 422.
   `clarified`, `error`, `timeout`, `rate_limited`, `turned_away`,
   `content_blocked`, `withheld`, `clean_retry`; Extractions: `proposed`,
   `no_change`, `failed`, `turned_away`, `content_blocked`,
-  `self_service_link`. An unknown outcome, a malformed date or a Chat-only
-  filter on Extractions is 422 `invalid_filter`. Cursor paging
+  `self_service_link`. An unknown outcome, a malformed date, a `min_ms`
+  that is not whole non-negative milliseconds (`1e3`, `-5`) or a Chat-only
+  filter on Extractions is 422 `invalid_filter`, never a bare 400. Cursor paging
   (`cursor`, `next_cursor`) is **proposed**; the mock returns every match.
   Backend requirement: both logs persist the model alias per request round,
   reasoning level, the typed outcome, guardrail signals, tools used, request

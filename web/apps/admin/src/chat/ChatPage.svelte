@@ -23,6 +23,8 @@
   $effect(() => {
     if (chat.data) last = chat.data;
   });
+  // A refused filter shows its error alone; `last` still feeds the filter facets.
+  const view = $derived(chat.error ? null : last);
 
   function apply(next: LogFilter) {
     onsearch?.(toSearch(next));
@@ -52,7 +54,7 @@
     void search;
     page = 1;
   });
-  const rows = $derived(last?.rows ?? []);
+  const rows = $derived(view?.rows ?? []);
   const shown = $derived(paged(rows, page));
   const filtered = $derived(activeCount(filter) > 0);
 </script>
@@ -60,11 +62,11 @@
 <div class="page-head">
   <div>
     <p class="eyebrow">The speech pilot</p>
-    <h1>{last ? (filtered ? `${rows.length} of ${last.total} interactions` : `${last.total} interactions`) : 'Chat'}</h1>
+    <h1>{view ? (filtered ? `${rows.length} of ${view.total} interactions` : `${view.total} interactions`) : 'Chat'}</h1>
   </div>
-  {#if last && last.summary.length}
+  {#if view && view.summary.length}
     <div class="statline" aria-label="Per model, for these rows">
-      {#each last.summary as m (m.model)}
+      {#each view.summary as m (m.model)}
         <div class="statline__row">
           <span class="statline__model mono">{m.model}</span>
           <span class="statline__pair"><span class="statline__k">answered</span> {m.answered}</span>
@@ -83,7 +85,7 @@
   {#if chat.error}
     <p class="flash flash--error" role="alert">{chat.error}</p>
   {/if}
-  {#if last}
+  {#if view}
     {#if rows.length === 0}
       <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
     {:else}

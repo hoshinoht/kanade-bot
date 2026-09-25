@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(ids(&s.chat(&q).ok().unwrap()), ["c-blocked", "c-fail"]);
         let q = LogQuery {
             tool: Some("schedule.read".into()),
-            min_ms: Some(5_000),
+            min_ms: Some("5000".into()),
             ..Default::default()
         };
         assert_eq!(ids(&s.chat(&q).ok().unwrap()), ["c-error", "c-retry"]);

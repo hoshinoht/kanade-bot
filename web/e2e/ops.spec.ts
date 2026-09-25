@@ -62,7 +62,8 @@ test('inbox: extractor tab — list and detail, edit then approve, reject', asyn
   await detail.getByRole('button', { name: 'Reject…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Reject change' }).click();
   await expect(toast(page, 'Rejected: new run NLimbo.')).toBeVisible();
-  await expect(page.getByText('Nothing waiting here.').first()).toBeVisible();
+  // An empty tab says why, visibly, not just that it is empty.
+  await expect(page.getByText('Nothing waiting here. The extractor posts a card when it reads a change in a watched channel.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Week' }).click();
   const wed = page.locator('section.board__col').filter({ has: page.locator('h2 .board__dow:text-is("Wed")') });
@@ -144,6 +145,68 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   await expect(list).toBeVisible();
 });
 
+test('inbox on a phone by keyboard: arrows move the active option, Enter opens, Back restores it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/inbox?tab=self_service');
+  const list = page.getByRole('listbox', { name: 'Self-service items' });
+  const options = list.getByRole('option');
+  await expect(options).toHaveCount(5);
+  const detail = page.locator('.inbox__detail');
+  // Read up front: the list (and its options) is hidden while a detail is open.
+  const ids = await options.evaluateAll((els) => els.map((el) => el.id));
+  const items = await options.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.item));
+  const idOf = (n: number) => ids[n]!;
+
+  await list.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  // Moving does not open anything: the list keeps focus and the URL has no item.
+  await expect(list).toBeFocused();
+  await expect(list).toHaveAttribute('aria-activedescendant', idOf(1));
+  await expect(page).not.toHaveURL(/item=/);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(new RegExp(`item=${items[1]}`));
+  await expect(detail).toBeFocused();
+  // Back by keyboard returns focus to the list, the opened option still active.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: /Back to the list/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(list).toBeFocused();
+  await expect(list).toHaveAttribute('aria-activedescendant', idOf(1));
+
+  // A middle item, opened with Space; the browser's Back restores it too.
+  await page.keyboard.press('ArrowDown');
+  await expect(list).toHaveAttribute('aria-activedescendant', idOf(2));
+  await page.keyboard.press(' ');
+  await expect(page).toHaveURL(new RegExp(`item=${items[2]}`));
+  await expect(detail).toBeFocused();
+  await page.goBack();
+  await expect(list).toBeFocused();
+  await expect(list).toHaveAttribute('aria-activedescendant', idOf(2));
+
+  // A tap opens and focuses the detail the same way.
+  await options.nth(3).click();
+  await expect(detail).toBeFocused();
+});
+
+test('inbox on a phone: approving returns to the list without a dead Back step', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: /^Inbox/ }).first().click();
+  await page.getByRole('tab', { name: /Self-service/ }).click();
+  const list = page.getByRole('listbox', { name: 'Self-service items' });
+  await list.getByRole('option', { name: /HCarling/ }).click();
+  await page.locator('.inbox__detail').getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(toast(page, /Approved/)).toBeVisible();
+  await expect(list).toBeVisible();
+  await expect(list).toBeFocused();
+  await expect(page).not.toHaveURL(/item=/);
+  // One Back leaves the Inbox for the Week, not a copy of the list.
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`^${ADMIN}/(\\?|$)`));
+});
+
 test('extractions: pager, detail tabs and a rescan job', async ({ page }) => {
   await go(page, '/extractions');
   await expect(page.getByText(/Page 1 of 2 · 34 calls/)).toBeVisible();
@@ -215,6 +278,19 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   // Nonsense is refused by the server, not silently ignored.
   const bad = await page.request.get(`${ADMIN}/api/admin/chat?outcome=nope`);
   expect(bad.status()).toBe(422);
+  const badMs = await page.request.get(`${ADMIN}/api/admin/chat?min_ms=1e3`);
+  expect(badMs.status()).toBe(422);
+  expect(((await badMs.json()) as { error: string }).error).toBe('invalid_filter');
+
+  // A refused filter shows its error without the previous filter's rows.
+  await go(page, '/chat');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('12 interactions');
+  await page.getByRole('button', { name: 'Filters (0)' }).click();
+  await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').fill('1e3');
+  await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').press('Tab');
+  await expect(page.getByRole('alert').filter({ hasText: 'whole milliseconds' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Chat');
+  await expect(page.getByRole('table')).toHaveCount(0);
 });
 
 test('extraction filters: outcome, model and member, deep-linked', async ({ page }) => {
@@ -233,6 +309,13 @@ test('extraction filters: outcome, model and member, deep-linked', async ({ page
   await panel.getByLabel('Model').selectOption('kanata/legacy');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 of 34 model calls');
   expect((await page.request.get(`${ADMIN}/api/admin/extractions?tool=x`)).status()).toBe(422);
+
+  // A Chat link's tool/latency keys leave the URL rather than count as filters that do nothing.
+  await go(page, '/extractions?outcome=proposed&tool=schedule.read&min_ms=5000');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 34 model calls');
+  await expect(page).not.toHaveURL(/tool=|min_ms=/);
+  await expect(page.getByRole('button', { name: 'Filters (1)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Tool:|ms — remove/ })).toHaveCount(0);
 });
 
 test('limits: backends, queue, admission by kind and an allowance reset', async ({ page }) => {

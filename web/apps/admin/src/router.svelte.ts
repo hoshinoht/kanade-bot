@@ -25,11 +25,12 @@ export class Router {
     return new URLSearchParams(this.search);
   }
 
-  go(href: string, { replace = false } = {}): void {
+  /** `state` tags the entry (the Inbox marks a detail it pushed, so Back can pop it). */
+  go(href: string, { replace = false, state = null }: { replace?: boolean; state?: Record<string, unknown> | null } = {}): void {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a one-off parse, not state
     const url = new URL(href, location.href);
     if (url.pathname === this.path && url.search === this.search) return;
-    history[replace ? 'replaceState' : 'pushState'](null, '', url.pathname + url.search + url.hash);
+    history[replace ? 'replaceState' : 'pushState'](state, '', url.pathname + url.search + url.hash);
     this.#sync();
   }
 

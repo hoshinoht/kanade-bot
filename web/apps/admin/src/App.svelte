@@ -89,7 +89,10 @@
           tab: router.query.get('tab') ?? '',
           item: router.query.get('item') ?? '',
           onselect: (tab: string, item: string, open: boolean) =>
-            router.go(`/inbox?tab=${encodeURIComponent(tab)}${item ? `&item=${encodeURIComponent(item)}` : ''}`, { replace: !open }),
+            router.go(`/inbox?tab=${encodeURIComponent(tab)}${item ? `&item=${encodeURIComponent(item)}` : ''}`, {
+              replace: !open,
+              state: open ? { inboxDetail: true } : null,
+            }),
         };
       case 'limits':
         return { toaster };

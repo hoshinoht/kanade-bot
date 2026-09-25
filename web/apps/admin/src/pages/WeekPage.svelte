@@ -126,13 +126,16 @@
   {#if landscape && store.summary}<NowTiles summary={store.summary} {onopen} inline />{/if}
   {#if compact}<Filters bind:filter channels={store.channels} members={store.members} compact />{/if}
   <div class="page-head__side">
-    <button type="button" class="btn" disabled={!store.lastMove} onclick={onundo} aria-keyshortcuts="Control+Z Meta+Z">
-      <Icon name="rotate-ccw" /> Undo move
+    <button type="button" class="btn" disabled={!store.lastMove} onclick={onundo} aria-keyshortcuts="Control+Z Meta+Z" title="Undo move">
+      <Icon name="rotate-ccw" /> <span class="week-head__label">Undo move</span>
     </button>
-    <button type="button" class="btn" onclick={() => store.refresh()}><Icon name="refresh-cw" /> Refresh</button>
+    <button type="button" class="btn" onclick={() => store.refresh()} title="Refresh"
+      ><Icon name="refresh-cw" /> <span class="week-head__label">Refresh</span></button
+    >
   </div>
   <!-- Always in the DOM: every movable card's aria-describedby points here. -->
-  <p class="week-head__helptext" id={helpId} hidden={!helpOpen}>
+  <!-- Planner-only help: its toggle leaves with the Planner, so the text does too. -->
+  <p class="week-head__helptext" id={helpId} hidden={!helpOpen || tab !== 'planner'}>
     Drag a run to another day (on touch, press and hold first). Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it, Enter
     drops it, Escape cancels. Its sheet has a Move field too.
   </p>

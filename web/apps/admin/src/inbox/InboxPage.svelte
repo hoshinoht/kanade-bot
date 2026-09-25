@@ -11,6 +11,7 @@
   import '@kanade/ui/styles/inbox.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
   import { Icon, Modal, Toaster } from '@kanade/ui';
+  import { tick } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import { parseWhen } from '../sheet/parseWhen';
   import type { AdminWeek } from '../store.svelte';
@@ -79,27 +80,50 @@
     tabEls[next.id]?.focus();
   }
 
-  // Whether the phone's detail came from a pick here (so Back pops it) or a deep link.
-  let pushed = false;
-  function pick(id: string, open: boolean) {
-    error = '';
-    pushed = open && phone;
-    onselect?.(current, id, pushed);
+  // Whether the phone's detail entry came from a pick here (so leaving it pops
+  // it) or a deep link; read from the entry itself so Forward/Back agree.
+  const pushedHere = () => (history.state as { inboxDetail?: boolean } | null)?.inboxDetail === true;
+  function leaveDetail() {
+    if (phone && pushedHere()) history.back();
+    else onselect?.(current, '', false);
   }
 
-  function back() {
-    if (pushed) {
-      pushed = false;
-      history.back();
-    } else onselect?.(current, '', false);
+  let list = $state<ReturnType<typeof InboxList>>();
+  let detailEl = $state<HTMLDivElement>();
+  // Phones hide the list while a detail is open: focus follows the swap both
+  // ways (into the detail after a pick, back to the opened option on return).
+  let focusDetail = false;
+  let restore = '';
+  let shown = '';
+  $effect(() => {
+    const key = `${current}/${chosen?.id ?? ''}`;
+    const was = shown;
+    shown = key;
+    if (!phone || key === was || !was.startsWith(`${current}/`)) return;
+    const wasId = was.slice(current.length + 1);
+    if (chosen && focusDetail) {
+      focusDetail = false;
+      void tick().then(() => detailEl?.focus());
+    } else if (!chosen && wasId) {
+      void list?.focusOn(restore || wasId);
+      restore = '';
+    }
+  });
+
+  function pick(id: string, open: boolean) {
+    error = '';
+    focusDetail = open && phone;
+    onselect?.(current, id, open && phone);
   }
 
   async function after(message: string) {
     toaster.show({ message, tone: 'ok' });
+    const index = items.findIndex((p) => p.id === chosen?.id);
     await inbox.load();
     void store.refresh();
-    // The next item of the tab takes the detail (or, on a phone, the list returns).
-    onselect?.(current, '', false);
+    // The next item of the tab takes the detail (or, on a phone, the list returns with it active).
+    if (phone) restore = (items[index] ?? items[index - 1])?.id ?? '';
+    leaveDetail();
   }
 
   async function approve(p: Proposal, body: ApproveRequest) {
@@ -168,19 +192,27 @@
       {/each}
     </div>
   </div>
-  <div class="inbox__body" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{current}">
+  <div class="inbox__body" class:inbox__body--empty={inbox.data && !items.length} role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{current}">
     {#if inbox.error}
       <p class="flash flash--error" role="alert">{inbox.error}</p>
     {:else if !inbox.data}
       <p class="note" aria-busy="true">Loading the inbox…</p>
     {:else}
       <div class="inbox__list" hidden={phone && Boolean(chosen)}>
-        <InboxList {items} selected={chosen?.id ?? ''} label="{current === 'extractor' ? 'Extractor' : 'Self-service'} items" onpick={pick} />
+        <InboxList
+          bind:this={list}
+          {items}
+          selected={chosen?.id ?? ''}
+          label="{current === 'extractor' ? 'Extractor' : 'Self-service'} items"
+          follow={!phone}
+          empty={current === 'extractor' ? 'The extractor posts a card when it reads a change in a watched channel.' : 'Members’ requests arrive here.'}
+          onpick={pick}
+        />
       </div>
-      <div class="inbox__detail" hidden={!chosen} tabindex="-1">
+      <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl}>
         {#if chosen}
           {#if phone}
-            <button type="button" class="btn btn--ghost inbox__back" onclick={back}>
+            <button type="button" class="btn btn--ghost inbox__back" onclick={leaveDetail}>
               <span aria-hidden="true">←</span> Back to the list
             </button>
           {/if}
@@ -198,8 +230,6 @@
               }}
             />
           {/key}
-        {:else if !phone}
-          <p class="note">Nothing waiting here. {current === 'extractor' ? 'The extractor posts a card when it reads a change in a watched channel.' : 'Members’ requests arrive here.'}</p>
         {/if}
       </div>
     {/if}

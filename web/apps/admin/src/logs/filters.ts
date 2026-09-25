@@ -20,10 +20,13 @@ export const NO_LOG_FILTER: LogFilter = { model: '', from: '', to: '', outcome: 
 
 const KEYS = ['model', 'from', 'to', 'channel', 'member', 'q', 'tool', 'min_ms'] as const;
 
-export function parseFilter(search: string): LogFilter {
+const CHAT_ONLY: readonly string[] = ['tool', 'min_ms'];
+
+/** `chat: false` (Extractions) drops Chat-only keys, so they never show as filters that do nothing. */
+export function parseFilter(search: string, { chat = true }: { chat?: boolean } = {}): LogFilter {
   const params = new URLSearchParams(search);
   const out: LogFilter = { ...NO_LOG_FILTER, outcome: [] };
-  for (const key of KEYS) out[key] = params.get(key) ?? '';
+  for (const key of KEYS) out[key] = chat || !CHAT_ONLY.includes(key) ? (params.get(key) ?? '') : '';
   out.outcome = (params.get('outcome') ?? '').split(',').filter(Boolean);
   return out;
 }

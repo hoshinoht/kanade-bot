@@ -19,6 +19,14 @@ describe('log filters', () => {
     expect(toSearch(NO_LOG_FILTER)).toBe('');
   });
 
+  it('drops Chat-only keys for Extractions instead of counting them', () => {
+    const filter = parseFilter('?outcome=proposed&tool=schedule.read&min_ms=5000', { chat: false });
+    expect(filter.tool).toBe('');
+    expect(filter.min_ms).toBe('');
+    expect(activeCount(filter)).toBe(1);
+    expect(toSearch(filter)).toBe('?outcome=proposed');
+  });
+
   it('computes guild-timezone presets from the week the server sent', () => {
     expect(preset('today', week)).toEqual({ from: '2026-09-29', to: '2026-09-29' });
     expect(preset('week', week)).toEqual({ from: '2026-09-24', to: '2026-09-30' });

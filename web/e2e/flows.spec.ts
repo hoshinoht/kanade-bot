@@ -387,6 +387,12 @@ test('admin week header: view switch, move help, and compact filters as chips', 
   await expect(page.locator(`#${helpId}`)).toBeHidden();
   await help.click();
   await expect(page.locator(`#${helpId}`)).toContainText('press M');
+  // The help belongs to the Planner: it leaves with its toggle and returns with it.
+  await views.getByRole('tab', { name: /Runs/ }).click();
+  await expect(page.locator(`#${helpId}`)).toBeHidden();
+  await views.getByRole('tab', { name: 'Planner' }).click();
+  await expect(page.locator(`#${helpId}`)).toBeVisible();
+  await help.click();
 
   // Phones: the filter card folds into "Filters (n)" with removable chips.
   await page.setViewportSize({ width: 390, height: 844 });
