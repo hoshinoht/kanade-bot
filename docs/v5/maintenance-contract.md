@@ -280,3 +280,70 @@ Authoritative reconciliation uses complete member/reaction pagination, fresh rol
 authorization, source-aware RSVP preservation, conflict blocking and NotFound vs
 Forbidden distinctions. Gateway dirty generations and reset rollover invalidate
 checkpoints; bounded retry never opens the gate on failure.
+
+## v5 store deltas (ownership and file safety)
+
+Recorded where the Rust SQLite store (`src/infrastructure/store/sqlite/`)
+implements the ownership rules above differently from the v4 reference.
+
+- Configuration is `SqliteStoreConfig { db_path, owner_lock_dir }`;
+  `owner_lock_dir` carries the `DB_OWNER_LOCK_DIR` contract. There is no
+  fallback lock location.
+- Every configured path must be absolute, free of `..`, and contain no
+  symbolic link in any component. v4 tolerated Darwin's `/var` alias; v5
+  requires the canonical path (`/private/var/...`). Components are checked,
+  then the final directory/file is opened `O_NOFOLLOW`; intermediate
+  directories remain raceable by a same-UID actor (the stated threat boundary).
+- Stricter than v4: the database's directory must be owned by the process
+  user with no group/other bits (0700 or stricter), and an existing database
+  file must be owned by the user with mode 0600 or stricter. v4 created
+  missing parents and did not check them.
+- Unchanged from v4: the lock directory must be a user-owned directory with
+  mode exactly 0700; lockfiles are `kanade-{dev:x}-{ino:x}.lock`, opened
+  `O_NOFOLLOW|O_CLOEXEC`, must be regular, user-owned, mode exactly 0600 with
+  one link, and are never truncated or removed. The database file is opened
+  (created 0600 if absent) and retained before the lock is taken; a
+  process-local `(dev, inode)` registry refuses a second owner in-process.
+- The retained identity is re-checked before every write transaction
+  (schedule commits, journal writes, migrations) rather than on every cursor
+  operation, again after a replacement write connection is opened, and before
+  and after a backup's `VACUUM INTO`. The path's own directory entry must be
+  the retained file: a symlink, even to the owned inode, fails the check. A mismatch refuses the write: `SqliteStoreError::IdentityChanged`
+  at the store level, surfaced through the domain ports as their `Backend`
+  error ("... was moved or replaced after opening; writes are refused").
+- Fork handling is not ported: v5 never forks, and every ownership descriptor
+  is `O_CLOEXEC`. `:memory:` stores are not supported by the SQLite store.
+- The lockfile is opened by path inside the checked lock directory, not
+  anchored to the directory descriptor through an `openat` chain as v4 did;
+  the directory's identity is compared before and after, which is weaker than
+  v4 but within the same-UID boundary. Lockfile names format `st_dev` as the
+  unsigned value std reports (on macOS `dev_t` is signed in C; names stay
+  stable per device either way).
+- A failed acquisition (unsafe lock directory, already owned) may leave an
+  empty 0600 database file it created, as v4 did.
+- `Backend` errors from the domain ports may include filesystem paths and
+  SQLite messages; they are for logs and operators, never echoed to Discord
+  users or API clients.
+- Opening runs in its own task, so a cancelled caller cannot release
+  ownership before the SQLite connections close.
+- A failed restore removes what it published only while the database path
+  still names the owned inode; an unknown replacement and its sidecars are
+  never unlinked.
+- Authorizer: not installed. sqlx 0.8.6 exposes no authorizer hook, and
+  `sqlite3_set_authorizer` would need `unsafe` FFI to `libsqlite3-sys`.
+  Extension loading stays disabled (pinned by a test); `ATTACH` and write
+  PRAGMAs are not blocked at the SQLite level. The store executes only fixed
+  internal SQL. This remains a gap against "Install the deny-by-default
+  bootstrap authorizer", accepted for now with a release gate: before any
+  caller-influenced SQL path lands (admin raw SQL, the recorder API, or
+  anything executing non-constant SQL), the deny-by-default authorizer must be
+  installed (a small audited `unsafe` FFI through `libsqlite3-sys` is then
+  acceptable), with statement caching disabled for it as "Admission and
+  state" requires.
+- Restore stages the backup copy beside the database, takes ownership of the
+  staged inode before validation, and publishes it with a hard link, so the
+  owned inode is the one that appears at `db_path`. It runs as its own task:
+  a cancelled caller leaves no staging and nothing published unless
+  publication already happened (then the validated database stays and the
+  task closes the store). Only process death mid-restore can leave the
+  hidden staging directory.
