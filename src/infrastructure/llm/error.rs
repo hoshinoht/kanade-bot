@@ -9,7 +9,11 @@ pub enum ErrorCode {
     ProviderAuthentication,
     InvalidOutput,
     ModelMismatch,
+    /// Cut off by length or an unknown finish reason.
     Incomplete,
+    /// The provider's content filter blocked the reply (user decision: kept apart
+    /// from a length cut-off). Permanent for that request; the backend is healthy.
+    ContentFiltered,
     /// The model's capabilities cannot honour a requested feature; nothing was sent.
     UnsupportedCapability,
     /// Gateway admission turned the request away (no work ran).

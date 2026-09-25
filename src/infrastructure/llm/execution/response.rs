@@ -72,7 +72,10 @@ pub(super) fn validate_response(
         "aggregate",
     )?;
     match &response.finish_reason {
-        FinishReason::Other(_) | FinishReason::Length | FinishReason::ContentFilter => {
+        FinishReason::ContentFilter => {
+            return Err(LlmError::new(ErrorCode::ContentFiltered, "content-filter"));
+        }
+        FinishReason::Other(_) | FinishReason::Length => {
             return Err(LlmError::new(ErrorCode::Incomplete, "finish"));
         }
         FinishReason::Stop | FinishReason::ToolCalls => {}

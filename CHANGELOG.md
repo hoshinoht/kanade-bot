@@ -101,6 +101,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   up with a single probe. Model calls go through it: a chat question holds one slot for
   all its tool rounds with a request cap of rounds + 1, gateway admission refusals are
   requeued once after Retry-After, a 504 ends the question, and retries need budget.
+  Nudge rewrites get their own session that never waits and sends one request, and a
+  content-filter stop is reported apart from a length cut-off (logged as
+  `content_blocked` by extraction).
 - v5: model requests match the real Kanata gateway contract: its published per-model
   admission limits are read and checked against the limiter's permits, request values
   are validated locally (so a bad value never marks a model unsupported), Kanata's

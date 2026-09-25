@@ -98,6 +98,26 @@ impl fmt::Display for SessionError {
 
 impl std::error::Error for SessionError {}
 
+impl SessionError {
+    /// Fixing it needs an operator or a code change (role unset or ungrouped,
+    /// route guard, key or capability mismatch, invalid request); anything else
+    /// is "unavailable now" and may succeed later.
+    pub fn is_misconfiguration(&self) -> bool {
+        match &self.failure {
+            SessionFailure::Refused(refused) => refused.is_misconfiguration(),
+            SessionFailure::Model(error) => matches!(
+                error.code,
+                ErrorCode::RequestInvalid
+                    | ErrorCode::UnsupportedCapability
+                    | ErrorCode::ProviderAuthentication
+                    | ErrorCode::KeyExpired
+                    | ErrorCode::ModelMismatch
+            ),
+            _ => false,
+        }
+    }
+}
+
 fn refunded(failure: SessionFailure) -> SessionError {
     SessionError {
         failure,
@@ -251,6 +271,50 @@ impl<P: LlmProvider> ModelClient<P> {
         })
     }
 
+    /// A one-line persona rewrite (nudges): never waits. The `rewrite` role's
+    /// permit comes from `try_acquire` and the rate token from
+    /// `try_begin_request`, so a busy group, open breaker or empty bucket is
+    /// refused at once with nothing sent. Exactly one `complete` sending exactly
+    /// one request: no transport retry, reshape, requeue or answer retry.
+    /// `timeout` bounds that request.
+    pub fn open_rewrite(
+        &self,
+        who: impl Into<String>,
+        timeout: Duration,
+    ) -> Result<Session<'_, P>, SessionError> {
+        if !valid_timeout(timeout) {
+            return Err(invalid("invalid-rewrite-timeout"));
+        }
+        let who = who.into();
+        let permit = self
+            .governor
+            .try_acquire(Role::Rewrite, CallKind::Rewrite, who.clone())
+            .map_err(|refused| refunded(SessionFailure::Refused(refused)))?;
+        Ok(Session {
+            client: self,
+            permit: Some(permit),
+            role: Role::Rewrite,
+            ticket: Ticket {
+                // Never queued: requeues are disabled below.
+                priority: Priority::FollowUp,
+                kind: CallKind::Rewrite,
+                who,
+            },
+            deadline: Instant::now() + timeout,
+            max_requests: 1,
+            used: 0,
+            requeues_left: 0,
+            question: false,
+            clean_used: false,
+            completed: false,
+            answered: false,
+            // No answer retry, so no request is held in reserve for one.
+            answer_retry_used: true,
+            ended: false,
+            id: self.next_id(CallKind::Rewrite),
+        })
+    }
+
     async fn acquire(
         &self,
         role: Role,
@@ -313,7 +377,8 @@ impl<P: LlmProvider> Session<'_, P> {
     }
 
     pub fn requeued(&self) -> bool {
-        self.requeues_left == 0
+        // Rewrite sessions start with no requeue to spend.
+        self.requeues_left == 0 && self.role != Role::Rewrite
     }
 
     /// No further request may be sent.

@@ -630,3 +630,34 @@ async fn a_gateway_breaker_cooldown_keeps_ours_open_at_least_as_long() {
     tokio::time::sleep(Duration::from_secs(21)).await;
     assert_eq!(snap(&governor).breaker.state, BreakerState::HalfOpen);
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_content_filter_is_charged_healthy_and_leaves_the_question_open() {
+    let governor = build(&config(10));
+    let filtered = || {
+        FakeAction::Response(CompletionResponse {
+            model: ALIAS.into(),
+            content: None,
+            tool_calls: Vec::new(),
+            finish_reason: FinishReason::ContentFilter,
+            usage: None,
+        })
+    };
+    let (provider, client) = setup(governor.clone(), (0..6).map(|_| filtered()));
+    let mut question = client
+        .open_question("member", false, rounds(8))
+        .await
+        .unwrap();
+    for _ in 0..6 {
+        let error = question.complete(&request()).await.unwrap_err();
+        assert_eq!(model(&error), ErrorCode::ContentFiltered);
+        assert_eq!(error.charge, Charge::Charged);
+    }
+    assert!(!question.is_ended(), "the caller decides on a clean retry");
+    assert_eq!(provider.requests().len(), 6, "never retried");
+    let snapshot = snap(&governor);
+    assert_eq!(snapshot.breaker.state, BreakerState::Closed);
+    assert_eq!(snapshot.breaker.failures, 0);
+    assert_eq!(snapshot.counters.transient_failures, 0);
+    assert_eq!(snapshot.counters.retries, 0);
+}

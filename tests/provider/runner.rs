@@ -212,6 +212,32 @@ async fn request_content_bytes_change_the_reservation() {
     assert!(provider.requests().is_empty());
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_content_filter_is_told_apart_from_a_length_cut_off_and_never_retried() {
+    for (finish_reason, code) in [
+        (FinishReason::ContentFilter, ErrorCode::ContentFiltered),
+        (FinishReason::Length, ErrorCode::Incomplete),
+        (FinishReason::Other("weird".into()), ErrorCode::Incomplete),
+    ] {
+        let cut = CompletionResponse {
+            content: None,
+            tool_calls: Vec::new(),
+            finish_reason: finish_reason.clone(),
+            ..tiny_response("m")
+        };
+        let (provider, runner) = build_runner([
+            FakeAction::Response(cut),
+            FakeAction::Response(tiny_response("m")),
+        ]);
+        assert_eq!(
+            runner.complete(&tiny_request()).await.unwrap_err().code,
+            code,
+            "{finish_reason:?}"
+        );
+        assert_eq!(provider.requests().len(), 1, "{finish_reason:?}");
+    }
+}
+
 #[test]
 fn completion_runner_result_constructor_is_the_public_failure_boundary() {
     let provider = Arc::new(FakeProvider::new([]));

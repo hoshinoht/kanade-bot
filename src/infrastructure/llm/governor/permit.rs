@@ -50,6 +50,17 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
+impl Refused {
+    /// Configuration or caller errors that no amount of waiting clears; the
+    /// rest mean "unavailable now".
+    pub fn is_misconfiguration(&self) -> bool {
+        matches!(
+            self,
+            Self::UnknownRole | Self::Ungrouped | Self::ExternalForbidden | Self::MustNotWait
+        )
+    }
+}
+
 /// A queued request for a permit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ticket {

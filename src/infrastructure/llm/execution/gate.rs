@@ -108,10 +108,13 @@ impl<'a> Gate<'a> {
         let retry = retry || std::mem::take(&mut self.retry_next);
         if let Some(permit) = self.permit {
             let wait = deadline.saturating_duration_since(Instant::now());
-            let attempt = if retry {
-                permit.begin_retry(wait).await
-            } else {
-                permit.begin_request(wait).await
+            // Try-only kinds (rewrite, pre-screen) never wait for a rate token
+            // and never retry.
+            let attempt = match (self.kind.may_wait(), retry) {
+                (false, false) => permit.try_begin_request(),
+                (false, true) => Err(Refused::MustNotWait),
+                (true, true) => permit.begin_retry(wait).await,
+                (true, false) => permit.begin_request(wait).await,
             }
             .map_err(Denied::Governor)?;
             self.attempt = Some(attempt);

@@ -5,6 +5,7 @@ mod pool;
 mod rate;
 mod recovery;
 mod reservation;
+mod rewrite;
 mod session;
 mod snapshot;
 mod support;
