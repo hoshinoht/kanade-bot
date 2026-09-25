@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { busyWeek } from './busy-week';
 import { ADMIN, PUBLIC, REAL_ART, expect, test } from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
@@ -156,6 +157,27 @@ for (const look of LOOKS) {
     await page.waitForTimeout(200);
     await shot(page, `admin-week-grip-focus-wide-${look.name}`);
     await crop(`admin-week-grip-focus-wide-${look.name}`);
+  });
+}
+
+// A run on every day squeezes the columns to their 230 px track: 1, 2 and 3
+// bosses beside the grip.
+for (const vp of VIEWPORTS) {
+  test(`capture admin busy week grip ${vp.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await busyWeek(page);
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('[data-run="busy-0-3"]')).toBeVisible();
+    await shot(page, `admin-week-busy-${vp.name}`);
+    const cards = page.locator('[data-run^="busy-0-"]');
+    const boxes = await cards.evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, r: r.right, b: r.bottom })));
+    const x = Math.min(...boxes.map((b) => b.x)) - 16;
+    const y = Math.min(...boxes.map((b) => b.y)) - 16;
+    await page.screenshot({
+      path: `${OUT}/admin-week-busy-grip-${vp.name}-crop.png`,
+      animations: 'disabled',
+      clip: { x, y, width: Math.max(...boxes.map((b) => b.r)) + 16 - x, height: Math.min(Math.max(...boxes.map((b) => b.b)) + 16, vp.height) - y },
+    });
   });
 }
 

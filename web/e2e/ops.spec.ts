@@ -417,6 +417,31 @@ test('limits: backends, queue, admission by kind and an allowance reset', async 
   await expect(toast(page, /window is reset/)).toBeVisible();
 });
 
+test('limits: a server without the route shows the page and says so, and stops asking', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  // Chrome logs every 4xx fetch as "Failed to load resource"; anything else is the app's.
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) errors.push(m.text());
+  });
+  let asked = 0;
+  // The Rust server's generic answer for an unmounted /api/admin path.
+  await page.route(`${ADMIN}/api/admin/limits`, (route) => {
+    asked += 1;
+    return route.fulfill({ status: 404, json: { error: 'not_found', message: 'No such endpoint on this origin.' } });
+  });
+  await go(page, '/limits');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Limits');
+  const window = page.getByRole('region', { name: 'Limits' });
+  await expect(window.getByRole('status')).toContainText("This isn't available on this server yet.");
+  await expect(window.getByRole('link', { name: 'Config → Models' })).toHaveAttribute('href', '/config?section=models');
+  await expect(page.getByText('Loading the limits…')).toHaveCount(0);
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  await page.waitForTimeout(5500);
+  expect(asked).toBe(1);
+  expect(errors).toEqual([]);
+});
+
 test('history: seeded timeline, strict revert, conflicts and force', async ({ page }) => {
   await go(page, '/history');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');

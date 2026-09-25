@@ -10,11 +10,14 @@
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
   import { Tabs, Toaster, type TabItem } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
+  import PaneWindow from '../pages/PaneWindow.svelte';
 
   let { toaster }: { toaster: Toaster } = $props();
 
   let limits = $state<Limits | null>(null);
   let error = $state('');
+  // A 404 means this server has not built the route: stop polling and say so in the window.
+  let unbuilt = $state('');
   const client = createClient();
   const poller = createPoller<Limits>({
     task: (signal) => client.get<Limits>('/api/admin/limits', { signal }),
@@ -25,9 +28,13 @@
       error = '';
     },
     onError: (e) => {
-      const unbuilt = e instanceof ApiRequestError && e.status === 404;
-      if (unbuilt) poller.stop();
-      error = unbuilt ? errorText(e) : 'Could not refresh the limits; retrying.';
+      if (e instanceof ApiRequestError && e.status === 404) {
+        poller.stop();
+        unbuilt = errorText(e);
+        error = '';
+        return;
+      }
+      error = 'Could not refresh the limits; retrying.';
     },
   });
   $effect(() => {
@@ -148,6 +155,13 @@
       {/if}
     {/snippet}
   </Tabs>
+{:else if unbuilt}
+  <PaneWindow title="Limits">
+    <div class="empty" role="status">
+      <strong>{unbuilt}</strong>
+      Model backends and their capacity are still set in <a href="/config?section=models">Config → Models</a>.
+    </div>
+  </PaneWindow>
 {:else}
   <section class="card window-fill" aria-busy="true"><div class="card__head"><h2 class="card__title">Loading the limits…</h2></div></section>
 {/if}

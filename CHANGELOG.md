@@ -294,6 +294,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, `/say`, staff-only `/nick`,
   `/debug ping|clear_test`, with v4's permissions and wording; `/bot`, `/pingtime`,
   `/debug status` and `/debug extract` are dropped in favour of the admin app.
+- v5: the week planner's cards are wide again (v4's 230px day columns) and the drag grip
+  has its own column, so it never covers a boss name or difficulty badge; the Limits page
+  says it isn't available yet instead of loading forever.
 - v5: the admin app signs in for real: it offers only the methods the server enables
   (Discord, admin token), explains each Discord refusal, returns you to the page you
   were on after a sign-out, signs out properly, hides proposal decisions for non-Discord

@@ -113,13 +113,24 @@
     --card-face: var(--raise);
   }
 
-  /* Tucked into the bottom-right corner, clear of the clock and tally above
-     and of the bosses, which keep a gutter for it. On the card's own face so
-     --dim holds its measured contrast over the entry-art veil. */
+  /* The grip owns a grid column beside the bosses, so no boss count or name
+     length can run under it; the clock and tally span the full width above.
+     On the card's own face so --dim holds its measured contrast over the
+     entry-art veil. */
+  .plan-card--movable .plan-card__open {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.3rem;
+  }
+
+  .plan-card--movable :global(.runcard__top) {
+    grid-column: 1 / -1;
+  }
+
   .plan-card__grip {
-    position: absolute;
-    right: 0.3rem;
-    bottom: 0.3rem;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+    margin: 0 -0.15rem -0.1rem 0;
     width: 0.55rem;
     height: 0.8rem;
     padding: 0.1rem;
@@ -131,8 +142,11 @@
     transition: transform 0.12s ease-out;
   }
 
-  .plan-card--movable :global(.runcard__bosses) {
-    padding-right: 0.9rem;
+  /* A token too long for its column drops its pill under the name rather than
+     losing it past the card's edge. */
+  .plan-card :global(.runcard__bosses .boss) {
+    flex-wrap: wrap;
+    row-gap: 0.1rem;
   }
 
   .plan-card--movable .plan-card__open {
@@ -198,11 +212,6 @@
     .plan-card__reread:hover {
       color: var(--accent);
       background: var(--raise);
-    }
-
-    /* The grip stays inside the open area, left of the re-read column. */
-    .plan-card--reread .plan-card__grip {
-      right: 2.8rem;
     }
   }
 
