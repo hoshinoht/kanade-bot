@@ -123,8 +123,10 @@ where
                 for card in &cards {
                     match service.reject_proposal(&card.proposal_id, &approver).await {
                         Ok(_) => rejected.push(card.proposal_id.clone()),
+                        // Member-facing refusals (e.g. an expired card) are
+                        // routine on ❌; only faults reach the admins.
                         Err(error) => {
-                            if let Failure::Private | Failure::Public { .. } = failure(&error) {
+                            if let Failure::Private = failure(&error) {
                                 self.alert_failure(&card.proposal_id, &error, now);
                             }
                         }

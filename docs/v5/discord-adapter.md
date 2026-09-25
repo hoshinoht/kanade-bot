@@ -289,7 +289,8 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
   decision 2026-09-25) for a draft conflict "That run was changed after this
   card went up, so I didn't apply it. Check the run and ask again if it
   still needs changing." Any other failure (store, retries, id reuse) raises
-  `AdminAlert::CardAnswerFailed` and posts nothing. Merge notices are
+  `AdminAlert::CardAnswerFailed` and posts nothing; on ❌, member-readable
+  refusals (e.g. an expired card) stay silent. Merge notices are
   returned (`CardReaction::notices`) for the draft-merge outbox path.
 - **Outbox** (`CardOutbox`): cards as above; link-first links as a
   journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
