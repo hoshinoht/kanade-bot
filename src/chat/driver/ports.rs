@@ -1,0 +1,121 @@
+//! What the driver needs from the model side ([`Answerer`]) and from Discord
+//! ([`Surface`]), and the plain values that cross them.
+
+use std::future::Future;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
+use chrono_tz::Tz;
+
+use crate::chat::answer::{Generation, Question};
+use crate::chat::context::QuestionMessage;
+use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
+use crate::chat::persona::CompiledPersona;
+use crate::chat::pilot::StormAlert;
+use crate::domain::members::{Directory, MemberProfile};
+use crate::domain::model_log::ChatInteraction;
+use crate::infrastructure::llm::Effort;
+
+/// One member message as the adapter hands it over.
+#[derive(Clone)]
+pub struct Asked {
+    pub message: QuestionMessage,
+    /// Where it was posted (a thread's own id): the reply goes here.
+    pub channel_id: String,
+    /// A thread's parent, else `channel_id`: the queue, history and cards key.
+    pub origin_id: String,
+    /// The gate's view: resolved author roles, mentions and channel.
+    pub gate: IncomingMessage,
+    pub replied_author_id: Option<String>,
+    pub bot_user_id: Option<String>,
+    /// Staff: exempt from the role gate and both allowances.
+    pub is_admin: bool,
+}
+
+/// Live settings read for every message.
+#[derive(Clone, Debug)]
+pub struct Setup {
+    /// `chatbot.enabled`.
+    pub enabled: bool,
+    /// A chat model route and an active persona exist.
+    pub ready: bool,
+    pub pilot: PilotSettings,
+    pub member_rate: (usize, f64),
+    pub pool_rate: (usize, f64),
+    /// The chat alias for rate-limited rows; `""` when unrouted.
+    pub model: String,
+    pub now: DateTime<Utc>,
+}
+
+/// Everything one question needs besides the pilot, read when it starts.
+pub struct Prepared {
+    pub persona: CompiledPersona,
+    /// Changes when the persona's identity does (history is then forgotten).
+    pub persona_key: String,
+    pub directory: Arc<dyn Directory + Send + Sync>,
+    /// The member rows the directory was built from (tools, identity).
+    pub members: Vec<MemberProfile>,
+    pub pilot: PilotSettings,
+    pub model: String,
+    pub reasoning: Option<Effort>,
+    /// The question's single wall-clock reading.
+    pub now: DateTime<Utc>,
+    pub zone: Tz,
+    pub reset: (Weekday, NaiveTime),
+    pub bot_names: Vec<String>,
+}
+
+/// One question for the model side.
+pub struct Job<'a> {
+    pub prepared: &'a Prepared,
+    pub asked: &'a Asked,
+    pub question: Question<'a>,
+    /// Set when the question was deleted: post nothing more for it.
+    pub cancelled: &'a Arc<AtomicBool>,
+}
+
+/// The model, persona, store and card side of a question.
+pub trait Answerer: Send + Sync + 'static {
+    fn setup(&self) -> Setup;
+
+    /// Channels and threads for the gate's category check.
+    fn channels(&self) -> &(dyn ChannelDirectory + Send + Sync);
+
+    /// `None` when chat cannot answer now (no persona or model route).
+    fn prepare(&self, asked: &Asked) -> impl Future<Output = Option<Prepared>> + Send;
+
+    /// Never fails: failures come back in the generation.
+    fn answer(&self, job: Job<'_>) -> impl Future<Output = Generation> + Send;
+
+    /// Persist one chat-log row.
+    fn record(&self, row: ChatInteraction) -> impl Future<Output = ()> + Send;
+
+    fn storm(&self, alert: &StormAlert);
+}
+
+/// Reactions and replies on the asking message. Replies are outside the
+/// delivery journal: an ambiguous send is never retried.
+pub trait Surface: Send + Sync + 'static {
+    fn react(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> impl Future<Output = ()> + Send;
+
+    fn unreact(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> impl Future<Output = ()> + Send;
+
+    /// Reply to `reply_to`, pinging nobody; the posted message's id.
+    fn reply(
+        &self,
+        channel_id: &str,
+        reply_to: &str,
+        text: &str,
+    ) -> impl Future<Output = Result<String, String>> + Send;
+}

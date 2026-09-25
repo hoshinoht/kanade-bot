@@ -7,7 +7,10 @@ use std::sync::Arc;
 use crate::{
     api::state::ApiState,
     bot::{
-        commands::{CommandContext, Dispatcher, DuplicateCommand, MemberRows, register_retained},
+        commands::{
+            ChatAllowance, CommandContext, Dispatcher, DuplicateCommand, MemberRows,
+            register_retained,
+        },
         guild_cache::GuildCache,
         handler::CommandsFn,
     },
@@ -39,7 +42,10 @@ impl<T: GatewayTransport> Commands<T> {
             access: Arc::clone(&state.access),
             personas: state.personas.clone(),
             rescans: None,
-            allowance: None,
+            allowance: state
+                .chat
+                .clone()
+                .map(|chat| chat as Arc<dyn ChatAllowance>),
             debug_cards: None,
             bot_name,
             clock: Arc::clone(&state.clock),

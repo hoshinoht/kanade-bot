@@ -10,6 +10,7 @@ use crate::{
         events::DroppedEvents,
         gateway::{Connection, ConnectionStatus},
     },
+    chat::driver::ChatHandle,
     infrastructure::store::SqliteStore,
     runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe},
 };
@@ -25,6 +26,7 @@ pub struct LiveHealth {
     store: Arc<SqliteStore>,
     gateway: Option<GatewayProbe>,
     tick: Option<Arc<TickStatus>>,
+    chat: Arc<ChatHandle>,
 }
 
 impl LiveHealth {
@@ -33,7 +35,13 @@ impl LiveHealth {
             store,
             gateway: None,
             tick: None,
+            chat: Arc::default(),
         }
+    }
+
+    /// Filled once serve starts chat; shared with the API and `/limits`.
+    pub fn chat(&self) -> Arc<ChatHandle> {
+        Arc::clone(&self.chat)
     }
 
     pub fn with_discord(mut self, gateway: GatewayProbe, tick: Arc<TickStatus>) -> Self {
@@ -87,6 +95,7 @@ impl HealthProbe for LiveHealth {
                 discord,
                 dropped_events,
                 last_tick_age_seconds,
+                chat: Some(self.chat.status()),
             }
         })
     }

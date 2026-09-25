@@ -1,12 +1,14 @@
 //! The Discord side of live serve: one gateway session for the configured
 //! guild, the roster task, the reaction worker and the delivery tick, all
 //! sharing one `GuildCache`, one `LiveRoster` and the API's store, sessions
-//! and access policy. Chat and extraction are not wired (messages are only
-//! counted).
+//! and access policy, plus the chat pilot (`super::chat`). Extraction is not
+//! wired.
 //!
 //! Shutdown order: gateway close (then its spawned interaction and
-//! registration tasks) → roster and reaction workers drain → the running
-//! tick finishes → (caller) HTTP drain → store close.
+//! registration tasks) → chat stops (waiting questions refunded, running
+//! ones finish within the grace or are cut, each concluded) → roster and
+//! reaction workers drain → the running tick finishes → (caller) HTTP drain
+//! → store close.
 
 mod late;
 mod ports;
@@ -23,12 +25,14 @@ use twilight_model::id::Id;
 
 use super::{
     api::Composition,
+    chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
+    chat_cards::ChatDesk,
     commands,
     health::GatewayProbe,
     tick::{self, TickLoop, TickStatus, delivery_config, watch_list},
 };
 use crate::{
-    api::{auth::Clock, write::ApiClock},
+    api::{admin::config::SettingsChanged, auth::Clock, state::GuildAccess, write::ApiClock},
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
         delivery::LogAlerts,
@@ -38,7 +42,8 @@ use crate::{
         handler::{Fanout, MessageCounts, Reactions},
         roster::{LiveRoster, RosterTask},
     },
-    domain::{ids::RandomIds, scheduler::SchedulerService},
+    chat::driver::DriverConfig,
+    domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
     infrastructure::store::SqliteStore,
     runtime::{config::ServeConfig, error::Error, logging},
 };
@@ -106,8 +111,40 @@ pub struct Discord {
     exit: Option<Result<RunExit, ()>>,
     pub messages: MessageCounts,
     connection: ConnectionStatus,
+    chat: Option<ChatRuntime>,
     /// Completed shutdown steps, in order.
     steps: Vec<&'static str>,
+}
+
+/// One card desk (journalled posts, ✅/❌ answers) over the shared store.
+fn card_desk<T: GatewayTransport>(
+    config: &ServeConfig,
+    store: &Arc<SqliteStore>,
+    transport: &Arc<T>,
+    clock: &Clock,
+    roster: &Arc<LiveRoster>,
+    access: &Arc<GuildAccess>,
+    policy: &SchedulePolicy,
+) -> ChatDesk<T> {
+    CardDesk::new(
+        DeskDeps {
+            store: Arc::clone(store),
+            transport: Arc::clone(transport),
+            ids: RandomIds,
+            clock: Arc::new(ApiClock(Arc::clone(clock))),
+            directory: roster.clone(),
+            authority: Arc::new(StaffAuthority {
+                roster: Arc::clone(roster),
+                access: Arc::clone(access),
+            }),
+            alerts: Arc::new(LogAlerts),
+        },
+        CardSettings {
+            zone: config.runtime.timezone,
+            policy: policy.clone(),
+            instance_id: config.instance_id.clone(),
+        },
+    )
 }
 
 /// Recover the delivery journal, then start everything. Nothing connects
@@ -154,26 +191,11 @@ where
         stopped.clone(),
     );
 
-    let alerts = Arc::new(LogAlerts);
-    let desk = CardDesk::new(
-        DeskDeps {
-            store: Arc::clone(&store),
-            transport: Arc::clone(&wiring.transport),
-            ids: RandomIds,
-            clock: Arc::new(ApiClock(Arc::clone(&wiring.clock))),
-            directory: roster.clone(),
-            authority: Arc::new(StaffAuthority {
-                roster: Arc::clone(&roster),
-                access: Arc::clone(&access),
-            }),
-            alerts,
-        },
-        CardSettings {
-            zone: config.runtime.timezone,
-            policy: policy.clone(),
-            instance_id: config.instance_id.clone(),
-        },
-    );
+    let (transport, clock) = (&wiring.transport, &wiring.clock);
+    let new_desk = || card_desk(config, &store, transport, clock, &roster, &access, &policy);
+    // Chat posts its cards through its own desk; ✅/❌ reach them through
+    // the reaction worker's, which reads the same stored cards.
+    let (desk, chat_desk) = (new_desk(), new_desk());
     let rsvp = ReactionRouter::new(
         StoreIndex(Arc::clone(&store)),
         SchedulerService::new(
@@ -206,6 +228,7 @@ where
     )?;
     let ready_transport = Arc::clone(&wiring.transport);
     let owner_access = Arc::clone(&access);
+    let chat_roster = Arc::clone(&roster);
     let mut handler = Fanout::new(
         scope.guild_id,
         Arc::clone(&wiring.transport),
@@ -218,6 +241,28 @@ where
         guild_ready,
     );
     let messages = handler.messages.clone();
+    let (feed, chat) = chat::start(ChatInputs {
+        config: DriverConfig::default(),
+        answerer: ServeAnswerer {
+            store: Arc::clone(&store),
+            models: composition.models.clone(),
+            personas: Arc::clone(&composition.personas),
+            settings: settings_changes(composition),
+            cache: Arc::clone(&cache),
+            catalog: Arc::clone(&composition.admin.state.catalog),
+            policy: composition.admin.state.policy.clone(),
+            guild_id: config.guild.guild_id.to_string(),
+            pilot_role: access.pilot_role.clone(),
+            clock: Arc::clone(&wiring.clock),
+            desk: Arc::new(chat_desk),
+        },
+        transport: Arc::clone(&wiring.transport),
+        handle: composition.admin.state.chat.clone(),
+        roster: chat_roster,
+        access: Arc::clone(&access),
+    })
+    .await?;
+    handler.chat = Some(feed);
 
     let workers = vec![
         tokio::spawn(roster_task.run(roster_queue)),
@@ -250,8 +295,25 @@ where
         exit: None,
         messages,
         connection: probe.connection,
+        chat: Some(chat),
         steps: Vec::new(),
     })
+}
+
+/// Live settings for chat: the config desk's changes, else the startup values.
+fn settings_changes(composition: &Composition) -> watch::Receiver<SettingsChanged> {
+    match &composition.admin.state.config {
+        Some(desk) => desk.subscribe(),
+        None => {
+            watch::channel(SettingsChanged {
+                revision: 0,
+                section: None,
+                actor: None,
+                settings: Arc::new(composition.settings.clone()),
+            })
+            .1
+        }
+    }
 }
 
 fn gateway_error(error: GatewayError) {
@@ -318,6 +380,12 @@ impl Discord {
                 "gateway_closed",
                 json!({"exit": format!("{:?}", self.exit)}),
             );
+        }
+        // No message can reach chat any more; its cards and replies go out
+        // before the workers stop.
+        if let Some(mut chat) = self.chat.take() {
+            chat.stop().await;
+            logging::event("INFO", "chat_stopped", json!({}));
         }
         // The handler (and so every queue sender) is gone: workers drain.
         self.stop_workers.send_replace(true);

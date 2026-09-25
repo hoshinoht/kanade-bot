@@ -383,16 +383,18 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
 tick, and a `ConnectionStatus` for health; `handler::Fanout` (the
 `EventHandler`) sends roster jobs to `roster::RosterTask`, RSVP reactions to
 `handler::Reactions` (card ✅/❌ → `CardDesk::on_reaction`, else the
-`ReactionRouter`), spawns interaction and command-registration tasks, and
-counts message events. `roster::reconcile` pages `list_members` and diffs it
+`ReactionRouter`), spawns interaction and command-registration tasks, offers created messages
+to the chat pilot (`chat_feed::ChatFeed`: resolved roles, mentions and the
+replied-to message, nothing fetched; deletions cancel) and counts message
+events. `roster::reconcile` pages `list_members` and diffs it
 against the stored rows (`Seen` for changed members, `Left` for rows still
 holding a role, roles or Administrator); `roster::LiveRoster` is the
 in-memory member snapshot (`Directory`) the tick and cards read.
 `delivery::LogAlerts` is the beta alert destination (structured log).
 Commands: `runtime::serve::commands` builds a `CommandContext` from the
 API's own store, writer, policy, catalog, personas, access and clock (the
-gateway cache as `GuildChannels`, the bot's name from `READY`; rescans,
-allowance and test cards `None`) and `register_retained`; the dispatcher is
+gateway cache as `GuildChannels`, the bot's name from `READY`; rescans and
+test cards `None`, `/limits` reads the chat pilot's allowance) and `register_retained`; the dispatcher is
 built on the first `READY` and every guild-registered command and
 autocomplete goes through `commands::spawn_interaction`.
 
@@ -400,7 +402,7 @@ autocomplete goes through `commands::spawn_interaction`.
 
 Opposite-reaction removal and decline notices (chat answers apply without
 them); card portraits/artwork; withdrawing a card whose message was deleted;
-converting `BotEvent::Message*` into the extraction/chat inputs and the
+converting `BotEvent::Message*` into the extraction input and the
 rescan `History` over `channel_messages`; attachments; an admin-alert
 destination beyond the log; an
 authenticated gateway/TLS smoke test against Discord (L1, run by hand).

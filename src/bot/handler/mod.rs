@@ -1,6 +1,6 @@
 //! The serve [`EventHandler`]: fans routed events out to the roster task,
-//! the reaction worker, spawned interaction and registration tasks, and
-//! message counters. It never awaits Discord I/O inline.
+//! the reaction worker, spawned interaction and registration tasks, the chat
+//! feed and message counters. It never awaits Discord I/O inline.
 
 mod reactions;
 
@@ -16,6 +16,7 @@ use twilight_model::id::{
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
 
+use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition, spawn_interaction};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::roster::RosterJob;
@@ -25,7 +26,7 @@ use crate::runtime::logging;
 
 pub use reactions::{Reacted, Reactions};
 
-/// Messages seen but not yet consumed (chat and extraction are off).
+/// Messages seen (extraction does not consume them yet).
 #[derive(Clone, Debug, Default)]
 pub struct MessageCounts(Arc<[AtomicU64; 3]>);
 
@@ -69,6 +70,8 @@ pub struct Fanout<T> {
     /// Set once the guild first became available (the tick waits for it).
     pub guild_ready: watch::Sender<bool>,
     pub messages: MessageCounts,
+    /// The chat pilot's input; `None` leaves chat off.
+    pub chat: Option<ChatFeed>,
     self_id: Option<Id<UserMarker>>,
     /// A `READY` arrived and its guild has not been synced yet.
     sync_pending: bool,
@@ -100,6 +103,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             on_ready,
             guild_ready,
             messages: MessageCounts::default(),
+            chat: None,
             self_id: None,
             sync_pending: false,
             tasks: Vec::new(),
@@ -241,12 +245,25 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                 }
             }
             BotEvent::Interaction(interaction) => self.interaction(interaction),
-            BotEvent::MessageCreated(_) => self.messages.bump(0, 1),
+            BotEvent::MessageCreated(message) => {
+                // For the extraction feed: v4 never extracts from a message
+                // the chatbot took.
+                let _handled_by_chat = self
+                    .chat
+                    .as_ref()
+                    .is_some_and(|chat| chat.message(&message, self.self_id));
+                self.messages.bump(0, 1);
+            }
             BotEvent::MessageUpdated(_) => self.messages.bump(1, 1),
-            BotEvent::MessagesDeleted(deleted) => self.messages.bump(
-                2,
-                u64::try_from(deleted.message_ids.len()).unwrap_or(u64::MAX),
-            ),
+            BotEvent::MessagesDeleted(deleted) => {
+                if let Some(chat) = &self.chat {
+                    chat.deleted(&deleted);
+                }
+                self.messages.bump(
+                    2,
+                    u64::try_from(deleted.message_ids.len()).unwrap_or(u64::MAX),
+                );
+            }
         }
     }
 }

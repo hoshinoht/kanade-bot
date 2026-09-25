@@ -5,7 +5,7 @@ Status: `src/chat/context/` and `src/chat/answer/` (slice C2). v4 reference:
 `_loop`/`_chat`/`_budgeted_messages`). Gate, tools and reply hygiene are C1
 (`src/chat/{gate,authority,tools,sanitize}`); the pre-screen, pollution
 containment, persona-voiced failure lines, queueing and allowance refunds
-are C3. Discord wiring is later.
+are C3. Serve wiring is `chat::driver` (below).
 
 ## Context (`chat::context`)
 
@@ -162,6 +162,23 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   - the configured question timeout stays below `per_member_s` (600 s), or
     `prune` can drop a live reservation;
   - call `reload_withheld` before admitting any question.
+
+  Serve wires it in `chat::driver` (`ChatDriver`, no Discord types; ports
+  `Answerer` for the model side and `Surface` for reactions and replies),
+  composed in `runtime::serve::chat`. `ChatDriver::start` validates the
+  timeout and reloads withheld ids before the driver exists. `offer` gates
+  (the live `Setup`), then `Traffic::admit`s: answer now, queue (keycap
+  position reaction) or shed (💬, refund); a spent budget gets ⏳, the
+  limited reply and its row. A channel's worker reserves the clean retry
+  when it dequeues a question, answers, posts the reply (`reply_to`, no
+  mentions) and then `conclude`s with that reservation under the state
+  lock (`conclude` sees the already-posted result), then records the row.
+  Deleting a waiting question refunds it; deleting a running one lets it
+  finish (a dispatch is never cut) but posts nothing more and withholds the
+  question from later context. Shutdown refunds waiters, lets running
+  answers finish within a grace, then cuts the rest (refunded, concluded,
+  row `cancelled: serve shut down`). A persona identity change forgets
+  history. Proposals are recorded against the interaction id.
 - Not here: strategy prefetch and source attribution (no boss-knowledge v2
   renderer outside `api`), and a model pre-screen.
 

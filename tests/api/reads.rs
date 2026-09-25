@@ -488,6 +488,7 @@ impl Reads {
             clock: Arc::new(move || pinned),
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
             config: config.map(|make| make(store.clone())),
+            chat: None,
         };
         let mut http = fixture.http();
         if logins {

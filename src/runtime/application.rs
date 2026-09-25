@@ -84,6 +84,10 @@ pub struct Health {
     /// Live tick only: seconds since the last completed tick.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_tick_age_seconds: Option<u64>,
+    /// Live serve only: `disabled`, `idle`, `busy` or `degraded`. Never
+    /// decides `status`: chat is not essential to the process.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -115,6 +119,7 @@ impl OfflineApplication {
             discord: "unavailable",
             dropped_events: None,
             last_tick_age_seconds: None,
+            chat: None,
         }
     }
 }

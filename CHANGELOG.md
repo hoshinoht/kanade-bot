@@ -273,6 +273,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 serve runs the Kanade chatbot in every channel and thread of the chat categories: pilot-role
+  gate, queue-position reactions, allowances with refunds, replies that ping nobody, chat log
+  rows, proposal cards approved with ✅, live on/off from settings, graceful shutdown, and a
+  `chat` state in health.
 - v5 config API reports the capacity groups the bot actually runs (default `gateway` group or
   `kanade.toml` groups, with `groups_source`), checks each group against Kanata's limits, and
   no longer presents the bot's permits as the key's limit (`key_limits.max_in_flight` is null).

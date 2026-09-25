@@ -7,6 +7,7 @@
 //! Discord unless a caller hands the runner a real shard.
 
 pub mod cards;
+pub mod chat_feed;
 pub mod commands;
 pub mod delivery;
 pub mod events;

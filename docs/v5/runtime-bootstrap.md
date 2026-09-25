@@ -7,7 +7,8 @@ latter as a semver version.
 ## Available now
 
 The offline development server and live `serve` (Discord gateway, roster
-sync and delivery tick for the configured guild; chat and extraction off):
+sync, delivery tick and the chat pilot for the configured guild; extraction
+off):
 
 ```sh
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
@@ -42,7 +43,11 @@ The admin listener binds `127.0.0.1:8080` by default. `GET /healthz` answers
 {other_guild, no_guild}`, and `scheduler` (`starting` until the guild is
 available and restart recovery ran, `running`, `stalled` after three tick
 periods plus five minutes without a completed tick, `stopped`) with
-`last_tick_age_seconds`. `status` is `ok` (HTTP 200) only when storage is ok,
+`last_tick_age_seconds`, and `chat` (`disabled` when `chatbot.enabled` is off
+or chat never started, `idle`, `busy` while any channel is answering,
+`degraded` when enabled but without a chat model route, an active persona,
+the pilot role or a chat category, or while the clean-retry storm guard is
+suspended; chat never decides `status`). `status` is `ok` (HTTP 200) only when storage is ok,
 Discord is `ready` and the scheduler `running`; otherwise `degraded` (503).
 With `KANADE_DISCORD_GATEWAY=0`, `scheduler`/`discord` are `disabled` and
 only storage decides.
@@ -291,8 +296,26 @@ The Discord side (`serve/discord/`) runs one gateway session for
   `GuildCache`.
 - Admin alerts go to the structured log (`admin_alert`, throttled per key
   per hour) for the beta.
-- Message events are counted only: chat and extraction stay off (S9/S10).
-  `Composition.settings.chatbot.category_ids` is the chat gate's input.
+- Chat (`runtime::serve::chat`, driver `chat::driver`, input
+  `bot::chat_feed`): a created message mentioning (or replying to) the bot in
+  any channel or thread of `chatbot.category_ids`, from a holder of
+  `KANADE_CHAT_PILOT_ROLE_ID` (staff are exempt), is answered as a reply
+  that pings nobody. `chatbot.enabled`, the categories and the allowances
+  are read live from the config desk's `SettingsChanged`; allowance
+  overrides reload on each settings change. The chat route follows the
+  model stack: an external route is refused (the fixed failure line, log
+  outcome `error`) unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` (then answered,
+  guardrail `external_unmasked`). The persona is the live snapshot with the
+  member's saved reply style. Replies are outside the delivery journal (an
+  ambiguous reply is logged, never retried); proposal cards go through a
+  card desk (journalled, ✅/❌ via the reaction worker). Withheld ids are
+  reloaded from the chat log before the first admission (a failed reload
+  fails startup); the question timeout (60 s) is validated below the
+  clean-retry window. A queued question gets its position as a keycap
+  reaction; shed, expired and deleted waiters are refunded; deleting a
+  running question lets it finish (a staged proposal is never cut) but
+  posts nothing more for it. Extraction is still off (S9); the handler
+  computes `handled_by_chat` for it.
 - A fatal close (4004: the token; 4014: enable the Server Members and
   Message Content privileged intents in the Developer Portal) is logged once
   (`gateway_closed_for_good`), stops the Discord side (workers, tick) and
@@ -303,7 +326,9 @@ The Discord side (`serve/discord/`) runs one gateway session for
   disconnected` meanwhile).
 
 Shutdown (`SIGINT`/`SIGTERM`): the gateway closes (and its spawned
-interaction/registration tasks finish), the roster and reaction workers
+interaction/registration tasks finish), chat stops (waiting questions are
+refunded, running ones get 5 s to finish and are then cut, refunded and
+concluded with a `cancelled` log row; logged `chat_stopped`), the roster and reaction workers
 drain, the running tick finishes (a tick is never cut midway), then HTTP
 drains, then the store closes (logged `store_closed`) so ownership is
 released only after SQLite closes. A startup failure after the store opened
@@ -314,7 +339,7 @@ then set `KANADE_EXPECT_V4_STOPPED=1` and start v5; to roll back, stop v5,
 set it back to `0` and `docker start kanade-bot`.
 
 Still not wired: `rescans` is `None` (`503`); the inbox's Discord card
-refresh/close; chat and extraction.
+refresh/close; extraction.
 
 ### Listeners
 

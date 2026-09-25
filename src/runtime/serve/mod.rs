@@ -3,6 +3,8 @@
 //! gateway, roster sync and delivery tick for the configured guild.
 
 pub mod api;
+pub mod chat;
+mod chat_cards;
 mod commands;
 pub mod discord;
 mod health;
@@ -111,6 +113,8 @@ where
     discord.result().and(served)
 }
 
+#[cfg(test)]
+mod chat_tests;
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]

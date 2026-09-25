@@ -468,6 +468,9 @@ pub struct ApiState {
     pub rescans: Option<Arc<super::rescan::RescanDesk>>,
     /// Runtime settings (A9); `None` answers `unavailable`.
     pub config: Option<Arc<super::admin::config::ConfigDesk>>,
+    /// The chat pilot's Limits view and status (for A8); empty until serve
+    /// starts chat.
+    pub chat: Option<Arc<crate::chat::driver::ChatHandle>>,
 }
 
 impl std::fmt::Debug for ApiState {

@@ -173,6 +173,7 @@ pub async fn compose(
         clock,
         rescans: None,
         config: Some(Arc::new(desk)),
+        chat: Some(health.chat()),
     };
     Ok(Composition {
         admin: LiveAdmin {
