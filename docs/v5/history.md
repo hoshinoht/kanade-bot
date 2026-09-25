@@ -414,7 +414,10 @@ section; there is no UI yet.
   (re-derive its status from its answers) and `revive_run { run }` (a
   cancelled or otot run back to `planned`, answers kept; anything else
   unchanged). They were appended to the `v1`
-  codec additively; every earlier encoding is unchanged.
+  codec additively; every earlier encoding is unchanged. These four are
+  proposal-only (`DraftOp::is_proposal_only`): stored proposals, the codec
+  and replay accept them, but `add_draft_op`, `edit_draft_op` and
+  `edit_request` refuse them (`DraftError::ProposalOnlyOp(kind)`).
   `fixed_participants { fixed, add, remove }` is a party DELTA for a weekly
   timing, replayed as `schedule::apply_party_delta` (`Op::FixedParticipants`):
   it applies `remove` then `add` (no duplicates, order kept) to the timing's
@@ -843,12 +846,17 @@ enforced by the service, not the store; TTL 24 h.
   upstream removal (done/cancelled/deleted) and every other field still
   conflict, and admin drafts and requests pass no such runs. A repeated ✅
   by the same member is `AlreadyApplied`, by another `AlreadyMerged`:
-  nothing is written or posted, but the idempotent follow-ups below are
-  re-run first, so a crash between the merge and them is repaired by the
-  next ✅. The merge's summary notices (`NoticeChange::Merged`, title
+  nothing is written or posted. When the repeating member is the one who
+  merged it (the draft's `closed_by`) or an administrator, and is still
+  allowed to answer it on the current schedule, the idempotent follow-ups
+  below are re-run first, so a crash between the merge and them is
+  repaired by the next ✅; anyone else's repeat has no effect at all. The
+  merge's summary notices (`NoticeChange::Merged`, title
   `<kind> proposal`) take the draft-merge outbox path. After the commit
   nothing returns an error: sibling live proposals about the same target
-  are retired (v4 `commit`'s `supersede`, below), a new weekly timing's
+  that were created at or before the merge (the draft's merge time; never
+  newer ones, on the first run or a re-run) are retired (v4 `commit`'s
+  `supersede`, below), a new weekly timing's
   weeks are materialised (a second record, `approve:<id>:materialise`), and
   failures there are reported in `follow_up_errors`. The outcome carries
   v4's `CommitResult` facts (run, timing, created runs, old time,

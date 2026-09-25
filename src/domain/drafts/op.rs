@@ -309,6 +309,18 @@ impl DraftOp {
         }
     }
 
+    /// Only a proposal stages it (v4 `commit` semantics); administrator
+    /// drafts and requests refuse it.
+    pub fn is_proposal_only(&self) -> bool {
+        matches!(
+            self,
+            Self::SetRunBosses { .. }
+                | Self::EnsureReminders { .. }
+                | Self::RecountRun { .. }
+                | Self::ReviveRun { .. }
+        )
+    }
+
     /// Whether this operation creates the row `Target::Created` names.
     pub fn creates_row(&self) -> bool {
         matches!(self, Self::AddFixedRun(_) | Self::CreateRun { .. })

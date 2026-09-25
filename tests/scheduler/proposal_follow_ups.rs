@@ -11,7 +11,7 @@ use kanade::domain::drafts::{
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
     ProposalStore, StoredDraft, StoredProposal,
 };
-use kanade::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
+use kanade::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, ChangeRef};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
@@ -195,11 +195,14 @@ fn kl(day: u32, hour: u32) -> DateTime<FixedOffset> {
         .unwrap()
 }
 
+type Service<'a> = SchedulerService<StoreRef<'a, Flaky>, RandomIds, TestClock>;
+
 fn weekly(time: u32) -> ProposedChange {
     ProposedChange {
         channel_id: Some("222".into()),
         bosses: vec!["HKalos".into()],
-        participants: vec!["1001".into()],
+        // Names nobody: anyone with the bossing role may answer it.
+        participants: Vec::new(),
         payload: Payload::Fix {
             weekday: Some(Weekday::Tue),
             time: NaiveTime::from_hms_opt(time, 0, 0),
@@ -220,10 +223,11 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
         NaiveTime::MIN,
     );
     let store = Flaky::default();
-    let mut service = SchedulerService::new(StoreRef(&store), RandomIds, TestClock::new(kl(27, 1)));
+    let clock = TestClock::new(kl(27, 1));
+    let mut service = SchedulerService::new(StoreRef(&store), RandomIds, clock.clone());
     let mut ids = Vec::new();
-    for time in [21, 22] {
-        let proposed = service
+    let propose = async |service: &mut Service<'_>, time: u32| {
+        service
             .propose(
                 ProposalRequest {
                     change: weekly(time),
@@ -235,8 +239,12 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
                 &Guild,
             )
             .await
-            .unwrap();
-        ids.push(proposed.proposal.id);
+            .unwrap()
+            .proposal
+            .id
+    };
+    for time in [21, 22] {
+        ids.push(propose(&mut service, time).await);
     }
     let approver = Approver {
         user_id: "1001".into(),
@@ -261,9 +269,9 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
             .count()
     };
     assert_eq!(runs_of(&store).await, 0);
-    let sibling = async |store: &Flaky| {
+    let status = async |store: &Flaky, id: &str| {
         store
-            .load_proposal(&ids[1])
+            .load_proposal(id)
             .await
             .unwrap()
             .unwrap()
@@ -271,9 +279,44 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
             .draft
             .status
     };
-    assert_eq!(sibling(&store).await, DraftStatus::Submitted);
-
+    assert_eq!(status(&store, &ids[1]).await, DraftStatus::Submitted);
     store.broken.store(false, Ordering::SeqCst);
+
+    // A card proposed after the merge is not the merge's to retire.
+    clock.set(kl(27, 2));
+    let newer = propose(&mut service, 23).await;
+
+    // Someone who did not merge it (allowed to answer or not), or the
+    // merger no longer allowed to: no effect at all.
+    let before = (
+        store.load(&Scope::All).await.unwrap(),
+        store.inner.history_head().await.unwrap(),
+        store.inner.list_proposals(false).await.unwrap(),
+    );
+    for (user, has_role) in [("1002", true), ("1002", false), ("1001", false)] {
+        let refused = Approver {
+            user_id: user.into(),
+            has_role,
+            is_admin: false,
+        };
+        assert!(matches!(
+            service
+                .approve_proposal(&ids[0], &refused, &policy, &Guild)
+                .await
+                .unwrap_err(),
+            ProposalError::Draft(
+                DraftError::AlreadyMerged { .. } | DraftError::AlreadyApplied { .. }
+            )
+        ));
+        let after = (
+            store.load(&Scope::All).await.unwrap(),
+            store.inner.history_head().await.unwrap(),
+            store.inner.list_proposals(false).await.unwrap(),
+        );
+        assert_eq!(after, before, "{user} has_role {has_role}");
+    }
+
+    // The merger's repeat finishes what the crash left undone, and only that.
     assert!(matches!(
         service
             .approve_proposal(&ids[0], &approver, &policy, &Guild)
@@ -281,7 +324,8 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
             .unwrap_err(),
         ProposalError::Draft(DraftError::AlreadyApplied { seq, .. }) if seq == approved.merge.seq
     ));
-    assert_eq!(sibling(&store).await, DraftStatus::Discarded);
+    assert_eq!(status(&store, &ids[1]).await, DraftStatus::Discarded);
+    assert_eq!(status(&store, &newer).await, DraftStatus::Submitted);
     assert!(
         runs_of(&store).await > 0,
         "the new timing's weeks are materialised"

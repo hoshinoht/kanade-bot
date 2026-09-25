@@ -370,9 +370,10 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     /// A cancel/otot target and a recount apply to the run as it is at
     /// approval, whatever its status did meanwhile (v4 parity).
     ///
-    /// A repeated ✅ (`AlreadyApplied`, or `AlreadyMerged` by another member)
-    /// re-runs those idempotent follow-ups before returning the error, so a
-    /// crash right after the merge commit does not leave them undone.
+    /// A repeated ✅ (`AlreadyApplied`, or `AlreadyMerged`) by the member who
+    /// merged it or an admin, still authorised now, re-runs those idempotent
+    /// follow-ups before returning the error, so a crash right after the
+    /// merge commit does not leave them undone. Anyone else's has no effect.
     pub async fn approve_proposal(
         &mut self,
         id: &str,
@@ -399,20 +400,32 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         let Ok(subject) = subject_of(&loaded) else {
             return;
         };
-        if loaded.draft.status != DraftStatus::Merged {
+        let draft = &loaded.draft;
+        let actor = Actor::member(approver.user_id.clone());
+        // Only the merger or an admin: an old card must not let anyone
+        // retire newer proposals or write records in their name.
+        let merger = approver.is_admin || draft.closed_by.as_ref() == Some(&actor);
+        if draft.status != DraftStatus::Merged || !merger {
+            return;
+        }
+        let Ok(snapshot) = self.store.load(&Scope::All).await else {
+            return;
+        };
+        if !allowed(&subject, approver, &snapshot) {
             return;
         }
         let new_timing = loaded
             .draft_ops()
             .iter()
             .any(|op| matches!(op, DraftOp::AddFixedRun(_)));
-        let actor = Actor::member(approver.user_id.clone());
+        let merged_at = draft.updated_at;
         self.follow_ups(
             id,
             &subject,
             info.source,
             new_timing,
             &actor,
+            merged_at,
             policy,
             &mut Vec::new(),
         )
@@ -421,8 +434,10 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
 
     /// After a merge: materialise a new timing's weeks (its own record,
     /// `approve:<id>:materialise`), then retire the sibling proposals (v4
-    /// `commit`'s `supersede`). Both are idempotent. Returns the retired ids
-    /// and whether materialising succeeded; failures go to `errors`.
+    /// `commit`'s `supersede`) that were live at the merge — created at or
+    /// before `merged_at`, never newer ones. Both are idempotent. Returns
+    /// the retired ids and whether materialising succeeded; failures go to
+    /// `errors`.
     #[allow(clippy::too_many_arguments)]
     async fn follow_ups(
         &mut self,
@@ -431,6 +446,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         source: ProposalSource,
         new_timing: bool,
         actor: &Actor,
+        merged_at: DateTime<Utc>,
         policy: &SchedulePolicy,
         errors: &mut Vec<String>,
     ) -> (Vec<String>, bool) {
@@ -451,7 +467,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             from_channel: subject.channel_id.as_deref(),
             by: source,
         };
-        let superseded = match self.supersede_proposals(scope).await {
+        let superseded = match self.retire(scope, Some(merged_at)).await {
             Ok(ids) => ids,
             Err(error) => {
                 errors.push(error.to_string());
@@ -572,6 +588,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                 info.source,
                 new_timing.is_some(),
                 &actor,
+                now,
                 policy,
                 &mut follow_up_errors,
             )
@@ -629,6 +646,17 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         &mut self,
         scope: SupersedeScope<'_>,
     ) -> ProposalResult<Vec<String>> {
+        self.retire(scope, None).await
+    }
+
+    /// [`Self::supersede_proposals`], only among proposals created at or
+    /// before `live_at` when given (a merge retires what it replaced, never
+    /// what was proposed after it).
+    async fn retire(
+        &mut self,
+        scope: SupersedeScope<'_>,
+        live_at: Option<DateTime<Utc>>,
+    ) -> ProposalResult<Vec<String>> {
         let live = self.store.list_proposals(true).await?;
         let others = live.into_iter().filter_map(|stored| {
             let subject = stored
@@ -636,7 +664,9 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                 .subject
                 .as_deref()
                 .and_then(ProposalSubject::parse)?;
-            (Some(stored.draft.id.as_str()) != scope.keep).then_some((stored.draft, subject))
+            let older = live_at.is_none_or(|at| stored.draft.created_at <= at);
+            (older && Some(stored.draft.id.as_str()) != scope.keep)
+                .then_some((stored.draft, subject))
         });
         let candidates: Vec<StoredDraft> = if let Some(run_id) = scope.run_id {
             let mine: Vec<(StoredDraft, ProposalSubject)> = others

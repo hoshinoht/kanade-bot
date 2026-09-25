@@ -8,8 +8,8 @@ use std::fmt;
 use chrono::{DateTime, Utc};
 
 use super::drafts::{
-    DraftError, MergeInput, MergeOutcome, MergeWarning, check_title, is_expired, merge_request_id,
-    skipped_runs, stale_of, upstream,
+    DraftError, MergeInput, MergeOutcome, MergeWarning, check_stageable, check_title, is_expired,
+    merge_request_id, skipped_runs, stale_of, upstream,
 };
 use super::ports::{Clock, IdSource, ScheduleStore, Scope};
 use super::service::{SchedulerService, digest};
@@ -360,6 +360,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> RequestResult<LoadedDraft> {
         self.check_policy(policy)?;
         require_admin(actor)?;
+        check_stageable(&ops)?;
         let now = self.clock.now();
         let loaded = load_request(&self.store, id).await?;
         require_submitted(&loaded, expected_version)?;

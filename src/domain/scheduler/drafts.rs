@@ -99,6 +99,8 @@ pub enum DraftError {
     Expired,
     /// A request's requester may no longer have it merged.
     RequesterUnauthorised,
+    /// The operation (its codec kind) exists only for proposals.
+    ProposalOnlyOp(&'static str),
 }
 
 impl From<ScheduleError> for DraftError {
@@ -157,6 +159,9 @@ impl fmt::Display for DraftError {
             Self::RequestDraft => f.write_str("member requests merge through approval, not here"),
             Self::Expired => f.write_str("the draft's boss week has passed"),
             Self::RequesterUnauthorised => f.write_str("the requester may not make this request"),
+            Self::ProposalOnlyOp(kind) => {
+                write!(f, "`{kind}` is staged only by extractor and chat proposals")
+            }
         }
     }
 }
@@ -390,6 +395,14 @@ pub(super) fn check_title(title: &str) -> DraftResult<()> {
     }
 }
 
+/// Administrator drafts and requests may not stage proposal-only operations.
+pub(super) fn check_stageable(ops: &[DraftOp]) -> DraftResult<()> {
+    match ops.iter().find(|op| op.is_proposal_only()) {
+        Some(op) => Err(DraftError::ProposalOnlyOp(op.kind())),
+        None => Ok(()),
+    }
+}
+
 /// The later operation needing the row `Target::Created(ord)` names, if any.
 fn needed_by(ops: &[DraftOp], ord: usize) -> Option<usize> {
     ops.iter()
@@ -465,6 +478,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         directory: &(dyn Directory + Sync),
     ) -> DraftResult<LoadedDraft> {
         self.check_policy(policy)?;
+        check_stageable(std::slice::from_ref(&op))?;
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
@@ -516,6 +530,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         directory: &(dyn Directory + Sync),
     ) -> DraftResult<LoadedDraft> {
         self.check_policy(policy)?;
+        check_stageable(std::slice::from_ref(&op))?;
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         if ord >= loaded.ops.len() {

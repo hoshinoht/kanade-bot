@@ -710,6 +710,35 @@ async fn a_proposed_move_revives_a_cancelled_or_otot_run() {
 }
 
 #[tokio::test]
+async fn in_v5_a_revived_run_is_rederived_unpinned_or_kept_once_started() {
+    // A future slot re-derives from answers (1003's ❌ makes it at risk); a
+    // slot already started is frozen at the revived `planned`.
+    for (to, want) in [
+        (kl(9, 1, 21, 30), RunStatus::AtRisk),
+        (kl(8, 27, 0, 30), RunStatus::Planned),
+    ] {
+        let mut f = fixture(AttendancePolicy::V5).await;
+        let run = f.run.clone();
+        f.react(&run, "1003", "\u{274c}").await;
+        f.hand_set(&run, RunStatus::Confirmed).await;
+        f.hand_set(&run, RunStatus::Cancelled).await;
+        let id = f
+            .propose(ProposedChange {
+                new_datetime: Some(utc(to)),
+                ..ProposedChange {
+                    kind: ChangeKind::Move,
+                    ..cancel(&run, "222")
+                }
+            })
+            .await;
+        f.approve(&id, &member("1002")).await.unwrap();
+        let state = snapshot(&f.service).await;
+        let row = state.runs.iter().find(|row| row.id == run).unwrap();
+        assert_eq!((row.status, row.status_pin), (want, None), "{to}");
+    }
+}
+
+#[tokio::test]
 async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();
@@ -721,6 +750,129 @@ async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
         .await
         .unwrap();
     assert_eq!(f.run_status(&run).await, RunStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn a_repeated_approval_never_retires_a_newer_sibling() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.approve(&id, &member("1001")).await.unwrap();
+    f.clock.set(kl(8, 27, 2, 0));
+    let newer = f
+        .propose_from(
+            answer(&run, "1002", RsvpState::Yes),
+            ProposalSource::Extraction,
+            Supersede::Keep,
+        )
+        .await
+        .unwrap();
+    // The merger (still on the run) and another participant both repeat ✅.
+    for approver in [member("1001"), member("1002")] {
+        assert!(matches!(
+            f.approve(&id, &approver).await.unwrap_err(),
+            ProposalError::Draft(
+                DraftError::AlreadyApplied { .. } | DraftError::AlreadyMerged { .. }
+            )
+        ));
+        assert_eq!(f.status(&newer).await, DraftStatus::Submitted);
+    }
+}
+
+#[tokio::test]
+async fn drafts_and_requests_refuse_proposal_only_operations() {
+    use kanade::domain::drafts::{DraftOp, Target};
+
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = Target::Existing(f.run.clone());
+    let internal = [
+        DraftOp::SetRunBosses {
+            run: run.clone(),
+            bosses: vec!["HFA".into()],
+        },
+        DraftOp::EnsureReminders { run: run.clone() },
+        DraftOp::RecountRun { run: run.clone() },
+        DraftOp::ReviveRun { run: run.clone() },
+    ];
+    let policy = f.policy.clone();
+    let draft = f.service.create_draft("root", "tidy", None).await.unwrap();
+    for op in &internal {
+        assert_eq!(
+            f.service
+                .add_draft_op(
+                    "root",
+                    &draft.id,
+                    draft.version,
+                    op.clone(),
+                    &policy,
+                    &Guild
+                )
+                .await
+                .unwrap_err(),
+            DraftError::ProposalOnlyOp(op.kind())
+        );
+    }
+    let staged = f
+        .service
+        .add_draft_op(
+            "root",
+            &draft.id,
+            draft.version,
+            DraftOp::SetStatus {
+                run: run.clone(),
+                change: StatusChange {
+                    status: RunStatus::Otot,
+                    announce: false,
+                    via_portal: true,
+                },
+            },
+            &policy,
+            &Guild,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.service
+            .edit_draft_op(
+                "root",
+                &draft.id,
+                staged.draft.version,
+                0,
+                internal[3].clone(),
+                &policy,
+                &Guild
+            )
+            .await
+            .unwrap_err(),
+        DraftError::ProposalOnlyOp("revive_run")
+    );
+    let request = f
+        .service
+        .submit_request(
+            "1004",
+            "please",
+            RequestSpec::Join(Subject::Run(f.run.clone())),
+            None,
+            &policy,
+            &Guild,
+            &NoFreezes,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.service
+            .edit_request(
+                &Actor::admin("root"),
+                &request.id,
+                request.version,
+                vec![internal[1].clone()],
+                &policy,
+                &Guild,
+            )
+            .await
+            .unwrap_err(),
+        RequestError::Draft(DraftError::ProposalOnlyOp("ensure_reminders"))
+    ));
 }
 
 #[tokio::test]
