@@ -212,8 +212,8 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
             "{text}"
         );
     }
-    // The tracked Kanade bundle carries a nudge_rewrite; its approved general
-    // pools also serve request-form tips, before any built-in line.
+    // The tracked Kanade bundle carries a nudge_rewrite and its own
+    // request-form pools, so "fix it yourself" lines never front a request.
     let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
     let compiled = CompiledPersona::compile(&kanade, None);
@@ -238,5 +238,12 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
     for mood in MOODS {
         let request = compiled.nudge_seeds(NudgePurpose::RequestForm, mood);
         assert_eq!(request.source, NudgeSource::Bundle);
+        let general = compiled.nudge_seeds(NudgePurpose::SelfService, mood);
+        assert!(
+            request
+                .lines
+                .iter()
+                .all(|line| !general.lines.contains(line))
+        );
     }
 }
