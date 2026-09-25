@@ -171,13 +171,15 @@ where
             // Only the pieces turned away are read again.
             let mut pending = group.clone();
             for _ in 0..TURNED_AWAY_ATTEMPTS {
+                // Taken before the check so a switch-off between the two
+                // still cuts the wait below.
+                let mark = self.extractor.cut_mark();
                 // Cooperative: a call in flight finishes, the next never starts.
                 if self.stopped() {
                     cancelled = true;
                     break 'groups;
                 }
                 // A breaker wait can be long; shutdown or a switch-off cuts it.
-                let mark = self.extractor.cut_mark();
                 tokio::select! {
                     biased;
                     _ = self.extractor.cut(mark) => {}

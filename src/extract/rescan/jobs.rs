@@ -318,6 +318,9 @@ where
     /// neither the API nor health shows them as live. Jobs of this process
     /// are left alone.
     pub async fn recover(&self) -> Result<usize, RescanError> {
+        // A submit writes its row before remembering the job; holding
+        // admission keeps a just-queued job from looking abandoned.
+        let _admission = self.admission.lock().await;
         let rows = self
             .extractor
             .store()

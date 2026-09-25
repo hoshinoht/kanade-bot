@@ -7,7 +7,7 @@ use crate::{
         model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore},
         settings::RuntimeSettings,
     },
-    extract::pipeline::CALL_CANCELLED,
+    extract::pipeline::{CALL_CANCELLED, CALL_SWITCHED_OFF},
     infrastructure::store::SqliteStore,
 };
 
@@ -63,7 +63,10 @@ impl ExtractionStatus {
                 matches!(
                     log.outcome,
                     ExtractionOutcome::Failed | ExtractionOutcome::TurnedAway
-                ) && log.error.as_deref() != Some(CALL_CANCELLED)
+                ) && !matches!(
+                    log.error.as_deref(),
+                    Some(CALL_CANCELLED | CALL_SWITCHED_OFF)
+                )
             })
         {
             return "degraded";
