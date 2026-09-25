@@ -157,7 +157,10 @@ where
                 .await?
         {
             // The worker started it meanwhile: attach, as to any running job.
-            if let Some(view) = self.state().view(&id) {
+            // A concurrent cancel also lands here; then queue the new request.
+            if let Some(view) = self.state().view(&id)
+                && view.job.status == RescanStatus::Running
+            {
                 return Ok(view);
             }
         }
