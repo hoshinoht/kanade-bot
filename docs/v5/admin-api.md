@@ -7,6 +7,10 @@ it. DTO names are from `web/packages/api-types`. Errors are `ApiError`
 and answer `409` with a fresh read when it moved underneath.
 Response JSON Schemas (frozen contract, endpoint index): [`api-schemas/`](api-schemas/README.md).
 
+Rows marked **Implemented** are served by the Rust binary (`src/api/`);
+listener, guard and static-serving behaviour is in `runtime-bootstrap.md`.
+Until admin authentication lands every other `/api/admin/*` path is `404`.
+
 Conventions: `?week=this|next` selects the boss week on week reads; ids in
 paths are URL-encoded (runs, inbox, members, fixed, limits, rescan); `PATCH` bodies are
 partial. A partial `PATCH` takes one section per request and replaces arrays
@@ -21,7 +25,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/summary` | — | `Summary` | Now tiles + nav Inbox pip + model tile. |
 | `GET /api/admin/members` | — | `MemberRow[]` | One list for the Members page, filter lists and roster adds (`MemberRow` extends `Member`). |
 | `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. |
-| `GET /api/identity` | — | `Identity` | Masthead, login window. |
+| `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins (offline name `Kanade`; `cached` reflects `KANADE_IDENTITY_DIR`). |
 | `GET /api/admin/session` | — | `Session` | Who is signed in. |
 | `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. |
 | `PATCH /api/admin/runs/{id}/status` | `StatusRequest` (`{status, version}`) | `RunResult` (`{run, version}`) | |
@@ -207,8 +211,10 @@ entries expire after two missed polls. UI in a later batch.
 While the portal is closed the public origin serves only the app shell, the
 status endpoint and the bot identity (name, avatar) the closed page needs;
 `/api/public/*` data and `/art/*` answer `503 {error: 'closed'}`.
+**Implemented**: the public listener is always closed today (any method on
+`/api/public/*` other than status, and on `/art/*`, is `503 closed`).
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
-| `GET /api/public/status` | — | `PublicStatus` (`{portal: 'open' \| 'closed'}`) | **Proposed**. The closed page needs nothing else to render. |
+| `GET /api/public/status` | — | `PublicStatus` (`{portal: 'open' \| 'closed'}`) | **Implemented** (always `closed`). The closed page needs nothing else to render. |
 | `GET /api/public/week` | — | `PublicWeek` | No names, answers, party or version. `503 {error: 'closed'}` while the portal is off. |

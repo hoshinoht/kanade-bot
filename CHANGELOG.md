@@ -110,6 +110,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   allowance overrides and one self-service tip per member per week, plus extractor/chat
   proposals stored as system drafts that expire and supersede older ones. Logs are
   pruned after 90 days in small batches.
+- v5: HTTP server with separate admin and public listeners (admin routes never exist on
+  the public one), Host and proxy-header guards, the PWAs' security headers, body and
+  time limits, and static serving of both apps and boss art; the public portal answers
+  closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
 - v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
   resolution, run matching, per-run merge), matching the frozen v4 vectors exactly,
   plus the extractor's answer schema, prompt, one-retry answer handling and burst
