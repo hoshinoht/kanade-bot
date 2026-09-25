@@ -63,18 +63,23 @@ pub fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>
 const DERIVED: &str = "it is derived by the server.";
 const DEPLOYMENT: &str = "it is set by the deployment.";
 const NOT_STORED: &str = "saving it is not supported yet.";
+const GROUPS: &str = "it is set in kanade.toml ([[models.groups]]); restart to apply.";
 
 /// Read-only keys the view carries; anything else not writable is unknown.
 fn read_only(section: &str, key: &str) -> Option<&'static str> {
     match (section, key) {
         ("chatbot", "configured" | "missing_env")
         | ("self_service", "effective_mode")
-        | ("models", "reachable" | "catalog" | "alias_limits" | "capacity_check")
+        | (
+            "models",
+            "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
+        )
         | ("persona", "personas" | "profiles") => Some(DERIVED),
         ("models", "key_limits" | "pii_pseudonymise") => Some(DEPLOYMENT),
         // Contracted as editable, but neither the settings port nor the
         // governor can hold them yet.
-        ("models", "groups") | ("persona", "role_profiles" | "visibility") => Some(NOT_STORED),
+        ("models", "groups") => Some(GROUPS),
+        ("persona", "role_profiles" | "visibility") => Some(NOT_STORED),
         _ => None,
     }
 }

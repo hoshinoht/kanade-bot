@@ -17,7 +17,7 @@ use kanade::{
     domain::settings::{Reasoning, RoleModel, RuntimeSettings, load_settings},
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
-        setup::{CatalogModel, CatalogSnapshot},
+        setup::{CapacityGroup, CatalogModel, CatalogSnapshot},
     },
 };
 use serde_json::{Value, json};
@@ -216,6 +216,10 @@ impl Config {
     }
 
     async fn build(gateway: bool) -> Self {
+        Self::with_groups(gateway, Vec::new()).await
+    }
+
+    async fn with_groups(gateway: bool, groups: Vec<CapacityGroup>) -> Self {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
@@ -240,6 +244,7 @@ impl Config {
                         timezone: "Asia/Kuala_Lumpur".into(),
                         model_gateway: gateway.then(|| "https://kanata.test/v1".into()),
                         model_permits: 2,
+                        model_groups: groups.clone(),
                         allow_external_unmasked: true,
                         chat_pilot_role_id: Some("30".into()),
                     },
@@ -380,10 +385,18 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         info("kanata/rewrite-small")["admission"],
         json!({"max_in_flight": 2})
     );
-    assert_eq!(models["groups"], json!([]));
+    assert_eq!(
+        models["groups"],
+        json!([
+            {"model": "kanata/chat", "group": "gateway", "permits": 2},
+            {"model": "kanata/extract", "group": "gateway", "permits": 2},
+            {"model": "kanata/rewrite-small", "group": "gateway", "permits": 2},
+        ])
+    );
+    assert_eq!(models["groups_source"], "default");
     assert_eq!(
         models["key_limits"],
-        json!({"max_in_flight": 2, "shared": true})
+        json!({"max_in_flight": null, "shared": true})
     );
     assert!(
         models["alias_limits"]
@@ -1022,4 +1035,94 @@ async fn reasoning_variants_are_marked_and_their_fixed_level_wins() {
         config.get().await["models"]["roles"]["chat"]["fixed_effort"],
         "medium"
     );
+}
+
+fn group(name: &str, permits: u32, aliases: &[&str]) -> CapacityGroup {
+    CapacityGroup {
+        name: name.into(),
+        permits,
+        aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
+    }
+}
+
+#[tokio::test]
+async fn declared_groups_are_listed_checked_per_group_and_summarised() {
+    // kanata/rewrite-small is left out on purpose; kanata/legacy is unused.
+    let config = Config::with_groups(
+        true,
+        vec![
+            group("local", 2, &["kanata/extract", "kanata/chat"]),
+            group("spare", 3, &["kanata/legacy"]),
+        ],
+    )
+    .await;
+    let view = config.get().await;
+    let models = &view["models"];
+    assert_eq!(models["groups_source"], "config");
+    assert_eq!(
+        models["groups"],
+        json!([
+            {"model": "kanata/extract", "group": "local", "permits": 2},
+            {"model": "kanata/chat", "group": "local", "permits": 2},
+            {"model": "kanata/legacy", "group": "spare", "permits": 3},
+        ])
+    );
+    assert_eq!(
+        models["key_limits"],
+        json!({"max_in_flight": null, "shared": true})
+    );
+    assert_eq!(
+        models["capacity_check"],
+        json!([
+            {"level": "warning", "message": "The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused."},
+            {"level": "ok", "message": "Group local: 2 permits, matching Kanata's limit."},
+            {"level": "warning", "message": "Group spare uses 3 of the 8 permits Kanata admits."},
+        ])
+    );
+    let row = view["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]")
+        .unwrap()
+        .clone();
+    assert_eq!(row["value"], "2 groups: local 2, spare 3");
+    assert_eq!(
+        row["reason"],
+        "Set in kanade.toml ([[models.groups]]); restart to apply."
+    );
+    let message = config
+        .refused(json!({"models": {"groups": []}}), 422, "read_only")
+        .await;
+    assert_eq!(
+        message,
+        "models.groups cannot be changed here: it is set in kanade.toml ([[models.groups]]); restart to apply."
+    );
+}
+
+#[tokio::test]
+async fn a_declared_group_over_kanata_limit_refuses_the_save() {
+    let config = Config::with_groups(
+        true,
+        vec![group(
+            "local",
+            2,
+            &[
+                "kanata/extract",
+                "kanata/chat",
+                "kanata/rewrite-small",
+                "kanata/tiny",
+            ],
+        )],
+    )
+    .await;
+    let view = config.get().await;
+    assert_eq!(
+        view["models"]["capacity_check"],
+        json!([{"level": "error", "message": "Group local declares 2 permits but Kanata admits at most 1 (capped by kanata/tiny); the bot refuses to start."}])
+    );
+    // A pre-existing error never blocks an unrelated save.
+    config
+        .patch(json!({"models": {"roles": {"extraction": {"reasoning": "low"}}}}))
+        .await;
 }

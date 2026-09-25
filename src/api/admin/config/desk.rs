@@ -21,7 +21,7 @@ use crate::{
     },
     chat::persona::PersonaStore,
     domain::settings::{RuntimeSettings, Section, SettingsError, SettingsStore, save_section},
-    infrastructure::llm::setup::CatalogSnapshot,
+    infrastructure::llm::setup::{CapacityGroup, CatalogSnapshot},
 };
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -56,8 +56,10 @@ pub struct ConfigFacts {
     pub timezone: String,
     /// `KANADE_MODEL_BASE_URL`; `None` disables every model feature.
     pub model_gateway: Option<String>,
-    /// `KANADE_MODEL_PERMITS`: the one gateway group's permits.
+    /// `KANADE_MODEL_PERMITS`: the default `gateway` group's permits.
     pub model_permits: u32,
+    /// `kanade.toml` `[[models.groups]]`; non-empty replaces the default group.
+    pub model_groups: Vec<CapacityGroup>,
     pub allow_external_unmasked: bool,
     pub chat_pilot_role_id: Option<String>,
 }
@@ -211,7 +213,8 @@ impl ConfigDesk {
                 role_profiles: Vec::new(),
             },
         };
-        let permits = self.facts.model_permits;
+        let groups = self.groups(settings);
+        let declared = !self.facts.model_groups.is_empty();
         ConfigView {
             pings: dto::pings(settings),
             watching: dto::Watching {
@@ -239,18 +242,27 @@ impl ConfigDesk {
                     .map(|model| dto::model_info(model, &catalog.snapshot))
                     .collect(),
                 roles: dto::roles(settings, &catalog.snapshot),
-                // The governor has one env-sized group shared by every role
-                // alias; the per-row DTO cannot state that faithfully.
-                groups: Vec::new(),
+                groups: groups
+                    .iter()
+                    .flat_map(|group| {
+                        group.aliases.iter().map(|alias| dto::CapacityGroup {
+                            model: alias.clone(),
+                            group: group.name.clone(),
+                            permits: Some(group.permits),
+                        })
+                    })
+                    .collect(),
+                groups_source: if declared { "config" } else { "default" },
                 alias_limits: dto::alias_limits(&catalog.snapshot),
-                // No key limit is declared yet; the governor's total bounds it.
+                // Kanata publishes no per-key limit.
                 key_limits: KeyLimits {
-                    max_in_flight: permits,
+                    max_in_flight: None,
                     shared: true,
                 },
                 capacity_check: models::capacity(
                     &settings.models,
-                    permits,
+                    &groups,
+                    declared,
                     catalog.reachable.then_some(&catalog.snapshot),
                 ),
                 pii_pseudonymise: false,
@@ -261,6 +273,15 @@ impl ConfigDesk {
             notices,
             env: self.env(settings, channels),
         }
+    }
+
+    /// The groups the governor runs, as `serve` configured it.
+    pub(super) fn groups(&self, settings: &RuntimeSettings) -> Vec<CapacityGroup> {
+        models::effective_groups(
+            &settings.models,
+            self.facts.model_permits,
+            &self.facts.model_groups,
+        )
     }
 
     fn env(&self, settings: &RuntimeSettings, channels: &[ChannelEntry]) -> Vec<EnvRow> {
@@ -339,11 +360,20 @@ impl ConfigDesk {
                 value: set(facts.model_gateway.as_ref()),
                 reason: "Repointing the gateway would redirect the bearer key, so only the operator changes it.",
             },
-            EnvRow {
-                key: "KANADE_MODEL_PERMITS",
-                label: "Model permits",
-                value: facts.model_permits.to_string(),
-                reason: "One capacity group shared by every model role; groups are not editable here yet.",
+            if facts.model_groups.is_empty() {
+                EnvRow {
+                    key: "KANADE_MODEL_PERMITS",
+                    label: "Model permits",
+                    value: facts.model_permits.to_string(),
+                    reason: "One capacity group shared by every model role; kanade.toml [[models.groups]] replaces it after a restart.",
+                }
+            } else {
+                EnvRow {
+                    key: "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]",
+                    label: "Model capacity groups",
+                    value: groups_summary(&facts.model_groups),
+                    reason: "Set in kanade.toml ([[models.groups]]); restart to apply.",
+                }
             },
             EnvRow {
                 key: "pseudonymisation",
@@ -359,4 +389,14 @@ impl ConfigDesk {
             },
         ]
     }
+}
+
+/// `2 groups: local 2, cloud 4`.
+fn groups_summary(groups: &[CapacityGroup]) -> String {
+    let each: Vec<String> = groups
+        .iter()
+        .map(|group| format!("{} {}", group.name, group.permits))
+        .collect();
+    let noun = if groups.len() == 1 { "group" } else { "groups" };
+    format!("{} {noun}: {}", groups.len(), each.join(", "))
 }

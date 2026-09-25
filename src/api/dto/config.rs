@@ -184,7 +184,8 @@ pub struct AliasLimit {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct KeyLimits {
-    pub max_in_flight: u32,
+    /// `None`: Kanata publishes no per-key limit.
+    pub max_in_flight: Option<u32>,
     pub shared: bool,
 }
 
@@ -200,6 +201,8 @@ pub struct Models {
     pub catalog: Vec<ModelInfo>,
     pub roles: Roles,
     pub groups: Vec<CapacityGroup>,
+    /// `default` (the one `gateway` group) or `config` (`[[models.groups]]`).
+    pub groups_source: &'static str,
     pub alias_limits: Vec<AliasLimit>,
     pub key_limits: KeyLimits,
     pub capacity_check: Vec<CapacityCheck>,

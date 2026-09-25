@@ -96,7 +96,7 @@
       "additionalProperties": false,
       "required": ["max_in_flight", "shared"],
       "properties": {
-        "max_in_flight": { "type": "integer", "minimum": 0 },
+        "max_in_flight": { "type": ["integer", "null"], "minimum": 0, "description": "null: Kanata publishes no per-key limit." },
         "shared": { "type": "boolean" }
       }
     },
@@ -223,6 +223,7 @@
               }
             },
             "groups": { "type": "array", "items": { "$ref": "#/$defs/CapacityGroup" } },
+            "groups_source": { "enum": ["default", "config"], "description": "default: one gateway group of KANADE_MODEL_PERMITS over the role aliases; config: kanade.toml [[models.groups]]." },
             "alias_limits": { "type": "array", "items": { "$ref": "#/$defs/AliasLimit" } },
             "key_limits": { "$ref": "#/$defs/KeyLimits" },
             "capacity_check": { "type": "array", "items": { "$ref": "#/$defs/CapacityCheck" } },

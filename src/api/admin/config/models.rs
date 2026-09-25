@@ -1,6 +1,6 @@
 //! The Models section: role aliases and reasoning levels checked against the
-//! live catalog (admin-api.md "Config semantics"), and the capacity check of
-//! the deployment's single gateway group (limits-contract.md).
+//! live catalog (admin-api.md "Config semantics"), and the per-group capacity check
+//! of the groups the governor runs (limits-contract.md).
 
 use std::collections::BTreeSet;
 
@@ -12,7 +12,7 @@ use crate::{
     domain::settings::{Models, Reasoning, RoleModel},
     infrastructure::llm::{
         Effort,
-        setup::{CatalogModel, CatalogSnapshot},
+        setup::{CapacityGroup, CatalogModel, CatalogSnapshot},
     },
 };
 
@@ -305,65 +305,111 @@ fn distinct_aliases(models: &Models) -> Vec<String> {
     aliases.into_iter().cloned().collect()
 }
 
-/// The capacity rule for the one gateway group: its permits must fit the
-/// smallest published admission of its aliases. `None` catalog: unreachable.
-pub fn capacity(
+/// The groups the governor runs: the declared ones, else one `gateway` group
+/// of `permits` over the distinct role aliases (none without a role alias).
+pub fn effective_groups(
     models: &Models,
     permits: u32,
-    catalog: Option<&CatalogSnapshot>,
-) -> Vec<CapacityCheck> {
-    let check = |level, message: String| CapacityCheck { level, message };
+    declared: &[CapacityGroup],
+) -> Vec<CapacityGroup> {
+    if !declared.is_empty() {
+        return declared.to_vec();
+    }
     let aliases = distinct_aliases(models);
     if aliases.is_empty() {
         return Vec::new();
     }
-    let Some(catalog) = catalog else {
-        return vec![check(
-            "warning",
-            "Kanata is unreachable; capacity is checked again once it lists its models.".into(),
-        )];
-    };
+    vec![CapacityGroup {
+        name: GROUP.into(),
+        permits,
+        aliases,
+    }]
+}
+
+/// Per group: its permits must fit the smallest published admission of its
+/// aliases. With `declared` groups a role alias outside them is refused by
+/// the governor, so it is reported. `None` catalog: unreachable.
+pub fn capacity(
+    models: &Models,
+    groups: &[CapacityGroup],
+    declared: bool,
+    catalog: Option<&CatalogSnapshot>,
+) -> Vec<CapacityCheck> {
+    let check = |level, message: String| CapacityCheck { level, message };
     let mut out = Vec::new();
-    let mut cap: Option<(u32, &str)> = None;
-    for alias in &aliases {
-        match find(catalog, alias) {
-            None => out.push(check("error", format!("Kanata does not list {alias}."))),
-            Some(model) => match model.admission {
-                Some(limits) => {
-                    let each = limits.concurrency();
-                    if cap.is_none_or(|(least, _)| each < least) {
-                        cap = Some((each, alias));
-                    }
-                }
-                // No declaration path exists yet, so this only warns.
-                None => out.push(check(
+    if declared {
+        for role in Role::ALL {
+            let Some(alias) = role.of(models).alias.as_ref() else {
+                continue;
+            };
+            if !groups.iter().any(|group| group.aliases.contains(alias)) {
+                out.push(check(
                     "warning",
                     format!(
-                        "Kanata publishes no limit for {alias}; its calls queue at the gateway."
+                        "The {} model {alias} is in no capacity group; its calls are refused.",
+                        role.name()
                     ),
-                )),
-            },
+                ));
+            }
         }
     }
-    if let Some((cap, by)) = cap {
-        out.push(if permits > cap {
-            check(
-                "error",
-                format!(
-                    "Group {GROUP} declares {permits} permits but Kanata admits at most {cap} (capped by {by}); the bot refuses to start."
-                ),
-            )
-        } else if permits < cap {
-            check(
-                "warning",
-                format!("Group {GROUP} uses {permits} of the {cap} permits Kanata admits."),
-            )
-        } else {
-            check(
-                "ok",
-                format!("Group {GROUP}: {permits} permits, matching Kanata's limit."),
-            )
-        });
+    if groups.is_empty() {
+        return out;
+    }
+    let Some(catalog) = catalog else {
+        out.push(check(
+            "warning",
+            "Kanata is unreachable; capacity is checked again once it lists its models.".into(),
+        ));
+        return out;
+    };
+    let mut unlisted = BTreeSet::new();
+    for group in groups {
+        let (name, permits) = (&group.name, group.permits);
+        let mut cap: Option<(u32, &str)> = None;
+        for alias in &group.aliases {
+            match find(catalog, alias) {
+                None => {
+                    if unlisted.insert(alias) {
+                        out.push(check("error", format!("Kanata does not list {alias}.")));
+                    }
+                }
+                Some(model) => match model.admission {
+                    Some(limits) => {
+                        let each = limits.concurrency();
+                        if cap.is_none_or(|(least, _)| each < least) {
+                            cap = Some((each, alias));
+                        }
+                    }
+                    None => out.push(check(
+                        "warning",
+                        format!(
+                            "Kanata publishes no limit for {alias}; its calls queue at the gateway."
+                        ),
+                    )),
+                },
+            }
+        }
+        if let Some((cap, by)) = cap {
+            out.push(if permits > cap {
+                check(
+                    "error",
+                    format!(
+                        "Group {name} declares {permits} permits but Kanata admits at most {cap} (capped by {by}); the bot refuses to start."
+                    ),
+                )
+            } else if permits < cap {
+                check(
+                    "warning",
+                    format!("Group {name} uses {permits} of the {cap} permits Kanata admits."),
+                )
+            } else {
+                check(
+                    "ok",
+                    format!("Group {name}: {permits} permits, matching Kanata's limit."),
+                )
+            });
+        }
     }
     out
 }
@@ -376,4 +422,123 @@ pub fn new_errors(before: &[CapacityCheck], after: &[CapacityCheck]) -> Vec<Stri
         .filter(|check| check.level == "error" && !before.contains(check))
         .map(|check| check.message.clone())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::llm::AdmissionLimits;
+
+    fn listed(alias: &str, limit: Option<u32>) -> CatalogModel {
+        CatalogModel {
+            alias: alias.into(),
+            published: true,
+            trust_zone: None,
+            leaves_homelab: false,
+            reasoning_control: false,
+            reasoning_efforts: None,
+            structured_output: true,
+            sampling_controls: true,
+            function_tools: true,
+            context_tokens: None,
+            admission: limit.map(|max| AdmissionLimits {
+                max_in_flight: max,
+                max_queue: None,
+                queue_ms: None,
+                adapter_max_in_flight: None,
+            }),
+        }
+    }
+
+    fn snapshot() -> CatalogSnapshot {
+        CatalogSnapshot {
+            listed: true,
+            models: vec![
+                listed("a", Some(2)),
+                listed("b", Some(4)),
+                listed("c", None),
+            ],
+        }
+    }
+
+    fn roles(extraction: &str, chat: &str) -> Models {
+        let mut models = Models::default();
+        models.extraction.alias = Some(extraction.into());
+        models.chat.alias = Some(chat.into());
+        models
+    }
+
+    fn group(name: &str, permits: u32, aliases: &[&str]) -> CapacityGroup {
+        CapacityGroup {
+            name: name.into(),
+            permits,
+            aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
+        }
+    }
+
+    fn messages(checks: &[CapacityCheck]) -> Vec<(&str, &str)> {
+        checks
+            .iter()
+            .map(|check| (check.level, check.message.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn default_group_covers_distinct_role_aliases_and_declared_groups_replace_it() {
+        let models = roles("a", "a");
+        assert_eq!(
+            effective_groups(&models, 3, &[]),
+            [group("gateway", 3, &["a"])]
+        );
+        assert!(effective_groups(&Models::default(), 3, &[]).is_empty());
+        let declared = [group("local", 1, &["b"])];
+        assert_eq!(effective_groups(&models, 3, &declared), declared);
+    }
+
+    #[test]
+    fn each_group_is_checked_against_its_least_admitting_alias() {
+        let models = roles("a", "b");
+        let groups = [
+            group("over", 3, &["a", "b"]),
+            group("under", 1, &["b"]),
+            group("equal", 2, &["a"]),
+            group("open", 1, &["c"]),
+        ];
+        let checks = capacity(&models, &groups, true, Some(&snapshot()));
+        assert_eq!(
+            messages(&checks),
+            [
+                (
+                    "error",
+                    "Group over declares 3 permits but Kanata admits at most 2 (capped by a); the bot refuses to start."
+                ),
+                (
+                    "warning",
+                    "Group under uses 1 of the 4 permits Kanata admits."
+                ),
+                ("ok", "Group equal: 2 permits, matching Kanata's limit."),
+                (
+                    "warning",
+                    "Kanata publishes no limit for c; its calls queue at the gateway."
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_ungrouped_role_alias_warns_only_when_groups_are_declared() {
+        let models = roles("a", "b");
+        let groups = [group("local", 2, &["a"])];
+        let declared = capacity(&models, &groups, true, Some(&snapshot()));
+        assert_eq!(
+            declared[0].message,
+            "The chat model b is in no capacity group; its calls are refused."
+        );
+        let default = capacity(&models, &groups, false, Some(&snapshot()));
+        assert!(
+            default
+                .iter()
+                .all(|check| !check.message.contains("no capacity group"))
+        );
+    }
 }

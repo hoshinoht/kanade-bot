@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 config API reports the capacity groups the bot actually runs (default `gateway` group or
+  `kanade.toml` groups, with `groups_source`), checks each group against Kanata's limits, and
+  no longer presents the bot's permits as the key's limit (`key_limits.max_in_flight` is null).
 - v5 admin app shows display names instead of raw Discord ids (click to copy the id),
   reply profiles as a table, and a tidier Chat log: the implicit bot mention is dropped from
   question previews, times are guild-local ("Mon 28 Sep · 00:00"), and model/duration/name

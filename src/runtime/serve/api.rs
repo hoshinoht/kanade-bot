@@ -145,6 +145,7 @@ pub async fn compose(
             timezone: config.runtime.timezone.name().to_owned(),
             model_gateway: config.models.base_url.clone(),
             model_permits: u32::from(config.models.permits),
+            model_groups: config.models.groups.clone(),
             allow_external_unmasked: config.models.allow_external_unmasked,
             chat_pilot_role_id: config.guild.chat_pilot_role_id.map(|id| id.to_string()),
         },

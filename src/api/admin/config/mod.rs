@@ -163,9 +163,21 @@ async fn update(
             }
             let (next, reset) =
                 models::apply_roles(&current.models, &fields["roles"], &read.snapshot)?;
-            let permits = desk.facts.model_permits;
-            let before = models::capacity(&current.models, permits, Some(&read.snapshot));
-            let after = models::capacity(&next, permits, Some(&read.snapshot));
+            let declared = !desk.facts.model_groups.is_empty();
+            let before = models::capacity(
+                &current.models,
+                &desk.groups(&current),
+                declared,
+                Some(&read.snapshot),
+            );
+            let mut proposed = current.clone();
+            proposed.models = next.clone();
+            let after = models::capacity(
+                &next,
+                &desk.groups(&proposed),
+                declared,
+                Some(&read.snapshot),
+            );
             let errors = models::new_errors(&before, &after);
             if !errors.is_empty() {
                 return Err(Refusal::new(
