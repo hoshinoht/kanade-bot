@@ -100,10 +100,10 @@ id for card links; the `SchedulePolicy` from runtime settings; and a
 production `StaffGate` = `GuildStaffGate` over `StoreGuildMembers` sharing one
 `GuildAccess` with `ApiState`. Gateway wiring: `BotEvent::Roster` →
 `api::auth::roster::on_roster_update`, `BotEvent::GuildAvailable` →
-`on_guild_available`. Missing seam: `RosterUpdate::Seen` carries no role ids
-or computed Administrator permission (it needs the member's roles and the
-guild's role permissions from `GuildCreate`), so stored `roles` /
-`is_guild_admin` are not refreshed by gateway updates yet.
+`on_guild_available(auth, access, members, owner_id, &admin_roles)` (async;
+`GuildAvailable` also fires when the owner or the set of Administrator roles
+changes). `RosterUpdate::Seen` carries role ids and the computed
+Administrator flag from the gateway `Router`'s role-permission cache.
 
 ### Edge contract (admin origin)
 

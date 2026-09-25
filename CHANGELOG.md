@@ -127,7 +127,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   JSON schemas; members gain stored aliases, reply style and roles (migration 0010) so
   the staff check survives a restart. A correct break-glass token can no longer be
   locked out by guesses from many addresses, and an edge request without a usable
-  `X-Forwarded-For` is refused. Not yet wired into `serve`.
+  `X-Forwarded-For` is refused. Discord member updates now carry roles and a computed
+  Administrator permission, so admin sign-ins end as soon as someone loses staff status.
+  Not yet wired into `serve`.
 - v5: admin sign-in: Discord login (identify only, PKCE, one-time state, token revoked
   after use), Tailscale identity from the edge for allow-listed logins, and a break-glass
   token read from a file; server-side sessions with idle/absolute timeouts, a staff

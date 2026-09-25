@@ -19,7 +19,7 @@ use kanade::bot::commands::{
     AccessPolicy, CommandError, CommandFuture, DebugCommand, Denial, Dispatcher, Disposition,
     GENERIC_FAILURE, Gate, Handled, Invocation, SlashCommand, format_uptime, spawn_interaction,
 };
-use kanade::bot::events::{BotEvent, EventHandler, route};
+use kanade::bot::events::{BotEvent, EventHandler};
 use kanade::bot::gateway::{EventSource, GatewayError, RunExit, RunnerConfig, run};
 use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, InteractionReply, Op, Outcome,

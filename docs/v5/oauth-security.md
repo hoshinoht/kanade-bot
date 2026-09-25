@@ -47,10 +47,12 @@ for the public origin when it opens.
     gate reads persisted member rows (`StoreGuildMembers`: stored roles and
     `is_guild_admin`, owner from `GuildAvailable`), and
     `api::auth::roster::on_roster_update` persists `BotEvent::Roster` and
-    calls `member_left` / `member_changed`. Still open: `RosterUpdate::Seen`
-    carries no role list or computed Administrator permission, so stored
-    roles only change when that seam lands (see `runtime-bootstrap.md`
-    composition gaps); a departure clears them at once.
+    calls `member_left` / `member_changed`. `RosterUpdate::Seen` carries the
+    member's role ids and computed Administrator (role-permission cache fed by
+    guild and role events; unknown roles never grant); a role or owner losing
+    staff status clears stored flags and ends sessions at once, while a new
+    grant waits for that member's next member event. Gateway wiring into
+    `serve` is still pending (`runtime-bootstrap.md` composition gaps).
 14. Rate limits on `/login` and the callback, per client IP and globally;
     Discord 429s honour `retry_after` and fail closed. *Recorded exception:*
     for the break-glass token (login and bearer) the global bucket counts and

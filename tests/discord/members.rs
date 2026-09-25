@@ -1,6 +1,6 @@
 //! Member events as roster updates.
 
-use kanade::bot::events::{BotEvent, RosterUpdate, route};
+use kanade::bot::events::{BotEvent, RosterUpdate};
 use kanade::domain::members::{Directory, Member, PingLevel, Roster};
 
 use super::support::*;
@@ -26,6 +26,8 @@ fn joining_with_the_role_is_seen_with_discord_display_name() {
             display_name: "Ali".into(),
             nickname: Some("Ali".into()),
             has_role: true,
+            roles: vec![BOSSING_ROLE.to_string(), "7".into()],
+            is_guild_admin: false,
         })
     );
 }

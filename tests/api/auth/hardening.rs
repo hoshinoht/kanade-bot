@@ -87,7 +87,10 @@ async fn roster_events_persist_members_and_end_sessions() {
             auth::roster::{on_guild_available, on_roster_update},
             state::GuildAccess,
         },
-        bot::{commands::AccessPolicy, events::RosterUpdate},
+        bot::{
+            commands::AccessPolicy,
+            events::{AdminRoles, RosterUpdate},
+        },
         domain::members::{MemberProfile, MemberStore},
     };
     use twilight_model::id::Id;
@@ -109,6 +112,8 @@ async fn roster_events_persist_members_and_end_sessions() {
         display_name: "Alice".into(),
         nickname: Some("Al".into()),
         has_role: true,
+        roles: vec![ADMIN_ROLE.to_string()],
+        is_guild_admin: false,
     };
     assert_eq!(
         on_roster_update(&auth, &*harness.store, &seen)
@@ -158,7 +163,18 @@ async fn roster_events_persist_members_and_end_sessions() {
         },
         None,
     );
-    on_guild_available(&access, Id::new(42));
+    assert_eq!(
+        on_guild_available(
+            &auth,
+            &access,
+            &*harness.store,
+            Id::new(42),
+            &AdminRoles::default()
+        )
+        .await
+        .unwrap(),
+        0
+    );
     assert_eq!(access.owner(), Some(Id::new(42)));
 }
 

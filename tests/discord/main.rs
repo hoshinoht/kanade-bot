@@ -4,6 +4,7 @@
 mod commands;
 mod fake_transport;
 mod gateway;
+mod guild;
 mod http_transport;
 mod members;
 mod mentions;

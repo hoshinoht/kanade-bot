@@ -106,6 +106,12 @@ fn intents_are_exactly_v4s_used_set() {
     assert!(
         WANTED_EVENTS.contains(EventTypeFlags::REACTION_ADD | EventTypeFlags::INTERACTION_CREATE)
     );
+    assert!(WANTED_EVENTS.contains(
+        EventTypeFlags::GUILD_UPDATE
+            | EventTypeFlags::ROLE_CREATE
+            | EventTypeFlags::ROLE_UPDATE
+            | EventTypeFlags::ROLE_DELETE
+    ));
     assert!(!WANTED_EVENTS.contains(EventTypeFlags::PRESENCE_UPDATE));
 }
 

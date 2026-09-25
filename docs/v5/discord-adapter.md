@@ -100,7 +100,7 @@ default allow-list is also none, and interaction replies always mention nobody.
 
 ## Gateway
 
-Intents: `GUILDS` (availability, owner id for staff checks), `GUILD_MEMBERS`
+Intents: `GUILDS` (availability, owner and role permissions for staff checks), `GUILD_MEMBERS`
 (roster), `GUILD_MESSAGES` + `MESSAGE_CONTENT` (watched chat for extraction
 and chat), `GUILD_MESSAGE_REACTIONS` (RSVPs). v4's other default intents (DMs,
 typing, voice, presences, …) were unused and are dropped.
@@ -129,9 +129,27 @@ up the next event. `BotEvent`'s `Debug` redacts the interaction token.
   on adds, roster flag on removals) and other emoji are ignored. Each card run
   is applied in its own transaction; runs deleted since posting are skipped.
 - Members: add/update produce `RosterUpdate::Seen` (discord.py display name,
-  nickname, bossing-role flag; ping level untouched); bots produce nothing.
-  Remove produces `Left`, clearing the role flag immediately (v4 waited for
-  the next full sync) while keeping the row.
+  nickname, bossing-role flag; ping level untouched; v5 adds the role ids and
+  computed Administrator); bots produce nothing. Remove produces `Left`,
+  clearing the role flag immediately (v4 waited for the next full sync) while
+  keeping the row.
+- Guild access: `events::Router` is stateful. It keeps the owner and every
+  role's permissions (`GuildRoles`) from `GUILD_CREATE`, `GUILD_UPDATE` and
+  `GUILD_ROLE_CREATE/UPDATE/DELETE` (event-type filter only; the `GUILDS`
+  intent already delivers them). A member is Administrator when `@everyone`
+  (role id = guild id) or one of their roles has the `ADMINISTRATOR` bit; a
+  role id the cache has not seen never grants it, and nothing does before
+  `GUILD_CREATE`. `BotEvent::GuildAvailable { owner_id, admin_roles }` is
+  emitted on `GUILD_CREATE` and whenever the owner or the set of
+  Administrator roles changes.
+- `api::auth::roster` applies both: `on_roster_update` stores `Seen`'s roles
+  and Administrator, then re-checks staff; `on_guild_available` records the
+  owner, clears the stored Administrator of every row whose roles no longer
+  grant it and re-checks those members and a replaced owner, ending sessions
+  that fail. It only revokes (a row may belong to someone who left while
+  the bot was offline); a role newly granting Administrator takes effect for
+  a member at their next member event. The staff gate's re-check reads the
+  stored flag, so a lost Administrator is never kept.
 
 ## Commands
 
@@ -223,5 +241,4 @@ reaction and roster reconciliation; roster persistence; wiring the tick into
 serve mode with a live `ChannelDirectory` and the admin-alert destination;
 notice delivery from mutation operations; card refresh/edits; proposal-card
 reactions, opposite-reaction removal and decline notices; message events for chat and extraction;
-attachments; the other command definitions; owner changes (the owner id
-comes from `GuildCreate` only, `GUILD_UPDATE` is deferred); an authenticated gateway/TLS smoke test against Discord.
+attachments; the other command definitions; an authenticated gateway/TLS smoke test against Discord.

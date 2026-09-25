@@ -2,7 +2,7 @@
 
 use twilight_gateway::{EventTypeFlags, Intents};
 
-/// * `GUILDS`: guild availability and the owner id for staff checks.
+/// * `GUILDS`: guild availability, owner and role permissions for staff checks.
 /// * `GUILD_MEMBERS` (privileged): roster sync from the bossing role.
 /// * `GUILD_MESSAGES`: watched-channel messages for chat and extraction.
 /// * `MESSAGE_CONTENT` (privileged): their text, which extraction reads.
@@ -20,6 +20,10 @@ pub const INTENTS: Intents = Intents::GUILDS
 /// Message events are subscribed through [`INTENTS`] but have no handler yet.
 pub const WANTED_EVENTS: EventTypeFlags = EventTypeFlags::READY
     .union(EventTypeFlags::GUILD_CREATE)
+    .union(EventTypeFlags::GUILD_UPDATE)
+    .union(EventTypeFlags::ROLE_CREATE)
+    .union(EventTypeFlags::ROLE_UPDATE)
+    .union(EventTypeFlags::ROLE_DELETE)
     .union(EventTypeFlags::MEMBER_ADD)
     .union(EventTypeFlags::MEMBER_UPDATE)
     .union(EventTypeFlags::MEMBER_REMOVE)

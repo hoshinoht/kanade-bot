@@ -4,6 +4,7 @@
 mod discord;
 mod fallbacks;
 mod hardening;
+mod roster;
 mod sessions;
 
 use std::{
@@ -22,11 +23,12 @@ use kanade::{
             discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
             fake::{FakeDiscord, FakeGuild},
             rate::{Limits, RateLimits, Route},
-            staff::GuildStaffGate,
+            staff::{GuildMembers, GuildStaffGate, StoreGuildMembers},
             wire,
         },
         guard::proxy,
         listeners::Site,
+        state::GuildAccess,
     },
     bot::commands::{AccessPolicy, Invoker},
     infrastructure::store::MemoryScheduleStore,
@@ -54,6 +56,8 @@ pub struct Harness {
     pub guild: Arc<FakeGuild>,
     pub audit: Arc<RecordingAudit>,
     pub store: Arc<MemoryScheduleStore>,
+    /// Owner and policy the store-backed staff gate reads (`store_gated`).
+    pub access: Arc<GuildAccess>,
     clock: Arc<Mutex<DateTime<Utc>>>,
     pub site: Site,
     _fixture: Fixture,
@@ -91,7 +95,19 @@ impl Harness {
         token: &str,
         store: Arc<MemoryScheduleStore>,
     ) -> Self {
-        Self::build(edge, token, store, None).await
+        Self::build(edge, token, store, None, false).await
+    }
+
+    /// The staff gate reads the persisted member rows, as in production.
+    pub async fn store_gated() -> Self {
+        Self::build(
+            None,
+            TOKEN,
+            Arc::new(MemoryScheduleStore::new()),
+            None,
+            true,
+        )
+        .await
     }
 
     /// With custom rate limits.
@@ -101,6 +117,7 @@ impl Harness {
             TOKEN,
             Arc::new(MemoryScheduleStore::new()),
             Some(limits),
+            false,
         )
         .await
     }
@@ -110,6 +127,7 @@ impl Harness {
         token: &str,
         store: Arc<MemoryScheduleStore>,
         limits: Option<fn(Route) -> Limits>,
+        store_gate: bool,
     ) -> Self {
         let fixture = Fixture::new();
         let mut http = fixture.http();
@@ -120,14 +138,20 @@ impl Harness {
         let clock = Arc::new(Mutex::new(
             Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap(),
         ));
-        let staff = Arc::new(GuildStaffGate::new(
+        let access = Arc::new(GuildAccess::new(
             AccessPolicy {
                 bossing_role_id: Id::new(10),
                 admin_role_id: Some(Id::new(ADMIN_ROLE)),
                 debug_user_ids: Vec::new(),
             },
-            guild.clone(),
+            None,
         ));
+        let members: Arc<dyn GuildMembers> = if store_gate {
+            Arc::new(StoreGuildMembers::new(store.clone(), access.clone()))
+        } else {
+            guild.clone()
+        };
+        let staff = Arc::new(GuildStaffGate::new(access.policy.clone(), members));
         let now = clock.clone();
         let auth = AdminAuth::new(store.clone(), staff)
             .with_discord(DiscordLogin::new(
@@ -164,6 +188,7 @@ impl Harness {
             guild,
             audit,
             store,
+            access,
             clock,
             site,
             _fixture: fixture,

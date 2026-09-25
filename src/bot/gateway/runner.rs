@@ -17,7 +17,7 @@ use twilight_gateway::{CloseFrame, Event, Shard};
 
 use super::close::CloseReason;
 use super::intents::WANTED_EVENTS;
-use crate::bot::events::{EventHandler, GuildScope, route};
+use crate::bot::events::{EventHandler, GuildScope, Router};
 
 /// A receive failure with the payload stripped: Twilight's own error text can
 /// quote a whole undecodable event.
@@ -92,6 +92,7 @@ where
     H: EventHandler,
 {
     tokio::pin!(shutdown);
+    let mut router = Router::new(config.scope);
     // The code of the latest close frame, cleared by any later event.
     let mut last_close = None;
     loop {
@@ -106,7 +107,7 @@ where
                         Event::GatewayClose(frame) => frame.as_ref().map(|frame| frame.code),
                         _ => None,
                     };
-                    if let Some(event) = route(config.scope, event) {
+                    if let Some(event) = router.route(event) {
                         handler.handle(event).await;
                     }
                 }
@@ -119,7 +120,7 @@ where
         loop {
             match source.next_event().await {
                 None | Some(Ok(Event::GatewayClose(_))) => return,
-                Some(Ok(event)) => dropped += usize::from(route(config.scope, event).is_some()),
+                Some(Ok(event)) => dropped += usize::from(router.route(event).is_some()),
                 Some(Err(_)) => {}
             }
         }

@@ -6,7 +6,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use twilight_model::id::{Id, marker::MessageMarker};
 
 use kanade::bot::events::{
-    BotEvent, CardIndex, LookupError, ReactionRouter, RouteError, RsvpAnswer, route, rsvp_reaction,
+    BotEvent, CardIndex, LookupError, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction,
 };
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Member, Roster};
