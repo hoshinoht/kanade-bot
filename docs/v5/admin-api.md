@@ -109,7 +109,12 @@ whole; unknown or read-only keys are refused with 422.
   reset; it answers `{cancelled: 0}`, as the first count is not recorded.
 - Known limits: the history walk behind `version`-derived expectations is
   unbounded; two concurrent RSVPs for different members both succeed (each
-  declares only its own `rsvp:<member>`).
+  declares only its own `rsvp:<member>`). A weekly-timing PATCH replay is
+  matched on the fields that still differ: if another edit landed in
+  between, the replay answers 422 `idempotency_mismatch` although the first
+  attempt applied (nothing is written), and a reused key whose body now equals
+  the stored row answers 200 without a mismatch check. Portal answers send no
+  v4 decline notice yet.
 - Other refusals: 404 `not_found`; 409 `move_conflict` (the weekly already
   has a run in that week) or `busy` (revision races outlasted the retries);
   422 `invalid` with the scheduler's own wording, `nothing_to_change`,
