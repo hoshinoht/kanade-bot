@@ -98,7 +98,7 @@ where
     let health = LiveHealth::new(store.clone())
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
     let composition = api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
-    let mut discord = discord::start(config, store, &composition, prepared, wiring)?;
+    let mut discord = discord::start(config, store, &composition, prepared, wiring).await?;
     // HTTP keeps serving until the Discord side has stopped, then drains.
     let served = server::serve(
         &config.runtime,

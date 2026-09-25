@@ -235,7 +235,12 @@ impl EventSource for Script {
         if self.closing {
             return None;
         }
-        self.events.recv().await.map(Ok)
+        let event = self.events.recv().await?;
+        // Twilight ends the stream after a fatal close frame.
+        if let Event::GatewayClose(Some(frame)) = &event {
+            self.closing = frame.code >= 4000;
+        }
+        Some(Ok(event))
     }
 
     fn close(&mut self) {
@@ -307,8 +312,9 @@ impl Harness {
             clock: Arc::new(auth::system_now),
             tick: TICK,
         };
-        let discord =
-            discord::start(&self.config, store.clone(), &composition, prepared, wiring).unwrap();
+        let discord = discord::start(&self.config, store.clone(), &composition, prepared, wiring)
+            .await
+            .unwrap();
         let ctx = Ctx {
             store,
             events,
@@ -756,6 +762,14 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
 
     let (mut discord, ctx) = harness.start().await;
     drive(&mut discord, async {
+        // Recovery ran in `start`, before the gateway, reactions or commands
+        // could send: nothing is left in flight to recover now.
+        let again = ctx
+            .store
+            .recover_on_start(auth::system_now())
+            .await
+            .unwrap();
+        assert!(again.indeterminate.is_empty() && again.orphaned_leases == 0);
         sleep(TICK * 4).await;
         assert!(
             harness.fake.calls().is_empty(),
@@ -1002,35 +1016,70 @@ async fn serve_refuses_to_connect_until_v4_is_stopped() {
 }
 
 #[tokio::test]
-async fn a_disallowed_intents_close_stops_serve_naming_the_portal_intents() {
+async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
     let harness = Harness::new();
     let (events, source) = script();
     events.send(ready()).unwrap();
+    events.send(guild_create(&[])).unwrap();
     events
         .send(Event::GatewayClose(Some(CloseFrame::new(
             4014,
             "Disallowed intent(s).",
         ))))
         .unwrap();
-    drop(events);
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
         clock: Arc::new(auth::system_now),
         tick: TICK,
     };
-    let error = serve_with(&harness.config, std::future::pending(), wiring)
+    // Serve stays up (no exit, so no restart re-IDENTIFYing) until shutdown.
+    let started = Instant::now();
+    serve_with(&harness.config, sleep(Duration::from_millis(400)), wiring)
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(error.starts_with("gateway closed (4014): "), "{error}");
-    assert!(
-        error.contains("Server Members") && error.contains("Message Content"),
-        "{error}"
-    );
-    // The store was closed on the way out.
+        .expect("a fatal close does not fail serve");
+    assert!(started.elapsed() >= Duration::from_millis(400));
+    drop(events);
     let store = store::open(&harness.config.store).await.unwrap();
     store::close(store, Duration::ZERO).await;
+}
+
+#[tokio::test]
+async fn a_fatal_close_reports_closed_health_and_stops_the_discord_side() {
+    let harness = Harness::new();
+    let (mut discord, ctx) = harness.start().await;
+    drive(&mut discord, async {
+        ctx.events.send(ready()).unwrap();
+        ctx.events.send(guild_create(&[])).unwrap();
+        eventually!("ready", ctx.health.health().await.status == "ok");
+        ctx.events
+            .send(Event::GatewayClose(Some(CloseFrame::new(
+                4004,
+                "Authentication failed.",
+            ))))
+            .unwrap();
+        eventually!(
+            "closed health",
+            ctx.health.health().await.discord == "closed"
+        );
+        let health = ctx.health.health().await;
+        assert_eq!(health.status, "degraded");
+        assert_eq!(health.storage, "ok", "the store keeps serving the portal");
+        eventually!(
+            "the tick stops",
+            ctx.health.health().await.scheduler == "stopped"
+        );
+        // Still up afterwards: nothing reconnects and nothing exits.
+        sleep(TICK * 4).await;
+        assert_eq!(ctx.health.health().await.discord, "closed");
+    })
+    .await;
+    assert_eq!(
+        discord.steps(),
+        ["gateway_closed", "workers_stopped", "tick_stopped"]
+    );
+    assert!(discord.result().is_ok());
+    finish(&harness, ctx).await;
 }
 
 #[tokio::test]

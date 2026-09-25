@@ -169,16 +169,16 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         );
         self.spawn(async move {
             if let Ok(Some((disposition, outcome))) = handled.await {
-                let (level, detail) = match &disposition {
-                    Disposition::Failed(detail) => ("WARN", Some(detail.as_str())),
-                    _ => ("INFO", None),
+                // A failure's detail can quote store errors; the kind is enough.
+                let level = match &disposition {
+                    Disposition::Failed(_) => "WARN",
+                    _ => "INFO",
                 };
                 logging::event(
                     level,
                     "interaction_handled",
                     json!({
                         "disposition": format!("{disposition:?}").split('(').next(),
-                        "detail": detail,
                         "delivered": outcome.is_delivered(),
                     }),
                 );

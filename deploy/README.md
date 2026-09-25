@@ -76,8 +76,11 @@ lines in the container log. The container healthcheck needs `/healthz`
 `status: ok`: storage answering, the gateway `ready` and the tick
 `running`; a disconnect or a stalled tick turns it unhealthy. A gateway
 close for a bad token (4004) or missing privileged intents (4014: enable
-Server Members and Message Content on the Developer Portal's Bot page) stops
-the container with that message. `KANADE_DISCORD_GATEWAY=0` runs the admin
+Server Members and Message Content on the Developer Portal's Bot page) is
+logged once (`gateway_closed_for_good`) and the container keeps running the
+portal with `discord: closed` (unhealthy) but never reconnects, so a restart
+loop cannot burn the shared token's IDENTIFY budget; fix the cause, then
+restart it. `KANADE_DISCORD_GATEWAY=0` runs the admin
 API alone (no gateway, no tick); for the old shell-only mode set
 `command: ["serve", "--offline"]`.
 

@@ -138,7 +138,13 @@ where
             () = &mut shutdown => break,
             item = source.next_event() => match item {
                 None => return RunExit::Closed { reason: CloseReason::from_code(last_close) },
-                Some(Err(error)) => on_error(error),
+                Some(Err(error)) => {
+                    // A failed reconnect means the session is down right now.
+                    if error == GatewayError::Reconnect {
+                        status.disconnected();
+                    }
+                    on_error(error);
+                }
                 Some(Ok(event)) => {
                     status.observe(&event);
                     last_close = match &event {

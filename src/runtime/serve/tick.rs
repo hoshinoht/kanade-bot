@@ -24,13 +24,15 @@ use crate::{
         roster::LiveRoster,
         transport::DiscordTransport,
     },
+    domain::notify::DeliveryJournal,
     domain::{
         ids::RandomIds, members::MemberStore, notify::DEFAULT_MAX_NOTICE_AGE,
         settings::RuntimeSettings,
     },
     infrastructure::store::SqliteStore,
-    runtime::{config::SettingSeeds, logging},
+    runtime::{config::SettingSeeds, error::Error, logging},
 };
+use chrono::{DateTime, Utc};
 
 const STARTING: u8 = 0;
 const RUNNING: u8 = 1;
@@ -128,8 +130,8 @@ pub fn watch_list(settings: &RuntimeSettings) -> WatchList {
 }
 
 impl<T: DiscordTransport> TickLoop<T> {
-    /// Wait for the guild, recover in-flight attempts, then tick until
-    /// `stop`. Returns after the running tick completes.
+    /// Wait for the guild, then tick until `stop`. Returns after the running
+    /// tick completes. [`recover`] must already have run.
     pub async fn run(
         self,
         mut guild_ready: watch::Receiver<bool>,
@@ -154,34 +156,12 @@ impl<T: DiscordTransport> TickLoop<T> {
         );
         let mut interval = tokio::time::interval(self.period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        let mut recovered = false;
+        self.status.set(RUNNING);
         loop {
             tokio::select! {
                 biased;
                 _ = stop.wait_for(|stop| *stop) => break,
                 _ = interval.tick() => {}
-            }
-            // Recovery must succeed before any send: until then a previous
-            // process's in-flight attempts are not yet marked indeterminate.
-            if !recovered {
-                match delivery.start((self.clock)()).await {
-                    Ok(recovery) => {
-                        recovered = true;
-                        logging::event(
-                            "INFO",
-                            "delivery_recovered",
-                            json!({
-                                "indeterminate": recovery.indeterminate.len(),
-                                "orphaned_leases": recovery.orphaned_leases,
-                            }),
-                        );
-                        self.status.set(RUNNING);
-                    }
-                    Err(error) => {
-                        tick_failed("recover", &error);
-                        continue;
-                    }
-                }
             }
             self.refresh(&mut delivery.config).await;
             match delivery.tick_at((self.clock)()).await {
@@ -207,6 +187,30 @@ impl<T: DiscordTransport> TickLoop<T> {
         if let Ok(rows) = self.store.list_members().await {
             self.roster.replace(rows);
         }
+    }
+}
+
+/// Once per process, before anything can send (tick, cards, commands):
+/// attempts a previous process left in flight become indeterminate and are
+/// never resent. Running it later would also catch this process's own
+/// in-flight sends.
+pub async fn recover(store: &SqliteStore, now: DateTime<Utc>) -> Result<(), Error> {
+    match store.recover_on_start(now).await {
+        Ok(recovery) => {
+            logging::event(
+                "INFO",
+                "delivery_recovered",
+                json!({
+                    "indeterminate": recovery.indeterminate.len(),
+                    "orphaned_leases": recovery.orphaned_leases,
+                }),
+            );
+            Ok(())
+        }
+        // Journal text can carry store paths; the kind is enough here.
+        Err(_) => Err(Error::Startup(
+            "delivery journal recovery failed; the store must be checked before serving".into(),
+        )),
     }
 }
 

@@ -115,3 +115,68 @@ async fn a_discord_fixed_edit_announces_nothing_and_a_portal_edit_does() {
     ));
     assert!(changed.notice.via_portal);
 }
+
+#[tokio::test]
+async fn a_discord_swap_is_unmarked_and_a_portal_swap_is_marked() {
+    use std::sync::Arc;
+
+    use kanade::api::write::{ApiClock, RunWrite, SchedulerWriter, WriteContext, Writer};
+    use kanade::domain::history::Expect;
+    use kanade::domain::members::Member;
+
+    let slash = Slash::new().await;
+    slash
+        .run(
+            ALICE,
+            "swap",
+            json!([
+                opt("run_id", R_KALOS),
+                super::user_opt("out", BOB),
+                super::user_opt("in", super::DAN)
+            ]),
+        )
+        .await;
+    let discord = written(&slash).await;
+    let [swapped] = discord.as_slice() else {
+        panic!("one notice: {discord:?}");
+    };
+    assert!(
+        !swapped.notice.via_portal,
+        "v4's slash swap had no portal mark"
+    );
+
+    // The portal goes through the same writer and keeps the mark.
+    let pinned = now();
+    let writer = SchedulerWriter::new(SchedulerService::new(
+        slash.store.clone(),
+        RandomIds,
+        ApiClock(Arc::new(move || pinned)),
+    ));
+    let mut directory = Roster::new();
+    for id in [ALICE, BOB, super::DAN] {
+        directory.upsert(Member {
+            user_id: id.to_string(),
+            has_role: true,
+            ..Member::default()
+        });
+    }
+    writer
+        .run(
+            portal(),
+            Expect::default(),
+            R_KALOS,
+            RunWrite::Participants {
+                add: vec![BOB.to_string()],
+                remove: vec![super::DAN.to_string()],
+            },
+            &WriteContext {
+                policy: policy(),
+                directory,
+            },
+        )
+        .await
+        .unwrap();
+    let all = written(&slash).await;
+    assert_eq!(all.len(), 2, "{all:?}");
+    assert!(all[1].notice.via_portal);
+}

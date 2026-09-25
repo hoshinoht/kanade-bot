@@ -36,7 +36,7 @@ The admin listener binds `127.0.0.1:8080` by default. `GET /healthz` answers
 `{status, mode, scheduler, storage, discord}`: offline mode reports `ok`,
 `offline` and `unavailable` for the rest; live mode reports `mode: "live"`,
 `storage: "ok"` when the store answers a read (else `storage: "error"`),
-`discord` (`connecting`, `ready`, `disconnected`) with `dropped_events:
+`discord` (`connecting`, `ready`, `disconnected`, `closed`) with `dropped_events:
 {other_guild, no_guild}`, and `scheduler` (`starting` until the guild is
 available and restart recovery ran, `running`, `stalled` after three tick
 periods plus five minutes without a completed tick, `stopped`) with
@@ -158,9 +158,11 @@ The Discord side (`serve/discord/`) runs one gateway session for
 - Card ✅/❌ go to `CardDesk` (the approver is the member, `via_portal:
   false`); other ✅/❌ on reminder/digest cards are RSVPs. One sequential
   reaction worker keeps a member's add/remove in order.
-- The delivery tick waits for the guild, runs `recover_on_start` once (an
-  attempt a previous process left in flight becomes indeterminate and is
-  never resent), then ticks every `KANADE_TICK_SECONDS` under one lease per
+- `recover_on_start` runs once before the gateway starts (an attempt a
+  previous process left in flight becomes indeterminate and is never
+  resent), so nothing (reactions, commands, the tick) can send first; a
+  failed recovery fails startup. The delivery tick waits for the guild, then
+  ticks every `KANADE_TICK_SECONDS` under one lease per
   tick in v4's order (materialise, mark done, expiry, notice outbox drain
   with `DEFAULT_MAX_NOTICE_AGE`, digest, reminders). The post channel, quiet
   mode, watch list and members are re-read each tick; the schedule policy
@@ -170,10 +172,14 @@ The Discord side (`serve/discord/`) runs one gateway session for
   per hour) for the beta.
 - Message events are counted only: chat and extraction stay off (S9/S10).
   `Composition.settings.chatbot.category_ids` is the chat gate's input.
-- A fatal close stops serve with the reason (4004: the token; 4014: enable
-  the Server Members and Message Content privileged intents in the
-  Developer Portal). Other disconnects reconnect with Twilight's backoff
-  (health `discord: disconnected` meanwhile).
+- A fatal close (4004: the token; 4014: enable the Server Members and
+  Message Content privileged intents in the Developer Portal) is logged once
+  (`gateway_closed_for_good`), stops the Discord side (workers, tick) and
+  leaves HTTP serving with health `discord: closed` (`degraded`) until
+  shutdown; serve neither exits nor reconnects (parent decision: a restart
+  loop would re-IDENTIFY with the shared production token). Other
+  disconnects reconnect with Twilight's backoff (health `discord:
+  disconnected` meanwhile).
 
 Shutdown (`SIGINT`/`SIGTERM`): the gateway closes (and its spawned
 interaction/registration tasks finish), the roster and reaction workers

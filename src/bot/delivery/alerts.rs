@@ -152,7 +152,8 @@ pub trait AlertSink: Send + Sync {
 }
 
 /// The beta destination: one structured `admin_alert` log line per alert
-/// (after the caller's throttle).
+/// (after the caller's throttle). Only the key (kind and target ids) is
+/// logged: the details can quote store errors, which may carry paths.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LogAlerts;
 
@@ -161,7 +162,7 @@ impl AlertSink for LogAlerts {
         crate::runtime::logging::event(
             "WARN",
             "admin_alert",
-            serde_json::json!({"key": alert.key(), "alert": format!("{alert:?}")}),
+            serde_json::json!({"key": alert.key()}),
         );
     }
 }

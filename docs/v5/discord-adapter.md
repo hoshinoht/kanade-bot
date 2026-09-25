@@ -133,7 +133,8 @@ create/update/delete, thread create/update/delete/list-sync.
 
 One shard (`ShardId::ONE`). Twilight reconnects with exponential backoff and
 resumes on its own (`RESUMED` is deserialized only so `ConnectionStatus`
-reads `ready` again; a close frame reads `disconnected`); the loop hands payload-free receive errors to a callback
+reads `ready` again; a close frame or a failed reconnect reads
+`disconnected`; serve marks a fatal close `closed`); the loop hands payload-free receive errors to a callback
 and continues. When the stream ends after a fatal close it returns
 `Closed { reason }`, taken from the close frame just before the end: 4004
 (token), 4010/4011 (sharding), 4012 (API version), 4013 (invalid intents) and

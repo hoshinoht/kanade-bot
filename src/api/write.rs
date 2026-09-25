@@ -10,7 +10,9 @@ use tokio::sync::Mutex;
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
     drafts::{ProposalStore, StoredDraft},
-    history::{Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome},
+    history::{
+        Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome, Surface,
+    },
     ids::RandomIds,
     members::Roster,
     proposals::Approver,
@@ -248,6 +250,8 @@ where
     ) -> WriteFuture<'a, ()> {
         Box::pin(async move {
             let mut service = self.service.lock().await;
+            // v4 parity: a Discord swap carries no "(via portal)" mark.
+            let via_portal = origin.surface != Surface::Discord;
             let handle = service.as_origin(origin).expecting(expect);
             // Notices are already in the store's outbox, written with the change.
             match write {
@@ -261,7 +265,7 @@ where
                     .await
                     .map(drop),
                 RunWrite::Participants { add, remove } => handle
-                    .swap_participants(run_id, &remove, &add, true, &ctx.directory)
+                    .swap_participants(run_id, &remove, &add, via_portal, &ctx.directory)
                     .await
                     .map(drop),
                 RunWrite::Reset => handle.reset_to_fixed(run_id, &ctx.policy).await.map(drop),

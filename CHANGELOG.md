@@ -278,8 +278,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   syncs the roster (so admins can sign in with Discord), runs the reminder and notice
   tick, handles card and RSVP reactions, reports Discord and scheduler health, and shuts
   down in order; `KANADE_DISCORD_GATEWAY=0` runs the admin API alone. Commands from
-  Discord no longer carry "(via portal)", and a Discord `/fixed edit` posts nothing, as
-  in v4.
+  Discord (including `/swap`) no longer carry "(via portal)", and a Discord `/fixed edit`
+  posts nothing, as in v4. Interrupted sends are recovered before Discord starts, and a
+  refused login (bad token or intents) leaves v5 up but degraded instead of restarting
+  and logging in again with the shared token.
 - v5: admin config API: the Config page reads every runtime setting, Kanata's live model
   list and the server-only facts, saves one section at a time (reasoning and capacity
   rules checked, safe to retry), and reloads persona profiles live.

@@ -25,7 +25,7 @@ use super::{
     api::Composition,
     commands,
     health::GatewayProbe,
-    tick::{TickLoop, TickStatus, delivery_config, watch_list},
+    tick::{self, TickLoop, TickStatus, delivery_config, watch_list},
 };
 use crate::{
     api::{auth::Clock, write::ApiClock},
@@ -105,13 +105,14 @@ pub struct Discord {
     /// How the gateway task ended; `Err` if it panicked.
     exit: Option<Result<RunExit, ()>>,
     pub messages: MessageCounts,
+    connection: ConnectionStatus,
     /// Completed shutdown steps, in order.
     steps: Vec<&'static str>,
 }
 
-/// Start everything. Must be called inside the runtime; nothing connects
+/// Recover the delivery journal, then start everything. Nothing connects
 /// until the gateway task first polls the source.
-pub fn start<S, T>(
+pub async fn start<S, T>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     composition: &Composition,
@@ -122,11 +123,14 @@ where
     S: EventSource + 'static,
     T: GatewayTransport,
 {
+    // Before anything that can send: the reaction worker and commands post
+    // as soon as the gateway is up, not only the tick.
+    tick::recover(&store, (wiring.clock)()).await?;
     let Prepared {
         cache,
         tick_status,
         live,
-        ..
+        probe,
     } = prepared;
     let scope = scope(config);
     let access = Arc::clone(&composition.access);
@@ -245,6 +249,7 @@ where
         tick: Some(tick),
         exit: None,
         messages,
+        connection: probe.connection,
         steps: Vec::new(),
     })
 }
@@ -283,7 +288,13 @@ impl Discord {
                 Ended::Shutdown => break,
                 Ended::Gateway(exit) => {
                     self.gateway = None;
+                    let fatal = matches!(exit, Ok(RunExit::Closed { .. }));
                     self.exit = Some(exit);
+                    if fatal {
+                        self.closed_for_good().await;
+                        shutdown.await;
+                        return;
+                    }
                 }
                 // Only when its guild-ready sender went away with the gateway.
                 Ended::Tick => self.tick = None,
@@ -322,14 +333,30 @@ impl Discord {
         }
     }
 
+    /// Parent decision: a fatal close (4004 token, 4014 intents) must not
+    /// exit, since a restart policy would re-IDENTIFY with the shared
+    /// production token every minute. Log once, stop the Discord side and
+    /// keep serving HTTP with health `discord: closed` until shutdown.
+    async fn closed_for_good(&mut self) {
+        self.connection.closed();
+        if let Some(Ok(RunExit::Closed { reason })) = self.exit {
+            logging::event(
+                "ERROR",
+                "gateway_closed_for_good",
+                json!({"code": reason.code(), "message": reason.to_string()}),
+            );
+        }
+        self.stop().await;
+    }
+
     pub fn steps(&self) -> &[&'static str] {
         &self.steps
     }
 
-    /// A gateway that ended without a shutdown request stops serve.
+    /// A panicked gateway task fails serve; a fatal close does not (see
+    /// [`Self::closed_for_good`]).
     pub fn result(&self) -> Result<(), Error> {
         match self.exit {
-            Some(Ok(RunExit::Closed { reason })) => Err(Error::Startup(reason.to_string())),
             Some(Err(())) => Err(Error::Startup("the Discord gateway task failed".into())),
             _ => Ok(()),
         }

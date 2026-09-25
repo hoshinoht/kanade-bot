@@ -12,8 +12,10 @@ pub enum Connection {
     Connecting,
     /// `READY` or `RESUMED` arrived since the last close.
     Ready,
-    /// A close frame arrived; Twilight is reconnecting (or the gateway ended).
+    /// A close frame arrived or a reconnect failed; Twilight is reconnecting.
     Disconnected,
+    /// A fatal close ended the session for good (serve does not reconnect).
+    Closed,
 }
 
 impl Connection {
@@ -22,6 +24,7 @@ impl Connection {
             Self::Connecting => "connecting",
             Self::Ready => "ready",
             Self::Disconnected => "disconnected",
+            Self::Closed => "closed",
         }
     }
 }
@@ -39,8 +42,21 @@ impl ConnectionStatus {
         match self.0.load(Ordering::Relaxed) {
             1 => Connection::Ready,
             2 => Connection::Disconnected,
+            3 => Connection::Closed,
             _ => Connection::Connecting,
         }
+    }
+
+    /// The session ended for good; later events cannot revive it.
+    pub fn closed(&self) {
+        self.0.store(3, Ordering::Relaxed);
+    }
+
+    /// Only a ready session drops to disconnected; connecting stays so.
+    pub(super) fn disconnected(&self) {
+        let _ = self
+            .0
+            .compare_exchange(1, 2, Ordering::Relaxed, Ordering::Relaxed);
     }
 
     pub(super) fn observe(&self, event: &Event) {
