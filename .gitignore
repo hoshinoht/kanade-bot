@@ -60,3 +60,6 @@ web/e2e/.results/
 web/e2e/.captures/
 web/**/*.tsbuildinfo
 tools/pwa-mock/target/
+
+# Local design research captures (kept on disk, not tracked)
+/docs/research/

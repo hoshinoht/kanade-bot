@@ -321,6 +321,7 @@ test('chat: interactions and one interaction in detail', async ({ page }) => {
   await expect(page).toHaveURL(`${ADMIN}/chat/c-move`);
   await page.getByRole('tab', { name: /Tool trace/ }).click();
   await expect(page.getByRole('row', { name: /schedule.propose/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /schedule.propose/ })).toContainText('63 ms');
   await page.getByRole('tab', { name: /Produced/ }).click();
   await expect(page.getByRole('link', { name: 'proposal card' })).toBeVisible();
 });
@@ -350,7 +351,8 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   // The panel stays open after Clear.
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used').selectOption('schedule.read');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 13 interactions');
+  // Includes the withheld turn: its tool name shows even though its traffic does not.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('4 of 13 interactions');
   await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: 'This boss week' }).click();
   await expect(page).toHaveURL(/from=2026-09-24&to=2026-09-30/);
   await page.getByRole('searchbox', { name: 'Search interactions' }).fill('carling');
@@ -568,18 +570,18 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('kanade');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
-  // Reply profiles as v4's table: label, voice as written, the prompt as plain text, visibility.
+  // Reply profiles: label, voice as written, a one-line plain-text prompt preview, visibility.
   const profiles = panel.getByRole('table', { name: 'Reply profiles' });
-  await expect(profiles.getByRole('columnheader')).toHaveText(['Profile', 'Voice', 'Prompt', 'Visibility', 'Actions']);
+  await expect(profiles.getByRole('columnheader')).toHaveText(['Profile', 'Voice', 'Prompt', 'Visibility']);
   const kanade = profiles.getByRole('row', { name: /^Kanade/ });
   await expect(kanade.getByRole('cell').first()).toHaveText('comedy.');
-  await expect(kanade).toContainText("Kanade Teases lightly in the persona's voice keeps every schedule fact exact");
+  await expect(kanade).toContainText('Kanade Teases lightly');
   await expect(kanade).not.toContainText('**');
   await expect(profiles).not.toContainText('config/personas/profiles/kanade');
   // Publishing and role order are read-only on the server (422 read_only): shown, not offered.
   const sparkly = profiles.getByRole('row', { name: /^Sparkly/ });
   await expect(sparkly).toContainText('private');
-  await expect(sparkly.getByRole('button', { name: /Make public/ })).toBeDisabled();
+  await expect(sparkly.getByRole('button', { name: /Make (public|private)/ })).toHaveCount(0);
   await expect(panel.getByText('Publishing a profile and assigning profiles to roles are not editable here yet.')).toBeVisible();
   // Roles read by name, and copy their id.
   await expect(panel.getByRole('button', { name: '@staff' })).toHaveAttribute('title', 'Role ID 300001 — click to copy');

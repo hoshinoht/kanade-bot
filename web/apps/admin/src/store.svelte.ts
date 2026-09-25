@@ -68,7 +68,7 @@ export class AdminWeek {
           this.#client.get<Summary>('/api/admin/summary', { signal }),
         ]);
         // The tiles describe "right now", not the board, so they never wait for a hold.
-        this.summary = summary;
+        if (JSON.stringify(this.summary) !== JSON.stringify(summary)) this.summary = summary;
         return [week, stats, which] as Snapshot;
       },
       intervalMs: POLL_MS,
@@ -115,8 +115,11 @@ export class AdminWeek {
   }
 
   #apply([week, stats]: Snapshot) {
-    this.week = week;
-    this.stats = stats;
+    // An unchanged poll keeps the objects on screen: new-but-equal objects
+    // re-run every derived value and attachment on the page for nothing.
+    if (!same(this.week, week)) this.week = week;
+    else if (this.week) this.week.generated_at = week.generated_at;
+    if (JSON.stringify(this.stats) !== JSON.stringify(stats)) this.stats = stats;
     // "Updated" names the data on screen, not the last response received.
     this.updated = clockTime(week.generated_at, week.timezone);
   }
@@ -292,3 +295,9 @@ export class AdminWeek {
     }
   }
 }
+
+/** Equal apart from when it was generated. */
+function same(a: Week | null, b: Week): boolean {
+  return a !== null && JSON.stringify({ ...a, generated_at: '' }) === JSON.stringify({ ...b, generated_at: '' });
+}
+

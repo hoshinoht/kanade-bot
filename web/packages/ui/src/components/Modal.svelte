@@ -9,6 +9,7 @@
     narrow = false,
     wide = false,
     flush = false,
+    lightDismiss = false,
     children,
     footer,
     onclose,
@@ -24,6 +25,8 @@
     children: Snippet;
     footer?: Snippet<[() => void]>;
     onclose?: () => void;
+    /** A click on the backdrop closes it (read-only viewers; never forms that hold input). */
+    lightDismiss?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -59,6 +62,10 @@
   class:modal--wide={wide}
   aria-labelledby="{uid}-title"
   onclose={handleClose}
+  onclick={(event) => {
+    // The dialog element itself is only hit on its backdrop; the panel covers the rest.
+    if (lightDismiss && event.target === dialog) close();
+  }}
 >
   <div class="modal__panel">
     <header class="modal__head">

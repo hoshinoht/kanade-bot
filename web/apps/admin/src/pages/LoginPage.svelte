@@ -5,6 +5,7 @@
   import { tick } from 'svelte';
   import { discordStart, loginErrorText } from '../auth';
   import { send } from '../resource.svelte';
+  import { artUrl } from '../shared/identity';
 
   let {
     next,
@@ -82,10 +83,10 @@
 <div class="gate">
   <section class="gate__window" aria-labelledby="{uid}-name">
     <div class="gate__bar"><span class="gate__bar-title">Sign in</span></div>
-    {#if identity}<img class="gate__hero" src={identity.banner} alt="" />{:else}<div class="gate__hero"></div>{/if}
+    {#if identity}<img class="gate__hero" src={artUrl(identity.banner, identity)} alt="" />{:else}<div class="gate__hero"></div>{/if}
     <div class="gate__body">
       {#if identity}
-        <img class="gate__avatar" src={identity.avatar} alt="" width="64" height="64" />
+        <img class="gate__avatar" src={artUrl(identity.avatar, identity)} alt="" width="64" height="64" />
       {:else}
         <span class="gate__avatar" aria-hidden="true">{name.slice(0, 1)}</span>
       {/if}

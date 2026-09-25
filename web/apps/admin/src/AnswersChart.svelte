@@ -3,6 +3,7 @@
   import 'uplot/dist/uPlot.min.css';
   import type { Stats, Week } from '@kanade/api-types';
   import { dayLabel } from '@kanade/ui';
+  import { untrack } from 'svelte';
 
   let { stats, week }: { stats: Stats; week: Week } = $props();
 
@@ -18,14 +19,21 @@
 
   // uPlot draws on canvas and sizes itself through CSSOM (el.style.*), which
   // CSP allows; it injects no style element and no markup strings.
-  $effect(() => {
-    const data: uPlot.AlignedData = [
-      stats.per_day.map((d) => d.day),
-      stats.per_day.map((d) => d.answered),
-      stats.per_day.map((d) => d.waiting),
-    ];
-    let chart: uPlot | null = null;
+  //
+  // Built once (and again only on a theme change); each poll hands it new
+  // data with setData. Rebuilding on every poll destroyed and redrew the
+  // canvas every 15 s — the flash users saw on the Answers tab.
+  let chart: uPlot | null = null;
+  // The axis labels read the latest week at draw time (set by the data effect below).
+  // svelte-ignore state_referenced_locally
+  let current = week;
+  const series = (): uPlot.AlignedData => [
+    stats.per_day.map((d) => d.day),
+    stats.per_day.map((d) => d.answered),
+    stats.per_day.map((d) => d.waiting),
+  ];
 
+  $effect(() => {
     const build = () => {
       chart?.destroy();
       const ink = token('--dim');
@@ -40,22 +48,26 @@
           cursor: { drag: { x: false, y: false } },
           scales: { x: { time: false, range: [-0.6, 6.6] }, y: { range: (_u, _min, max) => [0, Math.max(4, max + 1)] } },
           axes: [
-            { stroke: ink, font, grid: { show: false }, ticks: { stroke: grid }, values: (_u, splits) => splits.map((s) => (Number.isInteger(s) ? dayLabel(week, s) : '')), splits: () => [0, 1, 2, 3, 4, 5, 6] },
+            { stroke: ink, font, grid: { show: false }, ticks: { stroke: grid }, values: (_u, splits) => splits.map((s) => (Number.isInteger(s) ? dayLabel(current, s) : '')), splits: () => [0, 1, 2, 3, 4, 5, 6] },
             { stroke: ink, font, grid: { stroke: grid }, ticks: { stroke: grid } },
           ],
           series: [
-            { label: 'Day', value: (_u, v) => (v == null ? '–' : dayLabel(week, v)) },
+            { label: 'Day', value: (_u, v) => (v == null ? '–' : dayLabel(current, v)) },
             { label: 'Answered', stroke: token('--ok'), fill: token('--ok'), width: 2, paths: bars(-1), points: { show: false } },
             // Waiting is hollow and dashed, so the two series differ without colour.
             { label: 'Waiting', stroke: token('--warn'), fill: 'transparent', width: 2, dash: [4, 3], paths: bars(1), points: { show: false } },
           ],
         },
-        data,
+        untrack(series),
         host,
       );
     };
 
     build();
+    // Canvas text never requests a webfont: load Maple Mono, then redraw once with it.
+    let live = true;
+    const face = `12px ${token('--mono')}`;
+    if (document.fonts && !document.fonts.check(face)) void document.fonts.load(face).then(() => live && build(), () => {});
     const resize = new ResizeObserver(() => chart?.setSize({ width: Math.max(280, host.clientWidth), height: 220 }));
     resize.observe(host);
     const themed = new MutationObserver(build);
@@ -63,11 +75,20 @@
     const scheme = matchMedia('(prefers-color-scheme: dark)');
     scheme.addEventListener('change', build);
     return () => {
+      live = false;
       resize.disconnect();
       themed.disconnect();
       scheme.removeEventListener('change', build);
       chart?.destroy();
+      chart = null;
     };
+  });
+
+  // New figures redraw the same canvas.
+  $effect(() => {
+    const data = series();
+    current = week;
+    chart?.setData(data);
   });
 </script>
 

@@ -332,6 +332,8 @@ export interface Identity {
   cached: boolean;
   /** The bot's Discord user id (mentions of it read as the bot's name); null before the gateway is ready. */
   bot_user_id?: string | null;
+  /** Changes when the art changes; appended to the art URLs so browsers refetch. Not sent yet. */
+  version?: string | number | null;
 }
 
 /** `GET /api/admin/session`: who is signed in; the `X-Kanade-CSRF` response header carries the write token. */

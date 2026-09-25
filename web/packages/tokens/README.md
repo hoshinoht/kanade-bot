@@ -21,7 +21,7 @@ Entries: `@kanade/tokens/index.scss` (tokens + contrast layer),
 | Difficulty pills | `--pill-{e,n,h,c,x}-{bg,fg}` | `:root` + dark blocks | Ported; light `--pill-n-bg`/`--pill-h-bg` darkened slightly (3.53/4.21 → 4.6:1) |
 | Boss monogram | `--mono-s --mono-l --mono-ink-s --mono-ink-l --mono-line-s --mono-line-l` | `:root` + dark blocks | Ported |
 | Entry-art veil | `--art-veil --art-crop-sheet --art-crop-card` | `:root` | Ported |
-| Type families | `--display` Solway, `--body` Zilla Slab, `--mono` Sometype Mono | `:root`, Google Fonts `<link>` | Same stacks; faces self-hosted from `@fontsource/*` (OFL-1.1), latin subset, v4's weights (700/800, 400/500/600, 400/500/600) |
+| Type families | `--display` Solway, `--body` Zilla Slab, `--mono` Maple Mono (v5, user choice; v4 used Sometype Mono) | `:root`, Google Fonts `<link>` | Same stacks; faces self-hosted from `@fontsource/*` (OFL-1.1), latin subset, v4's weights (700/800, 400/500/600, 400/500/600) |
 | Type scale | `--fs-micro … --fs-brand` (7 steps) + display sizes `--fs-clock`, `--fs-clock-narrow`, `--fs-avatar` | `:root` | Steps ported unchanged; v4's component-local sizes now map to tokens (monograms → `--fs-micro`/`--fs-small`, brand mark → `--fs-small`, "own time" → `--fs-lg`) |
 | Shape | `--r --r-in --r-sm --shadow --gutter` | `:root` | Ported unchanged |
 | Appearance keys | `colorway` ∈ marigold/blossom/periwinkle/coral/twilight; `theme` ∈ light/dark/(absent = system) | `theme_boot.html`, `portal.js`, `templating.COLORWAYS` | Same localStorage keys and values; v4's legacy-name migration dropped |

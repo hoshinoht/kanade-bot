@@ -242,6 +242,9 @@ test('reminders: queued, due, sent and stale, all runs or one', async ({ page })
   const queued = page.getByRole('table', { name: 'Queued reminders' });
   const sent = page.getByRole('table', { name: 'Sent reminders' });
   await expect(queued.getByRole('row').nth(1)).toContainText('Tue 29 Sep 21:00');
+  // Sent is paged 15 at a time; the stale card is on a later page.
+  const older = page.getByRole('button', { name: 'Older →' });
+  while ((await sent.getByText('stale — retired without posting').count()) === 0 && (await older.isEnabled())) await older.click();
   await expect(sent.getByText('stale — retired without posting')).toBeVisible();
   await expect(sent.getByRole('link', { name: 'open in Discord' }).first()).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search reminders' }).fill('xbm');

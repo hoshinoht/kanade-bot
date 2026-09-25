@@ -59,7 +59,11 @@ tbody tr:last-child th {
   border-bottom: 0;
 }
 
-tbody tr:hover {
+// The cells carry the hover too: a cell with its own background (a sticky
+// header, a filled pill cell) otherwise left the highlight short of the row.
+tbody tr:hover,
+tbody tr:hover > td,
+tbody tr:hover > th {
   background: var(--raise);
 }
 

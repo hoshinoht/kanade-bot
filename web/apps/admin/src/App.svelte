@@ -31,6 +31,7 @@
   import AccountMenu from './shell/AccountMenu.svelte';
   import Nav from './shell/Nav.svelte';
   import { directory } from './names/directory.svelte';
+  import { artUrl } from './shared/identity';
   import { AdminWeek, type MoveOutcome } from './store.svelte';
   import { reread } from './week/reread';
 
@@ -169,7 +170,7 @@
         return { key: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
       case 'extraction':
       case 'chat-interaction':
-        return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur' };
+        return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
       case 'reminders':
         return { run: router.query.get('run') ?? '' };
       default:
@@ -346,7 +347,7 @@
 {:else}
   <div class="frame">
     <a class="skip" href="#main">Skip to the page</a>
-    <Masthead name={store.identity?.name ?? 'Kanade'} avatar={store.identity?.avatar ?? null} href="/">
+    <Masthead name={store.identity?.name ?? 'Kanade'} avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null} href="/">
       {#snippet meta()}
         <a class="brand__by" href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
         <!-- Three groups: data status, the signed-in account, the command palette. -->
