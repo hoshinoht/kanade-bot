@@ -274,7 +274,12 @@ pub fn alias_limits(catalog: &CatalogSnapshot) -> Vec<AliasLimit> {
 pub fn persona(active: &str, snapshot: &PersonaSnapshot) -> Persona {
     let mut personas = Vec::new();
     let mut profiles = Vec::new();
+    let mut active = active.to_owned();
     if let Some(loaded) = snapshot.active() {
+        // Unset means the catalog default is in use; report that bundle.
+        if active.is_empty() {
+            active = loaded.bundle.value.id.to_string();
+        }
         match &loaded.catalog {
             Some(catalog) => {
                 personas.extend(catalog.value.entries().iter().map(|entry| PersonaEntry {
@@ -305,7 +310,7 @@ pub fn persona(active: &str, snapshot: &PersonaSnapshot) -> Persona {
         }));
     }
     Persona {
-        active: active.to_owned(),
+        active,
         personas,
         profiles,
         role_profiles: Vec::new(),

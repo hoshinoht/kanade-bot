@@ -830,6 +830,18 @@ async fn profiles_reload_and_persona_switch_swap_the_live_snapshot() {
         .collect();
     assert_eq!(keys, ["calm", "terse"]);
 
+    // Nothing saved yet: the persona in use is reported, never "".
+    let unset = config.get().await;
+    let active = unset["persona"]["active"].as_str().unwrap().to_owned();
+    assert!(!active.is_empty());
+    assert!(
+        unset["persona"]["personas"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["key"] == active.as_str())
+    );
+
     let switched = config.patch(json!({"persona": {"active": "calm"}})).await;
     assert_eq!(switched["persona"]["active"], "calm");
     assert_eq!(effective(&config.personas).as_deref(), Some("calm"));
