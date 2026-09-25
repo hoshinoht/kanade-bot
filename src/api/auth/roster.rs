@@ -12,7 +12,7 @@ use crate::{
         ids::id_text,
     },
     domain::{
-        members::{Member, MemberProfile, MemberStore},
+        members::{GatewayMember, MemberStore},
         scheduler::StoreError,
     },
 };
@@ -26,7 +26,8 @@ pub async fn on_roster_update<S: MemberStore>(
     members: &S,
     update: &RosterUpdate,
 ) -> Result<u64, StoreError> {
-    let existing = members.load_member(update.user_id()).await?;
+    // Gateway-owned fields only, each in one write: a concurrent portal edit
+    // (ping level, aliases, reply style) can never be overwritten.
     match update {
         RosterUpdate::Seen {
             user_id,
@@ -36,39 +37,22 @@ pub async fn on_roster_update<S: MemberStore>(
             roles,
             is_guild_admin,
         } => {
-            let profile = existing.unwrap_or_default();
             members
-                .put_member(MemberProfile {
-                    member: Member {
-                        user_id: user_id.clone(),
-                        display_name: Some(display_name.clone()),
-                        nickname: nickname.clone(),
-                        has_role: *has_role,
-                        is_bot: false,
-                        ping_level: profile.member.ping_level,
-                    },
+                .apply_gateway(GatewayMember {
+                    user_id: user_id.clone(),
+                    display_name: Some(display_name.clone()),
+                    nickname: nickname.clone(),
+                    has_role: *has_role,
+                    is_bot: false,
                     roles: roles.clone(),
                     is_guild_admin: *is_guild_admin,
-                    ..profile
                 })
                 .await?;
             Ok(auth.member_changed(user_id).await)
         }
         RosterUpdate::Left { user_id } => {
-            if let Some(profile) = existing {
-                // A member who left holds no role, whatever the last update said.
-                members
-                    .put_member(MemberProfile {
-                        member: Member {
-                            has_role: false,
-                            ..profile.member
-                        },
-                        roles: Vec::new(),
-                        is_guild_admin: false,
-                        ..profile
-                    })
-                    .await?;
-            }
+            // A member who left holds no role, whatever the last update said.
+            members.member_departed(user_id).await?;
             Ok(auth.member_left(user_id).await)
         }
     }
@@ -93,12 +77,7 @@ pub async fn on_guild_available<S: MemberStore>(
     for profile in members.list_members().await? {
         if profile.is_guild_admin && !admin_roles.grants(&profile.roles) {
             recheck.push(profile.member.user_id.clone());
-            members
-                .put_member(MemberProfile {
-                    is_guild_admin: false,
-                    ..profile
-                })
-                .await?;
+            members.clear_guild_admin(&profile.member.user_id).await?;
         }
     }
     if let Some(previous) = previous.filter(|previous| *previous != owner_id) {

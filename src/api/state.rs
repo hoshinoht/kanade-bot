@@ -3,6 +3,7 @@
 //! the guild facts owned elsewhere (channels, personas, staff rule).
 
 use std::{
+    collections::BTreeMap,
     future::Future,
     path::PathBuf,
     pin::Pin,
@@ -18,8 +19,11 @@ use crate::{
     domain::{
         catalog::BossTable,
         drafts::{DraftKind, DraftStatus, ProposalStore},
-        history::{ChangeHistory, ChangeRef},
-        members::{MemberProfile, MemberStore},
+        history::{
+            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRef,
+            RowKey, changed_fields,
+        },
+        members::{MemberProfile, MemberStore, PortalEdit},
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
     },
@@ -36,11 +40,29 @@ pub trait ReadStore: Send + Sync {
     fn member(&self, user_id: String) -> ReadFuture<'_, Option<MemberProfile>>;
     /// Live extractor proposals plus submitted member requests.
     fn inbox_count(&self) -> ReadFuture<'_, u64>;
+    /// Each field of `target` any record set, with the last record's seq.
+    fn last_changes(&self, target: BlameTarget) -> ReadFuture<'_, BTreeMap<String, u64>>;
+    /// The last record at or before `version` that set `field` of `target`:
+    /// what a client that read at `version` saw (history is append-only).
+    fn seen_at(
+        &self,
+        target: BlameTarget,
+        field: String,
+        version: u64,
+    ) -> ReadFuture<'_, Option<u64>>;
+    /// The weekly timing a recorded request created (idempotent create replays).
+    fn recorded_fixed(&self, actor: Actor, request_id: String) -> ReadFuture<'_, Option<String>>;
+    /// Portal member edits bypass the scheduler (members are not history rows).
+    fn edit_member(
+        &self,
+        user_id: String,
+        edit: PortalEdit,
+    ) -> ReadFuture<'_, Option<MemberProfile>>;
 }
 
 impl<T> ReadStore for T
 where
-    T: ScheduleStore + ChangeHistory + MemberStore + ProposalStore + Send + Sync,
+    T: ScheduleStore + ChangeHistory + BlameIndex + MemberStore + ProposalStore + Send + Sync,
 {
     fn snapshot(&self, scope: Scope) -> ReadFuture<'_, ScheduleSnapshot> {
         Box::pin(async move { self.load(&scope).await })
@@ -69,6 +91,66 @@ where
                 .count();
             Ok((proposals + requests) as u64)
         })
+    }
+
+    fn last_changes(&self, target: BlameTarget) -> ReadFuture<'_, BTreeMap<String, u64>> {
+        Box::pin(async move { BlameIndex::last_changes(self, &target).await })
+    }
+
+    fn seen_at(
+        &self,
+        target: BlameTarget,
+        field: String,
+        version: u64,
+    ) -> ReadFuture<'_, Option<u64>> {
+        Box::pin(async move {
+            let key = (target, field);
+            let mut query = ChangeQuery::new(ChangeFilter::All);
+            query.newest_first = true;
+            query.cursor = Some(version.saturating_add(1));
+            loop {
+                let page = self.list_changes(&query).await?;
+                if let Some(record) = page
+                    .records
+                    .iter()
+                    .find(|record| changed_fields(record).contains(&key))
+                {
+                    return Ok(Some(record.seq));
+                }
+                match page.next_cursor {
+                    Some(cursor) => query.cursor = Some(cursor),
+                    None => return Ok(None),
+                }
+            }
+        })
+    }
+
+    fn recorded_fixed(&self, actor: Actor, request_id: String) -> ReadFuture<'_, Option<String>> {
+        Box::pin(async move {
+            let Some(recorded) = self.recorded_request(&actor, &request_id).await? else {
+                return Ok(None);
+            };
+            Ok(self
+                .load_change(recorded.committed.seq)
+                .await?
+                .and_then(|record| {
+                    record
+                        .rows
+                        .into_iter()
+                        .find_map(|row| match (row.key, row.before) {
+                            (RowKey::FixedRun(id), None) => Some(id),
+                            _ => None,
+                        })
+                }))
+        })
+    }
+
+    fn edit_member(
+        &self,
+        user_id: String,
+        edit: PortalEdit,
+    ) -> ReadFuture<'_, Option<MemberProfile>> {
+        Box::pin(async move { self.apply_portal(&user_id, edit).await })
     }
 }
 
@@ -175,6 +257,8 @@ impl GuildAccess {
 /// Everything the admin read routes compose.
 pub struct ApiState {
     pub store: Arc<dyn ReadStore>,
+    /// The one scheduler writer (a mutex inside); reads never go through it.
+    pub writer: Arc<dyn super::write::Writer>,
     pub policy: SchedulePolicy,
     pub catalog: Arc<BossTable>,
     pub channels: Arc<dyn ChannelList>,

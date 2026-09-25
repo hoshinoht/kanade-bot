@@ -16,17 +16,20 @@ use kanade::{
         },
         listeners::Site,
         state::{ApiState, ChannelEntry, GuildAccess, PersonaOption, StaticChannels},
+        write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
     domain::{
         attendance::AttendanceDefault,
         catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
         history::{Actor, ChangeMeta, Origin, Surface},
+        ids::RandomIds,
         members::{Member, MemberProfile, MemberStore, PingLevel},
         schedule::{
             Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState,
             Run, RunSource, RunStatus, SchedulePolicy,
         },
+        scheduler::SchedulerService,
         scheduler::{ScheduleStore, Scope},
     },
     infrastructure::store::{SqliteStore, SqliteStoreConfig},
@@ -134,8 +137,9 @@ impl Drop for TempDir {
 }
 
 pub struct Reads {
-    admin: std::net::SocketAddr,
-    cookie: String,
+    pub admin: std::net::SocketAddr,
+    pub cookie: String,
+    pub csrf: String,
     pub store: Arc<SqliteStore>,
     _fixture: Fixture,
     _dir: TempDir,
@@ -369,8 +373,14 @@ impl Reads {
             .unwrap()
             .with_clock(Arc::new(move || pinned));
         let zone = chrono_tz::Asia::Kuala_Lumpur;
+        let writer = Arc::new(SchedulerWriter::new(SchedulerService::new(
+            store.clone(),
+            RandomIds,
+            ApiClock(Arc::new(move || pinned)),
+        )));
         let state = ApiState {
             store: store.clone(),
+            writer,
             policy: SchedulePolicy::new(
                 ReminderPolicy {
                     zone,
@@ -424,9 +434,11 @@ impl Reads {
         let cookie = login
             .cookie(kanade::api::auth::wire::SESSION_COOKIE)
             .expect("signed in");
+        let csrf = login.header("x-kanade-csrf").expect("csrf").to_owned();
         Self {
             admin,
             cookie: format!("{}={cookie}", kanade::api::auth::wire::SESSION_COOKIE),
+            csrf,
             store,
             _fixture: fixture,
             _dir: dir,

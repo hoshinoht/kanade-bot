@@ -67,6 +67,38 @@ paths are URL-encoded (runs, inbox, members, fixed, limits, rescan); `PATCH` bod
 partial. A partial `PATCH` takes one section per request and replaces arrays
 whole; unknown or read-only keys are refused with 422.
 
+## Mutations (**Implemented**, A4)
+
+- Every mutation needs a session and, with the cookie, `X-Kanade-CSRF`
+  (403 `csrf`). Changes are recorded as the session's actor on surface
+  `admin_portal` (`cli` for the bearer). One scheduler writer serialises
+  them; reads never wait for it.
+- **Week version (API-1):** each run edit declares the fields it changes
+  (`slot`, `status`, `participants`, `rsvp:<member>`; reset declares `slot`,
+  `participants`, `bosses`, `channel`). A field last changed after the
+  request's `version` is `409 stale`; otherwise the change that set it is
+  re-checked inside the commit, so an edit landing in between is `409 stale`
+  too. Other fields of the same run merging freely is the point: edits to
+  different fields at the same version never conflict. An edit that
+  re-derives the status (roster, answers) changes `status` too.
+- Explicit `expect: [{field, seen}]` and admin `override: [{seq, hash}]`
+  are accepted in the same bodies and replace the version-derived
+  expectations; their refusals are 422 `unknown_field` | `duplicate_field` |
+  `override_not_seen` | `override_unchanged` | `unknown_override`, 404
+  `unknown_target`, 403 `override_forbidden`. The 409 body is a plain
+  `ApiError` (`stale`); the proposed `conflicts` list needs an `error.json`
+  extension first.
+- **`Idempotency-Key`** (1–128 of `[A-Za-z0-9-_.:]`, else 400
+  `invalid_idempotency_key`) is the request id: a replay answers the current
+  state (200/201) without applying again, even after its own change moved the
+  version; the same key with another request is `422 idempotency_mismatch`.
+- Other refusals: 404 `not_found`; 409 `move_conflict` (the weekly already
+  has a run in that week) or `busy` (revision races outlasted the retries);
+  422 `invalid` with the scheduler's own wording, `nothing_to_change`,
+  `choices_required`, `choices_not_applicable`, `not_on_run`, `alias_taken`;
+  400 `invalid_body` (unknown fields refused); 503 `unavailable` (no backend
+  text is ever returned).
+
 ## Schedule
 
 | Method & path | Request | Response | Notes |
@@ -78,23 +110,23 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. **Implemented** over a `ChannelList` port. |
 | `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins (offline name `Kanade`; `cached` reflects `KANADE_IDENTITY_DIR`). |
 | `GET /api/admin/session` | — | `Session` | Who is signed in. **Implemented** (see Sign-in and sessions). |
-| `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. |
-| `PATCH /api/admin/runs/{id}/status` | `StatusRequest` (`{status, version}`) | `RunResult` (`{run, version}`) | |
-| `POST /api/admin/runs/{id}/rsvp` | `RsvpRequest` (`{member_id, answer, version}`) | `RunResult` | |
-| `PATCH /api/admin/runs/{id}/participants` | `ParticipantsRequest` (`{add?, remove?, version}`) | `RunResult` | Week-only roster edits. |
-| `POST /api/admin/runs/{id}/reset` | `{version}` | `RunResult` | New in v5: back to the weekly timing. |
+| `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. **Implemented**: `day` 0–6 within the run's boss week; `time` null only for own-time runs; done/cancelled runs are refused (422). |
+| `PATCH /api/admin/runs/{id}/status` | `StatusRequest` (`{status, version}`) | `RunResult` (`{run, version}`) | **Implemented**; `at_risk` is derived, not settable (422). |
+| `POST /api/admin/runs/{id}/rsvp` | `RsvpRequest` (`{member_id, answer, version}`) | `RunResult` | **Implemented**: `yes`/`no` count as the card reaction would (status re-derived); `clear` takes the answer back; a member not on the run is `422 not_on_run`. |
+| `PATCH /api/admin/runs/{id}/participants` | `ParticipantsRequest` (`{add?, remove?, version}`) | `RunResult` | Week-only roster edits. **Implemented**. |
+| `POST /api/admin/runs/{id}/reset` | `{version}` | `RunResult` | New in v5: back to the weekly timing. **Implemented**. |
 | `POST /api/admin/rescan` (per-run) | `{channels: [run.channel_id], window: 'week'}` | `RescanJob` | The run sheet and phone board re-read one channel; `Run.channel_id` is the explicit key (`party` is the legacy handle). |
-| `POST /api/admin/runs/{id}/ping` | `{}` | `{message}` | Preview ping text. |
+| `POST /api/admin/runs/{id}/ping` | `{}` | `{message}` | Preview ping text. **Implemented** as a preview only: nothing is posted (the delivery tick owns Discord sends). |
 
 ## Fixed timings, bosses, knowledge
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `GET /api/admin/fixed` | — | `FixedRow[]` | **Implemented**; `runs` lists live runs this and next week. |
-| `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. |
-| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. |
-| `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. |
-| `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. |
+| `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. **Implemented**: `201`; the timing's runs are materialised for the current and next two boss weeks; members need the bossing role and the channel must be watched (422). |
+| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. **Implemented**: only fields that differ are edited; an amended run the edit would move needs a decision (`422 choices_required`), a decision for another run is `422 choices_not_applicable`; optional `version`/`expect`/`override` as for runs. |
+| `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. **Implemented** (live runs in the three materialised weeks). |
+| `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. **Implemented** (catalog parser; refusals are `422 invalid` with the parser's message). |
 | `GET /api/admin/bosses` | — | `BossRow[]` | **Implemented**; keys are catalog short names (`MaleficStar`, exact case, as `/art/*` keys); hue from the catalog guide colour. |
 | `GET /api/admin/bosses/events` | — | `EventBoss[]` | New in v5. **Implemented**. |
 | `GET /api/admin/bosses/{key}/knowledge` | — | `Knowledge` | Schema v2, served from `boss/knowledge/*.yaml`. **Implemented**; unknown or non-alphanumeric keys are 404. |
@@ -121,8 +153,8 @@ whole; unknown or read-only keys are refused with 422.
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
-| `PATCH /api/admin/members/{id}` | `MemberPatch` | `MemberRow` | Ping level, reply style. |
-| `POST /api/admin/members/{id}/aliases` | `{alias}` | `MemberRow` | v4 `…/nick`. |
+| `PATCH /api/admin/members/{id}` | `MemberPatch` | `MemberRow` | Ping level, reply style. **Implemented** (`persona: ""` clears; unknown member 404). |
+| `POST /api/admin/members/{id}/aliases` | `{alias}` | `MemberRow` | v4 `…/nick`. **Implemented**: one word (letters, digits, `-`, `_`, ≤ 32), lowercased; held by someone else is `422 alias_taken`. |
 | `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. **Implemented**. |
 | `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. **Implemented** for this and next boss week. |
 | `GET /api/admin/config` | — | `ConfigView` | All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |

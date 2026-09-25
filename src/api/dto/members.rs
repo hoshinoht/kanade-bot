@@ -49,37 +49,41 @@ pub fn rows(
     let mut rows: Vec<MemberRow> = profiles
         .iter()
         .filter(|profile| !profile.member.is_bot)
-        .filter_map(|profile| {
-            let level = access.access(profile);
-            (profile.member.has_role || level != "none").then(|| {
-                let member = &profile.member;
-                MemberRow {
-                    id: member.user_id.clone(),
-                    name: member
-                        .name()
-                        .map_or_else(|| member.user_id.clone(), str::to_owned),
-                    nickname: member.nickname.clone(),
-                    aliases: profile.aliases.clone(),
-                    runs_this_week: snapshot
-                        .runs
-                        .iter()
-                        .filter(|run| {
-                            run.week_start == this_week
-                                && run.participants.contains(&member.user_id)
-                        })
-                        .count(),
-                    ping_level: member.ping_level.as_str(),
-                    persona: profile.reply_style.clone(),
-                    persona_available: profile
-                        .reply_style
-                        .as_ref()
-                        .is_none_or(|key| personas.iter().any(|option| option.key == *key)),
-                    bossing: member.has_role,
-                    access: level,
-                }
-            })
-        })
+        .filter(|profile| profile.member.has_role || access.access(profile) != "none")
+        .map(|profile| row(profile, access, personas, snapshot, this_week))
         .collect();
     rows.sort_by(|a, b| (a.name.to_lowercase(), &a.id).cmp(&(b.name.to_lowercase(), &b.id)));
     rows
+}
+
+/// One member's row (also for edits of members outside the listed roster).
+pub fn row(
+    profile: &MemberProfile,
+    access: &GuildAccess,
+    personas: &[PersonaOption],
+    snapshot: &ScheduleSnapshot,
+    this_week: DateTime<Utc>,
+) -> MemberRow {
+    let member = &profile.member;
+    MemberRow {
+        id: member.user_id.clone(),
+        name: member
+            .name()
+            .map_or_else(|| member.user_id.clone(), str::to_owned),
+        nickname: member.nickname.clone(),
+        aliases: profile.aliases.clone(),
+        runs_this_week: snapshot
+            .runs
+            .iter()
+            .filter(|run| run.week_start == this_week && run.participants.contains(&member.user_id))
+            .count(),
+        ping_level: member.ping_level.as_str(),
+        persona: profile.reply_style.clone(),
+        persona_available: profile
+            .reply_style
+            .as_ref()
+            .is_none_or(|key| personas.iter().any(|option| option.key == *key)),
+        bossing: member.has_role,
+        access: access.access(profile),
+    }
 }

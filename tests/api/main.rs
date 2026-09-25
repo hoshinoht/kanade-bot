@@ -10,3 +10,4 @@ mod proxy;
 mod reads;
 mod schemas;
 mod support;
+mod writes;

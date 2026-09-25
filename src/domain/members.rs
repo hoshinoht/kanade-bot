@@ -171,10 +171,91 @@ pub trait MemberStore {
         &self,
         profile: MemberProfile,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// The gateway's view of a member, in one write that never touches the
+    /// portal's fields (ping level, aliases, reply style); a new row gets
+    /// their defaults. A concurrent portal edit therefore always survives.
+    fn apply_gateway(
+        &self,
+        update: GatewayMember,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// A departure: clears the role flag, roles and Administrator in one
+    /// write; `false` when there is no row.
+    fn member_departed(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
+
+    /// Clear only the stored Administrator; `false` when there is no row.
+    fn clear_guild_admin(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
+
+    /// A portal edit in one write that never touches the gateway's fields.
+    /// `None` when there is no row; an alias refused as by [`Self::put_member`]
+    /// is [`StoreError::Constraint`] and nothing is written.
+    fn apply_portal(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send;
+}
+
+/// Gateway-owned member fields.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GatewayMember {
+    pub user_id: String,
+    pub display_name: Option<String>,
+    pub nickname: Option<String>,
+    pub has_role: bool,
+    pub is_bot: bool,
+    pub roles: Vec<String>,
+    pub is_guild_admin: bool,
+}
+
+/// Portal-owned member fields; `None` leaves a field as it is.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PortalEdit {
+    pub ping_level: Option<PingLevel>,
+    /// `Some(None)` clears back to the default style.
+    pub reply_style: Option<Option<String>>,
+    /// Appended when not already held.
+    pub add_alias: Option<String>,
 }
 
 /// A shared store is a member store (the API holds stores behind `Arc`).
 impl<T: MemberStore + Send + Sync> MemberStore for Arc<T> {
+    fn apply_gateway(
+        &self,
+        update: GatewayMember,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send {
+        (**self).apply_gateway(update)
+    }
+
+    fn member_departed(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        (**self).member_departed(user_id)
+    }
+
+    fn clear_guild_admin(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        (**self).clear_guild_admin(user_id)
+    }
+
+    fn apply_portal(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send {
+        (**self).apply_portal(user_id, edit)
+    }
+
     fn list_members(&self) -> impl Future<Output = Result<Vec<MemberProfile>, StoreError>> + Send {
         (**self).list_members()
     }

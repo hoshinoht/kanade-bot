@@ -5,12 +5,12 @@ use serde::Serialize;
 
 use super::{
     Boss, Named, hhmm,
-    week::{Context, day_index, run_time},
+    week::{Context, day_index, is_amended, run_time},
     weekday_name,
 };
 use crate::domain::{
     ids::short_id,
-    schedule::{FixedRun, RunSource, ScheduleSnapshot},
+    schedule::{FixedRun, ScheduleSnapshot},
 };
 
 #[derive(Serialize)]
@@ -80,7 +80,7 @@ fn row(
                 day: day_index(ctx, start_date, run.datetime),
                 time: run_time(ctx, run),
                 status: run.status.as_str(),
-                amended: run.source == RunSource::Amend,
+                amended: is_amended(ctx, run, Some(fixed)),
             })
         })
         .collect();

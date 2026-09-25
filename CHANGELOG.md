@@ -122,6 +122,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: admin edit API: move runs, change status, answers and parties, reset to the
+  weekly timing, preview pings, create, edit and retire weekly timings, and edit
+  members and aliases. Edits made from an out-of-date screen are refused (409) instead
+  of overwriting someone else's change, a retried request is applied only once, and
+  Discord member updates no longer overwrite portal member edits. Not yet wired into
+  `serve`.
 - v5: admin read API: week, stats, summary, weekly timings, reminders, members,
   channels, personas, bosses, boss events and knowledge, each matching the published
   JSON schemas; members gain stored aliases, reply style and roles (migration 0010) so

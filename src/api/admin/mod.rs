@@ -5,6 +5,7 @@
 mod auth;
 mod context;
 mod read;
+mod write;
 
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/art/{kind}/{key}", get(assets::art))
         .merge(auth::routes())
         .merge(read::routes())
+        .merge(write::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

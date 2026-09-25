@@ -7,7 +7,9 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::list;
 use super::schedule::store_error;
-use crate::domain::members::{Member, MemberProfile, MemberStore, PingLevel, is_valid_alias};
+use crate::domain::members::{
+    GatewayMember, Member, MemberProfile, MemberStore, PingLevel, PortalEdit, is_valid_alias,
+};
 use crate::domain::scheduler::StoreError;
 
 const COLUMNS: &str = "user_id, display_name, nickname, has_role, is_bot, ping_level, aliases, \
@@ -118,6 +120,97 @@ async fn put(conn: &mut SqliteConnection, profile: &MemberProfile) -> Result<(),
     Ok(())
 }
 
+/// One upsert naming only gateway columns, so portal columns are never rewritten.
+async fn gateway(conn: &mut SqliteConnection, update: &GatewayMember) -> Result<(), StoreError> {
+    sqlx::query(
+        "INSERT INTO members (user_id, display_name, nickname, has_role, is_bot, roles, \
+         is_guild_admin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         ON CONFLICT (user_id) DO UPDATE SET display_name = excluded.display_name, \
+         nickname = excluded.nickname, has_role = excluded.has_role, is_bot = excluded.is_bot, \
+         roles = excluded.roles, is_guild_admin = excluded.is_guild_admin",
+    )
+    .bind(&update.user_id)
+    .bind(&update.display_name)
+    .bind(&update.nickname)
+    .bind(update.has_role)
+    .bind(update.is_bot)
+    .bind(list(&update.roles))
+    .bind(update.is_guild_admin)
+    .execute(&mut *conn)
+    .await
+    .map_err(store_error)?;
+    Ok(())
+}
+
+async fn departed(conn: &mut SqliteConnection, user_id: &str) -> Result<bool, StoreError> {
+    let done = sqlx::query(
+        "UPDATE members SET has_role = 0, roles = '[]', is_guild_admin = 0 WHERE user_id = ?1",
+    )
+    .bind(user_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(store_error)?;
+    Ok(done.rows_affected() > 0)
+}
+
+async fn not_admin(conn: &mut SqliteConnection, user_id: &str) -> Result<bool, StoreError> {
+    let done = sqlx::query("UPDATE members SET is_guild_admin = 0 WHERE user_id = ?1")
+        .bind(user_id)
+        .execute(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Inside one `BEGIN IMMEDIATE`: every other writer waits, so reading the
+/// aliases and writing them back cannot interleave with a gateway write.
+async fn portal(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    edit: &PortalEdit,
+) -> Result<Option<MemberProfile>, StoreError> {
+    let Some(mut profile) = one(conn, user_id).await? else {
+        return Ok(None);
+    };
+    if let Some(level) = edit.ping_level {
+        profile.member.ping_level = level;
+    }
+    if let Some(style) = &edit.reply_style {
+        profile.reply_style.clone_from(style);
+    }
+    let mut added = None;
+    if let Some(alias) = &edit.add_alias
+        && !profile.aliases.contains(alias)
+    {
+        if !is_valid_alias(alias) {
+            return Err(StoreError::Constraint(format!(
+                "alias {alias:?} is not one lowercase word"
+            )));
+        }
+        profile.aliases.push(alias.clone());
+        added = Some(alias);
+    }
+    sqlx::query(
+        "UPDATE members SET ping_level = ?1, reply_style = ?2, aliases = ?3 WHERE user_id = ?4",
+    )
+    .bind(profile.member.ping_level.as_str())
+    .bind(&profile.reply_style)
+    .bind(list(&profile.aliases))
+    .bind(user_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(store_error)?;
+    if let Some(alias) = added {
+        sqlx::query("INSERT INTO member_aliases (alias, user_id) VALUES (?1, ?2)")
+            .bind(alias)
+            .bind(user_id)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?;
+    }
+    Ok(Some(profile))
+}
+
 impl MemberStore for SqliteStore {
     async fn list_members(&self) -> Result<Vec<MemberProfile>, StoreError> {
         read_txn!(self, tx, all(&mut tx))
@@ -129,5 +222,25 @@ impl MemberStore for SqliteStore {
 
     async fn put_member(&self, profile: MemberProfile) -> Result<(), StoreError> {
         write_txn!(self, tx, put(&mut tx, &profile))
+    }
+
+    async fn apply_gateway(&self, update: GatewayMember) -> Result<(), StoreError> {
+        write_txn!(self, tx, gateway(&mut tx, &update))
+    }
+
+    async fn member_departed(&self, user_id: &str) -> Result<bool, StoreError> {
+        write_txn!(self, tx, departed(&mut tx, user_id))
+    }
+
+    async fn clear_guild_admin(&self, user_id: &str) -> Result<bool, StoreError> {
+        write_txn!(self, tx, not_admin(&mut tx, user_id))
+    }
+
+    async fn apply_portal(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+    ) -> Result<Option<MemberProfile>, StoreError> {
+        write_txn!(self, tx, portal(&mut tx, user_id, &edit))
     }
 }

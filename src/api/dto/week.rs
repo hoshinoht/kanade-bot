@@ -14,7 +14,7 @@ use crate::{
         ids::short_id,
         members::{Roster, member_name},
         schedule::{
-            DAY_OF, FixedRun, Reminder, RsvpState, Run, RunSource, RunStatus, ScheduleSnapshot,
+            DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot,
             countdown_kind, is_stale,
         },
     },
@@ -265,9 +265,22 @@ pub fn run_dto(
         channel_id,
         cards: cards.into_iter().map(|(_, card)| card).collect(),
         fixed_id: run.fixed_run_id.clone(),
-        amended: run.source == RunSource::Amend,
+        amended: is_amended(ctx, run, fixed),
         roster_change: roster_change(ctx, run, fixed),
     }
+}
+
+/// Off its weekly timing this week: another day or time, or another roster.
+/// Derived rather than read from `source`, which stays `amend` after a run is
+/// reset back onto its timing.
+pub fn is_amended(ctx: &Context<'_>, run: &Run, fixed: Option<&FixedRun>) -> bool {
+    let Some(fixed) = fixed else {
+        return false;
+    };
+    let local = ctx.zone.from_utc_datetime(&run.datetime.naive_utc());
+    let moved = local.weekday() != fixed.weekday
+        || (run.status != RunStatus::Otot && local.time() != fixed.time);
+    moved || roster_change(ctx, run, Some(fixed)).is_some()
 }
 
 /// The boss week starting at `start` (a UTC instant of the reset).
