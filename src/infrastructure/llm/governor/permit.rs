@@ -135,8 +135,12 @@ impl Permit {
         let mut state = self.group.lock();
         state.breaker.refresh(now);
         let closed = state.breaker.state() == BreakerState::Closed;
-        if (closed_only && !closed) || matches!(state.breaker.peek(), Admission::Refused { .. }) {
-            state.counters.shed_unavailable += 1;
+        let shed = matches!(state.breaker.peek(), Admission::Refused { .. });
+        if shed || (closed_only && !closed) {
+            // A policy skip (half-open, closed_only) sheds no admissible work.
+            if shed {
+                state.counters.shed_unavailable += 1;
+            }
             return Err(Refused::Unavailable {
                 retry_at: state.breaker.retry_at(),
             });

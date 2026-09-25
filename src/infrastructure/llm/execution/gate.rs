@@ -4,13 +4,14 @@ use super::super::governor::{Attempt, CallKind, Outcome, Permit, Random, Refused
 
 /// Admission for one runner call: every provider request passes the permit's
 /// rate ceiling, breaker and (for retries) retry budget, and is capped by the
-/// session's remaining request count.
+/// session's request count.
 pub(in crate::infrastructure::llm) struct Gate<'a> {
     permit: Option<&'a Permit>,
     kind: CallKind,
     deadline: Option<Instant>,
-    limit: u32,
-    sent: u32,
+    /// The session's own counter, bumped at admission so a cancelled call still counts.
+    used: &'a mut u32,
+    cap: u32,
     retry_next: bool,
     random: &'a dyn Random,
     attempt: Option<Attempt>,
@@ -22,12 +23,14 @@ pub(in crate::infrastructure::llm) enum Denied {
 }
 
 impl<'a> Gate<'a> {
-    /// `retry_first` makes the first request spend retry budget (requeue, clean retry).
+    /// Admits while `*used < cap`; `retry_first` makes the first request spend
+    /// retry budget (requeue, clean retry).
     pub(in crate::infrastructure::llm) fn governed(
         permit: &'a Permit,
         kind: CallKind,
         deadline: Instant,
-        limit: u32,
+        used: &'a mut u32,
+        cap: u32,
         retry_first: bool,
         random: &'a dyn Random,
     ) -> Self {
@@ -35,8 +38,8 @@ impl<'a> Gate<'a> {
             permit: Some(permit),
             kind,
             deadline: Some(deadline),
-            limit,
-            sent: 0,
+            used,
+            cap,
             retry_next: retry_first,
             random,
             attempt: None,
@@ -44,21 +47,17 @@ impl<'a> Gate<'a> {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(super) fn ungoverned(random: &'a dyn Random) -> Self {
+    pub(super) fn ungoverned(random: &'a dyn Random, used: &'a mut u32) -> Self {
         Self {
             permit: None,
             kind: CallKind::Extraction,
             deadline: None,
-            limit: u32::MAX,
-            sent: 0,
+            used,
+            cap: u32::MAX,
             retry_next: false,
             random,
             attempt: None,
         }
-    }
-
-    pub(in crate::infrastructure::llm) fn sent(&self) -> u32 {
-        self.sent
     }
 
     pub(super) fn kind(&self) -> CallKind {
@@ -74,7 +73,7 @@ impl<'a> Gate<'a> {
     }
 
     pub(super) fn has_room(&self) -> bool {
-        self.sent < self.limit
+        *self.used < self.cap
     }
 
     /// Asked before backing off so a denied retry costs no sleep.
@@ -103,7 +102,7 @@ impl<'a> Gate<'a> {
             .map_err(Denied::Governor)?;
             self.attempt = Some(attempt);
         }
-        self.sent += 1;
+        *self.used += 1;
         Ok(())
     }
 

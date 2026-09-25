@@ -338,7 +338,13 @@ fn status_failure(reply: &Reply) -> ProviderFailure {
         ),
         // Kanata's queue timeout and a slow backend are indistinguishable here.
         (504, _) => (ProviderFailureKind::UpstreamTimeout, "upstream-timeout"),
-        (429, _) => (ProviderFailureKind::Transient, "rate-limited"),
+        (429, _) => match reply.retry_after {
+            Some(retry_after) => (
+                ProviderFailureKind::RateLimited { retry_after },
+                "rate-limited",
+            ),
+            None => (ProviderFailureKind::Transient, "rate-limited"),
+        },
         (500..=599, _) => (ProviderFailureKind::Transient, "server-error"),
         (300..=399, _) => (ProviderFailureKind::Permanent, "redirect"),
         _ => (ProviderFailureKind::Permanent, "status"),

@@ -45,7 +45,13 @@ pub enum ProviderFailureKind {
     },
     /// The gateway reports the backend down; feeds the breaker, never retried.
     BackendUnavailable,
-    /// No answer in time; work may still be running upstream.
+    /// A plain upstream 429 naming `Retry-After`: transient, but the runner's
+    /// backoff waits at least `retry_after`.
+    RateLimited {
+        retry_after: Duration,
+    },
+    /// No complete answer (timeout, or the reply was lost after the request was
+    /// sent); work may still be running upstream.
     UpstreamTimeout,
 }
 

@@ -88,7 +88,8 @@ impl<P: LlmProvider> CompletionRunner<P> {
     #[cfg(any(test, feature = "test-support"))]
     pub async fn complete(&self, request: &ChatRequest) -> Result<CompletionResponse, LlmError> {
         let random = self.random.clone();
-        let mut gate = Gate::ungoverned(random.as_ref());
+        let mut used = 0;
+        let mut gate = Gate::ungoverned(random.as_ref(), &mut used);
         self.run(request, &mut gate)
             .await
             .map_err(|error| match error {
@@ -223,7 +224,10 @@ impl<P: LlmProvider> CompletionRunner<P> {
                     if gate.check_retry().is_err() {
                         return Err(RunError::Failed(this));
                     }
-                    let pause = full_jitter(gate.random(), self.backoff_cap(attempt));
+                    let mut pause = full_jitter(gate.random(), self.backoff_cap(attempt));
+                    if let ProviderFailureKind::RateLimited { retry_after } = kind {
+                        pause = pause.max(retry_after);
+                    }
                     attempt += 1;
                     let wait = remaining_time(deadline).map_err(|error| failed(error, charged))?;
                     if pause >= wait {
@@ -279,7 +283,7 @@ fn remaining_time(deadline: Instant) -> Result<Duration, LlmError> {
 /// a timed-out chat request may still be running upstream.
 fn retryable(kind: ProviderFailureKind, call: CallKind) -> bool {
     match kind {
-        ProviderFailureKind::Transient => true,
+        ProviderFailureKind::Transient | ProviderFailureKind::RateLimited { .. } => true,
         ProviderFailureKind::UpstreamTimeout => call != CallKind::Chat,
         _ => false,
     }
@@ -287,7 +291,9 @@ fn retryable(kind: ProviderFailureKind, call: CallKind) -> bool {
 
 fn outcome_of(kind: ProviderFailureKind) -> Outcome {
     match kind {
-        ProviderFailureKind::Transient => Outcome::TransientFailure,
+        ProviderFailureKind::Transient | ProviderFailureKind::RateLimited { .. } => {
+            Outcome::TransientFailure
+        }
         ProviderFailureKind::UpstreamTimeout => Outcome::Timeout,
         ProviderFailureKind::BackendUnavailable => Outcome::BackendUnavailable,
         ProviderFailureKind::AdmissionRefused { .. } => Outcome::AdmissionRefused,
@@ -314,6 +320,7 @@ fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
         ProviderFailureKind::BackendUnavailable => ErrorCode::BackendUnavailable,
         ProviderFailureKind::UpstreamTimeout => ErrorCode::UpstreamTimeout,
         ProviderFailureKind::Transient
+        | ProviderFailureKind::RateLimited { .. }
         | ProviderFailureKind::Permanent
         | ProviderFailureKind::CapabilityRejected(_) => ErrorCode::ProviderPermanent,
     };

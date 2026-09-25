@@ -18,6 +18,8 @@ pub const MAX_TOOL_ROUNDS: u8 = 12;
 const MAX_TIMEOUT: Duration = Duration::from_secs(300);
 /// Kanata's admission `queue_ms`; assumed when a refusal names no `Retry-After`.
 const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(1);
+/// Floor for `Retry-After: 0` so a requeue never resends at once.
+const MIN_RETRY_AFTER: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QuestionLimits {
@@ -325,26 +327,26 @@ impl<P: LlmProvider> Session<'_, P> {
                 return Err(invalid("session-alias"));
             }
             let reserved = u32::from(self.question && !self.clean_used);
-            let room = self.max_requests.saturating_sub(self.used + reserved);
-            if room == 0 {
+            let cap = self.max_requests.saturating_sub(reserved);
+            if self.used >= cap {
                 return Err(refunded(SessionFailure::RequestsExhausted));
+            }
+            // Set before awaiting so a cancelled extraction call cannot be repeated.
+            if !self.question {
+                self.ended = true;
             }
             let random = self.client.runner.random().clone();
             let mut gate = Gate::governed(
                 permit,
                 self.ticket.kind,
                 self.deadline,
-                room,
+                &mut self.used,
+                cap,
                 retry_first,
                 random.as_ref(),
             );
             let result = self.client.runner.run(request, &mut gate).await;
-            let sent = gate.sent();
             drop(gate);
-            self.used += sent;
-            if !self.question {
-                self.ended = true;
-            }
             let failure = match result {
                 Ok(response) => return Ok(response),
                 Err(RunError::Denied(Denied::Governor(refused))) => {
@@ -357,7 +359,7 @@ impl<P: LlmProvider> Session<'_, P> {
             };
             if let Cause::Admission { retry_after } = failure.cause
                 && self.requeues_left > 0
-                && sent < room
+                && self.used < cap
                 && self.requeue(retry_after).await?
             {
                 retry_first = true;
@@ -379,13 +381,21 @@ impl<P: LlmProvider> Session<'_, P> {
     }
 
     /// Gives the permit back, waits `Retry-After` plus full jitter, and queues
-    /// again (in-flight class). `false` when the deadline leaves no room.
+    /// again (in-flight class). `false` when the deadline leaves no room or the
+    /// resend could not be admitted as a retry anyway.
     async fn requeue(&mut self, retry_after: Option<Duration>) -> Result<bool, SessionError> {
-        let base = retry_after.unwrap_or(DEFAULT_RETRY_AFTER);
+        let base = retry_after
+            .unwrap_or(DEFAULT_RETRY_AFTER)
+            .max(MIN_RETRY_AFTER);
         let pause = base + full_jitter(self.client.governor.random.as_ref(), base);
         let now = Instant::now();
         if now + pause >= self.deadline {
             return Ok(false);
+        }
+        // Checked while still holding the slot: no pointless wait and requeue.
+        match &self.permit {
+            Some(permit) if permit.check_retry(false).is_ok() => {}
+            _ => return Ok(false),
         }
         self.requeues_left -= 1;
         self.permit = None;

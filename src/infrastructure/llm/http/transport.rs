@@ -177,6 +177,9 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let protocol = || failure(ProviderFailureKind::Transient, "protocol");
+    // Once the request is handed over it may have reached the backend, so a lost
+    // reply is treated like a timeout: charged, not retried for chat.
+    let interrupted = || failure(ProviderFailureKind::UpstreamTimeout, "interrupted");
     let mut builder = http1::Builder::new();
     builder
         .max_headers(MAX_HEADERS)
@@ -188,7 +191,10 @@ where
     // Driven inline rather than spawned so a timeout or cancellation leaves no task.
     let mut connection = pin!(connection);
     let mut exchange = pin!(async move {
-        let response = sender.send_request(request).await.map_err(|_| protocol())?;
+        let response = sender
+            .send_request(request)
+            .await
+            .map_err(|_| interrupted())?;
         let status = response.status();
         let retry_after = retry_after(response.headers());
         if status.is_redirection() {
@@ -220,7 +226,7 @@ where
                 {
                     None
                 }
-                Err(_) => return Err(protocol()),
+                Err(_) => return Err(interrupted()),
             }
         };
         match body {

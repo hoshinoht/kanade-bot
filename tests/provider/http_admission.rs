@@ -1,15 +1,32 @@
 //! Failure classification for gateway admission, backend-down and timeout
 //! replies. The Kanata codes are provisional (not shipped yet); loopback stubs only.
 
-use std::time::Duration;
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
-use kanade::infrastructure::llm::{ErrorCode, LlmProvider, ProviderFailureKind};
+use kanade::infrastructure::llm::{
+    ErrorCode, ExecutionLimits, LlmProvider, OpenAiCompatibleProvider, ProviderFailure,
+    ProviderFailureKind,
+    governor::{
+        Charge, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, QuestionLimits,
+        Role, RoleConfig, SessionFailure, XorShift,
+    },
+};
 use serde_json::json;
 
 use super::{
     http_transport::{declared, models_or, runner, structured},
-    stub::{Reply, Stub},
+    stub::{Reply, Stub, completion},
+    support::default_retry,
 };
+
+const ANSWER: &str = r#"{"answer":"ok"}"#;
 
 fn raw(status: u16, code: Option<&str>, retry_after: Option<&str>) -> Vec<u8> {
     let body = match code {
@@ -99,9 +116,17 @@ async fn backend_down_timeouts_and_generic_statuses_are_classified() {
         (
             429,
             Some("rate_limit_exceeded"),
-            ProviderFailureKind::Transient,
+            ProviderFailureKind::RateLimited {
+                retry_after: Duration::from_secs(5),
+            },
         ),
-        (429, None, ProviderFailureKind::Transient),
+        (
+            429,
+            None,
+            ProviderFailureKind::RateLimited {
+                retry_after: Duration::from_secs(5),
+            },
+        ),
         (503, None, ProviderFailureKind::Transient),
         // Admission codes count only on 429/503.
         (
@@ -134,5 +159,116 @@ async fn the_runner_never_retries_admission_refusals_or_a_down_backend() {
             .unwrap_err();
         assert_eq!(error.code, expected, "{code}");
         assert_eq!(stub.chat_requests().len(), 1, "{code}");
+    }
+}
+
+#[tokio::test]
+async fn a_plain_429_retry_after_floors_the_backoff() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let stub = Stub::start(models_or(move |_| {
+        if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            Reply::Raw(raw(429, None, Some("1")))
+        } else {
+            Reply::Json(200, completion("qwen3:8b", ANSWER))
+        }
+    }))
+    .await;
+    let started = std::time::Instant::now();
+    runner(declared(stub.url()))
+        .complete(&structured())
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    assert_eq!(stub.chat_requests().len(), 2);
+}
+
+/// A 200 whose body stops short, and a connection closed without any reply.
+fn lost_replies() -> [Vec<u8>; 2] {
+    [
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"choices\""
+            .to_vec(),
+        Vec::new(),
+    ]
+}
+
+#[tokio::test]
+async fn a_reply_lost_after_sending_is_an_upstream_timeout() {
+    for lost in lost_replies() {
+        let stub = Stub::start(models_or(move |_| Reply::Raw(lost.clone()))).await;
+        assert_eq!(
+            declared(stub.url())
+                .complete(&structured())
+                .await
+                .unwrap_err(),
+            ProviderFailure {
+                kind: ProviderFailureKind::UpstreamTimeout,
+                reason_code: "interrupted"
+            }
+        );
+    }
+}
+
+fn client(provider: Arc<OpenAiCompatibleProvider>) -> ModelClient<OpenAiCompatibleProvider> {
+    let roles = [Role::Chat, Role::Extraction]
+        .into_iter()
+        .map(|role| {
+            let config = RoleConfig {
+                alias: "qwen3:8b".into(),
+                external: false,
+            };
+            (role, config)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let config = GovernorConfig {
+        groups: vec![GroupConfig {
+            name: "local".into(),
+            backend: "stub".into(),
+            permits: 1,
+            requests_per_min: 6_000,
+            burst: Some(100),
+            aliases: vec!["qwen3:8b".into()],
+        }],
+        roles,
+        policy: GovernorPolicy {
+            retry_floor: 10,
+            ..GovernorPolicy::default()
+        },
+    };
+    let governor = Governor::new(&config, Arc::new(XorShift::new(7))).unwrap();
+    ModelClient::new(
+        Arc::new(governor),
+        provider,
+        ExecutionLimits::default(),
+        default_retry(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_lost_chat_reply_is_charged_and_never_retried() {
+    for lost in lost_replies() {
+        let stub = Stub::start(models_or(move |_| Reply::Raw(lost.clone()))).await;
+        let client = client(declared(stub.url()));
+        let limits = QuestionLimits::new(Duration::from_secs(30));
+        let mut question = client.open_question("member", false, limits).await.unwrap();
+        let error = question.complete(&structured()).await.unwrap_err();
+        assert!(matches!(
+            &error.failure,
+            SessionFailure::Model(model) if model.code == ErrorCode::UpstreamTimeout
+        ));
+        assert_eq!(error.charge, Charge::Charged);
+        assert!(question.is_ended());
+        assert_eq!(stub.chat_requests().len(), 1);
+
+        drop(question);
+
+        // Extraction may retry within its budget.
+        let mut extraction = client
+            .open_extraction("run", Duration::from_secs(5), Duration::from_secs(30))
+            .await
+            .unwrap();
+        extraction.complete(&structured()).await.unwrap_err();
+        assert_eq!(stub.chat_requests().len(), 4);
     }
 }
