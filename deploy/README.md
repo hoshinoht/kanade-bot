@@ -82,6 +82,36 @@ docker start kanade-bot                          # v4 back; the edge needs no ch
 Never run `down -v` unless the v5 store may be discarded. v4 data lives in
 `kanade_botdata`, which v5 never mounts.
 
+## Import v4 data (testing)
+
+`kanade import v4` copies v4's weekly fixed runs and recent chat/extraction
+logs into the v5 store (details: `docs/v5/v4-import.md`). It reads an online
+backup of the v4 database, never the live file, and takes the v5 store lock,
+so the v5 container must be stopped.
+
+```sh
+# 1. Snapshot v4 with SQLite's online backup API (v4 may keep running).
+#    A recent v4 backup under data/backups/ works too.
+docker exec kanade-bot python -c "import sqlite3; s = sqlite3.connect('/app/data/bot.sqlite'); d = sqlite3.connect('/app/data/backups/v4-import.sqlite'); s.backup(d); d.close()"
+cp data/backups/v4-import.sqlite /tmp/v4-snapshot.sqlite
+# 2. Stop v5, dry-run, then apply with the snapshot mounted read-only.
+docker compose -f deploy/compose.yaml stop bot
+docker compose -f deploy/compose.yaml run --rm --no-deps \
+  -v /tmp/v4-snapshot.sqlite:/import/v4.sqlite:ro \
+  bot import v4 --from /import/v4.sqlite
+docker compose -f deploy/compose.yaml run --rm --no-deps \
+  -v /tmp/v4-snapshot.sqlite:/import/v4.sqlite:ro \
+  bot import v4 --from /import/v4.sqlite --apply
+docker compose -f deploy/compose.yaml start bot
+```
+
+v4's `DB_PATH` is `/app/data/bot.sqlite` and `/app/data/backups` is bind
+mounted to the checkout's `data/backups` (`legacy/python/deploy/compose.yaml`).
+The dry run prints counts and skip reasons
+only; `--apply` is safe to repeat (it adds nothing the second time).
+`--since YYYY-MM-DD` narrows the logs below the 90-day retention. The owner
+lock directory (`/data/run`) must already exist, as it must for `serve`.
+
 ## Hardening
 
 Read-only root, `/tmp` tmpfs (16 MiB), all capabilities dropped,

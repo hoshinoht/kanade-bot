@@ -5,10 +5,11 @@ use serde::Serialize;
 use crate::{
     api::server,
     cli::{self, Command, healthcheck},
+    import,
 };
 
 use super::{
-    config::{HealthcheckConfig, RuntimeConfig, ServeConfig},
+    config::{HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
     error::Error,
     serve,
 };
@@ -30,6 +31,24 @@ pub async fn run(
                 url.as_deref(),
             )?)
             .await
+        }
+        Command::ImportV4(args) => {
+            let config = ImportConfig::from_mapping(&environment)?;
+            let options = import::v4::Options {
+                from: args.from,
+                since: args.since,
+                apply: args.apply,
+            };
+            let report = import::v4::run(&options, &config, import::v4::system_now())
+                .await
+                .map_err(|error| match error {
+                    import::v4::ImportError::Store(_) => {
+                        Error::Unavailable(format!("import v4: {error}"))
+                    }
+                    _ => Error::Configuration(format!("import v4: {error}")),
+                })?;
+            print!("{report}");
+            Ok(())
         }
         Command::Reserved { name } => Err(Error::Unavailable(format!(
             "{name} is not implemented in the runtime bootstrap"

@@ -234,10 +234,11 @@ emit only safe configuration-error descriptions, not environment values.
 
 ## Deliberate boundaries
 
-Live `serve` runs without Discord (see "Live serve"). `ctl`, `import`, and
-`export` are reserved commands that return a nonzero not-implemented result.
-`serve --offline` wires no scheduler, persistence, Discord, import/export,
-admin API or mutation route.
+Live `serve` runs without Discord (see "Live serve"). `ctl` and `export`
+are reserved commands that return a nonzero not-implemented result.
+`import v4` is the one-off testing import from a v4 snapshot
+(`v4-import.md`). `serve --offline` wires no scheduler, persistence,
+Discord, import/export, admin API or mutation route.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs

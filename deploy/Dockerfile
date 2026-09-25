@@ -32,6 +32,7 @@ COPY --from=rust /out/kanade /usr/local/bin/kanade
 COPY --from=web /web/apps/admin/dist /app/web/apps/admin/dist
 COPY --from=web /web/apps/public/dist /app/web/apps/public/dist
 # Tracked catalog knowledge only; private portraits/artwork are mounted at runtime.
+COPY boss/bosses.yaml /app/boss/bosses.yaml
 COPY boss/knowledge /app/boss/knowledge
 # Owned by the runtime user so a fresh named volume at /data inherits it.
 COPY --from=rust --chown=65532:65532 /out/data /data

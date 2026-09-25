@@ -8,6 +8,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Server tests run one at a time: a port picked by one test can be released
+/// and handed to another test's server while it is still shutting down.
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn binary() -> String {
     std::env::var("CARGO_BIN_EXE_kanade").expect("Cargo exposes the test binary")
 }
@@ -15,6 +24,17 @@ fn binary() -> String {
 fn unused_loopback_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.local_addr().unwrap().port()
+}
+
+/// Two distinct ports: both listeners are held at once, since a port released
+/// by the first call can be handed straight back by the second.
+fn unused_loopback_port_pair() -> (u16, u16) {
+    let first = TcpListener::bind("127.0.0.1:0").unwrap();
+    let second = TcpListener::bind("127.0.0.1:0").unwrap();
+    (
+        first.local_addr().unwrap().port(),
+        second.local_addr().unwrap().port(),
+    )
 }
 
 fn start_server(port: u16) -> Child {
@@ -33,7 +53,8 @@ fn response(address: SocketAddr) -> String {
 }
 
 fn request(address: SocketAddr, host: &str, path: &str) -> String {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    // Generous: parallel test binaries can slow startup well past a second.
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         match std::net::TcpStream::connect(address) {
             Ok(mut stream) => {
@@ -55,6 +76,7 @@ fn request(address: SocketAddr, host: &str, path: &str) -> String {
 
 #[test]
 fn offline_server_healthcheck_and_sigterm_are_operational() {
+    let _serial = serial();
     let port = unused_loopback_port();
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let mut server = start_server(port);
@@ -84,8 +106,8 @@ fn offline_server_healthcheck_and_sigterm_are_operational() {
 
 #[test]
 fn public_listener_starts_only_when_configured_and_is_closed() {
-    let admin_port = unused_loopback_port();
-    let public_port = unused_loopback_port();
+    let _serial = serial();
+    let (admin_port, public_port) = unused_loopback_port_pair();
     let mut server = Command::new(binary())
         .args(["serve", "--offline"])
         .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
@@ -110,6 +132,7 @@ fn public_listener_starts_only_when_configured_and_is_closed() {
 
 #[test]
 fn renamed_bind_variable_is_refused() {
+    let _serial = serial();
     let output = Command::new(binary())
         .args(["serve", "--offline"])
         .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
@@ -123,6 +146,7 @@ fn renamed_bind_variable_is_refused() {
 
 #[test]
 fn plain_discord_token_is_refused_without_echoing_it() {
+    let _serial = serial();
     let output = Command::new(binary())
         .args(["serve", "--offline"])
         .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
@@ -138,6 +162,7 @@ fn plain_discord_token_is_refused_without_echoing_it() {
 
 #[test]
 fn healthcheck_fails_when_no_loopback_server_is_available() {
+    let _serial = serial();
     let port = unused_loopback_port();
     let status = Command::new(binary())
         .args([
@@ -152,6 +177,7 @@ fn healthcheck_fails_when_no_loopback_server_is_available() {
 
 #[test]
 fn invalid_configuration_fails_without_echoing_values() {
+    let _serial = serial();
     let output = Command::new(binary())
         .args(["serve", "--offline"])
         .env("KANADE_TIMEZONE", "not-a-timezone")

@@ -50,7 +50,8 @@ SQLite DDL is not a v5 compatibility contract.
   implementation changes allowed. The owner must freeze vectors/wire details
   before parity acceptance.
 - **Import-only** — v4 data is consumed through the versioned portable bundle,
-  but the v4 surface is not a v5 runtime/API surface. No raw SQLite import.
+  but the v4 surface is not a v5 runtime/API surface. No raw SQLite import
+  (sole exception: the testing import `kanade import v4`, `v4-import.md`).
 - **Remove** — deliberately absent in v5. The absence and migration behavior
   must be tested; no placeholder may imply parity.
 - **Defer** — not in the v5.0 implementation boundary yet. It remains an

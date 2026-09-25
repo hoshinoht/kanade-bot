@@ -11,7 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::{ChildTimeout, binary, request, unused_loopback_port};
+use super::{
+    ChildTimeout, binary, request, serial, unused_loopback_port, unused_loopback_port_pair,
+};
 
 const ADMIN_TOKEN: &str = "live-serve-break-glass-token-0123456789abcdef";
 
@@ -164,8 +166,9 @@ fn ready(address: SocketAddr) -> String {
 
 #[test]
 fn live_serve_signs_in_with_the_token_and_reads_the_real_store() {
+    let _serial = serial();
     let live = Live::new();
-    let (admin_port, public_port) = (unused_loopback_port(), unused_loopback_port());
+    let (admin_port, public_port) = unused_loopback_port_pair();
     let admin = SocketAddr::from(([127, 0, 0, 1], admin_port));
     let public = SocketAddr::from(([127, 0, 0, 1], public_port));
     let server = live.spawn(admin_port, Some(public_port));
@@ -271,6 +274,7 @@ fn live_serve_signs_in_with_the_token_and_reads_the_real_store() {
 
 #[test]
 fn live_serve_builds_discord_sign_in_without_network() {
+    let _serial = serial();
     let live = Live::new();
     let port = unused_loopback_port();
     let address = SocketAddr::from(([127, 0, 0, 1], port));
@@ -303,6 +307,7 @@ fn live_serve_builds_discord_sign_in_without_network() {
 
 #[test]
 fn live_serve_refuses_a_missing_bot_token_file_before_opening_the_store() {
+    let _serial = serial();
     let live = Live::new();
     fs::remove_file(live.root.join("discord_token")).unwrap();
     let output = live.command(unused_loopback_port(), None).output().unwrap();

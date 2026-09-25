@@ -5,6 +5,7 @@
 !Cargo.toml
 !Cargo.lock
 !src/
+!boss/bosses.yaml
 !boss/knowledge/
 !web/package.json
 !web/bun.lock

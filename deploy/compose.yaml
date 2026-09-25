@@ -56,8 +56,6 @@ services:
       # SQLite on a named volume, not a macOS bind mount.
       - data:/data
       - ../config/personas:/config/personas:ro
-      # Tracked catalog; the image carries only boss/knowledge.
-      - ../boss/bosses.yaml:/app/boss/bosses.yaml:ro
       # Private art (git-ignored) stays on the host.
       - ../boss/portraits:/app/boss/portraits:ro
       - ../boss/artwork:/app/boss/artwork:ro
