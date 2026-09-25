@@ -26,14 +26,14 @@ export class Resource<T> {
   }
 }
 
-export type Outcome<T = unknown> = { ok: true; value: T } | { ok: false; message: string; status?: number | null };
+export type Outcome<T = unknown> = { ok: true; value: T } | { ok: false; message: string; status?: number | null; code?: string | null };
 
 /** One request with a typed outcome, for forms that keep their input on failure. */
 export async function send<T>(work: (client: Client) => Promise<T>): Promise<Outcome<T>> {
   try {
     return { ok: true, value: await work(createClient()) };
   } catch (error) {
-    if (error instanceof ApiRequestError) return { ok: false, message: error.message, status: error.status };
+    if (error instanceof ApiRequestError) return { ok: false, message: error.message, status: error.status, code: error.body?.error ?? null };
     return { ok: false, message: 'Something went wrong.' };
   }
 }

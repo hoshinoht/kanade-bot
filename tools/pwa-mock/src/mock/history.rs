@@ -26,9 +26,15 @@ impl Actor {
         }
     }
 
-    /// The mock's stand-in for the signed-in admin.
+    /// The mock's signed-in admin: the break-glass token, as the server
+    /// attributes it (`admin:token`).
     pub fn admin() -> Self {
-        Self::new("admin", "admin-token")
+        Self::new("admin", "token")
+    }
+
+    /// A Discord-signed-in admin (`admin:discord:<user id>`).
+    pub fn discord_admin(user: &str) -> Self {
+        Self::new("admin", &format!("discord:{user}"))
     }
 }
 
@@ -162,7 +168,7 @@ fn owner_id(name: &str) -> &'static str {
     seed::members()
         .into_iter()
         .find(|m| m.name == name)
-        .map_or("admin-token", |m| m.id)
+        .map_or("token", |m| m.id)
 }
 
 fn owner(id: &str) -> &'static str {
@@ -486,7 +492,6 @@ impl Store {
     fn rollback(
         &mut self,
         mut seqs: Vec<u64>,
-        by_seqs: bool,
         scope: impl Fn(&Value, &Self) -> Option<&'static str>,
         mode: &Mode,
     ) -> Plan {
@@ -541,18 +546,11 @@ impl Store {
             "applied"
         };
         if outcome == "conflicts" {
-            // As the server: a strict refusal lists no rows, and names the
-            // requested records (or, for a week or actor, the conflicting ones).
-            let mut reverts: Vec<u64> = if by_seqs {
-                seqs
-            } else {
-                conflicts.iter().map(|c| c.seq).collect()
-            };
-            reverts.sort_unstable_by(|a, b| b.cmp(a));
-            reverts.dedup();
+            // As the server: a strict refusal plans no rows and names every
+            // selected record (newest first), not only the conflicting ones.
             return Plan {
                 outcome,
-                reverts,
+                reverts: seqs,
                 rows: Vec::new(),
                 conflicts,
                 skipped: Vec::new(),
@@ -607,7 +605,7 @@ impl Store {
 
     pub fn revert_changes(&mut self, seqs: Vec<u64>, mode: &Mode) -> Result<Plan, MoveError> {
         self.check_seqs(&seqs)?;
-        Ok(self.rollback(seqs, true, |_, _| None, mode))
+        Ok(self.rollback(seqs, |_, _| None, mode))
     }
 
     /// Every later change touching `week`, limited to that week's runs and RSVPs.
@@ -631,7 +629,7 @@ impl Store {
             let run = store.runs.iter().find(|r| r.id == run_id)?;
             (Self::week_of(run.next_week) != week).then_some("outside week")
         };
-        Ok(self.rollback(seqs, false, in_week, mode))
+        Ok(self.rollback(seqs, in_week, mode))
     }
 
     pub fn revert_by_actor(
@@ -646,7 +644,7 @@ impl Store {
             .filter(|r| r.seq > 0 && &r.actor == actor && r.at.as_str() >= since)
             .map(|r| r.seq)
             .collect();
-        Ok(self.rollback(seqs, false, |_, _| None, mode))
+        Ok(self.rollback(seqs, |_, _| None, mode))
     }
 
     fn head(&self) -> Ref {
@@ -692,6 +690,21 @@ impl Store {
 
     pub fn record(&self, seq: u64) -> Option<Record> {
         self.history.get(seq as usize).cloned()
+    }
+
+    /// Whether a record after `version` changed this row field (the server's
+    /// per-field precondition behind `409 stale`).
+    pub fn changed_after(&self, key: &Value, field: &str, version: u64) -> bool {
+        self.history.iter().rev().any(|r| {
+            r.revision > version
+                && r.rows
+                    .iter()
+                    // Creating the row sets every field.
+                    .any(|row| {
+                        row.key == *key
+                            && (row.before.is_null() || row.before[field] != row.after[field])
+                    })
+        })
     }
 
     /// Who last changed each field of a run, under the domain's blame names
@@ -865,7 +878,8 @@ impl Store {
         step(
             self,
             hour(41),
-            Actor::admin(),
+            // Asahi (staff) approved it after signing in with Discord.
+            Actor::discord_admin("1001"),
             "extraction_approval",
             &|s| set(s, "r-kalos", &|r| r.time = Some("22:00".into())),
         );
@@ -1070,6 +1084,15 @@ mod tests {
                 .all(|c| super::run_of(&c.key) == Some("r-kalos"))
         );
         assert!(strict.rows.is_empty());
+        // Every selected record, even those with no conflict of their own.
+        let selected: Vec<u64> = s
+            .history
+            .iter()
+            .rev()
+            .filter(|r| r.seq > 0 && r.actor == member)
+            .map(|r| r.seq)
+            .collect();
+        assert_eq!(strict.reverts, selected);
         let plan = s
             .revert_by_actor(&member, "1970-01-01", &mode(true, false))
             .ok()
@@ -1098,6 +1121,7 @@ mod tests {
         let blame = s.blame("r-kalos");
         let slot = blame.iter().find(|b| b.field == "slot").unwrap();
         assert_eq!(slot.surface, "extraction_approval");
+        assert_eq!(slot.actor, Actor::discord_admin("1001"));
         assert!(slot.value["datetime"].as_str().unwrap().ends_with("+00:00"));
         let answer = blame.iter().find(|b| b.field == "rsvp:1005").unwrap();
         assert_eq!(answer.actor, Actor::new("member", "1005"));

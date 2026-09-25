@@ -1,27 +1,24 @@
 <script lang="ts">
-  import type { BossRow, FixedRow, Week } from '@kanade/api-types';
+  import type { BossRow, FixedRow } from '@kanade/api-types';
   import { BossTag, Modal, Toaster } from '@kanade/ui';
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import FixedEditor from './FixedEditor.svelte';
+  import { FixedSnapshot } from './snapshot.svelte';
 
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
 
-  const fixed = new Resource<FixedRow[]>('/api/admin/fixed');
+  /** Rows and the week version they were read at, published together; edits send that version. */
+  const fixed = new FixedSnapshot();
   const bosses = new Resource<BossRow[]>('/api/admin/bosses');
-  /** Week version the rows were read at; edits send it (409 if a timing moved since). */
-  let loadedAt = $state<number | null>(null);
   $effect(() => {
     void load();
     void bosses.load();
   });
 
-  // Head first: an older version can only cost a needless 409, a newer one could hide someone's edit.
-  async function load() {
-    const head = await send((c) => c.get<Week>('/api/admin/week'));
-    loadedAt = head.ok ? head.value.version : null;
-    await fixed.load();
+  function load() {
+    return fixed.load();
   }
 
   let query = $state('');
@@ -34,7 +31,7 @@
   const title = (row: FixedRow) => `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}`;
   const q = $derived(query.trim().toLowerCase());
   const rows = $derived(
-    (fixed.data ?? []).filter(
+    (fixed.rows ?? []).filter(
       (row) =>
         !q ||
         [row.weekday_name, row.time, row.channel_name, row.owner, row.note ?? '', ...row.participants.map((p) => p.name), ...row.bosses.flatMap((b) => [b.token, b.name])].some(
@@ -79,7 +76,7 @@
 <div class="page-head">
   <div>
     <p class="eyebrow">Baseline</p>
-    <h1>{fixed.data ? `${fixed.data.length} weekly timing${fixed.data.length === 1 ? '' : 's'}` : 'Weekly timings'}</h1>
+    <h1>{fixed.rows ? `${fixed.rows.length} weekly timing${fixed.rows.length === 1 ? '' : 's'}` : 'Weekly timings'}</h1>
     <p class="note">Materialised into runs for this week and next.</p>
   </div>
   <div class="page-head__side">
@@ -90,12 +87,12 @@
 <PaneWindow title="Weekly timings" bind:query searchLabel="Search weekly timings" placeholder="boss, day, party, channel…">
   {#if fixed.error}
     <p class="flash flash--error" role="alert">{fixed.error}</p>
-  {:else if fixed.data && rows.length === 0}
+  {:else if fixed.rows && rows.length === 0}
     <div class="empty">
       {#if q}<strong>Nothing matches “{query}”.</strong>The search reads the bosses, the day and time, the party and the home channel.
       {:else}<strong>No baseline yet.</strong>Add one with the button above, or run <code>/fixed add</code> inside a party channel.{/if}
     </div>
-  {:else if fixed.data}
+  {:else if fixed.rows}
     <div class="table-wrap">
       <table>
         <caption class="vh">Weekly timings, by weekday</caption>
@@ -161,7 +158,7 @@
   channels={store.channels}
   members={store.members}
   week={store.week}
-  version={loadedAt}
+  version={fixed.version}
   onsaved={saved}
   onstale={stale}
 />

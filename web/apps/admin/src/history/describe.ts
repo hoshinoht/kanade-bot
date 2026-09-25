@@ -204,9 +204,20 @@ export const SURFACE_LABELS: Record<string, string> = {
   cherry_pick: 'week-to-week copy',
 };
 
-export function actorName(actor: ChangeRecord['actor'], names: Names): string {
+/**
+ * Who made a change. Admin ids are the server's sign-in attribution
+ * (`token`, `discord:<user id>`, `tailscale:<login>`); a Discord admin reads
+ * as their member name when the roster has them.
+ */
+export function actorName(actor: ChangeRecord['actor'], names: Names, known: (id: string) => boolean = () => false): string {
   if (actor.kind === 'member') return names(actor.id);
-  if (actor.kind === 'admin') return actor.id === 'admin-token' ? 'admin token' : `admin ${actor.id}`;
+  if (actor.kind === 'admin') {
+    if (actor.id === 'token') return 'Admin (token)';
+    const [method, subject = ''] = actor.id.split(/:(.*)/s);
+    if (method === 'discord' && subject) return known(subject) ? names(subject) : `Admin (Discord ${subject})`;
+    if (method === 'tailscale' && subject) return `Admin (${subject})`;
+    return `Admin (${actor.id})`;
+  }
   return `system (${actor.id})`;
 }
 

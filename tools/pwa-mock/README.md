@@ -20,16 +20,24 @@ Admin writes follow the server's API-5 contract (`src/writes.rs`): every
 and an `Idempotency-Key` replays the first successful answer (`422
 idempotency_mismatch` for another request, `400 invalid_idempotency_key` for a
 malformed one). `POST /__mock/csrf/rotate` stands in for signing in again.
+The CSRF check is looser than the server's: the server also requires an
+`Origin` or `Sec-Fetch-Site` header and checks each one sent
+(`src/api/auth/csrf.rs`), while the mock only refuses an explicit cross-site
+`Sec-Fetch-Site`, because Playwright's API requests send neither. Do not
+read a mock pass as proof that a request carries the browser markers.
 `PATCH /api/admin/fixed/{id}` requires `version` (`422 version_required`) and
-is `409 stale` when the week moved since, checked like run edits (whole week,
-where the server checks per field). Unit tests pin their own clock and ignore
-`KANADE_MOCK_NOW`.
+is `409 stale` per field, as on the server: a form field whose value differs
+from the stored timing and that a record after `version` changed (run edits
+still check the whole week). Admin changes are attributed as the server does:
+`admin:token` for the mock's session, `admin:discord:<id>` in the seed.
+Unit tests pin their own clock and ignore `KANADE_MOCK_NOW`.
 
 History records carry domain rows as the server encodes them (run instants
 in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`
 rows derived from each run's cards), name weeks by their starting RFC 3339
 instant (the `week` query also takes the local start date), blame under the
-domain's field names, and answer a strict rollback conflict with `rows: []`.
+domain's field names, and answer a strict rollback conflict with `rows: []`
+and every selected seq in `reverts` (revert, restore-week and revert-actor).
 The hash is still a stand-in.
 
 `cargo test` also walks every endpoint the PWAs call and validates each

@@ -194,7 +194,21 @@ impl Store {
                 "Choose update or keep for amended run {missing}."
             )));
         }
-        if version != self.version {
+        let old = &self.fixed[index];
+        // As the server: each field the form changes must not have moved since `version`.
+        let changed = [
+            ("weekday", old.weekday != timing.weekday),
+            ("time", old.time != timing.time),
+            ("bosses", old.bosses != timing.bosses),
+            ("participants", old.participants != timing.participants),
+            ("channel_id", old.channel != timing.channel),
+            ("note", old.note != timing.note),
+        ];
+        let key = serde_json::json!({ "table": "fixed_runs", "id": id });
+        if changed
+            .iter()
+            .any(|(field, differs)| *differs && self.changed_after(&key, field, version))
+        {
             return Err(MoveError::Stale);
         }
         let old = &self.fixed[index];
@@ -259,7 +273,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::super::tests::store;
-    use crate::mock::{MoveError, dto::FixedRequest};
+    use crate::mock::{MoveError, Store, dto::FixedRequest, history::Actor};
     use std::collections::HashMap;
 
     fn request(time: &str, decisions: &[(&str, &str)], version: Option<u64>) -> FixedRequest {
@@ -333,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn edits_need_the_version_they_were_loaded_at() {
+    fn edits_need_the_version_they_were_loaded_at_and_conflict_per_field() {
         let mut s = store();
         let keep = [("r-kalos", "keep")];
         match s.update_fixed("f-kalos", request("21:00", &keep, None)) {
@@ -342,13 +356,24 @@ mod tests {
             Ok(_) => panic!("an edit without a version was applied"),
         }
         let loaded = s.version;
-        s.update_fixed("f-kalos", request("21:00", &keep, Some(loaded)))
+        let edit = |s: &mut Store, req: FixedRequest| {
+            s.tracked(Actor::admin(), "admin_portal", |s| {
+                s.update_fixed("f-kalos", req)
+            })
+        };
+        edit(&mut s, request("21:00", &keep, Some(loaded)))
             .ok()
             .unwrap();
+        // A form loaded before that edit resends the old time: refused, not reverted.
         assert!(matches!(
-            s.update_fixed("f-kalos", request("20:00", &keep, Some(loaded))),
+            edit(&mut s, request("20:00", &keep, Some(loaded))),
             Err(MoveError::Stale)
         ));
+        // A field nobody touched since merges freely at the same old version.
+        let mut noted = request("21:00", &keep, Some(loaded));
+        noted.note = Some("bring potions".into());
+        let row = edit(&mut s, noted).ok().unwrap();
+        assert_eq!(row.note.as_deref(), Some("bring potions"));
     }
 
     #[test]

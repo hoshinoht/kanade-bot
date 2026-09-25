@@ -79,6 +79,9 @@
   );
   const loose = $derived(records.filter((r) => r.weeks.length === 0));
   const members = $derived(store.members.filter((m) => m.bossing));
+  // Staff sign in with Discord, so their admin changes are `admin:discord:<id>`.
+  const admins = $derived(store.members.filter((m) => m.access === 'staff'));
+  const known = (id: string) => store.members.some((m) => m.id === id);
 
   // The dialog's request.
   let dialogOpen = $state(false);
@@ -131,7 +134,8 @@
       <span>Who</span>
       <select bind:value={actor}>
         <option value="">everyone</option>
-        <option value="admin:admin-token">admin token</option>
+        <option value="admin:token">Admin (token)</option>
+        {#each admins as m (m.id)}<option value="admin:discord:{m.id}">{names(m.id)} (as admin)</option>{/each}
         <option value="system:delivery">system (delivery)</option>
         {#each members as m (m.id)}<option value="member:{m.id}">{names(m.id)}</option>{/each}
       </select>
@@ -161,7 +165,7 @@
         <li class="change" class:change--rollback={r.surface === 'rollback'}>
           <div class="change__head">
             <span class="change__seq mono">#{r.seq}</span>
-            <strong>{actorName(r.actor, names)}</strong>
+            <strong>{actorName(r.actor, names, known)}</strong>
             <span class="chip chip--mono">{SURFACE_LABELS[r.surface] ?? r.surface}</span>
             {#if r.refs.length}<span class="chip">reverts {r.refs.map((x) => `#${x.seq}`).join(', ')}</span>{/if}
             <span class="id">{localAt(r.at, tz)}</span>

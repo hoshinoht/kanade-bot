@@ -223,6 +223,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: weekly-timing edits can no longer pair a fresh week version with an old row (which
+  could silently undo another admin's change); only a real out-of-date refusal asks to
+  reopen the form, and history names admins by who they are.
 - v5: the admin app now sends the CSRF token and a retry key with every save, and the
   week version with weekly-timing edits (an out-of-date form shows the reload message
   and keeps what was typed); the dev mock enforces the same rules.

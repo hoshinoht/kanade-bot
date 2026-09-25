@@ -41,7 +41,7 @@
             <tr>
               <th scope="row">{field(e.field)}</th>
               <td class="mono">{value(e.field, e.value)}</td>
-              <td>{actorName(e.actor, names)} <span class="id">via {SURFACE_LABELS[e.surface] ?? e.surface}</span></td>
+              <td>{actorName(e.actor, names, (id) => members.some((m) => m.id === id))} <span class="id">via {SURFACE_LABELS[e.surface] ?? e.surface}</span></td>
               <td class="mono"><a href="/history">#{e.seq}</a> · {localAt(e.at, timezone)}</td>
             </tr>
           {/each}

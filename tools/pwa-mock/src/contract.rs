@@ -156,7 +156,10 @@ impl Harness {
                 want.0, want.1
             ));
         }
-        self.check(&label, status, &value, "");
+        // An unexpected success is already a failure above; only refusals have a shape to check.
+        if !status.is_success() {
+            self.check(&label, status, &value, "");
+        }
     }
 
     fn check(&mut self, label: &str, status: StatusCode, value: &Value, target: &str) {

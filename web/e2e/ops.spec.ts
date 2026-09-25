@@ -362,6 +362,14 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   // Records carry reminder rows; a move's re-placed cards fold into one line.
   const moved = page.getByRole('listitem').filter({ hasText: '#3' }).first();
   await expect(moved).toContainText('XKalos: 2 reminders re-placed');
+  // `admin:discord:1001` reads as the staff member's name.
+  await expect(moved.locator('strong').first()).toHaveText('Asahi');
+  await page.getByLabel('Who').selectOption({ label: 'Asahi (as admin)' });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 change');
+  await page.getByLabel('Who').selectOption({ label: 'Admin (token)' });
+  await expect(page.getByRole('listitem').filter({ hasText: '#9' }).first().locator('strong').first()).toHaveText('Admin (token)');
+  await page.getByLabel('Who').selectOption({ label: 'everyone' });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
 
   // Tsubame's answer (#2) was followed by an admin moving that run (#3): conflict.
   await page.getByRole('button', { name: 'Revert #2' }).click();
@@ -411,6 +419,7 @@ test('history: restore a week to a point, revert a member, and blame in the run 
   await sheet.getByText('Who changed this').click();
   await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('via extraction approval');
   await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Fri 25 22:00');
+  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Asahi');
   await expect(sheet.getByRole('row', { name: /Tsubame's answer/ })).toContainText('out');
 });
 

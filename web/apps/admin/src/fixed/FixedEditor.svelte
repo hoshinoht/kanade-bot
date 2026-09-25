@@ -112,7 +112,8 @@
       : await send((c) => c.post<FixedRow>('/api/admin/fixed', body));
     busy = false;
     if (!result.ok) {
-      const stale = result.status === 409;
+      // Only `stale` means the form is out of date; `busy` and the rest leave it valid to retry as is.
+      const stale = result.code === 'stale';
       error = stale ? `${result.message} Close and reopen this timing to edit what is saved now.` : result.message;
       step = 'edit';
       if (stale) onstale();

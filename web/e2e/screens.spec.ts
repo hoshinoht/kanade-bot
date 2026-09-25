@@ -57,12 +57,37 @@ test('fixed: editing a timing with an amended run asks update or keep', async ({
   await expect(page.locator('[data-run="r-kalos"]')).toContainText('21:00');
 });
 
-test('fixed: an edit sends the version it was loaded at; one made stale behind it is refused', async ({ page }) => {
+type FixedApiRow = { id: string; weekday: number; time: string; bosses: { token: string }[]; participants: { id: string }[]; channel_id: string; note: string | null };
+
+/** Another admin edits XBM's timing through the API, as the server would see it. */
+async function editXbmBehind(page: Page, change: Partial<{ note: string; time: string }>) {
+  const { version } = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
+  const rows = (await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as FixedApiRow[];
+  const bm = rows.find((r) => r.bosses.some((b) => b.token === 'XBM'))!;
+  const response = await page.request.patch(`${ADMIN}/api/admin/fixed/${encodeURIComponent(bm.id)}`, {
+    headers: await csrf(page.request),
+    data: {
+      weekday: bm.weekday,
+      time: bm.time,
+      bosses: bm.bosses.map((b) => b.token).join(' '),
+      participants: bm.participants.map((p) => p.id),
+      channel_id: bm.channel_id,
+      note: bm.note,
+      version,
+      ...change,
+    },
+  });
+  expect(response.ok()).toBe(true);
+  return version;
+}
+
+test('fixed: an edit sends the version it was loaded at; conflicts are per field, as on the server', async ({ page }) => {
   await go(page, '/fixed');
-  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
   const editor = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+  await editButton.click();
   await editor.getByLabel('Note').fill('Bring potions');
-  // Someone else edits the week while the form is open.
+  // A change to another run moves the week version but touches none of this timing's fields.
   const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number; runs: { id: string; day: number }[] };
   const limbo = week.runs.find((r) => r.id === 'r-limbo')!;
   const moved = await page.request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, {
@@ -78,12 +103,39 @@ test('fixed: an edit sends the version it was loaded at; one made stale behind i
   const headers = await patch.allHeaders();
   expect(headers['x-kanade-csrf']).toBeTruthy();
   expect(headers['idempotency-key']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/);
-  await expect(editor.getByRole('alert')).toContainText('The week changed since it was loaded. Close and reopen');
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+
+  // Another admin changes this timing's note while the form is open: the
+  // form would resend the old note, so the save is refused, not a revert.
+  await editButton.click();
   await expect(editor.getByLabel('Note')).toHaveValue('Bring potions');
+  await editor.getByLabel('Note').fill('Bring snacks');
+  await editXbmBehind(page, { note: 'Starts late' });
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  await expect(editor.getByRole('alert')).toContainText('The week changed since it was loaded. Close and reopen');
+  await expect(editor.getByLabel('Note')).toHaveValue('Bring snacks');
 
   await editor.getByRole('button', { name: 'Cancel' }).click();
+  await editButton.click();
+  await expect(editor.getByLabel('Note')).toHaveValue('Starts late');
+  await editor.getByLabel('Note').fill('Starts late; bring snacks');
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+});
+
+test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date advice', async ({ page }) => {
+  await go(page, '/fixed');
   await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const editor = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
   await editor.getByLabel('Note').fill('Bring potions');
+  await page.route('**/api/admin/fixed/*', (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"busy","message":"Another change landed at the same moment; try again."}' })
+      : route.continue(),
+  );
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  await expect(editor.getByRole('alert')).toHaveText('Another change landed at the same moment; try again.');
+  await page.unroute('**/api/admin/fixed/*');
   await editor.getByRole('button', { name: 'Save changes' }).click();
   await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
 });

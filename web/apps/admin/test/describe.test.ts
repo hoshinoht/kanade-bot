@@ -100,7 +100,11 @@ suite('history describe', () => {
   });
 
   it('formats actors and guild-local instants', () => {
-    expect(actorName({ kind: 'admin', id: 'admin-token' }, names)).toBe('admin token');
+    expect(actorName({ kind: 'admin', id: 'token' }, names)).toBe('Admin (token)');
+    const known = (id: string) => id === '1005';
+    expect(actorName({ kind: 'admin', id: 'discord:1005' }, names, known)).toBe('Tsubame');
+    expect(actorName({ kind: 'admin', id: 'discord:4242' }, names, known)).toBe('Admin (Discord 4242)');
+    expect(actorName({ kind: 'admin', id: 'tailscale:ops@example.test' }, names)).toBe('Admin (ops@example.test)');
     expect(actorName({ kind: 'system', id: 'delivery' }, names)).toBe('system (delivery)');
     expect(localAt('2026-09-29T04:00:00+00:00', TZ)).toBe('Tue 29 Sep 12:00');
   });
