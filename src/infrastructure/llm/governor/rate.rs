@@ -54,6 +54,12 @@ impl TokenBucket {
         Ok(wait)
     }
 
+    /// Returns an unused reservation, never above capacity.
+    pub(super) fn refund(&mut self, now: Instant) {
+        self.refill(now);
+        self.level = (self.level + UNIT).min(self.capacity);
+    }
+
     pub(super) fn available(&mut self, now: Instant) -> u32 {
         self.refill(now);
         u32::try_from(self.level.max(0) / UNIT).unwrap_or(u32::MAX)

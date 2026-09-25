@@ -105,7 +105,8 @@ impl Governor {
     }
 
     /// Takes a permit only if one is free now, nobody is queued and the breaker
-    /// is closed; never waits.
+    /// is closed or half-open without a probe in flight (the holder's first
+    /// request then probes); never waits.
     pub fn try_acquire(
         &self,
         role: Role,

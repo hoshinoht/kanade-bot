@@ -29,7 +29,8 @@ backend group and validates it against what Kanata publishes:
   (declare one first). A row's permits are a whole number from 1 to 64;
   anything else (including a cleared input, sent as `null`) is refused with
   422 naming the row, never clamped. An absent `adapter_max_in_flight` caps
-  nothing. A role's model with no group only warns (it runs with no permits).
+  nothing. A role's model with no group only warns on save; the governor
+  then refuses that role's model calls (it never runs ungoverned).
 
 ## Live model
 

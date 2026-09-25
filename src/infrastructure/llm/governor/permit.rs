@@ -121,33 +121,21 @@ impl Permit {
 
     /// Admits a request only if a rate token is available now.
     pub fn try_begin_request(&self) -> Result<Attempt, Refused> {
-        self.admit(false, Duration::ZERO)
-            .map(|(attempt, _)| attempt)
+        self.reserve(false, Duration::ZERO)?.0.commit()
     }
 
     async fn begin(&self, retry: bool, max_wait: Duration) -> Result<Attempt, Refused> {
-        let (attempt, wait) = self.admit(retry, max_wait)?;
-        if wait.is_zero() || attempt.probe {
-            if !wait.is_zero() {
-                tokio::time::sleep(wait).await;
-            }
-            return Ok(attempt);
+        let (reservation, wait) = self.reserve(retry, max_wait)?;
+        if !wait.is_zero() {
+            // Cancelled here, the reservation's drop refunds the token.
+            tokio::time::sleep(wait).await;
         }
-        tokio::time::sleep(wait).await;
-        // A breaker that opened while this request waited for its token wins.
-        let mut state = self.group.lock();
-        state.breaker.refresh(Instant::now());
-        if state.breaker.state() != BreakerState::Closed {
-            state.counters.shed_unavailable += 1;
-            let retry_at = state.breaker.retry_at();
-            drop(state);
-            drop(attempt);
-            return Err(Refused::Unavailable { retry_at });
-        }
-        Ok(attempt)
+        reservation.commit()
     }
 
-    fn admit(&self, retry: bool, max_wait: Duration) -> Result<(Attempt, Duration), Refused> {
+    /// Checks breaker and budget and reserves a rate token; the request is
+    /// recorded only when the reservation commits.
+    fn reserve(&self, retry: bool, max_wait: Duration) -> Result<(Reservation, Duration), Refused> {
         let now = Instant::now();
         let mut state = self.group.lock();
         state.breaker.refresh(now);
@@ -166,22 +154,70 @@ impl Permit {
                 return Err(Refused::RateLimited { wait });
             }
         };
-        if retry {
-            state.budget.try_spend(now);
+        let probe = state.breaker.admit() == Admission::Probe;
+        Ok((
+            Reservation {
+                group: self.group.clone(),
+                retry,
+                probe,
+                live: true,
+            },
+            wait,
+        ))
+    }
+}
+
+/// A rate token (and possibly the probe slot) held while waiting to send.
+struct Reservation {
+    group: Arc<Group>,
+    retry: bool,
+    probe: bool,
+    live: bool,
+}
+
+impl Reservation {
+    fn commit(mut self) -> Result<Attempt, Refused> {
+        let now = Instant::now();
+        let mut state = self.group.lock();
+        state.breaker.refresh(now);
+        // A breaker that opened while this request waited for its token wins.
+        if !self.probe && state.breaker.state() != BreakerState::Closed {
+            state.counters.shed_unavailable += 1;
+            return Err(Refused::Unavailable {
+                retry_at: state.breaker.retry_at(),
+            });
+        }
+        if self.retry {
+            if !state.budget.try_spend(now) {
+                state.counters.retries_denied += 1;
+                return Err(Refused::RetryBudgetExhausted);
+            }
             state.counters.retries += 1;
         } else {
             state.budget.record_request(now);
             state.counters.requests += 1;
         }
-        let probe = state.breaker.admit() == Admission::Probe;
-        Ok((
-            Attempt {
-                group: self.group.clone(),
-                probe,
-                done: false,
-            },
-            wait,
-        ))
+        drop(state);
+        self.live = false;
+        Ok(Attempt {
+            group: self.group.clone(),
+            probe: self.probe,
+            done: false,
+        })
+    }
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        if !self.live {
+            return;
+        }
+        let now = Instant::now();
+        let mut state = self.group.lock();
+        state.rate.refund(now);
+        if self.probe {
+            state.record(now, true, Signal::Neutral, self.group.random.as_ref());
+        }
     }
 }
 
@@ -347,7 +383,9 @@ pub(super) fn try_acquire(
     let now = Instant::now();
     let mut state = group.lock();
     state.breaker.refresh(now);
-    if state.breaker.state() != BreakerState::Closed {
+    // Half-open with no probe in flight: a try-only group (rewrite) must be able
+    // to probe too, or it would never leave half-open.
+    if let Admission::Refused { .. } = state.breaker.peek() {
         state.counters.shed_unavailable += 1;
         return Err(Refused::Unavailable {
             retry_at: state.breaker.retry_at(),
