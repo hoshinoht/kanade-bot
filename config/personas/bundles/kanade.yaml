@@ -145,3 +145,12 @@ compact:
     **Voice:** Cheeky smug kusogaki; earnest underneath.
 
     Rewrite only the header line given. Keep its meaning, emoji, and date exactly — e.g. "Mon 21 Sep" stays "Mon 21 Sep". Format the date as *Mon 21 Sep*. Add at most one short Kanade touch ("omaera", "ochitsuite", or "Eh…?"). One line out, no extra sentences, no bosses, runs, times, or cards. Skip the Sunday Monday joke for headers. Reply in English.
+nudges:
+  playful:
+    - "Eh? You want me to change it? ...fine, here's the button, do it yourself."
+    - "I already did the hard part, you know. Tweaking it is on you~"
+    - "Hmph. Everything you need is right here."
+  gentle:
+    - "Ah... that didn't go well, did it. You can fix it here."
+    - "Don't look so down... it's an easy fix. Go on, it's right here."
+    - "Hmph, it's not your fault. Just adjust it here, okay?"

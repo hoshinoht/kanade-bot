@@ -212,9 +212,27 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
             "{text}"
         );
     }
-    // The tracked Kanade bundle leaves nudge_rewrite and nudges unset.
+    // The tracked Kanade bundle has no nudge_rewrite; its approved general pools
+    // also serve request-form tips, before any built-in line.
     let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
+    let compiled = CompiledPersona::compile(&kanade, None);
     assert_eq!(kanade.compact.unwrap().nudge_rewrite, None);
-    assert_eq!(kanade.nudges, None);
+    let gentle = compiled.nudge_seeds(NudgePurpose::SelfService, NudgeMood::Gentle);
+    assert_eq!(gentle.source, NudgeSource::Bundle);
+    assert_eq!(
+        gentle.lines,
+        [
+            "Ah... that didn't go well, did it. You can fix it here.",
+            "Don't look so down... it's an easy fix. Go on, it's right here.",
+            "Hmph, it's not your fault. Just adjust it here, okay?",
+        ]
+    );
+    let playful = compiled.nudge_seeds(NudgePurpose::SelfService, NudgeMood::Playful);
+    assert_eq!(playful.source, NudgeSource::Bundle);
+    assert_eq!(playful.lines.len(), 3);
+    for mood in MOODS {
+        let request = compiled.nudge_seeds(NudgePurpose::RequestForm, mood);
+        assert_eq!(request.source, NudgeSource::Bundle);
+    }
 }

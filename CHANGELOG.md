@@ -103,7 +103,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
   requeued once after Retry-After, a 504 ends the question, and retries need budget.
 - v5: persona prompt compiler matching v4's assembled prompts byte for byte, with strict
   staging lines (literal boss-name substitution), optional self-service nudge pools and a
-  nudge rewrite prompt per bundle/profile. Persona YAML no longer coerces unquoted
+  nudge rewrite prompt per bundle/profile (Kanade ships its own lines). Persona YAML no longer coerces unquoted
   numbers or booleans into text.
 - v5: storage for extraction and chat logs (per-round chat detail, filterable by model,
   date, outcome, channel, member, tool and text with keyset paging), rescan jobs,

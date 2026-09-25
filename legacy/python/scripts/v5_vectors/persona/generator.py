@@ -26,8 +26,9 @@ class ContractError(ValueError):
 def check_v5_bundle(templates: dict[str, Any]) -> None:
     """The tracked v5 Kanade bundle must carry the v4 templates byte-for-byte."""
     bundle = yaml.safe_load(V5_BUNDLE.read_text(encoding="utf-8"))
-    # `compact` is v5-only with no v4 oracle; the Rust tests pin its bytes.
+    # `compact` and `nudges` are v5-only with no v4 oracle; the Rust tests pin them.
     bundle.pop("compact", None)
+    bundle.pop("nudges", None)
     expected = {
         "schema_version": 1,
         "id": templates["id"],
