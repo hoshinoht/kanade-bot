@@ -151,6 +151,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
   write path, replaces older proposals for the same target, and expires silently after
   24 hours. Proposed answers recount the run's status like v4; approved cancels win over
   status changes since the proposal, and an approved move revives a cancelled run.
+- v5: extraction proposal cards on Discord, formatted as in v4: posted through the
+  delivery journal with no pings, ✅ to apply and ❌ to reject (by a participant, an
+  admin or the owner), and refreshed when applied, rejected or superseded. Card details
+  are stored with each proposal (migration 0011) so cards re-render after a restart;
+  extraction logs record refused changes in a structured field. A post that never went
+  out gives the weekly nudge tip back.
 - v5: self-service redirect decisions (move it yourself, request it, or keep the card;
   cards only while the public portal is closed) and persona nudges: rotating seed lines
   from the profile, bundle or built-in pools, at most one tip per member per boss week,

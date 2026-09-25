@@ -3,9 +3,10 @@
 Status: `src/extract/pipeline/`, `src/extract/backlog.rs`,
 `src/extract/rescan/` (slice E4). v4 reference: `bot/extract/pipeline.py`
 (`Pipeline.offer`/`flush`/`extract`/`rescan_window`/`apply_plan`) and
-`bot/agent/rescan.py`. Cards and ✅/❌ handling are slice E5; the
-self-service redirect (slice N1) is wired below. Serve wiring (Discord
-events, config, the Limits view) is not done yet.
+`bot/agent/rescan.py`. The self-service redirect (slice N1) is wired
+below; cards and ✅/❌ (slice E5) are `bot::cards` (`docs/v5/discord-adapter.md`
+*Proposal cards*), whose `CardOutbox` implements `Outbox`. Serve wiring
+(Discord events, config, the Limits view) is not done yet.
 
 ## Ports
 
@@ -22,8 +23,12 @@ No Twilight types cross into `src/extract`:
   proposals and the ids this pass retired), `answers` (chat RSVPs for the
   reaction path), `redirect` (a link-first self-service link that replaced
   the card: change, author, `SelfServiceTip`) and `backlog_dropped` (audit).
-  A kept card entry may carry `self_service: Option<SelfServiceTip>` (link,
-  optional lead-in, how the lead-in was made).
+  A card entry carries the staged `ProposedChange` and may carry
+  `self_service: Option<SelfServiceTip>` (link, optional lead-in, how the
+  lead-in was made, and the weekly tip it `claimed`). `card` and `redirect`
+  return `PostResult`: `NotPosted` (never sent, refused) gives every tip the
+  post carried back (`ModelLogStore::release_tip`); a send whose outcome is
+  unknown counts as posted.
 - **`SelfServiceDeps`** (optional in `Deps`; absent means cards only):
   `PortalLinks`, a `Nudger<SharedRewriter>` (production:
   `GovernedRewriter`) and `Personas` (the member's resolved persona).
@@ -96,13 +101,20 @@ injected wall clock as `now`.
   per target with `Supersede::Older` (its key is stored), any sibling with
   `Keep`, so a `sub` proposed beside a `move` for the same run never
   retires it. A target whose every new change is refused has still had its
-  older proposals retired, as v4 retired them before writing.
+  older proposals retired, as v4 retired them before writing. A link-first
+  redirected move's run is a target too: its link replaces today's card, so
+  older cards for that run retire (the `Card` then has no entries, only
+  `superseded`).
 - **Several calls** (a split burst, a rescan) are consolidated first
   (`plan::consolidate`, latest word per target); each kept change stays
   attributed to the call it came from.
 - **Up-front refusals** (`D-PROPOSE-REFUSES`: `Refused`, `NoEffect`,
-  `Expired`, or a store failure) create nothing and are logged as
-  `refused up front: <kind>: <reason>; …` in the call's `error`.
+  `Expired`, or a store failure) create nothing and are logged in the call's
+  structured `refusals` (`[{change, code, message}]`: the change kind, a
+  stable snake_case code from `pipeline::refusal_code`, v4's words); `error`
+  is only for failures. Migration 0011 adds `extractions.refusals`; the
+  admin API's `Extraction` schema does not expose it yet (follow-up for the
+  API lane).
 - Answered calls mark their messages processed (`ModelLogStore::mark_read`),
   each only if its content is still what the call read: a message edited
   while the call was in flight stays unprocessed and its pending burst reads

@@ -62,6 +62,9 @@ pub enum AdminAlert {
         channel_id: String,
         detail: String,
     },
+    /// The extraction backlog was full and dropped its oldest messages
+    /// (unread; a rescan can still read them from the cache).
+    BacklogDropped { messages: usize, capacity: usize },
 }
 
 impl AdminAlert {
@@ -93,6 +96,7 @@ impl AdminAlert {
             Self::CheckpointFailed { week_start, .. } => format!("checkpoint:{week_start}"),
             Self::DraftExpiryFailed { .. } => "draft-expiry".to_owned(),
             Self::AttendanceRecountFailed { .. } => "attendance-recount".to_owned(),
+            Self::BacklogDropped { .. } => "extraction-backlog".to_owned(),
         }
     }
 }

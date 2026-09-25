@@ -191,3 +191,17 @@ pub(super) async fn claim_tip(
     .map_err(store_error)?;
     Ok(done.rows_affected() == 1)
 }
+
+pub(super) async fn release_tip(
+    conn: &mut SqliteConnection,
+    member_id: &str,
+    week: &DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    let done = sqlx::query("DELETE FROM self_service_tips WHERE member_id = ?1 AND week = ?2")
+        .bind(member_id)
+        .bind(instant(week)?)
+        .execute(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    Ok(done.rows_affected() == 1)
+}

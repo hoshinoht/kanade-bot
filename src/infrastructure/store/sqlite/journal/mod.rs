@@ -44,11 +44,12 @@ fn encode(target: &DeliveryTarget) -> Result<(&'static str, String), JournalErro
     Ok((target.binding_type(), target.key_primary()?))
 }
 
-/// Target families this journal plans; others (decline, card) are ignored.
+/// Target families this journal plans; others (decline, debug) are ignored.
 fn decode(binding_type: &str, key: &str) -> Result<Option<DeliveryTarget>, JournalError> {
     Ok(match binding_type {
         "reminder" => Some(DeliveryTarget::Reminder(key.to_owned())),
         "digest" => Some(DeliveryTarget::Digest(from_iso(key).map_err(corrupt)?)),
+        "card" => Some(DeliveryTarget::Card(key.to_owned())),
         _ => None,
     })
 }
@@ -223,6 +224,9 @@ async fn suppress_natives(
                 .map_err(backend)?;
             }
             DeliveryTarget::Digest(week) => raise_marker(tx, *week, at).await?,
+            // A refused card stays unposted; the next pass in its channel
+            // may claim it again.
+            DeliveryTarget::Card(_) => {}
         }
     }
     Ok(())

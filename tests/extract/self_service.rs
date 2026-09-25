@@ -13,10 +13,14 @@ use kanade::chat::nudge::{
     SeedReason,
 };
 use kanade::chat::persona::{NudgeMood, NudgePurpose};
+use kanade::domain::drafts::ProposalSource;
 use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
 use kanade::domain::notify::WeekReset;
+use kanade::domain::proposals::{ChangeKind, ProposedChange};
+use kanade::domain::scheduler::{ProposalRequest, Supersede};
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::MessageEvent;
+use kanade::extract::pipeline::Proposer;
 use kanade::extract::redirect::SelfServiceMode;
 use kanade::infrastructure::llm::governor::{
     BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
@@ -297,6 +301,89 @@ async fn link_first_with_the_portal_open_sends_only_the_link_and_one_lead_in() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_link_that_never_posted_gives_the_weekly_tip_back() {
+    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
+        config.self_service.mode = SelfServiceMode::LinkFirst;
+        config.self_service.public_portal_open = true;
+    })
+    .await;
+    world.outbox.fail_posts.store(true, Ordering::SeqCst);
+    let (events, _loop) = world.pipeline();
+    events.send(post("101")).await.expect("send");
+    after(91).await;
+
+    let week = reset().current_week(now()).unwrap();
+    let redirects = world.outbox.redirects.lock().unwrap().clone();
+    assert_eq!(redirects[0].tip.claimed, Some((MY.to_owned(), week)));
+    assert!(
+        world.store.claim_tip(MY, week, now()).await.unwrap(),
+        "the failed post released the tip"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_card_that_never_posted_gives_the_weekly_tip_back() {
+    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
+        config.self_service.public_portal_open = true;
+    })
+    .await;
+    world.outbox.fail_posts.store(true, Ordering::SeqCst);
+    let (events, _loop) = world.pipeline();
+    events.send(post("101")).await.expect("send");
+    after(91).await;
+
+    let cards = world.outbox.cards.lock().unwrap().clone();
+    assert!(cards[0].entries[0].self_service.is_some());
+    let week = reset().current_week(now()).unwrap();
+    assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_link_first_move_retires_the_older_card_for_its_run() {
+    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
+        config.self_service.mode = SelfServiceMode::LinkFirst;
+        config.self_service.public_portal_open = true;
+    })
+    .await;
+    let older = world
+        .scheduler
+        .propose(ProposalRequest {
+            change: ProposedChange {
+                run_id: Some(world.runs[0].clone()),
+                channel_id: Some(CHANNEL.into()),
+                bosses: vec!["HMaleficStar".into(), "HFA".into()],
+                participants: vec![MY.into()],
+                new_datetime: Some(local(9, 2, 22, 0)),
+                ..ProposedChange::new(ChangeKind::Move)
+            },
+            source: ProposalSource::Extraction,
+            source_id: "x-older".into(),
+            supersede: Supersede::Older,
+        })
+        .await
+        .expect("older proposal")
+        .proposal
+        .id;
+    let (events, _loop) = world.pipeline();
+    events.send(post("101")).await.expect("send");
+    after(91).await;
+
+    assert_eq!(world.outbox.redirects.lock().unwrap().len(), 1);
+    assert!(
+        world.live_proposals().await.is_empty(),
+        "the older card retired"
+    );
+    let cards = world.outbox.cards.lock().unwrap().clone();
+    assert_eq!(cards.len(), 1);
+    assert!(cards[0].entries.is_empty());
+    assert_eq!(
+        cards[0].superseded,
+        [older],
+        "its card is marked superseded"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn cards_and_link_keeps_the_card_and_gives_the_lead_in_once_a_week() {
     let world = World::self_service(
         vec![moved("101"), reply(REWRITTEN), moved("102")],
@@ -370,12 +457,14 @@ async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
     after(91).await;
 
     let log = &world.logs().await[0];
-    assert!(
-        log.error
-            .as_deref()
-            .is_some_and(|error| error.starts_with("refused up front: move")),
-        "{:?}",
-        log.error
+    assert_eq!(log.error, None);
+    assert_eq!(log.refusals.len(), 1);
+    assert_eq!(
+        (
+            log.refusals[0].change.as_str(),
+            log.refusals[0].code.as_str()
+        ),
+        ("move", "no_effect")
     );
     assert!(world.live_proposals().await.is_empty());
     assert!(world.outbox.cards.lock().unwrap().is_empty());

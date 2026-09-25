@@ -184,4 +184,12 @@ pub trait ModelLogStore {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<bool, StoreError>> + Send;
+
+    /// Give a claimed tip back (its post never went out); `true` when one
+    /// was held.
+    fn release_tip(
+        &self,
+        member_id: &str,
+        week: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
 }

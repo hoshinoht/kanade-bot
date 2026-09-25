@@ -16,6 +16,7 @@ pub use filter::{
 pub use outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
 pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
 pub use records::{
-    AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, RescanJob, WatchedMessage,
+    AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, ExtractionRefusal, RescanJob,
+    WatchedMessage,
 };
 pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};

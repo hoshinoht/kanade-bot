@@ -410,4 +410,11 @@ impl ModelLogStore for MemoryScheduleStore {
             .tips
             .insert((member_id.to_owned(), micros(week))))
     }
+
+    async fn release_tip(&self, member_id: &str, week: DateTime<Utc>) -> Result<bool, StoreError> {
+        Ok(self
+            .logs()
+            .tips
+            .remove(&(member_id.to_owned(), micros(week))))
+    }
 }

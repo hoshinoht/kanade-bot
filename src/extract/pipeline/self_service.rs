@@ -94,6 +94,7 @@ where
             link: link_plan.link,
             lead_in: None,
             line: None,
+            claimed: None,
         };
         let Some(deps) = self.self_service.as_ref() else {
             return tip;
@@ -127,6 +128,11 @@ where
             Ok(Some(nudge)) => {
                 tip.lead_in = Some(nudge.lead_in);
                 tip.line = Some(nudge.line);
+                // `Nudger::tip` claimed this week's tip for the member.
+                tip.claimed = reset
+                    .current_week(now)
+                    .ok()
+                    .map(|week| (link_plan.author_id.clone(), week));
             }
             Ok(None) => {}
             Err(error) => errors.push(format!("self-service tip: {error}")),

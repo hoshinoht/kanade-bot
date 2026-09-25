@@ -30,6 +30,7 @@ use super::order::sort_snapshot;
 mod journal;
 mod members;
 mod model_log;
+mod proposal_cards;
 mod proposals;
 mod web_sessions;
 
@@ -44,6 +45,8 @@ struct DraftTables {
     events: BTreeMap<String, Vec<DraftEvent>>,
     requests: BTreeMap<(String, String, String), (String, String)>,
     proposals: BTreeMap<String, crate::domain::drafts::ProposalInfo>,
+    /// Proposal cards by proposal id, with their creation order.
+    cards: BTreeMap<String, (u64, crate::domain::proposals::StoredCard)>,
 }
 
 #[derive(Clone, Debug, Default)]

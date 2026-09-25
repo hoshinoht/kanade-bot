@@ -2,7 +2,7 @@
 //! are cached, gated and buffered per channel, and each burst becomes one
 //! governed model call per prompt-sized piece, planned changes, proposals
 //! through the scheduler and one extraction log row per call. Discord is
-//! reached only through the ports; cards and reactions are slice E5.
+//! reached only through the ports (`bot::cards::CardOutbox` posts the cards).
 //! `self_service` applies the self-service redirect and the weekly nudge.
 
 mod call;
@@ -13,6 +13,7 @@ mod driver;
 mod extractor;
 mod outcome;
 mod ports;
+mod refusal;
 mod self_service;
 
 pub(crate) use call::CallRecord;
@@ -29,5 +30,7 @@ pub use extractor::{Deps, Extractor, PassReport};
 pub use outcome::extraction_outcome;
 pub use ports::{
     AuthorKind, BacklogDrop, Card, CardEntry, ChatAnswer, Guild, IncomingMessage, MessageEvent,
-    MessageOrigin, Outbox, Personas, Proposer, Redirected, SelfServiceDeps, SelfServiceTip,
+    MessageOrigin, Outbox, Personas, PostResult, Proposer, Redirected, SelfServiceDeps,
+    SelfServiceTip,
 };
+pub use refusal::{refusal, refusal_code};

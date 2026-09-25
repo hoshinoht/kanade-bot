@@ -45,6 +45,33 @@ pub struct ExtractionLog {
     pub message_ids: Vec<String>,
     /// Proposal draft ids (v4 `amendment_ids`).
     pub proposal_ids: Vec<String>,
+    /// Changes refused up front (`D-PROPOSE-REFUSES`); `error` is only for
+    /// failures.
+    pub refusals: Vec<ExtractionRefusal>,
+}
+
+/// One change the scheduler refused to stage: the change kind, a stable
+/// reason code and the (v4-worded) message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtractionRefusal {
+    pub change: String,
+    pub code: String,
+    pub message: String,
+}
+
+impl ExtractionRefusal {
+    pub fn to_json(&self) -> Value {
+        serde_json::json!({ "change": self.change, "code": self.code, "message": self.message })
+    }
+
+    pub fn from_json(value: &Value) -> Option<Self> {
+        let field = |name: &str| value.get(name)?.as_str().map(str::to_owned);
+        Some(Self {
+            change: field("change")?,
+            code: field("code")?,
+            message: field("message")?,
+        })
+    }
 }
 
 /// One model request within a chat question.

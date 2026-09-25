@@ -14,9 +14,10 @@ mod retry;
 mod support;
 
 use kanade::infrastructure::store::{
-    MemoryScheduleStore, SqliteStore, attendance_conformance, cherry_pick_conformance, conformance,
-    draft_conformance, history_conformance, journal_conformance, model_log_conformance,
-    precondition_conformance, proposal_conformance, web_sessions_conformance,
+    MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
+    cherry_pick_conformance, conformance, draft_conformance, history_conformance,
+    journal_conformance, model_log_conformance, precondition_conformance, proposal_conformance,
+    web_sessions_conformance,
 };
 
 #[tokio::test]
@@ -70,6 +71,24 @@ async fn sqlite_model_logs_conform() {
     model_log_conformance::run_suite(async || {
         let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         SqliteStore::open(&dir.config(&format!("logs-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn memory_proposal_cards_conform() {
+    card_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_proposal_cards_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    card_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("cards-{n}")))
             .await
             .expect("fresh store opens")
     })

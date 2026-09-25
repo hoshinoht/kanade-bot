@@ -256,7 +256,7 @@ where
             self.journal.mark_indeterminate(self.lease, attempt).await?;
             return Ok(SendOutcome::Uncertain);
         }
-        if intent.effect == EffectKind::Reminder
+        if matches!(intent.effect, EffectKind::Reminder | EffectKind::Card)
             && let Some(channel) = parse_id(&intent.channel_id)
         {
             // Best effort, as v4: a card without reactions still counts.

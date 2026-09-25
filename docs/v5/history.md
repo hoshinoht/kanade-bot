@@ -790,6 +790,18 @@ enforced by the service, not the store; TTL 24 h.
   same non-null `supersede_key` is closed `discarded`, reason `superseded`
   (event detail the same), by the new proposal's system author, version
   unchanged. The ids are returned. Closed proposals are left alone.
+- **Card details** (migration 0011, `ProposalCardStore`; user decision
+  2026-09-25): `proposal_cards` holds, per proposal, the card channel and
+  the `CardDetails` JSON the card renders (v4's row: kind, run, bosses,
+  party, time, the literal day/time words, answer, question flag, summary,
+  also-mentioned, confidence, payload incl. `weekly_when`, evidence ids, the
+  self-service line), written once after propose (the same details again
+  are a no-op; different ones are `Constraint`; not in the propose
+  transaction, so a crash in between leaves a proposal without a card, which
+  the admin inbox still lists). `message_id`/`posted_at` are written only by
+  the delivery journal's `card` bind; a trigger refuses any other change and
+  every delete. Lookups: by proposal ids, by message (✅/❌), and live unposted
+  cards per channel (reposted before the next card, as v4).
 - **TTL.** `expires_at = created_at + ttl`; `ttl` is a per-proposal
   parameter (positive; `DEFAULT_PROPOSAL_TTL` = the decided 24 h).
   `expire_proposals(now, actor)` closes live proposals with

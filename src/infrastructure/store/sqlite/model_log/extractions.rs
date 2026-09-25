@@ -8,7 +8,8 @@ use super::{
     read_optional_u64, read_u64, text,
 };
 use crate::domain::model_log::{
-    ExtractionFilter, ExtractionLog, ExtractionOutcome, LogCursor, LogFacets, LogPage, page_size,
+    ExtractionFilter, ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogCursor, LogFacets,
+    LogPage, page_size,
 };
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
@@ -16,7 +17,20 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 
 const COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, e.prompt, \
     e.raw_response, e.latency_ms, e.request_count, e.outcome, e.error, e.guardrail, \
-    e.message_ids, e.proposal_ids";
+    e.message_ids, e.proposal_ids, e.refusals";
+
+fn refusals_of(row: &SqliteRow) -> Result<Vec<ExtractionRefusal>, StoreError> {
+    let value = read_json(row, "refusals")?;
+    value
+        .as_array()
+        .ok_or_else(|| StoreError::Backend("extractions.refusals is not an array".into()))?
+        .iter()
+        .map(|item| {
+            ExtractionRefusal::from_json(item)
+                .ok_or_else(|| StoreError::Backend("extractions.refusals item".into()))
+        })
+        .collect()
+}
 
 fn log_of(row: &SqliteRow) -> Result<ExtractionLog, StoreError> {
     let outcome = text(row, "outcome")?;
@@ -38,6 +52,7 @@ fn log_of(row: &SqliteRow) -> Result<ExtractionLog, StoreError> {
         guardrail: read_json(row, "guardrail")?,
         message_ids: read_list(row, "message_ids")?,
         proposal_ids: read_list(row, "proposal_ids")?,
+        refusals: refusals_of(row)?,
     })
 }
 
@@ -48,7 +63,8 @@ pub(super) async fn insert(
     sqlx::query(
         "INSERT INTO extractions (id, at, channel_id, member_ids, model, reasoning, prompt, \
          raw_response, latency_ms, request_count, outcome, error, guardrail, message_ids, \
-         proposal_ids) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+         proposal_ids, refusals) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
     )
     .bind(&log.id)
     .bind(instant(&log.at)?)
@@ -65,6 +81,12 @@ pub(super) async fn insert(
     .bind(json_text(&log.guardrail))
     .bind(json_list(&log.message_ids))
     .bind(json_list(&log.proposal_ids))
+    .bind(json_text(&serde_json::Value::Array(
+        log.refusals
+            .iter()
+            .map(ExtractionRefusal::to_json)
+            .collect(),
+    )))
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;

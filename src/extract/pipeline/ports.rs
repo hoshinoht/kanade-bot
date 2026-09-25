@@ -129,6 +129,9 @@ pub struct SelfServiceTip {
     pub link: RedirectLink,
     pub lead_in: Option<String>,
     pub line: Option<LineSource>,
+    /// The weekly tip this lead-in claimed (member, boss week start); given
+    /// back when the post carrying it never went out.
+    pub claimed: Option<(String, DateTime<Utc>)>,
 }
 
 /// A self-serviceable change sent as a link only (link-first mode): no
@@ -145,6 +148,8 @@ pub struct Redirected {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardEntry {
     pub proposal_id: String,
+    /// The staged change (bosses, time, party, payload) the card renders.
+    pub change: ProposedChange,
     pub kind: AmendmentKind,
     pub run_id: Option<String>,
     pub summary: String,
@@ -187,11 +192,21 @@ pub struct BacklogDrop {
     pub capacity: usize,
 }
 
+/// Whether a post went out. A send whose outcome is unknown counts as posted
+/// (it may have been seen); `NotPosted` gives the post's weekly tips back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PostResult {
+    Posted,
+    NotPosted,
+}
+
 pub trait Outbox: Send + Sync {
     /// A change sent as a self-service link instead of a card.
-    fn redirect(&self, redirected: Redirected) -> impl Future<Output = ()> + Send;
+    fn redirect(&self, redirected: Redirected) -> impl Future<Output = PostResult> + Send;
 
-    fn card(&self, card: Card) -> impl Future<Output = ()> + Send;
+    /// The card's new entries (if any), and the retired proposals' cards
+    /// marked superseded.
+    fn card(&self, card: Card) -> impl Future<Output = PostResult> + Send;
 
     fn answers(&self, answers: Vec<ChatAnswer>) -> impl Future<Output = ()> + Send;
 

@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use kanade::domain::drafts::{DraftStatus, ProposalStore};
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
+use kanade::domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
 use kanade::domain::schedule::RsvpState;
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{
@@ -213,9 +213,14 @@ async fn an_unworkable_change_is_refused_up_front_and_logged_with_its_reason() {
     after(91).await;
     let logs = world.logs().await;
     assert_eq!(logs[0].outcome, ExtractionOutcome::NoChange);
+    assert_eq!(logs[0].error, None, "error is for failures only");
     assert_eq!(
-        logs[0].error.as_deref(),
-        Some("refused up front: fix: no recurring day and time were agreed - use `/fixed add`")
+        logs[0].refusals,
+        [ExtractionRefusal {
+            change: "fix".into(),
+            code: "no_recurring_slot".into(),
+            message: "no recurring day and time were agreed - use `/fixed add`".into(),
+        }]
     );
     assert!(logs[0].proposal_ids.is_empty());
     assert!(world.live_proposals().await.is_empty());

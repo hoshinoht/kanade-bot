@@ -17,6 +17,7 @@ mod members;
 mod migrate;
 mod model_log;
 mod owner;
+mod proposal_cards;
 mod proposals;
 mod rows;
 mod schedule;

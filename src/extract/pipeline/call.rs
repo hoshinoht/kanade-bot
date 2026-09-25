@@ -127,7 +127,7 @@ pub(crate) struct CallRecord {
     pub dropped: usize,
     pub stale: usize,
     pub proposal_ids: Vec<String>,
-    pub refusals: Vec<String>,
+    pub refusals: Vec<crate::domain::model_log::ExtractionRefusal>,
     pub redirected: usize,
     /// How each lead-in of this call was made (`LineSource::as_str`), for the log.
     pub nudges: Vec<&'static str>,

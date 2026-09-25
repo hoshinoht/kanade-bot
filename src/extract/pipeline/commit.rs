@@ -10,7 +10,8 @@ use serde_json::json;
 use super::call::{CallRecord, Failure, Kept};
 use super::extractor::{Extractor, PassReport, utc};
 use super::outcome::extraction_outcome;
-use super::ports::{Card, CardEntry, ChatAnswer, Outbox, Proposer, Redirected};
+use super::ports::{Card, CardEntry, ChatAnswer, Outbox, PostResult, Proposer, Redirected};
+use super::refusal::refusal;
 use super::self_service::LinkPlan;
 use crate::domain::drafts::ProposalSource;
 use crate::domain::model_log::{ExtractionLog, ModelLogStore, ReadMessage};
@@ -143,6 +144,9 @@ where
 
         let mut answers: Vec<ChatAnswer> = Vec::new();
         let mut proposals: Vec<(usize, Kept, ProposedChange, Option<LinkPlan>)> = Vec::new();
+        // A link-first move replaces today's card, so older cards for its run
+        // retire as they would for a new proposal (N1 review note).
+        let mut redirected_targets: BTreeSet<Target> = BTreeSet::new();
         for (origin, kept) in entries.iter().cloned() {
             if kept.amendment.kind == AmendmentKind::Rsvp {
                 // "maybe" is recorded by nobody, as v4.
@@ -178,7 +182,9 @@ where
                     if let Some(line) = tip.line {
                         records[origin].nudges.push(line.as_str());
                     }
-                    self.outbox
+                    let claimed = tip.claimed.clone();
+                    let posted = self
+                        .outbox
                         .redirect(Redirected {
                             channel_id: channel_id.to_owned(),
                             change,
@@ -186,6 +192,10 @@ where
                             tip,
                         })
                         .await;
+                    if posted == PostResult::NotPosted {
+                        self.give_back(claimed, &mut report.errors).await;
+                    }
+                    redirected_targets.insert(target(&kept));
                     records[origin].redirected += 1;
                 }
                 link_plan => proposals.push((origin, kept, change, link_plan)),
@@ -195,10 +205,11 @@ where
         // v4 `_record`: every older card about these targets retires before
         // anything is written, so this pass never retires its own siblings.
         let mut superseded: Vec<String> = Vec::new();
-        let targets: BTreeSet<Target> = proposals
+        let mut targets: BTreeSet<Target> = proposals
             .iter()
             .map(|(_, kept, _, _)| target(kept))
             .collect();
+        targets.extend(redirected_targets);
         for goal in &targets {
             let scope = match goal {
                 Target::Run(run_id) => SupersedeScope {
@@ -262,6 +273,7 @@ where
                     };
                     card.push(CardEntry {
                         proposal_id: id,
+                        change: change.clone(),
                         kind: kept.amendment.kind,
                         run_id: kept.run.as_ref().map(|run| run.id.clone()),
                         summary: kept.summary.clone(),
@@ -276,9 +288,9 @@ where
                     });
                 }
                 Err(error) => {
-                    let text = format!("{}: {error}", kept.amendment.kind.as_str());
-                    records[origin].refusals.push(text.clone());
-                    report.refused.push(text);
+                    let change = kept.amendment.kind.as_str();
+                    records[origin].refusals.push(refusal(change, &error));
+                    report.refused.push(format!("{change}: {error}"));
                 }
             }
         }
@@ -288,13 +300,23 @@ where
         superseded.sort();
         superseded.dedup();
         if !card.is_empty() || !superseded.is_empty() {
-            self.outbox
+            let claimed: Vec<_> = card
+                .iter()
+                .filter_map(|entry| entry.self_service.as_ref()?.claimed.clone())
+                .collect();
+            let posted = self
+                .outbox
                 .card(Card {
                     channel_id: channel_id.to_owned(),
                     entries: card,
                     superseded,
                 })
                 .await;
+            if posted == PostResult::NotPosted {
+                for tip in claimed {
+                    self.give_back(Some(tip), &mut report.errors).await;
+                }
+            }
         }
         report.answers = answers.len();
         if !answers.is_empty() {
@@ -323,10 +345,6 @@ where
             if let Some(error) = &record.error {
                 report.errors.push(error.clone());
             }
-            let error = record.error.clone().or_else(|| {
-                (!record.refusals.is_empty())
-                    .then(|| format!("refused up front: {}", record.refusals.join("; ")))
-            });
             let log = ExtractionLog {
                 id: record.log_id.clone(),
                 at: record.at,
@@ -346,7 +364,7 @@ where
                     record.proposal_ids.len(),
                     record.redirected,
                 ),
-                error,
+                error: record.error.clone(),
                 // How each lead-in was made; labels only, never model text.
                 guardrail: if record.nudges.is_empty() {
                     json!({})
@@ -355,6 +373,7 @@ where
                 },
                 message_ids: record.message_ids,
                 proposal_ids: record.proposal_ids,
+                refusals: record.refusals,
             };
             match self.store.record_extraction(log).await {
                 Ok(()) => report.logs.push(record.log_id),
@@ -362,5 +381,19 @@ where
             }
         }
         report
+    }
+
+    /// Release a weekly tip whose post never went out.
+    async fn give_back(
+        &self,
+        claimed: Option<(String, chrono::DateTime<chrono::Utc>)>,
+        errors: &mut Vec<String>,
+    ) {
+        let Some((member_id, week)) = claimed else {
+            return;
+        };
+        if let Err(error) = self.store.release_tip(&member_id, week).await {
+            errors.push(format!("self-service tip release: {error}"));
+        }
     }
 }

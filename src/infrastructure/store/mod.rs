@@ -10,6 +10,8 @@ pub mod web_sessions;
 #[cfg(any(test, feature = "test-support"))]
 pub mod attendance_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod card_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod cherry_pick_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;

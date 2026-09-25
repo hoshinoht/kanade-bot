@@ -340,6 +340,15 @@ implements the ownership rules above differently from the v4 reference.
   installed (a small audited `unsafe` FFI through `libsqlite3-sys` is then
   acceptable), with statement caching disabled for it as "Admission and
   state" requires.
+- Proposal cards (slice E5) use binding type `card`, key_primary the
+  proposal (draft) id, as v4's `DeliveryTarget.card`. A claim requires a
+  stored, unposted card of a live proposal with no unproven retirement
+  (retirements by `service:delivery-rejected` or `service:delivery-not-sent`
+  prove nothing was posted); `bind` stamps `proposal_cards.message_id` and
+  `posted_at` in its transaction. A rejected card is not suppressed: it stays
+  unposted and is posted before the next card in its channel (v4 reposted
+  stranded rows). Unlike v4 amendments, there is no terminal-null
+  retirement; operator `retire_unproven` blocks reposting.
 - Restore stages the backup copy beside the database, takes ownership of the
   staged inode before validation, and publishes it with a hard link, so the
   owned inode is the one that appears at `db_path`. It runs as its own task:

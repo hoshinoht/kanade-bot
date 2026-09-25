@@ -227,6 +227,7 @@ A clock that moved backwards never suppresses one. The alerts are:
 - `DigestReplacementSuppressed`.
 - `DigestClockRollback`.
 - `JournalFailure`.
+- `BacklogDropped` (extraction backlog overflow).
 
 Quiet mode is never announced publicly: the rendered text has no mention tags
 and the allow-list is empty.
@@ -234,11 +235,59 @@ and the allow-list is empty.
 Rendering is minimal plain text (bosses, Discord timestamps, mention tags).
 Card parity (embeds, portraits, quiet lines) is a later slice.
 
+## Proposal cards
+
+`src/bot/cards/` (slice E5; v4 `formatting.proposal_card`,
+`Pipeline.apply_plan`, `_handle_proposal_reaction`). Tests:
+`tests/extract/cards.rs` (vectors) and `tests/discord/cards.rs`.
+
+- **Text** (`format.rs`): `when_text`, `proposal_line`, `card_kind`,
+  `proposal_card`, `unanswered` and the notices, byte-exact to
+  `docs/v5/vectors/extract/cards.json` (4 cases, 35 steps, no deviations).
+  Portraits and artwork are not rendered. v5 adds one line: a card entry's
+  self-service link (`<lead-in> → edit the run: <url>`) under its field.
+- **Stored details.** `CardDesk::post_card` saves each proposal's
+  `CardDetails` (the v4 row the card reads) with its channel through
+  `ProposalCardStore` (migration 0011 `proposal_cards`), then posts. A card is
+  always rendered from stored details plus the runs as they stand, so it can
+  be refreshed after a restart (`CardDesk::refresh`).
+- **Posting** goes through the delivery `Executor` under its own lease:
+  intent `EffectKind::Card`, one `DeliveryTarget::Card(proposal id)` per
+  proposal (binding type `card`). The claim requires a stored, unposted card
+  of a live proposal with no unproven retirement; `bind` writes
+  `message_id`/`posted_at` in the same transaction. Ambiguous sends stay held
+  and are never replayed; a refused or unsent card stays unposted and is
+  posted, as v4's stranded rows, before the next card in its channel. Bound
+  cards get ✅/❌. Allowed mentions are empty: people are named, not pinged.
+  `PostResult` tells the pipeline whether the post went out.
+- **Refresh.** Re-render content and embed and append one line per decision
+  on the card, from the proposals' states: merged → `✅ applied by <name>`,
+  rejected → `❌ rejected by <name>`, superseded → `↪ superseded by a newer
+  card`. The edit mentions nobody. A card's retired siblings are refreshed
+  after every pass and every approval.
+- **Reactions** (`CardDesk::on_reaction`): only added ✅/❌ on a message
+  with stored cards (else `NotACard`, routed as an RSVP). `Authority` gives
+  the member's `Approver` (role, Administrator or guild owner). ❌ rejects
+  and ✅ approves every proposal on the card through
+  `SchedulerService::{reject_proposal, approve_proposal}`, so the approval
+  rules, the 24 h TTL, move revival, repeat-✅ follow-ups and v4's ✅-time
+  refusal wording are the scheduler's. Unauthorised or already answered
+  proposals are silent; refusals are posted once as `⚠️ <reason>; …`
+  (journalled notice, no mentions). Merge notices are returned
+  (`CardReaction::notices`) for the draft-merge outbox path.
+- **Outbox** (`CardOutbox`): cards as above; link-first links as a
+  journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
+  pinged); chat answers through the reaction path (`apply_reaction` as the
+  member, then the answer's source set to `chat`, v4 `_apply_rsvp`); backlog
+  drops as `AdminAlert::BacklogDropped`.
+
 ## Deferred
 
 Serve-mode wiring and logging; startup roster sync and member chunking;
 reaction and roster reconciliation; roster persistence; wiring the tick into
 serve mode with a live `ChannelDirectory` and the admin-alert destination;
-notice delivery from mutation operations; card refresh/edits; proposal-card
-reactions, opposite-reaction removal and decline notices; message events for chat and extraction;
+notice delivery from mutation operations; routing gateway reactions to
+`CardDesk::on_reaction`; opposite-reaction removal and decline notices
+(chat answers apply without them); card portraits/artwork; withdrawing a
+card whose message was deleted; message events for chat and extraction;
 attachments; the other command definitions; an authenticated gateway/TLS smoke test against Discord.

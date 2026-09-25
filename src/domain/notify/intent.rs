@@ -16,6 +16,8 @@ pub enum DeliveryTarget {
     Reminder(String),
     /// A boss week's digest, by week start.
     Digest(DateTime<Utc>),
+    /// A proposal's card, by proposal (draft) id (v4 `DeliveryTarget.card`).
+    Card(String),
 }
 
 impl DeliveryTarget {
@@ -24,6 +26,7 @@ impl DeliveryTarget {
         match self {
             Self::Reminder(_) => "reminder",
             Self::Digest(_) => "digest",
+            Self::Card(_) => "card",
         }
     }
 
@@ -33,7 +36,7 @@ impl DeliveryTarget {
     /// [`DateOutOfRange`] for a week start outside v4's years.
     pub fn key_primary(&self) -> Result<String, DateOutOfRange> {
         match self {
-            Self::Reminder(id) => Ok(id.clone()),
+            Self::Reminder(id) | Self::Card(id) => Ok(id.clone()),
             Self::Digest(week) => to_iso(week),
         }
     }
@@ -57,6 +60,8 @@ impl JournalView for BTreeSet<DeliveryTarget> {
 pub enum EffectKind {
     Reminder,
     Digest,
+    /// A proposal card (v4 effect kind `card`).
+    Card,
     /// A change notice, e.g. `notice.run.status.cancelled`.
     Notice(String),
 }
@@ -66,6 +71,7 @@ impl EffectKind {
         match self {
             Self::Reminder => "reminder",
             Self::Digest => "digest",
+            Self::Card => "card",
             Self::Notice(kind) => kind,
         }
     }
@@ -88,6 +94,12 @@ pub enum IntentContent {
     },
     /// A schedule change notice, rendered from the event itself.
     Notice(Notice),
+    /// One card for these proposals, rendered from their stored details.
+    ProposalCard {
+        proposal_ids: Vec<String>,
+    },
+    /// A message its sender renders (a self-service link, an approval problem).
+    Plain,
 }
 
 /// Admin-visible problems found while planning a delivery.

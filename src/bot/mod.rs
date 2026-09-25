@@ -6,6 +6,7 @@
 //! journal are ports implemented later. Nothing here connects to Discord
 //! unless a caller hands the runner a real shard.
 
+pub mod cards;
 pub mod commands;
 pub mod delivery;
 pub mod events;

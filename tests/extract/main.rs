@@ -4,8 +4,9 @@
 //! `rescan` drive the orchestration over pipeline-level fakes (`fakes`).
 //! `redirect` and `nudge` cover the v5 self-service redirect and its persona
 //! nudges (no v4 vectors); `self_service` wires them through the governed
-//! rewrite and the pipeline. Cards belong to a later slice.
+//! rewrite and the pipeline. `cards` replays the proposal card text.
 
+mod cards;
 mod commit;
 mod fakes;
 mod gate;
@@ -29,8 +30,8 @@ mod window;
 #[path = "../common/mod.rs"]
 mod common;
 
-const REPLAYED: [&str; 9] = [
-    "gate", "window", "resolve", "match", "merge", "prompt", "parse", "plan", "commit",
+const REPLAYED: [&str; 10] = [
+    "gate", "window", "resolve", "match", "merge", "prompt", "parse", "plan", "commit", "cards",
 ];
 
 #[test]

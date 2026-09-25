@@ -1,6 +1,7 @@
 //! Discord adapter tests. All offline: fakes, Twilight models built from
 //! JSON, and a loopback HTTP stub; nothing contacts Discord.
 
+mod cards;
 mod commands;
 mod fake_transport;
 mod gateway;

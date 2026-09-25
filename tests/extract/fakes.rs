@@ -27,8 +27,8 @@ use kanade::domain::scheduler::{
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage,
-    MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig, Proposer, Redirected,
-    SelfServiceDeps,
+    MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig, PostResult, Proposer,
+    Redirected, SelfServiceDeps,
 };
 use kanade::extract::redirect::PublicPortalLinks;
 use kanade::extract::rescan::History;
@@ -243,15 +243,29 @@ pub struct Recorder {
     pub answers: Mutex<Vec<ChatAnswer>>,
     pub drops: Mutex<Vec<BacklogDrop>>,
     pub redirects: Mutex<Vec<Redirected>>,
+    /// Report every card and link as never posted.
+    pub fail_posts: AtomicBool,
+}
+
+impl Recorder {
+    fn result(&self) -> PostResult {
+        if self.fail_posts.load(Ordering::SeqCst) {
+            PostResult::NotPosted
+        } else {
+            PostResult::Posted
+        }
+    }
 }
 
 impl Outbox for Recorder {
-    async fn redirect(&self, redirected: Redirected) {
+    async fn redirect(&self, redirected: Redirected) -> PostResult {
         self.redirects.lock().unwrap().push(redirected);
+        self.result()
     }
 
-    async fn card(&self, card: Card) {
+    async fn card(&self, card: Card) -> PostResult {
         self.cards.lock().unwrap().push(card);
+        self.result()
     }
 
     async fn answers(&self, answers: Vec<ChatAnswer>) {

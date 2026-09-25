@@ -216,4 +216,8 @@ impl ModelLogStore for SqliteStore {
     ) -> Result<bool, StoreError> {
         write_txn!(self, tx, jobs::claim_tip(&mut tx, member_id, &week, &at))
     }
+
+    async fn release_tip(&self, member_id: &str, week: DateTime<Utc>) -> Result<bool, StoreError> {
+        write_txn!(self, tx, jobs::release_tip(&mut tx, member_id, &week))
+    }
 }

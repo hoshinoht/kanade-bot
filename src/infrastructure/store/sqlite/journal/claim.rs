@@ -103,6 +103,40 @@ async fn check_targets(
                     )));
                 }
             }
+            DeliveryTarget::Card(id) => {
+                let row: Option<(bool, bool, bool)> = sqlx::query_as(
+                    "SELECT c.message_id IS NOT NULL,
+                            d.status IN ('open', 'submitted'),
+                            EXISTS (SELECT 1 FROM delivery_attempt_targets AS ut
+                                JOIN delivery_attempts AS ua ON ua.attempt_id = ut.attempt_id
+                                WHERE ut.binding_type = 'card' AND ut.key_primary = c.draft_id
+                                  AND ut.released_at IS NOT NULL AND ua.state = 'retired'
+                                  AND ua.message_id IS NULL
+                                  AND COALESCE(ua.resolved_by, '') NOT IN
+                                      ('service:delivery-not-sent', 'service:delivery-rejected'))
+                     FROM proposal_cards c JOIN drafts d ON d.id = c.draft_id
+                     WHERE c.draft_id = ?1",
+                )
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?;
+                match row {
+                    None => return Err(unavailable(format!("proposal {id} has no card"))),
+                    Some((true, _, _)) => {
+                        return Err(unavailable(format!("proposal {id}'s card was posted")));
+                    }
+                    Some((_, false, _)) => {
+                        return Err(unavailable(format!("proposal {id} is closed")));
+                    }
+                    Some((_, _, true)) => {
+                        return Err(unavailable(format!(
+                            "proposal {id}'s card was retired without proof of delivery"
+                        )));
+                    }
+                    Some((false, true, false)) => {}
+                }
+            }
         }
     }
     Ok(())

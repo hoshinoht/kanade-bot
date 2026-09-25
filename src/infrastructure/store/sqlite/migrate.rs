@@ -55,6 +55,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 10,
         sql: include_str!("migrations/0010_member_profile.sql"),
     },
+    Migration {
+        version: 11,
+        sql: include_str!("migrations/0011_proposal_cards.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the

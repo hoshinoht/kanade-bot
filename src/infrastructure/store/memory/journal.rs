@@ -76,6 +76,23 @@ impl JournalTables {
         })
     }
 
+    /// Retired by an operator without proof: never reposted. Rejected and
+    /// not-sent retirements prove nothing was posted.
+    fn card_retired_unproven(&self, proposal_id: &str) -> bool {
+        self.attempts.values().any(|row| {
+            row.state == AttemptState::Retired
+                && row.message_id.is_none()
+                && !matches!(
+                    row.resolved_by.as_deref(),
+                    Some(NOT_SENT_ACTOR | REJECTED_ACTOR)
+                )
+                && row.targets.iter().any(|target| {
+                    target.released
+                        && matches!(&target.target, DeliveryTarget::Card(id) if id == proposal_id)
+                })
+        })
+    }
+
     fn holds(&self, target: &DeliveryTarget) -> bool {
         self.attempts.values().any(|row| {
             row.dedupe_active
@@ -142,6 +159,8 @@ fn suppress_natives(
                 }
             }
             DeliveryTarget::Digest(week) => tables.journal.raise_marker(*week, at)?,
+            // A refused card stays unposted and may be claimed again.
+            DeliveryTarget::Card(_) => {}
         }
     }
     Ok(())
@@ -231,6 +250,28 @@ fn claim_in(
                         "digest for {} already has an active card",
                         to_iso(week)?
                     )));
+                }
+            }
+            DeliveryTarget::Card(id) => {
+                let unavailable = |detail: String| Err(JournalError::TargetUnavailable(detail));
+                let Some((_, card)) = tables.drafts.cards.get(id) else {
+                    return unavailable(format!("proposal {id} has no card"));
+                };
+                if card.message_id.is_some() {
+                    return unavailable(format!("proposal {id}'s card was posted"));
+                }
+                if !tables
+                    .drafts
+                    .drafts
+                    .get(id)
+                    .is_some_and(|draft| draft.status.is_live())
+                {
+                    return unavailable(format!("proposal {id} is closed"));
+                }
+                if journal.card_retired_unproven(id) {
+                    return unavailable(format!(
+                        "proposal {id}'s card was retired without proof of delivery"
+                    ));
                 }
             }
         }
@@ -324,6 +365,21 @@ fn bind_in(
                         retired_at: None,
                     },
                 );
+            }
+            DeliveryTarget::Card(id) => {
+                let card = tables
+                    .drafts
+                    .cards
+                    .get_mut(id)
+                    .map(|(_, card)| card)
+                    .filter(|card| {
+                        card.message_id.is_none() && card.channel_id == receipt.channel_id
+                    })
+                    .ok_or_else(|| {
+                        state_changed(format!("proposal {id}'s card is gone or posted"))
+                    })?;
+                card.message_id = Some(receipt.message_id.clone());
+                card.posted_at = Some(super::micros(at));
             }
         }
     }

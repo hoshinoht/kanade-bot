@@ -128,6 +128,8 @@ pub fn render(
             },
             _ => "The schedule changed.".to_owned(),
         },
+        // Rendered by their senders (`bot::cards`), never by the tick.
+        IntentContent::ProposalCard { .. } | IntentContent::Plain => String::new(),
     };
     let people = people(intent, quiet);
     let content = if people.is_empty() {

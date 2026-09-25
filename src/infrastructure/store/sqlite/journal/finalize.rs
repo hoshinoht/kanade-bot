@@ -87,6 +87,25 @@ pub(super) async fn bind(
                     return Err(state_changed("the week already has an active digest"));
                 }
             }
+            DeliveryTarget::Card(id) => {
+                let changed = sqlx::query(
+                    "UPDATE proposal_cards SET message_id = ?1, posted_at = ?2
+                     WHERE draft_id = ?3 AND message_id IS NULL AND channel_id = ?4",
+                )
+                .bind(&receipt.message_id)
+                .bind(&stamp)
+                .bind(&id)
+                .bind(&receipt.channel_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?
+                .rows_affected();
+                if changed != 1 {
+                    return Err(state_changed(format!(
+                        "proposal {id}'s card is gone or posted"
+                    )));
+                }
+            }
         }
     }
     if let Some(week) = record_week {

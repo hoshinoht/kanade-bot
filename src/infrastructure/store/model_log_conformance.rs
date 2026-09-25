@@ -8,8 +8,8 @@ use serde_json::json;
 
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
-    ExtractionLog, ExtractionOutcome, LogFacets, MessageUpsert, ModelLogStore, ReadMessage,
-    RescanJob, RescanStatus, WatchedMessage,
+    ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MessageUpsert, ModelLogStore,
+    ReadMessage, RescanJob, RescanStatus, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -128,6 +128,7 @@ fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
         guardrail: json!({}),
         message_ids: vec!["m-1".into()],
         proposal_ids: Vec::new(),
+        refusals: Vec::new(),
     }
 }
 
@@ -295,6 +296,11 @@ async fn extraction_logs_round_trip_and_refuse_bad_rows<S: ModelLogStore>(store:
     log.guardrail = json!({"content_filter": false, "prescreen": "clean"});
     log.proposal_ids = vec!["p-1".into()];
     log.outcome = ExtractionOutcome::Proposed;
+    log.refusals = vec![ExtractionRefusal {
+        change: "fix".into(),
+        code: "no_recurring_slot".into(),
+        message: "no recurring day and time were agreed - use `/fixed add`".into(),
+    }];
     store.record_extraction(log.clone()).await.expect("record");
     assert_eq!(
         store.load_extraction("x-1").await.expect("load"),
@@ -784,6 +790,18 @@ async fn tips_are_claimed_once_per_member_and_week<S: ModelLogStore + Sync>(stor
             .claim_tip("1", week, utc(21, 9, 0))
             .await
             .expect("again")
+    );
+    assert!(store.release_tip("1", week).await.expect("release"));
+    assert!(
+        !store.release_tip("1", week).await.expect("release again"),
+        "tips: a release gives back only a held tip"
+    );
+    assert!(
+        store
+            .claim_tip("1", week, utc(21, 9, 0))
+            .await
+            .expect("after release"),
+        "tips: a released tip can be claimed again"
     );
 }
 
