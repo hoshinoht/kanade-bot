@@ -75,6 +75,33 @@ from third-party client DTOs; SEA `stat_name` labels and symbol fields are
 6. **Deferred:** guild roster sync (`guild/basic` names every member, including
    those who have not opted in, and needs one lookup each).
 
+## Party clear estimate (user model, 2026-09-26)
+
+MapleScouter supports MSEA characters and shows, per boss and difficulty, a
+character's "cut" percentage. Its party-spec feature works only for KMS
+characters (it breaks on SEA), so Kanade would provide the party view itself.
+
+- **Scouter %:** clear time = 30 min × 100 / % (100% = 30 min, 150% = 20 min,
+  200% = 15 min). The basis stays 30 min for every boss, including Black Mage.
+- **Party estimate:** boss HP does not scale with party size, so party % ≈ the
+  sum of the members' % for that boss and difficulty; estimated time = 30 × 100
+  / party %.
+- **Clearable:** party % ≥ 100 × 30 / time limit. Time limits today: 30 min for
+  most bosses (100% needed), Black Mage 60 min (50%), Extreme Black Mage 30 min
+  (100%). A future update lowers the limit to 20 min for all bosses (150%).
+- **Caveats:** an estimate only — it ignores party buffs and synergies, deaths,
+  invulnerable phases and mechanics. Show time and margin (e.g. "≈ 13.6 min ·
+  1.47× the 20-min limit") and ✅ / ⚠️ / ❌, never a guarantee.
+- **Uses:** run-sheet and planner verdicts per run; "who would make this party
+  clear" hints; a chatbot readiness answer computed in Rust.
+- **Boss knowledge:** add a per-difficulty time limit in minutes plus one
+  setting for the 20-minute era; the 30-minute scouter basis is a constant.
+- **Source of each member's %** (open): manual entry per boss/difficulty with a
+  date and a 30-day expiry (MVP); automatic fetch only with MapleScouter's
+  written permission (contact on the site); never scraping; computing our own %
+  is ruled out. MapleScouter's page also has a "Boss Timer" setting — record
+  which timer a % was taken under, or require the 30-minute basis.
+
 ## Privacy, security and operations
 
 - Opt-in linking only; `/unlink` hard-deletes at once (ToS §9.1).
