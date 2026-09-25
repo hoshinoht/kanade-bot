@@ -10,6 +10,7 @@ use std::{
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::{
     api::{
+        admin::config::ConfigDesk,
         auth::{
             AdminAuth,
             crypto::SealedSecret,
@@ -47,6 +48,8 @@ use crate::{
     schemas::assert_valid,
     support::{ADMIN_HOST, Fixture, request, send, spawn},
 };
+
+type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
 
 const TOKEN: &str = "break-glass-token-with-at-least-32-bytes!";
 const TAILSCALE_ADMIN: &str = "ops@example.com";
@@ -365,16 +368,23 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false).await
+        Self::build(reset, false, None).await
+    }
+
+    /// With the config API over the seeded store.
+    pub async fn with_config(
+        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
+    ) -> Self {
+        Self::build(NaiveTime::MIN, false, Some(Box::new(make))).await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true).await
+        Self::build(NaiveTime::MIN, true, None).await
     }
 
-    async fn build(reset: NaiveTime, logins: bool) -> Self {
+    async fn build(reset: NaiveTime, logins: bool, config: Option<ConfigMaker>) -> Self {
         let dir = TempDir::new();
         let store = Arc::new(
             SqliteStore::open(&SqliteStoreConfig {
@@ -474,6 +484,7 @@ impl Reads {
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
+            config: config.map(|make| make(store.clone())),
         };
         let mut http = fixture.http();
         if logins {

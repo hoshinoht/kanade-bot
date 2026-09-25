@@ -4,6 +4,7 @@
 
 mod assets;
 mod auth;
+mod config;
 mod headers;
 mod history;
 mod inbox;

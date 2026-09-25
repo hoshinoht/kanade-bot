@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: admin config API: the Config page reads every runtime setting, Kanata's live model
+  list and the server-only facts, saves one section at a time (reasoning and capacity
+  rules checked, safe to retry), and reloads persona profiles live.
 - v5: slash commands ported from v4 (guild-scoped): `/fixed add|edit|remove|list`,
   `/schedule`, `/amend`, `/status` (now also covers cancel, own time, done and restore),
   `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, `/say`, staff-only `/nick`,

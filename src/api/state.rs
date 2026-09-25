@@ -447,6 +447,8 @@ pub struct ApiState {
     pub clock: Clock,
     /// Rescan jobs; `None` until the extractor is composed (503).
     pub rescans: Option<Arc<super::rescan::RescanDesk>>,
+    /// Runtime settings (A9); `None` answers `unavailable`.
+    pub config: Option<Arc<super::admin::config::ConfigDesk>>,
 }
 
 impl std::fmt::Debug for ApiState {

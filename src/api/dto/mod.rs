@@ -3,6 +3,7 @@
 //! chrono runs without its formatting features here.
 
 pub mod bosses;
+pub mod config;
 pub mod fixed;
 pub mod history;
 pub mod inbox;

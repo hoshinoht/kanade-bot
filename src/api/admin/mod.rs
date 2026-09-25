@@ -3,6 +3,7 @@
 //! generic 404.
 
 mod auth;
+pub mod config;
 mod context;
 mod history;
 mod inbox;
@@ -29,6 +30,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(history::routes())
         .merge(inbox::routes())
         .merge(logs::routes())
+        .merge(config::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

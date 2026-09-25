@@ -182,3 +182,34 @@ async fn store_directories_are_created_private_and_one_owner_is_enforced() {
     );
     store::close(store, Duration::ZERO).await;
 }
+
+#[tokio::test]
+async fn compose_builds_the_model_stack_and_seeds_unset_role_aliases_from_env() {
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
+        ("KANADE_EXTRACT_MODEL", "kanata/extract"),
+        ("KANADE_CHAT_MODEL", "kanata/chat"),
+    ]);
+    // A stored alias beats its env seed.
+    with_rows(&config, &[(keys::CHAT_MODEL, "kanata/stored")]).await;
+    let store = store::open(&config.store).await.unwrap();
+    let composition = api::compose(&config, store.clone(), Arc::new(StaticChannels(Vec::new())))
+        .await
+        .unwrap();
+    let models = &composition.settings.models;
+    assert_eq!(models.extraction.alias.as_deref(), Some("kanata/extract"));
+    assert_eq!(models.chat.alias.as_deref(), Some("kanata/stored"));
+    assert_eq!(models.rewrite.alias, None);
+    let stack = composition.models.as_ref().expect("stack");
+    assert_eq!(stack.roles().chat.alias.as_deref(), Some("kanata/stored"));
+    let desk = composition
+        .admin
+        .state
+        .config
+        .as_ref()
+        .expect("config desk");
+    assert_eq!(desk.settings().await, composition.settings);
+    drop(composition);
+    store::close(store, Duration::ZERO).await;
+}
