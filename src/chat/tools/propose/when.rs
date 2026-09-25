@@ -3,8 +3,10 @@
 //! v4 asked `dateparser` first and fell back to the extractor's resolver;
 //! v5 has no general date parser, so the guild's own forms go through the
 //! extractor's resolver directly: a bare clock time (today, or tomorrow once
-//! past, pm assumed as v4), or `<day words> <clock>` including ISO dates,
-//! with the typed hour read literally as `dateparser` did. Free-text dates
+//! past, pm assumed as v4), or `<day words> <clock>` including ISO dates:
+//! a separator clock (`09:00`) reads literally as `dateparser` did, compact
+//! digits and bare hours keep the pm reading (v4 respelled `930` → 21:30
+//! first; its day-of-month misreading of `sat 10` is not kept). Free-text dates
 //! only `dateparser` read (`12 september 9pm`, `in 2 hours`) and
 //! unrecognised day words are refused with v4's own message (known
 //! difference K-WHEN-SUBSET).
@@ -66,9 +68,15 @@ fn day_and_clock(text: &str, zone: Tz, now: DateTime<Utc>) -> Option<ZonedDateTi
     resolve(Some(&day), Some(&clock), &now, zone).ok()?.at
 }
 
-/// A typed day-and-time reads its hour literally (`wed 09:00` is 09:00, as
-/// v4's `dateparser` read it); only the extractor's chat reading assumes pm.
+/// A separator clock after a day reads literally (`wed 09:00` is 09:00, as
+/// v4's `dateparser` read it). Compact digits and bare hours keep the
+/// extractor's pm reading: v4 respelled `wed 930` to 21:30 before
+/// `dateparser` saw it, and read `wed 9` / `sat 10` as a day of the month
+/// (a v4 bug, not reproduced).
 fn literal_clock(clock: &str) -> String {
+    if !clock.contains([':', '.']) {
+        return clock.to_owned();
+    }
     match (parse_clock(Some(clock)), parse_hhmm(clock)) {
         (Some((_, true)), Ok(literal)) => {
             let (hour, minute) = (literal.hour(), literal.minute());
@@ -122,18 +130,40 @@ mod tests {
         crate::chat::tools::read::format::when_label(at, Kuala_Lumpur)
     }
 
+    /// v4 oracle: `bot.api.service.parse_when` at this clock and zone
+    /// (the frozen v4 tree, run 2026-09-25).
     #[test]
-    fn the_guilds_own_forms_resolve_forward() {
-        assert_eq!(read("wed 21:30").unwrap(), "Wed 09 Sep 21:30");
-        assert_eq!(read("wed 09:00").unwrap(), "Wed 16 Sep 09:00");
-        assert_eq!(read("sat 10").unwrap(), "Sat 12 Sep 10:00");
-        assert_eq!(read("sat 12").unwrap(), "Sat 12 Sep 12:00");
-        assert_eq!(read("tomorrow 9:45pm").unwrap(), "Thu 10 Sep 21:45");
-        assert_eq!(read("tmr 2300").unwrap(), "Thu 10 Sep 23:00");
-        assert_eq!(read("2300").unwrap(), "Wed 09 Sep 23:00");
-        assert_eq!(read("11am").unwrap(), "Thu 10 Sep 11:00");
+    fn the_guilds_own_forms_match_the_v4_oracle() {
+        for (text, v4) in [
+            ("wed 930", "Wed 09 Sep 21:30"),
+            ("wed 0930", "Wed 09 Sep 21:30"),
+            ("tmr 1030", "Thu 10 Sep 22:30"),
+            ("tomorrow 1200", "Thu 10 Sep 00:00"),
+            ("tmr 2300", "Thu 10 Sep 23:00"),
+            ("wed 9pm", "Wed 09 Sep 21:00"),
+            ("wed 09:00", "Wed 16 Sep 09:00"),
+            ("wed 9:30", "Wed 16 Sep 09:30"),
+            ("sat 09.00", "Sat 12 Sep 09:00"),
+            ("wed 21:30", "Wed 09 Sep 21:30"),
+            ("tomorrow 9:45pm", "Thu 10 Sep 21:45"),
+            ("930", "Wed 09 Sep 21:30"),
+            ("2300", "Wed 09 Sep 23:00"),
+            ("11am", "Thu 10 Sep 11:00"),
+            ("sat 12", "Sat 12 Sep 00:00"),
+        ] {
+            assert_eq!(read(text).as_deref(), Ok(v4), "{text}");
+        }
         assert_eq!(read("2026-09-20 21:30").unwrap(), "Sun 20 Sep 21:30");
         assert_eq!(read("yesterday 21:00").unwrap(), "Tue 08 Sep 21:00");
+    }
+
+    /// v4's `dateparser` read a bare hour after a weekday as a day of the
+    /// month (`sat 10` → Fri 09 Oct 00:00, `wed 9` → Thu 09 Sep 00:00); v5
+    /// keeps the weekday and reads the hour as the compact digits are read.
+    #[test]
+    fn a_bare_hour_after_a_weekday_keeps_the_weekday() {
+        assert_eq!(read("sat 10").unwrap(), "Sat 12 Sep 22:00");
+        assert_eq!(read("wed 9").unwrap(), "Wed 09 Sep 21:00");
     }
 
     #[test]
