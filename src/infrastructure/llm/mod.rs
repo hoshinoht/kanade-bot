@@ -5,6 +5,7 @@ mod execution;
 mod fake;
 pub mod governor;
 mod http;
+pub mod identity;
 mod provider;
 mod request;
 mod response;
