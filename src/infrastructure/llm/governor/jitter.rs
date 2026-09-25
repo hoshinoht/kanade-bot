@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 /// Injected randomness so jitter is reproducible under test.
 pub trait Random: Send + Sync {
@@ -41,4 +44,9 @@ impl Random for XorShift {
 /// Uniform in [0, 1).
 pub(super) fn unit(random: &dyn Random) -> f64 {
     (random.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Full jitter: uniform in [0, `cap`).
+pub(in crate::infrastructure::llm) fn full(random: &dyn Random, cap: Duration) -> Duration {
+    cap.mul_f64(unit(random))
 }

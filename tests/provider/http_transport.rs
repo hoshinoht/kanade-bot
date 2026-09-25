@@ -69,7 +69,7 @@ pub(super) fn declared(url: String) -> Arc<OpenAiCompatibleProvider> {
 pub(super) fn runner(
     provider: Arc<OpenAiCompatibleProvider>,
 ) -> CompletionRunner<OpenAiCompatibleProvider> {
-    CompletionRunner::new(provider, ExecutionLimits::default(), default_retry()).unwrap()
+    CompletionRunner::ungoverned(provider, ExecutionLimits::default(), default_retry()).unwrap()
 }
 
 pub(super) fn models_or(
@@ -217,7 +217,9 @@ async fn statuses_map_to_provider_failure_kinds() {
         (403, ProviderFailureKind::Authentication),
         (429, ProviderFailureKind::Transient),
         (500, ProviderFailureKind::Transient),
+        (502, ProviderFailureKind::Transient),
         (503, ProviderFailureKind::Transient),
+        (504, ProviderFailureKind::UpstreamTimeout),
         (400, ProviderFailureKind::Permanent),
         (404, ProviderFailureKind::Permanent),
         (422, ProviderFailureKind::Permanent),
@@ -366,7 +368,7 @@ async fn per_request_timeout_is_honoured() {
     assert_eq!(
         failure,
         ProviderFailure {
-            kind: ProviderFailureKind::Transient,
+            kind: ProviderFailureKind::UpstreamTimeout,
             reason_code: "timeout"
         }
     );

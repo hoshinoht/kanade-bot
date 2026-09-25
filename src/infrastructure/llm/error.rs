@@ -12,6 +12,11 @@ pub enum ErrorCode {
     Incomplete,
     /// The model's capabilities cannot honour a requested feature; nothing was sent.
     UnsupportedCapability,
+    /// Gateway admission turned the request away (no work ran).
+    AdmissionRefused,
+    BackendUnavailable,
+    /// Upstream or transport timeout; the backend may still be working.
+    UpstreamTimeout,
 }
 
 #[derive(Clone, PartialEq, Eq)]

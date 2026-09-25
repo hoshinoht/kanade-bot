@@ -1,27 +1,64 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+
+use tokio::time::Instant;
 
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider, ModelCapabilities,
-    ProviderFailure, ProviderFailureKind, shaping,
+    ProviderFailureKind,
+    governor::{CallKind, Outcome, Random, full_jitter},
+    shaping,
 };
 use super::{
     accounting::estimate,
-    policy::{ExecutionLimits, RetryPolicy},
+    gate::{Denied, Gate},
+    policy::{ExecutionLimits, MAX_BACKOFF, RetryPolicy},
     request::validate_request,
     response::validate_response,
 };
 
+/// Runs one completion through a [`Gate`]. Only governor sessions construct and
+/// drive it; test support adds an ungoverned constructor.
 pub struct CompletionRunner<P> {
     provider: Arc<P>,
     limits: ExecutionLimits,
     retry: RetryPolicy,
+    random: Arc<dyn Random>,
+}
+
+pub(in crate::infrastructure::llm) enum RunError {
+    /// The gate refused the first request; nothing was sent.
+    Denied(Denied),
+    Failed(RunFailure),
+}
+
+pub(in crate::infrastructure::llm) struct RunFailure {
+    pub(in crate::infrastructure::llm) error: LlmError,
+    pub(in crate::infrastructure::llm) cause: Cause,
+    /// The backend may have worked for this call (a reply arrived or a request timed out).
+    pub(in crate::infrastructure::llm) charged: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::infrastructure::llm) enum Cause {
+    Admission { retry_after: Option<Duration> },
+    Timeout,
+    Other,
+}
+
+fn failed(error: LlmError, charged: bool) -> RunError {
+    RunError::Failed(RunFailure {
+        error,
+        cause: Cause::Other,
+        charged,
+    })
 }
 
 impl<P: LlmProvider> CompletionRunner<P> {
-    pub fn new(
+    pub(in crate::infrastructure::llm) fn new(
         provider: Arc<P>,
         limits: ExecutionLimits,
         retry: RetryPolicy,
+        random: Arc<dyn Random>,
     ) -> Result<Self, LlmError> {
         limits.validate()?;
         retry.validate()?;
@@ -29,44 +66,111 @@ impl<P: LlmProvider> CompletionRunner<P> {
             provider,
             limits,
             retry,
+            random,
         })
     }
 
+    pub(in crate::infrastructure::llm) fn random(&self) -> &Arc<dyn Random> {
+        &self.random
+    }
+
+    /// Test support only: no governor, and backoff draws the full-jitter upper bound.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn ungoverned(
+        provider: Arc<P>,
+        limits: ExecutionLimits,
+        retry: RetryPolicy,
+    ) -> Result<Self, LlmError> {
+        Self::new(provider, limits, retry, Arc::new(UpperBound))
+    }
+
+    /// Test support only: one ungoverned call with non-chat retry rules.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn complete(&self, request: &ChatRequest) -> Result<CompletionResponse, LlmError> {
-        let original_bytes = validate_request(request, &self.limits)?;
-        let deadline = tokio::time::Instant::now()
+        let random = self.random.clone();
+        let mut gate = Gate::ungoverned(random.as_ref());
+        self.run(request, &mut gate)
+            .await
+            .map_err(|error| match error {
+                RunError::Failed(failure) => failure.error,
+                RunError::Denied(_) => LlmError::new(ErrorCode::BudgetExceeded, "gate"),
+            })
+    }
+
+    pub(in crate::infrastructure::llm) async fn run(
+        &self,
+        request: &ChatRequest,
+        gate: &mut Gate<'_>,
+    ) -> Result<CompletionResponse, RunError> {
+        let local = |error| failed(error, false);
+        let original_bytes = validate_request(request, &self.limits).map_err(local)?;
+        let own = Instant::now()
             .checked_add(self.retry.total_deadline)
-            .ok_or_else(|| LlmError::new(ErrorCode::RequestInvalid, "deadline-overflow"))?;
-        let wait = remaining_time(deadline)?;
+            .ok_or_else(|| {
+                local(LlmError::new(
+                    ErrorCode::RequestInvalid,
+                    "deadline-overflow",
+                ))
+            })?;
+        let deadline = gate.deadline().map_or(own, |outer| outer.min(own));
+        let wait = remaining_time(deadline).map_err(local)?;
         let mut capabilities =
             tokio::time::timeout(wait, self.provider.capabilities(&request.model, deadline))
                 .await
-                .map_err(|_| LlmError::new(ErrorCode::DeadlineExceeded, "deadline"))?;
-        let (mut shaped, mut request_bytes) =
-            self.shape(request, original_bytes, capabilities.as_ref())?;
+                .map_err(|_| local(LlmError::new(ErrorCode::DeadlineExceeded, "deadline")))?;
+        let (mut shaped, mut request_bytes) = self
+            .shape(request, original_bytes, capabilities.as_ref())
+            .map_err(local)?;
         let mut downgraded = false;
         let mut remaining = self.limits.token_budget;
         let mut attempt = 1u8;
+        let mut charged = false;
+        let mut retry = false;
+        // The failure a refused retry falls back to.
+        let mut last: Option<RunFailure> = None;
         loop {
             let current = shaped.as_ref().unwrap_or(request);
-            let reservation = estimate(request_bytes, current.max_output_tokens)?;
+            let reservation = estimate(request_bytes, current.max_output_tokens)
+                .map_err(|error| failed(error, charged))?;
             if reservation > remaining {
-                return Err(LlmError::new(
-                    ErrorCode::BudgetExceeded,
-                    "attempt-reservation",
+                return Err(failed(
+                    LlmError::new(ErrorCode::BudgetExceeded, "attempt-reservation"),
+                    charged,
                 ));
             }
+            if let Err(denied) = gate.admit(retry, deadline).await {
+                return Err(match last {
+                    Some(failure) => RunError::Failed(failure),
+                    None => RunError::Denied(denied),
+                });
+            }
+            retry = false;
             remaining -= reservation;
-            let wait = remaining_time(deadline)?;
+            let Ok(wait) = remaining_time(deadline) else {
+                gate.finish(None);
+                return Err(failed(
+                    LlmError::new(ErrorCode::DeadlineExceeded, "deadline"),
+                    charged,
+                ));
+            };
             let call = match &capabilities {
                 Some(capabilities) => self.provider.complete_with(current, capabilities),
                 None => self.provider.complete(current),
             };
-            let outcome = tokio::time::timeout(wait, call)
-                .await
-                .map_err(|_| LlmError::new(ErrorCode::DeadlineExceeded, "deadline"))?;
-            match outcome {
+            let Ok(outcome) = tokio::time::timeout(wait, call).await else {
+                // Our own deadline cut the request off: the backend may still be
+                // working, but its health is unknown.
+                gate.finish(None);
+                return Err(RunError::Failed(RunFailure {
+                    error: LlmError::new(ErrorCode::DeadlineExceeded, "deadline"),
+                    cause: Cause::Timeout,
+                    charged: true,
+                }));
+            };
+            let failure = match outcome {
                 Ok(response) => {
+                    gate.finish(Some(Outcome::Success));
+                    let charge = |error| failed(error, true);
                     let known = response
                         .usage
                         .as_ref()
@@ -75,45 +179,75 @@ impl<P: LlmProvider> CompletionRunner<P> {
                                 LlmError::new(ErrorCode::BudgetExceeded, "usage-overflow")
                             })
                         })
-                        .transpose()?;
+                        .transpose()
+                        .map_err(charge)?;
                     if let Some(used) = known
                         && used > reservation
                     {
-                        return Err(LlmError::new(
+                        return Err(charge(LlmError::new(
                             ErrorCode::BudgetExceeded,
                             "usage-reservation",
-                        ));
+                        )));
                     }
-                    return validate_response(current, response, &self.limits);
+                    return validate_response(current, response, &self.limits).map_err(charge);
                 }
+                Err(failure) => failure,
+            };
+            gate.finish(Some(outcome_of(failure.kind)));
+            charged |= matches!(
+                failure.kind,
+                ProviderFailureKind::UpstreamTimeout | ProviderFailureKind::InvalidOutput
+            );
+            let this = RunFailure {
+                error: provider_error(failure.kind, failure.reason_code),
+                cause: cause_of(failure.kind),
+                charged,
+            };
+            match failure.kind {
                 // One reshaped retry outside the transient attempt count; the
                 // rejected attempt keeps its reservation.
-                Err(ProviderFailure {
-                    kind: ProviderFailureKind::CapabilityRejected(capability),
-                    ..
-                }) if !downgraded && capabilities.is_some() => {
+                ProviderFailureKind::CapabilityRejected(capability)
+                    if !downgraded && capabilities.is_some() =>
+                {
                     downgraded = true;
                     let reduced = capabilities
                         .take()
                         .map(|capabilities| capabilities.without(capability));
-                    (shaped, request_bytes) =
-                        self.shape(request, original_bytes, reduced.as_ref())?;
+                    (shaped, request_bytes) = self
+                        .shape(request, original_bytes, reduced.as_ref())
+                        .map_err(|error| failed(error, charged))?;
                     capabilities = reduced;
+                    last = Some(this);
                 }
-                Err(failure)
-                    if failure.kind == ProviderFailureKind::Transient
-                        && attempt < self.retry.max_attempts =>
-                {
-                    attempt += 1;
-                    let wait = remaining_time(deadline)?;
-                    if self.retry.backoff >= wait {
-                        return Err(LlmError::new(ErrorCode::DeadlineExceeded, "backoff"));
+                kind if retryable(kind, gate.kind()) && attempt < self.retry.max_attempts => {
+                    if gate.check_retry().is_err() {
+                        return Err(RunError::Failed(this));
                     }
-                    tokio::time::sleep(self.retry.backoff).await;
+                    let pause = full_jitter(gate.random(), self.backoff_cap(attempt));
+                    attempt += 1;
+                    let wait = remaining_time(deadline).map_err(|error| failed(error, charged))?;
+                    if pause >= wait {
+                        return Err(failed(
+                            LlmError::new(ErrorCode::DeadlineExceeded, "backoff"),
+                            charged,
+                        ));
+                    }
+                    tokio::time::sleep(pause).await;
+                    retry = true;
+                    last = Some(this);
                 }
-                Err(failure) => return Err(provider_error(failure.kind, failure.reason_code)),
+                _ => return Err(RunError::Failed(this)),
             }
         }
+    }
+
+    /// Exponential cap for the `attempt`-th retry; the pause is drawn below it.
+    fn backoff_cap(&self, attempt: u8) -> Duration {
+        let factor = 1u32 << u32::from(attempt.saturating_sub(1)).min(16);
+        self.retry
+            .backoff
+            .checked_mul(factor)
+            .map_or(MAX_BACKOFF, |cap| cap.min(MAX_BACKOFF))
     }
 
     /// Shaping may add a schema instruction, which must count toward every bound.
@@ -135,22 +269,64 @@ impl<P: LlmProvider> CompletionRunner<P> {
     }
 }
 
-fn remaining_time(deadline: tokio::time::Instant) -> Result<std::time::Duration, LlmError> {
+fn remaining_time(deadline: Instant) -> Result<Duration, LlmError> {
     deadline
-        .checked_duration_since(tokio::time::Instant::now())
+        .checked_duration_since(Instant::now())
         .ok_or_else(|| LlmError::new(ErrorCode::DeadlineExceeded, "deadline"))
 }
 
-fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
+/// Admission refusals are only ever requeued by the session, never retried here;
+/// a timed-out chat request may still be running upstream.
+fn retryable(kind: ProviderFailureKind, call: CallKind) -> bool {
     match kind {
-        ProviderFailureKind::Authentication => {
-            LlmError::new(ErrorCode::ProviderAuthentication, reason)
-        }
-        ProviderFailureKind::InvalidOutput => LlmError::new(ErrorCode::InvalidOutput, reason),
+        ProviderFailureKind::Transient => true,
+        ProviderFailureKind::UpstreamTimeout => call != CallKind::Chat,
+        _ => false,
+    }
+}
+
+fn outcome_of(kind: ProviderFailureKind) -> Outcome {
+    match kind {
+        ProviderFailureKind::Transient => Outcome::TransientFailure,
+        ProviderFailureKind::UpstreamTimeout => Outcome::Timeout,
+        ProviderFailureKind::BackendUnavailable => Outcome::BackendUnavailable,
+        ProviderFailureKind::AdmissionRefused { .. } => Outcome::AdmissionRefused,
+        ProviderFailureKind::Permanent
+        | ProviderFailureKind::Authentication
+        | ProviderFailureKind::InvalidOutput
+        | ProviderFailureKind::CapabilityRejected(_) => Outcome::Rejected,
+    }
+}
+
+fn cause_of(kind: ProviderFailureKind) -> Cause {
+    match kind {
+        ProviderFailureKind::AdmissionRefused { retry_after } => Cause::Admission { retry_after },
+        ProviderFailureKind::UpstreamTimeout => Cause::Timeout,
+        _ => Cause::Other,
+    }
+}
+
+fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
+    let code = match kind {
+        ProviderFailureKind::Authentication => ErrorCode::ProviderAuthentication,
+        ProviderFailureKind::InvalidOutput => ErrorCode::InvalidOutput,
+        ProviderFailureKind::AdmissionRefused { .. } => ErrorCode::AdmissionRefused,
+        ProviderFailureKind::BackendUnavailable => ErrorCode::BackendUnavailable,
+        ProviderFailureKind::UpstreamTimeout => ErrorCode::UpstreamTimeout,
         ProviderFailureKind::Transient
         | ProviderFailureKind::Permanent
-        | ProviderFailureKind::CapabilityRejected(_) => {
-            LlmError::new(ErrorCode::ProviderPermanent, reason)
-        }
+        | ProviderFailureKind::CapabilityRejected(_) => ErrorCode::ProviderPermanent,
+    };
+    LlmError::new(code, reason)
+}
+
+/// Makes ungoverned backoff deterministic: every draw is the top of its range.
+#[cfg(any(test, feature = "test-support"))]
+struct UpperBound;
+
+#[cfg(any(test, feature = "test-support"))]
+impl Random for UpperBound {
+    fn next_u64(&self) -> u64 {
+        u64::MAX
     }
 }

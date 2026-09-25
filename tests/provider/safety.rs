@@ -161,7 +161,7 @@ impl LlmProvider for RawReasonProvider {
 
 #[tokio::test]
 async fn provider_raw_reason_is_redacted_by_the_real_runner() {
-    let runner = CompletionRunner::new(
+    let runner = CompletionRunner::ungoverned(
         Arc::new(RawReasonProvider),
         ExecutionLimits::default(),
         default_retry(),
@@ -201,7 +201,7 @@ fn zero_and_extreme_limits_and_retry_policies_return_typed_errors() {
         let mut limits = ExecutionLimits::default();
         update(&mut limits);
         let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            CompletionRunner::new(
+            CompletionRunner::ungoverned(
                 Arc::new(FakeProvider::new([])),
                 limits.clone(),
                 RetryPolicy::default(),
@@ -243,7 +243,7 @@ fn zero_and_extreme_limits_and_retry_policies_return_typed_errors() {
         },
     ] {
         let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            CompletionRunner::new(
+            CompletionRunner::ungoverned(
                 Arc::new(FakeProvider::new([])),
                 ExecutionLimits::default(),
                 policy,

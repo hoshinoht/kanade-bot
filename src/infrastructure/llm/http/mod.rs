@@ -87,7 +87,7 @@ impl OpenAiCompatibleProvider {
             )
             .await?;
         if reply.status != StatusCode::OK {
-            return Err(status_failure(reply.status));
+            return Err(status_failure(&reply));
         }
         let models = parse_models_list(&reply.body).ok_or(ProviderFailure {
             kind: ProviderFailureKind::InvalidOutput,
@@ -232,9 +232,9 @@ impl OpenAiCompatibleProvider {
             StatusCode::OK => Ok(reply),
             StatusCode::BAD_REQUEST => match rejected_field(&reply.body) {
                 Some((field, capability)) => Err(PostError::Rejected(field, capability)),
-                None => Err(PostError::Failed(status_failure(reply.status))),
+                None => Err(PostError::Failed(status_failure(&reply))),
             },
-            status => Err(PostError::Failed(status_failure(status))),
+            _ => Err(PostError::Failed(status_failure(&reply))),
         }
     }
 
@@ -301,12 +301,46 @@ fn rejected_field(body: &[u8]) -> Option<(&'static str, Capability)> {
     field_capability(value.get("error")?.get("param")?.as_str()?)
 }
 
-fn status_failure(status: StatusCode) -> ProviderFailure {
-    let (kind, reason_code) = match status.as_u16() {
-        401 | 403 => (ProviderFailureKind::Authentication, "authentication"),
-        429 => (ProviderFailureKind::Transient, "rate-limited"),
-        500..=599 => (ProviderFailureKind::Transient, "server-error"),
-        300..=399 => (ProviderFailureKind::Permanent, "redirect"),
+/// Provisional Kanata admission codes (not yet shipped by Kanata): the request was
+/// turned away before any backend work.
+const ADMISSION_CODES: [&str; 4] = [
+    "gateway_queue_full",
+    "gateway_busy",
+    "gateway_key_busy",
+    "gateway_key_rate_limited",
+];
+/// Provisional Kanata code for an adapter whose own breaker is open.
+const BACKEND_DOWN_CODE: &str = "upstream_unavailable";
+
+/// `error.code` of an OpenAI-style error body.
+fn gateway_code(body: &[u8]) -> Option<String> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    Some(value.get("error")?.get("code")?.as_str()?.to_owned())
+}
+
+fn status_failure(reply: &Reply) -> ProviderFailure {
+    let status = reply.status.as_u16();
+    let code = match status {
+        429 | 500..=599 => gateway_code(&reply.body),
+        _ => None,
+    };
+    let (kind, reason_code) = match (status, code.as_deref()) {
+        (401 | 403, _) => (ProviderFailureKind::Authentication, "authentication"),
+        (429 | 503, Some(code)) if ADMISSION_CODES.contains(&code) => (
+            ProviderFailureKind::AdmissionRefused {
+                retry_after: reply.retry_after,
+            },
+            "admission",
+        ),
+        (500..=599, Some(BACKEND_DOWN_CODE)) => (
+            ProviderFailureKind::BackendUnavailable,
+            "backend-unavailable",
+        ),
+        // Kanata's queue timeout and a slow backend are indistinguishable here.
+        (504, _) => (ProviderFailureKind::UpstreamTimeout, "upstream-timeout"),
+        (429, _) => (ProviderFailureKind::Transient, "rate-limited"),
+        (500..=599, _) => (ProviderFailureKind::Transient, "server-error"),
+        (300..=399, _) => (ProviderFailureKind::Permanent, "redirect"),
         _ => (ProviderFailureKind::Permanent, "status"),
     };
     ProviderFailure { kind, reason_code }

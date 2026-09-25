@@ -36,7 +36,7 @@ async fn retries_only_transient_failures_with_a_total_deadline() {
     assert_eq!(provider.requests().len(), 1);
 
     let (provider, _) = build_runner([FakeAction::Transient, FakeAction::Transient]);
-    let runner = CompletionRunner::new(
+    let runner = CompletionRunner::ungoverned(
         provider.clone(),
         ExecutionLimits::default(),
         RetryPolicy {
@@ -145,7 +145,7 @@ async fn unknown_transient_attempts_consume_the_full_reservation() {
         token_budget: reservation * 2 - 1,
         ..ExecutionLimits::default()
     };
-    let runner = CompletionRunner::new(provider.clone(), limits, default_retry()).unwrap();
+    let runner = CompletionRunner::ungoverned(provider.clone(), limits, default_retry()).unwrap();
     assert_eq!(
         runner.complete(&request).await.unwrap_err().code,
         ErrorCode::BudgetExceeded
@@ -204,7 +204,7 @@ async fn request_content_bytes_change_the_reservation() {
         ..ExecutionLimits::default()
     };
     let (provider, _) = build_runner([FakeAction::Response(tiny_response("m"))]);
-    let runner = CompletionRunner::new(provider.clone(), limits, default_retry()).unwrap();
+    let runner = CompletionRunner::ungoverned(provider.clone(), limits, default_retry()).unwrap();
     assert_eq!(
         runner.complete(&larger).await.unwrap_err().code,
         ErrorCode::BudgetExceeded
@@ -216,6 +216,6 @@ async fn request_content_bytes_change_the_reservation() {
 fn completion_runner_result_constructor_is_the_public_failure_boundary() {
     let provider = Arc::new(FakeProvider::new([]));
     let result =
-        CompletionRunner::new(provider, ExecutionLimits::default(), RetryPolicy::default());
+        CompletionRunner::ungoverned(provider, ExecutionLimits::default(), RetryPolicy::default());
     assert!(result.is_ok());
 }

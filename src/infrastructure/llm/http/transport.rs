@@ -2,10 +2,10 @@ use std::{pin::pin, sync::Arc, time::Duration};
 
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{
-    Method, Request, StatusCode,
+    HeaderMap, Method, Request, StatusCode,
     body::{Body, Bytes},
     client::conn::http1,
-    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, USER_AGENT},
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, RETRY_AFTER, USER_AGENT},
 };
 use hyper_util::rt::TokioIo;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
@@ -24,10 +24,15 @@ use super::{
 const MAX_HEADERS: usize = 64;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 
+/// Longest `Retry-After` honoured; the caller's deadline bounds it further.
+const MAX_RETRY_AFTER: u64 = 3_600;
+
 pub(crate) struct Reply {
     pub status: StatusCode,
     /// Empty for redirects and for error bodies over their cap.
     pub body: Bytes,
+    /// `Retry-After` in delta-seconds; HTTP-date values are ignored.
+    pub retry_after: Option<Duration>,
 }
 
 /// One connection per exchange; redirects are returned, never followed.
@@ -84,7 +89,8 @@ impl Transport {
             }
         })
         .await
-        .map_err(|_| failure(ProviderFailureKind::Transient, "timeout"))?
+        // One timeout covers the whole exchange, so the request may have reached the backend.
+        .map_err(|_| failure(ProviderFailureKind::UpstreamTimeout, "timeout"))?
     }
 
     fn request(
@@ -184,10 +190,12 @@ where
     let mut exchange = pin!(async move {
         let response = sender.send_request(request).await.map_err(|_| protocol())?;
         let status = response.status();
+        let retry_after = retry_after(response.headers());
         if status.is_redirection() {
             return Ok(Reply {
                 status,
                 body: Bytes::new(),
+                retry_after,
             });
         }
         let limit = if status == StatusCode::OK {
@@ -216,13 +224,18 @@ where
             }
         };
         match body {
-            Some(body) => Ok(Reply { status, body }),
+            Some(body) => Ok(Reply {
+                status,
+                body,
+                retry_after,
+            }),
             None if status == StatusCode::OK => {
                 Err(failure(ProviderFailureKind::InvalidOutput, "body-size"))
             }
             None => Ok(Reply {
                 status,
                 body: Bytes::new(),
+                retry_after,
             }),
         }
     });
@@ -231,6 +244,15 @@ where
         reply = &mut exchange => reply,
         _ = &mut connection => exchange.await,
     }
+}
+
+fn retry_after(headers: &HeaderMap) -> Option<Duration> {
+    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let seconds = value.parse::<u64>().unwrap_or(u64::MAX);
+    Some(Duration::from_secs(seconds.min(MAX_RETRY_AFTER)))
 }
 
 /// TLS protocol and certificate errors are permanent; a reset or EOF mid-handshake

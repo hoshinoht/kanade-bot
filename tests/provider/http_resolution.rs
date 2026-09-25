@@ -49,7 +49,7 @@ fn runner_within(
         max_attempts: 1,
         backoff: Duration::from_millis(10),
     };
-    CompletionRunner::new(provider, ExecutionLimits::default(), retry).unwrap()
+    CompletionRunner::ungoverned(provider, ExecutionLimits::default(), retry).unwrap()
 }
 
 #[tokio::test]
@@ -245,7 +245,7 @@ async fn downgrade_retry_is_recounted_and_independent_of_transient_attempts() {
     let both = reservation(&request) + reservation(&shaped);
     for (budget, ok) in [(both, true), (both - 1, false)] {
         let stub = Stub::start(rejecting).await;
-        let runner = CompletionRunner::new(
+        let runner = CompletionRunner::ungoverned(
             build(config(stub.url())),
             ExecutionLimits {
                 token_budget: budget,

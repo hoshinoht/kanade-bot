@@ -124,6 +124,30 @@ impl Permit {
         self.reserve(false, Duration::ZERO)?.0.commit()
     }
 
+    /// Asks the retry gate before backing off: refused unless the breaker admits
+    /// work (only a closed one when `closed_only`) and retry budget remains.
+    /// `begin_retry` still re-checks and spends.
+    pub(in crate::infrastructure::llm) fn check_retry(
+        &self,
+        closed_only: bool,
+    ) -> Result<(), Refused> {
+        let now = Instant::now();
+        let mut state = self.group.lock();
+        state.breaker.refresh(now);
+        let closed = state.breaker.state() == BreakerState::Closed;
+        if (closed_only && !closed) || matches!(state.breaker.peek(), Admission::Refused { .. }) {
+            state.counters.shed_unavailable += 1;
+            return Err(Refused::Unavailable {
+                retry_at: state.breaker.retry_at(),
+            });
+        }
+        if state.budget.remaining(now) == 0 {
+            state.counters.retries_denied += 1;
+            return Err(Refused::RetryBudgetExhausted);
+        }
+        Ok(())
+    }
+
     async fn begin(&self, retry: bool, max_wait: Duration) -> Result<Attempt, Refused> {
         let (reservation, wait) = self.reserve(retry, max_wait)?;
         if !wait.is_zero() {

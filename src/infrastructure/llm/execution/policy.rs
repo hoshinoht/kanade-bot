@@ -10,7 +10,7 @@ const MAX_NODES: usize = 100_000;
 const MAX_TOKENS: u32 = 1_000_000;
 const MAX_ATTEMPTS: u8 = 5;
 const MAX_DEADLINE: Duration = Duration::from_secs(300);
-const MAX_BACKOFF: Duration = Duration::from_secs(10);
+pub(super) const MAX_BACKOFF: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct ExecutionLimits {

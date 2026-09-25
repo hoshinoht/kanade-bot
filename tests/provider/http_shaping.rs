@@ -69,7 +69,7 @@ fn runner_with(
     provider: Arc<OpenAiCompatibleProvider>,
     limits: ExecutionLimits,
 ) -> CompletionRunner<OpenAiCompatibleProvider> {
-    CompletionRunner::new(provider, limits, default_retry()).unwrap()
+    CompletionRunner::ungoverned(provider, limits, default_retry()).unwrap()
 }
 
 fn messages(system: &str) -> Value {

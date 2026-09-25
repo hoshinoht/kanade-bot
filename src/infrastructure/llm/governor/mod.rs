@@ -12,6 +12,7 @@ mod jitter;
 mod permit;
 mod pool;
 mod rate;
+mod session;
 mod snapshot;
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -28,9 +29,15 @@ pub use group::Counters;
 pub use jitter::{Random, XorShift};
 pub use permit::{Attempt, Outcome, Permit, Refused, Ticket};
 pub use pool::{CallKind, Priority};
+pub use session::{
+    Charge, DEFAULT_TOOL_ROUNDS, MAX_TOOL_ROUNDS, ModelClient, QuestionLimits, Session,
+    SessionError, SessionFailure,
+};
 pub use snapshot::{
     BreakerView, GroupSnapshot, HeldPermit, PermitUsage, QueuedCall, RateLevel, RetryLevel,
 };
+
+pub(in crate::infrastructure::llm) use jitter::full as full_jitter;
 
 use group::Group;
 
@@ -38,6 +45,7 @@ pub struct Governor {
     groups: Vec<Arc<Group>>,
     routes: BTreeMap<Role, (RoleRoute, Option<Arc<Group>>)>,
     warnings: Vec<ConfigWarning>,
+    random: Arc<dyn Random>,
 }
 
 impl std::fmt::Debug for Governor {
@@ -72,6 +80,7 @@ impl Governor {
             groups,
             routes,
             warnings,
+            random,
         })
     }
 

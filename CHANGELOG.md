@@ -98,7 +98,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: model traffic governor: per-backend permit groups with priority queues (admin
   first, extraction and follow-ups last), a request-rate ceiling, a capped retry
   budget and a circuit breaker that sheds new work during an outage and ramps back
-  up with a single probe. Not yet wired into model calls.
+  up with a single probe. Model calls go through it: a chat question holds one slot for
+  all its tool rounds with a request cap of rounds + 1, gateway admission refusals are
+  requeued once after Retry-After, a 504 ends the question, and retries need budget.
 - v5: persona prompt compiler matching v4's assembled prompts byte for byte, with strict
   staging lines (literal boss-name substitution), optional self-service nudge pools and a
   nudge rewrite prompt per bundle/profile. Persona YAML no longer coerces unquoted

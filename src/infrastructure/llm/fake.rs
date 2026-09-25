@@ -12,6 +12,9 @@ pub enum FakeAction {
     Permanent,
     Authentication,
     Malformed,
+    AdmissionRefused(Option<Duration>),
+    BackendUnavailable,
+    UpstreamTimeout,
     Delayed {
         delay: Duration,
         action: Box<FakeAction>,
@@ -65,6 +68,17 @@ async fn run(action: FakeAction) -> Result<CompletionResponse, ProviderFailure> 
             "authentication",
         )),
         FakeAction::Malformed => Err(failure(ProviderFailureKind::InvalidOutput, "malformed")),
+        FakeAction::AdmissionRefused(retry_after) => Err(failure(
+            ProviderFailureKind::AdmissionRefused { retry_after },
+            "admission",
+        )),
+        FakeAction::BackendUnavailable => Err(failure(
+            ProviderFailureKind::BackendUnavailable,
+            "backend-unavailable",
+        )),
+        FakeAction::UpstreamTimeout => {
+            Err(failure(ProviderFailureKind::UpstreamTimeout, "timeout"))
+        }
         FakeAction::Delayed { delay, action } => {
             tokio::time::sleep(delay).await;
             Box::pin(run(*action)).await

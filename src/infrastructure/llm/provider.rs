@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::Duration};
 
 use tokio::time::Instant;
 
@@ -38,6 +38,15 @@ pub enum ProviderFailureKind {
     /// The gateway refused a field of this capability; the provider remembers the
     /// downgrade and the runner reshapes and retries once.
     CapabilityRejected(Capability),
+    /// Turned away by gateway admission before any work ran; never retried
+    /// directly, only requeued after `retry_after` plus jitter.
+    AdmissionRefused {
+        retry_after: Option<Duration>,
+    },
+    /// The gateway reports the backend down; feeds the breaker, never retried.
+    BackendUnavailable,
+    /// No answer in time; work may still be running upstream.
+    UpstreamTimeout,
 }
 
 #[derive(Clone, PartialEq, Eq)]

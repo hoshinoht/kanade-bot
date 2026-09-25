@@ -2,6 +2,7 @@ mod bounds;
 mod capabilities;
 mod correlation;
 mod encoding;
+mod http_admission;
 mod http_resolution;
 mod http_shaping;
 mod http_transport;

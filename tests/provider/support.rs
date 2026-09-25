@@ -61,7 +61,7 @@ pub fn build_runner_with(
     retry: RetryPolicy,
 ) -> (Arc<FakeProvider>, CompletionRunner<FakeProvider>) {
     let provider = Arc::new(FakeProvider::new(actions));
-    let runner = CompletionRunner::new(provider.clone(), limits, retry).unwrap();
+    let runner = CompletionRunner::ungoverned(provider.clone(), limits, retry).unwrap();
     (provider, runner)
 }
 
