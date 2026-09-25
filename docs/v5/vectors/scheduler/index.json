@@ -1,5 +1,13 @@
 {
   "schema_version": "v5-scheduler-v1",
   "schema": "schema.json",
-  "vectors": ["scheduler.json"]
+  "vectors": ["scheduler.json"],
+  "families": [
+    {"family": "scheduler", "schema": "schema.json", "vector": "scheduler.json"},
+    {"family": "reminders", "schema": "reminders.schema.json", "vector": "reminders.json"},
+    {"family": "mutations", "schema": "mutations.schema.json", "vector": "mutations.json"},
+    {"family": "dispatch", "schema": "dispatch.schema.json", "vector": "dispatch.json"},
+    {"family": "mentions", "schema": "mentions.schema.json", "vector": "mentions.json"},
+    {"family": "digest", "schema": "digest.schema.json", "vector": "digest.json"}
+  ]
 }

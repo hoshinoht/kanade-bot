@@ -43,3 +43,7 @@ extraction, chat, wire/delivery, and portable bundle vectors are also pending.
 replay for materialisation, fixed-run edits/retirement, reminder rows, and RSVP
 reactions. See its [README](scheduler/README.md); run it with
 `uv run python -m scripts.v5_vectors.scheduler --check` from `legacy/python/`.
+
+`persona/` captures the v4 prompt assembly from public Kanade templates and synthetic
+profiles; see its [README](persona/README.md) and run
+`uv run python -m scripts.v5_vectors.persona --check`.

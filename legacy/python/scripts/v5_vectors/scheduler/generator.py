@@ -8,18 +8,45 @@ from pathlib import Path
 from typing import Any
 
 from . import cases, replay, validation
+from .digest import cases as digest_cases
+from .digest import replay as digest_replay
+from .digest import validation as digest_validation
+from .dispatch import cases as dispatch_cases
+from .dispatch import replay as dispatch_replay
+from .dispatch import validation as dispatch_validation
+from .mentions import cases as mention_cases
+from .mentions import replay as mention_replay
+from .mentions import validation as mention_validation
+from .mutations import cases as mutation_cases
+from .mutations import replay as mutation_replay
+from .mutations import validation as mutation_validation
+from .reminders import cases as reminder_cases
+from .reminders import replay as reminder_replay
+from .reminders import validation as reminder_validation
 
 ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_OUTPUT = ROOT / "docs" / "v5" / "vectors" / "scheduler"
+#: (serialized cases, oracle replay, completed-document gate) per family.
+FAMILIES = (
+    (cases.documents, replay.replay, validation.validate_document),
+    (reminder_cases.documents, reminder_replay.replay, reminder_validation.validate_document),
+    (mutation_cases.documents, mutation_replay.replay, mutation_validation.validate_document),
+    (dispatch_cases.documents, dispatch_replay.replay, dispatch_validation.validate_document),
+    (mention_cases.documents, mention_replay.replay, mention_validation.validate_document),
+    (digest_cases.documents, digest_replay.replay, digest_validation.validate_document),
+)
 
 
 def documents() -> dict[str, dict[str, Any]]:
-    seeded = json.loads(json.dumps(cases.documents(), ensure_ascii=False, sort_keys=True))
-    for document in seeded.values():
-        for case in document["cases"]:
-            case["expected"] = replay.replay(case)
-        validation.validate_document(document)
-    return seeded
+    out: dict[str, dict[str, Any]] = {}
+    for serialized, oracle_replay, validate in FAMILIES:
+        seeded = json.loads(json.dumps(serialized(), ensure_ascii=False, sort_keys=True))
+        for name, document in seeded.items():
+            for case in document["cases"]:
+                case["expected"] = oracle_replay(case)
+            validate(document)
+            out[name] = document
+    return out
 
 
 def _bytes(document: dict[str, Any]) -> bytes:
