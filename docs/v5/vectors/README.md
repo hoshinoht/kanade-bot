@@ -36,8 +36,9 @@ DST wall-clock week ends, weekday/time parsing, ISO conversion, ID display and
 resolution errors, and synthetic catalog token/reference/list/name/description
 parsing. Bare weekday-forward behavior belongs to `api.service.parse_when` and
 chat tooling rather than these four pure domain modules, so it is pending its
-later API/chat vector slice. Scheduling/materialization, RSVP, notifications,
-extraction, chat, wire/delivery, and portable bundle vectors are also pending.
+later API/chat vector slice. Scheduling, notification, extraction and chat
+vectors live in their own directories below; wire/delivery and portable bundle
+vectors are pending.
 
 `scheduler/` is the next stateful producer subset: real in-memory v4 `Repo`
 replay for materialisation, fixed-run edits/retirement, reminder rows, and RSVP
@@ -54,3 +55,10 @@ bytes, response parsing with retry/quarantine over a scripted model, burst
 planning, commit outcomes and proposal cards, one schema per family listed in
 its `index.json`. See its [README](extract/README.md) and run
 `uv run python -m scripts.v5_vectors.extract --check`.
+
+`chat/` freezes the v4 chatbot oracle: gate, authority, participant
+resolution, tool-schema bytes, read-tool rendering, proposal tools, text
+sanitisation, the agent loop over a scripted provider, and context assembly,
+one schema per family listed in its `index.json`. Per-member memory is not
+vectored (removed in v4). See its [README](chat/README.md) and run
+`uv run python -m scripts.v5_vectors.chat --check`.
