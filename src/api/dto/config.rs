@@ -124,6 +124,8 @@ pub struct ModelInfo {
     pub sampling_controls: bool,
     pub reasoning_control: bool,
     pub reasoning_efforts: Option<Vec<&'static str>>,
+    /// False when the alias requires reasoning (a published list without `none`).
+    pub off_allowed: bool,
     pub admission: Option<Admission>,
 }
 
@@ -246,6 +248,7 @@ pub fn model_info(model: &CatalogModel) -> ModelInfo {
             .reasoning_efforts
             .as_ref()
             .map(|efforts| efforts.iter().map(|effort| effort.as_str()).collect()),
+        off_allowed: model.off_allowed(),
         admission: model.admission.map(|limits| Admission {
             max_in_flight: limits.max_in_flight,
             adapter_max_in_flight: limits.adapter_max_in_flight,

@@ -31,6 +31,10 @@
         "reasoning_efforts": {
           "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         },
+        "off_allowed": {
+          "type": "boolean",
+          "description": "False when the alias requires reasoning (a published `reasoning_efforts` list without `none`): hide `off`; a stranded role falls back to the lowest published level."
+        },
         "admission": {
           "anyOf": [
             {

@@ -123,7 +123,13 @@ async fn models_check_lists_the_catalog_and_routes_without_printing_the_key() {
     ));
     assert!(out.contains("  glm-cloud zone=local homelab=leaves efforts=unsupported"));
     assert!(out.contains("  extraction sumi-structured effort=off route=homelab"));
-    assert!(out.contains("  chat codex-like effort=off route=external refused"));
+    assert!(out.contains(
+        "  codex-like zone=external homelab=leaves efforts=low,medium,high (off not allowed) in_flight=8"
+    ));
+    assert!(out.contains("  chat codex-like effort=low (configured off) route=external refused"));
+    assert!(out.contains(
+        "warning: chat reasoning off is not allowed: codex-like requires reasoning; sending low"
+    ));
     assert!(out.contains("  rewrite gone (not listed) effort=off route=external refused"));
     assert!(out.contains("warning: chat model codex-like leaves the homelab"));
     assert!(!out.contains("probe:"));
@@ -148,7 +154,7 @@ async fn models_check_probe_fails_on_a_refused_role_and_passes_with_the_override
     );
     assert!(out.contains("finish=stop"));
     assert!(
-        out.contains("  chat codex-like effort=off refused: role chat routes to external model")
+        out.contains("  chat codex-like effort=low refused: role chat routes to external model")
     );
 
     let mut overridden = env(&stub.url(), &base);
@@ -157,7 +163,7 @@ async fn models_check_probe_fails_on_a_refused_role_and_passes_with_the_override
     result.unwrap();
     assert!(out.contains("route=external UNMASKED"));
     assert!(out.contains("warning: UNMASKED: chat model codex-like"));
-    assert!(out.contains("  chat codex-like effort=off ok "));
+    assert!(out.contains("  chat codex-like effort=low ok "));
     assert_eq!(stub.chat_requests().len(), 3);
 }
 

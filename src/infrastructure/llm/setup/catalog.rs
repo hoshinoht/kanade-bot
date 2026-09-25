@@ -8,6 +8,7 @@ use serde::Serialize;
 use super::super::{
     AdmissionLimits, Effort, ListedModel, ModelCapabilities, TrustZone,
     governor::{Governor, Role},
+    off_allowed, reasoning_floor,
 };
 
 /// Read-only view of the gateway's `GET /v1/models` for the config API.
@@ -33,6 +34,18 @@ pub struct CatalogModel {
     pub function_tools: bool,
     pub context_tokens: Option<u32>,
     pub admission: Option<AdmissionLimits>,
+}
+
+impl CatalogModel {
+    /// Whether a role on this alias may send no reasoning (`off`).
+    pub fn off_allowed(&self) -> bool {
+        off_allowed(self.reasoning_control, self.reasoning_efforts.as_deref())
+    }
+
+    /// The level used instead of `off` where `off` is not allowed.
+    pub fn reasoning_floor(&self) -> Option<Effort> {
+        reasoning_floor(self.reasoning_control, self.reasoning_efforts.as_deref())
+    }
 }
 
 /// Fails closed (`ModelInfo.leaves_homelab`): only a published `local` or

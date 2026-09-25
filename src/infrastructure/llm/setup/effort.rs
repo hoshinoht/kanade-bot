@@ -8,8 +8,9 @@ use crate::extract::pipeline::check_reasoning_effort;
 pub struct EffortStatus {
     /// What requests send.
     pub effort: Effort,
-    /// The configured (or inherited) level the alias does not publish; it
-    /// is replaced by `off` so calls are not refused before sending.
+    /// The configured (or inherited) level the alias does not accept; it is
+    /// replaced by `off`, or by the lowest published level where the alias
+    /// requires reasoning, so calls are not refused before sending.
     pub stranded: Option<Effort>,
 }
 
@@ -32,18 +33,23 @@ pub(super) fn resolve(
                 RoleEffort::Level(effort) => effort,
                 RoleEffort::Inherit => base,
             };
-            let legal = published(alias)
-                .is_none_or(|caps| check_reasoning_effort(alias, Some(wanted), &caps).is_ok());
-            let status = if legal {
-                EffortStatus {
+            let fallback = published(alias).and_then(|caps| {
+                let legal = if wanted == Effort::Off {
+                    caps.off_allowed()
+                } else {
+                    check_reasoning_effort(alias, Some(wanted), &caps).is_ok()
+                };
+                (!legal).then(|| caps.reasoning_floor().unwrap_or(Effort::Off))
+            });
+            let status = match fallback {
+                None => EffortStatus {
                     effort: wanted,
                     stranded: None,
-                }
-            } else {
-                EffortStatus {
-                    effort: Effort::Off,
+                },
+                Some(effort) => EffortStatus {
+                    effort,
                     stranded: Some(wanted),
-                }
+                },
             };
             Some((role, status))
         })

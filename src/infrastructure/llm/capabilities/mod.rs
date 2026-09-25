@@ -89,6 +89,21 @@ pub enum TrustZone {
     External,
 }
 
+/// `off` needs no list (Kanata restricts nothing) or one naming `none`; without
+/// reasoning control nothing is sent, so `off` is trivially fine (user decision
+/// 2026-09-26: a list without `none` means the model requires reasoning).
+pub fn off_allowed(reasoning_control: bool, efforts: Option<&[Effort]>) -> bool {
+    !reasoning_control || efforts.is_none_or(|efforts| efforts.contains(&Effort::Off))
+}
+
+/// The lowest published level, used instead of `off` where `off` is not allowed.
+pub fn reasoning_floor(reasoning_control: bool, efforts: Option<&[Effort]>) -> Option<Effort> {
+    if off_allowed(reasoning_control, efforts) {
+        return None;
+    }
+    efforts?.iter().copied().min()
+}
+
 /// Which optional request fields one model alias accepts.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCapabilities {
@@ -125,6 +140,16 @@ impl ModelCapabilities {
             context_tokens: None,
             admission: None,
         }
+    }
+
+    /// See [`off_allowed`].
+    pub fn off_allowed(&self) -> bool {
+        off_allowed(self.reasoning_control, self.reasoning_efforts.as_deref())
+    }
+
+    /// See [`reasoning_floor`].
+    pub fn reasoning_floor(&self) -> Option<Effort> {
+        reasoning_floor(self.reasoning_control, self.reasoning_efforts.as_deref())
     }
 
     /// Ollama's cloud proxy reports `local`; the `-cloud` alias suffix is what marks it.

@@ -10,7 +10,10 @@ use super::patch::{PatchError, field_error, object};
 use crate::{
     api::dto::config::CapacityCheck,
     domain::settings::{Models, Reasoning, RoleModel},
-    infrastructure::llm::setup::{CatalogModel, CatalogSnapshot},
+    infrastructure::llm::{
+        Effort,
+        setup::{CatalogModel, CatalogSnapshot},
+    },
 };
 
 /// Matches the model stack's one backend group (`setup::build`).
@@ -55,18 +58,36 @@ fn find<'a>(catalog: &'a CatalogSnapshot, alias: &str) -> Option<&'a CatalogMode
     catalog.models.iter().find(|model| model.alias == alias)
 }
 
-/// `off` always; otherwise the alias must be listed and publish the level
-/// (`null` efforts: Kanata restricts nothing).
+/// `off` unless the alias requires reasoning (a published list without
+/// `none`); otherwise the alias must be listed and publish the level (`null`
+/// efforts: Kanata restricts nothing). An unlisted alias takes only `off`.
 fn legal(model: Option<&CatalogModel>, level: Reasoning) -> bool {
+    let Some(model) = model else {
+        return level == Reasoning::Off;
+    };
     if level == Reasoning::Off {
-        return true;
+        return model.off_allowed();
     }
-    match model.map(|model| &model.reasoning_efforts) {
-        None => false,
-        Some(None) => true,
-        Some(Some(efforts)) => efforts
+    model.reasoning_efforts.as_ref().is_none_or(|efforts| {
+        efforts
             .iter()
-            .any(|effort| effort.as_str() == level.as_str()),
+            .any(|effort| effort.as_str() == level.as_str())
+    })
+}
+
+/// Published levels other than `off`, as "a, b or c".
+fn required_levels(model: &CatalogModel) -> String {
+    let levels: Vec<&str> = model
+        .reasoning_efforts
+        .iter()
+        .flatten()
+        .filter(|effort| **effort != Effort::Off)
+        .map(|effort| effort.as_str())
+        .collect();
+    match levels.split_last() {
+        Some((last, [])) => (*last).to_owned(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => "a level".to_owned(),
     }
 }
 
@@ -76,13 +97,29 @@ fn accepted(alias: &str, model: Option<&CatalogModel>) -> String {
     };
     match &model.reasoning_efforts {
         Some(efforts) => {
-            let levels: Vec<&str> = std::iter::once("off")
-                .chain(efforts.iter().map(|effort| effort.as_str()))
+            let off = model.off_allowed().then_some("off");
+            let levels: Vec<&str> = off
+                .into_iter()
+                .chain(
+                    efforts
+                        .iter()
+                        .filter(|effort| **effort != Effort::Off)
+                        .map(|effort| effort.as_str()),
+                )
                 .collect();
             format!("{alias} accepts reasoning {}", levels.join(", "))
         }
         None => format!("{alias} accepts every reasoning level"),
     }
+}
+
+/// What a stranded level becomes: `off`, or the lowest published level where
+/// the alias requires reasoning.
+fn reset_level(model: &CatalogModel) -> Reasoning {
+    model
+        .reasoning_floor()
+        .and_then(|floor| Reasoning::parse(floor.as_str()))
+        .unwrap_or(Reasoning::Off)
 }
 
 /// What a role's requests would send: `Inherit` resolved to extraction's level.
@@ -94,7 +131,8 @@ fn resolved(models: &Models, role: Role) -> Reasoning {
 }
 
 /// `models.roles` merged onto `current`: explicit levels validated (422),
-/// stranded levels the request did not set reset to `off` with a notice.
+/// stranded levels the request did not set reset (`off`, or the alias's
+/// lowest published level where it requires reasoning) with a notice.
 pub fn apply_roles(
     current: &Models,
     roles: &Value,
@@ -165,29 +203,53 @@ pub fn apply_roles(
         if legal(model, level) {
             continue;
         }
+        let requires = model.is_some_and(|model| !model.off_allowed());
         if asked.contains(role.name()) {
-            return Err(PatchError::invalid(
-                if role.of(&next).reasoning == Reasoning::Inherit {
-                    format!(
-                        "{} inherits {} from extraction, which {alias} does not publish; pick a level or turn reasoning off.",
-                        role.name(),
-                        level.as_str()
-                    )
-                } else {
-                    format!("{}, not {}.", accepted(&alias, model), level.as_str())
-                },
-            ));
+            let inherits = role.of(&next).reasoning == Reasoning::Inherit;
+            return Err(PatchError::invalid(match (model, inherits) {
+                (Some(model), true) if requires && level == Reasoning::Off => format!(
+                    "{} inherits off from extraction, but {alias} requires reasoning: pick {}.",
+                    role.name(),
+                    required_levels(model)
+                ),
+                (Some(model), true) if requires => format!(
+                    "{} inherits {} from extraction, which {alias} does not publish; pick {}.",
+                    role.name(),
+                    level.as_str(),
+                    required_levels(model)
+                ),
+                (_, true) => format!(
+                    "{} inherits {} from extraction, which {alias} does not publish; pick a level or turn reasoning off.",
+                    role.name(),
+                    level.as_str()
+                ),
+                (Some(model), false) if level == Reasoning::Off => format!(
+                    "{alias} requires reasoning: pick {}.",
+                    required_levels(model)
+                ),
+                _ => format!("{}, not {}.", accepted(&alias, model), level.as_str()),
+            }));
         }
         // A saved alias Kanata no longer lists is shown as it is, not reset.
-        if model.is_none() {
+        let Some(model) = model else {
             continue;
-        }
-        role.of_mut(&mut next).reasoning = Reasoning::Off;
-        notices.push(format!(
-            "{} reasoning reset to off: {alias} does not publish {}.",
-            role.name(),
-            level.as_str()
-        ));
+        };
+        let reset = reset_level(model);
+        role.of_mut(&mut next).reasoning = reset;
+        notices.push(if level == Reasoning::Off {
+            format!(
+                "{} reasoning set to {}: {alias} requires reasoning.",
+                role.name(),
+                reset.as_str()
+            )
+        } else {
+            format!(
+                "{} reasoning reset to {}: {alias} does not publish {}.",
+                role.name(),
+                reset.as_str(),
+                level.as_str()
+            )
+        });
     }
     Ok((next, notices))
 }

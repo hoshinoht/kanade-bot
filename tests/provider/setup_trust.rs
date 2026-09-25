@@ -149,6 +149,7 @@ async fn startup_reports_stranded_efforts_capacity_and_refused_external_routes()
                 role: Role::Extraction,
                 alias: "codex-like".into(),
                 effort: Effort::Max,
+                sent: Effort::Low,
             },
             StartupWarning::ExternalRefused {
                 role: Role::Extraction,
@@ -162,11 +163,12 @@ async fn startup_reports_stranded_efforts_capacity_and_refused_external_routes()
     );
     assert_eq!(
         report.warnings[1].to_string(),
-        "extraction reasoning max is not published by codex-like; sending off"
+        "extraction reasoning max is not published by codex-like; sending low"
     );
-    // Stranded extraction sends off; chat inherits the configured max, which
-    // sumi publishes; glm-cloud has no reasoning control, so high is legal.
-    assert_eq!(stack.effort(Role::Extraction), Some(Effort::Off));
+    // Stranded extraction falls to codex-like's lowest level (it requires
+    // reasoning); chat inherits the configured max, which sumi publishes;
+    // glm-cloud has no reasoning control, so high is legal.
+    assert_eq!(stack.effort(Role::Extraction), Some(Effort::Low));
     assert_eq!(stack.effort(Role::Chat), Some(Effort::Max));
     assert_eq!(stack.effort(Role::Rewrite), Some(Effort::High));
 }
@@ -193,7 +195,7 @@ async fn an_inherited_level_is_checked_against_the_inheriting_alias() {
     assert_eq!(
         stack.efforts()[&Role::Chat],
         EffortStatus {
-            effort: Effort::Off,
+            effort: Effort::Low,
             stranded: Some(Effort::Xhigh)
         }
     );
@@ -261,4 +263,63 @@ async fn the_catalog_snapshot_exposes_published_metadata() {
         (json!(false), json!(true))
     );
     assert_eq!(find("odd-flags")["trust_zone"], Value::Null);
+}
+
+#[tokio::test]
+async fn off_needs_a_list_with_none_else_the_lowest_published_level_is_used() {
+    let stub = Stub::start(gateway(
+        json!({"object": "list", "data": [
+            {"id": "needs", "kanata": {"reasoning_control": true, "reasoning_efforts": ["high", "medium"]}},
+            {"id": "any", "kanata": {"reasoning_control": true}},
+            {"id": "none-ok", "kanata": {"reasoning_control": true, "reasoning_efforts": ["none", "high"]}},
+            {"id": "no-reasoning", "kanata": {"reasoning_control": false}},
+        ]}),
+        "{}",
+    ))
+    .await;
+    let mut input = setup(Some(stub.url()));
+    input.roles = ModelRoles {
+        extraction: role("needs", RoleEffort::Level(Effort::Off)),
+        chat: role("any", RoleEffort::Inherit),
+        rewrite: role("none-ok", RoleEffort::Level(Effort::Low)),
+    };
+    let stack = ready(input);
+    let report = stack.check_startup().await;
+    let status = |effort, stranded| EffortStatus { effort, stranded };
+    let efforts = stack.efforts();
+    assert_eq!(
+        efforts[&Role::Extraction],
+        status(Effort::Medium, Some(Effort::Off))
+    );
+    assert_eq!(
+        efforts[&Role::Chat],
+        status(Effort::Off, None),
+        "null list keeps off"
+    );
+    assert_eq!(
+        efforts[&Role::Rewrite],
+        status(Effort::Off, Some(Effort::Low)),
+        "a list with none falls back to off"
+    );
+    assert_eq!(
+        report.warnings[0].to_string(),
+        "extraction reasoning off is not allowed: needs requires reasoning; sending medium"
+    );
+    let catalog = stack.catalog();
+    let off = |alias: &str| {
+        catalog
+            .models
+            .iter()
+            .find(|model| model.alias == alias)
+            .unwrap()
+            .off_allowed()
+    };
+    assert!(!off("needs"));
+    assert!(off("any") && off("none-ok") && off("no-reasoning"));
+
+    let mut unsupported = setup(Some(stub.url()));
+    unsupported.roles = roles("no-reasoning");
+    let stack = ready(unsupported);
+    stack.check_startup().await;
+    assert_eq!(stack.effort(Role::Extraction), Some(Effort::Off));
 }

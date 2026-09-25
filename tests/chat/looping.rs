@@ -298,6 +298,7 @@ fn named() -> Vec<Named> {
     let mut shaping = Vec::new();
     let mut usage = Vec::new();
     let mut failures = Vec::new();
+    let mut floor = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -365,6 +366,25 @@ fn named() -> Vec<Named> {
                 ("model-without-function-tools", 0) => failures.push(error(
                     "LLM completion failed (UnsupportedCapability, digest=71a4de261d6d72bf)",
                 )),
+                // User decision 2026-09-26: `off` on a model whose list lacks
+                // `none` sends its lowest level (v4 omitted the field).
+                ("reasoning-and-sampling-controls", 0) => {
+                    for (k, request) in v4["requests"]
+                        .as_array()
+                        .expect("requests")
+                        .iter()
+                        .enumerate()
+                    {
+                        let mut v5 = request.clone();
+                        v5["reasoning_effort"] = json!("low");
+                        floor.push(dev(
+                            case_id,
+                            format!("{pointer}/requests/{k}"),
+                            request.clone(),
+                            v5,
+                        ));
+                    }
+                }
                 ("missing-model-alias", 0) => {
                     failures.push(error("role is not configured"));
                     // The question never opened a session.
@@ -395,6 +415,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-TYPED-FAILURES",
             entries: failures,
+        },
+        Named {
+            name: "D-REASONING-FLOOR",
+            entries: floor,
         },
     ]
 }

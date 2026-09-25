@@ -15,8 +15,8 @@ mod shaping;
 mod wire;
 
 pub use capabilities::{
-    AdmissionLimits, Capability, Effort, ListedModel, ModelCapabilities, TrustZone,
-    parse_models_list, resolve as resolve_capabilities,
+    AdmissionLimits, Capability, Effort, ListedModel, ModelCapabilities, TrustZone, off_allowed,
+    parse_models_list, reasoning_floor, resolve as resolve_capabilities,
 };
 pub use error::{ErrorCode, LlmError};
 pub use execution::{CompletionRunner, ExecutionLimits, RetryPolicy};

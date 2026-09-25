@@ -95,3 +95,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `tailscale` | `token`), sent on `GET /api/admin/session` and every sign-in
   response so the admin app can hide proposal actions for non-Discord
   sessions up front. Optional in the schema so earlier responses stay valid.
+- Reasoning floor: `config.json` `ModelInfo.off_allowed` (always sent by the
+  server; optional in the schema so earlier responses stay valid). False when
+  the alias publishes a `reasoning_efforts` list without `none`; `off` is then
+  refused (422) and a stranded level resets to the lowest published level.

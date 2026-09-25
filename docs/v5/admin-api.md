@@ -183,7 +183,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. **Implemented**. |
 | `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. **Implemented** for this and next boss week. |
 | `GET /api/admin/config` | — | `ConfigView` | **Implemented** (A9): models from the live Kanata catalog (`reachable: false` keeps the last snapshot), env facts incl. pseudonymisation off and `KANADE_ALLOW_EXTERNAL_UNMASKED`. All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |
-| `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | **Implemented** (A9): 422 `unknown_field`/`read_only`/`invalid`/`capacity`/`idempotency_mismatch`, 503 `models_unreachable` for the models section only; `models.groups`, `persona.role_profiles` and `persona.visibility` are `read_only` until they get settings keys; a no-limit alias only warns. Persona switches apply live; model roles and pings apply on restart. One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off` and reported in `notices`, e.g. `"chat reasoning reset to off: kanata/chat does not publish high."` Reasoning resolution: `""` inherits the extraction role's effort; inherit is legal only while that effort is `off` or published for the alias; a model that decides takes `low`/`medium`/`high`. |
+| `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | **Implemented** (A9): 422 `unknown_field`/`read_only`/`invalid`/`capacity`/`idempotency_mismatch`, 503 `models_unreachable` for the models section only; `models.groups`, `persona.role_profiles` and `persona.visibility` are `read_only` until they get settings keys; a no-limit alias only warns. Persona switches apply live; model roles and pings apply on restart. One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off`, or to the alias's lowest published level where `off` is not allowed, and reported in `notices`, e.g. `"chat reasoning reset to low: kanata/chat does not publish high."` Reasoning resolution: see "Config semantics"; `""` inherits the extraction role's effort and is legal only while that effort is legal for the alias. |
 | `POST /api/admin/config/profiles/reload` | `{}` | `{message, reloaded}` | **Implemented** (A9); safe to repeat. Re-reads `config/personas/profiles/` after a file edit. Profile text is files-only by decision (a deliberate v4 drop); the app shows profiles read-only and only publishes them or assigns them to roles. |
 | `POST /api/admin/digest` | `{week, channel_id?}` | `{message}` | v4 `POST /digest` parity, channel override included. |
 | `GET /api/admin/access` | — | `AccessReport` | v4 `GET /access`. |
@@ -218,19 +218,29 @@ the A4 table.
   reports `local`, so the suffix is what marks it. The PWA re-derives the same
   rule and warns for every such alias, and for a saved alias the catalog no
   longer lists (shown selected as "(not listed)").
-- Reasoning: `off` is always legal; otherwise the level must be in the
-  alias's `reasoning_efforts`, and `null` there means Kanata restricts
-  nothing (every level accepted; Kanata sends a list only when a provider
-  restricts levels). `""` (chat/rewrite only)
+- Reasoning (user decision 2026-09-26): `off` is legal only when the alias
+  publishes no list (`null`: Kanata restricts nothing) or a list containing
+  `none`, or has no reasoning control (nothing is sent); a list without `none`
+  means the model requires reasoning, `ModelInfo.off_allowed` is false, and
+  setting `off` is refused (422 `"<alias> requires reasoning: pick low,
+  medium or high."`, naming its published levels). Any other level must be in
+  the alias's `reasoning_efforts`; `null` accepts every level. No alias names
+  are special-cased: a model that in fact needs reasoning but publishes `null`
+  keeps whatever level is configured. `""` (chat/rewrite only)
   inherits extraction's effort and is legal only when that effort is legal
   for the role's alias. Validation runs after every role in the request is
   applied, so inheritance resolves against the FINAL extraction effort and
   each role's final alias. A level the request sets — including an explicit
   `""` whose resolved effort is illegal — is refused (422). A stored level the
   request did not set, stranded by an alias or extraction change, is reset to
-  `off` and named in `notices`. The admin app sends all three roles and
-  resets a stranded inheritor to `off` locally (with a visible note) before
-  saving, so its saves never hit the 422.
+  `off` — or, where `off_allowed` is false, to the alias's lowest published
+  level — and named in `notices` (`"chat reasoning reset to low: kanata/chat
+  does not publish high."`, or for a stranded `off` `"chat reasoning set to
+  low: kanata/chat requires reasoning."`). The admin app sends all three
+  roles, hides `off` where `off_allowed` is false, and resets a stranded
+  inheritor the same way locally (with a visible note) before saving, so its
+  saves never hit the 422. The model stack applies the same rule at runtime
+  (setup effort resolution and the runner's per-call shaping).
 - Self-service mode (`self_service.mode`) sets how the extractor and the
   chatbot answer a change they detect: `cards_and_link` (default) keeps the ✅
   card and adds a pre-filled deep link for moves the author can make

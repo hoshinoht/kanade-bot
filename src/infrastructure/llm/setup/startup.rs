@@ -30,11 +30,12 @@ pub enum Listing {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StartupWarning {
     Governor(ConfigWarning),
-    /// The alias does not publish this level; requests send `off` instead.
+    /// The alias does not accept `effort`; requests send `sent` instead.
     UnpublishedEffort {
         role: Role,
         alias: String,
         effort: Effort,
+        sent: Effort,
     },
     /// Leaves the homelab and pseudonymization is off: the operator override
     /// lets member data through in plain text.
@@ -67,12 +68,25 @@ impl fmt::Display for StartupWarning {
             Self::UnpublishedEffort {
                 role,
                 alias,
-                effort,
+                effort: Effort::Off,
+                sent,
             } => write!(
                 f,
-                "{} reasoning {} is not published by {alias}; sending off",
+                "{} reasoning off is not allowed: {alias} requires reasoning; sending {}",
                 role.as_str(),
-                effort.as_str()
+                sent.as_str()
+            ),
+            Self::UnpublishedEffort {
+                role,
+                alias,
+                effort,
+                sent,
+            } => write!(
+                f,
+                "{} reasoning {} is not published by {alias}; sending {}",
+                role.as_str(),
+                effort.as_str(),
+                sent.as_str()
             ),
             Self::ExternalUnmasked { role, alias } => write!(
                 f,
@@ -140,11 +154,14 @@ impl ModelStack {
             let Some(route) = self.governor.route(role) else {
                 continue;
             };
-            if let Some(effort) = efforts.get(&role).and_then(|status| status.stranded) {
+            if let Some(status) = efforts.get(&role)
+                && let Some(effort) = status.stranded
+            {
                 warnings.push(StartupWarning::UnpublishedEffort {
                     role,
                     alias: route.alias.clone(),
                     effort,
+                    sent: status.effort,
                 });
             }
             if route.external {

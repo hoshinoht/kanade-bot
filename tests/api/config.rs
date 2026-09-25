@@ -591,7 +591,7 @@ async fn reasoning_follows_published_efforts_and_strands_reset_with_notices() {
         .await;
     assert_eq!(
         message,
-        "kanata/chat accepts reasoning off, low, medium, not high."
+        "kanata/chat accepts reasoning low, medium, not high."
     );
     // The app sends all three roles: extraction to high while chat still
     // inherits is judged on the final extraction level.
@@ -618,10 +618,11 @@ async fn reasoning_follows_published_efforts_and_strands_reset_with_notices() {
         stranded["models"]["roles"]["extraction"]["reasoning"],
         "high"
     );
-    assert_eq!(stranded["models"]["roles"]["chat"]["reasoning"], "off");
+    // kanata/chat requires reasoning, so the reset lands on its lowest level.
+    assert_eq!(stranded["models"]["roles"]["chat"]["reasoning"], "low");
     assert_eq!(
         stranded["notices"],
-        json!(["chat reasoning reset to off: kanata/chat does not publish high."])
+        json!(["chat reasoning reset to low: kanata/chat does not publish high."])
     );
     // An alias change strands its own untouched level too.
     let moved = config
@@ -890,4 +891,62 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         let reply = config.send(method, path, None, &json!({})).await;
         assert_eq!(reply.status, 404, "{path}");
     }
+}
+
+#[tokio::test]
+async fn off_is_refused_where_the_alias_requires_reasoning() {
+    let config = Config::new().await;
+    // kanata/chat publishes low and medium but not none.
+    let view = config.get().await;
+    let off_allowed = |id: &str| {
+        view["models"]["catalog"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["id"] == id)
+            .unwrap()["off_allowed"]
+            .clone()
+    };
+    assert_eq!(off_allowed("kanata/chat"), json!(false));
+    assert_eq!(off_allowed("kanata/legacy"), json!(true), "null list");
+    assert_eq!(
+        off_allowed("kanata/rewrite-small"),
+        json!(true),
+        "no reasoning"
+    );
+
+    let message = config
+        .refused(
+            json!({"models": {"roles": {"chat": {"reasoning": "off"}}}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert_eq!(
+        message,
+        "kanata/chat requires reasoning: pick low or medium."
+    );
+    let message = config
+        .refused(
+            json!({"models": {"roles": {
+                "extraction": {"alias": "kanata/legacy", "reasoning": "off"},
+                "chat": {"reasoning": ""},
+            }}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert_eq!(
+        message,
+        "chat inherits off from extraction, but kanata/chat requires reasoning: pick low or medium."
+    );
+    // Not part of the request: an inheritor stranded on off gets the lowest level.
+    let stranded = config
+        .patch(json!({"models": {"roles": {"extraction": {"alias": "kanata/legacy", "reasoning": "off"}}}}))
+        .await;
+    assert_eq!(stranded["models"]["roles"]["chat"]["reasoning"], "low");
+    assert_eq!(
+        stranded["notices"],
+        json!(["chat reasoning set to low: kanata/chat requires reasoning."])
+    );
 }

@@ -4,7 +4,8 @@ const SCHEMA_INSTRUCTION: &str = "OUTPUT FORMAT\nAnswer with exactly one JSON va
 
 /// Fit `request` to `capabilities` before validation and accounting.
 ///
-/// Returns `None` when nothing changes. A model without structured output gets the
+/// Returns `None` when nothing changes. `off` for a model that requires reasoning
+/// becomes its lowest published level. A model without structured output gets the
 /// output schema as one system instruction, merged into a leading system message
 /// (chat templates often honour only one) or prepended; `output_schema` stays set so
 /// the runner still validates the reply against it.
@@ -33,6 +34,9 @@ pub fn prepare(
     }
     super::wire::check(request, capabilities)
         .map_err(|reason| LlmError::new(ErrorCode::RequestInvalid, reason))?;
+    let floor = (request.reasoning == Some(Effort::Off))
+        .then(|| capabilities.reasoning_floor())
+        .flatten();
     // Substituted here too so the placeholder counts toward every bound.
     let mut shaped = request
         .messages
@@ -49,6 +53,9 @@ pub fn prepare(
             }
             copy
         });
+    if let Some(floor) = floor {
+        shaped.get_or_insert_with(|| request.clone()).reasoning = Some(floor);
+    }
     let Some(output) = &request.output_schema else {
         return Ok(shaped);
     };

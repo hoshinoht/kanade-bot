@@ -203,11 +203,12 @@ async fn codex_like_model_gets_reasoning_only() {
             })
         );
     }
+    // codex-like publishes no `none`: off sends its lowest level instead.
     let mut off = structured("codex-like");
     off.reasoning = Some(Effort::Off);
     runner.complete(&off).await.unwrap();
     let body = stub.chat_requests().last().unwrap().body.clone();
-    assert!(body.get("reasoning_effort").is_none());
+    assert_eq!(body["reasoning_effort"], "low");
     assert_eq!(stub.chat_requests().len(), 4);
 }
 
@@ -287,7 +288,10 @@ async fn unpublished_reasoning_level_is_rejected_before_sending() {
     runner.complete(&request).await.unwrap();
     let chats = stub.chat_requests();
     assert_eq!(chats.len(), 2);
-    assert!(chats[0].body.get("reasoning_effort").is_none());
+    assert_eq!(
+        chats[0].body["reasoning_effort"], "low",
+        "off → lowest level"
+    );
     assert_eq!(chats[1].body["reasoning_effort"], "low");
 }
 

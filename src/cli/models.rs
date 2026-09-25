@@ -116,7 +116,14 @@ pub async fn check(
             .any(|model| model.alias == route.alias);
         let effort = efforts
             .get(&role)
-            .map_or("off", |status| status.effort.as_str());
+            .map_or("off".to_owned(), |status| match status.stranded {
+                Some(configured) => format!(
+                    "{} (configured {})",
+                    status.effort.as_str(),
+                    configured.as_str()
+                ),
+                None => status.effort.as_str().to_owned(),
+            });
         let trust = match (route.external, route.unmasked_allowed) {
             (false, _) => "homelab",
             (true, true) => "external UNMASKED",
@@ -189,6 +196,11 @@ fn describe(model: &CatalogModel) -> String {
             .map(|level| level.as_str())
             .collect::<Vec<_>>()
             .join(","),
+    };
+    let efforts = if model.off_allowed() {
+        efforts
+    } else {
+        format!("{efforts} (off not allowed)")
     };
     let mut line = format!(
         "{} zone={zone} homelab={} efforts={efforts}",

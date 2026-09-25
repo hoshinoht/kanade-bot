@@ -273,6 +273,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: reasoning "off" is only used where Kanata allows it (no published list, or one
+  that includes `none`); models that require reasoning get their lowest published level,
+  the Config API refuses "off" for them, and `kanade models check` shows the level each
+  role actually uses.
 - v5: live Discord wiring in `serve`: connects with the bot token only when
   `KANADE_EXPECT_V4_STOPPED=1`, registers the retained commands for the guild only,
   syncs the roster (so admins can sign in with Discord), runs the reminder and notice

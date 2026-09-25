@@ -193,6 +193,8 @@ async fn a_locally_invalid_value_is_permanent_and_never_downgrades() {
 
 #[test]
 fn off_is_sent_as_none_unless_a_published_list_excludes_it() {
+    // `wire_body` shapes like the runner: off on a list without `none` becomes
+    // the lowest published level (user decision 2026-09-26).
     let mut caps = full();
     let mut request = tiny_request();
     request.reasoning = Some(Effort::Off);
@@ -204,13 +206,20 @@ fn off_is_sent_as_none_unless_a_published_list_excludes_it() {
             "none"
         );
     }
-    caps.reasoning_efforts = Some(vec![Effort::Low]);
+    caps.reasoning_efforts = Some(vec![Effort::High, Effort::Low]);
+    assert_eq!(
+        wire_body(&request, &caps).unwrap()["reasoning_effort"],
+        "low"
+    );
+    caps.reasoning_control = false;
     assert!(
         wire_body(&request, &caps)
             .unwrap()
             .get("reasoning_effort")
-            .is_none()
+            .is_none(),
+        "no reasoning control sends nothing"
     );
+    caps.reasoning_control = true;
     caps.reasoning_efforts = Some(vec![Effort::Minimal, Effort::Xhigh, Effort::Max]);
     for (effort, wire) in [
         (Effort::Minimal, "minimal"),
