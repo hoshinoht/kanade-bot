@@ -43,6 +43,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 7,
         sql: include_str!("migrations/0007_model_logs.sql"),
     },
+    Migration {
+        version: 8,
+        sql: include_str!("migrations/0008_log_retention.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the

@@ -8,6 +8,7 @@ mod failures;
 mod history;
 mod journal;
 mod migrate;
+mod model_logs;
 mod owner;
 mod retry;
 mod support;

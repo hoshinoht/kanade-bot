@@ -1,6 +1,8 @@
 //! Stored rows. Instants keep microsecond precision; JSON fields hold what
 //! the pipeline recorded and are opaque to the store beyond their shape.
 
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
@@ -10,7 +12,7 @@ use crate::domain::scheduler::StoreError;
 /// One watched Discord message (the extraction window cache, v4
 /// `messages`). An edit with different content clears `processed_at`, so
 /// the message is read again.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct WatchedMessage {
     pub id: String,
     pub channel_id: String,
@@ -22,7 +24,7 @@ pub struct WatchedMessage {
 }
 
 /// One extraction pass (v4 `extractions`, plus the v5 filter fields).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ExtractionLog {
     pub id: String,
     pub at: DateTime<Utc>,
@@ -46,7 +48,7 @@ pub struct ExtractionLog {
 }
 
 /// One model request within a chat question.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ChatRound {
     /// Model alias.
     pub model: String,
@@ -64,7 +66,7 @@ pub struct ChatRound {
 }
 
 /// One chat question (v4 `chat_interactions`, plus the v5 filter fields).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ChatInteraction {
     pub id: String,
     pub at: DateTime<Utc>,
@@ -160,5 +162,69 @@ impl AllowanceOverride {
     /// The shape every store refuses to write otherwise.
     pub fn check_shape(&self) -> Result<(), StoreError> {
         shape(self.window_ms > 0, "allowance window")
+    }
+}
+
+// Debug shows ids, instants and sizes only: member text, prompts and model
+// output must not reach logs or panic messages.
+
+impl fmt::Debug for WatchedMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WatchedMessage")
+            .field("id", &self.id)
+            .field("channel_id", &self.channel_id)
+            .field("created_at", &self.created_at)
+            .field("edited_at", &self.edited_at)
+            .field("content_len", &self.content.len())
+            .field("processed_at", &self.processed_at)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for ExtractionLog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExtractionLog")
+            .field("id", &self.id)
+            .field("at", &self.at)
+            .field("channel_id", &self.channel_id)
+            .field("model", &self.model)
+            .field("outcome", &self.outcome)
+            .field("request_count", &self.request_count)
+            .field("latency_ms", &self.latency_ms)
+            .field("prompt_len", &self.prompt.len())
+            .field("raw_response_len", &self.raw_response.len())
+            .field("messages", &self.message_ids.len())
+            .field("proposal_ids", &self.proposal_ids)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for ChatRound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatRound")
+            .field("model", &self.model)
+            .field("finish_reason", &self.finish_reason)
+            .field("latency_ms", &self.latency_ms)
+            .field("tools", &self.tools)
+            .field("response_len", &self.response.as_ref().map(String::len))
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for ChatInteraction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatInteraction")
+            .field("id", &self.id)
+            .field("at", &self.at)
+            .field("channel_id", &self.channel_id)
+            .field("outcome", &self.outcome)
+            .field("clean_retry", &self.clean_retry)
+            .field("withheld", &self.withheld)
+            .field("request_count", &self.request_count)
+            .field("latency_ms", &self.latency_ms)
+            .field("question_len", &self.question.len())
+            .field("reply_len", &self.reply.len())
+            .field("rounds", &self.rounds)
+            .finish_non_exhaustive()
     }
 }

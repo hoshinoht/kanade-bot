@@ -3,8 +3,9 @@
 //! [`DraftStore::commit_merge`]; this port adds only what drafts lack — the
 //! source, a supersede key and a TTL deadline — written with the draft.
 //!
-//! Approval authority and the TTL value are not decided here: the TTL is a
-//! parameter of each proposal ([`DEFAULT_PROPOSAL_TTL`] until configured).
+//! Decided (2026-09-25): v4 approval — ✅ by a run participant, an
+//! administrator or the run's owner — enforced by the proposal service, not
+//! the store; TTL 24 h ([`DEFAULT_PROPOSAL_TTL`], passed per proposal).
 
 use std::future::Future;
 
@@ -14,7 +15,7 @@ use super::port::{DraftStore, LoadedDraft, StagedOp, StoredDraft};
 use crate::domain::history::{Actor, ChangeRef};
 use crate::domain::scheduler::StoreError;
 
-/// The TTL used until one is configured.
+/// The decided proposal TTL.
 pub const DEFAULT_PROPOSAL_TTL: TimeDelta = TimeDelta::hours(24);
 
 /// The `close_reason` of a proposal a newer one replaced.

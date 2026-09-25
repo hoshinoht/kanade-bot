@@ -1,4 +1,5 @@
-//! The model-log store port. Every write is atomic; logs are insert-only.
+//! The model-log store port. Every write is atomic; logs are never updated,
+//! only inserted and pruned.
 
 use std::future::Future;
 
@@ -8,6 +9,7 @@ use super::filter::{ChatFilter, ExtractionFilter, LogFacets, LogPage};
 use super::records::{
     AllowanceOverride, ChatInteraction, ExtractionLog, RescanJob, WatchedMessage,
 };
+use super::retention::PruneCounts;
 use crate::domain::scheduler::StoreError;
 
 /// What [`ModelLogStore::upsert_message`] did.
@@ -90,6 +92,16 @@ pub trait ModelLogStore {
     ) -> impl Future<Output = Result<LogPage<ChatInteraction>, StoreError>> + Send;
 
     fn chat_facets(&self) -> impl Future<Output = Result<LogFacets, StoreError>> + Send;
+
+    /// Delete extraction and chat logs with `at` before `before`, and
+    /// processed cached messages created before it (unprocessed ones are
+    /// kept). Runs in write transactions of at most
+    /// [`PRUNE_BATCH`](super::PRUNE_BATCH) rows per table until nothing is
+    /// left, so other writers interleave; each batch is atomic.
+    fn prune_model_logs(
+        &self,
+        before: DateTime<Utc>,
+    ) -> impl Future<Output = Result<PruneCounts, StoreError>> + Send;
 
     // Rescan jobs.
 

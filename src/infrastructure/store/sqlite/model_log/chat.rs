@@ -176,21 +176,9 @@ pub(super) async fn load(
     }
 }
 
-pub(super) async fn list(
-    conn: &mut SqliteConnection,
-    filter: &ChatFilter,
-) -> Result<LogPage<ChatInteraction>, StoreError> {
-    let size = page_size(filter.limit);
-    let outcomes = (!filter.outcomes.is_empty()).then(|| {
-        json_list(
-            &filter
-                .outcomes
-                .iter()
-                .map(|outcome| outcome.as_str().to_owned())
-                .collect::<Vec<_>>(),
-        )
-    });
-    let rows = sqlx::query(&format!(
+/// A bounded scan of `chat_recent` newest first, as the extraction list.
+pub(super) fn list_sql() -> String {
+    format!(
         "SELECT {COLUMNS} FROM chat_interactions c \
          WHERE (?1 IS NULL OR EXISTS (SELECT 1 FROM chat_rounds r \
               WHERE r.interaction_id = c.id AND r.model = ?1)) \
@@ -208,24 +196,41 @@ pub(super) async fn list(
          AND (?9 IS NULL OR c.latency_ms >= ?9) \
          AND (?10 IS NULL OR c.at < ?10 OR (c.at = ?10 AND c.id < ?11)) \
          ORDER BY c.at DESC, c.id DESC LIMIT ?12"
-    ))
-    .bind(&filter.model)
-    .bind(optional_instant(filter.from.as_ref())?)
-    .bind(optional_instant(filter.to.as_ref())?)
-    .bind(outcomes)
-    .bind(&filter.channel)
-    .bind(&filter.member)
-    .bind(&filter.q)
-    .bind(&filter.tool)
-    .bind(optional_signed(filter.min_ms, "min_ms")?)
-    .bind(optional_instant(
-        filter.cursor.as_ref().map(|cursor| &cursor.at),
-    )?)
-    .bind(filter.cursor.as_ref().map(|cursor| cursor.id.as_str()))
-    .bind(i64::from(size) + 1)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(store_error)?;
+    )
+}
+
+pub(super) async fn list(
+    conn: &mut SqliteConnection,
+    filter: &ChatFilter,
+) -> Result<LogPage<ChatInteraction>, StoreError> {
+    let size = page_size(filter.limit);
+    let outcomes = (!filter.outcomes.is_empty()).then(|| {
+        json_list(
+            &filter
+                .outcomes
+                .iter()
+                .map(|outcome| outcome.as_str().to_owned())
+                .collect::<Vec<_>>(),
+        )
+    });
+    let rows = sqlx::query(&list_sql())
+        .bind(&filter.model)
+        .bind(optional_instant(filter.from.as_ref())?)
+        .bind(optional_instant(filter.to.as_ref())?)
+        .bind(outcomes)
+        .bind(&filter.channel)
+        .bind(&filter.member)
+        .bind(&filter.q)
+        .bind(&filter.tool)
+        .bind(optional_signed(filter.min_ms, "min_ms")?)
+        .bind(optional_instant(
+            filter.cursor.as_ref().map(|cursor| &cursor.at),
+        )?)
+        .bind(filter.cursor.as_ref().map(|cursor| cursor.id.as_str()))
+        .bind(i64::from(size) + 1)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
     let mut items = Vec::with_capacity(rows.len());
     for row in &rows {
         items.push(with_rounds(conn, interaction_of(row)?).await?);
@@ -240,21 +245,19 @@ pub(super) async fn facets(conn: &mut SqliteConnection) -> Result<LogFacets, Sto
         .map_err(store_error)?;
     Ok(LogFacets {
         total: u64::try_from(total).unwrap_or_default(),
-        models: distinct(conn, "SELECT DISTINCT model FROM chat_rounds ORDER BY 1").await?,
-        tools: distinct(conn, "SELECT DISTINCT tool FROM chat_tools ORDER BY 1").await?,
-        outcomes: distinct(
-            conn,
-            "SELECT outcome FROM chat_interactions \
-             UNION SELECT 'clean_retry' FROM chat_interactions WHERE clean_retry = 1 \
-             UNION SELECT 'withheld' FROM chat_interactions WHERE withheld = 1 \
-             ORDER BY 1",
-        )
-        .await?,
-        channels: distinct(
-            conn,
-            "SELECT DISTINCT channel_id FROM chat_interactions \
-             WHERE channel_id IS NOT NULL ORDER BY 1",
-        )
-        .await?,
+        models: distinct(conn, FACET_SQL[0]).await?,
+        tools: distinct(conn, FACET_SQL[1]).await?,
+        outcomes: distinct(conn, FACET_SQL[2]).await?,
+        channels: distinct(conn, FACET_SQL[3]).await?,
     })
 }
+
+pub(super) const FACET_SQL: [&str; 4] = [
+    "SELECT DISTINCT model FROM chat_rounds ORDER BY 1",
+    "SELECT DISTINCT tool FROM chat_tools ORDER BY 1",
+    "SELECT outcome FROM chat_interactions \
+     UNION SELECT 'clean_retry' FROM chat_interactions WHERE clean_retry = 1 \
+     UNION SELECT 'withheld' FROM chat_interactions WHERE withheld = 1 \
+     ORDER BY 1",
+    "SELECT DISTINCT channel_id FROM chat_interactions WHERE channel_id IS NOT NULL ORDER BY 1",
+];

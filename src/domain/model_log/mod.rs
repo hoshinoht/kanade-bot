@@ -8,6 +8,7 @@ mod filter;
 mod outcome;
 mod port;
 mod records;
+mod retention;
 
 pub use filter::{
     ChatFilter, ExtractionFilter, LogCursor, LogFacets, LogPage, MAX_PAGE, page_size,
@@ -17,3 +18,4 @@ pub use port::{MessageUpsert, ModelLogStore};
 pub use records::{
     AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, RescanJob, WatchedMessage,
 };
+pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};

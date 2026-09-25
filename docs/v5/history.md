@@ -752,7 +752,9 @@ draft of kind `request` (`request_type`, `subject` = `run:<id>` or
 Status: storage only — `src/domain/drafts/proposal.rs` (`ProposalStore`),
 both stores, migration `0007`. The proposal service (amendment → `DraftOp`
 translation, approval, supersede policy, expiry in the delivery tick) is
-E3; approval authority and the TTL value await a user decision.
+E3. Decided (user, 2026-09-25): v4 approval — ✅ by a participant of the
+run, an administrator or the run's owner — enforced by E3, not the store;
+TTL 24 h.
 
 - **A proposal is a draft** of kind `DraftKind::Proposal`, created
   `submitted` with its operations (`created` + `submitted` events) and
@@ -776,7 +778,7 @@ E3; approval authority and the TTL value await a user decision.
   (event detail the same), by the new proposal's system author, version
   unchanged. The ids are returned. Closed proposals are left alone.
 - **TTL.** `expires_at = created_at + ttl`; `ttl` is a per-proposal
-  parameter (positive; `DEFAULT_PROPOSAL_TTL` = 24 h until configured).
+  parameter (positive; `DEFAULT_PROPOSAL_TTL` = the decided 24 h).
   `expire_proposals(now, actor)` closes live proposals with
   `expires_at <= now` as `expired` (version unchanged). The week expiry
   (`expire_drafts`) still applies to a proposal's `expires_week`.

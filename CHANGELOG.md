@@ -106,7 +106,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: storage for extraction and chat logs (per-round chat detail, filterable by model,
   date, outcome, channel, member, tool and text with keyset paging), rescan jobs,
   allowance overrides and one self-service tip per member per week, plus extractor/chat
-  proposals stored as system drafts that expire and supersede older ones.
+  proposals stored as system drafts that expire and supersede older ones. Logs are
+  pruned after 90 days in small batches.
 - v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
   resolution, run matching, per-run merge), matching the frozen v4 vectors exactly.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,

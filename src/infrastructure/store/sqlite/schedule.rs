@@ -23,6 +23,10 @@ use crate::domain::scheduler::{
 use crate::infrastructure::store::history::touched_keys;
 use crate::infrastructure::store::order::sort_snapshot;
 
+/// `SQLITE_CONSTRAINT_TRIGGER` (a trigger's `RAISE`): sqlx 0.8.6 reports it
+/// as `ErrorKind::Other`, so it is matched by extended code.
+const SQLITE_CONSTRAINT_TRIGGER: &str = "1811";
+
 pub(super) fn store_error(error: sqlx::Error) -> StoreError {
     match &error {
         sqlx::Error::Database(db) => match db.kind() {
@@ -30,6 +34,9 @@ pub(super) fn store_error(error: sqlx::Error) -> StoreError {
             | ErrorKind::ForeignKeyViolation
             | ErrorKind::NotNullViolation
             | ErrorKind::CheckViolation => StoreError::Constraint(db.message().to_owned()),
+            _ if db.code().as_deref() == Some(SQLITE_CONSTRAINT_TRIGGER) => {
+                StoreError::Constraint(db.message().to_owned())
+            }
             _ => StoreError::Backend(error.to_string()),
         },
         _ => StoreError::Backend(error.to_string()),

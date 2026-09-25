@@ -23,6 +23,73 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     rescan_jobs_stop_changing_once_final(make().await).await;
     allowance_overrides_replace_and_clear(make().await).await;
     tips_are_claimed_once_per_member_and_week(make().await).await;
+    retention_prunes_old_logs_and_processed_messages(make().await).await;
+}
+
+async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(store: S) {
+    let cutoff = utc(20, 0, 0);
+    let just_before = cutoff - chrono::TimeDelta::microseconds(1);
+    for (id, at) in [("x-old", just_before), ("x-edge", cutoff)] {
+        store
+            .record_extraction(extraction(id, at))
+            .await
+            .expect("record");
+    }
+    let mut old_chat = chat("c-old", just_before);
+    old_chat.rounds = vec![round("kanata/old", &["old_tool"])];
+    store.record_chat(old_chat).await.expect("record");
+    store
+        .record_chat(chat("c-edge", cutoff))
+        .await
+        .expect("record");
+    for (id, at) in [
+        ("m-old", just_before),
+        ("m-pending", just_before),
+        ("m-new", cutoff),
+    ] {
+        store
+            .upsert_message(message(id, "900", at, "x"))
+            .await
+            .expect("message");
+    }
+    store
+        .mark_processed(&["m-old".into(), "m-new".into()], cutoff)
+        .await
+        .expect("processed");
+    assert_eq!(
+        store.prune_model_logs(cutoff).await.expect("prune"),
+        crate::domain::model_log::PruneCounts {
+            extractions: 1,
+            chats: 1,
+            messages: 1,
+        },
+        "retention: strictly before the cutoff; unprocessed messages stay"
+    );
+    assert_eq!(store.load_extraction("x-old").await.expect("load"), None);
+    assert!(
+        store
+            .load_extraction("x-edge")
+            .await
+            .expect("load")
+            .is_some()
+    );
+    assert_eq!(store.load_chat("c-old").await.expect("load"), None);
+    let facets = store.chat_facets().await.expect("facets");
+    assert_eq!(facets.total, 1);
+    assert_eq!(
+        (facets.models, facets.tools),
+        (vec!["kanata/chat".to_owned()], Vec::<String>::new()),
+        "retention: a pruned chat's rounds and tools go with it"
+    );
+    let left = store
+        .channel_messages("900", utc(1, 0, 0), false)
+        .await
+        .expect("messages");
+    assert_eq!(ids(&left, |m| &m.id), ["m-pending", "m-new"]);
+    assert_eq!(
+        store.prune_model_logs(cutoff).await.expect("again"),
+        crate::domain::model_log::PruneCounts::default()
+    );
 }
 
 fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {

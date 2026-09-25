@@ -96,6 +96,32 @@ pub(super) async fn load(
     .transpose()
 }
 
+/// Optional filters are `?n IS NULL OR …`, so SQLite cannot use a per-column
+/// index; the plan walks `extractions_recent` newest first and stops at the
+/// page limit (a bounded scan, pinned by `plans::list_walks_the_time_index`).
+pub(super) fn list_sql() -> String {
+    format!(
+        "SELECT {COLUMNS} FROM extractions e \
+         WHERE (?1 IS NULL OR e.model = ?1) \
+         AND (?2 IS NULL OR e.at >= ?2) \
+         AND (?3 IS NULL OR e.at < ?3) \
+         AND (?4 IS NULL OR e.outcome IN (SELECT value FROM json_each(?4))) \
+         AND (?5 IS NULL OR e.channel_id = ?5) \
+         AND (?6 IS NULL OR EXISTS (SELECT 1 FROM extraction_members m \
+              WHERE m.extraction_id = e.id AND m.member_id = ?6)) \
+         AND (?7 IS NULL OR instr(lower(e.prompt), lower(?7)) > 0 \
+              OR instr(lower(e.raw_response), lower(?7)) > 0) \
+         AND (?8 IS NULL OR e.at < ?8 OR (e.at = ?8 AND e.id < ?9)) \
+         ORDER BY e.at DESC, e.id DESC LIMIT ?10"
+    )
+}
+
+pub(super) const FACET_SQL: [&str; 3] = [
+    "SELECT DISTINCT model FROM extractions ORDER BY 1",
+    "SELECT DISTINCT outcome FROM extractions ORDER BY 1",
+    "SELECT DISTINCT channel_id FROM extractions WHERE channel_id IS NOT NULL ORDER BY 1",
+];
+
 pub(super) async fn list(
     conn: &mut SqliteConnection,
     filter: &ExtractionFilter,
@@ -110,35 +136,22 @@ pub(super) async fn list(
                 .collect::<Vec<_>>(),
         )
     });
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM extractions e \
-         WHERE (?1 IS NULL OR e.model = ?1) \
-         AND (?2 IS NULL OR e.at >= ?2) \
-         AND (?3 IS NULL OR e.at < ?3) \
-         AND (?4 IS NULL OR e.outcome IN (SELECT value FROM json_each(?4))) \
-         AND (?5 IS NULL OR e.channel_id = ?5) \
-         AND (?6 IS NULL OR EXISTS (SELECT 1 FROM extraction_members m \
-              WHERE m.extraction_id = e.id AND m.member_id = ?6)) \
-         AND (?7 IS NULL OR instr(lower(e.prompt), lower(?7)) > 0 \
-              OR instr(lower(e.raw_response), lower(?7)) > 0) \
-         AND (?8 IS NULL OR e.at < ?8 OR (e.at = ?8 AND e.id < ?9)) \
-         ORDER BY e.at DESC, e.id DESC LIMIT ?10"
-    ))
-    .bind(&filter.model)
-    .bind(optional_instant(filter.from.as_ref())?)
-    .bind(optional_instant(filter.to.as_ref())?)
-    .bind(outcomes)
-    .bind(&filter.channel)
-    .bind(&filter.member)
-    .bind(&filter.q)
-    .bind(optional_instant(
-        filter.cursor.as_ref().map(|cursor| &cursor.at),
-    )?)
-    .bind(filter.cursor.as_ref().map(|cursor| cursor.id.as_str()))
-    .bind(i64::from(size) + 1)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(store_error)?;
+    let rows = sqlx::query(&list_sql())
+        .bind(&filter.model)
+        .bind(optional_instant(filter.from.as_ref())?)
+        .bind(optional_instant(filter.to.as_ref())?)
+        .bind(outcomes)
+        .bind(&filter.channel)
+        .bind(&filter.member)
+        .bind(&filter.q)
+        .bind(optional_instant(
+            filter.cursor.as_ref().map(|cursor| &cursor.at),
+        )?)
+        .bind(filter.cursor.as_ref().map(|cursor| cursor.id.as_str()))
+        .bind(i64::from(size) + 1)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
     let items = rows.iter().map(log_of).collect::<Result<Vec<_>, _>>()?;
     Ok(page(items, size))
 }
@@ -186,13 +199,9 @@ pub(super) async fn facets(conn: &mut SqliteConnection) -> Result<LogFacets, Sto
         .map_err(store_error)?;
     Ok(LogFacets {
         total: u64::try_from(total).unwrap_or_default(),
-        models: distinct(conn, "SELECT DISTINCT model FROM extractions ORDER BY 1").await?,
+        models: distinct(conn, FACET_SQL[0]).await?,
         tools: Vec::new(),
-        outcomes: distinct(conn, "SELECT DISTINCT outcome FROM extractions ORDER BY 1").await?,
-        channels: distinct(
-            conn,
-            "SELECT DISTINCT channel_id FROM extractions WHERE channel_id IS NOT NULL ORDER BY 1",
-        )
-        .await?,
+        outcomes: distinct(conn, FACET_SQL[1]).await?,
+        channels: distinct(conn, FACET_SQL[2]).await?,
     })
 }

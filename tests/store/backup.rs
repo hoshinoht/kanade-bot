@@ -27,7 +27,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 7);
+    assert_eq!(restored.schema_version().await.expect("version"), 8);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -149,14 +149,14 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (8, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (9, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
     assert!(
         matches!(
             error,
-            SqliteStoreError::FutureVersion { found: 8, known: 7 }
+            SqliteStoreError::FutureVersion { found: 9, known: 8 }
         ),
         "{error}"
     );

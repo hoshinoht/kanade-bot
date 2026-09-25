@@ -7,6 +7,9 @@ mod chat;
 mod extractions;
 mod jobs;
 mod messages;
+#[cfg(test)]
+mod plans;
+mod prune;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -18,7 +21,7 @@ use super::rows;
 use super::schedule::store_error;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets,
-    LogPage, MessageUpsert, ModelLogStore, RescanJob, WatchedMessage,
+    LogPage, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, RescanJob, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -152,6 +155,21 @@ impl ModelLogStore for SqliteStore {
 
     async fn chat_facets(&self) -> Result<LogFacets, StoreError> {
         read_txn!(self, tx, chat::facets(&mut tx))
+    }
+
+    async fn prune_model_logs(&self, before: DateTime<Utc>) -> Result<PruneCounts, StoreError> {
+        let mut total = PruneCounts::default();
+        loop {
+            let done: PruneCounts =
+                write_txn!(self, tx, prune::batch(&mut tx, &before, PRUNE_BATCH))?;
+            total.extractions += done.extractions;
+            total.chats += done.chats;
+            total.messages += done.messages;
+            let full = u64::from(PRUNE_BATCH);
+            if done.extractions < full && done.chats < full && done.messages < full {
+                return Ok(total);
+            }
+        }
     }
 
     async fn insert_rescan_job(&self, job: RescanJob) -> Result<(), StoreError> {

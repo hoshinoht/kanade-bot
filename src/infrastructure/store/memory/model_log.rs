@@ -8,8 +8,8 @@ use chrono::{DateTime, Utc};
 use super::{MemoryScheduleStore, micros};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ExtractionFilter, ExtractionLog,
-    LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, RescanJob, WatchedMessage,
-    page_size,
+    LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, PruneCounts, RescanJob,
+    WatchedMessage, page_size,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -294,6 +294,23 @@ impl ModelLogStore for MemoryScheduleStore {
             tools: sorted(rounds().flat_map(|round| round.tools.iter().cloned())),
             outcomes: sorted(outcomes),
             channels: sorted(all().filter_map(|chat| chat.channel_id.clone())),
+        })
+    }
+
+    async fn prune_model_logs(&self, before: DateTime<Utc>) -> Result<PruneCounts, StoreError> {
+        let before = micros(before);
+        let mut logs = self.logs();
+        let extractions = logs.extractions.len();
+        logs.extractions.retain(|_, log| log.at >= before);
+        let chats = logs.chats.len();
+        logs.chats.retain(|_, chat| chat.at >= before);
+        let messages = logs.messages.len();
+        logs.messages
+            .retain(|_, message| message.processed_at.is_none() || message.created_at >= before);
+        Ok(PruneCounts {
+            extractions: (extractions - logs.extractions.len()) as u64,
+            chats: (chats - logs.chats.len()) as u64,
+            messages: (messages - logs.messages.len()) as u64,
         })
     }
 

@@ -97,21 +97,31 @@ pub(super) async fn delete(conn: &mut SqliteConnection, id: &str) -> Result<bool
     Ok(done.rows_affected() > 0)
 }
 
+/// Two constant variants: a bound `processed_at` flag would keep SQLite off
+/// the partial `messages_unprocessed` index the extractor's reads need.
+pub(super) fn in_channel_sql(unprocessed_only: bool) -> String {
+    let pending = if unprocessed_only {
+        "AND processed_at IS NULL "
+    } else {
+        ""
+    };
+    format!(
+        "SELECT {COLUMNS} FROM messages WHERE channel_id = ?1 AND created_at >= ?2 \
+         {pending}ORDER BY created_at, id"
+    )
+}
+
 pub(super) async fn in_channel(
     conn: &mut SqliteConnection,
     channel_id: &str,
     since: &DateTime<Utc>,
     unprocessed_only: bool,
 ) -> Result<Vec<WatchedMessage>, StoreError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM messages WHERE channel_id = ?1 AND created_at >= ?2 \
-         AND (?3 = 0 OR processed_at IS NULL) ORDER BY created_at, id"
-    ))
-    .bind(channel_id)
-    .bind(instant(since)?)
-    .bind(unprocessed_only)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(store_error)?;
+    let rows = sqlx::query(&in_channel_sql(unprocessed_only))
+        .bind(channel_id)
+        .bind(instant(since)?)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
     rows.iter().map(message_of).collect()
 }
