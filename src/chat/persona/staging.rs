@@ -21,10 +21,6 @@ pub enum StagingState {
     Generic,
 }
 
-fn is_line_break(c: char) -> bool {
-    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
-}
-
 /// Visible Discord mention syntax; mentions stay disabled when sending regardless.
 pub(crate) fn has_mention(text: &str) -> bool {
     let lower = text.to_lowercase();
@@ -34,13 +30,23 @@ pub(crate) fn has_mention(text: &str) -> bool {
         || lower.contains("@here")
 }
 
-/// Braces must form only the allowed literal fields.
+/// Braces must form only the allowed literal fields. One left-to-right scan, as
+/// substitution does, so deleting a field can never assemble another one.
 pub(crate) fn only_fields(text: &str, allowed: &[&str]) -> bool {
-    let mut rest = text.to_owned();
-    for field in allowed {
-        rest = rest.replace(field, "");
+    let mut rest = text;
+    while let Some(index) = rest.find(['{', '}']) {
+        let tail = &rest[index..];
+        match allowed.iter().find(|field| tail.starts_with(**field)) {
+            Some(field) => rest = &tail[field.len()..],
+            None => return false,
+        }
     }
-    !rest.contains(['{', '}'])
+    true
+}
+
+/// Line breaks in any form, including U+0085, VT, FF, U+2028 and U+2029.
+pub(crate) fn is_line_break(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
 }
 
 fn check(value: &str, named: bool) -> Result<(), PersonaError> {

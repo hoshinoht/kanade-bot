@@ -29,10 +29,11 @@ are rejected. Block scalars (`|`) keep their internal newlines.
 - **Bundle:** `id` (matching the filename), `identity`, `behaviour` with a
   required `prompt` and optional one-line `voice`, a complete `staging` map
   (`schedule`, `guide`, `guide_named`, `write`, `generic`), optional
-  `compact` and optional `nudges`. `compact` holds v5-only one-line rewrite
-  prompts for a small model, at least one of `header_rewrite` (reminder
-  header lines) and `nudge_rewrite` (self-service nudge lead-ins). The tracked
-  Kanade bundle carries `header_rewrite` only.
+  `compact` and optional `nudges`. `compact` holds v5-only prompts (text of
+  any length) that ask a small model to rewrite a single line: at least one
+  of `header_rewrite` (reminder header lines) and `nudge_rewrite`
+  (self-service nudge lead-ins). The tracked Kanade bundle carries
+  `header_rewrite` only.
 - **Profile:** `id` (matching the filename), `label`, optional `voice`,
   `prompt`, optional partial `staging` and optional `nudges`; missing staging
   keys come from the selected bundle.

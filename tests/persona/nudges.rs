@@ -112,6 +112,10 @@ fn nudge_pools_are_strictly_validated() {
         "  playful: ['{name} look', b, c]\n".into(),
         "  playful: ['{0} look', b, c]\n".into(),
         "  playful: ['{boss!r}', b, c]\n".into(),
+        // Deleting `{boss}` would assemble `{day}`; the scan must still refuse it.
+        "  playful: ['{da{boss}y} look', b, c]\n".into(),
+        "  playful: ['{boss}} look', b, c]\n".into(),
+        "  playful: ['{{time} look', b, c]\n".into(),
         "  playful: [' padded', b, c]\n".into(),
         "  playful: ['', b, c]\n".into(),
         "  playful: [\"two\\nlines\", b, c]\n".into(),

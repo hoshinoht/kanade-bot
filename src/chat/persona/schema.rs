@@ -143,7 +143,7 @@ fn non_empty(value: String, what: &'static str) -> Result<String, PersonaError> 
 
 fn one_line(value: String, what: &'static str) -> Result<String, PersonaError> {
     let value = non_empty(value, what)?;
-    if value.contains(['\n', '\r']) {
+    if value.chars().any(staging::is_line_break) {
         Err(PersonaError::Invalid(what))
     } else {
         Ok(value)
@@ -307,7 +307,8 @@ impl TryFrom<RawStagingOverride> for StagingOverride {
     }
 }
 
-/// One-line rewrite instructions for a small model; v5-only, no v4 oracle.
+/// Instructions for a small model that rewrites a single line; the prompts
+/// themselves may span lines (tracked Kanade's is byte-pinned). v5-only.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Compact {
     /// Reminder header-line rewrite.

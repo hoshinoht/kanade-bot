@@ -36,6 +36,8 @@ fn bundle_lines_follow_the_strict_rules() {
         ("guide_named", "'{boss} {0}'"),
         ("guide_named", "'{boss!r}'"),
         ("guide_named", "'{{boss}}'"),
+        ("guide_named", "'{{boss}boss}'"),
+        ("guide_named", "'{bo{boss}ss}'"),
         ("schedule", "'checking {boss}'"),
         ("write", "'{name} writes'"),
         ("generic", "'odd } brace'"),

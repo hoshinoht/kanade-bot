@@ -6,7 +6,7 @@ use serde::Deserialize;
 use super::{
     PersonaError,
     markdown::strip,
-    staging::{has_mention, only_fields},
+    staging::{has_mention, is_line_break, only_fields},
 };
 
 pub const MIN_NUDGE_LINES: usize = 3;
@@ -95,10 +95,7 @@ pub fn check_nudge_line(line: &str) -> Result<(), PersonaError> {
             "nudge lines must be non-empty and unpadded",
         ));
     }
-    if line
-        .chars()
-        .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
-    {
+    if line.chars().any(is_line_break) {
         return Err(PersonaError::Invalid("nudge lines must be one line"));
     }
     if line.chars().count() > MAX_NUDGE_CHARS {

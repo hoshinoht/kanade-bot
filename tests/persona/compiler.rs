@@ -20,6 +20,36 @@ use crate::{
     support::{Fixture, bundle, catalog, pid, prof, profile, tracked},
 };
 
+#[test]
+fn clock_header_ends_the_boss_week_seven_wall_clock_days_later_across_dst() {
+    use chrono::DateTime;
+    use kanade::chat::persona::TurnContext;
+
+    let header = |now: &str, week: &str| {
+        let now = DateTime::parse_from_rfc3339(now).unwrap();
+        let week = DateTime::parse_from_rfc3339(week).unwrap();
+        TurnContext::new(&now, chrono_tz::Europe::London, &week, "", "")
+            .header()
+            .to_owned()
+    };
+    // BST ends 25 Oct 2026: the reset stays at 00:00 local, not 23:00.
+    assert_eq!(
+        header("2026-10-27T12:00:00Z", "2026-10-21T23:00:00Z"),
+        "Right now it is Tuesday 27 October 2026, 12:00 (Europe/London). The calendar week is \
+         Monday 26 October to Sunday 01 November. The current boss week runs from Thursday 22 \
+         October 00:00 to Thursday 29 October 00:00. Unqualified 'this week' and 'next week' \
+         mean calendar weeks."
+    );
+    // BST starts 29 Mar 2026: likewise 00:00 local, not 01:00.
+    assert_eq!(
+        header("2026-03-30T12:00:00Z", "2026-03-26T00:00:00Z"),
+        "Right now it is Monday 30 March 2026, 13:00 (Europe/London). The calendar week is \
+         Monday 30 March to Sunday 05 April. The current boss week runs from Thursday 26 March \
+         00:00 to Thursday 02 April 00:00. Unqualified 'this week' and 'next week' mean \
+         calendar weeks."
+    );
+}
+
 /// Normative illustration from the standardize-prompt-format step, verbatim.
 const TSUNDERE: &str = r#"# profiles/tsundere.yaml
 schema_version: 1

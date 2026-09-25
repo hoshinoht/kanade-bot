@@ -43,7 +43,7 @@ pub struct CompileProvenance {
 }
 
 /// Seed lines for one nudge, most specific pool first found.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct NudgeSeeds<'a> {
     pub lines: Vec<&'a str>,
     pub source: NudgeSource,
@@ -273,5 +273,15 @@ impl fmt::Debug for CompiledPersona {
             .field("has_compact", &self.prompt_compact.is_some())
             .field("provenance", &self.provenance)
             .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for NudgeSeeds<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NudgeSeeds")
+            .field("lines", &self.lines.len())
+            .field("source", &self.source)
+            .finish()
     }
 }
