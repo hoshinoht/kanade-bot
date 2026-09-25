@@ -67,6 +67,17 @@ impl ApiError {
         error: "rate_limited",
         message: "Too many attempts; try again shortly.",
     };
+    /// The authenticated edge sent no usable `X-Forwarded-For`.
+    pub const BAD_FORWARDING: Self = Self {
+        status: StatusCode::BAD_REQUEST,
+        error: "bad_forwarding",
+        message: "The proxy did not identify the client.",
+    };
+    pub const INVALID_QUERY: Self = Self {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        error: "invalid_query",
+        message: "A query parameter is not valid.",
+    };
     pub const INVALID_BODY: Self = Self {
         status: StatusCode::BAD_REQUEST,
         error: "invalid_body",

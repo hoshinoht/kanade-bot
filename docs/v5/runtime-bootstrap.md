@@ -87,6 +87,24 @@ Known gap: `axum::serve` sets no header-read timeout, so slow-header clients
 are bounded by the edge/cloudflared in front of the loopback listeners until
 harden-and-package revisits connection limits.
 
+### Admin reads: composition still missing
+
+`serve --offline` builds neither `AdminAuth` nor `ApiState`, so admin reads
+answer `503 auth_unavailable`. A composed `serve` must supply: an opened
+`SqliteStore` (sessions, members, schedule; `ApiState.store`,
+`api::auth::from_settings`); a boss-catalog YAML loader (only the validated
+`BossTable` exists); `KANADE_KNOWLEDGE_DIR`-style config for
+`ApiState.knowledge_dir`; the guild's `ChannelList` and chat pilot role from
+the gateway/config; the reply-style profile list for `personas`; the guild
+id for card links; the `SchedulePolicy` from runtime settings; and a
+production `StaffGate` = `GuildStaffGate` over `StoreGuildMembers` sharing one
+`GuildAccess` with `ApiState`. Gateway wiring: `BotEvent::Roster` →
+`api::auth::roster::on_roster_update`, `BotEvent::GuildAvailable` →
+`on_guild_available`. Missing seam: `RosterUpdate::Seen` carries no role ids
+or computed Administrator permission (it needs the member's roles and the
+guild's role permissions from `GuildCreate`), so stored `roles` /
+`is_guild_admin` are not refreshed by gateway updates yet.
+
 ### Edge contract (admin origin)
 
 For the shared edge (`sites/kanade`); owned and applied by the edge owner.
@@ -115,6 +133,15 @@ For the shared edge (`sites/kanade`); owned and applied by the edge owner.
   otherwise it strips them. With the secret configured, a peer that omits it
   gets no forwarding trust either. `X-Kanade-Edge-Auth` is always stripped
   before handlers.
+- A request that presents the secret must carry a parseable `X-Forwarded-For`;
+  otherwise kanade answers `400 bad_forwarding` rather than falling back to the
+  edge's own address, which would pool every client into one rate-limit
+  bucket (a misconfigured edge fails loudly).
+- Without `KANADE_EDGE_SECRET_FILE`, `KANADE_TRUSTED_PROXY` is trusted by
+  address alone: any process that can connect from that address (on
+  loopback, every local process) can set `X-Forwarded-For` and so choose the
+  per-IP rate-limit bucket and the client IP in audit records. Configure the
+  secret whenever the proxy address is shared.
 - The edge must not forward `/healthz`; the container healthcheck calls kanade
   directly (loopback or its own address) without the secret. A relayed
   `/healthz` carrying the secret answers 404.

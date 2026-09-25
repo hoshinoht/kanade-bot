@@ -82,27 +82,37 @@ pub async fn art(
     let Ok(UrlPath((kind, key))) = path else {
         return ApiError::NOT_FOUND.into_response();
     };
-    let dir = match kind.as_str() {
-        "portraits" => "portraits",
-        "icons" => "portraits/icon",
-        "entry" => "artwork/entry",
-        _ => return ApiError::NOT_FOUND.into_response(),
+    // With a catalog, only catalog keys (exact case) resolve, through their portrait basename.
+    let basename = match site.state.as_ref() {
+        Some(state) => match state.catalog.boss(&key) {
+            Some(boss) => boss.portrait().unwrap_or(boss.short()).to_owned(),
+            None => return ApiError::NOT_FOUND.into_response(),
+        },
+        None => key,
     };
-    // Catalog keys are mixed case (`MaleficStar`); shape only until the catalog is in the API state.
-    let key_ok = (1..=64).contains(&key.len())
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
-    let Some(root) = site.boss_dir.as_ref().filter(|_| key_ok) else {
-        return ApiError::NOT_FOUND.into_response();
-    };
-    let found = ART_SUFFIXES
-        .iter()
-        .find_map(|suffix| contained(root, &Path::new(dir).join(format!("{key}.{suffix}"))));
-    match found {
+    match art_file(site.boss_dir.as_deref(), &kind, &basename) {
         Some(path) => send(&path).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
+}
+
+/// The art file for `kind` (`portraits`, `icons`, `entry`) and a basename, if present.
+/// Basenames are plain (mixed case allowed, as catalog keys like `MaleficStar`).
+pub fn art_file(root: Option<&Path>, kind: &str, basename: &str) -> Option<PathBuf> {
+    let dir = match kind {
+        "portraits" => "portraits",
+        "icons" => "portraits/icon",
+        "entry" => "artwork/entry",
+        _ => return None,
+    };
+    let plain = (1..=64).contains(&basename.len())
+        && basename
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+    let root = root.filter(|_| plain)?;
+    ART_SUFFIXES
+        .iter()
+        .find_map(|suffix| contained(root, &Path::new(dir).join(format!("{basename}.{suffix}"))))
 }
 
 /// Paths owned by the server (in any case, or after a doubled slash): never the SPA shell.

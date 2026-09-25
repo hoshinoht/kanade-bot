@@ -7,4 +7,6 @@ mod auth;
 mod headers;
 mod origins;
 mod proxy;
+mod reads;
+mod schemas;
 mod support;

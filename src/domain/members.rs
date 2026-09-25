@@ -4,9 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::future::Future;
+use std::sync::Arc;
 
 use crate::domain::ids::short_id;
 use crate::domain::pytext;
+use crate::domain::scheduler::StoreError;
 
 /// A member's mention preference, in v4's `PING_LEVELS` order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -134,6 +137,70 @@ pub trait Directory {
     fn display_name(&self, user_id: &str) -> Option<String> {
         self.member(user_id)?.name().map(str::to_owned)
     }
+}
+
+/// A persisted `members` row: the roster entry plus what the portal edits
+/// (aliases, reply style) and the gateway's view of the member's roles, which
+/// the admin staff gate reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MemberProfile {
+    pub member: Member,
+    /// Lowercase one-word names the extractor also matches; unique across members.
+    pub aliases: Vec<String>,
+    /// Chosen reply-style profile key; `None` is the default.
+    pub reply_style: Option<String>,
+    /// Role ids from the last gateway update; cleared when they leave.
+    pub roles: Vec<String>,
+    /// Discord's computed Administrator permission from the last gateway update.
+    pub is_guild_admin: bool,
+}
+
+/// Persistence of the member table. Reads never take the writer.
+pub trait MemberStore {
+    /// Every row, by user id.
+    fn list_members(&self) -> impl Future<Output = Result<Vec<MemberProfile>, StoreError>> + Send;
+
+    fn load_member(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send;
+
+    /// Insert or replace one row. An alias another member already holds, or an
+    /// alias [`is_valid_alias`] refuses, is [`StoreError::Constraint`].
+    fn put_member(
+        &self,
+        profile: MemberProfile,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+}
+
+/// A shared store is a member store (the API holds stores behind `Arc`).
+impl<T: MemberStore + Send + Sync> MemberStore for Arc<T> {
+    fn list_members(&self) -> impl Future<Output = Result<Vec<MemberProfile>, StoreError>> + Send {
+        (**self).list_members()
+    }
+
+    fn load_member(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send {
+        (**self).load_member(user_id)
+    }
+
+    fn put_member(
+        &self,
+        profile: MemberProfile,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send {
+        (**self).put_member(profile)
+    }
+}
+
+/// An alias as stored: one lowercase word (1..=64 characters, no whitespace or
+/// control characters). Loose enough for any name v4 stored; the portal's
+/// stricter input rule is its own.
+pub fn is_valid_alias(alias: &str) -> bool {
+    (1..=64).contains(&alias.chars().count())
+        && alias.to_lowercase() == alias
+        && !alias.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 /// A borrowed directory (including `&dyn Directory`) is a directory.

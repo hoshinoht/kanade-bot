@@ -184,10 +184,12 @@ impl AdminAuth {
         context: &AuditContext,
     ) -> Result<AdminSession, ApiError> {
         let now = self.now();
-        // Checked before comparing, so a client out of failures cannot keep guessing.
+        // The client's failures are checked before comparing, so it cannot keep
+        // guessing; the global bucket only ever refuses wrong tokens, so guesses
+        // from many addresses cannot lock out the right one.
         if !self
             .rate()
-            .allows(Route::BearerFailure, context.client, now)
+            .allows_client(Route::BearerFailure, context.client, now)
         {
             self.audit(
                 context,
@@ -217,7 +219,17 @@ impl AdminAuth {
                 session_id: None,
             });
         }
-        self.rate().take(Route::BearerFailure, context.client, now);
+        self.rate()
+            .take_client(Route::BearerFailure, context.client, now);
+        if !self.rate().take_global(Route::BearerFailure, now) {
+            self.audit(
+                context,
+                AuditEvent::RateLimited {
+                    route: Route::BearerFailure.as_str(),
+                },
+            );
+            return Err(ApiError::RATE_LIMITED);
+        }
         self.audit(
             context,
             AuditEvent::LoginRefused {

@@ -57,6 +57,13 @@ impl Limits {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Buckets {
+    Client,
+    Global,
+    Both,
+}
+
 /// Bounds memory: beyond this many tracked clients, idle ones are dropped and
 /// then unknown clients are refused (the global bucket still bounds work).
 const MAX_CLIENTS: usize = 4096;
@@ -116,19 +123,42 @@ impl RateLimits {
     /// Take one token from the client's and the global bucket; `false` (and
     /// nothing taken) when either is empty.
     pub fn take(&self, route: Route, client: Option<IpAddr>, now: DateTime<Utc>) -> bool {
-        self.admit(route, client, now, true)
+        self.admit(route, client, now, true, Buckets::Both)
     }
 
     /// Whether [`Self::take`] would succeed, without taking.
     pub fn allows(&self, route: Route, client: Option<IpAddr>, now: DateTime<Utc>) -> bool {
-        self.admit(route, client, now, false)
+        self.admit(route, client, now, false, Buckets::Both)
     }
 
-    fn admit(&self, route: Route, client: Option<IpAddr>, now: DateTime<Utc>, take: bool) -> bool {
+    /// The client's bucket only.
+    pub fn take_client(&self, route: Route, client: Option<IpAddr>, now: DateTime<Utc>) -> bool {
+        self.admit(route, client, now, true, Buckets::Client)
+    }
+
+    pub fn allows_client(&self, route: Route, client: Option<IpAddr>, now: DateTime<Utc>) -> bool {
+        self.admit(route, client, now, false, Buckets::Client)
+    }
+
+    /// The route's global bucket only.
+    pub fn take_global(&self, route: Route, now: DateTime<Utc>) -> bool {
+        self.admit(route, None, now, true, Buckets::Global)
+    }
+
+    fn admit(
+        &self,
+        route: Route,
+        client: Option<IpAddr>,
+        now: DateTime<Utc>,
+        take: bool,
+        buckets: Buckets,
+    ) -> bool {
         let limits = (self.limits)(route);
         let mut state = self.state();
         let key = (route, client);
-        if !state.clients.contains_key(&key) && state.clients.len() >= MAX_CLIENTS {
+        let use_client = buckets != Buckets::Global;
+        let use_global = buckets != Buckets::Client;
+        if use_client && !state.clients.contains_key(&key) && state.clients.len() >= MAX_CLIENTS {
             state.clients.retain(|(route, _), bucket| {
                 let rule = (self.limits)(*route).per_ip;
                 bucket.refill(rule, now);
@@ -142,19 +172,26 @@ impl RateLimits {
             .global
             .entry(route)
             .or_insert_with(|| Bucket::full(limits.global, now));
-        let mut own = *state
+        let mut own = state
             .clients
-            .entry(key)
-            .or_insert_with(|| Bucket::full(limits.per_ip, now));
+            .get(&key)
+            .copied()
+            .unwrap_or_else(|| Bucket::full(limits.per_ip, now));
         global.refill(limits.global, now);
         own.refill(limits.per_ip, now);
-        let allowed = global.tokens >= 1.0 && own.tokens >= 1.0;
+        let allowed = (!use_global || global.tokens >= 1.0) && (!use_client || own.tokens >= 1.0);
         if allowed && take {
-            global.tokens -= 1.0;
-            own.tokens -= 1.0;
+            if use_global {
+                global.tokens -= 1.0;
+            }
+            if use_client {
+                own.tokens -= 1.0;
+            }
         }
         state.global.insert(route, global);
-        state.clients.insert(key, own);
+        if use_client {
+            state.clients.insert(key, own);
+        }
         allowed
     }
 }

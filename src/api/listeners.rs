@@ -9,6 +9,7 @@ use super::{
     admin, assets,
     auth::{AdminAuth, crypto::SealedSecret},
     error, guard, public,
+    state::ApiState,
 };
 use crate::runtime::config::HttpConfig;
 
@@ -56,6 +57,8 @@ pub struct Site {
     pub edge_secret: Option<Arc<SealedSecret>>,
     /// The listener's bound address: a client there is on this host (healthcheck).
     pub listener_ip: Option<IpAddr>,
+    /// Admin reads; `None` answers `unavailable`. Never set on the public site.
+    pub state: Option<Arc<ApiState>>,
 }
 
 impl Site {
@@ -102,6 +105,7 @@ impl Site {
             auth: None,
             edge_secret: None,
             listener_ip: None,
+            state: None,
         }
     }
 }
@@ -111,6 +115,7 @@ pub fn router(mut site: Site) -> Router {
         // Admin credentials must mean nothing on the public origin.
         site.auth = None;
         site.edge_secret = None;
+        site.state = None;
     }
     let site = Arc::new(site);
     let routes = match site.origin {

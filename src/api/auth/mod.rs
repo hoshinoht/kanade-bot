@@ -12,6 +12,7 @@ pub mod discord_http;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
 pub mod rate;
+pub mod roster;
 mod secrets;
 mod session;
 pub mod staff;

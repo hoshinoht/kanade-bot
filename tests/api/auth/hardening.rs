@@ -4,12 +4,162 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use kanade::api::auth::{audit::AuditEvent, wire};
+use kanade::api::auth::{
+    audit::AuditEvent,
+    rate::{Limits, Route, Rule},
+    wire,
+};
 
 use super::{ADMIN_ROLE, Harness, ORIGIN, TOKEN, cookie, member, user};
 
 fn start_path() -> &'static str {
     "/api/admin/auth/discord/start"
+}
+
+/// Roomy per client, tight globally: stands in for guesses from many addresses.
+fn tight_global(_: Route) -> Limits {
+    Limits {
+        per_ip: Rule {
+            burst: 100.0,
+            per_minute: 100.0,
+        },
+        global: Rule {
+            burst: 3.0,
+            per_minute: 1.0,
+        },
+    }
+}
+
+#[tokio::test]
+async fn distributed_guessing_never_locks_out_the_right_token() {
+    let harness = Harness::limited(tight_global).await;
+    for _ in 0..3 {
+        let reply = harness
+            .post(
+                "/api/admin/auth/token",
+                &[ORIGIN],
+                Some(r#"{"token":"guess"}"#),
+            )
+            .await;
+        assert_eq!(reply.status, 401);
+    }
+    let guess = harness
+        .post(
+            "/api/admin/auth/token",
+            &[ORIGIN],
+            Some(r#"{"token":"guess"}"#),
+        )
+        .await;
+    assert_eq!(guess.status, 429, "wrong tokens share the global budget");
+    let right = format!(r#"{{"token":"{TOKEN}"}}"#);
+    let reply = harness
+        .post("/api/admin/auth/token", &[ORIGIN], Some(&right))
+        .await;
+    assert_eq!(
+        reply.status, 200,
+        "the right token is never refused globally"
+    );
+
+    for _ in 0..3 {
+        let reply = harness
+            .get("/api/admin/session", &[("Authorization", "Bearer guess")])
+            .await;
+        assert_eq!(reply.status, 401);
+    }
+    let guess = harness
+        .get("/api/admin/session", &[("Authorization", "Bearer guess")])
+        .await;
+    assert_eq!(guess.status, 429);
+    let bearer = format!("Bearer {TOKEN}");
+    assert_eq!(
+        harness
+            .get("/api/admin/session", &[("Authorization", &bearer)])
+            .await
+            .status,
+        200
+    );
+}
+
+#[tokio::test]
+async fn roster_events_persist_members_and_end_sessions() {
+    use kanade::{
+        api::{
+            auth::roster::{on_guild_available, on_roster_update},
+            state::GuildAccess,
+        },
+        bot::{commands::AccessPolicy, events::RosterUpdate},
+        domain::members::{MemberProfile, MemberStore},
+    };
+    use twilight_model::id::Id;
+
+    let harness = Harness::new().await;
+    let auth = harness.site.auth.clone().unwrap();
+    harness.guild.put(member(111, &[ADMIN_ROLE], false));
+    let login = harness.discord_login(user(111, "Alice"), "%2F").await;
+    let (name, value) = cookie(&login.cookie(wire::SESSION_COOKIE).unwrap());
+
+    let mut kept = MemberProfile::default();
+    kept.member.user_id = "111".into();
+    kept.aliases = vec!["ali".into()];
+    kept.roles = vec![ADMIN_ROLE.to_string()];
+    harness.store.put_member(kept).await.unwrap();
+
+    let seen = RosterUpdate::Seen {
+        user_id: "111".into(),
+        display_name: "Alice".into(),
+        nickname: Some("Al".into()),
+        has_role: true,
+    };
+    assert_eq!(
+        on_roster_update(&auth, &*harness.store, &seen)
+            .await
+            .unwrap(),
+        0
+    );
+    let row = harness.store.load_member("111").await.unwrap().unwrap();
+    assert_eq!(row.member.nickname.as_deref(), Some("Al"));
+    assert_eq!(
+        row.aliases,
+        ["ali"],
+        "portal edits survive a gateway update"
+    );
+    assert_eq!(
+        harness
+            .get("/api/admin/session", &[(name, &value)])
+            .await
+            .status,
+        200
+    );
+
+    let left = RosterUpdate::Left {
+        user_id: "111".into(),
+    };
+    assert_eq!(
+        on_roster_update(&auth, &*harness.store, &left)
+            .await
+            .unwrap(),
+        1
+    );
+    let row = harness.store.load_member("111").await.unwrap().unwrap();
+    assert!(!row.member.has_role && row.roles.is_empty() && !row.is_guild_admin);
+    assert_eq!(
+        harness
+            .get("/api/admin/session", &[(name, &value)])
+            .await
+            .status,
+        401
+    );
+
+    let access = GuildAccess::new(
+        AccessPolicy {
+            bossing_role_id: Id::new(10),
+            admin_role_id: None,
+            debug_user_ids: Vec::new(),
+        },
+        None,
+    );
+    on_guild_available(&access, Id::new(42));
+    assert_eq!(access.owner(), Some(Id::new(42)));
 }
 
 #[tokio::test]

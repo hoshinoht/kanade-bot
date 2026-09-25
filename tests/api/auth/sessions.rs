@@ -5,7 +5,9 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use kanade::api::auth::wire;
 
-use super::{ADMIN_ROLE, EDGE_AUTH, Harness, ORIGIN, TOKEN, actor_probe, cookie, member, user};
+use super::{
+    ADMIN_ROLE, EDGE_AUTH, EDGE_XFF, Harness, ORIGIN, TOKEN, actor_probe, cookie, member, user,
+};
 use crate::support::{PUBLIC_HOST, request, send};
 
 #[tokio::test]
@@ -261,6 +263,7 @@ async fn actors_are_attributed_per_method() {
             &[
                 ORIGIN,
                 EDGE_AUTH,
+                EDGE_XFF,
                 ("Tailscale-User-Login", "Ops@Example.com"),
             ],
             None,
@@ -278,6 +281,7 @@ async fn actors_are_attributed_per_method() {
             ORIGIN,
             ("X-Kanade-CSRF", &ts_csrf),
             EDGE_AUTH,
+            EDGE_XFF,
             ("Tailscale-User-Login", "ops@example.com"),
         ],
         None,

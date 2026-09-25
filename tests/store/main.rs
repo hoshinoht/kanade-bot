@@ -20,6 +20,27 @@ use kanade::infrastructure::store::{
 };
 
 #[tokio::test]
+async fn memory_members_conform() {
+    kanade::infrastructure::store::members_conformance::run_suite(async || {
+        MemoryScheduleStore::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_members_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    kanade::infrastructure::store::members_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("members-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn memory_web_sessions_conform() {
     web_sessions_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }

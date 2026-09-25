@@ -28,6 +28,7 @@ use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
 mod journal;
+mod members;
 mod model_log;
 mod proposals;
 mod web_sessions;
@@ -120,6 +121,7 @@ pub struct MemoryScheduleStore {
     tables: Mutex<Tables>,
     logs: Mutex<model_log::LogTables>,
     sessions: Mutex<BTreeMap<String, crate::infrastructure::store::web_sessions::WebSession>>,
+    members: Mutex<BTreeMap<String, crate::domain::members::MemberProfile>>,
 }
 
 impl MemoryScheduleStore {

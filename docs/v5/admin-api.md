@@ -71,11 +71,11 @@ whole; unknown or read-only keys are refused with 422.
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
-| `GET /api/admin/week?week=` | — | `Week` (with `version`) | Hidden done/cancelled runs are filtered client-side. |
-| `GET /api/admin/stats?week=` | — | `Stats` | Answers chart. |
-| `GET /api/admin/summary` | — | `Summary` | Now tiles + nav Inbox pip + model tile. |
-| `GET /api/admin/members` | — | `MemberRow[]` | One list for the Members page, filter lists and roster adds (`MemberRow` extends `Member`). |
-| `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. |
+| `GET /api/admin/week?week=` | — | `Week` (with `version`) | Hidden done/cancelled runs are filtered client-side. **Implemented**: `version` is the history head seq (API-1); per-field `versions` are not sent (the frozen `Week` schema has none); `?week=` other than `this`/`next` is `422 invalid_query`; cards show only `day_of`/`countdown_60`/`countdown_15` (the `CardKind` enum); own-time runs have `time: null`. |
+| `GET /api/admin/stats?week=` | — | `Stats` | Answers chart. **Implemented**. |
+| `GET /api/admin/summary` | — | `Summary` | Now tiles + nav Inbox pip + model tile. **Implemented**; `inbox` = live proposals + submitted member requests; `model` is `{busy: false, holder: null}` until the governor is composed. |
+| `GET /api/admin/members` | — | `MemberRow[]` | One list for the Members page, filter lists and roster adds (`MemberRow` extends `Member`). **Implemented**: bossing members plus anyone with staff or pilot access, never bots. |
+| `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. **Implemented** over a `ChannelList` port. |
 | `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins (offline name `Kanade`; `cached` reflects `KANADE_IDENTITY_DIR`). |
 | `GET /api/admin/session` | — | `Session` | Who is signed in. **Implemented** (see Sign-in and sessions). |
 | `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. |
@@ -90,14 +90,14 @@ whole; unknown or read-only keys are refused with 422.
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
-| `GET /api/admin/fixed` | — | `FixedRow[]` | |
+| `GET /api/admin/fixed` | — | `FixedRow[]` | **Implemented**; `runs` lists live runs this and next week. |
 | `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. |
 | `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. |
 | `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. |
 | `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. |
-| `GET /api/admin/bosses` | — | `BossRow[]` | |
-| `GET /api/admin/bosses/events` | — | `EventBoss[]` | New in v5. |
-| `GET /api/admin/bosses/{key}/knowledge` | — | `Knowledge` | Schema v2, served from `boss/knowledge/*.yaml`. |
+| `GET /api/admin/bosses` | — | `BossRow[]` | **Implemented**; keys are catalog short names (`MaleficStar`, exact case, as `/art/*` keys); hue from the catalog guide colour. |
+| `GET /api/admin/bosses/events` | — | `EventBoss[]` | New in v5. **Implemented**. |
+| `GET /api/admin/bosses/{key}/knowledge` | — | `Knowledge` | Schema v2, served from `boss/knowledge/*.yaml`. **Implemented**; unknown or non-alphanumeric keys are 404. |
 
 ## Kanade (inbox, extractions, chat, limits)
 
@@ -123,8 +123,8 @@ whole; unknown or read-only keys are refused with 422.
 |---|---|---|---|
 | `PATCH /api/admin/members/{id}` | `MemberPatch` | `MemberRow` | Ping level, reply style. |
 | `POST /api/admin/members/{id}/aliases` | `{alias}` | `MemberRow` | v4 `…/nick`. |
-| `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. |
-| `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. |
+| `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. **Implemented**. |
+| `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. **Implemented** for this and next boss week. |
 | `GET /api/admin/config` | — | `ConfigView` | All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |
 | `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off` and reported in `notices`, e.g. `"chat reasoning reset to off: kanata/chat does not publish high."` Reasoning resolution: `""` inherits the extraction role's effort; inherit is legal only while that effort is `off` or published for the alias; a model that decides takes `low`/`medium`/`high`. |
 | `POST /api/admin/config/profiles/reload` | `{}` | `{message, reloaded}` | **Proposed**. Re-reads `config/personas/profiles/` after a file edit. Profile text is files-only by decision (a deliberate v4 drop); the app shows profiles read-only and only publishes them or assigns them to roles. |

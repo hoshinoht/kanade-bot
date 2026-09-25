@@ -162,6 +162,16 @@ async fn methods(State(site): State<Arc<Site>>, request: Request) -> Json<Method
     })
 }
 
+fn rate_limited(auth: &AdminAuth, context: &AuditContext, route: Route) -> Response {
+    auth.audit(
+        context,
+        AuditEvent::RateLimited {
+            route: route.as_str(),
+        },
+    );
+    ApiError::RATE_LIMITED.into_response()
+}
+
 /// Take a rate-limit token; audits and answers `false` when refused.
 fn admitted(auth: &AdminAuth, context: &AuditContext, route: Route) -> bool {
     let admitted = auth.rate().take(route, context.client, auth.now());
@@ -411,13 +421,21 @@ async fn token_login(
         Ok(auth) => auth,
         Err(error) => return error.into_response(),
     };
-    if !admitted(&auth, &context, Route::TokenLogin) {
-        return ApiError::RATE_LIMITED.into_response();
+    // Every attempt counts per client; only wrong tokens count globally, so a
+    // flood of guesses from many addresses can never lock out the right token.
+    if !auth
+        .rate()
+        .take_client(Route::TokenLogin, context.client, auth.now())
+    {
+        return rate_limited(&auth, &context, Route::TokenLogin);
     }
     let Ok(Json(TokenLogin { token })) = body else {
         return ApiError::INVALID_BODY.into_response();
     };
     let Some(fingerprint) = auth.breakglass_matches(token.as_bytes()).map(str::to_owned) else {
+        if !auth.rate().take_global(Route::TokenLogin, auth.now()) {
+            return rate_limited(&auth, &context, Route::TokenLogin);
+        }
         auth.audit(
             &context,
             AuditEvent::LoginRefused {

@@ -142,6 +142,33 @@ pub trait ScheduleStore {
     ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send;
 }
 
+/// A shared store: the API's single writer and its readers hold one `Arc`.
+impl<T: ScheduleStore + Send + Sync> ScheduleStore for std::sync::Arc<T> {
+    fn load(
+        &self,
+        scope: &Scope,
+    ) -> impl Future<Output = Result<ScheduleSnapshot, StoreError>> + Send {
+        (**self).load(scope)
+    }
+
+    fn recorded_request(
+        &self,
+        actor: &Actor,
+        request_id: &str,
+    ) -> impl Future<Output = Result<Option<RecordedRequest>, StoreError>> + Send {
+        (**self).recorded_request(actor, request_id)
+    }
+
+    fn commit(
+        &self,
+        expected_revision: u64,
+        changes: ChangeSet,
+        meta: ChangeMeta,
+    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
+        (**self).commit(expected_revision, changes, meta)
+    }
+}
+
 /// v5 attendance reads: one member's recorded attendance.
 pub trait AttendanceHistory {
     /// `member`'s recorded attendance on done runs with their explicit

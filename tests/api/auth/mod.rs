@@ -21,6 +21,7 @@ use kanade::{
             crypto::SealedSecret,
             discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
             fake::{FakeDiscord, FakeGuild},
+            rate::{Limits, RateLimits, Route},
             staff::GuildStaffGate,
             wire,
         },
@@ -43,6 +44,8 @@ pub const TAILSCALE_ADMIN: &str = "ops@example.com";
 pub const EDGE_SECRET: &str = "edge-secret-shared-with-the-caddy-edge!!";
 /// What the authenticated edge adds to every request it relays.
 pub const EDGE_AUTH: (&str, &str) = ("X-Kanade-Edge-Auth", EDGE_SECRET);
+/// The client address the edge saw (a tailnet IP).
+pub const EDGE_XFF: (&str, &str) = ("X-Forwarded-For", "100.64.0.7");
 
 pub struct Harness {
     pub admin: SocketAddr,
@@ -88,6 +91,26 @@ impl Harness {
         token: &str,
         store: Arc<MemoryScheduleStore>,
     ) -> Self {
+        Self::build(edge, token, store, None).await
+    }
+
+    /// With custom rate limits.
+    pub async fn limited(limits: fn(Route) -> Limits) -> Self {
+        Self::build(
+            None,
+            TOKEN,
+            Arc::new(MemoryScheduleStore::new()),
+            Some(limits),
+        )
+        .await
+    }
+
+    async fn build(
+        edge: Option<IpAddr>,
+        token: &str,
+        store: Arc<MemoryScheduleStore>,
+        limits: Option<fn(Route) -> Limits>,
+    ) -> Self {
         let fixture = Fixture::new();
         let mut http = fixture.http();
         http.trusted_proxy = edge;
@@ -120,6 +143,10 @@ impl Harness {
             .unwrap()
             .with_clock(Arc::new(move || *now.lock().unwrap()))
             .with_audit(audit.clone());
+        let auth = match limits {
+            Some(limits) => auth.with_rate_limits(RateLimits::new(limits)),
+            None => auth,
+        };
         let mut site = Site::admin(&http);
         site.auth = Some(Arc::new(auth));
         if edge.is_some() {

@@ -42,6 +42,39 @@ impl GuildStaffGate {
     }
 }
 
+/// [`GuildMembers`] over the persisted member rows (the bot's gateway view:
+/// roles and computed Administrator) and the owner the gateway reported.
+pub struct StoreGuildMembers<S> {
+    store: S,
+    access: Arc<crate::api::state::GuildAccess>,
+}
+
+impl<S> StoreGuildMembers<S> {
+    pub fn new(store: S, access: Arc<crate::api::state::GuildAccess>) -> Self {
+        Self { store, access }
+    }
+}
+
+impl<S: crate::domain::members::MemberStore + Send + Sync> GuildMembers for StoreGuildMembers<S> {
+    fn member(&self, user_id: Id<UserMarker>) -> GateFuture<'_, Result<Option<Invoker>, ()>> {
+        Box::pin(async move {
+            let profile = self
+                .store
+                .load_member(&user_id.get().to_string())
+                .await
+                .map_err(|_| ())?;
+            // Departures clear the stored roles, so a former admin no longer qualifies.
+            Ok(profile
+                .as_ref()
+                .and_then(crate::api::state::GuildAccess::invoker))
+        })
+    }
+
+    fn owner_id(&self) -> Option<Id<UserMarker>> {
+        self.access.owner()
+    }
+}
+
 impl StaffGate for GuildStaffGate {
     fn check<'a>(&'a self, discord_user_id: &'a str) -> GateFuture<'a, StaffCheck> {
         Box::pin(async move {

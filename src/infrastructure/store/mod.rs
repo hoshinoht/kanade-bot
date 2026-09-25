@@ -20,6 +20,8 @@ pub mod history_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod journal_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod members_conformance;
+#[cfg(any(test, feature = "test-support"))]
 mod memory;
 #[cfg(any(test, feature = "test-support"))]
 pub mod model_log_conformance;

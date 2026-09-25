@@ -122,6 +122,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: admin read API: week, stats, summary, weekly timings, reminders, members,
+  channels, personas, bosses, boss events and knowledge, each matching the published
+  JSON schemas; members gain stored aliases, reply style and roles (migration 0010) so
+  the staff check survives a restart. A correct break-glass token can no longer be
+  locked out by guesses from many addresses, and an edge request without a usable
+  `X-Forwarded-For` is refused. Not yet wired into `serve`.
 - v5: admin sign-in: Discord login (identify only, PKCE, one-time state, token revoked
   after use), Tailscale identity from the edge for allow-listed logins, and a break-glass
   token read from a file; server-side sessions with idle/absolute timeouts, a staff

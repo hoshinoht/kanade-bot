@@ -3,6 +3,8 @@
 //! generic 404.
 
 mod auth;
+mod context;
+mod read;
 
 use std::sync::Arc;
 
@@ -16,6 +18,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/healthz", get(health))
         .route("/art/{kind}/{key}", get(assets::art))
         .merge(auth::routes())
+        .merge(read::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

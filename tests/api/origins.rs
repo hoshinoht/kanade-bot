@@ -86,17 +86,20 @@ async fn every_admin_path_and_method_is_a_generic_404_on_public() {
 async fn admin_api_is_not_served_before_auth_exists() {
     let fixture = Fixture::new();
     let admin = support::admin(&fixture.http()).await;
-    for path in ["/api/admin/week", "/api/public/status"] {
+    for path in ["/api/admin/history", "/api/public/status"] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}");
         assert_eq!(reply.api_error(), "not_found");
     }
-    // Without a configured sign-in, auth routes fail closed rather than disappear.
-    let reply = get(admin, ADMIN_HOST, "/api/admin/session").await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (503, "auth_unavailable".into())
-    );
+    // Without a configured sign-in, mounted admin routes fail closed rather than disappear.
+    for path in ["/api/admin/session", "/api/admin/week"] {
+        let reply = get(admin, ADMIN_HOST, path).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (503, "auth_unavailable".into()),
+            "{path}"
+        );
+    }
     let reply = get(admin, ADMIN_HOST, "/api/admin/auth/discord/start").await;
     assert_eq!(reply.header("location"), Some("/?login_error=unavailable"));
 }
@@ -193,7 +196,10 @@ async fn healthz_answers_only_direct_loopback_clients_of_the_admin_listener() {
         "GET",
         ADMIN_HOST,
         "/healthz",
-        &[("X-Kanade-Edge-Auth", edge)],
+        &[
+            ("X-Kanade-Edge-Auth", edge),
+            ("X-Forwarded-For", "100.64.0.7"),
+        ],
     )
     .await;
     assert_eq!(reply.status, 404);

@@ -18,8 +18,11 @@ use axum::{
     response::Response,
 };
 
+use axum::response::IntoResponse;
+
 use crate::api::{
     auth::crypto,
+    error::ApiError,
     listeners::{Origin, Site},
 };
 
@@ -97,12 +100,17 @@ pub async fn sanitize(State(site): State<Arc<Site>>, mut request: Request, next:
         trusted,
         edge_authenticated,
     );
-    let client = if trusted {
+    let forwarded = if trusted {
         forwarded_client(request.headers(), site.origin)
     } else {
         None
+    };
+    // The authenticated edge must name the client: falling back to its own
+    // address would pool every client into one rate-limit bucket.
+    if edge_authenticated && forwarded.is_none() {
+        return ApiError::BAD_FORWARDING.into_response();
     }
-    .or(addr.map(|addr| addr.ip()));
+    let client = forwarded.or(addr.map(|addr| addr.ip()));
     let request_id = crypto::random_id().unwrap_or_default();
     request.extensions_mut().insert(Peer {
         addr,

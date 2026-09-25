@@ -13,6 +13,7 @@ mod connect;
 mod drafts;
 mod history;
 mod journal;
+mod members;
 mod migrate;
 mod model_log;
 mod owner;

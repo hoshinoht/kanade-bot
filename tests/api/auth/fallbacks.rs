@@ -7,8 +7,8 @@ use kanade::{
 };
 
 use super::{
-    ADMIN_ROLE, CLIENT_SECRET, EDGE_AUTH, Harness, ORIGIN, TAILSCALE_ADMIN, TOKEN, cookie, member,
-    user,
+    ADMIN_ROLE, CLIENT_SECRET, EDGE_AUTH, EDGE_XFF, Harness, ORIGIN, TAILSCALE_ADMIN, TOKEN,
+    cookie, member, user,
 };
 
 const EDGE: [u8; 4] = [127, 0, 0, 1];
@@ -19,7 +19,11 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     let methods = harness
         .get(
             "/api/admin/auth/methods",
-            &[EDGE_AUTH, ("Tailscale-User-Login", TAILSCALE_ADMIN)],
+            &[
+                EDGE_AUTH,
+                EDGE_XFF,
+                ("Tailscale-User-Login", TAILSCALE_ADMIN),
+            ],
         )
         .await;
     assert_eq!(
@@ -33,6 +37,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             &[
                 ORIGIN,
                 EDGE_AUTH,
+                EDGE_XFF,
                 ("Tailscale-User-Login", "intruder@example.com"),
             ],
             None,
@@ -46,6 +51,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             &[
                 ORIGIN,
                 EDGE_AUTH,
+                EDGE_XFF,
                 ("Tailscale-User-Login", TAILSCALE_ADMIN),
                 ("Tailscale-User-Name", "Ops Person"),
             ],
@@ -59,6 +65,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     let with_identity = [
         (name, value.as_str()),
         EDGE_AUTH,
+        EDGE_XFF,
         ("Tailscale-User-Login", TAILSCALE_ADMIN),
     ];
     assert_eq!(
@@ -76,6 +83,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             &[
                 (name, &value),
                 EDGE_AUTH,
+                EDGE_XFF,
                 ("Tailscale-User-Login", "other@example.com"),
             ],
         )
@@ -96,6 +104,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             &[
                 ("Origin", "https://evil.example"),
                 EDGE_AUTH,
+                EDGE_XFF,
                 ("Tailscale-User-Login", TAILSCALE_ADMIN),
             ],
             None,
@@ -155,6 +164,44 @@ async fn tailscale_headers_need_both_the_edge_peer_and_the_edge_secret() {
 }
 
 #[tokio::test]
+async fn the_authenticated_edge_must_name_the_client() {
+    let harness = Harness::with(Some(EDGE.into()), TOKEN).await;
+    for xff in [None, Some("not-an-ip"), Some("")] {
+        let mut extra = vec![EDGE_AUTH, ("Tailscale-User-Login", TAILSCALE_ADMIN)];
+        if let Some(value) = xff {
+            extra.push(("X-Forwarded-For", value));
+        }
+        let reply = harness.get("/api/admin/auth/methods", &extra).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (400, "bad_forwarding".into()),
+            "{xff:?}"
+        );
+    }
+    // Without the secret nothing is vouched for, so no forwarding is needed.
+    assert_eq!(
+        harness.get("/api/admin/auth/methods", &[]).await.status,
+        200
+    );
+    // The named client is the one rate limits and audit see.
+    let reply = harness
+        .post(
+            "/api/admin/auth/tailscale",
+            &[
+                ORIGIN,
+                EDGE_AUTH,
+                EDGE_XFF,
+                ("Tailscale-User-Login", "intruder@example.com"),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, 401);
+    let refusal = harness.audit.records().pop().unwrap();
+    assert_eq!(refusal.client.as_deref(), Some(EDGE_XFF.1));
+}
+
+#[tokio::test]
 async fn the_edge_secret_never_reaches_handlers() {
     let harness = Harness::with(Some(EDGE.into()), TOKEN).await;
     let probe = super::header_probe(harness.site.clone()).await;
@@ -163,7 +210,11 @@ async fn the_edge_secret_never_reaches_handlers() {
         "GET",
         crate::support::ADMIN_HOST,
         "/headers",
-        &[EDGE_AUTH, ("Tailscale-User-Login", TAILSCALE_ADMIN)],
+        &[
+            EDGE_AUTH,
+            EDGE_XFF,
+            ("Tailscale-User-Login", TAILSCALE_ADMIN),
+        ],
     )
     .await
     .text();

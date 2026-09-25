@@ -43,12 +43,20 @@ for the public origin when it opens.
 13. The staff gate reads bot data: roles plus computed Administrator permission
     and guild ownership (interactions get `is_guild_admin` directly; the web
     must compute it). Short-TTL recheck, and sessions are invalidated on
-    member-remove or role-update gateway events. *Status (A2 fix):* the hooks
-    `AdminAuth::member_left` / `member_changed` exist and are tested with the
-    fake guild; calling them from gateway events, and the computed
-    Administrator permission, are wired with the real member cache in A3.
+    member-remove or role-update gateway events. *Status (A3):* the staff
+    gate reads persisted member rows (`StoreGuildMembers`: stored roles and
+    `is_guild_admin`, owner from `GuildAvailable`), and
+    `api::auth::roster::on_roster_update` persists `BotEvent::Roster` and
+    calls `member_left` / `member_changed`. Still open: `RosterUpdate::Seen`
+    carries no role list or computed Administrator permission, so stored
+    roles only change when that seam lands (see `runtime-bootstrap.md`
+    composition gaps); a departure clears them at once.
 14. Rate limits on `/login` and the callback, per client IP and globally;
-    Discord 429s honour `retry_after` and fail closed.
+    Discord 429s honour `retry_after` and fail closed. *Recorded exception:*
+    for the break-glass token (login and bearer) the global bucket counts and
+    refuses wrong tokens only, so guesses from many addresses cannot lock out
+    the right token; its ≥ 32-byte entropy makes online guessing moot. Per-IP
+    limits apply to every attempt.
 15. Never log the code, state, verifier, tokens or cookies; log the user id,
     outcome and request id.
 
