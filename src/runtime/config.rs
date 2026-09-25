@@ -11,8 +11,20 @@ use chrono_tz::Tz;
 use super::error::Error;
 
 mod admin_auth;
+mod discord;
+mod files;
+mod guild;
+mod models;
+mod serve;
+mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
+pub use discord::DiscordSettings;
+pub use files::FileSettings;
+pub use guild::GuildSettings;
+pub use models::ModelSettings;
+pub use serve::{ServeConfig, SettingSeeds};
+pub use store::StoreSettings;
 
 const DEFAULT_BIND: &str = "127.0.0.1:8080";
 const DEFAULT_SHUTDOWN_SECONDS: u64 = 10;
@@ -57,6 +69,7 @@ impl RuntimeConfig {
                 "KANADE_BIND was renamed to KANADE_ADMIN_BIND".into(),
             ));
         }
+        discord::refuse_plain_token(values)?;
         let private = allow_private_bind(values)?;
         let admin_bind = listener_bind(
             "KANADE_ADMIN_BIND",

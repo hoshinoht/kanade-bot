@@ -52,6 +52,35 @@ secrets come only from files. `serve --offline` has no store, so it parses
 these but serves sign-in routes as `503 auth_unavailable`; the session store
 is wired with the API state (A3). See `admin-api.md` "Sign-in and sessions".
 
+### Serve environment
+
+Parsed by `ServeConfig` (`src/runtime/config/`) for live `serve` only; not yet
+wired (`serve` without `--offline` still refuses). Snowflakes are canonical
+decimal (no sign, no leading zero, non-zero, `u64`); lists are comma-separated.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB). Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
+| `KANADE_EXPECT_V4_STOPPED` | required | Must be `1`; otherwise startup fails with "stop the v4 container first". |
+| `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
+| `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
+| `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
+| `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`; ownership, symlink and mode checks run when the store opens. |
+| `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
+| `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root. |
+| `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
+| `KANADE_MODEL_BASE_URL` | unset | `https`, or `http` only to loopback, `localhost` or `host.docker.internal`; no userinfo or query. Unset disables models; the key, CA and alias variables then are refused. |
+| `KANADE_MODEL_KEY_FILE`, `KANADE_MODEL_CA_FILE` | unset | Bearer key file (plain `KANADE_MODEL_KEY` is refused) and extra CA bundle. |
+| `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200). |
+| `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls, 1–16. |
+| `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
+| `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
+| `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
+| `KANADE_WATCH_CHANNEL_IDS`, `KANADE_PILOT_CHANNEL_IDS` | empty | Settings seeds: snowflake lists. |
+| `KANADE_EXTRACTION_ENABLED`, `KANADE_CHAT_ENABLED` | `0` | Settings seeds: `0` or `1`. |
+
+Other unknown `KANADE_*` variables are ignored, as for the HTTP settings.
+
 ### Listeners
 
 Two routers, authorized by mounting: the public router is built without any

@@ -14,28 +14,11 @@ use super::{
 };
 use crate::{
     infrastructure::store::web_sessions::WebSessionStore,
-    runtime::{config::AdminAuthSettings, error::Error},
+    runtime::{config::AdminAuthSettings, error::Error, secrets::read_secret},
 };
 
-const MAX_SECRET_BYTES: u64 = 4096;
 /// Break-glass tokens must be long enough that guessing is not a strategy.
 const MIN_TOKEN_BYTES: usize = 32;
-
-fn read_secret(path: &Path, variable: &str) -> Result<String, Error> {
-    let refused = || Error::Configuration(format!("{variable} must name a readable secret file"));
-    let metadata = std::fs::metadata(path).map_err(|_| refused())?;
-    if !metadata.is_file() || metadata.len() > MAX_SECRET_BYTES {
-        return Err(refused());
-    }
-    let text = std::fs::read_to_string(path).map_err(|_| refused())?;
-    let secret = text.trim_end_matches(['\r', '\n']).to_owned();
-    if secret.is_empty() || secret.chars().any(char::is_control) {
-        return Err(Error::Configuration(format!(
-            "{variable} must contain one non-empty line"
-        )));
-    }
-    Ok(secret)
-}
 
 /// The secret the edge sends in `X-Kanade-Edge-Auth`, sealed for constant-time checks.
 pub fn edge_secret(path: &Path) -> Result<SealedSecret, Error> {

@@ -122,6 +122,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: serve configuration for the live bot: Discord token from a file only (plain env
+  refused), a required "v4 stopped" confirmation, guild/role ids, store paths, model
+  endpoint and settings seeds, all validated at startup with secrets never logged.
 - v5: startup loaders for the boss catalogue (tracked `boss/bosses.yaml`, parsed strictly),
   the boss knowledge directory (schema-checked) and the persona directory.
 - v5: admin logs and rescan API: chat and extraction logs with filters, totals and facets

@@ -120,6 +120,21 @@ fn renamed_bind_variable_is_refused() {
 }
 
 #[test]
+fn plain_discord_token_is_refused_without_echoing_it() {
+    let output = Command::new(binary())
+        .args(["serve", "--offline"])
+        .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
+        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
+        .env("DISCORD_TOKEN", "plain-token-value")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("DISCORD_TOKEN is not read; use KANADE_DISCORD_TOKEN_FILE"));
+    assert!(!stderr.contains("plain-token-value"));
+}
+
+#[test]
 fn healthcheck_fails_when_no_loopback_server_is_available() {
     let port = unused_loopback_port();
     let status = Command::new(binary())
