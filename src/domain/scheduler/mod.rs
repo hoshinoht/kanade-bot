@@ -16,8 +16,8 @@ pub use ports::{
     StoreError,
 };
 pub use proposals::{
-    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, Supersede,
-    SupersedeScope,
+    ProposalApproved, ProposalError, ProposalPreview, ProposalRequest, ProposalResult, Proposed,
+    Supersede, SupersedeScope,
 };
 pub use requests::{Approved, Rejected, RequestError, RequestPreview, RequestResult};
 pub use service::{Attributed, COMMIT_ATTEMPTS, SchedulerError, SchedulerResult, SchedulerService};

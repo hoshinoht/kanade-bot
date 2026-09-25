@@ -160,9 +160,9 @@ whole; unknown or read-only keys are refused with 422.
 
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
-| `GET /api/admin/inbox` | — | `Proposal[]` | Extractions and self-service requests together. |
-| `POST /api/admin/inbox/{id}/approve` | `{day?, time?}` (moves) | `{message}` | Optional edit before approving. |
-| `POST /api/admin/inbox/{id}/reject` | `{}` | `{message}` | Confirm in UI. |
+| `GET /api/admin/inbox` | — | `Proposal[]` | Extractor/chat proposals and member requests together. **Implemented (A6)**, see "Inbox (A6)". |
+| `POST /api/admin/inbox/{id}/approve` | `{version?, choices?, day?, time?}` | `{message}` | **Implemented (A6)**; `day`/`time` edit a proposal's time before approving; no `force`. |
+| `POST /api/admin/inbox/{id}/reject` | `{version?, reason?}` | `{message}` | **Implemented (A6)**; `reason` required for member requests only. |
 | `GET /api/admin/extractions` | — | `Extractions` | Paged client-side. |
 | `GET /api/admin/extractions/{id}` | — | `Extraction` | Tabs: changes, chat read, prompt, raw. |
 | `GET /api/admin/rescan/targets` | — | `Channel[]` | Watched channels only. |
@@ -239,23 +239,105 @@ the A4 table.
   sign in with Discord and the server re-validates everything.
 - Capacity: see `limits-contract.md` (per-alias admission rule and DTOs).
 
+## Inbox (A6)
+
+**Implemented (A6)** over the domain (`history.md` "Member requests",
+"Proposals"). One route set serves both sources; ids are draft ids (one id
+space), so `{id}` names a proposal or a member request, anything else is 404.
+
+- **List.** Live proposals (`source` `extraction` | `chat`, `tab`
+  `extractor`) and submitted member requests (`source` `self_service`, `tab`
+  `self_service`), oldest first; items past their deadline but not yet
+  closed by the tick are listed with `expired`. `kind` is the v4 change kind
+  for proposals and the request type (`new_fixed`, `change_fixed`, `join`,
+  `leave`, `swap`) for requests. `version` is the draft version (proposals
+  never change it). `preview` is the domain's merge analysis against the
+  current schedule (`preview_request` / `preview_proposal`, computed outside
+  the writer lock, nothing written): `changes` are the result's field writes
+  (`field` = the domain names `slot`, `status`, `participants`, `bosses`,
+  `channel`, `day_time`, `note`, `owner`, `new_run`, `new_fixed`, `retired`,
+  `answer:<id>`; prefixed `#<short id>` when several rows change; reminder
+  rows are not shown), `conflicts` the three-way conflicts (`expected` = what
+  the change was based on, `found` = now) plus a `change` line when it no
+  longer applies (v4's words for proposals). `flags`: `conflict` (any
+  conflict line), `expired`, `requester_frozen` (always false until a freeze
+  store exists), `requester_unauthorised` (the requester may no longer have
+  it approved), `no_effect` (the merge would write no row at all).
+  `choices` (`change_fixed` only, else `null`) lists exactly the amended runs
+  the edit would move (`amended: true`); other runs follow the timing, and
+  the listed preview assumes `update` for each. `expires_at`: the earlier of
+  a proposal's 24 h TTL and the reset ending its boss week; a request's
+  boss-week reset, `null` for weekly-only requests. Proposals carry their
+  stored card (`confidence`, `is_question`, `summary`, `evidence` read from
+  the watched-message cache, `missing` when pruned, `card_url` once posted);
+  a proposal whose card was never saved still lists, with `confidence:
+  null`, `evidence: []`, `card_url: null`, `summary` = the draft title and
+  its target from the draft subject. Requests: `confidence: null`,
+  `evidence: []`, `card_url: null`, `summary` and `self_service.note` = the
+  member's title (admin-only), `self_service.via` = `request`,
+  `public_summary` = the generated `member request: <type> <subject>`.
+- **Approve** `{version?, choices?, day?, time?}` (`choices`: amended run id
+  → `update` | `keep`). Requests need `version` (422 `version_required`)
+  and, for `change_fixed`, `choices` (send `{}` when none are listed); they
+  take no edit (422 `edit_not_applicable`). Proposals take an optional
+  `version` and no `choices`. Conflicts always block (`force: true` is 422
+  `force_unsupported`). A proposal is approved as the signed-in Discord
+  user with admin authority, exactly like their ✅ on the card (the same
+  record: actor `member:<id>`, surface `extraction_approval` /
+  `chat_approval`, request id `approve:<id>`); a Tailscale or token session
+  gets 403 `discord_session_required` on proposal approve and reject. A
+  request is merged as the session's admin (`request_merge`,
+  `merge:<id>@v<version>`); every admin session may decide requests.
+- **Edit, then approve** (proposals; v4's portal form): `day` (0–6) and
+  `time` (`HH:MM`) in the boss week of the proposal's scheduled instant (a
+  move's target, a new run's or a split-off run's slot) replace that
+  instant, and the proposal is dry-run and merged as the same single record
+  (`approve_proposal_at`), with `edited=<instant>` in the draft's `merged`
+  event. The proposal itself never changes, so its card never shows a time
+  ✅ would not apply. Authority, TTL, conflict and refusal rules are those of
+  a plain approval; an edit equal to the proposed time is a plain approval.
+  A change without a time is 422 `edit_not_applicable`; a day or time that
+  is malformed, missing its pair, outside that boss week or in a past week
+  is 422 `invalid`.
+- **Reject** `{version?, reason?}`: requests need `version` and a reason of
+  1–500 characters (422 `reason_required` | `reason_invalid`); proposals
+  keep v4's reason-free reject (a non-empty `reason` is 422
+  `reason_not_applicable`, as nothing would store it). Rejecting a proposal
+  past its TTL closes it as expired and answers 200.
+- **Refusals.** 409 `stale` (version moved, or decided by someone else) |
+  `conflicts` (three-way conflicts, a replay that no longer applies, or a
+  proposal refusal in v4's words) | `no_effect` | `requester_unauthorised` |
+  `busy`; 410 `expired` (closed as expired by the attempt); 422
+  `choices_required` | `choices_not_applicable` | `version_required` |
+  `reason_required` | `reason_invalid` | `reason_not_applicable` |
+  `force_unsupported` | `edit_not_applicable` | `invalid` |
+  `idempotency_mismatch`; 403 `discord_session_required` | `csrf`; 404
+  `not_found`; 400 `invalid_body` | `invalid_idempotency_key`; 503
+  `unavailable`.
+- **Retries.** Every decision is naturally repeatable, with the domain's own
+  request ids: repeating a completed approval (same admin; same `choices`
+  for a request, same edit for a proposal) answers 200 with the same
+  message, and so does repeating one's own rejection with the same reason.
+  A request re-approved at the same version with other `choices`, a
+  proposal re-approved with another edit (or without the first one's), or
+  a request re-rejected with another reason is 422 `idempotency_mismatch`
+  (the edit is part of the approval digest). `Idempotency-Key` is validated
+  as for A4 but not stored.
+- **Not delivered yet.** The domain returns the merge summary notices, the
+  requester notice (approve, reject, expiry) and proposal follow-up errors;
+  until serve composition the API drops them, as A4 drops its notices. The
+  Discord card is not refreshed either: it keeps its text until the card
+  desk re-renders it, and a later ✅/❌ on it is answered in silence (stale).
+  A follow-up that failed after a committed proposal merge is named in
+  `message`; approving again re-runs it. Approving a proposal retires its
+  live siblings about the same target (v4 `commit`).
+- **Deferred.** Request edit (`PATCH /api/admin/requests/{id}`: the domain
+  takes raw draft operations; no UI contract, like drafts under API-6),
+  closed-request history (`?state=`), and every public member route (API-3).
+
 ## Inbox and log filters (built against the mock)
 
-- `GET /api/admin/inbox` items carry `tab` (`extractor` | `self_service`),
-  `version`, `flags` (`conflict`, `expired`, `requester_frozen`,
-  `no_effect`), `preview` (`{no_effect, changes[{field, from, to}],
-  conflicts[{field, expected, found}]}`), `expires_at`, `choices` (weekly
-  timings: `[{run_id, label, when, amended}]`) and `public_summary`.
-  **Proposed**; the admin request routes below are the backend's names for
-  the same operations.
-- `POST /api/admin/inbox/{id}/approve` `{version?, day?, time?, choices?,
-  force?}`: 409 `stale` (version moved) | `conflicts` (not `force`d after
-  review) | `no_effect`; 410 `expired`; 422 `choices_required` |
-  `choices_not_applicable`. Edit-then-approve sends `force` only when the
-  admin ticked the reviewed-conflict box.
-- `POST /api/admin/inbox/{id}/reject` `{version?, reason?}`: member requests
-  need a reason of 1–500 characters (422 `reason_required` |
-  `reason_invalid`); extractor proposals keep v4's reason-free reject.
+- The inbox contract is "Inbox (A6)" above.
 - `GET /api/admin/chat` and `GET /api/admin/extractions` take `model`,
   `from`, `to` (guild-local `YYYY-MM-DD`, inclusive), `outcome`
   (comma-separated, any of), `channel`, `member`, `q`; Chat also `tool` and
@@ -296,11 +378,11 @@ the A4 table.
 | `POST /api/public/requests` | `{run_id \| fixed_id, change, note?}` + `Idempotency-Key` | `MemberRequest` | Signed-in member; a replayed key returns the first result. |
 | `POST /api/public/requests/{id}/withdraw` | `{}` | `MemberRequest` | Own requests only. |
 | `GET /api/public/requests/mine` | — | `MemberRequest[]` | |
-| `GET /api/admin/requests?state=` | — | `MemberRequest[]` | The Inbox's Self-service tab. |
-| `GET /api/admin/requests/{id}/preview` | — | `{version, preview, choices?}` | Same `preview` shape as the inbox. |
-| `PATCH /api/admin/requests/{id}` | edit ops `[{op, field, value}]` + `version` | `MemberRequest` | Edit before approving. |
-| `POST /api/admin/requests/{id}/approve` | `{version, choices?}` | `{message}` | `choices` required for `change_fixed`. |
-| `POST /api/admin/requests/{id}/reject` | `{version, reason}` | `{message}` | Reason 1–500 characters. |
+| `GET /api/admin/requests?state=` | — | `MemberRequest[]` | Folded into `GET /api/admin/inbox` (A6); closed-request history deferred. |
+| `GET /api/admin/requests/{id}/preview` | — | `{version, preview, choices?}` | Folded into the inbox item (A6). |
+| `PATCH /api/admin/requests/{id}` | edit ops `[{op, field, value}]` + `version` | `MemberRequest` | Deferred (A6): needs an op-edit contract. |
+| `POST /api/admin/requests/{id}/approve` | `{version, choices?}` | `{message}` | Folded into `POST /api/admin/inbox/{id}/approve` (A6). |
+| `POST /api/admin/requests/{id}/reject` | `{version, reason}` | `{message}` | Folded into `POST /api/admin/inbox/{id}/reject` (A6). |
 
 Errors: 409 `stale` | `conflicts` | `no_effect`; 422 `choices_required` |
 `choices_not_applicable` | `reason_required` | `reason_invalid`; 410

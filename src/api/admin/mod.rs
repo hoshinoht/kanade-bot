@@ -5,6 +5,7 @@
 mod auth;
 mod context;
 mod history;
+mod inbox;
 mod read;
 mod write;
 
@@ -23,6 +24,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(read::routes())
         .merge(write::routes())
         .merge(history::routes())
+        .merge(inbox::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

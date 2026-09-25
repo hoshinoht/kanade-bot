@@ -31,6 +31,8 @@ pub fn refusal_code(error: &ProposalError) -> &'static str {
         ProposalError::Expired => "expired",
         ProposalError::Unauthorised => "unauthorised",
         ProposalError::NotAProposal => "not_a_proposal",
+        ProposalError::EditNotApplicable => "edit_not_applicable",
+        ProposalError::EditInPast => "edit_in_past",
         ProposalError::Draft(_) => "store",
     }
 }

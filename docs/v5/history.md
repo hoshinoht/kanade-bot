@@ -889,6 +889,30 @@ enforced by the service, not the store; TTL 24 h.
   v4's `CommitResult` facts (run, timing, created runs, old time,
   superseded, notes `adopted …'s run` / `updated N` / `cancelled N
   scheduled run(s)`).
+- **Edited approval** (`approve_proposal_at(id, approver, edit, policy,
+  directory)`; user decision 2026-09-25, v4's portal "edit, then approve"):
+  `edit` replaces the proposal's one scheduled instant (`amend_run`'s target
+  or `create_run`'s slot and boss week: moves, adds, splits); a proposal
+  with none, or more than one, is `EditNotApplicable`, an instant in a boss
+  week before the current one `EditInPast`. The edited operations are
+  dry-run on the current schedule (refusals in v4's words) and merged as the
+  same single record with the same surface, actor and `approve:<id>`
+  request id; the `merged` event notes `edited=<instant>`. The stored
+  proposal never changes (its card never shows a time ✅ would not apply).
+  The edit is part of the request digest (`(id, instant)`; a plain approval
+  digests `id` alone), so the same edit repeated is `AlreadyApplied` and
+  another edit, or none, under the same request id is
+  `IdempotencyMismatch`. An edit equal to the proposed time is a plain
+  approval. Authority, TTL, conflict and follow-up rules are unchanged;
+  `approve_proposal` is `approve_proposal_at` without an edit.
+- **Preview** (`preview_proposal(id, approver, policy, directory)`), for
+  administrators: the three-way analysis of the operations between the
+  proposal's base and the current schedule with the approval's
+  status-at-apply rules (an `approver`, when given, fills an unnamed party
+  as approval would), `no_effect`, `expired` (TTL or boss week, not closed
+  by the preview), and the refusal approval would give now (a vanished
+  target, an answer for someone off the run, a replay failure). Nothing is
+  written and no authority is checked.
 - **Reject** (`reject_proposal(id, approver)`): the same members as for ✅;
   closed `rejected`, no schedule record.
 - **Supersede** (`supersede_proposals(SupersedeScope)`, v4 `supersede`):

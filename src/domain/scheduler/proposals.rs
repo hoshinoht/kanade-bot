@@ -9,13 +9,16 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 
-use super::drafts::{DraftError, EXPIRY_ACTOR, MergeInput, MergeOutcome, is_expired, stale_of};
+use super::drafts::{
+    DraftError, EXPIRY_ACTOR, MergeInput, MergeOutcome, is_expired, stale_of, upstream,
+};
 use super::ports::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use super::service::{SchedulerError, SchedulerService, digest};
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, DraftUpdate, DraftWrite,
-    LoadedDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource, ProposalStore,
-    SUPERSEDED, StagedOp, StoredDraft, Target, expires_week, replay,
+    LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
+    ProposalStore, SUPERSEDED, StagedOp, StoredDraft, Target, analyze_merge_applying, expires_week,
+    replay,
 };
 use crate::domain::history::{Actor, Origin, Surface};
 use crate::domain::members::Directory;
@@ -23,7 +26,10 @@ use crate::domain::proposals::{
     Approver, ChangeKind, ProposalSubject, ProposedChange, Refusal, Translation, adoption_notes,
     fill_approver, live_timing_runs, may_commit, translate,
 };
-use crate::domain::schedule::{OpResult, ScheduleError, SchedulePolicy, ScheduleSnapshot};
+use crate::domain::schedule::{
+    OpResult, ScheduleError, SchedulePolicy, ScheduleSnapshot, utc_instant,
+};
+use crate::domain::time::to_iso;
 
 /// Why a proposal action did not apply; nothing was written (except closing
 /// a proposal found expired).
@@ -39,6 +45,10 @@ pub enum ProposalError {
     NotAProposal,
     /// Past its TTL or its boss week; it is closed as expired.
     Expired,
+    /// An edited approval of a change with no single time to edit.
+    EditNotApplicable,
+    /// An edited approval to a time in a boss week that has passed.
+    EditInPast,
     Draft(DraftError),
 }
 
@@ -78,6 +88,8 @@ impl fmt::Display for ProposalError {
             Self::Unauthorised => f.write_str("that proposal is not yours to answer"),
             Self::NotAProposal => f.write_str("that is not a proposal"),
             Self::Expired => f.write_str("that proposal has expired"),
+            Self::EditNotApplicable => f.write_str("that change has no time to edit"),
+            Self::EditInPast => f.write_str("that time is in a boss week that has passed"),
             Self::Draft(error) => error.fmt(f),
         }
     }
@@ -129,6 +141,25 @@ pub struct ProposalApproved {
     /// Follow-up work after the committed merge that failed; reported,
     /// never an error (the merge stands).
     pub follow_up_errors: Vec<String>,
+}
+
+/// What approving a proposal now would do, for an administrator; nothing
+/// is written and nobody's authority is checked.
+#[derive(Clone, Debug)]
+pub struct ProposalPreview {
+    pub version: u64,
+    pub status: DraftStatus,
+    pub info: ProposalInfo,
+    pub subject: ProposalSubject,
+    /// Past its TTL or boss week, not yet closed by the tick.
+    pub expired: bool,
+    /// Between its base and the current schedule, with the approval's
+    /// status-at-apply rules.
+    pub analysis: MergeAnalysis,
+    /// Approving would change nothing.
+    pub no_effect: bool,
+    /// Why approving would be refused now, in v4's words.
+    pub refusal: Option<Refusal>,
 }
 
 /// v4 `supersede`: which live proposals to retire.
@@ -226,6 +257,49 @@ fn status_at_apply(ops: &[DraftOp]) -> BTreeSet<String> {
             _ => None,
         })
         .collect()
+}
+
+/// The operations with their one scheduled instant moved to `to` (the
+/// portal's "edit, then approve"); `None` when they already hold `to`.
+fn retime(
+    ops: &[DraftOp],
+    to: DateTime<Utc>,
+    policy: &SchedulePolicy,
+    now: DateTime<Utc>,
+) -> ProposalResult<Option<Vec<DraftOp>>> {
+    let timed = |op: &DraftOp| matches!(op, DraftOp::AmendRun { .. } | DraftOp::CreateRun { .. });
+    if ops.iter().filter(|op| timed(op)).count() != 1 {
+        return Err(ProposalError::EditNotApplicable);
+    }
+    let mut ops = ops.to_vec();
+    let week = policy
+        .week_of(&to)
+        .and_then(|start| utc_instant(&start))
+        .map_err(ScheduleError::from)?;
+    for op in &mut ops {
+        match op {
+            DraftOp::AmendRun { to: at, .. } | DraftOp::CreateRun { datetime: at, .. }
+                if *at == to =>
+            {
+                return Ok(None);
+            }
+            DraftOp::AmendRun { to: at, .. } => *at = to,
+            DraftOp::CreateRun {
+                datetime,
+                week_start,
+                ..
+            } => {
+                *datetime = to;
+                *week_start = week;
+            }
+            _ => {}
+        }
+    }
+    // Merging into a past week would close the proposal as expired.
+    if is_expired(Some(week), policy, now)? {
+        return Err(ProposalError::EditInPast);
+    }
+    Ok(Some(ops))
 }
 
 fn subject_of(loaded: &LoadedDraft) -> ProposalResult<ProposalSubject> {
@@ -387,7 +461,30 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         policy: &SchedulePolicy,
         directory: &(dyn Directory + Sync),
     ) -> ProposalResult<ProposalApproved> {
-        let result = self.approve_once(id, approver, policy, directory).await;
+        self.approve_proposal_at(id, approver, None, policy, directory)
+            .await
+    }
+
+    /// [`Self::approve_proposal`] with an optional edited time (v4's portal
+    /// "edit, then approve"): the proposal's one scheduled instant (a move's
+    /// target, a new run's slot) becomes `edit`, dry-run on the current
+    /// schedule and merged as the same single record, with `edited=<instant>`
+    /// in the `merged` event. The proposal itself is never changed, so its
+    /// card never shows a time ✅ would not apply. The edit is part of the
+    /// request digest: repeating it is `AlreadyApplied`, another edit (or
+    /// none) under the same `approve:<id>` is `IdempotencyMismatch`. An edit
+    /// equal to the proposed time is a plain approval.
+    pub async fn approve_proposal_at(
+        &mut self,
+        id: &str,
+        approver: &Approver,
+        edit: Option<DateTime<Utc>>,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> ProposalResult<ProposalApproved> {
+        let result = self
+            .approve_once(id, approver, edit, policy, directory)
+            .await;
         if let Err(ProposalError::Draft(
             DraftError::AlreadyApplied { .. } | DraftError::AlreadyMerged { .. },
         )) = &result
@@ -487,6 +584,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         &mut self,
         id: &str,
         approver: &Approver,
+        edit: Option<DateTime<Utc>>,
         policy: &SchedulePolicy,
         directory: &(dyn Directory + Sync),
     ) -> ProposalResult<ProposalApproved> {
@@ -494,7 +592,23 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         let now = self.clock.now();
         let actor = Actor::member(approver.user_id.clone());
         let request_id = format!("approve:{id}");
-        let request_digest = digest("proposal_approve", &id);
+        // Stored operations never change, so the edit normalises the same
+        // way on every retry.
+        let edited = match edit {
+            None => None,
+            Some(to) => {
+                let (loaded, _) = self
+                    .store
+                    .load_proposal(id)
+                    .await?
+                    .ok_or_else(|| DraftError::UnknownDraft(id.to_owned()))?;
+                retime(&loaded.draft_ops(), to, policy, now)?.map(|ops| (to, ops))
+            }
+        };
+        let request_digest = match &edited {
+            None => digest("proposal_approve", &id),
+            Some((to, _)) => digest("proposal_approve", &(id, to)),
+        };
         if let Some(recorded) = self.store.recorded_request(&actor, &request_id).await? {
             return Err(
                 if recorded.digest.as_deref() == Some(request_digest.as_str()) {
@@ -511,9 +625,25 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             );
         }
         let (loaded, info, subject, snapshot) = self.live_proposal(id, approver, now).await?;
-        let mut ops = loaded.draft_ops();
+        let (mut ops, note) = match edited {
+            Some((to, ops)) => (
+                ops,
+                Some(format!(
+                    "edited={}",
+                    to_iso(&to).map_err(ScheduleError::from)?
+                )),
+            ),
+            None => (loaded.draft_ops(), None),
+        };
         still_applies(&subject, &ops, &snapshot)?;
         fill_approver(&mut ops, &approver.user_id);
+        if note.is_some() {
+            // The edited time was never dry-run: refuse in v4's words, as
+            // proposing does.
+            replay(&snapshot, &ops, policy, directory, now).map_err(|rejected| {
+                Refusal::from_replay(subject.kind, removes_timing(&ops), &rejected.error)
+            })?;
+        }
         // Read before the merge: nothing after it may fail.
         let old_datetime = ops.iter().find_map(|op| match op {
             DraftOp::AmendRun { .. } => subject
@@ -545,7 +675,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     ops: ops.clone(),
                     expected_version: loaded.draft.version,
                     summary: format!("{} proposal", subject.kind.as_str()),
-                    note: None,
+                    note,
                     authorise: Some(&still_allowed),
                     status_at_apply: status_at_apply(&ops),
                 },
@@ -615,6 +745,67 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             notes,
             follow_up_errors,
             merge,
+        })
+    }
+
+    /// What approving the proposal now would do, for an administrator: the
+    /// three-way analysis of its operations (the approver, when given,
+    /// fills an unnamed party as approval would), whether it would change
+    /// nothing, and why it would be refused. Nothing is written, not even
+    /// closing an expired proposal.
+    pub async fn preview_proposal(
+        &self,
+        id: &str,
+        approver: Option<&str>,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> ProposalResult<ProposalPreview> {
+        self.check_policy(policy)?;
+        let now = self.clock.now();
+        let (loaded, info) = self
+            .store
+            .load_proposal(id)
+            .await?
+            .ok_or_else(|| DraftError::UnknownDraft(id.to_owned()))?;
+        let subject = subject_of(&loaded)?;
+        let flow = upstream(&self.store, &loaded.draft.base).await?;
+        let mut ops = loaded.draft_ops();
+        let mut refusal = still_applies(&subject, &ops, &flow.current).err();
+        if let Some(user) = approver {
+            fill_approver(&mut ops, user);
+        }
+        let analysis = analyze_merge_applying(
+            &flow.base_snapshot,
+            &flow.current,
+            &ops,
+            policy,
+            directory,
+            now,
+            &status_at_apply(&ops),
+        );
+        if refusal.is_none()
+            && let Err(rejected) = replay(&flow.current, &ops, policy, directory, now)
+        {
+            refusal = Some(Refusal::from_replay(
+                subject.kind,
+                removes_timing(&ops),
+                &rejected.error,
+            ));
+        }
+        let expired =
+            info.expires_at <= now || is_expired(loaded.draft.scope.expires_week(), policy, now)?;
+        Ok(ProposalPreview {
+            version: loaded.draft.version,
+            status: loaded.draft.status,
+            no_effect: analysis
+                .result_changes
+                .as_ref()
+                .is_some_and(|changes| changes.is_empty()),
+            info,
+            subject,
+            expired,
+            analysis,
+            refusal,
         })
     }
 

@@ -83,3 +83,6 @@ Pointers are `<file>#/$defs/<Name>`.
   rows and must keep matching their hash); `common.json` `Surface` adds
   `draft_merge`, `request_merge`, `cherry_pick` (all of `Surface::ALL`);
   `BlameEntry.field` uses the domain's blame names (`slot`, `rsvp:<id>`, …).
+- A6: `inbox.json` `Proposal.kind` adds the request types
+  (`new_fixed`, `change_fixed`, `join`, `leave`, `swap`), `source` adds
+  `chat`, `flags` adds `requester_unauthorised`.

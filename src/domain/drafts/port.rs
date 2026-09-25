@@ -527,6 +527,93 @@ impl<T: DraftStore + Sync> DraftStore for &T {
     }
 }
 
+/// A shared store: the API's writer and its readers hold one `Arc`.
+impl<T: DraftStore + Send + Sync> DraftStore for std::sync::Arc<T> {
+    fn snapshot_with_head(
+        &self,
+    ) -> impl Future<Output = Result<(ScheduleSnapshot, ChangeRef), StoreError>> + Send {
+        (**self).snapshot_with_head()
+    }
+
+    fn records_after(
+        &self,
+        base: &ChangeRef,
+    ) -> impl Future<Output = Result<Vec<ChangeRecord>, StoreError>> + Send {
+        (**self).records_after(base)
+    }
+
+    fn create_draft(
+        &self,
+        new: NewDraft,
+    ) -> impl Future<Output = Result<DraftCreated, StoreError>> + Send {
+        (**self).create_draft(new)
+    }
+
+    fn load_draft(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = Result<Option<LoadedDraft>, StoreError>> + Send {
+        (**self).load_draft(id)
+    }
+
+    fn list_drafts(
+        &self,
+        status: Option<DraftStatus>,
+    ) -> impl Future<Output = Result<Vec<StoredDraft>, StoreError>> + Send {
+        (**self).list_drafts(status)
+    }
+
+    fn recorded_draft_request(
+        &self,
+        author: &Actor,
+        request_id: &str,
+    ) -> impl Future<Output = Result<Option<(String, StoredDraft)>, StoreError>> + Send {
+        (**self).recorded_draft_request(author, request_id)
+    }
+
+    fn draft_events(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = Result<Vec<DraftEvent>, StoreError>> + Send {
+        (**self).draft_events(id)
+    }
+
+    fn update_draft(
+        &self,
+        update: DraftUpdate,
+    ) -> impl Future<Output = Result<DraftWrite, StoreError>> + Send {
+        (**self).update_draft(update)
+    }
+
+    fn commit_merge(
+        &self,
+        expected_revision: u64,
+        changes: ChangeSet,
+        meta: ChangeMeta,
+        draft_id: &str,
+        expected_version: u64,
+        note: Option<String>,
+    ) -> impl Future<Output = Result<MergeCommit, StoreError>> + Send {
+        (**self).commit_merge(
+            expected_revision,
+            changes,
+            meta,
+            draft_id,
+            expected_version,
+            note,
+        )
+    }
+
+    fn expire_drafts(
+        &self,
+        week: DateTime<Utc>,
+        at: DateTime<Utc>,
+        actor: &Actor,
+    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
+        (**self).expire_drafts(week, at, actor)
+    }
+}
+
 impl fmt::Display for DraftStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

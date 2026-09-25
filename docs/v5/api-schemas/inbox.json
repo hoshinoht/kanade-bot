@@ -73,14 +73,21 @@
       "properties": {
         "id": { "type": "string" },
         "short_id": { "type": "string" },
-        "kind": { "enum": ["move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix"] },
+        "kind": {
+          "enum": [
+            "move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix",
+            "new_fixed", "change_fixed", "join", "leave", "swap"
+          ]
+        },
         "kind_label": { "type": "string" },
-        "source": { "enum": ["extraction", "self_service"] },
+        "source": { "enum": ["extraction", "chat", "self_service"] },
         "tab": { "enum": ["extractor", "self_service"] },
         "version": { "type": "integer", "minimum": 0 },
         "flags": {
           "type": "array",
-          "items": { "enum": ["conflict", "expired", "requester_frozen", "no_effect"] }
+          "items": {
+            "enum": ["conflict", "expired", "requester_frozen", "requester_unauthorised", "no_effect"]
+          }
         },
         "preview": { "$ref": "#/$defs/ProposalPreview" },
         "expires_at": { "$ref": "common.json#/$defs/NullableString" },

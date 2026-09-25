@@ -18,14 +18,16 @@ use crate::{
     bot::commands::{AccessPolicy, Invoker},
     domain::{
         catalog::BossTable,
-        drafts::{DraftKind, DraftStatus, ProposalStore},
+        drafts::{DraftKind, DraftStatus, LoadedDraft, ProposalStore, StoredProposal},
         history::{
             Actor, Blame, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery,
             ChangeRecord, ChangeRef, HeldReminders, HistoryVerification, JournalHeld, blame,
             changed_fields,
         },
         members::{MemberProfile, MemberStore, PortalEdit},
+        model_log::{ModelLogStore, WatchedMessage},
         notify::DeliveryJournal,
+        proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
     },
@@ -42,6 +44,19 @@ pub trait ReadStore: Send + Sync {
     fn member(&self, user_id: String) -> ReadFuture<'_, Option<MemberProfile>>;
     /// Live extractor proposals plus submitted member requests.
     fn inbox_count(&self) -> ReadFuture<'_, u64>;
+    /// Live proposals, oldest first.
+    fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>>;
+    /// Submitted member requests with their operations, oldest first.
+    fn submitted_requests(&self) -> ReadFuture<'_, Vec<LoadedDraft>>;
+    /// Any draft (admin, request or proposal) with its operations.
+    fn draft(&self, id: String) -> ReadFuture<'_, Option<LoadedDraft>>;
+    fn cards(&self, proposal_ids: Vec<String>) -> ReadFuture<'_, Vec<StoredCard>>;
+    /// A channel's cached messages created at or after `since`.
+    fn messages(
+        &self,
+        channel_id: String,
+        since: DateTime<Utc>,
+    ) -> ReadFuture<'_, Vec<WatchedMessage>>;
     /// Each field of `target` any record set, with the last record's seq.
     fn last_changes(&self, target: BlameTarget) -> ReadFuture<'_, BTreeMap<String, u64>>;
     /// The last record at or before `version` that set `field` of `target`:
@@ -95,6 +110,8 @@ where
         + BlameIndex
         + MemberStore
         + ProposalStore
+        + ProposalCardStore
+        + ModelLogStore
         + DeliveryJournal
         + Send
         + Sync,
@@ -126,6 +143,40 @@ where
                 .count();
             Ok((proposals + requests) as u64)
         })
+    }
+
+    fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>> {
+        Box::pin(self.list_proposals(true))
+    }
+
+    fn submitted_requests(&self) -> ReadFuture<'_, Vec<LoadedDraft>> {
+        Box::pin(async move {
+            let mut requests = Vec::new();
+            for draft in self.list_drafts(Some(DraftStatus::Submitted)).await? {
+                if draft.kind == DraftKind::Request
+                    && let Some(loaded) = self.load_draft(&draft.id).await?
+                {
+                    requests.push(loaded);
+                }
+            }
+            Ok(requests)
+        })
+    }
+
+    fn draft(&self, id: String) -> ReadFuture<'_, Option<LoadedDraft>> {
+        Box::pin(async move { self.load_draft(&id).await })
+    }
+
+    fn cards(&self, proposal_ids: Vec<String>) -> ReadFuture<'_, Vec<StoredCard>> {
+        Box::pin(async move { self.load_cards(&proposal_ids).await })
+    }
+
+    fn messages(
+        &self,
+        channel_id: String,
+        since: DateTime<Utc>,
+    ) -> ReadFuture<'_, Vec<WatchedMessage>> {
+        Box::pin(async move { self.channel_messages(&channel_id, since, false).await })
     }
 
     fn last_changes(&self, target: BlameTarget) -> ReadFuture<'_, BTreeMap<String, u64>> {

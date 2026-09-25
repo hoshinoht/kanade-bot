@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub use refusal::{Refusal, scheduler};
+pub use runs::strict_time;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

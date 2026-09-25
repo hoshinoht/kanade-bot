@@ -9,13 +9,27 @@ use tokio::sync::Mutex;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
+    drafts::{ProposalStore, StoredDraft},
     history::{Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome},
+    ids::RandomIds,
     members::Roster,
-    schedule::{FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange},
-    scheduler::{Clock, IdSource, ScheduleStore, SchedulerResult, SchedulerService, StoreError},
+    proposals::Approver,
+    requests::NoFreezes,
+    schedule::{
+        FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange,
+    },
+    scheduler::{
+        Approved, Clock, IdSource, ProposalApproved, ProposalError, ProposalPreview, Rejected,
+        RequestError, RequestPreview, ScheduleStore, SchedulerResult, SchedulerService, StoreError,
+    },
 };
 
 pub type WriteFuture<'a, T> = Pin<Box<dyn Future<Output = SchedulerResult<T>> + Send + 'a>>;
+/// A request or proposal decision (their own error types).
+pub type DecideFuture<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
+
+/// No freeze store exists yet: nobody is frozen.
+const GATE: NoFreezes = NoFreezes;
 
 /// What every write reads besides its arguments.
 pub struct WriteContext {
@@ -94,6 +108,56 @@ pub trait Writer: Send + Sync {
         held: &'a dyn ReadStore,
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, RevertOutcome>;
+
+    /// Previews write nothing and never wait for the writer.
+    fn preview_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        choices: Option<FixedEditChoices>,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, RequestPreview, RequestError>;
+
+    fn preview_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: Option<&'a str>,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, ProposalPreview, ProposalError>;
+
+    fn approve_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        version: u64,
+        choices: Option<FixedEditChoices>,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, Approved, RequestError>;
+
+    fn reject_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        version: u64,
+        reason: &'a str,
+    ) -> DecideFuture<'a, Rejected, RequestError>;
+
+    /// `edit`: the portal's "edit, then approve" time.
+    fn approve_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: &'a Approver,
+        edit: Option<DateTime<Utc>>,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, ProposalApproved, ProposalError>;
+
+    fn reject_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: &'a Approver,
+    ) -> DecideFuture<'a, StoredDraft, ProposalError>;
 }
 
 /// Which recorded changes a rollback undoes.
@@ -136,21 +200,40 @@ impl Clock for ApiClock {
     }
 }
 
-pub struct SchedulerWriter<S, I, C> {
-    service: Mutex<SchedulerService<S, I, C>>,
+/// A fixed instant for one preview.
+struct Pinned(DateTime<Utc>);
+
+impl Clock for Pinned {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
 }
 
-impl<S, I, C> SchedulerWriter<S, I, C> {
+pub struct SchedulerWriter<S, I, C> {
+    service: Mutex<SchedulerService<S, I, C>>,
+    /// The same store, for previews outside the writer lock.
+    reader: S,
+    attendance: crate::domain::attendance::AttendancePolicy,
+}
+
+impl<S: ScheduleStore + Clone, I: IdSource, C: Clock> SchedulerWriter<S, I, C> {
     pub fn new(service: SchedulerService<S, I, C>) -> Self {
         Self {
+            reader: service.store().clone(),
+            attendance: service.attendance(),
             service: Mutex::new(service),
         }
+    }
+
+    fn previewer(&self, now: DateTime<Utc>) -> SchedulerService<S, RandomIds, Pinned> {
+        SchedulerService::new(self.reader.clone(), RandomIds, Pinned(now))
+            .with_attendance(self.attendance)
     }
 }
 
 impl<S, I, C> Writer for SchedulerWriter<S, I, C>
 where
-    S: ScheduleStore + ChangeHistory + Send + Sync,
+    S: ScheduleStore + ChangeHistory + ProposalStore + Clone + Send + Sync,
     // Rollbacks borrow the whole service across awaits.
     I: IdSource + Send + Sync,
     C: Clock + Send + Sync,
@@ -292,6 +375,98 @@ where
                         .await
                 }
             }
+        })
+    }
+
+    fn preview_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        choices: Option<FixedEditChoices>,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, RequestPreview, RequestError> {
+        Box::pin(async move {
+            self.previewer(now)
+                .preview_request(actor, id, choices, &ctx.policy, &ctx.directory, &GATE)
+                .await
+        })
+    }
+
+    fn preview_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: Option<&'a str>,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, ProposalPreview, ProposalError> {
+        Box::pin(async move {
+            self.previewer(now)
+                .preview_proposal(id, approver, &ctx.policy, &ctx.directory)
+                .await
+        })
+    }
+
+    fn approve_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        version: u64,
+        choices: Option<FixedEditChoices>,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, Approved, RequestError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .approve_request(
+                    actor,
+                    id,
+                    version,
+                    choices,
+                    &ctx.policy,
+                    &ctx.directory,
+                    &GATE,
+                )
+                .await
+        })
+    }
+
+    fn reject_request<'a>(
+        &'a self,
+        actor: &'a Actor,
+        id: &'a str,
+        version: u64,
+        reason: &'a str,
+    ) -> DecideFuture<'a, Rejected, RequestError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service.reject_request(actor, id, version, reason).await
+        })
+    }
+
+    fn approve_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: &'a Approver,
+        edit: Option<DateTime<Utc>>,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, ProposalApproved, ProposalError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .approve_proposal_at(id, approver, edit, &ctx.policy, &ctx.directory)
+                .await
+        })
+    }
+
+    fn reject_proposal<'a>(
+        &'a self,
+        id: &'a str,
+        approver: &'a Approver,
+    ) -> DecideFuture<'a, StoredDraft, ProposalError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service.reject_proposal(id, approver).await
         })
     }
 }

@@ -142,7 +142,7 @@ fn declared(
     (version, Explicit { expect, overrides })
 }
 
-fn strict_time(text: &str) -> Option<NaiveTime> {
+pub fn strict_time(text: &str) -> Option<NaiveTime> {
     let bytes = text.as_bytes();
     (bytes.len() == 5 && bytes[2] == b':' && text[..2].bytes().all(|b| b.is_ascii_digit()))
         .then(|| NaiveTime::parse_from_str(text, "%H:%M").ok())

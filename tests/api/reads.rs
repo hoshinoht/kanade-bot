@@ -12,7 +12,11 @@ use kanade::{
     api::{
         auth::{
             AdminAuth,
+            crypto::SealedSecret,
+            discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
+            fake::FakeDiscord,
             staff::{GuildStaffGate, StoreGuildMembers},
+            wire,
         },
         listeners::Site,
         state::{ApiState, ChannelEntry, GuildAccess, PersonaOption, StaticChannels},
@@ -43,6 +47,14 @@ use crate::{
 };
 
 const TOKEN: &str = "break-glass-token-with-at-least-32-bytes!";
+const TAILSCALE_ADMIN: &str = "ops@example.com";
+const EDGE_SECRET: &str = "edge-secret-shared-with-the-caddy-edge!!";
+/// What the trusted edge adds to every relayed request.
+pub const EDGE_HEADERS: [(&str, &str); 3] = [
+    ("X-Kanade-Edge-Auth", EDGE_SECRET),
+    ("X-Forwarded-For", "100.64.0.7"),
+    ("Tailscale-User-Login", TAILSCALE_ADMIN),
+];
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 
 fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -141,6 +153,8 @@ pub struct Reads {
     pub cookie: String,
     pub csrf: String,
     pub store: Arc<SqliteStore>,
+    /// Discord and Tailscale sign-in, when built `with_logins`.
+    pub discord: Arc<FakeDiscord>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -347,6 +361,16 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
+        Self::build(reset, false).await
+    }
+
+    /// Also Discord sign-in and Tailscale sign-in through a trusted edge
+    /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
+    pub async fn with_logins() -> Self {
+        Self::build(NaiveTime::MIN, true).await
+    }
+
+    async fn build(reset: NaiveTime, logins: bool) -> Self {
         let dir = TempDir::new();
         let store = Arc::new(
             SqliteStore::open(&SqliteStoreConfig {
@@ -377,10 +401,23 @@ impl Reads {
             Arc::new(StoreGuildMembers::new(store.clone(), access.clone())),
         ));
         let pinned = now();
-        let auth = AdminAuth::new(store.clone(), staff)
+        let discord = Arc::new(FakeDiscord::default());
+        let mut auth = AdminAuth::new(store.clone(), staff)
             .with_breakglass(TOKEN.as_bytes())
             .unwrap()
             .with_clock(Arc::new(move || pinned));
+        if logins {
+            auth = auth
+                .with_discord(DiscordLogin::new(
+                    DiscordClient {
+                        client_id: "4242".into(),
+                        client_secret: Secret::new("discord-client-secret"),
+                        redirect_uri: "https://kanade.test/api/admin/auth/discord/callback".into(),
+                    },
+                    discord.clone(),
+                ))
+                .with_tailscale_logins([TAILSCALE_ADMIN.to_owned()]);
+        }
         let zone = chrono_tz::Asia::Kuala_Lumpur;
         let writer = Arc::new(SchedulerWriter::new(SchedulerService::new(
             store.clone(),
@@ -427,8 +464,15 @@ impl Reads {
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
         };
-        let mut site = Site::admin(&fixture.http());
+        let mut http = fixture.http();
+        if logins {
+            http.trusted_proxy = Some([127, 0, 0, 1].into());
+        }
+        let mut site = Site::admin(&http);
         site.auth = Some(Arc::new(auth));
+        if logins {
+            site.edge_secret = Some(Arc::new(SealedSecret::new(EDGE_SECRET.as_bytes()).unwrap()));
+        }
         site.state = Some(Arc::new(state));
         let admin = spawn(site).await;
         let login = send(
@@ -449,9 +493,90 @@ impl Reads {
             cookie: format!("{}={cookie}", kanade::api::auth::wire::SESSION_COOKIE),
             csrf,
             store,
+            discord,
             _fixture: fixture,
             _dir: dir,
         }
+    }
+
+    /// A Discord session for `user` (staff by the stored member rows):
+    /// `(Cookie header, CSRF token)`.
+    pub async fn discord_session(&self, id: u64, name: &str) -> (String, String) {
+        let start = request(
+            self.admin,
+            "GET",
+            ADMIN_HOST,
+            "/api/admin/auth/discord/start?next=%2F",
+            &[],
+        )
+        .await;
+        assert_eq!(start.status, 303, "{}", start.text());
+        let login = start.cookie(wire::LOGIN_COOKIE).unwrap();
+        let location = start.header("location").unwrap().to_owned();
+        let pairs = wire::query_pairs(location.split_once('?').map(|(_, query)| query));
+        let state = wire::query_value(&pairs, "state").unwrap();
+        let challenge = wire::query_value(&pairs, "code_challenge").unwrap();
+        let code = format!("code-{id}");
+        self.discord.approve(
+            &code,
+            &challenge,
+            DiscordUser {
+                id: id.to_string(),
+                username: name.to_lowercase(),
+                global_name: Some(name.into()),
+                bot: false,
+            },
+        );
+        let login_cookie = format!("{}={login}", wire::LOGIN_COOKIE);
+        let callback = request(
+            self.admin,
+            "GET",
+            ADMIN_HOST,
+            &format!(
+                "/api/admin/auth/discord/callback?code={code}&state={}",
+                wire::encode(&state)
+            ),
+            &[("Cookie", &login_cookie)],
+        )
+        .await;
+        let session = callback
+            .cookie(wire::SESSION_COOKIE)
+            .unwrap_or_else(|| panic!("signed in: {}", callback.dump()));
+        let cookie = format!("{}={session}", wire::SESSION_COOKIE);
+        let me = request(
+            self.admin,
+            "GET",
+            ADMIN_HOST,
+            "/api/admin/session",
+            &[("Cookie", &cookie)],
+        )
+        .await;
+        (cookie, me.header("x-kanade-csrf").unwrap().to_owned())
+    }
+
+    /// A Tailscale session through the trusted edge: `(Cookie header, CSRF
+    /// token)`; every later request must carry [`EDGE_HEADERS`] too.
+    pub async fn tailscale_session(&self) -> (String, String) {
+        let mut headers = vec![ORIGIN];
+        headers.extend_from_slice(&EDGE_HEADERS);
+        let login = send(
+            self.admin,
+            "POST",
+            ADMIN_HOST,
+            "/api/admin/auth/tailscale",
+            &headers,
+            None,
+        )
+        .await;
+        assert_eq!(login.status, 200, "{}", login.text());
+        (
+            format!(
+                "{}={}",
+                wire::SESSION_COOKIE,
+                login.cookie(wire::SESSION_COOKIE).unwrap()
+            ),
+            login.header("x-kanade-csrf").unwrap().to_owned(),
+        )
     }
 
     /// GET as the signed-in admin; asserts 200 and the schema.

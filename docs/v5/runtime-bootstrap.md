@@ -110,6 +110,10 @@ write back a stale row over a newer `Seen`); startup roster reconciliation
 refreshes members changed while the bot was offline; and deleting the
 configured admin role revokes its holders (verify Discord sends member
 updates, or filter stored roles against the known role set).
+Admin writes return but drop their Discord effects until then: A4 run and
+timing notices, and inbox approve/reject (A6): persist merge + requester
+notices atomically with the decision and refresh/close the Discord card
+(and its superseded siblings' cards).
 
 ### Edge contract (admin origin)
 

@@ -129,6 +129,37 @@ pub trait ProposalStore: DraftStore {
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
 }
 
+impl<T: ProposalStore + Send + Sync> ProposalStore for std::sync::Arc<T> {
+    fn create_proposal(
+        &self,
+        new: NewProposal,
+    ) -> impl Future<Output = Result<ProposalCreated, StoreError>> + Send {
+        (**self).create_proposal(new)
+    }
+
+    fn load_proposal(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = Result<Option<(LoadedDraft, ProposalInfo)>, StoreError>> + Send {
+        (**self).load_proposal(id)
+    }
+
+    fn list_proposals(
+        &self,
+        live_only: bool,
+    ) -> impl Future<Output = Result<Vec<StoredProposal>, StoreError>> + Send {
+        (**self).list_proposals(live_only)
+    }
+
+    fn expire_proposals(
+        &self,
+        now: DateTime<Utc>,
+        actor: &Actor,
+    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
+        (**self).expire_proposals(now, actor)
+    }
+}
+
 /// Refusals both stores apply before writing; returns `expires_at`.
 pub fn check_new(new: &NewProposal) -> Result<DateTime<Utc>, StoreError> {
     if !matches!(new.author, Actor::System { .. }) {

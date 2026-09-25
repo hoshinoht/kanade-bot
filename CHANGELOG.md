@@ -122,6 +122,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: admin inbox API: Kanade's extraction and chat proposals and members' requests in
+  one list with a preview of what approving would change; approve or reject each
+  (safe to retry), approve a proposed move, add or split at a corrected time in one step,
+  and proposal decisions require a Discord sign-in. Discord card refreshes and notices
+  follow once the bot is wired up.
 - v5: admin history API: paged change history with a total and week/person filters,
   single change records, who-changed-what per run, a history integrity check, and
   revert, restore-week and revert-a-person's-changes with a preview that never writes

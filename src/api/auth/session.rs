@@ -40,6 +40,15 @@ impl AdminSession {
         self.session_id.as_deref()
     }
 
+    /// The Discord user id of a Discord sign-in (Tailscale and token
+    /// sessions have none).
+    pub fn discord_user(&self) -> Option<&str> {
+        match self.method {
+            LoginMethod::Discord => self.actor.id().strip_prefix("discord:"),
+            LoginMethod::Tailscale | LoginMethod::Token => None,
+        }
+    }
+
     /// Attribution for history records.
     pub fn origin(&self) -> Origin {
         let surface = if self.session_id.is_some() {

@@ -6,6 +6,7 @@ mod assets;
 mod auth;
 mod headers;
 mod history;
+mod inbox;
 mod origins;
 mod proxy;
 mod reads;

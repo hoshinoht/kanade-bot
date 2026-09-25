@@ -86,7 +86,10 @@ fn failure(error: &ProposalError) -> Failure {
             text: CHANGED_SINCE_CARD.to_owned(),
             stale: true,
         },
-        ProposalError::Draft(_) => Failure::Private,
+        // Reactions never edit; anything else is a fault.
+        ProposalError::Draft(_) | ProposalError::EditNotApplicable | ProposalError::EditInPast => {
+            Failure::Private
+        }
     }
 }
 
