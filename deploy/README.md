@@ -35,7 +35,7 @@ resolve from it.
 | Personas | `config/personas/` | Mounted read-only at `/config/personas`. |
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
-| Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. |
+| Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. The bot's cached avatar and banner live in `/data/identity` (`KANADE_IDENTITY_DIR`), created `0700` by the gateway side and refreshed from Discord's CDN after each `READY`; deleting it only brings back the monogram and wash until the next refresh. |
 | Edge network | `kanade_edge` (external, `192.168.97.0/24`) | Created by the v4 stack; it must exist. v5 takes `192.168.97.10` with the alias `kanade-bot`. If the network is ever recreated with another subnet, update the addresses in `compose.yaml`. |
 
 ## Build

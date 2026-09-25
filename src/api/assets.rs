@@ -5,42 +5,89 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::UNIX_EPOCH,
 };
 
 use axum::{
     Json,
     extract::{Path as UrlPath, State, rejection::PathRejection},
-    http::{Method, StatusCode, Uri, header},
+    http::{HeaderMap, Method, StatusCode, Uri, header},
     response::{IntoResponse, Response},
 };
+use ring::digest::{Context, SHA256, digest};
 use serde::Serialize;
 
 use super::{error::ApiError, listeners::Site};
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
-const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
+/// Cached identity art, in lookup order (`bot::identity` writes these).
+pub const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
 
 #[derive(Serialize)]
 pub struct Identity {
     name: String,
-    avatar: &'static str,
-    banner: &'static str,
+    /// Carries `?v=<version>` so a refreshed image is a new URL.
+    avatar: String,
+    banner: String,
     cached: bool,
+    /// Changes whenever the name or the cached art does.
+    version: String,
     /// Admin origin only, once the gateway is `READY`.
     bot_user_id: Option<String>,
 }
 
 pub async fn identity(State(site): State<Arc<Site>>) -> Json<Identity> {
+    let name = live_name(&site);
+    let avatar = identity_file(&site, "avatar");
+    let banner = identity_file(&site, "banner");
+    let version = version(&name, [avatar.as_deref(), banner.as_deref()]);
     Json(Identity {
-        name: site.identity_name.clone(),
-        avatar: "/identity/avatar",
-        banner: "/identity/banner",
-        cached: identity_file(&site, "avatar").is_some(),
+        avatar: format!("/identity/avatar?v={version}"),
+        banner: format!("/identity/banner?v={version}"),
+        cached: avatar.is_some(),
+        version,
+        name,
         bot_user_id: site
             .state
             .as_ref()
             .and_then(|state| state.channels.bot_user_id()),
     })
+}
+
+/// The gateway's display name once `READY`, else the configured name.
+fn live_name(site: &Site) -> String {
+    site.state
+        .as_ref()
+        .map(|state| &state.channels)
+        .or(site.bot.as_ref())
+        .and_then(|bot| bot.bot_name())
+        .unwrap_or_else(|| site.identity_name.clone())
+}
+
+/// Name plus each cached file's extension, size and mtime: cheap, and an
+/// atomic replace always yields a new mtime.
+fn version(name: &str, files: [Option<&Path>; 2]) -> String {
+    let mut context = Context::new(&SHA256);
+    context.update(name.as_bytes());
+    for file in files {
+        context.update(b"\0");
+        let Some((path, meta)) = file.and_then(|path| Some((path, path.metadata().ok()?))) else {
+            continue;
+        };
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |since| since.as_nanos());
+        context.update(path.extension().unwrap_or_default().as_encoded_bytes());
+        context.update(&meta.len().to_le_bytes());
+        context.update(&modified.to_le_bytes());
+    }
+    hex(&context.finish().as_ref()[..6])
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn identity_file(site: &Site, stem: &str) -> Option<PathBuf> {
@@ -57,27 +104,58 @@ fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn svg(body: String) -> Response {
-    ([(header::CONTENT_TYPE, "image/svg+xml")], body).into_response()
+/// Identity images with a content ETag; a matching `If-None-Match` is a 304.
+async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Response {
+    let (content_type, bytes) = match identity_file(site, stem) {
+        Some(path) => match tokio::fs::read(&path).await {
+            Ok(bytes) => (content_type(&path), bytes),
+            Err(_) => return ApiError::NOT_FOUND.into_response(),
+        },
+        None if stem == "avatar" => ("image/svg+xml", monogram(&live_name(site)).into_bytes()),
+        None => ("image/svg+xml", WASH.as_bytes().to_vec()),
+    };
+    let etag = format!("\"{}\"", hex(&digest(&SHA256, &bytes).as_ref()[..8]));
+    let fresh = request
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|tags| tags.split(',').any(|tag| tag.trim() == etag));
+    if fresh {
+        return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+    }
+    (
+        [
+            (header::CONTENT_TYPE, content_type.to_owned()),
+            (header::ETAG, etag),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 
-/// Nothing cached: a monogram on the window-chrome colour, like v4's fallback initial.
-pub async fn avatar(State(site): State<Arc<Site>>) -> Response {
-    if let Some(path) = identity_file(&site, "avatar") {
-        return send(&path).await;
-    }
-    let initial = escape(&site.identity_name.chars().next().unwrap_or('K').to_string());
-    svg(format!(
+/// A monogram on the window-chrome colour, like v4's fallback initial.
+fn monogram(name: &str) -> String {
+    let initial: String = name
+        .trim()
+        .chars()
+        .next()
+        .unwrap_or('K')
+        .to_uppercase()
+        .collect();
+    let initial = escape(&initial);
+    format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#5f6579"/><text x="32" y="44" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="34" fill="#fbf6e8">{initial}</text></svg>"##
-    ))
+    )
 }
 
-/// Nothing cached: v4's accent wash.
-pub async fn banner(State(site): State<Arc<Site>>) -> Response {
-    if let Some(path) = identity_file(&site, "banner") {
-        return send(&path).await;
-    }
-    svg(r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 150" preserveAspectRatio="xMidYMid slice"><rect width="600" height="150" fill="#eec75f"/><path d="M0 110 L600 40 L600 150 L0 150 Z" fill="#4d5c9e" opacity=".22"/><path d="M0 150 L600 90 L600 150 Z" fill="#4d5c9e" opacity=".25"/></svg>"##.to_owned())
+/// v4's accent wash.
+const WASH: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 150" preserveAspectRatio="xMidYMid slice"><rect width="600" height="150" fill="#eec75f"/><path d="M0 110 L600 40 L600 150 L0 150 Z" fill="#4d5c9e" opacity=".22"/><path d="M0 150 L600 90 L600 150 Z" fill="#4d5c9e" opacity=".25"/></svg>"##;
+
+pub async fn avatar(State(site): State<Arc<Site>>, headers: HeaderMap) -> Response {
+    identity_image(&site, "avatar", &headers).await
+}
+
+pub async fn banner(State(site): State<Arc<Site>>, headers: HeaderMap) -> Response {
+    identity_image(&site, "banner", &headers).await
 }
 
 /// `/art/{portraits,icons,entry}/{key}`; absent art is a plain 404 ("absent means absent").

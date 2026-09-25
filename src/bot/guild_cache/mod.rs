@@ -4,11 +4,13 @@
 //! which read it through their own traits (`views.rs`).
 
 mod permissions;
+mod profile;
 mod views;
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use tokio::sync::watch;
 use twilight_model::channel::permission_overwrite::PermissionOverwrite;
 use twilight_model::channel::{Channel, ChannelType};
 use twilight_model::guild::{Guild, Permissions, Role};
@@ -16,7 +18,9 @@ use twilight_model::id::{
     Id,
     marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker},
 };
+use twilight_model::util::ImageHash;
 
+pub use profile::SelfAvatar;
 pub use views::WatchList;
 
 /// A channel or thread as last seen on the gateway.
@@ -93,6 +97,10 @@ struct State {
     self_names: Vec<String>,
     /// The bot's guild nickname (`GUILD_CREATE`).
     self_nick: Option<String>,
+    /// Global name, else user name (`READY`, `USER_UPDATE`).
+    self_display: Option<String>,
+    self_avatar: Option<ImageHash>,
+    self_guild_avatar: Option<ImageHash>,
     /// `None` until the bot's own member is seen: permissions are unknown.
     self_roles: Option<Vec<Id<RoleMarker>>>,
     roles: HashMap<Id<RoleMarker>, Permissions>,
@@ -106,6 +114,8 @@ struct State {
 pub struct GuildCache {
     guild_id: Id<GuildMarker>,
     state: RwLock<State>,
+    /// Bumped when the bot's name or avatar may have changed.
+    profile: watch::Sender<u64>,
 }
 
 impl GuildCache {
@@ -113,6 +123,7 @@ impl GuildCache {
         Self {
             guild_id,
             state: RwLock::default(),
+            profile: watch::Sender::new(0),
         }
     }
 
@@ -136,11 +147,6 @@ impl GuildCache {
     /// The bot's own user id, from `READY`.
     pub fn set_self(&self, self_id: Id<UserMarker>) {
         self.write().self_id = Some(self_id);
-    }
-
-    /// The bot's user and global names, from `READY`.
-    pub fn set_self_names(&self, names: Vec<String>) {
-        self.write().self_names = names;
     }
 
     /// What members may call the bot (v4 `user.name`/`display_name`, plus
@@ -199,7 +205,11 @@ impl GuildCache {
             .find(|member| Some(member.user.id) == self_id)
         {
             state.self_roles = Some(me.roles.clone());
-            state.self_nick.clone_from(&me.nick);
+            let changed = profile::set_member(&mut state, me.nick.as_deref(), me.avatar);
+            drop(state);
+            if changed {
+                self.profile_changed();
+            }
         }
     }
 

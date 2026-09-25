@@ -15,6 +15,7 @@ pub mod extract_feed;
 pub mod gateway;
 pub mod guild_cache;
 pub mod handler;
+pub mod identity;
 pub mod ids;
 pub mod mentions;
 pub mod roster;

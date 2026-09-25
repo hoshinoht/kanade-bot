@@ -35,6 +35,7 @@ pub async fn serve(
         admin_site.edge_secret = Some(Arc::new(auth::edge_secret(path)?));
     }
     admin_site.listener_ip = Some(config.admin_bind.ip());
+    let bot = live.as_ref().map(|live| Arc::clone(&live.state.channels));
     if let Some(live) = live {
         admin_site.auth = Some(live.auth);
         admin_site.state = Some(live.state);
@@ -44,6 +45,7 @@ pub async fn serve(
     let public = match (config.public_bind, Site::public(&config.http)) {
         (Some(address), Some(mut site)) => {
             site.listener_ip = Some(address.ip());
+            site.bot = bot;
             Some((bind(address, mode).await?, site))
         }
         (Some(_), None) => {

@@ -45,6 +45,7 @@ use crate::{
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
         handler::{Fanout, MessageCounts, Reactions},
+        identity,
         roster::{LiveRoster, RosterTask},
     },
     chat::driver::DriverConfig,
@@ -329,10 +330,18 @@ where
     };
     handler.chat = Some(feed);
 
-    let workers = vec![
+    let mut workers = vec![
         tokio::spawn(roster_task.run(roster_queue)),
         tokio::spawn(Reactions { desk, rsvp }.run(reaction_queue)),
     ];
+    let identity_dir = config.runtime.http.identity_dir.as_deref();
+    let transport = Arc::clone(&wiring.transport);
+    workers.extend(identity::spawn(
+        identity_dir,
+        transport,
+        Arc::clone(&cache),
+        stopped.clone(),
+    ));
     let tick: Pin<Box<dyn Future<Output = ()>>> = Box::pin(tick.run(ready, stopped));
     let (stop_gateway, stop_requested) = oneshot::channel::<()>();
     let mut source = wiring.source;

@@ -80,7 +80,7 @@ the container's own listener address) and has a bounded timeout.
 | `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. |
 | `KANADE_WEB_DIR` | unset | Web workspace root; serves `apps/admin/dist` and `apps/public/dist` (same layout as `tools/pwa-mock`). Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
-| `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. |
+| `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. With the gateway on, serve creates it (`0700`) and, after each `READY` and on the bot's own nickname/avatar/user changes, fetches the guild avatar (else user avatar) and banner from Discord's CDN (png/webp/gif/jpeg, ≤ 8 MiB, 20 s timeout, no redirects), replacing files by temp + rename; no avatar/banner removes the file (monogram/wash). Logs `identity_cached {avatar, banner}`; failures log WARN `identity_refresh_failed {kind, reason}` and keep the last files. Compose sets `/data/identity`. |
 | `KANADE_ADMIN_DISCORD_CLIENT_ID` | unset | Discord application id; the three Discord variables are all-or-none. |
 | `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | unset | File holding the client secret (one line, ≤ 4 KiB). |
 | `KANADE_ADMIN_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_ADMIN_HOST/api/admin/auth/discord/callback` (`http:` only for loopback dev hosts); needs `KANADE_ADMIN_HOST`. |

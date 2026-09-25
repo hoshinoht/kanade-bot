@@ -158,18 +158,17 @@ impl Router {
     /// adapter does not handle.
     pub fn route(&mut self, event: Event) -> Option<BotEvent> {
         if let Event::Ready(ready) = &event {
-            self.cache.set_self(ready.user.id);
-            let user = &ready.user;
-            self.cache.set_self_names(
-                std::iter::once(user.name.clone())
-                    .chain(user.global_name.clone())
-                    .collect(),
-            );
+            self.cache.set_self_user(&ready.user);
             return Some(BotEvent::Ready {
                 self_id: ready.user.id,
                 application_id: ready.application.id,
                 name: ready.user.name.clone(),
             });
+        }
+        // Guild-less, and always the bot itself.
+        if let Event::UserUpdate(update) = &event {
+            self.cache.set_self_user(update);
+            return None;
         }
         match event.guild_id() {
             Some(guild) if guild == self.scope.guild_id => {}
@@ -271,6 +270,7 @@ impl Router {
             }
             Event::MemberUpdate(update) => {
                 cache.member_roles(update.user.id, &update.roles);
+                cache.member_profile(update.user.id, update.nick.as_deref(), update.avatar);
                 member_update(&update, role, &self.guild.admin_roles()).map(BotEvent::Roster)
             }
             Event::MemberRemove(remove) => (!remove.user.bot).then(|| {

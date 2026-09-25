@@ -1,5 +1,12 @@
 //! Static PWA shells with SPA fallback, boss art and identity art.
 
+use std::sync::Arc;
+
+use kanade::api::{
+    listeners::Site,
+    state::{ChannelEntry, ChannelList},
+};
+
 use crate::support::{self, ADMIN_HOST, Fixture, PUBLIC_HOST, SECRET, get, read, request};
 
 #[tokio::test]
@@ -138,13 +145,16 @@ async fn identity_uses_cached_art_or_generated_stand_ins() {
     let mut http = fixture.http();
     let admin = support::admin(&http).await;
     let identity = get(admin, ADMIN_HOST, "/api/identity").await.json();
+    let version = identity["version"].as_str().unwrap().to_owned();
+    assert_eq!(version.len(), 12);
     assert_eq!(
         identity,
         serde_json::json!({
             "name": "Kanade",
-            "avatar": "/identity/avatar",
-            "banner": "/identity/banner",
+            "avatar": format!("/identity/avatar?v={version}"),
+            "banner": format!("/identity/banner?v={version}"),
             "cached": false,
+            "version": version,
             "bot_user_id": null,
         })
     );
@@ -155,19 +165,75 @@ async fn identity_uses_cached_art_or_generated_stand_ins() {
     let dir = fixture.path("identity");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("avatar.png"), b"\x89PNG avatar").unwrap();
-    http.identity_dir = Some(dir);
+    http.identity_dir = Some(dir.clone());
     let cached = support::admin(&http).await;
-    assert_eq!(
-        get(cached, ADMIN_HOST, "/api/identity").await.json()["cached"],
-        true
-    );
+    let identity = get(cached, ADMIN_HOST, "/api/identity").await.json();
+    assert_eq!(identity["cached"], true);
+    assert_ne!(identity["version"], version, "art changes the version");
     let avatar = get(cached, ADMIN_HOST, "/identity/avatar").await;
     assert_eq!(avatar.body, b"\x89PNG avatar");
-    assert_eq!(avatar.header("cache-control"), Some("public, max-age=3600"));
+    assert_eq!(
+        avatar.header("cache-control"),
+        Some("public, max-age=86400, must-revalidate")
+    );
+    let etag = avatar.header("etag").unwrap().to_owned();
+    let revalidated = request(
+        cached,
+        "GET",
+        ADMIN_HOST,
+        "/identity/avatar?v=x",
+        &[("If-None-Match", &etag)],
+    )
+    .await;
+    assert_eq!(revalidated.status, 304);
+    assert!(revalidated.body.is_empty());
     assert_eq!(
         get(cached, ADMIN_HOST, "/identity/banner")
             .await
             .header("content-type"),
         Some("image/svg+xml")
     );
+
+    // A refresh replaces the file (temp + rename): new version, new ETag.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(dir.join(".avatar.tmp"), b"RIFF webp avatar").unwrap();
+    std::fs::rename(dir.join(".avatar.tmp"), dir.join("avatar.webp")).unwrap();
+    std::fs::remove_file(dir.join("avatar.png")).unwrap();
+    let refreshed = get(cached, ADMIN_HOST, "/api/identity").await.json();
+    assert_ne!(refreshed["version"], identity["version"]);
+    let avatar = get(cached, ADMIN_HOST, "/identity/avatar").await;
+    assert_eq!(avatar.header("content-type"), Some("image/webp"));
+    assert_ne!(avatar.header("etag"), Some(etag.as_str()));
+}
+
+struct NamedBot;
+
+impl ChannelList for NamedBot {
+    fn channels(&self) -> Vec<ChannelEntry> {
+        Vec::new()
+    }
+
+    fn bot_name(&self) -> Option<String> {
+        Some("Yoisaki".into())
+    }
+}
+
+#[tokio::test]
+async fn public_identity_shows_the_live_name_but_never_the_bot_id() {
+    let fixture = Fixture::new();
+    let http = fixture.http();
+    let mut site = Site::public(&http).unwrap();
+    let before = support::spawn(site.clone()).await;
+    assert_eq!(
+        get(before, PUBLIC_HOST, "/api/identity").await.json()["name"],
+        "Kanade",
+        "configured name before READY"
+    );
+    site.bot = Some(Arc::new(NamedBot));
+    let public = support::spawn(site).await;
+    let identity = get(public, PUBLIC_HOST, "/api/identity").await.json();
+    assert_eq!(identity["name"], "Yoisaki");
+    assert_eq!(identity["bot_user_id"], serde_json::Value::Null);
+    let avatar = get(public, PUBLIC_HOST, "/identity/avatar").await;
+    assert!(avatar.text().contains(">Y</text>"));
 }

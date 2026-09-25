@@ -9,11 +9,11 @@ use super::{
     admin, assets,
     auth::{AdminAuth, crypto::SealedSecret},
     error, guard, public,
-    state::ApiState,
+    state::{ApiState, ChannelList},
 };
 use crate::runtime::{application::HealthProbe, config::HttpConfig};
 
-/// Offline mode has no Discord bot user to name the masthead after.
+/// The masthead name before `READY`, and in offline mode.
 const OFFLINE_IDENTITY_NAME: &str = "Kanade";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,7 +49,10 @@ pub struct Site {
     pub app_dir: Option<PathBuf>,
     pub boss_dir: Option<PathBuf>,
     pub identity_dir: Option<PathBuf>,
+    /// Shown until the gateway names the bot.
     pub identity_name: String,
+    /// The live bot name for the public origin, which has no `state`.
+    pub bot: Option<Arc<dyn ChannelList>>,
     pub limits: guard::limits::Limits,
     /// Admin sign-in; `None` answers `auth_unavailable`. Never set on the public site.
     pub auth: Option<Arc<AdminAuth>>,
@@ -103,6 +106,7 @@ impl Site {
             boss_dir: http.boss_dir.clone(),
             identity_dir: http.identity_dir.clone(),
             identity_name: OFFLINE_IDENTITY_NAME.into(),
+            bot: None,
             limits: guard::limits::Limits::default(),
             auth: None,
             edge_secret: None,

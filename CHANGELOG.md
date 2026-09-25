@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5 admin app brand shows the live Discord bot: its name (server nickname, global name, then
+  user name) and its avatar and banner, cached from Discord's CDN into `/data/identity` after
+  each READY or profile change, with versioned URLs so browsers pick up new art.
 - v5 container logs explain persona and chat behaviour: `persona_selected` at startup (fallbacks
   and profile load problems warn), `settings_changed` with keys and before/after values,
   `persona_switched`/`personas_reloaded`, and chat lifecycle events (`chat_admitted`,

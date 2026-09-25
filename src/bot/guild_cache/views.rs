@@ -97,6 +97,10 @@ impl ChannelList for GuildCache {
     fn bot_user_id(&self) -> Option<String> {
         self.self_id().map(id_text)
     }
+
+    fn bot_name(&self) -> Option<String> {
+        self.display_name()
+    }
 }
 
 impl ChannelDirectory for GuildCache {

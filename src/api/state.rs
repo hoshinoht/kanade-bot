@@ -361,6 +361,17 @@ pub trait ChannelList: Send + Sync {
     fn bot_user_id(&self) -> Option<String> {
         None
     }
+
+    /// The bot's live display name, once the gateway said `READY`.
+    fn bot_name(&self) -> Option<String> {
+        None
+    }
+}
+
+impl std::fmt::Debug for dyn ChannelList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ChannelList")
+    }
 }
 
 /// A fixed list: offline use and tests.

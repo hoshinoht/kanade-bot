@@ -20,6 +20,7 @@ use twilight_model::id::{
     Id,
     marker::{ChannelMarker, GuildMarker, InteractionMarker, MessageMarker, UserMarker},
 };
+use twilight_model::user::CurrentUser;
 
 pub use outcome::{AmbiguousKind, Outcome, RejectionKind, classify_status, codes};
 pub use twilight::{MAX_SENDS, TransportConfig, TwilightTransport};
@@ -252,4 +253,10 @@ pub trait DiscordTransport: Send + Sync {
         &self,
         guild: Id<GuildMarker>,
     ) -> impl Future<Output = Outcome<Vec<Channel>>> + Send;
+
+    /// The bot's own user (`GET /users/@me`: the banner `READY` may omit).
+    /// Test doubles that never refresh identity art may keep the default.
+    fn current_user(&self) -> impl Future<Output = Outcome<CurrentUser>> + Send {
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
 }

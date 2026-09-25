@@ -12,6 +12,7 @@ use twilight_model::id::{
     Id,
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
+use twilight_model::user::CurrentUser;
 
 use crate::bot::transport::{
     ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit,
@@ -159,5 +160,9 @@ impl DiscordTransport for LateTransport {
 
     async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
         delegate!(self, guild_channels(guild))
+    }
+
+    async fn current_user(&self) -> Outcome<CurrentUser> {
+        delegate!(self, current_user())
     }
 }

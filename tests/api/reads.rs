@@ -850,6 +850,9 @@ async fn members_channels_personas_and_fixed() {
         .read("/api/identity", "identity.json#/$defs/Identity")
         .await;
     assert_eq!(identity["bot_user_id"], "42");
+    assert_eq!(identity["name"], "mikan", "the live name once READY");
+    let monogram = request(reads.admin, "GET", ADMIN_HOST, "/identity/avatar", &[]).await;
+    assert!(monogram.text().contains(">M</text>"), "live initial");
     let personas = reads
         .read("/api/admin/personas", "members.json#/$defs/Personas")
         .await;
@@ -1052,5 +1055,9 @@ impl ChannelList for ReadyGuild {
 
     fn bot_user_id(&self) -> Option<String> {
         Some("42".into())
+    }
+
+    fn bot_name(&self) -> Option<String> {
+        Some("mikan".into())
     }
 }

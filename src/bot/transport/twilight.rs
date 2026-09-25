@@ -40,6 +40,7 @@ use twilight_model::id::{
     Id,
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
+use twilight_model::user::CurrentUser;
 
 use super::{
     AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
@@ -505,5 +506,9 @@ impl DiscordTransport for TwilightTransport {
 
     async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
         self.fetch(self.client.guild_channels(guild)).await
+    }
+
+    async fn current_user(&self) -> Outcome<CurrentUser> {
+        self.fetch(self.client.current_user()).await
     }
 }

@@ -37,6 +37,8 @@ services:
       # The volume root is 0750; serve creates these two 0700 on first start.
       KANADE_DB_PATH: /data/db/kanade.sqlite
       KANADE_OWNER_LOCK_DIR: /data/run
+      # The bot's avatar/banner, refreshed after each READY (rootfs is read-only).
+      KANADE_IDENTITY_DIR: /data/identity
       KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
       KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
       KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret

@@ -27,7 +27,10 @@ pub fn cache_policy(path: &str, success: bool) -> &'static str {
     // An explicit max-age would let caches keep a 404/503 (missing chunk, closed art).
     if !success || path.starts_with("/api/") || path == "/api" || path == "/healthz" {
         "no-store"
-    } else if path.starts_with("/art/") || path.starts_with("/identity/") {
+    } else if path.starts_with("/identity/") {
+        // v4's policy; `/api/identity` versions the URLs and responses carry an ETag.
+        "public, max-age=86400, must-revalidate"
+    } else if path.starts_with("/art/") {
         // Unhashed, deployment-replaceable art.
         "public, max-age=3600"
     } else if path.starts_with("/assets/") {
@@ -90,6 +93,10 @@ mod tests {
         assert_eq!(
             cache_policy("/art/entry/carling", true),
             "public, max-age=3600"
+        );
+        assert_eq!(
+            cache_policy("/identity/avatar", true),
+            "public, max-age=86400, must-revalidate"
         );
         assert_eq!(cache_policy("/assets/missing.js", false), "no-store");
         assert_eq!(cache_policy("/art/entry/carling", false), "no-store");

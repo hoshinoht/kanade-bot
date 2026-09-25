@@ -265,7 +265,12 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
     }
 
     let identity = get(public, PUBLIC_HOST, "/api/identity").await.json();
-    assert_eq!(identity["avatar"], "/identity/avatar");
+    assert!(
+        identity["avatar"]
+            .as_str()
+            .unwrap()
+            .starts_with("/identity/avatar?v=")
+    );
     assert_eq!(identity["bot_user_id"], serde_json::Value::Null);
     assert_eq!(
         get(public, PUBLIC_HOST, "/").await.text(),

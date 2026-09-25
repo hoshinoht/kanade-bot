@@ -8,10 +8,11 @@
       "additionalProperties": false,
       "required": ["name", "avatar", "banner", "cached"],
       "properties": {
-        "name": { "type": "string" },
-        "avatar": { "type": "string" },
-        "banner": { "type": "string" },
+        "name": { "type": "string", "description": "The bot's live display name (guild nickname, else global name, else user name) once the gateway is ready; the configured name before that and offline." },
+        "avatar": { "type": "string", "description": "Same-origin URL carrying `?v=<version>`." },
+        "banner": { "type": "string", "description": "Same-origin URL carrying `?v=<version>`." },
         "cached": { "type": "boolean" },
+        "version": { "type": "string", "description": "Short hash of the name and the cached art; changes after an identity refresh. Always sent by the server; optional so earlier fixtures stay valid." },
         "bot_user_id": { "$ref": "common.json#/$defs/NullableString", "description": "The bot's Discord user id; null on the public origin and before the gateway is ready. Always sent by the server; optional so earlier fixtures stay valid." }
       }
     },
