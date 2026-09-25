@@ -127,20 +127,35 @@ pub struct ModelInfo {
     /// False when the alias requires reasoning (a published list without `none`).
     pub off_allowed: bool,
     pub admission: Option<Admission>,
+    /// Set on a listed `<base>:<level>` alias: the picker lists the base only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
+    /// The variant's baked-in level in the `reasoning` vocabulary (`:none` is `off`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixed_effort: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RoleModel {
     pub alias: String,
     pub reasoning: &'static str,
+    /// A stored variant alias: shown as "`variant_of` (fixed: `fixed_effort`)".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixed_effort: Option<&'static str>,
 }
 
-impl From<&StoredRole> for RoleModel {
-    fn from(role: &StoredRole) -> Self {
-        Self {
-            alias: role.alias.clone().unwrap_or_default(),
-            reasoning: role.reasoning.as_str(),
-        }
+fn role_model(role: &StoredRole, catalog: &CatalogSnapshot) -> RoleModel {
+    let variant = role
+        .alias
+        .as_deref()
+        .and_then(|alias| catalog.variant(alias));
+    RoleModel {
+        alias: role.alias.clone().unwrap_or_default(),
+        reasoning: role.reasoning.as_str(),
+        fixed_effort: variant.as_ref().map(|variant| variant.effort.as_str()),
+        variant_of: variant.map(|variant| variant.base),
     }
 }
 
@@ -219,11 +234,11 @@ pub fn self_service(settings: &RuntimeSettings) -> SelfService {
     }
 }
 
-pub fn roles(settings: &RuntimeSettings) -> Roles {
+pub fn roles(settings: &RuntimeSettings, catalog: &CatalogSnapshot) -> Roles {
     Roles {
-        extraction: (&settings.models.extraction).into(),
-        chat: (&settings.models.chat).into(),
-        rewrite: (&settings.models.rewrite).into(),
+        extraction: role_model(&settings.models.extraction, catalog),
+        chat: role_model(&settings.models.chat, catalog),
+        rewrite: role_model(&settings.models.rewrite, catalog),
     }
 }
 
@@ -235,8 +250,11 @@ fn trust_zone(zone: Option<TrustZone>) -> &'static str {
     }
 }
 
-pub fn model_info(model: &CatalogModel) -> ModelInfo {
+pub fn model_info(model: &CatalogModel, catalog: &CatalogSnapshot) -> ModelInfo {
+    let variant = catalog.variant(&model.alias);
     ModelInfo {
+        fixed_effort: variant.as_ref().map(|variant| variant.effort.as_str()),
+        variant_of: variant.map(|variant| variant.base),
         id: model.alias.clone(),
         trust_zone: trust_zone(model.trust_zone),
         leaves_homelab: model.leaves_homelab,

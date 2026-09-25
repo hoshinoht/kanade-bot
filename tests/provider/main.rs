@@ -15,6 +15,7 @@ mod schema;
 mod setup;
 mod setup_probe;
 mod setup_trust;
+mod setup_variants;
 mod stub;
 mod support;
 mod tool_rounds;

@@ -99,8 +99,26 @@ pub async fn check(
         }
     }
     let catalog = stack.catalog();
+    // Variants (`<base>:<level>`) are listed under their base, as the picker does.
     for model in &catalog.models {
-        writeln!(out, "  {}", describe(model)).map_err(io)?;
+        if catalog.variant(&model.alias).is_some() {
+            continue;
+        }
+        let variants: Vec<&str> = catalog
+            .models
+            .iter()
+            .filter(|other| {
+                catalog
+                    .variant(&other.alias)
+                    .is_some_and(|variant| variant.base == model.alias)
+            })
+            .filter_map(|other| other.alias.rsplit_once(':').map(|(_, level)| level))
+            .collect();
+        let mut line = describe(model);
+        if !variants.is_empty() {
+            line.push_str(&format!(" variants: {}", variants.join(", ")));
+        }
+        writeln!(out, "  {line}").map_err(io)?;
     }
 
     writeln!(out, "roles:").map_err(io)?;
@@ -114,9 +132,11 @@ pub async fn check(
             .models
             .iter()
             .any(|model| model.alias == route.alias);
+        let fixed = catalog.variant(&route.alias).is_some();
         let effort = efforts
             .get(&role)
             .map_or("off".to_owned(), |status| match status.stranded {
+                None if fixed => format!("{} (fixed)", status.effort.as_str()),
                 Some(configured) => format!(
                     "{} (configured {})",
                     status.effort.as_str(),

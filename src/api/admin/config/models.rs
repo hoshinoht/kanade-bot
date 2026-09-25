@@ -191,13 +191,56 @@ pub fn apply_roles(
         }
     }
 
-    // Checked after every role is applied: inheritance resolves against the
-    // final extraction level and each role's final alias.
     let mut notices = Vec::new();
+    // A `<base>:<level>` variant bakes its level in: the stored level follows
+    // it (never a 422, the app sends every role on each save). First, so
+    // inheritors see extraction's fixed level.
+    let mut fixed = BTreeSet::new();
     for role in Role::ALL {
         let Some(alias) = role.of(&next).alias.clone() else {
             continue;
         };
+        let Some(level) = catalog
+            .variant(&alias)
+            .and_then(|variant| Reasoning::parse(variant.effort.as_str()))
+        else {
+            continue;
+        };
+        fixed.insert(role.name());
+        let slot = role.of_mut(&mut next);
+        if slot.reasoning == level {
+            continue;
+        }
+        let was = slot.reasoning;
+        slot.reasoning = level;
+        notices.push(if asked.contains(role.name()) {
+            let requested = match was {
+                Reasoning::Inherit => "inherit".to_owned(),
+                other => other.as_str().to_owned(),
+            };
+            format!(
+                "{} reasoning is fixed at {} by {alias}; the requested {requested} is ignored.",
+                role.name(),
+                level.as_str()
+            )
+        } else {
+            format!(
+                "{} reasoning set to {}: {alias} fixes it.",
+                role.name(),
+                level.as_str()
+            )
+        });
+    }
+
+    // Checked after every role is applied: inheritance resolves against the
+    // final extraction level and each role's final alias.
+    for role in Role::ALL {
+        let Some(alias) = role.of(&next).alias.clone() else {
+            continue;
+        };
+        if fixed.contains(role.name()) {
+            continue;
+        }
         let model = find(catalog, &alias);
         let level = resolved(&next, role);
         if legal(model, level) {

@@ -99,3 +99,6 @@ Pointers are `<file>#/$defs/<Name>`.
   server; optional in the schema so earlier responses stay valid). False when
   the alias publishes a `reasoning_efforts` list without `none`; `off` is then
   refused (422) and a stranded level resets to the lowest published level.
+- Reasoning variants: `config.json` `ModelInfo.variant_of`/`fixed_effort`
+  and the same two fields on `RoleModel` (all optional, sent only for a listed
+  `<base>:<level>` alias whose base is listed).

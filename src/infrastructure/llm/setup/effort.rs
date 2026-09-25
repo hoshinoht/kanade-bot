@@ -16,23 +16,32 @@ pub struct EffortStatus {
 
 /// `published` is `None` for an alias with nothing published (or no listing
 /// yet): the level is kept, and the runner still refuses per call if needed.
+/// `fixed` is a listed `<base>:<level>` variant's baked-in level, which wins
+/// over the configured one (inheritors of extraction get it too).
 pub(super) fn resolve(
     roles: &ModelRoles,
     published: impl Fn(&str) -> Option<ModelCapabilities>,
+    fixed: impl Fn(&str) -> Option<Effort>,
 ) -> BTreeMap<Role, EffortStatus> {
-    let base = match roles.extraction.effort {
+    let configured = match roles.extraction.effort {
         RoleEffort::Level(effort) => effort,
         RoleEffort::Inherit => Effort::Off,
     };
+    let base = roles
+        .extraction
+        .alias
+        .as_deref()
+        .and_then(&fixed)
+        .unwrap_or(configured);
     ModelRoles::ALL
         .into_iter()
         .filter_map(|role| {
             let model = roles.get(role);
             let alias = model.alias.as_deref()?;
-            let wanted = match model.effort {
+            let wanted = fixed(alias).unwrap_or(match model.effort {
                 RoleEffort::Level(effort) => effort,
                 RoleEffort::Inherit => base,
-            };
+            });
             let fallback = published(alias).and_then(|caps| {
                 let legal = if wanted == Effort::Off {
                     caps.off_allowed()

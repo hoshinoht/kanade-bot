@@ -241,6 +241,20 @@ the A4 table.
   inheritor the same way locally (with a visible note) before saving, so its
   saves never hit the 422. The model stack applies the same rule at runtime
   (setup effort resolution and the runner's per-call shaping).
+- Reasoning variants: Kanata lists `<base>:<level>` aliases (`gpt-6-luna:high`)
+  — the base model with reasoning baked in. An alias is a variant only when
+  `<level>` is `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`
+  and `<base>` is itself listed (`gpt-oss:120b-cloud` is not). `ModelInfo`
+  carries `variant_of` and `fixed_effort` (`:none` is `off`); the picker lists
+  base models only and reasoning is chosen separately. Saving a variant alias
+  is still accepted: its fixed level wins, the stored `reasoning` is set to it
+  (an explicit level, `""` included, that differs is ignored with a notice,
+  `"chat reasoning is fixed at high by gpt-6-luna:high; the requested medium is
+  ignored."`, never a 422; an untouched stored level is set with `"… set to
+  high: gpt-6-luna:high fixes it."`), and inheritors of extraction see that
+  level. A stored variant's `RoleModel` carries the same two fields, shown as
+  "gpt-6-luna (fixed: high)". The model stack and `kanade models check` apply
+  the same detection.
 - Self-service mode (`self_service.mode`) sets how the extractor and the
   chatbot answer a change they detect: `cards_and_link` (default) keeps the ✅
   card and adds a pre-filled deep link for moves the author can make

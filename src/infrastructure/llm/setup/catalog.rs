@@ -48,6 +48,34 @@ impl CatalogModel {
     }
 }
 
+/// A `<base>:<level>` alias: Kanata's listing of `base` with reasoning baked in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Variant {
+    pub base: String,
+    pub effort: Effort,
+}
+
+/// Only a known effort suffix (`none` … `max`) on a base that is itself listed
+/// makes a variant; Ollama tags such as `gpt-oss:120b-cloud` never do.
+pub fn variant_of(alias: &str, listed: impl Fn(&str) -> bool) -> Option<Variant> {
+    let (base, level) = alias.rsplit_once(':')?;
+    let effort = match level {
+        "none" => Effort::Off,
+        "off" => return None,
+        other => Effort::parse(other)?,
+    };
+    (!base.is_empty() && listed(base)).then(|| Variant {
+        base: base.to_owned(),
+        effort,
+    })
+}
+
+impl CatalogSnapshot {
+    pub fn variant(&self, alias: &str) -> Option<Variant> {
+        variant_of(alias, |base| self.models.iter().any(|m| m.alias == base))
+    }
+}
+
 /// Fails closed (`ModelInfo.leaves_homelab`): only a published `local` or
 /// `private_network` zone stays home, and a `-cloud` alias never does because
 /// Ollama's cloud proxy reports `local`.

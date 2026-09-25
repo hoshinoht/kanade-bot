@@ -15,13 +15,14 @@ kanade serve        # live: the "Serve environment" below is required
 KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
 ```
 
-`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases, `KANADE_ALLOW_EXTERNAL_UNMASKED`) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced); `--probe` sends one fixed, member-free completion per configured role (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
+`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases, `KANADE_ALLOW_EXTERNAL_UNMASKED`) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free completion per configured role (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
 
 ```text
 gateway: https://kanata.example/v1 (key: set, roots: webpki)
-catalog: 2 models
+catalog: 5 models
   sumi-structured zone=private_network homelab=stays efforts=off,minimal,low,medium,high,xhigh,max context=32768 in_flight=2
   codex-like zone=external homelab=leaves efforts=low,medium,high (off not allowed) in_flight=8
+  gpt-6-luna zone=external homelab=leaves efforts=low,medium,high (off not allowed) variants: high, low, medium
 roles:
   extraction sumi-structured effort=off route=homelab
   chat codex-like effort=low (configured off) route=external refused

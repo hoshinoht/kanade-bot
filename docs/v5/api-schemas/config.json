@@ -35,6 +35,14 @@
           "type": "boolean",
           "description": "False when the alias requires reasoning (a published `reasoning_efforts` list without `none`): hide `off`; a stranded role falls back to the lowest published level."
         },
+        "variant_of": {
+          "type": "string",
+          "description": "Present on a `<base>:<level>` alias whose base is listed (a known effort suffix only): the picker lists the base and chooses reasoning separately."
+        },
+        "fixed_effort": {
+          "type": "string",
+          "description": "The variant's baked-in level in the `reasoning` vocabulary (`:none` is `off`)."
+        },
         "admission": {
           "anyOf": [
             {
@@ -57,7 +65,9 @@
       "required": ["alias", "reasoning"],
       "properties": {
         "alias": { "type": "string" },
-        "reasoning": { "type": "string", "description": "`off`, a published effort, or `\"\"` = same as extraction (chat and rewrite only)." }
+        "reasoning": { "type": "string", "description": "`off`, a published effort, or `\"\"` = same as extraction (chat and rewrite only)." },
+        "variant_of": { "type": "string", "description": "The stored alias is a listed variant of this base; show \"<variant_of> (fixed: <fixed_effort>)\"." },
+        "fixed_effort": { "type": "string", "description": "The stored variant's baked-in level; it wins over `reasoning`." }
       }
     },
     "CapacityGroup": {

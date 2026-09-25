@@ -23,7 +23,7 @@ use super::{
     },
 };
 
-pub use catalog::{CatalogModel, CatalogSnapshot, leaves_homelab};
+pub use catalog::{CatalogModel, CatalogSnapshot, Variant, leaves_homelab, variant_of};
 pub use effort::EffortStatus;
 pub use probe::{PROBE_TIMEOUT, ProbeOutcome, ProbeResult};
 pub use startup::{Listing, StartupReport, StartupWarning};
@@ -252,12 +252,20 @@ impl ModelStack {
     }
 
     /// Effective level per routed role against the current listing: inherit
-    /// resolved, a stranded level reset to `off` (reported in `stranded`).
+    /// resolved, a variant's fixed level applied, a stranded level reset to
+    /// `off` or the lowest published level (reported in `stranded`).
     pub fn efforts(&self) -> BTreeMap<Role, EffortStatus> {
         let listing = self.catalog.listing();
-        effort::resolve(&self.roles, |alias| {
-            catalog::published(listing.as_deref()?, alias).cloned()
-        })
+        let listed = |alias: &str| {
+            listing
+                .as_deref()
+                .is_some_and(|models| models.iter().any(|model| model.id == alias))
+        };
+        effort::resolve(
+            &self.roles,
+            |alias| catalog::published(listing.as_deref()?, alias).cloned(),
+            |alias| variant_of(alias, listed).map(|variant| variant.effort),
+        )
     }
 
     /// What a role's requests should send as `reasoning`.

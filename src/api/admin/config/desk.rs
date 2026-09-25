@@ -236,9 +236,9 @@ impl ConfigDesk {
                     .snapshot
                     .models
                     .iter()
-                    .map(dto::model_info)
+                    .map(|model| dto::model_info(model, &catalog.snapshot))
                     .collect(),
-                roles: dto::roles(settings),
+                roles: dto::roles(settings, &catalog.snapshot),
                 // The governor has one env-sized group shared by every role
                 // alias; the per-row DTO cannot state that faithfully.
                 groups: Vec::new(),

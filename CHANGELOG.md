@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: Kanata's `model:level` aliases (e.g. `gpt-6-luna:high`) are recognised as reasoning
+  variants of their base model: the config API marks them, a role saved on one uses its
+  fixed level, and `kanade models check` lists them under the base.
 - v5: reasoning "off" is only used where Kanata allows it (no published list, or one
   that includes `none`); models that require reasoning get their lowest published level,
   the Config API refuses "off" for them, and `kanade models check` shows the level each

@@ -97,6 +97,21 @@ fn catalog() -> CatalogSnapshot {
                 Some((4, None)),
             ),
             model("kanata/tiny", local, false, Some(&[Low]), Some((1, None))),
+            // A reasoning variant of kanata/chat, and a `:level` whose base is unlisted.
+            model(
+                "kanata/chat:medium",
+                local,
+                true,
+                Some(&[Low, Medium]),
+                Some((4, Some(8))),
+            ),
+            model(
+                "kanata/solo:low",
+                local,
+                true,
+                Some(&[Low]),
+                Some((4, None)),
+            ),
         ],
     }
 }
@@ -948,5 +963,63 @@ async fn off_is_refused_where_the_alias_requires_reasoning() {
     assert_eq!(
         stranded["notices"],
         json!(["chat reasoning set to low: kanata/chat requires reasoning."])
+    );
+}
+
+#[tokio::test]
+async fn reasoning_variants_are_marked_and_their_fixed_level_wins() {
+    let config = Config::new().await;
+    let view = config.get().await;
+    let info = |id: &str| {
+        view["models"]["catalog"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let variant = info("kanata/chat:medium");
+    assert_eq!(variant["variant_of"], "kanata/chat");
+    assert_eq!(variant["fixed_effort"], "medium");
+    assert!(
+        info("kanata/solo:low").get("variant_of").is_none(),
+        "base unlisted"
+    );
+    assert!(info("kanata/chat").get("fixed_effort").is_none());
+    assert!(roles(&view)["chat"].get("variant_of").is_none());
+
+    // Saving a variant is accepted; an explicit differing level is ignored.
+    let saved = config
+        .patch(json!({"models": {"roles": {"chat": {"alias": "kanata/chat:medium", "reasoning": "low"}}}}))
+        .await;
+    assert_eq!(
+        saved["models"]["roles"]["chat"],
+        json!({
+            "alias": "kanata/chat:medium",
+            "reasoning": "medium",
+            "variant_of": "kanata/chat",
+            "fixed_effort": "medium",
+        })
+    );
+    assert_eq!(
+        saved["notices"],
+        json!([
+            "chat reasoning is fixed at medium by kanata/chat:medium; the requested low is ignored."
+        ])
+    );
+    // The same level, or another role's save, raises nothing.
+    let again = config
+        .patch(json!({"models": {"roles": {"chat": {"reasoning": "medium"}}}}))
+        .await;
+    assert_eq!(again["notices"], json!([]));
+    let other = config
+        .patch(json!({"models": {"roles": {"extraction": {"reasoning": "low"}}}}))
+        .await;
+    assert_eq!(other["notices"], json!([]));
+    assert_eq!(other["models"]["roles"]["chat"]["reasoning"], "medium");
+    assert_eq!(
+        config.get().await["models"]["roles"]["chat"]["fixed_effort"],
+        "medium"
     );
 }
