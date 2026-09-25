@@ -19,7 +19,7 @@
           "additionalProperties": false,
           "required": ["table", "id"],
           "properties": {
-            "table": { "enum": ["runs", "fixed_runs"] },
+            "table": { "enum": ["runs", "fixed_runs", "reminders"] },
             "id": { "type": "string" }
           }
         },
@@ -156,8 +156,11 @@
       "additionalProperties": false,
       "required": ["field", "value", "seq", "at", "actor", "surface"],
       "properties": {
-        "field": { "type": "string", "description": "`answer:<member id>` per answer." },
-        "value": {},
+        "field": {
+          "type": "string",
+          "description": "Blame's field name (docs/v5/history.md): `slot`, `bosses`, `participants`, `channel`, `status`, `status_pin`, `rsvp:<member id>` per answer, `attended:<member id>` per attendance entry. Fields no record set are not listed."
+        },
+        "value": { "description": "The field's current value: `slot` is `{datetime, week_start, source, fixed_run_id}`, `channel` the channel id, `rsvp:`/`attended:` the row or entry (null once cleared), the rest as in the run row." },
         "seq": { "type": "integer", "minimum": 0 },
         "at": { "type": "string" },
         "actor": { "$ref": "#/$defs/Actor" },

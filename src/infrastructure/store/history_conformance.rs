@@ -449,6 +449,48 @@ async fn lists_filter_by_week_actor_and_revision<S: ScheduleStore + ChangeHistor
     })
     .await;
     assert_eq!(recent.len(), 2);
+
+    // Member 3 answered only on week 1's run.
+    let both = list(ChangeFilter::ActorInWeek(Actor::member("3"), week(1))).await;
+    assert_eq!(both.len(), 1);
+    assert!(
+        list(ChangeFilter::ActorInWeek(Actor::member("3"), week(0)))
+            .await
+            .is_empty()
+    );
+
+    // The count agrees with the list for every filter, genesis left out.
+    for filter in [
+        ChangeFilter::All,
+        ChangeFilter::Week(week(1)),
+        ChangeFilter::Actor(Actor::member("2")),
+        ChangeFilter::ActorInWeek(Actor::member("3"), week(1)),
+        ChangeFilter::ActorInWeek(Actor::member("3"), week(0)),
+        ChangeFilter::Revisions {
+            from: 0,
+            to: u64::MAX >> 1,
+        },
+        ChangeFilter::Revisions {
+            from: mark + 1,
+            to: u64::MAX >> 1,
+        },
+    ] {
+        let listed = list(filter.clone())
+            .await
+            .iter()
+            .filter(|record| record.seq > 0)
+            .count();
+        let counted = service.store().count_changes(&filter).await.expect("count");
+        assert_eq!(counted, listed as u64, "{filter:?}");
+    }
+    assert_eq!(
+        service
+            .store()
+            .count_changes(&ChangeFilter::Actor(Actor::member("9")))
+            .await
+            .expect("count"),
+        0
+    );
 }
 
 async fn reverts_amend_status_swap_and_fixed_edit<S: ScheduleStore + ChangeHistory>(store: S) {

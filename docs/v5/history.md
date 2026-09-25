@@ -2,8 +2,10 @@
 
 Status: implemented in `src/domain/history/` (types, encoding, verification,
 revert planning, blame, checkpoints), `src/domain/scheduler/service.rs` (attribution, rollbacks)
-and both stores (`src/infrastructure/store/{memory,sqlite}`). Not yet exposed
-through an API or UI.
+and both stores (`src/infrastructure/store/{memory,sqlite}`). The admin API
+(A5, `admin-api.md`) serves the record list, records, blame, the chain check
+and the three rollbacks; cherry-pick, checkpoints by name and the graph are
+not exposed yet.
 
 Every schedule mutation appends one immutable, hash-chained record in the
 same transaction as its commit. Records are never edited or deleted; a
@@ -155,6 +157,15 @@ record and no notice.
   left as they are and reported as skipped (`outside week`).
 - `revert_by_actor(actor, since)`: everything one actor changed since an
   instant (spam cleanup).
+- `preview_revert_changes`, `preview_restore_week`,
+  `preview_revert_by_actor` (and `preview_checkpoint_restore`) plan the same
+  rollback now and write nothing; they take no request id.
+
+`RevertOutcome::Reverted` carries `rows` (every row the rollback changes,
+reminders included, in key order: exactly the record's rows once applied)
+and `seq` (the rollback record, `None` for a preview). Reminders are
+re-planned on every attempt, so a preview's reminder ids differ from the
+apply's.
 
 Rules:
 
@@ -255,7 +266,9 @@ is `Tampered`.
 
 Read APIs: `Checkpoints::list_checkpoints(week)` (creation order, all or one
 boss week), `Checkpoints::load_checkpoint(name)`, and `blame` for a run or
-weekly timing.
+weekly timing. `ChangeHistory::list_changes` pages by `ChangeFilter` (`All`,
+`Week`, `Actor`, `ActorInWeek`, `Revisions`) and `count_changes` counts the
+same filter without genesis (one constant statement per filter on SQLite).
 
 ## Attendance fields
 

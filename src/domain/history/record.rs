@@ -62,7 +62,8 @@ pub enum RowKey {
 }
 
 impl RowKey {
-    fn to_json(&self) -> Value {
+    /// The key as the record encodes it (`{table, id}` or the RSVP pair).
+    pub fn to_json(&self) -> Value {
         match self {
             Self::FixedRun(id) => json!({"table": "fixed_runs", "id": id}),
             Self::Run(id) => json!({"table": "runs", "id": id}),
@@ -183,7 +184,11 @@ impl RowValue {
         }
     }
 
-    fn to_json(&self) -> Result<Value, RecordError> {
+    /// The full row as the record encodes it.
+    ///
+    /// # Errors
+    /// [`RecordError`] when an instant is outside the representable years.
+    pub fn to_json(&self) -> Result<Value, RecordError> {
         Ok(match self {
             Self::FixedRun(row) => {
                 let mut value = json!({

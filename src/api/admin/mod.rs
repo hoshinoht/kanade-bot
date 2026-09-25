@@ -4,6 +4,7 @@
 
 mod auth;
 mod context;
+mod history;
 mod read;
 mod write;
 
@@ -21,6 +22,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(auth::routes())
         .merge(read::routes())
         .merge(write::routes())
+        .merge(history::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

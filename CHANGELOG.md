@@ -122,6 +122,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: admin history API: paged change history with a total and week/person filters,
+  single change records, who-changed-what per run, a history integrity check, and
+  revert, restore-week and revert-a-person's-changes with a preview that never writes
+  and retry-safe apply. Cherry-pick and the history graph follow once their contracts
+  are settled.
 - v5: admin edit API: move runs, change status, answers and parties, reset to the
   weekly timing, preview pings, create, edit and retire weekly timings, and edit
   members and aliases. Edits made from an out-of-date screen are refused (409) instead

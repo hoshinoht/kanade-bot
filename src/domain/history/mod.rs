@@ -40,6 +40,6 @@ pub use record::{
 };
 pub use revert::{
     HeldReminders, JournalHeld, RevertMode, RevertOutcome, RevertScope, RowConflict, SkippedRow,
-    apply_revert, changes_by_actor, changes_for_week,
+    apply_revert, changed_rows, changes_by_actor, changes_for_week,
 };
 pub use rewind::{HistoryGap, check_records_after, rewind};

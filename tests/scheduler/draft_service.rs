@@ -1266,6 +1266,13 @@ impl ChangeHistory for Racy<'_> {
         self.inner.list_changes(query).await
     }
 
+    async fn count_changes(
+        &self,
+        filter: &kanade::domain::history::ChangeFilter,
+    ) -> Result<u64, StoreError> {
+        self.inner.count_changes(filter).await
+    }
+
     async fn verify_history(
         &self,
     ) -> Result<kanade::domain::history::HistoryVerification, StoreError> {

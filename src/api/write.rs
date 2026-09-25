@@ -2,17 +2,17 @@
 //! mutex, so admin mutations are serialised; reads never take it. The port is
 //! object-safe so `ApiState` stays non-generic.
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 
-use super::auth::Clock as ApiClockFn;
+use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
-    history::{Expect, Origin},
+    history::{Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome},
     members::Roster,
     schedule::{FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange},
-    scheduler::{Clock, IdSource, ScheduleStore, SchedulerResult, SchedulerService},
+    scheduler::{Clock, IdSource, ScheduleStore, SchedulerResult, SchedulerService, StoreError},
 };
 
 pub type WriteFuture<'a, T> = Pin<Box<dyn Future<Output = SchedulerResult<T>> + Send + 'a>>;
@@ -83,6 +83,48 @@ pub trait Writer: Send + Sync {
         origin: Origin,
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, Vec<String>>;
+
+    /// A rollback by the origin's admin (`Surface::Rollback`), or its preview,
+    /// which writes nothing and ignores the request id. `held` is re-read on
+    /// every commit attempt.
+    fn rollback<'a>(
+        &'a self,
+        origin: Origin,
+        request: RollbackRequest,
+        held: &'a dyn ReadStore,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, RevertOutcome>;
+}
+
+/// Which recorded changes a rollback undoes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RollbackSelection {
+    Seqs(Vec<u64>),
+    /// Every later change touching the week, only within it.
+    Week {
+        week: DateTime<Utc>,
+        revision: u64,
+    },
+    Actor {
+        actor: Actor,
+        since: DateTime<Utc>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RollbackRequest {
+    pub selection: RollbackSelection,
+    pub mode: RevertMode,
+    pub preview: bool,
+}
+
+/// The held reminders, read through the API's store on each call.
+struct StoreHeld<'a>(&'a dyn ReadStore);
+
+impl HeldReminders for StoreHeld<'_> {
+    fn held_reminders(&self) -> impl Future<Output = Result<BTreeSet<String>, StoreError>> + Send {
+        self.0.held_reminders()
+    }
 }
 
 /// The scheduler clock over the API's pinned-or-system clock.
@@ -108,8 +150,9 @@ impl<S, I, C> SchedulerWriter<S, I, C> {
 
 impl<S, I, C> Writer for SchedulerWriter<S, I, C>
 where
-    S: ScheduleStore + Send + Sync,
-    I: IdSource + Send,
+    S: ScheduleStore + ChangeHistory + Send + Sync,
+    // Rollbacks borrow the whole service across awaits.
+    I: IdSource + Send + Sync,
     C: Clock + Send + Sync,
 {
     fn run<'a>(
@@ -203,6 +246,52 @@ where
                 .as_origin(origin)
                 .materialise_weeks(&ctx.policy)
                 .await
+        })
+    }
+
+    fn rollback<'a>(
+        &'a self,
+        origin: Origin,
+        request: RollbackRequest,
+        held: &'a dyn ReadStore,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, RevertOutcome> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            let (admin, request_id) = (origin.actor.id().to_owned(), origin.request_id);
+            let (held, reminders, mode) = (StoreHeld(held), &ctx.policy.reminders, request.mode);
+            match (request.selection, request.preview) {
+                (RollbackSelection::Seqs(seqs), true) => {
+                    service
+                        .preview_revert_changes(&seqs, mode, reminders, &held)
+                        .await
+                }
+                (RollbackSelection::Seqs(seqs), false) => {
+                    service
+                        .revert_changes(&admin, request_id, &seqs, mode, reminders, &held)
+                        .await
+                }
+                (RollbackSelection::Week { week, revision }, true) => {
+                    service
+                        .preview_restore_week(week, revision, mode, reminders, &held)
+                        .await
+                }
+                (RollbackSelection::Week { week, revision }, false) => {
+                    service
+                        .restore_week_to(&admin, request_id, week, revision, mode, reminders, &held)
+                        .await
+                }
+                (RollbackSelection::Actor { actor, since }, true) => {
+                    service
+                        .preview_revert_by_actor(&actor, since, mode, reminders, &held)
+                        .await
+                }
+                (RollbackSelection::Actor { actor, since }, false) => {
+                    service
+                        .revert_by_actor(&admin, request_id, &actor, since, mode, reminders, &held)
+                        .await
+                }
+            }
         })
     }
 }

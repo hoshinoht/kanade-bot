@@ -521,6 +521,15 @@ impl ChangeHistory for SqliteStore {
                 args.push(Arg::Text(actor.kind().to_owned()));
                 args.push(Arg::Text(actor.id().to_owned()));
             }
+            ChangeFilter::ActorInWeek(actor, week) => {
+                clauses.push(
+                    "actor_kind = ? AND actor_id = ? \
+                     AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?)",
+                );
+                args.push(Arg::Text(actor.kind().to_owned()));
+                args.push(Arg::Text(actor.id().to_owned()));
+                args.push(Arg::Text(rows::instant(week)?));
+            }
             ChangeFilter::Revisions { from, to } => {
                 clauses.push("revision BETWEEN ? AND ?");
                 args.push(Arg::Int(int(*from)?));
@@ -563,6 +572,59 @@ impl ChangeHistory for SqliteStore {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ChangePage::from_matches(records, query))
+    }
+
+    async fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError> {
+        // One constant statement per filter; genesis (seq 0) is never counted.
+        let int = |value: u64| i64::try_from(value).map_err(backend);
+        let count =
+            match filter {
+                ChangeFilter::All => {
+                    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM change_log WHERE seq > 0")
+                        .fetch_one(&self.readers)
+                        .await
+                }
+                ChangeFilter::Week(week) => {
+                    sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?1)",
+                    )
+                    .bind(rows::instant(week)?)
+                    .fetch_one(&self.readers)
+                    .await
+                }
+                ChangeFilter::Actor(actor) => {
+                    sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND actor_kind = ?1 AND actor_id = ?2",
+                    )
+                    .bind(actor.kind())
+                    .bind(actor.id())
+                    .fetch_one(&self.readers)
+                    .await
+                }
+                ChangeFilter::ActorInWeek(actor, week) => {
+                    sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND actor_kind = ?1 AND actor_id = ?2 \
+                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?3)",
+                    )
+                    .bind(actor.kind())
+                    .bind(actor.id())
+                    .bind(rows::instant(week)?)
+                    .fetch_one(&self.readers)
+                    .await
+                }
+                ChangeFilter::Revisions { from, to } => sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND revision BETWEEN ?1 AND ?2",
+                )
+                .bind(int(*from)?)
+                .bind(int(*to)?)
+                .fetch_one(&self.readers)
+                .await,
+            }
+            .map_err(backend)?;
+        u64::try_from(count).map_err(backend)
     }
 
     async fn verify_history(&self) -> Result<HistoryVerification, StoreError> {

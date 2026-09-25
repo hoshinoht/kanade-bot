@@ -1260,6 +1260,13 @@ impl<S: ChangeHistory + Sync> ChangeHistory for Racing<'_, S> {
         self.inner.list_changes(query).await
     }
 
+    async fn count_changes(
+        &self,
+        filter: &crate::domain::history::ChangeFilter,
+    ) -> Result<u64, crate::domain::scheduler::StoreError> {
+        self.inner.count_changes(filter).await
+    }
+
     async fn verify_history(
         &self,
     ) -> Result<crate::domain::history::HistoryVerification, crate::domain::scheduler::StoreError>

@@ -25,7 +25,7 @@ use crate::{
     domain::{history::Origin, members::MemberProfile},
 };
 
-pub use refusal::Refusal;
+pub use refusal::{Refusal, scheduler};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

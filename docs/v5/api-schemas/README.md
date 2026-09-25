@@ -75,3 +75,11 @@ Pointers are `<file>#/$defs/<Name>`.
 `week.json`, `members.json`, `fixed.json`, `bosses.json`, `reminders.json`,
 `inbox.json`, `extractions.json`, `chat.json`, `limits.json`, `history.json`,
 `config.json`.
+
+## Changes since A0
+
+- A4: `fixed.json#/$defs/FixedRequest` (request body; `version` required by `PATCH`).
+- A5: `history.json` `RowKey.table` adds `reminders` (records carry reminder
+  rows and must keep matching their hash); `common.json` `Surface` adds
+  `draft_merge`, `request_merge`, `cherry_pick` (all of `Surface::ALL`);
+  `BlameEntry.field` uses the domain's blame names (`slot`, `rsvp:<id>`, …).

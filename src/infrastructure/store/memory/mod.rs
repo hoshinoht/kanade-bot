@@ -9,8 +9,8 @@ use crate::domain::drafts::{
     LoadedDraft, MergeCommit, NewDraft, RequestLimit, StoredDraft,
 };
 use crate::domain::history::{
-    Actor, ChangeHistory, ChangeMeta, ChangePage, ChangeQuery, ChangeRecord, ChangeRef,
-    CheckedChange, HistoryVerification, RowKey, RowValue, verify_chain,
+    Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangePage, ChangeQuery, ChangeRecord,
+    ChangeRef, CheckedChange, HistoryVerification, RowKey, RowValue, verify_chain,
 };
 use crate::domain::history::{
     BlameIndex, BlameTarget, Checkpoint, CheckpointCreated, CheckpointKind, Checkpoints, FieldNow,
@@ -523,6 +523,18 @@ impl ChangeHistory for MemoryScheduleStore {
                 .collect()
         };
         Ok(ChangePage::from_matches(records, query))
+    }
+
+    async fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError> {
+        let query = ChangeQuery::new(filter.clone());
+        let tables = self.tables();
+        let count = tables
+            .history
+            .records
+            .iter()
+            .filter(|record| record.seq > 0 && query.selects(record))
+            .count();
+        Ok(u64::try_from(count).unwrap_or(u64::MAX))
     }
 
     async fn verify_history(&self) -> Result<HistoryVerification, StoreError> {

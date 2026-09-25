@@ -19,7 +19,13 @@ const RUN_RESULT: &str = "week.json#/$defs/RunResult";
 const ERROR: &str = "error.json#/$defs/ApiError";
 
 impl Reads {
-    async fn call(&self, method: &str, path: &str, body: Value, extra: &[(&str, &str)]) -> Reply {
+    pub(crate) async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Value,
+        extra: &[(&str, &str)],
+    ) -> Reply {
         let mut headers = vec![
             ("Cookie", self.cookie.as_str()),
             ORIGIN,
@@ -38,7 +44,7 @@ impl Reads {
     }
 
     /// 2xx validated against `target`, anything else against `ApiError`.
-    async fn ok(&self, method: &str, path: &str, body: Value, target: &str) -> Value {
+    pub(crate) async fn ok(&self, method: &str, path: &str, body: Value, target: &str) -> Value {
         let reply = self.call(method, path, body, &[]).await;
         assert!(
             (200..300).contains(&reply.status),
@@ -50,14 +56,14 @@ impl Reads {
         value
     }
 
-    async fn refused(&self, method: &str, path: &str, body: Value) -> (u16, String) {
+    pub(crate) async fn refused(&self, method: &str, path: &str, body: Value) -> (u16, String) {
         let reply = self.call(method, path, body, &[]).await;
         assert!(reply.status >= 400, "{method} {path}: {}", reply.text());
         assert_valid(ERROR, path, &reply.json());
         (reply.status, reply.api_error())
     }
 
-    async fn version(&self) -> u64 {
+    pub(crate) async fn version(&self) -> u64 {
         self.store.history_head().await.unwrap().seq
     }
 }

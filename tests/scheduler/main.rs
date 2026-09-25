@@ -11,6 +11,7 @@ mod proposal_follow_ups;
 mod proposals;
 mod reminders_family;
 mod requests;
+mod rollback_previews;
 mod scheduler_family;
 
 // Vector loading, pinned clock/ids and snapshots shared with the notify target.

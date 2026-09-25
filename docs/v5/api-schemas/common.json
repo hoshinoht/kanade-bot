@@ -19,7 +19,10 @@
         "extraction_approval",
         "delivery_tick",
         "rollback",
-        "import"
+        "import",
+        "draft_merge",
+        "request_merge",
+        "cherry_pick"
       ]
     },
     "NullableString": { "type": ["string", "null"] },

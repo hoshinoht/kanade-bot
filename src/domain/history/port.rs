@@ -19,6 +19,9 @@ pub enum ChangeFilter {
     Week(DateTime<Utc>),
     /// Records by this actor.
     Actor(Actor),
+    /// Records by this actor touching this boss week (the history page with
+    /// both filters).
+    ActorInWeek(Actor, DateTime<Utc>),
     /// Records whose store revision is within `from..=to`.
     Revisions {
         from: u64,
@@ -59,6 +62,9 @@ impl ChangeQuery {
                 ChangeFilter::All => true,
                 ChangeFilter::Week(week) => record.touches_week(*week),
                 ChangeFilter::Actor(actor) => &record.origin.actor == actor,
+                ChangeFilter::ActorInWeek(actor, week) => {
+                    &record.origin.actor == actor && record.touches_week(*week)
+                }
                 ChangeFilter::Revisions { from, to } => (*from..=*to).contains(&record.revision),
             }
     }
@@ -208,6 +214,13 @@ pub trait ChangeHistory {
         query: &ChangeQuery,
     ) -> impl Future<Output = Result<ChangePage, StoreError>> + Send;
 
+    /// How many records other than genesis `filter` selects (a history
+    /// page's total).
+    fn count_changes(
+        &self,
+        filter: &ChangeFilter,
+    ) -> impl Future<Output = Result<u64, StoreError>> + Send;
+
     /// Recompute the whole chain and report the first broken link.
     fn verify_history(
         &self,
@@ -254,6 +267,54 @@ impl<T: ChangeHistory + Sync> ChangeHistory for &T {
         query: &ChangeQuery,
     ) -> impl Future<Output = Result<ChangePage, StoreError>> + Send {
         (**self).list_changes(query)
+    }
+
+    fn count_changes(
+        &self,
+        filter: &ChangeFilter,
+    ) -> impl Future<Output = Result<u64, StoreError>> + Send {
+        (**self).count_changes(filter)
+    }
+
+    fn verify_history(
+        &self,
+    ) -> impl Future<Output = Result<HistoryVerification, StoreError>> + Send {
+        (**self).verify_history()
+    }
+
+    fn history_head(&self) -> impl Future<Output = Result<ChangeRef, StoreError>> + Send {
+        (**self).history_head()
+    }
+}
+
+/// A shared store (the API's writer holds one `Arc` beside its readers).
+impl<T: ChangeHistory + Send + Sync> ChangeHistory for std::sync::Arc<T> {
+    fn load_change(
+        &self,
+        seq: u64,
+    ) -> impl Future<Output = Result<Option<ChangeRecord>, StoreError>> + Send {
+        (**self).load_change(seq)
+    }
+
+    fn load_checked(
+        &self,
+        seq: u64,
+    ) -> impl Future<Output = Result<CheckedChange, StoreError>> + Send {
+        (**self).load_checked(seq)
+    }
+
+    fn list_changes(
+        &self,
+        query: &ChangeQuery,
+    ) -> impl Future<Output = Result<ChangePage, StoreError>> + Send {
+        (**self).list_changes(query)
+    }
+
+    fn count_changes(
+        &self,
+        filter: &ChangeFilter,
+    ) -> impl Future<Output = Result<u64, StoreError>> + Send {
+        (**self).count_changes(filter)
     }
 
     fn verify_history(

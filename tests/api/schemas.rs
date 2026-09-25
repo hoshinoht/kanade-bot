@@ -41,6 +41,27 @@ pub fn validator(target: &str) -> Validator {
         .unwrap_or_else(|error| panic!("{target}: {error}"))
 }
 
+/// Records can carry any surface the domain has, so the schema lists them all.
+#[test]
+fn the_surface_enum_is_the_domains() {
+    let common = schemas()
+        .into_iter()
+        .find(|(name, _)| name == "common.json")
+        .unwrap()
+        .1;
+    let listed: Vec<&str> = common["$defs"]["Surface"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    let domain: Vec<&str> = kanade::domain::history::Surface::ALL
+        .iter()
+        .map(|surface| surface.as_str())
+        .collect();
+    assert_eq!(listed, domain);
+}
+
 /// Panics with every violation, naming the endpoint.
 pub fn assert_valid(target: &str, what: &str, value: &Value) {
     let validator = validator(target);

@@ -3,7 +3,7 @@
 //! the guild facts owned elsewhere (channels, personas, staff rule).
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
     path::PathBuf,
     pin::Pin,
@@ -20,10 +20,12 @@ use crate::{
         catalog::BossTable,
         drafts::{DraftKind, DraftStatus, ProposalStore},
         history::{
-            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
-            ChangeRef, changed_fields,
+            Actor, Blame, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery,
+            ChangeRecord, ChangeRef, HeldReminders, HistoryVerification, JournalHeld, blame,
+            changed_fields,
         },
         members::{MemberProfile, MemberStore, PortalEdit},
+        notify::DeliveryJournal,
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
     },
@@ -63,11 +65,39 @@ pub trait ReadStore: Send + Sync {
         user_id: String,
         edit: PortalEdit,
     ) -> ReadFuture<'_, Option<MemberProfile>>;
+    /// Newest first, older than `before`, genesis never included.
+    fn history_page(
+        &self,
+        filter: ChangeFilter,
+        before: Option<u64>,
+        limit: usize,
+    ) -> ReadFuture<'_, HistorySlice>;
+    fn history_total(&self, filter: ChangeFilter) -> ReadFuture<'_, u64>;
+    fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>>;
+    fn verify_history(&self) -> ReadFuture<'_, HistoryVerification>;
+    fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>>;
+    /// Reminders unresolved delivery attempts hold (rollbacks keep them).
+    fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>>;
+}
+
+/// One history page: records and whether older ones exist.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HistorySlice {
+    pub records: Vec<ChangeRecord>,
+    /// The seq to pass as `before` for the next page.
+    pub next_before: Option<u64>,
 }
 
 impl<T> ReadStore for T
 where
-    T: ScheduleStore + ChangeHistory + BlameIndex + MemberStore + ProposalStore + Send + Sync,
+    T: ScheduleStore
+        + ChangeHistory
+        + BlameIndex
+        + MemberStore
+        + ProposalStore
+        + DeliveryJournal
+        + Send
+        + Sync,
 {
     fn snapshot(&self, scope: Scope) -> ReadFuture<'_, ScheduleSnapshot> {
         Box::pin(async move { self.load(&scope).await })
@@ -149,6 +179,64 @@ where
         edit: PortalEdit,
     ) -> ReadFuture<'_, Option<MemberProfile>> {
         Box::pin(async move { self.apply_portal(&user_id, edit).await })
+    }
+
+    fn history_page(
+        &self,
+        filter: ChangeFilter,
+        before: Option<u64>,
+        limit: usize,
+    ) -> ReadFuture<'_, HistorySlice> {
+        Box::pin(async move {
+            let mut query = ChangeQuery::new(filter);
+            query.newest_first = true;
+            query.cursor = before;
+            query.limit = limit;
+            let page = self.list_changes(&query).await?;
+            let records: Vec<ChangeRecord> = page
+                .records
+                .into_iter()
+                .filter(|record| record.seq > 0)
+                .collect();
+            // The next page may hold only genesis, which is never listed.
+            let next_before = match page.next_cursor {
+                Some(cursor) => {
+                    query.cursor = Some(cursor);
+                    query.limit = 1;
+                    let older = self.list_changes(&query).await?;
+                    older
+                        .records
+                        .iter()
+                        .any(|record| record.seq > 0)
+                        .then_some(cursor)
+                }
+                None => None,
+            };
+            Ok(HistorySlice {
+                records,
+                next_before,
+            })
+        })
+    }
+
+    fn history_total(&self, filter: ChangeFilter) -> ReadFuture<'_, u64> {
+        Box::pin(async move { ChangeHistory::count_changes(self, &filter).await })
+    }
+
+    fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>> {
+        Box::pin(async move { Ok(self.load_change(seq).await?.filter(|record| record.seq > 0)) })
+    }
+
+    fn verify_history(&self) -> ReadFuture<'_, HistoryVerification> {
+        Box::pin(ChangeHistory::verify_history(self))
+    }
+
+    fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>> {
+        Box::pin(async move { blame(self, &target).await })
+    }
+
+    fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>> {
+        Box::pin(async move { JournalHeld(self).held_reminders().await })
     }
 }
 

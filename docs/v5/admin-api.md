@@ -187,13 +187,27 @@ whole; unknown or read-only keys are refused with 422.
 | `POST /api/admin/digest` | `{week, channel_id?}` | `{message}` | v4 `POST /digest` parity, channel override included. |
 | `GET /api/admin/access` | — | `AccessReport` | v4 `GET /access`. |
 | `POST /api/admin/access/recheck` | `{}` | `AccessReport` | v4 `POST /access`. |
-| `GET /api/admin/history?week&actor&before&limit` | — | `HistoryPage` | `before` is a seq cursor; `next_before` pages older. **Proposed** (`docs/v5/history.md` is authoritative for the format). |
-| `GET /api/admin/history/{seq}` | — | `ChangeRecord` | **Proposed**; the PWA reads records from the page list and does not call this yet. |
-| `POST /api/admin/history/revert` | `{seqs[], force?, preview?, request_id?}` | `RevertPlan` | **Proposed**. |
-| `POST /api/admin/history/restore-week` | `{week, revision, force?, preview?, request_id?}` | `RevertPlan` | **Proposed**. |
-| `POST /api/admin/history/revert-actor` | `{actor, week?, force?, preview?, request_id?}` | `RevertPlan` | **Proposed**. |
-| `GET /api/admin/history/checkpoints` | — | `Checkpoints` | **Proposed**. |
-| `GET /api/admin/runs/{id}/blame` | — | `BlameEntry[]` | **Proposed**. |
+| `GET /api/admin/history?week&actor&before&limit` | — | `HistoryPage` | `before` is a seq cursor; `next_before` pages older. **Implemented** (A5): newest first, genesis never listed; `week` is a boss-week start, either as records name it (RFC 3339 instant, `+` sent as `%2B`) or the guild-local start date (`Week.starts`); `actor` is `kind:id` (`admin:discord:1`); both filters combine; `limit` 1–100 (default 20); `total` counts every match. Any other key, a repeated key or a malformed value is `422 invalid_query`. Records are exactly the hashed `kanade.change.v1` bodies plus `hash` (`docs/v5/history.md`), reminder rows included. |
+| `GET /api/admin/history/{seq}` | — | `ChangeRecord` | **Implemented**; genesis, unknown and non-numeric seqs are 404. The PWA reads records from the page list and does not call this yet. |
+| `POST /api/admin/history/revert` | `{seqs[], force?, preview?, request_id?}` | `RevertPlan` | **Implemented** (rollback rules below). An empty `seqs` or an unknown/genesis seq is `422 invalid`. |
+| `POST /api/admin/history/restore-week` | `{week, revision, force?, preview?, request_id?}` | `RevertPlan` | **Implemented**: `week` as in the history query (not a week start: 422); nothing to restore is `outcome: unchanged`. |
+| `POST /api/admin/history/revert-actor` | `{actor, since, force?, preview?, request_id?}` | `RevertPlan` | **Implemented** (A5-7): `actor` is `kind:id`; `since` is a bare date (local midnight) or a naive local `YYYY-MM-DDTHH:MM[:SS]` in the guild zone; offsets, other shapes and DST-gap times are `422 invalid`. Nothing to revert is `unchanged`. |
+| `GET /api/admin/history/checkpoints` | — | `Checkpoints` | **Implemented** (A5-9): `verified` is the full chain check; `backups` is `[]` until a backup directory is configured. Named checkpoints (tags) and checkpoint restore are **proposed** and need a schema extension. |
+| `GET /api/admin/runs/{id}/blame` | — | `BlameEntry[]` | **Implemented** (A5-4/8): the domain's field names (`slot`, `bosses`, `participants`, `channel`, `status`, `status_pin`, `rsvp:<id>`, `attended:<id>`), `value` read from the current run; fields no record set are omitted; unknown run 404. |
+
+Rollbacks (**Implemented**, A5): every body takes `force?`, `preview?` and
+`request_id?`. `preview: true` plans the rollback now and writes nothing (its
+request id is ignored); a strict plan with conflicts is `outcome:
+conflicts` (200, nothing written, `rows: []`, `reverts` the requested seqs);
+`force` puts the recorded `before` values back and lists the overridden
+conflicts. Applying records one `rollback` change by the session's admin and
+answers `outcome: applied` with `rows` equal to the record's. Reminder rows
+are re-planned on apply, so their ids differ from the preview's. The request
+id is `Idempotency-Key` or `request_id` (same rules; both must agree, else
+`400 invalid_idempotency_key`): a retry answers the recorded rollback
+(`reverts` = its refs), the same id for another rollback is `422
+idempotency_mismatch`. CSRF is required even to preview; other refusals follow
+the A4 table.
 
 ## Config semantics
 
@@ -299,8 +313,14 @@ not-yours, unknown or forbidden case into one uniform not-found response.
   preview of applying record `{seq}` to another boss week.
 - `POST /api/admin/history/{seq}/cherry-pick` `{week, mode, reviewed?}`;
   forcing requires `reviewed` to list the conflicts the admin saw.
+- Not in A5 (decision A5-9): unmounted until a schema exists. The service's
+  preview is steps plus `{run_id, field, expected, current}` conflicts and a
+  `force` expectation set a forced pick must echo, not a `RevertPlan`.
 
 ### History graph
+
+Not in A5 (decision A5-9): unmounted until a schema exists; it needs the
+drafts routes (API-6) and member requests (A6).
 
 `GET /api/admin/history/graph?week=&before=&limit=` → `{records: [{seq,
 hash, parents, actor, at, summary, refs}], drafts: [{id, base_seq, author,

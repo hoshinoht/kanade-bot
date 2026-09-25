@@ -15,7 +15,8 @@ use crate::domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, ChangeRef,
     CheckedChange, Checkpoint, CheckpointKind, Checkpoints, EDIT_OVERRIDE, Expect, HeldReminders,
     HistoryRefusal, NewCheckpoint, Origin, PreconditionError, RevertMode, RevertOutcome,
-    RevertScope, StaleField, Surface, apply_revert, changes_by_actor, changes_for_week, sha256_hex,
+    RevertScope, StaleField, Surface, apply_revert, changed_rows, changes_by_actor,
+    changes_for_week, sha256_hex,
 };
 use crate::domain::members::Directory;
 use crate::domain::schedule::{
@@ -1238,6 +1239,72 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
             .await
     }
 
+    /// What [`Self::revert_changes`] would do now; nothing is written.
+    /// Reminder ids in `rows` are planned afresh by the apply.
+    ///
+    /// # Errors
+    /// As [`Self::revert_changes`], without the request-id refusals.
+    pub async fn preview_revert_changes(
+        &mut self,
+        seqs: &[u64],
+        mode: RevertMode,
+        policy: &ReminderPolicy,
+        held: &impl HeldReminders,
+    ) -> SchedulerResult<RevertOutcome> {
+        let rollback = Rollback {
+            selection: Selection::Seqs(seqs),
+            scope: RevertScope::Whole,
+            mode,
+            checkpoint: None,
+            preview: true,
+        };
+        self.rollback("preview", None, rollback, policy, held).await
+    }
+
+    /// What [`Self::restore_week_to`] would do now; nothing is written.
+    ///
+    /// # Errors
+    /// As [`Self::preview_revert_changes`].
+    pub async fn preview_restore_week(
+        &mut self,
+        week: DateTime<Utc>,
+        revision: u64,
+        mode: RevertMode,
+        policy: &ReminderPolicy,
+        held: &impl HeldReminders,
+    ) -> SchedulerResult<RevertOutcome> {
+        let rollback = Rollback {
+            selection: Selection::Week { week, revision },
+            scope: RevertScope::Week(week),
+            mode,
+            checkpoint: None,
+            preview: true,
+        };
+        self.rollback("preview", None, rollback, policy, held).await
+    }
+
+    /// What [`Self::revert_by_actor`] would do now; nothing is written.
+    ///
+    /// # Errors
+    /// As [`Self::preview_revert_changes`].
+    pub async fn preview_revert_by_actor(
+        &mut self,
+        actor: &Actor,
+        since: DateTime<Utc>,
+        mode: RevertMode,
+        policy: &ReminderPolicy,
+        held: &impl HeldReminders,
+    ) -> SchedulerResult<RevertOutcome> {
+        let rollback = Rollback {
+            selection: Selection::Actor { actor, since },
+            scope: RevertScope::Whole,
+            mode,
+            checkpoint: None,
+            preview: true,
+        };
+        self.rollback("preview", None, rollback, policy, held).await
+    }
+
     async fn history(&self, filter: ChangeFilter) -> SchedulerResult<Vec<ChangeRecord>> {
         let mut query = ChangeQuery::new(filter);
         let mut records = Vec::new();
@@ -1325,6 +1392,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
             let snapshot = self.store.load(&Scope::All).await?;
             let revision = snapshot.revision;
             let mut draft = Draft::new(snapshot);
+            let base = draft.clone();
             let outcome = apply_revert(
                 &mut draft,
                 &mut self.ids,
@@ -1349,11 +1417,14 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                 seqs,
                 skipped,
                 notices,
+                rows,
+                seq,
                 ..
-            } = &outcome
+            } = &mut outcome
             else {
                 return Ok(outcome);
             };
+            let after = draft.clone();
             let changes = draft.into_changes();
             if changes.is_empty() {
                 return Ok(RevertOutcome::Unchanged {
@@ -1361,6 +1432,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                     skipped: skipped.clone(),
                 });
             }
+            *rows = changed_rows(&base, &after, &changes);
             if rollback.preview {
                 return Ok(outcome);
             }
@@ -1372,7 +1444,10 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                 Ok(Some(committed)) if committed.replayed => {
                     return Err(already_applied(committed));
                 }
-                Ok(_) => return Ok(outcome),
+                Ok(committed) => {
+                    *seq = committed.map(|committed| committed.seq);
+                    return Ok(outcome);
+                }
                 Err(StoreError::Conflict { .. }) if attempt < COMMIT_ATTEMPTS => attempt += 1,
                 Err(error) => return Err(store_failure(error)),
             }

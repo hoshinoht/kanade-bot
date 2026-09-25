@@ -19,11 +19,12 @@ use std::future::Future;
 use chrono::{DateTime, Utc};
 
 use super::origin::Actor;
-use super::record::{ChangeRecord, RowKey, RowValue};
+use super::record::{ChangeRecord, RowChange, RowKey, RowValue};
 use crate::domain::ids::IdGenerator;
 use crate::domain::notify::{DeliveryJournal, DeliveryTarget};
 use crate::domain::schedule::{
-    Draft, Notice, NoticeChange, ReminderPolicy, RunStatus, ScheduleError, reminder_specs,
+    Change, ChangeSet, Draft, Notice, NoticeChange, ReminderPolicy, RunStatus, ScheduleError,
+    reminder_specs,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -115,6 +116,12 @@ pub enum RevertOutcome {
         skipped: Vec<SkippedRow>,
         /// One summary notice per affected channel.
         notices: Vec<Notice>,
+        /// Every row the rollback changes (reminders included), in key order:
+        /// the record's rows once applied. Set by the service, empty from
+        /// [`apply_revert`].
+        rows: Vec<RowChange>,
+        /// The rollback record's seq once committed; `None` for a preview.
+        seq: Option<u64>,
     },
     /// The selected records were already undone (or only skipped rows
     /// remained): nothing changed, nothing is recorded or announced.
@@ -305,7 +312,43 @@ pub fn apply_revert(
         overridden: conflicts,
         skipped,
         notices,
+        rows: Vec::new(),
+        seq: None,
     })
+}
+
+/// The rows `changes` alter going from `before` to `after`, in key order, as
+/// the store records them.
+pub fn changed_rows(before: &Draft, after: &Draft, changes: &ChangeSet) -> Vec<RowChange> {
+    let keys: BTreeSet<RowKey> = changes
+        .changes
+        .iter()
+        .map(|change| match change {
+            Change::PutFixedRun(row) => RowKey::FixedRun(row.id.clone()),
+            Change::DeleteFixedRun(id) => RowKey::FixedRun(id.clone()),
+            Change::PutRun(row) => RowKey::Run(row.id.clone()),
+            Change::PutReminder(row) => RowKey::Reminder(row.id.clone()),
+            Change::DeleteReminder(id) => RowKey::Reminder(id.clone()),
+            Change::PutRsvp(row) => RowKey::Rsvp {
+                run_id: row.run_id.clone(),
+                user_id: row.user_id.clone(),
+            },
+            Change::DeleteRsvp { run_id, user_id } => RowKey::Rsvp {
+                run_id: run_id.clone(),
+                user_id: user_id.clone(),
+            },
+        })
+        .collect();
+    keys.into_iter()
+        .filter_map(|key| {
+            let (old, new) = (current(before, &key), current(after, &key));
+            (old != new).then_some(RowChange {
+                key,
+                before: old,
+                after: new,
+            })
+        })
+        .collect()
 }
 
 /// One rollback notice per home channel of the affected runs (listing

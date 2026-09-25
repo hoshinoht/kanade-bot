@@ -4,6 +4,7 @@
 
 pub mod bosses;
 pub mod fixed;
+pub mod history;
 pub mod members;
 pub mod reminders;
 pub mod week;
