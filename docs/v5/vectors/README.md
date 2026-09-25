@@ -47,3 +47,10 @@ reactions. See its [README](scheduler/README.md); run it with
 `persona/` captures the v4 prompt assembly from public Kanade templates and synthetic
 profiles; see its [README](persona/README.md) and run
 `uv run python -m scripts.v5_vectors.persona --check`.
+
+`extract/` freezes the v4 extraction oracle: keyword gate, burst windows,
+day/time resolution, run matching, merge, prompt and structured-output schema
+bytes, response parsing with retry/quarantine over a scripted model, burst
+planning, commit outcomes and proposal cards, one schema per family listed in
+its `index.json`. See its [README](extract/README.md) and run
+`uv run python -m scripts.v5_vectors.extract --check`.
