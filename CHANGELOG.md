@@ -122,6 +122,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: startup loaders for the boss catalogue (tracked `boss/bosses.yaml`, parsed strictly),
+  the boss knowledge directory (schema-checked) and the persona directory.
 - v5: admin logs and rescan API: chat and extraction logs with filters, totals and facets
   (withheld questions stay hidden and unsearchable; extraction details list refused
   changes), and rescans of watched channels that start at once, report unread messages

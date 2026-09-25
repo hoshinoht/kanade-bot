@@ -7,11 +7,12 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Art, hue};
-use crate::domain::{catalog::BossTable, schedule::FixedRun};
+use crate::{
+    domain::{catalog::BossTable, schedule::FixedRun},
+    infrastructure::files::read_document,
+};
 
 const LETTERS: [&str; 5] = ["e", "n", "h", "c", "x"];
-/// Knowledge files are a few KiB; anything far larger is not ours.
-const MAX_KNOWLEDGE_BYTES: u64 = 256 * 1024;
 
 #[derive(Serialize)]
 pub struct DifficultyOption {
@@ -72,11 +73,7 @@ pub fn rows(catalog: &BossTable, art: &Art<'_>, fixed: &[FixedRun]) -> Vec<BossR
 }
 
 fn read_yaml(path: &Path) -> Option<Value> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_KNOWLEDGE_BYTES {
-        return None;
-    }
-    serde_saphyr::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    read_document(path).ok()
 }
 
 /// The file stem for a key: ASCII letters and digits only, lowercased.
