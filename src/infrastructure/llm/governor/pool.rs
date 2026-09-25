@@ -2,6 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use tokio::{sync::Notify, time::Instant};
 
+use super::super::ToolCallValidation;
+
 /// Queue classes, highest first; FIFO within a class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Priority {
@@ -39,6 +41,14 @@ impl CallKind {
 
     pub fn may_wait(self) -> bool {
         !matches!(self, Self::Rewrite | Self::PreScreen)
+    }
+
+    /// Chat answers steer the model past bad tool calls (v4); everything else is strict.
+    pub fn tool_call_validation(self) -> ToolCallValidation {
+        match self {
+            Self::Chat => ToolCallValidation::Lenient,
+            _ => ToolCallValidation::Strict,
+        }
     }
 }
 

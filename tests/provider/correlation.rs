@@ -177,25 +177,59 @@ async fn requested_tool_ids_and_definitions_cannot_be_duplicated() {
 }
 
 #[tokio::test]
-async fn request_tool_arguments_must_match_the_declared_schema() {
-    let mut input = tool_request();
-    input.messages = vec![Message::Assistant {
+async fn historical_tool_calls_are_shape_checked_not_schema_checked() {
+    let words = || {
+        FakeAction::Response(CompletionResponse {
+            model: "m".into(),
+            content: Some("done".into()),
+            tool_calls: Vec::new(),
+            finish_reason: FinishReason::Stop,
+            usage: None,
+        })
+    };
+    let history = |arguments: String| {
+        let mut input = tool_request();
+        input.messages.extend([
+            Message::Assistant {
+                content: None,
+                tool_calls: vec![ToolCallRequest {
+                    id: "c1".into(),
+                    name: "tool".into(),
+                    arguments,
+                }],
+            },
+            Message::Tool {
+                tool_call_id: "c1".into(),
+                content: "result".into(),
+            },
+        ]);
+        input
+    };
+    // Valid JSON the schema rejects: the model already sent it; not re-judged.
+    let (provider, runner) = build_runner([words()]);
+    runner
+        .complete(&history(json!({"value": 7}).to_string()))
+        .await
+        .unwrap();
+    assert_eq!(provider.requests().len(), 1);
+
+    for arguments in ["{not json".to_owned(), String::new()] {
+        let (provider, runner) = build_runner([words()]);
+        assert_eq!(
+            runner.complete(&history(arguments)).await.unwrap_err().code,
+            ErrorCode::RequestInvalid
+        );
+        assert!(provider.requests().is_empty());
+    }
+
+    let mut unanswered = tool_request();
+    unanswered.messages.push(Message::Assistant {
         content: None,
-        tool_calls: vec![ToolCallRequest {
-            id: "wrong".into(),
-            name: "tool".into(),
-            arguments: json!({"value": 7}).to_string(),
-        }],
-    }];
-    let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
-        model: "m".into(),
-        content: None,
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
-    })]);
+        tool_calls: vec![tool_call("c1")],
+    });
+    let (provider, runner) = build_runner([words()]);
     assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
+        runner.complete(&unanswered).await.unwrap_err().code,
         ErrorCode::RequestInvalid
     );
     assert!(provider.requests().is_empty());

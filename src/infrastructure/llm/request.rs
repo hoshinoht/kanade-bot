@@ -64,6 +64,17 @@ impl OutputValidation {
         *self == Self::Runner
     }
 }
+/// How reply tool calls are checked against the tools a request offered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToolCallValidation {
+    /// Unknown tools and schema mismatches are `InvalidOutput`.
+    #[default]
+    Strict,
+    /// User decision (v4 parity for chat): unknown tools and schema mismatches are
+    /// returned for the caller to steer; unreadable calls are still `InvalidOutput`.
+    Lenient,
+}
+
 /// Optional sampling controls; each is sent only to models that accept sampling.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Sampling {

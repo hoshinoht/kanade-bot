@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmError, Message, OutputValidation,
+    ToolCallValidation,
     schema::{self},
+    wire::valid_name,
 };
 use super::{
     accounting::{encoded_size, response_metadata_text, response_payload_text, value_bounds},
@@ -13,6 +15,7 @@ pub(super) fn validate_response(
     request: &ChatRequest,
     response: CompletionResponse,
     limits: &ExecutionLimits,
+    validation: ToolCallValidation,
 ) -> Result<CompletionResponse, LlmError> {
     if response.tool_calls.len() > limits.max_tools {
         return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-count"));
@@ -53,8 +56,16 @@ pub(super) fn validate_response(
         if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.as_str()) {
             return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-id"));
         }
-        if !tools.contains_key(call.name.as_str()) {
-            return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-name"));
+        let known = tools.contains_key(call.name.as_str());
+        match validation {
+            ToolCallValidation::Strict if !known => {
+                return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-name"));
+            }
+            // A lenient call must still be resendable as history.
+            ToolCallValidation::Lenient if !valid_name(&call.name) => {
+                return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-name"));
+            }
+            _ => {}
         }
     }
 
@@ -82,15 +93,33 @@ pub(super) fn validate_response(
     }
 
     for call in &response.tool_calls {
-        let schema = tools
-            .get(call.name.as_str())
-            .ok_or_else(|| LlmError::new(ErrorCode::InvalidOutput, "tool-name"))?;
-        schema::parse_and_validate(
-            schema,
-            &call.arguments,
-            &value_bounds(limits, limits.max_output_bytes),
-            &value_bounds(limits, limits.max_schema_bytes),
-        )?;
+        let bounds = value_bounds(limits, limits.max_output_bytes);
+        match (validation, tools.get(call.name.as_str())) {
+            (ToolCallValidation::Strict, schema) => {
+                let schema =
+                    schema.ok_or_else(|| LlmError::new(ErrorCode::InvalidOutput, "tool-name"))?;
+                schema::parse_and_validate(
+                    schema,
+                    &call.arguments,
+                    &bounds,
+                    &value_bounds(limits, limits.max_schema_bytes),
+                )?;
+            }
+            // Unknown tools and schema misses go to the caller, which steers the
+            // model as v4 did; only an unreadable call is malformed.
+            (ToolCallValidation::Lenient, _) => {
+                schema::inspect_json(
+                    &call.arguments,
+                    &bounds,
+                    ErrorCode::InvalidOutput,
+                    "malformed-json",
+                )?;
+                // Already valid JSON, so a leading `{` means an object.
+                if !call.arguments.trim_start().starts_with('{') {
+                    return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-arguments"));
+                }
+            }
+        }
     }
     if let Some(output) = &request.output_schema
         && output.validation == OutputValidation::Runner

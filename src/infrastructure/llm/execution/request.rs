@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::{
     ChatRequest, ErrorCode, LlmError, Message,
     schema::{self},
+    wire::valid_name,
 };
 use super::{
     accounting::{encoded_size, request_text, value_bounds},
@@ -108,7 +109,6 @@ pub(super) fn validate_request(
                         call.id.as_str(),
                         call.name.as_str(),
                         call.arguments.as_str(),
-                        &tools,
                         limits,
                         &mut TranscriptState {
                             pending: &mut pending,
@@ -150,7 +150,6 @@ pub(super) fn validate_request(
             &value_bounds(limits, limits.max_schema_bytes),
         )?;
     }
-    validate_tool_arguments(request, &tools, limits)?;
     Ok(request_bytes)
 }
 
@@ -159,20 +158,22 @@ struct TranscriptState<'state, 'id> {
     seen: &'state mut BTreeSet<&'id str>,
 }
 
+/// Historical calls are checked for shape only, not against `request.tools`:
+/// a round may withhold tools (v4's final round) after earlier rounds used
+/// them, and a lenient chat reply may have named a tool that was not offered.
 fn call_request<'id>(
     id: &'id str,
     name: &str,
     args: &str,
-    tools: &BTreeMap<&'id str, &'id serde_json::Value>,
     limits: &ExecutionLimits,
     state: &mut TranscriptState<'_, 'id>,
 ) -> Result<(), LlmError> {
     request_text(id, limits)?;
     request_text(name, limits)?;
     request_text(args, limits)?;
-    tools
-        .get(name)
-        .ok_or_else(|| LlmError::new(ErrorCode::RequestInvalid, "tool-name"))?;
+    if !valid_name(name) {
+        return Err(LlmError::new(ErrorCode::RequestInvalid, "tool-name"));
+    }
     if id.is_empty() || !state.pending.insert(id) || !state.seen.insert(id) {
         return Err(LlmError::new(ErrorCode::RequestInvalid, "tool-id"));
     }
@@ -182,29 +183,4 @@ fn call_request<'id>(
         ErrorCode::RequestInvalid,
         "tool-arguments",
     )
-}
-
-fn validate_tool_arguments(
-    request: &ChatRequest,
-    tools: &BTreeMap<&str, &serde_json::Value>,
-    limits: &ExecutionLimits,
-) -> Result<(), LlmError> {
-    for message in &request.messages {
-        let Message::Assistant { tool_calls, .. } = message else {
-            continue;
-        };
-        for call in tool_calls {
-            let schema = tools
-                .get(call.name.as_str())
-                .ok_or_else(|| LlmError::new(ErrorCode::RequestInvalid, "tool-name"))?;
-            schema::parse_and_validate(
-                schema,
-                &call.arguments,
-                &value_bounds(limits, limits.max_output_bytes),
-                &value_bounds(limits, limits.max_schema_bytes),
-            )
-            .map_err(|_| LlmError::new(ErrorCode::RequestInvalid, "tool-arguments"))?;
-        }
-    }
-    Ok(())
 }

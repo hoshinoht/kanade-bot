@@ -88,9 +88,20 @@ impl<P: LlmProvider> CompletionRunner<P> {
     /// Test support only: one ungoverned call with non-chat retry rules.
     #[cfg(any(test, feature = "test-support"))]
     pub async fn complete(&self, request: &ChatRequest) -> Result<CompletionResponse, LlmError> {
+        self.complete_as(request, CallKind::Extraction).await
+    }
+
+    /// Test support only: one ungoverned call with `kind`'s retry and
+    /// tool-call validation rules.
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn complete_as(
+        &self,
+        request: &ChatRequest,
+        kind: CallKind,
+    ) -> Result<CompletionResponse, LlmError> {
         let random = self.random.clone();
         let mut used = 0;
-        let mut gate = Gate::ungoverned(random.as_ref(), &mut used);
+        let mut gate = Gate::ungoverned(random.as_ref(), &mut used, kind);
         self.run(request, &mut gate)
             .await
             .map_err(|error| match error {
@@ -195,7 +206,9 @@ impl<P: LlmProvider> CompletionRunner<P> {
                             "usage-reservation",
                         )));
                     }
-                    return validate_response(current, response, &self.limits).map_err(charge);
+                    let validation = gate.kind().tool_call_validation();
+                    return validate_response(current, response, &self.limits, validation)
+                        .map_err(charge);
                 }
                 Err(failure) => failure,
             };

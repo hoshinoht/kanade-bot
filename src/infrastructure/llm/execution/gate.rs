@@ -60,10 +60,10 @@ impl<'a> Gate<'a> {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(super) fn ungoverned(random: &'a dyn Random, used: &'a mut u32) -> Self {
+    pub(super) fn ungoverned(random: &'a dyn Random, used: &'a mut u32, kind: CallKind) -> Self {
         Self {
             permit: None,
-            kind: CallKind::Extraction,
+            kind,
             deadline: None,
             used,
             cap: u32::MAX,
