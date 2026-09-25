@@ -101,8 +101,9 @@ seed's placeholders, otherwise the seed line is used as written.
 ## Compiled prompt
 
 The chat prompt is compiled from the selected bundle and profile: identity,
-behaviour, profile prompt, `Good` examples (profile examples replace the
-behaviour's), then the code-owned policies in `src/chat/prompts/`, the
+behaviour, profile prompt, optional `Good` examples (profile examples replace
+the behaviour's; profiles usually omit them, since a larger context can make
+the model follow the persona less reliably), then the code-owned policies in `src/chat/prompts/`, the
 per-turn clock/model/card lines and a voice cue. The effective voice is the
 profile `voice`, then the bundle `voice`, then a built-in default; `<...>`
 template values count as unset. The last message of every request is the

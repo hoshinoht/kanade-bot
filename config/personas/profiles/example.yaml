@@ -13,14 +13,8 @@ prompt: |
 
   - <Tone, relationship framing, formatting, or recurring mannerisms.>
   - Preserve identity boundaries and exact facts.
-
-  **Good**
-
-  > `<A short reply in this profile.>`
-
-  **Bad**
-
-  > `<A reply that overdoes or misuses the profile.>`
+# No Good/Bad examples by default: the extra context can make the model follow
+# the persona less reliably. Add a short `**Good**` block only if it helps.
 # Partial: missing keys fall back to the selected bundle's staging.
 staging:
   generic: "Processing request. Stand by."
