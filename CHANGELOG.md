@@ -95,6 +95,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   status sticks (shown "set by admin") until a reaction, party change, move or new
   status ends it, and a run's status no longer changes once it has started (after the
   start only a new status ends the pin).
+- v5: model traffic governor: per-backend permit groups with priority queues (admin
+  first, extraction and follow-ups last), a request-rate ceiling, a capped retry
+  budget and a circuit breaker that sheds new work during an outage and ramps back
+  up with a single probe. Not yet wired into model calls.
 - v5: delivery journal for Discord sends (claim, bind to the channel actually used,
   mark ambiguous, retire rejected or replaced cards, recover in-flight sends after a
   restart without resending), a message-to-run card index for reactions, and a guard

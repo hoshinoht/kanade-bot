@@ -14,7 +14,7 @@
 ## v5 toolchain and checks
 
 - CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`.
-- Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
+- Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `governor` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
 - The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
 - Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_BIND` loopback-only). See `docs/v5/runtime-bootstrap.md`.
 - Pin new dependencies exactly (`=x.y.z`) with minimal features; keep rustls on `ring` only (no aws-lc/native-tls/openssl).

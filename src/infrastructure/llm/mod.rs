@@ -3,6 +3,7 @@ mod error;
 mod execution;
 #[cfg(any(test, feature = "test-support"))]
 mod fake;
+pub mod governor;
 mod http;
 mod provider;
 mod request;

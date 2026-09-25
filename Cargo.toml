@@ -37,6 +37,11 @@ path = "tests/provider/main.rs"
 required-features = ["test-support"]
 
 [[test]]
+name = "governor"
+path = "tests/governor/main.rs"
+required-features = ["test-support"]
+
+[[test]]
 name = "scheduler"
 path = "tests/scheduler/main.rs"
 required-features = ["test-support"]
