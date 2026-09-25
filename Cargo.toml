@@ -76,3 +76,8 @@ required-features = ["test-support"]
 name = "api"
 path = "tests/api/main.rs"
 required-features = ["test-support"]
+
+[[test]]
+name = "chat"
+path = "tests/chat/main.rs"
+required-features = ["test-support"]

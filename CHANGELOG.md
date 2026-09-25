@@ -130,6 +130,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   write path, replaces older proposals for the same target, and expires silently after
   24 hours. Proposed answers recount the run's status like v4; approved cancels win over
   status changes since the proposal, and an approved move revives a cancelled run.
+- v5: chat gate, authority, read and proposal tools (proposals only through the
+  scheduler, refused up front when unworkable), reply sanitising and injection guards,
+  matching the frozen v4 chat vectors; tools load in bundles as needed instead of all
+  12 every round, and every tool argument and result goes through the identity codec.
 - v5: extraction pipeline: watched messages are debounced into bursts, read through the
   model limiter (one answer retry), logged once per call with their outcome, and turned
   into proposals only through the scheduler; a bounded backlog drains slowly and waits
