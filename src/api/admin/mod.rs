@@ -12,7 +12,9 @@ mod write;
 
 use std::sync::Arc;
 
-use axum::{Extension, Json, Router, extract::State, response::IntoResponse, routing::get};
+use axum::{
+    Extension, Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get,
+};
 
 use super::{assets, error::ApiError, guard::proxy::Peer, listeners::Site};
 use crate::runtime::application::OfflineApplication;
@@ -38,5 +40,14 @@ async fn health(
     if !peer.is_local(site.listener_ip) {
         return ApiError::NOT_FOUND.into_response();
     }
-    Json(OfflineApplication.health()).into_response()
+    let health = match &site.health {
+        Some(probe) => probe.health().await,
+        None => OfflineApplication.health(),
+    };
+    let status = if health.is_ok() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (status, Json(health)).into_response()
 }

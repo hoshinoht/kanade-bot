@@ -91,3 +91,7 @@ Pointers are `<file>#/$defs/<Name>`.
   and per-channel `unread`/`errors`, `RescanJob.window` adds `24h`/`48h`
   (bot-started jobs); `ExtractionOutcome` and `chat.json` `ChatOutcome` add
   `unknown` (v4-imported rows).
+- Serve composition: `identity.json` `Session.method` (`discord` |
+  `tailscale` | `token`), sent on `GET /api/admin/session` and every sign-in
+  response so the admin app can hide proposal actions for non-Discord
+  sessions up front. Optional in the schema so earlier responses stay valid.

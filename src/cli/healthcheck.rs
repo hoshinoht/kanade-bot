@@ -13,8 +13,8 @@ const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_HEADERS: usize = 32;
 
+/// Unknown fields are ignored so live mode can report more components.
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 struct HealthResponse {
     status: String,
     mode: String,
@@ -24,12 +24,18 @@ struct HealthResponse {
 }
 
 impl HealthResponse {
-    fn is_expected_offline_response(&self) -> bool {
-        self.status == "ok"
-            && self.mode == "offline"
-            && self.scheduler == "unavailable"
-            && self.storage == "unavailable"
-            && self.discord == "unavailable"
+    fn is_ready(&self) -> bool {
+        match self.mode.as_str() {
+            "offline" => {
+                self.status == "ok"
+                    && self.scheduler == "unavailable"
+                    && self.storage == "unavailable"
+                    && self.discord == "unavailable"
+            }
+            // The server folds every component into `status`; storage is required.
+            "live" => self.status == "ok" && self.storage == "ok",
+            _ => false,
+        }
     }
 }
 
@@ -84,10 +90,8 @@ async fn check_inner(target: std::net::SocketAddr) -> Result<(), Error> {
     let health: HealthResponse = serde_json::from_slice(&body).map_err(|_| {
         Error::Unavailable("healthcheck target returned invalid health JSON".into())
     })?;
-    if !health.is_expected_offline_response() {
-        return Err(Error::Unavailable(
-            "healthcheck target is not offline-ready".into(),
-        ));
+    if !health.is_ready() {
+        return Err(Error::Unavailable("healthcheck target is not ready".into()));
     }
     Ok(())
 }
@@ -116,12 +120,42 @@ mod tests {
         }
     }
 
+    async fn check_body(body: &str) -> Result<(), Error> {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        check(fake_response(response.into_bytes(), false).await).await
+    }
+
     #[tokio::test]
     async fn accepts_only_the_complete_expected_health_document() {
-        let body = br#"{"status":"ok","mode":"offline","scheduler":"unavailable","storage":"unavailable","discord":"unavailable"}"#;
-        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
-        let config = fake_response([response.as_bytes(), body].concat(), false).await;
-        assert!(check(config).await.is_ok());
+        let offline = r#"{"status":"ok","mode":"offline","scheduler":"unavailable","storage":"unavailable","discord":"unavailable"}"#;
+        assert!(check_body(offline).await.is_ok());
+        let live = r#"{"status":"ok","mode":"live","scheduler":"disabled","storage":"ok","discord":"disabled"}"#;
+        assert!(check_body(live).await.is_ok());
+        let later = r#"{"status":"ok","mode":"live","scheduler":"ok","storage":"ok","discord":"ok","tick":"ok"}"#;
+        assert!(
+            check_body(later).await.is_ok(),
+            "extra components are allowed"
+        );
+        for refused in [
+            r#"{"status":"ok","mode":"offline","scheduler":"ok","storage":"unavailable","discord":"unavailable"}"#,
+            r#"{"status":"degraded","mode":"live","scheduler":"disabled","storage":"error","discord":"disabled"}"#,
+            r#"{"status":"ok","mode":"live","scheduler":"disabled","storage":"error","discord":"disabled"}"#,
+            r#"{"status":"ok","mode":"other","scheduler":"ok","storage":"ok","discord":"ok"}"#,
+            r#"{"status":"ok","mode":"live","storage":"ok"}"#,
+        ] {
+            assert_eq!(
+                check_body(refused).await.unwrap_err().to_string(),
+                if refused.contains("scheduler") {
+                    "healthcheck target is not ready"
+                } else {
+                    "healthcheck target returned invalid health JSON"
+                },
+                "{refused}"
+            );
+        }
     }
 
     #[tokio::test]

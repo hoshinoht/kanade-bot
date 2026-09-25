@@ -301,7 +301,7 @@ impl AdminAuth {
 }
 
 /// Wall clock without chrono's `clock` feature; before the epoch reads as the epoch.
-fn system_now() -> DateTime<Utc> {
+pub fn system_now() -> DateTime<Utc> {
     let since = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

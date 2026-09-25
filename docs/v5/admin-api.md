@@ -22,7 +22,7 @@ session (below) and answers `401 unauthenticated` without one.
 | `POST /api/admin/auth/tailscale` | `{}` or no body | `Session` + cookie + `X-Kanade-CSRF` | 401 unless the edge vouches for an allow-listed login. |
 | `POST /api/admin/auth/token` | `{token}` | `Session` + cookie + `X-Kanade-CSRF` | Break-glass; every use is logged at WARN. 401 on a wrong token, 400 `invalid_body`, 429 `rate_limited`. |
 | `POST /api/admin/auth/logout` | — | `204` + cleared cookie | Needs CSRF. Deletes the session server-side. |
-| `GET /api/admin/session` | — | `Session` (`{display}`) + `X-Kanade-CSRF` | 401 `unauthenticated` when signed out. |
+| `GET /api/admin/session` | — | `Session` (`{display, method}`; `method` is `discord`, `tailscale` or `token`, and only `discord` sessions may decide proposals) + `X-Kanade-CSRF` | 401 `unauthenticated` when signed out. |
 
 Contract for the frontend (API-5):
 

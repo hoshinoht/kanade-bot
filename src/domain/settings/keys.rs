@@ -23,7 +23,6 @@ pub const REWRITE_REASONING: &str = "v5.rewrite_reasoning";
 pub const POST_CHANNEL: &str = "v5.post_channel_id";
 pub const WATCHED_CHANNELS: &str = "v5.watched_channel_ids";
 pub const WATCHED_CATEGORIES: &str = "v5.watched_category_ids";
-pub const CHAT_CHANNELS: &str = "v5.chat_channel_ids";
 pub const CHAT_CATEGORIES: &str = "v5.chat_category_ids";
 pub const RESET_WEEKDAY: &str = "v5.reset_weekday";
 pub const RESET_TIME: &str = "v5.reset_time";
@@ -33,7 +32,7 @@ pub const PUBLIC_PORTAL: &str = "v5.public_portal";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 27] = [
+pub const ALL: [&str; 26] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -54,7 +53,6 @@ pub const ALL: [&str; 27] = [
     POST_CHANNEL,
     WATCHED_CHANNELS,
     WATCHED_CATEGORIES,
-    CHAT_CHANNELS,
     CHAT_CATEGORIES,
     RESET_WEEKDAY,
     RESET_TIME,

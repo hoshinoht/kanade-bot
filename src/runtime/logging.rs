@@ -21,7 +21,7 @@ pub fn error(error: &Error) {
     });
 }
 
-pub fn server_started(bind: &str) {
+pub fn server_started(mode: &'static str, bind: &str) {
     #[derive(Serialize)]
     struct Event<'a> {
         level: &'static str,
@@ -32,7 +32,7 @@ pub fn server_started(bind: &str) {
     emit(&Event {
         level: "INFO",
         event: "server_started",
-        mode: "offline",
+        mode,
         bind,
     });
 }
@@ -45,6 +45,19 @@ pub fn store_dropped_unclosed(db_path: &std::path::Path) {
         "event": "store_dropped_unclosed",
         "db_path": db_path.display().to_string(),
     }));
+}
+
+/// `closed` is false when closing failed or the store was still shared.
+pub fn store_closed(closed: bool) {
+    emit(&serde_json::json!({
+        "level": if closed { "INFO" } else { "WARN" },
+        "event": if closed { "store_closed" } else { "store_close_failed" },
+    }));
+}
+
+/// Live serve runs without the Discord gateway until it is wired.
+pub fn discord_disabled() {
+    emit(&serde_json::json!({"level":"INFO", "event":"discord_disabled"}));
 }
 
 pub fn shutdown_started() {

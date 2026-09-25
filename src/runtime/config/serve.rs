@@ -2,6 +2,8 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
+use chrono::{NaiveTime, Weekday};
+
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
     StoreSettings, guild, non_empty, parse_bounded_u64,
@@ -21,13 +23,21 @@ pub struct ServeConfig {
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
+/// `None` and empty lists keep the code default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SettingSeeds {
     pub post_channel_id: Option<u64>,
     pub watch_channel_ids: Vec<u64>,
-    pub pilot_channel_ids: Vec<u64>,
-    pub extraction_enabled: bool,
-    pub chat_enabled: bool,
+    pub watch_category_ids: Vec<u64>,
+    /// Kanade chats in every channel of these categories.
+    pub chat_category_ids: Vec<u64>,
+    pub extraction_enabled: Option<bool>,
+    pub chat_enabled: Option<bool>,
+    pub reset_weekday: Option<Weekday>,
+    pub reset_time: Option<NaiveTime>,
+    pub day_of_ping_time: Option<NaiveTime>,
+    /// Largest first, no duplicates.
+    pub countdown_minutes: Option<Vec<u32>>,
 }
 
 impl ServeConfig {
@@ -54,22 +64,103 @@ impl ServeConfig {
 
 impl SettingSeeds {
     fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+        // Removed before release: chat follows categories, never a channel list.
+        if non_empty(values, "KANADE_PILOT_CHANNEL_IDS").is_some() {
+            return Err(Error::Configuration(
+                "KANADE_PILOT_CHANNEL_IDS was removed; use KANADE_CHAT_CATEGORY_IDS".into(),
+            ));
+        }
         Ok(Self {
             post_channel_id: guild::optional(values, "KANADE_POST_CHANNEL_ID")?,
             watch_channel_ids: guild::list(values, "KANADE_WATCH_CHANNEL_IDS")?,
-            pilot_channel_ids: guild::list(values, "KANADE_PILOT_CHANNEL_IDS")?,
+            watch_category_ids: guild::list(values, "KANADE_WATCH_CATEGORY_IDS")?,
+            chat_category_ids: guild::list(values, "KANADE_CHAT_CATEGORY_IDS")?,
             extraction_enabled: flag(values, "KANADE_EXTRACTION_ENABLED")?,
             chat_enabled: flag(values, "KANADE_CHAT_ENABLED")?,
+            reset_weekday: non_empty(values, "KANADE_BOSS_WEEK_RESET_WEEKDAY")
+                .map(|value| {
+                    weekday(value).ok_or_else(|| {
+                        Error::Configuration(
+                            "KANADE_BOSS_WEEK_RESET_WEEKDAY must be one of mon..sun".into(),
+                        )
+                    })
+                })
+                .transpose()?,
+            reset_time: clock(values, "KANADE_BOSS_WEEK_RESET_TIME")?,
+            day_of_ping_time: clock(values, "KANADE_DAY_OF_PING_TIME")?,
+            countdown_minutes: countdowns(values, "KANADE_COUNTDOWN_MINUTES")?,
         })
     }
 }
 
-fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<bool, Error> {
+fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
     match non_empty(values, key) {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
+        None => Ok(None),
+        Some("0") => Ok(Some(false)),
+        Some("1") => Ok(Some(true)),
         Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
     }
+}
+
+fn weekday(value: &str) -> Option<Weekday> {
+    const DAYS: [(&str, Weekday); 7] = [
+        ("mon", Weekday::Mon),
+        ("tue", Weekday::Tue),
+        ("wed", Weekday::Wed),
+        ("thu", Weekday::Thu),
+        ("fri", Weekday::Fri),
+        ("sat", Weekday::Sat),
+        ("sun", Weekday::Sun),
+    ];
+    let value = value.to_ascii_lowercase();
+    DAYS.iter()
+        .find(|(name, _)| *name == value)
+        .map(|(_, day)| *day)
+}
+
+/// Exactly `HH:MM`, 24-hour.
+fn clock(values: &BTreeMap<String, String>, key: &str) -> Result<Option<NaiveTime>, Error> {
+    let Some(value) = non_empty(values, key) else {
+        return Ok(None);
+    };
+    let bytes = value.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes[range.clone()]
+            .iter()
+            .all(u8::is_ascii_digit)
+            .then(|| value[range].parse::<u32>().ok())
+            .flatten()
+    };
+    let time = (bytes.len() == 5 && bytes[2] == b':')
+        .then(|| NaiveTime::from_hms_opt(digits(0..2)?, digits(3..5)?, 0))
+        .flatten();
+    time.map(Some)
+        .ok_or_else(|| Error::Configuration(format!("{key} must be HH:MM (24-hour)")))
+}
+
+fn countdowns(values: &BTreeMap<String, String>, key: &str) -> Result<Option<Vec<u32>>, Error> {
+    let Some(text) = non_empty(values, key) else {
+        return Ok(None);
+    };
+    let mut minutes = text
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            let ok = item.bytes().all(|byte| byte.is_ascii_digit());
+            ok.then(|| item.parse::<u32>().ok())
+                .flatten()
+                .filter(|minute| *minute > 0)
+                .ok_or_else(|| {
+                    Error::Configuration(format!(
+                        "{key} must be comma-separated positive whole minutes"
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    minutes.sort_unstable_by(|a, b| b.cmp(a));
+    minutes.dedup();
+    Ok(Some(minutes))
 }
 
 fn instance_id(values: &BTreeMap<String, String>) -> Result<String, Error> {
@@ -133,13 +224,27 @@ mod tests {
     }
 
     #[test]
-    fn live_serve_needs_the_v4_guard_and_a_token_file() {
-        for guard in ["", "0", "yes"] {
-            assert_eq!(
-                config(&[("KANADE_EXPECT_V4_STOPPED", guard)]).unwrap_err(),
-                "KANADE_EXPECT_V4_STOPPED must be 1: stop the v4 container first"
-            );
+    fn live_serve_needs_a_token_file_and_the_gateway_needs_the_v4_guard() {
+        for (guard, stopped) in [("", false), ("0", false), ("1", true)] {
+            let discord = config(&[("KANADE_EXPECT_V4_STOPPED", guard)])
+                .unwrap()
+                .discord;
+            assert_eq!(discord.v4_stopped, stopped);
+            assert_eq!(discord.require_v4_stopped().is_ok(), stopped);
         }
+        assert_eq!(
+            config(&[("KANADE_EXPECT_V4_STOPPED", "")])
+                .unwrap()
+                .discord
+                .require_v4_stopped()
+                .unwrap_err()
+                .to_string(),
+            "KANADE_EXPECT_V4_STOPPED must be 1: stop the v4 container first"
+        );
+        assert_eq!(
+            config(&[("KANADE_EXPECT_V4_STOPPED", "yes")]).unwrap_err(),
+            "KANADE_EXPECT_V4_STOPPED must be 0 or 1"
+        );
         assert_eq!(
             config(&[("KANADE_DISCORD_TOKEN_FILE", "")]).unwrap_err(),
             "KANADE_DISCORD_TOKEN_FILE is required"
@@ -151,6 +256,62 @@ mod tests {
                 format!("{plain} is not read; use KANADE_DISCORD_TOKEN_FILE")
             );
         }
+    }
+
+    #[test]
+    fn schedule_seeds_are_strict() {
+        let seeds = config(&[
+            ("KANADE_BOSS_WEEK_RESET_WEEKDAY", "Wed"),
+            ("KANADE_BOSS_WEEK_RESET_TIME", "08:30"),
+            ("KANADE_DAY_OF_PING_TIME", "23:59"),
+            ("KANADE_COUNTDOWN_MINUTES", " 15,60,, 15 "),
+            ("KANADE_WATCH_CATEGORY_IDS", "21,22"),
+            ("KANADE_CHAT_CATEGORY_IDS", "31"),
+            ("KANADE_EXTRACTION_ENABLED", "0"),
+        ])
+        .unwrap()
+        .seeds;
+        assert_eq!(seeds.reset_weekday, Some(Weekday::Wed));
+        assert_eq!(seeds.reset_time, NaiveTime::from_hms_opt(8, 30, 0));
+        assert_eq!(seeds.day_of_ping_time, NaiveTime::from_hms_opt(23, 59, 0));
+        assert_eq!(seeds.countdown_minutes, Some(vec![60, 15]));
+        assert_eq!(seeds.watch_category_ids, [21, 22]);
+        assert_eq!(seeds.chat_category_ids, [31]);
+        assert_eq!(seeds.extraction_enabled, Some(false));
+        assert_eq!(seeds.chat_enabled, None);
+        for bad in ["thursday", "th", "7"] {
+            assert_eq!(
+                config(&[("KANADE_BOSS_WEEK_RESET_WEEKDAY", bad)]).unwrap_err(),
+                "KANADE_BOSS_WEEK_RESET_WEEKDAY must be one of mon..sun",
+                "{bad}"
+            );
+        }
+        for bad in [
+            "8:30",
+            "24:00",
+            "08:60",
+            "0830",
+            "08:30pm",
+            "+8:30",
+            "٠٨:٣٠",
+        ] {
+            assert_eq!(
+                config(&[("KANADE_DAY_OF_PING_TIME", bad)]).unwrap_err(),
+                "KANADE_DAY_OF_PING_TIME must be HH:MM (24-hour)",
+                "{bad}"
+            );
+        }
+        for bad in ["0", "15,x", "-5", "+5"] {
+            assert_eq!(
+                config(&[("KANADE_COUNTDOWN_MINUTES", bad)]).unwrap_err(),
+                "KANADE_COUNTDOWN_MINUTES must be comma-separated positive whole minutes",
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            config(&[("KANADE_PILOT_CHANNEL_IDS", "1")]).unwrap_err(),
+            "KANADE_PILOT_CHANNEL_IDS was removed; use KANADE_CHAT_CATEGORY_IDS"
+        );
     }
 
     #[test]
@@ -186,10 +347,11 @@ mod tests {
         assert_eq!(parsed.guild.debug_user_ids, [5, 7]);
         assert_eq!(parsed.seeds.watch_channel_ids, [9, 10]);
         assert_eq!(parsed.seeds.post_channel_id, Some(11));
-        assert!(parsed.seeds.chat_enabled && !parsed.seeds.extraction_enabled);
+        assert_eq!(parsed.seeds.chat_enabled, Some(true));
+        assert_eq!(parsed.seeds.extraction_enabled, None);
         assert_eq!(
-            config(&[("KANADE_PILOT_CHANNEL_IDS", "1,x")]).unwrap_err(),
-            "KANADE_PILOT_CHANNEL_IDS must be comma-separated Discord snowflakes"
+            config(&[("KANADE_CHAT_CATEGORY_IDS", "1,x")]).unwrap_err(),
+            "KANADE_CHAT_CATEGORY_IDS must be comma-separated Discord snowflakes"
         );
         assert_eq!(
             config(&[("KANADE_EXTRACTION_ENABLED", "true")]).unwrap_err(),

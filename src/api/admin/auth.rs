@@ -58,6 +58,8 @@ pub fn routes() -> Router<Arc<Site>> {
 #[derive(Serialize)]
 struct SessionView {
     display: String,
+    /// `discord`, `tailscale` or `token`: only Discord sessions may decide proposals.
+    method: &'static str,
 }
 
 fn session_cookie(auth: &AdminAuth, id: &str) -> HeaderValue {
@@ -69,8 +71,17 @@ fn session_cookie(auth: &AdminAuth, id: &str) -> HeaderValue {
     )
 }
 
-fn signed_in(display: String, csrf: Option<String>, cookie: Option<HeaderValue>) -> Response {
-    let mut response = Json(SessionView { display }).into_response();
+fn signed_in(
+    display: String,
+    method: LoginMethod,
+    csrf: Option<String>,
+    cookie: Option<HeaderValue>,
+) -> Response {
+    let mut response = Json(SessionView {
+        display,
+        method: method.as_str(),
+    })
+    .into_response();
     let headers = response.headers_mut();
     if let Some(token) = csrf.and_then(|token| HeaderValue::from_str(&token).ok()) {
         headers.insert(CSRF_HEADER, token);
@@ -135,7 +146,7 @@ fn landing(next: &str, cookies: impl IntoIterator<Item = HeaderValue>) -> Respon
 
 async fn session(session: AdminSession) -> Response {
     let csrf = session.csrf_token();
-    signed_in(session.display, csrf, None)
+    signed_in(session.display, session.method, csrf, None)
 }
 
 #[derive(Serialize)]
@@ -398,6 +409,7 @@ async fn tailscale_login(State(site): State<Arc<Site>>, request: Request) -> Res
     {
         Some(id) => signed_in(
             name,
+            LoginMethod::Tailscale,
             Some(csrf::token(&id)),
             Some(session_cookie(&auth, &id)),
         ),
@@ -468,6 +480,7 @@ async fn token_login(
     {
         Some(id) => signed_in(
             display.into(),
+            LoginMethod::Token,
             Some(csrf::token(&id)),
             Some(session_cookie(&auth, &id)),
         ),

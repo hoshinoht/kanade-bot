@@ -57,12 +57,11 @@ impl Default for Watching {
     }
 }
 
-/// `enabled` is v4's `chat_mode` kill switch; the chatbot still answers only
-/// in its channels.
+/// `enabled` is v4's `chat_mode` kill switch; the chatbot answers in every
+/// channel of its categories (no per-channel list, user decision).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chatbot {
     pub enabled: bool,
-    pub channel_ids: Vec<String>,
     pub category_ids: Vec<String>,
     pub member_rate: Rate,
     pub guild_rate: Rate,
@@ -72,7 +71,6 @@ impl Default for Chatbot {
     fn default() -> Self {
         Self {
             enabled: false,
-            channel_ids: Vec::new(),
             category_ids: Vec::new(),
             member_rate: Rate {
                 count: 4,

@@ -122,6 +122,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public one), Host and proxy-header guards, the PWAs' security headers, body and
   time limits, and static serving of both apps and boss art; the public portal answers
   closed. `KANADE_BIND` is renamed `KANADE_ADMIN_BIND`.
+- v5: `kanade serve` now runs live without Discord: it owns v5's own database, loads the
+  catalogue, knowledge, personas and settings (env seeds under saved values), and serves
+  the admin app against real data; sessions report how the admin signed in. Kanade chats
+  in every channel of the configured chat categories (no per-channel chat list).
 - v5: the model client is built at startup from the configured Kanata endpoint, key and
   per-role models; an unreachable model list leaves extraction and chat degraded rather
   than stopping the bot, and unpublished reasoning levels are reported.

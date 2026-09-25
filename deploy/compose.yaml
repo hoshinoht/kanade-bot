@@ -10,10 +10,11 @@ services:
       dockerfile: deploy/Dockerfile
     image: kanade-v5:local
     container_name: kanade-v5
-    # Live Discord mode (S7/S8): change to ["serve"].
-    command: ["serve", "--offline"]
+    # Live serve: owns the store; Discord is not wired yet (runs disabled).
+    command: ["serve"]
     env_file:
-      # KANADE_TIMEZONE (required), sign-in and tuning settings; never secrets.
+      # KANADE_TIMEZONE, KANADE_GUILD_ID, KANADE_BOSSING_ROLE_ID (required),
+      # roles, settings seeds, sign-in and tuning; never secrets.
       - path: ${KANADE_ENV_FILE:-../.env.v5}
         required: true
     # Overrides env_file: topology and container paths are fixed here.
@@ -30,7 +31,8 @@ services:
       KANADE_CATALOG_FILE: /app/boss/bosses.yaml
       KANADE_KNOWLEDGE_DIR: /app/boss/knowledge
       KANADE_PERSONA_DIR: /config/personas
-      KANADE_DB_PATH: /data/kanade.sqlite
+      # The volume root is 0750; serve creates these two 0700 on first start.
+      KANADE_DB_PATH: /data/db/kanade.sqlite
       KANADE_OWNER_LOCK_DIR: /data/run
       KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
       KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
@@ -54,6 +56,8 @@ services:
       # SQLite on a named volume, not a macOS bind mount.
       - data:/data
       - ../config/personas:/config/personas:ro
+      # Tracked catalog; the image carries only boss/knowledge.
+      - ../boss/bosses.yaml:/app/boss/bosses.yaml:ro
       # Private art (git-ignored) stays on the host.
       - ../boss/portraits:/app/boss/portraits:ro
       - ../boss/artwork:/app/boss/artwork:ro

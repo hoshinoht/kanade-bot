@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use serde::Serialize;
 
@@ -8,8 +8,9 @@ use crate::{
 };
 
 use super::{
-    config::{HealthcheckConfig, RuntimeConfig},
+    config::{HealthcheckConfig, RuntimeConfig, ServeConfig},
     error::Error,
+    serve,
 };
 
 pub async fn run(
@@ -20,10 +21,9 @@ pub async fn run(
         Command::Serve { offline: true } => {
             server::serve_offline(RuntimeConfig::from_mapping(&environment)?).await
         }
-        Command::Serve { offline: false } => Err(Error::Unavailable(
-            "production adapters are unavailable; use `serve --offline` only for local development"
-                .into(),
-        )),
+        Command::Serve { offline: false } => {
+            serve::run(ServeConfig::from_mapping(&environment)?).await
+        }
         Command::Healthcheck { url } => {
             healthcheck::check(HealthcheckConfig::from_mapping(
                 &environment,
@@ -40,13 +40,29 @@ pub async fn run(
 #[derive(Clone, Copy)]
 pub struct OfflineApplication;
 
-#[derive(Serialize)]
+/// The `/healthz` document. `status` is `ok` only when the process can do
+/// its job; anything else answers 503.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Health {
-    status: &'static str,
-    mode: &'static str,
-    scheduler: &'static str,
-    storage: &'static str,
-    discord: &'static str,
+    pub status: &'static str,
+    /// `offline` or `live`.
+    pub mode: &'static str,
+    pub scheduler: &'static str,
+    pub storage: &'static str,
+    pub discord: &'static str,
+}
+
+impl Health {
+    pub fn is_ok(&self) -> bool {
+        self.status == "ok"
+    }
+}
+
+pub type HealthFuture<'a> = Pin<Box<dyn Future<Output = Health> + Send + 'a>>;
+
+/// Live health, probed per request.
+pub trait HealthProbe: Send + Sync + std::fmt::Debug {
+    fn health(&self) -> HealthFuture<'_>;
 }
 
 impl OfflineApplication {

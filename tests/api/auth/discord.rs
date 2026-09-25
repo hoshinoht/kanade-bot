@@ -60,7 +60,10 @@ async fn staff_sign_in_with_pkce_uses_the_token_once_and_lands_on_next() {
     let (name, value) = cookie(&session_id);
     let me = harness.get("/api/admin/session", &[(name, &value)]).await;
     assert_eq!(me.status, 200);
-    assert_eq!(me.json(), serde_json::json!({"display": "Alice"}));
+    assert_eq!(
+        me.json(),
+        serde_json::json!({"display": "Alice", "method": "discord"})
+    );
     assert_eq!(me.header("x-kanade-csrf").map(str::len), Some(43));
 }
 

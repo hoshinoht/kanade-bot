@@ -6,15 +6,22 @@ latter as a semver version.
 
 ## Available now
 
-Only the explicit offline development server is runnable:
+The offline development server and live `serve` without Discord:
 
 ```sh
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
+kanade serve        # live: the "Serve environment" below is required
 KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
 ```
 
-The admin listener binds `127.0.0.1:8080` by default; `GET /healthz` reports
-offline mode plus unavailable scheduler, storage, and Discord capabilities.
+The admin listener binds `127.0.0.1:8080` by default. `GET /healthz` answers
+`{status, mode, scheduler, storage, discord}`: offline mode reports `ok`,
+`offline` and `unavailable` for the rest; live mode reports `mode: "live"`,
+`storage: "ok"` when the store answers a read (else `status: "degraded"`,
+`storage: "error"` and HTTP 503), and `scheduler`/`discord` `disabled` until
+the gateway and delivery tick are wired (later fields may be added).
+`healthcheck` accepts the exact offline document or a live one with `status`
+and `storage` `ok`, ignoring extra fields.
 Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
 private address (RFC 1918, IPv4 link-local, IPv6 `fc00::/7` and `fe80::/10`)
 on the internal edge network; wildcard (`0.0.0.0`, `::`) and public addresses
@@ -49,23 +56,23 @@ the container's own listener address) and has a bounded timeout.
 Empty values count as unset. Values are never echoed in errors or logs.
 Plain `KANADE_ADMIN_TOKEN` / `KANADE_ADMIN_DISCORD_CLIENT_SECRET` are refused:
 secrets come only from files. `serve --offline` has no store, so it parses
-these but serves sign-in routes as `503 auth_unavailable`; the session store
-is wired with the API state (A3). See `admin-api.md` "Sign-in and sessions".
+these but serves sign-in routes as `503 auth_unavailable`; live `serve`
+keeps sessions in its store. See `admin-api.md` "Sign-in and sessions".
 
 ### Serve environment
 
-Parsed by `ServeConfig` (`src/runtime/config/`) for live `serve` only; not yet
-wired (`serve` without `--offline` still refuses). Snowflakes are canonical
-decimal (no sign, no leading zero, non-zero, `u64`); lists are comma-separated.
+Parsed by `ServeConfig` (`src/runtime/config/`) for live `serve` only.
+Snowflakes are canonical decimal (no sign, no leading zero, non-zero, `u64`);
+lists are comma-separated.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB). Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
-| `KANADE_EXPECT_V4_STOPPED` | required | Must be `1`; otherwise startup fails with "stop the v4 container first". |
+| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB); read at startup even while the gateway is not wired, so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
+| `KANADE_EXPECT_V4_STOPPED` | `0` | `0` or `1`. Required to be `1` only before the Discord gateway connects ("stop the v4 container first"); serve without the gateway does not check it. |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
-| `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`; ownership, symlink and mode checks run when the store opens. |
+| `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
 | `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
 | `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root. |
 | `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
@@ -76,10 +83,37 @@ decimal (no sign, no leading zero, non-zero, `u64`); lists are comma-separated.
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
-| `KANADE_WATCH_CHANNEL_IDS`, `KANADE_PILOT_CHANNEL_IDS` | empty | Settings seeds: snowflake lists. |
-| `KANADE_EXTRACTION_ENABLED`, `KANADE_CHAT_ENABLED` | `0` | Settings seeds: `0` or `1`. |
+| `KANADE_WATCH_CHANNEL_IDS`, `KANADE_WATCH_CATEGORY_IDS` | empty | Settings seeds: snowflake lists the extractor reads. |
+| `KANADE_CHAT_CATEGORY_IDS` | empty | Settings seed: Kanade chats in every channel of these categories (there is no per-channel chat list). |
+| `KANADE_EXTRACTION_ENABLED`, `KANADE_CHAT_ENABLED` | unset | Settings seeds: `0` or `1`. |
+| `KANADE_BOSS_WEEK_RESET_WEEKDAY` | unset | Settings seed: `mon` … `sun` (case-insensitive). |
+| `KANADE_BOSS_WEEK_RESET_TIME`, `KANADE_DAY_OF_PING_TIME` | unset | Settings seeds: exactly `HH:MM`, 24-hour. |
+| `KANADE_COUNTDOWN_MINUTES` | unset | Settings seed: positive whole minutes, comma-separated (stored largest first, duplicates dropped). |
 
-Other unknown `KANADE_*` variables are ignored, as for the HTTP settings.
+Seeds apply per key only where the store has no row; an unset seed keeps
+the code default (`docs/v5/api-schemas/config.json` sections). A stored row
+that does not decode (or a `persona` that is not a persona id) fails startup
+naming the key, never the value. `KANADE_PILOT_CHANNEL_IDS` is refused with a
+pointer to `KANADE_CHAT_CATEGORY_IDS`. Other unknown `KANADE_*` variables are
+ignored, as for the HTTP settings.
+
+### Live serve (Discord not wired yet)
+
+`serve` (`src/runtime/serve/`) reads the bot token file, opens and owns the
+store, loads the catalog, knowledge and personas, resolves settings, then
+serves both listeners: one shared `SchedulerWriter`, `ApiState` (schedule
+policy from settings, one `GuildAccess` shared with the staff gate, guild id
+for card links) and `AdminAuth` (Discord OAuth, Tailscale and break-glass per
+the HTTP environment) with `GuildStaffGate` over `StoreGuildMembers`. On
+`SIGINT`/`SIGTERM` it drains HTTP, then closes the store (logged
+`store_closed`) so ownership is released only after SQLite closes; a startup
+failure after the store opened closes it too.
+
+Until the gateway is wired: the channel list is empty (pickers and rescan
+targets show nothing); no member rows arrive, so Discord sign-in refuses
+everyone as not staff (fail-closed) and the break-glass token is the way in;
+`rescans` is `None` (`503`); admin writes persist but send no Discord
+effects; nothing is delivered (no tick).
 
 ### Listeners
 
@@ -116,18 +150,12 @@ Known gap: `axum::serve` sets no header-read timeout, so slow-header clients
 are bounded by the edge/cloudflared in front of the loopback listeners until
 harden-and-package revisits connection limits.
 
-### Admin reads: composition still missing
+### Admin composition: what remains
 
 `serve --offline` builds neither `AdminAuth` nor `ApiState`, so admin reads
-answer `503 auth_unavailable`. A composed `serve` must supply: an opened
-`SqliteStore` (sessions, members, schedule; `ApiState.store`,
-`api::auth::from_settings`); a boss-catalog YAML loader (only the validated
-`BossTable` exists); `KANADE_KNOWLEDGE_DIR`-style config for
-`ApiState.knowledge_dir`; the guild's `ChannelList` and chat pilot role from
-the gateway/config; the reply-style profile list for `personas`; the guild
-id for card links; the `SchedulePolicy` from runtime settings; and a
-production `StaffGate` = `GuildStaffGate` over `StoreGuildMembers` sharing one
-`GuildAccess` with `ApiState`. Gateway wiring: `BotEvent::Roster` →
+answer `503 auth_unavailable`. Live `serve` composes both (above); still
+missing: the guild's `ChannelList` (pass the gateway's `GuildCache` to
+`runtime::serve::api::compose` instead of the empty list). Gateway wiring: `BotEvent::Roster` →
 `api::auth::roster::on_roster_update`, `BotEvent::GuildAvailable` →
 `on_guild_available(auth, access, members, owner_id, &admin_roles)` (async;
 `GuildAvailable` also fires when the owner or the set of Administrator roles
@@ -206,10 +234,10 @@ emit only safe configuration-error descriptions, not environment values.
 
 ## Deliberate boundaries
 
-`serve` without `--offline` fails: production adapters are not implemented.
-`ctl`, `import`, and `export` are reserved commands that return a nonzero
-not-implemented result. `serve --offline` wires no scheduler, persistence,
-Discord, import/export, admin API or mutation route.
+Live `serve` runs without Discord (see "Live serve"). `ctl`, `import`, and
+`export` are reserved commands that return a nonzero not-implemented result.
+`serve --offline` wires no scheduler, persistence, Discord, import/export,
+admin API or mutation route.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs
@@ -239,7 +267,8 @@ src/
 │   └── healthcheck.rs
 └── runtime/
     ├── mod.rs
-    ├── application.rs
+    ├── application.rs   # command dispatch, `/healthz` document
+    ├── serve/           # live serve: store, settings, API composition, health
     ├── config.rs
     ├── error.rs
     ├── logging.rs

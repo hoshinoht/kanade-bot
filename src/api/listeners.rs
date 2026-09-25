@@ -11,7 +11,7 @@ use super::{
     error, guard, public,
     state::ApiState,
 };
-use crate::runtime::config::HttpConfig;
+use crate::runtime::{application::HealthProbe, config::HttpConfig};
 
 /// Offline mode has no Discord bot user to name the masthead after.
 const OFFLINE_IDENTITY_NAME: &str = "Kanade";
@@ -59,6 +59,8 @@ pub struct Site {
     pub listener_ip: Option<IpAddr>,
     /// Admin reads; `None` answers `unavailable`. Never set on the public site.
     pub state: Option<Arc<ApiState>>,
+    /// Live `/healthz`; `None` reports offline mode.
+    pub health: Option<Arc<dyn HealthProbe>>,
 }
 
 impl Site {
@@ -106,6 +108,7 @@ impl Site {
             edge_secret: None,
             listener_ip: None,
             state: None,
+            health: None,
         }
     }
 }
@@ -116,6 +119,7 @@ pub fn router(mut site: Site) -> Router {
         site.auth = None;
         site.edge_secret = None;
         site.state = None;
+        site.health = None;
     }
     let site = Arc::new(site);
     let routes = match site.origin {

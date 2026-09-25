@@ -186,7 +186,6 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::WATCHED_CHANNELS => out.watching.channel_ids = ids(key, value)?,
         keys::WATCHED_CATEGORIES => out.watching.category_ids = ids(key, value)?,
         keys::CHAT_MODE => out.chatbot.enabled = flag(key, value)?,
-        keys::CHAT_CHANNELS => out.chatbot.channel_ids = ids(key, value)?,
         keys::CHAT_CATEGORIES => out.chatbot.category_ids = ids(key, value)?,
         keys::CHAT_RATE_COUNT => out.chatbot.member_rate.count = count(key, value)?,
         keys::CHAT_RATE_WINDOW => out.chatbot.member_rate.window_s = window(key, value)?,
@@ -262,7 +261,6 @@ fn encode(section: &Section) -> Rows {
         ],
         Section::Chatbot(chat) => vec![
             (keys::CHAT_MODE, flag_text(chat.enabled)),
-            (keys::CHAT_CHANNELS, list_text(&chat.channel_ids)),
             (keys::CHAT_CATEGORIES, list_text(&chat.category_ids)),
             (keys::CHAT_RATE_COUNT, chat.member_rate.count.to_string()),
             (

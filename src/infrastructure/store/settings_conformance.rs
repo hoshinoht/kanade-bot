@@ -80,7 +80,7 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
         .await
         .expect("save notifications");
 
-    wanted.chatbot.channel_ids = vec!["1001".into(), "1002".into()];
+    wanted.chatbot.category_ids = vec!["1001".into(), "1002".into()];
     wanted.chatbot.member_rate.count = 2;
     wanted.chatbot.guild_rate.window_s = 60;
     wanted.models.chat.alias = Some("kanata/chat".into());
@@ -107,7 +107,7 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     assert_eq!(
-        rows.get(keys::CHAT_CHANNELS).map(String::as_str),
+        rows.get(keys::CHAT_CATEGORIES).map(String::as_str),
         Some("1001,1002")
     );
     assert_eq!(
