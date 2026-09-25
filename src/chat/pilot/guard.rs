@@ -98,8 +98,10 @@ impl CleanRetryGuard {
         allowed
     }
 
-    /// The question ended: release the reservation, and count the retry
-    /// when it was sent (the alert when it trips the guard).
+    /// The question holding `member`'s reservation ended: release it, and
+    /// count the retry when it was sent (the alert when it trips the guard).
+    /// Call only for the question [`Self::reserve`] said `true` to, or a
+    /// refused question would free a running one's reservation.
     pub fn settle(&mut self, member: &str, sent: bool, now: f64) -> Option<StormAlert> {
         self.pending.remove(member);
         sent.then(|| self.record(member, now)).flatten()

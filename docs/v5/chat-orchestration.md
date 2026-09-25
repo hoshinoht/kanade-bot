@@ -128,7 +128,9 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   `ChatPilot::reserve_clean_retry` reserves one when a question starts (the
   value for `AnswerSettings::clean_retry`), so concurrent questions cannot
   all pass: one reservation per member, and at most 4 recent or reserved
-  guild-wide. `conclude` settles it: counted if sent, else released.
+  guild-wide. `conclude` settles it only for the question that holds it
+  (`Finished::reserved`): counted if sent, else released; a refused
+  question never frees another's reservation.
   Guarded off, the question fails with its original reason and no retry is
   sent. The governor's retry budget and breaker still apply.
 - **Routing.** v4 had no model pre-screen, so `ChatPilot::route` is
@@ -153,6 +155,13 @@ through `ReplyPort::post_reply`, the adapter wires it later).
 - **Limits.** `ChatPilot::limits` returns `LimitsView` (member and pool
   used/limit/window/resets-in with override flags, the queue, the guard) for
   the API's Limits page.
+- **Serve composition** (required when serve wires the pilot):
+  - take the clean-retry reservation when a question is dequeued and starts,
+    not when it is admitted to the queue;
+  - every path that reserved ends in `conclude` with `reserved: true`;
+  - the configured question timeout stays below `per_member_s` (600 s), or
+    `prune` can drop a live reservation;
+  - call `reload_withheld` before admitting any question.
 - Not here: strategy prefetch and source attribution (no boss-knowledge v2
   renderer outside `api`), and a model pre-screen.
 

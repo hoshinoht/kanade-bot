@@ -68,6 +68,9 @@ pub struct Finished<'a> {
     pub log: LogFacts<'a>,
     /// When the gate spent this question's allowance (`None` for admins).
     pub spent_at: Option<f64>,
+    /// This question holds the member's clean-retry reservation (what
+    /// [`ChatPilot::reserve_clean_retry`] returned for it).
+    pub reserved: bool,
     /// Monotonic now.
     pub now: f64,
 }
@@ -205,9 +208,11 @@ impl ChatPilot {
         if let (true, Some(stamp)) = (refunded, done.spent_at) {
             self.allowance.refund(&done.ctx.author_id, stamp);
         }
-        let alert = self
-            .guard
-            .settle(&done.ctx.author_id, generation.clean_retry, done.now);
+        let alert = done.reserved.then(|| {
+            self.guard
+                .settle(&done.ctx.author_id, generation.clean_retry, done.now)
+        });
+        let alert = alert.flatten();
 
         let mut row = interaction(
             done.log.id,

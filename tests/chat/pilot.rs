@@ -314,11 +314,54 @@ fn concurrent_questions_from_one_member_reserve_one_clean_retry() {
         !pilot.reserve_clean_retry("11", 0.5),
         "the second question in flight gets none"
     );
-    // The first never sent its retry: the reservation is released.
+    // The first (the holder) never sent its retry: the reservation is released.
     assert_eq!(pilot.guard.settle("11", false, 1.0), None);
     assert!(pilot.reserve_clean_retry("11", 2.0));
     assert_eq!(pilot.guard.settle("11", true, 3.0), None);
     assert!(!pilot.reserve_clean_retry("11", 4.0), "spent, not released");
+}
+
+/// A (reserved) and B (refused) from one member in two channels; B ends
+/// first. Only A's conclusion may settle the reservation.
+#[tokio::test]
+async fn a_refused_question_never_releases_anothers_reservation() {
+    let world = world().await;
+    let persona = kanade();
+    let mut pilot = new_pilot();
+    let a_reserved = pilot.reserve_clean_retry("11", 0.0);
+    let b_reserved = pilot.reserve_clean_retry("11", 0.5);
+    assert!(a_reserved && !b_reserved);
+    let conclude = async |pilot: &mut ChatPilot, id: &str, reserved, generation, now| {
+        pilot
+            .conclude(
+                Finished {
+                    message: &message(id, "11", "hmm", None),
+                    channel_id: "700",
+                    ctx: &ctx_for("11", id),
+                    generation: &generation,
+                    persona: &persona,
+                    directory: &world.guild,
+                    log: facts(&format!("chat-{id}")),
+                    spent_at: None,
+                    reserved,
+                    now,
+                },
+                &Replies::default(),
+            )
+            .await
+    };
+    conclude(&mut pilot, "b", b_reserved, answered("B."), 1.0).await;
+    assert_eq!(pilot.limits(1.0).clean_retry.pending, 1, "A still holds it");
+    assert!(!pilot.reserve_clean_retry("11", 2.0), "C is still refused");
+    let sent = Generation {
+        clean_retry: true,
+        ..answered("A.")
+    };
+    conclude(&mut pilot, "a", a_reserved, sent, 3.0).await;
+    let view = pilot.limits(3.0).clean_retry;
+    assert_eq!((view.pending, view.recent), (0, 1));
+    assert!(!pilot.reserve_clean_retry("11", 602.0), "inside 600 s");
+    assert!(pilot.reserve_clean_retry("11", 603.0));
 }
 
 #[test]
@@ -407,6 +450,7 @@ async fn an_answer_is_remembered_anchored_and_focused() {
                 directory: &world.guild,
                 log: facts("chat-1"),
                 spent_at: Some(1.0),
+                reserved: false,
                 now: 5.0,
             },
             &replies,
@@ -480,6 +524,7 @@ async fn blocked_content_is_withheld_from_every_later_context() {
                 directory: &world.guild,
                 log: facts("chat-a"),
                 spent_at: Some(1.0),
+                reserved: false,
                 now: 5.0,
             },
             &replies,
@@ -567,6 +612,7 @@ async fn other_failures_say_v4s_line_and_turned_away_questions_are_refunded() {
                 directory: &world.guild,
                 log: facts("chat-t"),
                 spent_at: Some(1.0),
+                reserved: false,
                 now: 2.0,
             },
             &Replies::default(),
@@ -604,7 +650,8 @@ async fn filtered_then(
     let (_governor, client) = client(Some(MODEL), provider.clone());
     let ask = ctx_for("11", message_id);
     let mut settings = settings(&input, 8);
-    settings.clean_retry = pilot.reserve_clean_retry("11", 1.0);
+    let reserved = pilot.reserve_clean_retry("11", 1.0);
+    settings.clean_retry = reserved;
     let persona = kanade();
     let roster = roster(&world);
     let deps = AnswerDeps {
@@ -642,6 +689,7 @@ async fn filtered_then(
                 directory: &world.guild,
                 log: facts(&format!("chat-{message_id}")),
                 spent_at: None,
+                reserved,
                 now: 2.0,
             },
             &Replies::default(),
@@ -729,6 +777,7 @@ async fn withheld_questions_survive_a_restart() {
                 directory: &world.guild,
                 log: facts("chat-w"),
                 spent_at: None,
+                reserved: false,
                 now: 1.0,
             },
             &Replies::default(),
@@ -746,6 +795,7 @@ async fn withheld_questions_survive_a_restart() {
                 directory: &world.guild,
                 log: facts("chat-x"),
                 spent_at: None,
+                reserved: false,
                 now: 2.0,
             },
             &Replies::default(),
