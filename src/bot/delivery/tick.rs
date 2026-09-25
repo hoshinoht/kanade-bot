@@ -1,8 +1,8 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
 //! rollover (taking the week's automatic history checkpoint), mark finished
 //! runs done, recount attendance (v5 mode only), expire past-week drafts and
-//! proposals past their TTL, post the weekly digest, then dispatch due reminders. One clock reading
-//! and one journal lease per tick.
+//! proposals past their TTL, post the weekly digest, then dispatch due
+//! reminders. One clock reading and one journal lease per tick.
 //!
 //! v5 deviation (user decision): the digest posts only when the current boss
 //! week is after the last recorded one. A clock that reads an earlier week

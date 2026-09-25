@@ -407,11 +407,13 @@ section; there is no UI yet.
 - **Draft operations** (`DraftOp`) mirror the member-facing mutations:
   `add_fixed_run`, `apply_fixed_edit`, `fixed_participants`,
   `retire_fixed_run`, `create_run`, `amend_run`, `set_status`,
-  `swap_participants`, `set_rsvp`, `reset_to_fixed`, and three used by
+  `swap_participants`, `set_rsvp`, `reset_to_fixed`, and four used by
   proposals (see *Proposals*): `set_run_bosses { run, bosses }` (replace a
   run's bosses and rebuild its reminders), `ensure_reminders { run }` (add
-  the reminders a run lacks, `rebuild = false`) and `recount_run { run }`
-  (re-derive its status from its answers). They were appended to the `v1`
+  the reminders a run lacks, `rebuild = false`), `recount_run { run }`
+  (re-derive its status from its answers) and `revive_run { run }` (a
+  cancelled or otot run back to `planned`, answers kept; anything else
+  unchanged). They were appended to the `v1`
   codec additively; every earlier encoding is unchanged.
   `fixed_participants { fixed, add, remove }` is a party DELTA for a weekly
   timing, replayed as `schedule::apply_party_delta` (`Op::FixedParticipants`):
@@ -608,7 +610,7 @@ and the delivery tick (expiry). Requests are S3, cherry-pick S4.
     any run-level operation — `create_run` its slot; `amend_run` the source
     run's week and the destination slot's week; `set_status`,
     `swap_participants`, `set_rsvp`, `reset_to_fixed`, `set_run_bosses`,
-    `ensure_reminders`, `recount_run` their run's week
+    `ensure_reminders`, `recount_run`, `revive_run` their run's week
     (`drafts::expires_week`; `create_run` also counts its stated
     `week_start`, which staging requires to equal the slot's week). Drafts staging only weekly-timing operations
     (`add_fixed_run`, `apply_fixed_edit`, `retire_fixed_run`) have none and
@@ -794,7 +796,10 @@ enforced by the service, not the store; TTL 24 h.
   supersede }, policy, directory)`). A `ProposedChange` (v4's `amendments`
   row: kind, run, channel, bosses, participants, new time, answer, typed
   payload) is translated on the current schedule into operations (v4
-  `commit.py` per kind): `move` → `amend_run`; `add` → `create_run` +
+  `commit.py` per kind): `move` → `amend_run`, preceded by `revive_run`
+  when the run is cancelled or otot (user decision: v4 `_move` revives it;
+  the move then re-derives it and ends any pin as every move does — admin
+  and draft `amend_run` keep their rule); `add` → `create_run` +
   `ensure_reminders`; `cancel`/`otot` → `set_status`; `sub` → a
   `swap_participants` delta (leavers not on the run and joiners already on
   it ignored, as v4); `split` → `set_run_bosses` (what stays) +
@@ -830,9 +835,17 @@ enforced by the service, not the store; TTL 24 h.
   `Surface::ExtractionApproval` or `Surface::ChatApproval` (by source),
   actor the approving member, `request_id` `approve:<id>`; the authority
   check is repeated at every merge attempt, conflicts block, and a replay
-  refusal maps to v4's text. A repeated ✅ by the same member is
-  `AlreadyApplied`, by another `AlreadyMerged`: nothing is written or
-  posted. The merge's summary notices (`NoticeChange::Merged`, title
+  refusal maps to v4's text. **Status at approval (parent decision, v4
+  parity):** a `cancel`/`otot` target and a `recount_run` apply to the run
+  as it is at approval — the run's `status` field takes the merge result
+  (`analyze_merge_applying`, `MergeInput.status_at_apply`), so an upstream
+  status change (a reaction, a tick recount) never conflicts with them. An
+  upstream removal (done/cancelled/deleted) and every other field still
+  conflict, and admin drafts and requests pass no such runs. A repeated ✅
+  by the same member is `AlreadyApplied`, by another `AlreadyMerged`:
+  nothing is written or posted, but the idempotent follow-ups below are
+  re-run first, so a crash between the merge and them is repaired by the
+  next ✅. The merge's summary notices (`NoticeChange::Merged`, title
   `<kind> proposal`) take the draft-merge outbox path. After the commit
   nothing returns an error: sibling live proposals about the same target
   are retired (v4 `commit`'s `supersede`, below), a new weekly timing's

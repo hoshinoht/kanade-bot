@@ -118,7 +118,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   apply now (otherwise it's refused with v4's reason and no card), is approved with ✅ by
   a run participant, an admin or the timing's owner, merges through the shared schedule
   write path, replaces older proposals for the same target, and expires silently after
-  24 hours. Proposed answers recount the run's status like v4.
+  24 hours. Proposed answers recount the run's status like v4; approved cancels win over
+  status changes since the proposal, and an approved move revives a cancelled run.
 - v5: extraction rules ported (keyword gate, message bursts and rescan windows, day/time
   resolution, run matching, per-run merge), matching the frozen v4 vectors exactly,
   plus the extractor's answer schema, prompt, one-retry answer handling and burst

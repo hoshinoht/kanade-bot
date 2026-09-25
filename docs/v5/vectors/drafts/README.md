@@ -17,5 +17,5 @@ encoder's output is a new format version with its own vector.
 The one in-place extension, before any release (no stored drafts existed),
 appended the `fixed_participants` sample (a weekly-timing party delta);
 the earlier strings are unchanged. A second additive extension (E3
-proposals) appended `set_run_bosses`, `ensure_reminders` and `recount_run`
-samples, again leaving every earlier string unchanged.
+proposals) appended `set_run_bosses`, `ensure_reminders`, `recount_run`
+and `revive_run` samples, again leaving every earlier string unchanged.

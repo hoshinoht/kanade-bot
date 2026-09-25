@@ -4,17 +4,18 @@
 //! drafts of kind `proposal`; every schedule effect goes through the shared
 //! draft merge, so there is no second write path.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
 
 use super::drafts::{DraftError, EXPIRY_ACTOR, MergeInput, MergeOutcome, is_expired, stale_of};
 use super::ports::{Clock, IdSource, ScheduleStore, Scope, StoreError};
-use super::service::{SchedulerService, digest};
+use super::service::{SchedulerError, SchedulerService, digest};
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, DraftUpdate, DraftWrite,
     LoadedDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource, ProposalStore,
-    SUPERSEDED, StagedOp, StoredDraft, expires_week, replay,
+    SUPERSEDED, StagedOp, StoredDraft, Target, expires_week, replay,
 };
 use crate::domain::history::{Actor, Origin, Surface};
 use crate::domain::members::Directory;
@@ -210,6 +211,23 @@ fn still_applies(
     Ok(())
 }
 
+/// Runs whose status a proposal sets as of approval (v4 `_cancel`/`_otot`
+/// and `_rsvp`'s recount): it wins over upstream status changes.
+fn status_at_apply(ops: &[DraftOp]) -> BTreeSet<String> {
+    ops.iter()
+        .filter_map(|op| match op {
+            DraftOp::SetStatus {
+                run: Target::Existing(id),
+                ..
+            }
+            | DraftOp::RecountRun {
+                run: Target::Existing(id),
+            } => Some(id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn subject_of(loaded: &LoadedDraft) -> ProposalResult<ProposalSubject> {
     loaded
         .draft
@@ -349,7 +367,101 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     /// and writes and posts nothing). Afterwards the sibling proposals about
     /// the same target are retired (v4 `commit`), and a new weekly timing's
     /// weeks are materialised. Nothing after the merge returns an error.
+    /// A cancel/otot target and a recount apply to the run as it is at
+    /// approval, whatever its status did meanwhile (v4 parity).
+    ///
+    /// A repeated ✅ (`AlreadyApplied`, or `AlreadyMerged` by another member)
+    /// re-runs those idempotent follow-ups before returning the error, so a
+    /// crash right after the merge commit does not leave them undone.
     pub async fn approve_proposal(
+        &mut self,
+        id: &str,
+        approver: &Approver,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> ProposalResult<ProposalApproved> {
+        let result = self.approve_once(id, approver, policy, directory).await;
+        if let Err(ProposalError::Draft(
+            DraftError::AlreadyApplied { .. } | DraftError::AlreadyMerged { .. },
+        )) = &result
+        {
+            self.repeat_follow_ups(id, approver, policy).await;
+        }
+        result
+    }
+
+    /// The follow-ups of an already merged proposal; failures stay for the
+    /// next ✅ (the merge is what the caller reports).
+    async fn repeat_follow_ups(&mut self, id: &str, approver: &Approver, policy: &SchedulePolicy) {
+        let Ok(Some((loaded, info))) = self.store.load_proposal(id).await else {
+            return;
+        };
+        let Ok(subject) = subject_of(&loaded) else {
+            return;
+        };
+        if loaded.draft.status != DraftStatus::Merged {
+            return;
+        }
+        let new_timing = loaded
+            .draft_ops()
+            .iter()
+            .any(|op| matches!(op, DraftOp::AddFixedRun(_)));
+        let actor = Actor::member(approver.user_id.clone());
+        self.follow_ups(
+            id,
+            &subject,
+            info.source,
+            new_timing,
+            &actor,
+            policy,
+            &mut Vec::new(),
+        )
+        .await;
+    }
+
+    /// After a merge: materialise a new timing's weeks (its own record,
+    /// `approve:<id>:materialise`), then retire the sibling proposals (v4
+    /// `commit`'s `supersede`). Both are idempotent. Returns the retired ids
+    /// and whether materialising succeeded; failures go to `errors`.
+    #[allow(clippy::too_many_arguments)]
+    async fn follow_ups(
+        &mut self,
+        id: &str,
+        subject: &ProposalSubject,
+        source: ProposalSource,
+        new_timing: bool,
+        actor: &Actor,
+        policy: &SchedulePolicy,
+        errors: &mut Vec<String>,
+    ) -> (Vec<String>, bool) {
+        let mut materialised = false;
+        if new_timing {
+            let origin = Origin::new(actor.clone(), surface_of(source))
+                .with_request_id(format!("approve:{id}:materialise"));
+            match self.as_origin(origin).materialise_weeks(policy).await {
+                Ok(_) | Err(SchedulerError::AlreadyApplied { .. }) => materialised = true,
+                Err(error) => errors.push(error.to_string()),
+            }
+        }
+        let scope = SupersedeScope {
+            run_id: subject.run_id.as_deref(),
+            channel_id: subject.channel_id.as_deref(),
+            bosses: &subject.bosses,
+            keep: Some(id),
+            from_channel: subject.channel_id.as_deref(),
+            by: source,
+        };
+        let superseded = match self.supersede_proposals(scope).await {
+            Ok(ids) => ids,
+            Err(error) => {
+                errors.push(error.to_string());
+                Vec::new()
+            }
+        };
+        (superseded, materialised)
+    }
+
+    async fn approve_once(
         &mut self,
         id: &str,
         approver: &Approver,
@@ -417,6 +529,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     summary: format!("{} proposal", subject.kind.as_str()),
                     note: None,
                     authorise: Some(&still_allowed),
+                    status_at_apply: status_at_apply(&ops),
                 },
                 policy,
                 directory,
@@ -452,33 +565,23 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         if let Some(count) = edit_count {
             notes.push(format!("updated {count} scheduled run(s)"));
         }
-        if let Some(fixed) = &new_timing {
-            let origin = Origin::new(actor.clone(), surface)
-                .with_request_id(format!("{request_id}:materialise"));
-            match self.as_origin(origin).materialise_weeks(policy).await {
-                Ok(_) => match self.store.load(&Scope::All).await {
-                    Ok(state) => notes.extend(adoption_notes(&state, fixed, policy, now)),
-                    Err(error) => follow_up_errors.push(error.to_string()),
-                },
+        let (superseded, materialised) = self
+            .follow_ups(
+                id,
+                &subject,
+                info.source,
+                new_timing.is_some(),
+                &actor,
+                policy,
+                &mut follow_up_errors,
+            )
+            .await;
+        if let (Some(fixed), true) = (&new_timing, materialised) {
+            match self.store.load(&Scope::All).await {
+                Ok(state) => notes.extend(adoption_notes(&state, fixed, policy, now)),
                 Err(error) => follow_up_errors.push(error.to_string()),
             }
         }
-        let bosses = subject.bosses.clone();
-        let scope = SupersedeScope {
-            run_id: subject.run_id.as_deref(),
-            channel_id: subject.channel_id.as_deref(),
-            bosses: &bosses,
-            keep: Some(id),
-            from_channel: subject.channel_id.as_deref(),
-            by: info.source,
-        };
-        let superseded = match self.supersede_proposals(scope).await {
-            Ok(ids) => ids,
-            Err(error) => {
-                follow_up_errors.push(error.to_string());
-                Vec::new()
-            }
-        };
         Ok(ProposalApproved {
             kind: subject.kind,
             run_id: match subject.kind {

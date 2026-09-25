@@ -70,6 +70,22 @@ pub fn analyze_merge(
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> MergeAnalysis {
+    analyze_merge_applying(base, current, ops, policy, directory, now, &BTreeSet::new())
+}
+
+/// [`analyze_merge`] where the status of each run in `status_at_apply` is
+/// whatever the operations make of the current schedule: it never
+/// conflicts with an upstream status change (a proposal's cancel/otot
+/// target or its recount, v4 parity). Every other field is checked as usual.
+pub fn analyze_merge_applying(
+    base: &ScheduleSnapshot,
+    current: &ScheduleSnapshot,
+    ops: &[DraftOp],
+    policy: &SchedulePolicy,
+    directory: &(dyn Directory + Sync),
+    now: DateTime<Utc>,
+    status_at_apply: &BTreeSet<String>,
+) -> MergeAnalysis {
     let (drafted, drafted_rejected) = replay_partial(base, ops, policy, directory, now);
     let (merged, merged_rejected) = replay_partial(current, ops, policy, directory, now);
     let mut analysis = MergeAnalysis {
@@ -113,7 +129,11 @@ pub fn analyze_merge(
     let d = fields(&drafted.draft.to_snapshot(), &drafted_names);
     let t = fields(current, &identity);
     let r = fields(analysis.preview.as_ref().unwrap_or(current), &merged_names);
-    three_way(&b, &d, &t, &r, &mut analysis.conflicts);
+    let applied: BTreeSet<(Entity, Field)> = status_at_apply
+        .iter()
+        .map(|run| (Entity::Run(run.clone()), Field::Status))
+        .collect();
+    three_way(&b, &d, &t, &r, &applied, &mut analysis.conflicts);
     analysis
 }
 
@@ -358,7 +378,17 @@ fn merge_sets(
     Some(FieldValue::Set(merged.into_iter().cloned().collect()))
 }
 
-fn three_way(b: &Fields, d: &Fields, t: &Fields, r: &Fields, conflicts: &mut Vec<MergeConflict>) {
+/// `applied` keys take the merge result's value as it stands (see
+/// [`analyze_merge_applying`]); an upstream removal of their entity still
+/// conflicts.
+fn three_way(
+    b: &Fields,
+    d: &Fields,
+    t: &Fields,
+    r: &Fields,
+    applied: &BTreeSet<(Entity, Field)>,
+    conflicts: &mut Vec<MergeConflict>,
+) {
     let keys: BTreeSet<&(Entity, Field)> = b.keys().chain(d.keys()).chain(t.keys()).collect();
     let drafted: Vec<&(Entity, Field)> = keys
         .into_iter()
@@ -402,7 +432,7 @@ fn three_way(b: &Fields, d: &Fields, t: &Fields, r: &Fields, conflicts: &mut Vec
         }
     }
     for key in drafted {
-        if skip_entities.contains(&key.0) {
+        if skip_entities.contains(&key.0) || applied.contains(key) {
             continue;
         }
         let (bv, dv, tv) = (b.get(key), d.get(key), t.get(key));
@@ -429,7 +459,7 @@ fn three_way(b: &Fields, d: &Fields, t: &Fields, r: &Fields, conflicts: &mut Vec
 
     let all: BTreeSet<&(Entity, Field)> = t.keys().chain(r.keys()).chain(expected.keys()).collect();
     for key in all {
-        if skip_entities.contains(&key.0) || skip_keys.contains(key) {
+        if skip_entities.contains(&key.0) || skip_keys.contains(key) || applied.contains(key) {
             continue;
         }
         let want = match expected.get(key) {
@@ -516,6 +546,55 @@ mod tests {
         FieldValue::Text(Some(value.to_owned()))
     }
 
+    /// An applied-at-merge status takes the merge result over an upstream
+    /// change; the same change on any other key still conflicts.
+    #[test]
+    fn an_applied_status_never_conflicts_but_other_fields_still_do() {
+        let run = Entity::Run("r-1".into());
+        let status = (run.clone(), Field::Status);
+        let slot = (run.clone(), Field::Slot);
+        let b = Fields::from([
+            (status.clone(), text_of("planned")),
+            (slot.clone(), text_of("mon")),
+        ]);
+        let mut d = b.clone();
+        d.insert(status.clone(), text_of("cancelled"));
+        d.insert(slot.clone(), text_of("tue"));
+        let mut t = b.clone();
+        t.insert(status.clone(), text_of("at_risk"));
+        t.insert(slot.clone(), text_of("wed"));
+        let mut r = t.clone();
+        r.insert(status.clone(), text_of("cancelled"));
+        let mut conflicts = Vec::new();
+        three_way(
+            &b,
+            &d,
+            &t,
+            &r,
+            &BTreeSet::from([status.clone()]),
+            &mut conflicts,
+        );
+        assert!(
+            matches!(
+                conflicts.as_slice(),
+                [MergeConflict::BothChanged {
+                    field: Field::Slot,
+                    ..
+                }]
+            ),
+            "{conflicts:?}"
+        );
+        let mut conflicts = Vec::new();
+        three_way(&b, &d, &t, &r, &BTreeSet::new(), &mut conflicts);
+        assert!(conflicts.iter().any(|conflict| matches!(
+            conflict,
+            MergeConflict::BothChanged {
+                field: Field::Status,
+                ..
+            }
+        )));
+    }
+
     /// Replay normally refuses a run on a missing timing first; the field
     /// check still names the retired timing if a run reaches it another way.
     #[test]
@@ -530,7 +609,7 @@ mod tests {
         let mut r = d.clone();
         r.remove(&(fixed.clone(), Field::Note));
         let mut conflicts = Vec::new();
-        three_way(&b, &d, &t, &r, &mut conflicts);
+        three_way(&b, &d, &t, &r, &BTreeSet::new(), &mut conflicts);
         assert_eq!(
             conflicts,
             [MergeConflict::UpstreamRemoved {

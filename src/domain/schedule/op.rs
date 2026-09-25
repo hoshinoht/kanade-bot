@@ -189,6 +189,11 @@ pub enum Op<'a> {
     RecountRun {
         run_id: String,
     },
+    /// v5 only (proposal move): a cancelled or otot run goes back to
+    /// `planned` without clearing answers, as v4 `_move`; others unchanged.
+    ReviveRun {
+        run_id: String,
+    },
 }
 
 impl Op<'_> {
@@ -456,6 +461,16 @@ pub fn apply_op(
                 draft.set_run_status(run_id, status);
             }
             quiet(OpResult::Changed(status != before.status))
+        }
+        Op::ReviveRun { run_id } => {
+            let revive = matches!(
+                draft.require_run(run_id)?.status,
+                RunStatus::Cancelled | RunStatus::Otot
+            );
+            if revive {
+                draft.set_run_status(run_id, RunStatus::Planned);
+            }
+            quiet(OpResult::Changed(revive))
         }
     })
 }

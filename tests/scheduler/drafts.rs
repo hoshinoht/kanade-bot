@@ -252,7 +252,8 @@ async fn commit(service: &mut Service, op: &DraftOp) {
         }
         DraftOp::SetRunBosses { .. }
         | DraftOp::EnsureReminders { .. }
-        | DraftOp::RecountRun { .. } => panic!("proposal-only; not used upstream"),
+        | DraftOp::RecountRun { .. }
+        | DraftOp::ReviveRun { .. } => panic!("proposal-only; not used upstream"),
     }
 }
 
@@ -415,6 +416,9 @@ fn codec_samples() -> Vec<DraftOp> {
             run: Target::Created(4),
         },
         DraftOp::RecountRun {
+            run: existing("run-1"),
+        },
+        DraftOp::ReviveRun {
             run: existing("run-1"),
         },
     ]

@@ -7,6 +7,7 @@ mod drafts;
 mod invariants;
 mod mutations_family;
 mod mutations_v5;
+mod proposal_follow_ups;
 mod proposals;
 mod reminders_family;
 mod requests;

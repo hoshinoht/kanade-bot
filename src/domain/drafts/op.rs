@@ -89,6 +89,10 @@ pub enum DraftOp {
     RecountRun {
         run: Target,
     },
+    /// Put a cancelled or otot run back to `planned` (a proposal's move).
+    ReviveRun {
+        run: Target,
+    },
 }
 
 /// Why an operation could not be replayed.
@@ -255,6 +259,9 @@ impl DraftOp {
             Self::RecountRun { run } => Op::RecountRun {
                 run_id: resolve(run, created)?,
             },
+            Self::ReviveRun { run } => Op::ReviveRun {
+                run_id: resolve(run, created)?,
+            },
         })
     }
 }
@@ -297,7 +304,8 @@ impl DraftOp {
             | Self::ResetToFixed { run }
             | Self::SetRunBosses { run, .. }
             | Self::EnsureReminders { run }
-            | Self::RecountRun { run } => visit(run),
+            | Self::RecountRun { run }
+            | Self::ReviveRun { run } => visit(run),
         }
     }
 
@@ -322,6 +330,7 @@ impl DraftOp {
             Self::SetRunBosses { .. } => "set_run_bosses",
             Self::EnsureReminders { .. } => "ensure_reminders",
             Self::RecountRun { .. } => "recount_run",
+            Self::ReviveRun { .. } => "revive_run",
         }
     }
 }

@@ -77,7 +77,8 @@ pub fn expires_week(
             | DraftOp::ResetToFixed { run }
             | DraftOp::SetRunBosses { run, .. }
             | DraftOp::EnsureReminders { run }
-            | DraftOp::RecountRun { run } => {
+            | DraftOp::RecountRun { run }
+            | DraftOp::ReviveRun { run } => {
                 let week = resolve(run, created)
                     .ok()
                     .and_then(|id| run_week(&id).map(|run| run.week_start));

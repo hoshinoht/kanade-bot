@@ -17,7 +17,7 @@ use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftOp, DraftRequest, DraftStale,
     DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeAnalysis, MergeCommit,
     MergeConflict, NewDraft, PreviewIds, ReplayError, StagedOp, StoredDraft, Target, analyze_merge,
-    expires_week, renumber_created, replay, replay_equivalent, replay_real,
+    analyze_merge_applying, expires_week, renumber_created, replay, replay_equivalent, replay_real,
 };
 use crate::domain::history::{Actor, ChangeMeta, ChangeRef, HistoryGap, Origin, Surface, rewind};
 use crate::domain::members::Directory;
@@ -252,6 +252,10 @@ pub(super) struct MergeInput<'a> {
     /// Re-checked on the current schedule at every attempt (a request's
     /// requester); `false` refuses with `RequesterUnauthorised`.
     pub authorise: Option<&'a (dyn Fn(&ScheduleSnapshot) -> bool + Sync)>,
+    /// Runs whose status the operations set as of the merge, never
+    /// conflicting with upstream (proposals only; empty for drafts and
+    /// requests).
+    pub status_at_apply: BTreeSet<String>,
 }
 
 pub(super) fn stale_of(id: &str, stale: DraftStale) -> DraftError {
@@ -820,6 +824,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 summary: loaded.draft.title.clone(),
                 note: None,
                 authorise: None,
+                status_at_apply: BTreeSet::new(),
             },
             policy,
             directory,
@@ -850,6 +855,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             summary,
             note,
             authorise,
+            status_at_apply,
         } = input;
         let draft_id = draft.id.as_str();
         // An expired draft is closed first (idempotently), so the window
@@ -881,13 +887,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             if authorise.is_some_and(|allowed| !allowed(&flow.current)) {
                 return Err(DraftError::RequesterUnauthorised);
             }
-            let analysis = analyze_merge(
+            let analysis = analyze_merge_applying(
                 &flow.base_snapshot,
                 &flow.current,
                 &ops,
                 policy,
                 directory,
                 now,
+                &status_at_apply,
             );
             if !analysis.conflicts.is_empty() {
                 return Err(DraftError::Conflicts(analysis.conflicts));

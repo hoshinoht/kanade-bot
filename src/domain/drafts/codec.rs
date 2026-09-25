@@ -165,7 +165,8 @@ pub fn encode(op: &DraftOp) -> Result<String, CodecError> {
         }),
         DraftOp::ResetToFixed { run }
         | DraftOp::EnsureReminders { run }
-        | DraftOp::RecountRun { run } => json!({"run": target(run)}),
+        | DraftOp::RecountRun { run }
+        | DraftOp::ReviveRun { run } => json!({"run": target(run)}),
         DraftOp::SetRunBosses { run, bosses } => json!({"run": target(run), "bosses": bosses}),
     };
     if let Value::Object(map) = &mut body {
@@ -336,7 +337,7 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
         "set_status" => &["run", "change"],
         "swap_participants" => &["run", "remove", "add", "via_portal"],
         "set_rsvp" => &["run", "user_id", "state", "source"],
-        "reset_to_fixed" | "ensure_reminders" | "recount_run" => &["run"],
+        "reset_to_fixed" | "ensure_reminders" | "recount_run" | "revive_run" => &["run"],
         "set_run_bosses" => &["run", "bosses"],
         other => return Err(bad(format!("unknown operation {other}"))),
     };
@@ -453,6 +454,7 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
         "reset_to_fixed" => DraftOp::ResetToFixed { run: run()? },
         "ensure_reminders" => DraftOp::EnsureReminders { run: run()? },
         "recount_run" => DraftOp::RecountRun { run: run()? },
+        "revive_run" => DraftOp::ReviveRun { run: run()? },
         "set_run_bosses" => DraftOp::SetRunBosses {
             run: run()?,
             bosses: texts(field(&value, "bosses")?)?,

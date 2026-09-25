@@ -14,6 +14,7 @@
     "{\"add\":[\"1004\"],\"fixed\":{\"existing\":\"fixed-1\"},\"format\":\"kanade.draft_op.v1\",\"op\":\"fixed_participants\",\"remove\":[\"1002\"]}",
     "{\"bosses\":[\"HFA\",\"Kalos \\\"C\\\"\"],\"format\":\"kanade.draft_op.v1\",\"op\":\"set_run_bosses\",\"run\":{\"existing\":\"run-1\"}}",
     "{\"format\":\"kanade.draft_op.v1\",\"op\":\"ensure_reminders\",\"run\":{\"created\":4}}",
-    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"recount_run\",\"run\":{\"existing\":\"run-1\"}}"
+    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"recount_run\",\"run\":{\"existing\":\"run-1\"}}",
+    "{\"format\":\"kanade.draft_op.v1\",\"op\":\"revive_run\",\"run\":{\"existing\":\"run-1\"}}"
   ]
 }

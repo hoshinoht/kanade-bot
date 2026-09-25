@@ -94,10 +94,17 @@ fn move_run(
     {
         return Err(Refusal::WeeklyHoldsWeek);
     }
-    Ok(vec![DraftOp::AmendRun {
-        run: Target::Existing(run.id.clone()),
-        to,
-    }])
+    let target = Target::Existing(run.id.clone());
+    let mut ops = Vec::new();
+    // User decision: v4 `_move` revives a cancelled or otot run; the move
+    // then re-derives it (and ends any pin) as every move does.
+    if matches!(run.status, RunStatus::Cancelled | RunStatus::Otot) {
+        ops.push(DraftOp::ReviveRun {
+            run: target.clone(),
+        });
+    }
+    ops.push(DraftOp::AmendRun { run: target, to });
+    Ok(ops)
 }
 
 fn add(change: &ProposedChange, policy: &SchedulePolicy) -> Result<Vec<DraftOp>, Refusal> {

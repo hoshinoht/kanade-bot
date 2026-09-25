@@ -574,3 +574,170 @@ async fn proposals_leave_member_request_limits_alone() {
         }))
     ));
 }
+
+impl Fixture {
+    /// A member's ✅/❌ reaction: the answer and the recount it triggers.
+    async fn react(&mut self, run: &str, user: &str, emoji: &str) {
+        self.service
+            .as_origin(Origin::for_tests())
+            .apply_reaction(run, user, emoji, true)
+            .await
+            .unwrap();
+    }
+
+    async fn hand_set(&mut self, run: &str, status: RunStatus) {
+        self.service
+            .as_origin(Origin::for_tests())
+            .set_status(
+                run,
+                StatusChange {
+                    status,
+                    announce: false,
+                    via_portal: true,
+                },
+                &self.policy.reminders,
+            )
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_or_otot_target_wins_over_a_status_that_moved_meanwhile() {
+    for (kind, target) in [
+        (ChangeKind::Cancel, RunStatus::Cancelled),
+        (ChangeKind::Otot, RunStatus::Otot),
+    ] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        let id = f
+            .propose(ProposedChange {
+                kind,
+                ..cancel(&run, "222")
+            })
+            .await;
+        f.react(&run, "1003", "\u{274c}").await;
+        assert_eq!(f.run_status(&run).await, RunStatus::AtRisk);
+        f.approve(&id, &member("1001")).await.unwrap();
+        assert_eq!(f.run_status(&run).await, target, "{kind:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_proposed_answer_recounts_against_the_status_at_approval() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    for user in ["1002", "1003"] {
+        f.react(&run, user, "\u{2705}").await;
+    }
+    // Drafted, the answer confirms the run; meanwhile 1003 turns to ❌.
+    let id = f.propose(answer(&run, "1001", RsvpState::Yes)).await;
+    f.react(&run, "1003", "\u{274c}").await;
+    assert_eq!(f.run_status(&run).await, RunStatus::AtRisk);
+    f.approve(&id, &member("1002")).await.unwrap();
+    let state = snapshot(&f.service).await;
+    assert_eq!(
+        state.runs.iter().find(|row| row.id == run).unwrap().status,
+        RunStatus::AtRisk
+    );
+    assert!(
+        state.rsvps.iter().any(|rsvp| rsvp.run_id == run
+            && rsvp.user_id == "1001"
+            && rsvp.state == RsvpState::Yes)
+    );
+}
+
+#[tokio::test]
+async fn other_upstream_changes_still_conflict() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f
+        .propose(ProposedChange {
+            new_datetime: Some(utc(kl(9, 1, 21, 30))),
+            ..ProposedChange {
+                kind: ChangeKind::Move,
+                ..cancel(&run, "222")
+            }
+        })
+        .await;
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
+        .await
+        .unwrap();
+    let before = snapshot(&f.service).await;
+    assert!(matches!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::Conflicts(_))
+    ));
+    assert_eq!(snapshot(&f.service).await, before);
+}
+
+#[tokio::test]
+async fn a_proposed_move_revives_a_cancelled_or_otot_run() {
+    for status in [RunStatus::Cancelled, RunStatus::Otot] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        f.react(&run, "1001", "\u{2705}").await;
+        f.hand_set(&run, status).await;
+        let to = utc(kl(9, 1, 21, 30));
+        let id = f
+            .propose(ProposedChange {
+                new_datetime: Some(to),
+                ..ProposedChange {
+                    kind: ChangeKind::Move,
+                    ..cancel(&run, "222")
+                }
+            })
+            .await;
+        f.approve(&id, &member("1002")).await.unwrap();
+        let state = snapshot(&f.service).await;
+        let row = state.runs.iter().find(|row| row.id == run).unwrap();
+        assert_eq!(
+            (row.status, row.datetime),
+            (RunStatus::Planned, to),
+            "{status:?}"
+        );
+        // As v4 `_move`: the answers given are kept.
+        assert!(
+            state
+                .rsvps
+                .iter()
+                .any(|rsvp| rsvp.run_id == run && rsvp.user_id == "1001")
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    f.hand_set(&run, RunStatus::Cancelled).await;
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 1, 21, 30)), &policy)
+        .await
+        .unwrap();
+    assert_eq!(f.run_status(&run).await, RunStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn an_approver_taken_off_the_run_meanwhile_is_refused() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.service
+        .as_origin(Origin::for_tests())
+        .swap_participants(&run, &["1003".into()], &["1004".into()], false, &Guild)
+        .await
+        .unwrap();
+    let before = snapshot(&f.service).await;
+    assert_eq!(
+        f.approve(&id, &member("1003")).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(snapshot(&f.service).await, before);
+    assert_eq!(f.status(&id).await, DraftStatus::Submitted);
+}

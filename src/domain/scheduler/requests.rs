@@ -519,6 +519,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     summary: public_summary(kind, subject.as_ref()),
                     note,
                     authorise: Some(&still_allowed),
+                    status_at_apply: Default::default(),
                 },
                 policy,
                 directory,

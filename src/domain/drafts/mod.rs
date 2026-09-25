@@ -15,7 +15,9 @@ pub use crate::domain::schedule::party_delta;
 pub use codec::{CodecError, DRAFT_OP_FORMAT, decode, encode};
 pub use conflict::{Entity, Field, FieldValue, MergeConflict, Removal};
 pub use expiry::expires_week;
-pub use merge::{MergeAnalysis, analyze_merge, analyze_merge_since, replay_equivalent};
+pub use merge::{
+    MergeAnalysis, analyze_merge, analyze_merge_applying, analyze_merge_since, replay_equivalent,
+};
 pub use op::{DraftOp, ReplayError, Target, renumber_created, resolve};
 pub use port::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftRequest, DraftScope,
