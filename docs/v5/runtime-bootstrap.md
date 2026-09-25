@@ -1,8 +1,7 @@
 # v5 runtime bootstrap
 
-`kanade` is the single Rust executable. Cargo package version `1.0.0-beta.1`
-corresponds to the planned release label `1.0.0b`; Cargo does not accept the
-latter as a semver version.
+`kanade` is the single Rust executable, version `1.0.0-beta.1` (the release
+label everywhere: Cargo, CHANGELOG and the planned `v1.0.0-beta.1` tag).
 
 ## Available now
 
