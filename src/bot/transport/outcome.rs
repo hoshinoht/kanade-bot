@@ -52,6 +52,23 @@ pub enum RejectionKind {
     Http { status: u16, code: Option<u64> },
 }
 
+impl RejectionKind {
+    /// A content-free label for logs, e.g. `http_400`.
+    pub fn label(&self) -> String {
+        match self {
+            Self::MissingPermissions => "missing_permissions".into(),
+            Self::MissingAccess => "missing_access".into(),
+            Self::UnknownChannel => "unknown_channel".into(),
+            Self::UnknownMessage => "unknown_message".into(),
+            Self::Unauthorized => "unauthorized".into(),
+            Self::Invalid => "invalid".into(),
+            Self::NotSent => "not_sent".into(),
+            Self::RateLimited => "rate_limited".into(),
+            Self::Http { status, .. } => format!("http_{status}"),
+        }
+    }
+}
+
 /// Why the result of a request is unknown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AmbiguousKind {
@@ -63,6 +80,29 @@ pub enum AmbiguousKind {
     ServerError { status: u16 },
     /// A response arrived but its status or body could not be read.
     UnreadableResponse,
+}
+
+impl AmbiguousKind {
+    /// A content-free label for logs, e.g. `ambiguous_timeout`.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Timeout => "ambiguous_timeout".into(),
+            Self::Connection => "ambiguous_connection".into(),
+            Self::ServerError { status } => format!("ambiguous_http_{status}"),
+            Self::UnreadableResponse => "ambiguous_unreadable".into(),
+        }
+    }
+}
+
+impl<T> Outcome<T> {
+    /// Why nothing (certainly) arrived: `None` when delivered.
+    pub fn failure_label(&self) -> Option<String> {
+        match self {
+            Self::Delivered(_) => None,
+            Self::DefinitelyRejected(kind) => Some(kind.label()),
+            Self::Ambiguous(kind) => Some(kind.label()),
+        }
+    }
 }
 
 /// Discord error codes the adapter distinguishes.

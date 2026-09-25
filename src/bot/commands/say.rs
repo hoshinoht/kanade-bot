@@ -14,6 +14,7 @@ use super::context::CommandContext;
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::options::Args;
+use super::split::{CONTENT_LIMIT, units};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
 use crate::bot::transport::{
@@ -75,7 +76,8 @@ impl<T: DiscordTransport> SayCommand<T> {
             return Err(CommandError::User("Nothing to say.".into()));
         }
         let length = text.chars().count();
-        if length > SAY_LIMIT {
+        // Never split: a /say is one message. UTF-16 units bound what Discord counts.
+        if length > SAY_LIMIT || units(text) > CONTENT_LIMIT {
             return Err(CommandError::User(format!(
                 "That's {length} characters; keep it under {SAY_LIMIT}."
             )));

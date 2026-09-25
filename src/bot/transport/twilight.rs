@@ -421,6 +421,28 @@ impl DiscordTransport for TwilightTransport {
         .await
     }
 
+    async fn followup(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> Outcome<()> {
+        let none = mentions::none();
+        let client = self.client.interaction(self.application_id);
+        let mut request = client
+            .create_followup(interaction.token())
+            .allowed_mentions(Some(&none));
+        if !reply.content.is_empty() {
+            request = request.content(&reply.content);
+        }
+        if !reply.embeds.is_empty() {
+            request = request.embeds(&reply.embeds);
+        }
+        if reply.ephemeral {
+            request = request.flags(MessageFlags::EPHEMERAL);
+        }
+        self.settle(request).await
+    }
+
     async fn autocomplete(
         &self,
         interaction: &InteractionRef,

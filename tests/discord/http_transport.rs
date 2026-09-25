@@ -546,6 +546,30 @@ async fn autocomplete_and_embed_replies_serialise_as_discord_expects() {
 }
 
 #[tokio::test]
+async fn follow_ups_post_to_the_interaction_webhook() {
+    let (stub, addr) = Stub::start(vec![json_reply(200, json!({ "id": "8" }))]).await;
+    let interaction = InteractionRef::new(Id::new(7700), "interaction-secret-token".into());
+    assert_eq!(
+        quick(addr)
+            .followup(&interaction, &InteractionReply::ephemeral("more <@1001>"))
+            .await,
+        Outcome::Delivered(())
+    );
+    let seen = stub.seen();
+    assert!(
+        seen[0]
+            .request_line
+            .starts_with("POST /api/v10/webhooks/9/interaction-secret-token"),
+        "{}",
+        seen[0].request_line
+    );
+    let body: Value = serde_json::from_slice(&seen[0].body).unwrap();
+    assert_eq!(body["content"], json!("more <@1001>"));
+    assert_eq!(body["flags"], json!(64));
+    assert_eq!(body["allowed_mentions"], json!({ "parse": [] }));
+}
+
+#[tokio::test]
 async fn debug_output_never_contains_the_token() {
     let (_, addr) = Stub::start(Vec::new()).await;
     let transport = quick(addr);

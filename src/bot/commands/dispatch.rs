@@ -22,7 +22,10 @@ use twilight_model::id::{
 
 use super::access::{AccessPolicy, Denial, Gate};
 use super::invocation::Invocation;
-use crate::bot::transport::{DiscordTransport, InteractionReply, Outcome, RejectionKind};
+use super::split::split_reply;
+use crate::bot::transport::{
+    DiscordTransport, InteractionRef, InteractionReply, Outcome, RejectionKind,
+};
 
 /// v4's reply for unexpected failures.
 pub const GENERIC_FAILURE: &str = "❌ Something went wrong. Check the bot logs.";
@@ -253,6 +256,11 @@ impl Dispatcher {
         match self.authorise(&invocation, owner_id) {
             Ok(command) => {
                 let mut choices = command.autocomplete(&invocation).await;
+                // Discord refuses the whole answer for one value over 100.
+                choices.retain(|choice| match &choice.value {
+                    CommandOptionChoiceValue::String(value) => value.chars().count() <= 100,
+                    _ => true,
+                });
                 choices.truncate(MAX_CHOICES);
                 choices
             }
@@ -293,12 +301,12 @@ impl Dispatcher {
         let command = match self.authorise(&invocation, owner_id) {
             Ok(command) => command,
             Err((reply, disposition)) => {
-                return Some((disposition, transport.respond(target, &reply).await));
+                return Some((disposition, deliver(transport, target, &reply, None).await));
             }
         };
         let Some(ephemeral) = command.defer() else {
             let (reply, disposition) = Self::execute(command, &invocation).await;
-            return Some((disposition, transport.respond(target, &reply).await));
+            return Some((disposition, deliver(transport, target, &reply, None).await));
         };
         let acknowledged = transport.defer(target, ephemeral).await;
         if !acknowledged.is_delivered() {
@@ -307,9 +315,54 @@ impl Dispatcher {
         let (reply, disposition) = Self::execute(command, &invocation).await;
         Some((
             disposition,
-            transport.complete_deferred(target, &reply).await,
+            deliver(transport, target, &reply, Some(ephemeral)).await,
         ))
     }
+}
+
+/// Replaces "thinking…" when a deferred reply could not be completed.
+pub const COMPLETION_FALLBACK: &str = "Something went wrong answering that — try again.";
+
+/// Send `reply` within Discord's limits: the first message answers the
+/// interaction (directly, or completing the deferral whose visibility is
+/// `deferred`), the rest follow in order. The first failure stops it and is
+/// returned. A refused completion gets one short fallback edit so nobody is
+/// left on "thinking…"; an ambiguous one may have landed and is left alone.
+async fn deliver<T: DiscordTransport>(
+    transport: &T,
+    target: &InteractionRef,
+    reply: &InteractionReply,
+    deferred: Option<bool>,
+) -> Outcome<()> {
+    let mut parts = split_reply(reply).into_iter().map(|mut part| {
+        // The deferral fixed the visibility; follow-ups must match it.
+        if let Some(ephemeral) = deferred {
+            part.ephemeral = ephemeral;
+        }
+        part
+    });
+    let Some(first) = parts.next() else {
+        return Outcome::Delivered(());
+    };
+    let outcome = match deferred {
+        None => transport.respond(target, &first).await,
+        Some(_) => transport.complete_deferred(target, &first).await,
+    };
+    if !outcome.is_delivered() {
+        if deferred.is_some() && matches!(outcome, Outcome::DefinitelyRejected(_)) {
+            let _ = transport
+                .complete_deferred(target, &InteractionReply::ephemeral(COMPLETION_FALLBACK))
+                .await;
+        }
+        return outcome;
+    }
+    for part in parts {
+        let outcome = transport.followup(target, &part).await;
+        if !outcome.is_delivered() {
+            return outcome;
+        }
+    }
+    Outcome::Delivered(())
 }
 
 /// Answer an interaction on its own task so the gateway loop keeps polling.

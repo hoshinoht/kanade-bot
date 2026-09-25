@@ -19,6 +19,7 @@ mod rescan;
 mod runs;
 mod say;
 mod schedule;
+mod split;
 mod text;
 
 use std::sync::Arc;
@@ -30,8 +31,9 @@ pub use context::{
 };
 pub use debug::{DebugCommand, TEST_CARDS_UNAVAILABLE, TEST_PREFIX};
 pub use dispatch::{
-    ChoicesFuture, CommandError, CommandFuture, Dispatcher, Disposition, DuplicateCommand,
-    GENERIC_FAILURE, Handled, MAX_CHOICES, SlashCommand, choice, spawn_interaction,
+    COMPLETION_FALLBACK, ChoicesFuture, CommandError, CommandFuture, Dispatcher, Disposition,
+    DuplicateCommand, GENERIC_FAILURE, Handled, MAX_CHOICES, SlashCommand, choice,
+    spawn_interaction,
 };
 pub use fixed::FixedCommand;
 pub use invocation::Invocation;
@@ -41,6 +43,7 @@ pub use rescan::{RESCAN_UNAVAILABLE, RescanCommand, window_label};
 pub use runs::RunCommand;
 pub use say::{SAY_LIMIT, SayCommand, mentioned_users};
 pub use schedule::ScheduleCommand;
+pub use split::{CONTENT_LIMIT, fit_embed, split_lines, split_reply};
 
 use crate::bot::transport::DiscordTransport;
 

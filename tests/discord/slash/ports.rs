@@ -323,6 +323,15 @@ async fn say_posts_verbatim_and_notifies_only_written_users() {
         reply.content,
         "❌ That's 1901 characters; keep it under 1900."
     );
+    // Never split: over Discord's 2,000 however it counts, refused whole.
+    let astral = "🧪".repeat(1_001);
+    let reply = slash
+        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say(&astral))
+        .await;
+    assert_eq!(
+        reply.content,
+        "❌ That's 1001 characters; keep it under 1900."
+    );
     let reply = slash
         .run_in(
             ALICE,

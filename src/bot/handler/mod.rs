@@ -19,7 +19,7 @@ use twilight_model::id::{
 use crate::bot::commands::{Dispatcher, Disposition, spawn_interaction};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::roster::RosterJob;
-use crate::bot::transport::DiscordTransport;
+use crate::bot::transport::{DiscordTransport, Outcome};
 use crate::domain::members::Directory;
 use crate::runtime::logging;
 
@@ -177,14 +177,26 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
                 logging::event(
                     level,
                     "interaction_handled",
-                    json!({
-                        "disposition": format!("{disposition:?}").split('(').next(),
-                        "delivered": outcome.is_delivered(),
-                    }),
+                    handled_fields(&disposition, &outcome),
                 );
             }
         });
     }
+}
+
+/// `interaction_handled` fields: the disposition's name, whether the answer
+/// arrived and, when not, the content-free failure kind (`http_400`,
+/// `rate_limited`, `not_sent`, …). A failure's detail can quote store
+/// errors, so only its kind is logged; no content, no ids.
+pub fn handled_fields(disposition: &Disposition, outcome: &Outcome<()>) -> serde_json::Value {
+    let mut fields = json!({
+        "disposition": format!("{disposition:?}").split('(').next(),
+        "delivered": outcome.is_delivered(),
+    });
+    if let Some(label) = outcome.failure_label() {
+        fields["rejected"] = json!(label);
+    }
+    fields
 }
 
 impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {

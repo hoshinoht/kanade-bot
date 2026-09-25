@@ -273,6 +273,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   each run field, reminder changes described (a move's re-placed reminders fold into one
   line), guild-local week headings, and a revert dialog that lists conflicts and previews
   what forcing would change. Reverts no longer send a conflicting request id.
+- v5: slash-command replies longer than Discord's limits are split at line boundaries
+  into follow-up messages (`/fixed list` no longer hangs on "thinking…"); a refused
+  completion gets one short fallback edit, and the interaction log names the failure kind.
 - v5: the admin API sends name data so the app never needs raw ids: a roles list
   (`/api/admin/roles`), the bot's own user id in the identity, author ids on evidence and
   extraction messages, and full member ids on chat rows.

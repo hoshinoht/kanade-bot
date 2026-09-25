@@ -30,6 +30,7 @@ pub enum Op {
     Respond,
     Defer,
     CompleteDeferred,
+    Followup,
     Autocomplete,
     Register,
     ListMembers,
@@ -102,6 +103,11 @@ pub enum Call {
         reply: InteractionReply,
         outcome: Outcome<()>,
     },
+    Followup {
+        interaction: InteractionRef,
+        reply: InteractionReply,
+        outcome: Outcome<()>,
+    },
     Autocomplete {
         interaction: InteractionRef,
         choices: Vec<CommandOptionChoice>,
@@ -142,6 +148,7 @@ impl Call {
             Self::Respond { .. } => Op::Respond,
             Self::Defer { .. } => Op::Defer,
             Self::CompleteDeferred { .. } => Op::CompleteDeferred,
+            Self::Followup { .. } => Op::Followup,
             Self::Autocomplete { .. } => Op::Autocomplete,
             Self::Register { .. } => Op::Register,
             Self::ListMembers { .. } => Op::ListMembers,
@@ -464,6 +471,21 @@ impl DiscordTransport for FakeDiscord {
         let mut state = self.state();
         let outcome = state.plain(Op::CompleteDeferred);
         state.calls.push(Call::CompleteDeferred {
+            interaction: interaction.clone(),
+            reply: reply.clone(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn followup(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> Outcome<()> {
+        let mut state = self.state();
+        let outcome = state.plain(Op::Followup);
+        state.calls.push(Call::Followup {
             interaction: interaction.clone(),
             reply: reply.clone(),
             outcome: outcome.clone(),

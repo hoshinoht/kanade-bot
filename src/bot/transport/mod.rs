@@ -198,6 +198,18 @@ pub trait DiscordTransport: Send + Sync {
         reply: &InteractionReply,
     ) -> impl Future<Output = Outcome<()>> + Send;
 
+    /// A further message for an answered interaction (webhook follow-up),
+    /// with the reply's visibility; it mentions nobody. Test doubles that
+    /// never see one may keep the default.
+    fn followup(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> impl Future<Output = Outcome<()>> + Send {
+        let _ = (interaction, reply);
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
     /// Answer an autocomplete interaction (response type 8) with at most 25
     /// choices. Test doubles that never see autocomplete may keep the default.
     fn autocomplete(

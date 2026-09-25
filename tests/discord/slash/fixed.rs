@@ -264,3 +264,79 @@ async fn timing_picker_lists_the_invokers_timings() {
             .is_empty()
     );
 }
+
+/// The live bug: twelve timings with full parties are ~2,400 characters,
+/// over Discord's 2,000, so the deferred reply was never completed.
+#[tokio::test]
+async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
+    use kanade::bot::transport::Call;
+    use kanade::domain::attendance::AttendanceDefault;
+    use kanade::domain::history::{Actor, ChangeMeta, Origin};
+    use kanade::domain::schedule::{Change, ChangeSet, FixedRun};
+
+    let slash = Slash::new().await;
+    let party: Vec<String> = [ALICE, BOB, DAN, 1_010, 1_011, 1_012]
+        .iter()
+        .map(u64::to_string)
+        .collect();
+    let changes = (2..=12)
+        .map(|index| {
+            Change::PutFixedRun(FixedRun {
+                id: format!("ffff{index:04}-0000-4000-8000-000000000000"),
+                owner_id: ALICE.to_string(),
+                channel_id: Some(KALOS.to_string()),
+                bosses: vec!["XKalos".into(), "HMaleficStar".into()],
+                weekday: chrono::Weekday::Sat,
+                time: chrono::NaiveTime::from_hms_opt(20, index, 0).unwrap(),
+                participants: party.clone(),
+                note: None,
+                attendance_default: AttendanceDefault::default(),
+                standing: Vec::new(),
+            })
+        })
+        .collect();
+    let revision = slash.store.load(&Scope::All).await.unwrap().revision;
+    slash
+        .store
+        .commit(
+            revision,
+            ChangeSet { changes },
+            ChangeMeta {
+                origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
+                at: super::now(),
+                notices: Vec::new(),
+                refs: Vec::new(),
+                request_digest: None,
+                expect: Default::default(),
+                outbox: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let before = slash.discord.calls().len();
+    slash
+        .run(DAN, "fixed", sub("list", json!([opt("scope", "all")])))
+        .await;
+    let sent: Vec<(String, bool)> = slash.discord.calls()[before..]
+        .iter()
+        .filter_map(|call| match call {
+            Call::CompleteDeferred { reply, .. } | Call::Followup { reply, .. } => {
+                Some((reply.content.clone(), reply.ephemeral))
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(sent.len() >= 2, "{sent:?}");
+    let whole: Vec<&str> = sent.iter().map(|(content, _)| content.as_str()).collect();
+    let whole = whole.join("\n");
+    assert!(whole.encode_utf16().count() > 2_000);
+    assert_eq!(whole.matches("`#ffff").count(), 12);
+    assert!(whole.starts_with(KALOS_LINE));
+    for (content, ephemeral) in &sent {
+        assert!(*ephemeral);
+        assert!(content.encode_utf16().count() <= 2_000);
+        // Never mid-line: every message starts a timing's line.
+        assert!(content.starts_with("`#ffff"), "{content}");
+    }
+}
