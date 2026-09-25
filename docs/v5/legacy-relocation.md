@@ -18,6 +18,8 @@ and `docker build -f deploy/Dockerfile .`. Container files live in
 No ignored or untracked deployment state moved. `deploy/compose.yaml` reads the
 root `.env` and mounts root data, config, persona and boss artwork paths; set
 `KANATA_API_KEY_HOST_FILE` before any Compose command. Caddy is no longer part
-of kanade: TLS ingress is the shared edge over `kanade_edge`. Existing root private paths remain untouched; copy or mount
+of kanade: TLS ingress is the shared edge over `kanade_edge`. The private v4
+persona layout lives in `config/personas-v4/` (mounted writable at
+`/app/config/personas`); root `config/personas/` holds the v5 layout. Existing root private paths remain untouched; copy or mount
 them only in an explicitly authorized deployment operation. The rollback image
 must be built with `legacy/python/` as its context, never the repository root.

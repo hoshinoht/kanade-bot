@@ -36,8 +36,9 @@ services:
       # Untracked portraits and entry artwork remain at the repo root.
       - ../../../boss/portraits:/app/boss/portraits:ro
       - ../../../boss/artwork:/app/boss/artwork:ro
-      # Writable for private identities, behaviours, and portal-managed profiles.
-      - ../../../config/personas:/app/config/personas
+      # Writable v4 identities, behaviours and portal-managed profiles. The v4
+      # layout lives in config/personas-v4; config/personas is the v5 layout.
+      - ../../../config/personas-v4:/app/config/personas
     restart: unless-stopped
     # Root stays immutable; only mounted data and config/personas are writable.
     read_only: true

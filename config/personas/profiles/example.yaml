@@ -1,0 +1,26 @@
+# Template only: the loader never offers `example` as a profile.
+# Copy to profiles/<id>.yaml with a matching `id` and edit.
+schema_version: 1
+id: example
+label: Example
+voice: <A short voice cue for this profile.>
+prompt: |
+  # Reply profile
+
+  Describe how this profile changes delivery for one member's replies.
+
+  ## Delivery
+
+  - <Tone, relationship framing, formatting, or recurring mannerisms.>
+  - Preserve identity boundaries and exact facts.
+
+  **Good**
+
+  > `<A short reply in this profile.>`
+
+  **Bad**
+
+  > `<A reply that overdoes or misuses the profile.>`
+# Partial: missing keys fall back to the selected bundle's staging.
+staging:
+  generic: "Processing request. Stand by."
