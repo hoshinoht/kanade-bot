@@ -1,6 +1,6 @@
 use kanade::infrastructure::llm::{
     CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, OutputSchema,
-    ToolCall,
+    OutputValidation, ToolCall,
 };
 use serde_json::{Value, json};
 
@@ -43,6 +43,7 @@ async fn hundred_kib_structured_content_uses_payload_limit_not_metadata_limit() 
             "additionalProperties":false
         }),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let content = serde_json::to_string(&json!({"answer": "s".repeat(100 * 1024)})).unwrap();
     let output = CompletionResponse {
@@ -262,6 +263,7 @@ async fn escaped_payloads_respect_raw_and_canonical_boundaries() {
             "additionalProperties":false
         }),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let value = json!({"answer":"quote \" slash \\ unicode ☃"});
     let canonical = serde_json::to_string(&value).unwrap();

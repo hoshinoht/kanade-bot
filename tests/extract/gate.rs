@@ -70,3 +70,14 @@ fn replay(input: &Value, step: &Value) -> Outcome {
 fn gate_vectors_replay_exactly() {
     assert_eq!(replay_family("gate", replay), (6, 72));
 }
+
+/// Named known difference K-WORD-MARKS: Rust `regex`'s `\w` admits combining
+/// marks such as the emoji variation selector U+FE0F, Python's (`isalnum`)
+/// does not, so no `\b` falls between `❤️` and the digits. v4 finds `930`
+/// here; v5 finds nothing. Plain emoji and custom-emoji markup are unaffected.
+#[test]
+fn known_difference_marks_are_word_characters() {
+    assert_eq!(gate::find_times("❤️930"), Vec::<String>::new());
+    assert_eq!(gate::find_times("❤ 930"), ["930"]);
+    assert_eq!(gate::find_times("🔥930"), ["930"]);
+}

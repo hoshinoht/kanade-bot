@@ -28,7 +28,9 @@ pub use http::{
 pub use provider::{
     CapabilityFuture, CompletionFuture, LlmProvider, ProviderFailure, ProviderFailureKind,
 };
-pub use request::{ChatRequest, Message, OutputSchema, Sampling, ToolCallRequest, ToolDefinition};
+pub use request::{
+    ChatRequest, Message, OutputSchema, OutputValidation, Sampling, ToolCallRequest, ToolDefinition,
+};
 pub use response::{CompletionResponse, FinishReason, ToolCall, Usage};
 pub use shaping::prepare as shape_request;
 pub use shaping::schema_instruction;

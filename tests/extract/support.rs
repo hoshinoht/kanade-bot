@@ -118,8 +118,10 @@ pub fn replay_family_with(
             }
             let got = match replay(input, step) {
                 Ok(mut value) => {
-                    if !deviated {
-                        let result = validator(&schema, Some(&format!("result_{op}")));
+                    let result = validator(&schema, Some(&format!("result_{op}")));
+                    // A deviated value is still checked unless the v5 value
+                    // itself is outside the v4 result shape (a refusal).
+                    if !deviated || errors(&result, &want["value"]).is_empty() {
                         let problems = errors(&result, &value);
                         assert!(
                             problems.is_empty(),

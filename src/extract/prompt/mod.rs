@@ -27,7 +27,9 @@ use crate::domain::catalog::BossTable;
 use crate::domain::schedule::{FixedRun, Run};
 use crate::extract::schema::extraction_schema;
 use crate::infrastructure::llm::identity::{IdentitySession, Member};
-use crate::infrastructure::llm::{ChatRequest, Effort, Message, OutputSchema, Sampling};
+use crate::infrastructure::llm::{
+    ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling,
+};
 
 /// One chat message as the prompt shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,6 +197,9 @@ pub fn extraction_request(
             name: "extraction".to_owned(),
             schema: extraction_schema(refs.as_deref()),
             strict: true,
+            // `parse_response` and the session decode are the validator: they
+            // coerce v4's near-misses and answer a malformed reply with a retry.
+            validation: OutputValidation::CallerValidates,
         }),
         max_output_tokens: u32::try_from(CONTEXT_RESERVE).expect("small constant"),
         reasoning,

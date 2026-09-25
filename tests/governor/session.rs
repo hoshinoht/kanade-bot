@@ -323,7 +323,8 @@ async fn extraction_is_one_call_at_extraction_priority_and_may_retry_a_timeout()
         .await
         .unwrap();
     assert_eq!(snap(&governor).holders[0].kind, CallKind::Extraction);
-    assert_eq!(session.max_requests(), 4);
+    // Runner attempts + one reshape + one reserved answer retry.
+    assert_eq!(session.max_requests(), 5);
     session.complete(&request()).await.unwrap();
     assert_eq!(provider.requests().len(), 2);
     assert_eq!(snap(&governor).counters.retries, 1);
@@ -335,6 +336,77 @@ async fn extraction_is_one_call_at_extraction_priority_and_may_retry_a_timeout()
         session.clean_retry(&request()).await.unwrap_err().failure,
         SessionFailure::CleanRetryUnavailable
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_extraction_answer_retry_is_one_extra_request_outside_the_retry_budget() {
+    // No failure retries allowed at all: the answer retry must not need one.
+    let governor = build(&config(0));
+    let (provider, client) = setup(governor.clone(), [ok(), ok(), ok()]);
+    let mut session = client
+        .open_extraction("run 2026-W39", TIMEOUT, TIMEOUT)
+        .await
+        .unwrap();
+    assert_eq!(
+        session.answer_retry(&request()).await.unwrap_err().failure,
+        SessionFailure::AnswerRetryUnavailable,
+        "nothing to retry before the first answer"
+    );
+    session.complete(&request()).await.unwrap();
+    assert!(!session.is_ended());
+    session.answer_retry(&request()).await.unwrap();
+    assert!(session.is_ended());
+    assert_eq!(
+        session.answer_retry(&request()).await.unwrap_err().failure,
+        SessionFailure::AnswerRetryUnavailable
+    );
+    assert_eq!(
+        session.complete(&request()).await.unwrap_err().failure,
+        SessionFailure::Ended
+    );
+    assert_eq!(session.requests_used(), 2);
+    assert_eq!(provider.requests().len(), 2);
+    let counters = snap(&governor).counters;
+    assert_eq!((counters.requests, counters.retries), (2, 0));
+    assert_eq!(snap(&governor).permits.in_use, 1, "one permit throughout");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_extraction_call_has_no_answer_to_retry() {
+    let governor = build(&config(10));
+    let (provider, client) = setup(governor, [FakeAction::Permanent, ok()]);
+    let mut session = client
+        .open_extraction("run 2026-W39", TIMEOUT, TIMEOUT)
+        .await
+        .unwrap();
+    session.complete(&request()).await.unwrap_err();
+    assert!(session.is_ended());
+    assert_eq!(
+        session.answer_retry(&request()).await.unwrap_err().failure,
+        SessionFailure::AnswerRetryUnavailable
+    );
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_answer_retry_still_has_a_request_after_the_first_call_retried() {
+    let governor = build(&config(10));
+    let actions = [
+        FakeAction::UpstreamTimeout,
+        FakeAction::UpstreamTimeout,
+        ok(),
+        ok(),
+    ];
+    let (provider, client) = setup(governor, actions);
+    let mut session = client
+        .open_extraction("run 2026-W39", TIMEOUT, TIMEOUT)
+        .await
+        .unwrap();
+    session.complete(&request()).await.unwrap();
+    assert_eq!(session.requests_used(), 3);
+    session.answer_retry(&request()).await.unwrap();
+    assert_eq!(session.requests_used(), 4);
+    assert_eq!(provider.requests().len(), 4);
 }
 
 #[tokio::test(start_paused = true)]
@@ -413,7 +485,34 @@ async fn a_cancelled_extraction_call_ends_the_session() {
         session.complete(&request()).await.unwrap_err().failure,
         SessionFailure::Ended
     );
+    assert_eq!(
+        session.answer_retry(&request()).await.unwrap_err().failure,
+        SessionFailure::AnswerRetryUnavailable
+    );
     assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_answer_retry_spends_it_and_ends_the_session() {
+    let governor = build(&config(10));
+    let (provider, client) = setup(governor, [ok(), slow(), ok()]);
+    let mut session = client
+        .open_extraction("run 2026-W39", TIMEOUT, TIMEOUT)
+        .await
+        .unwrap();
+    session.complete(&request()).await.unwrap();
+    assert!(
+        tokio::time::timeout(CUT, session.answer_retry(&request()))
+            .await
+            .is_err()
+    );
+    assert_eq!(session.requests_used(), 2);
+    assert!(session.is_ended());
+    assert_eq!(
+        session.answer_retry(&request()).await.unwrap_err().failure,
+        SessionFailure::AnswerRetryUnavailable
+    );
+    assert_eq!(provider.requests().len(), 2);
 }
 
 #[tokio::test(start_paused = true)]

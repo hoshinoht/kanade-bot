@@ -7,7 +7,7 @@ use std::{
 use kanade::infrastructure::llm::{
     BearerKey, ChatRequest, CompletionRunner, ErrorCode, ExecutionLimits, HttpConfigError,
     HttpLimits, HttpProviderConfig, LlmProvider, ModelCapabilities, OpenAiCompatibleProvider,
-    OutputSchema, ProviderFailure, ProviderFailureKind, Sampling, TrustRoots,
+    OutputSchema, OutputValidation, ProviderFailure, ProviderFailureKind, Sampling, TrustRoots,
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::{Value, json};
@@ -34,6 +34,7 @@ pub(super) fn structured() -> ChatRequest {
             "additionalProperties": false
         }),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     request.sampling = Some(Sampling {
         temperature: Some(0.0),

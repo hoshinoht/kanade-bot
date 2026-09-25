@@ -41,6 +41,28 @@ pub struct OutputSchema {
     pub name: String,
     pub schema: Value,
     pub strict: bool,
+    #[serde(default, skip_serializing_if = "OutputValidation::is_runner")]
+    pub validation: OutputValidation,
+}
+
+/// Who checks a reply against the output schema. Either way the schema is sent
+/// (`response_format`, or the prompt instruction without structured output).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputValidation {
+    /// The runner parses and validates the content; a mismatch is `InvalidOutput`.
+    #[default]
+    Runner,
+    /// The runner returns the content unparsed (still size-bounded, possibly
+    /// absent); the caller parses it as untrusted text. For callers that coerce
+    /// near-misses or answer a malformed reply with a retry.
+    CallerValidates,
+}
+
+impl OutputValidation {
+    fn is_runner(&self) -> bool {
+        *self == Self::Runner
+    }
 }
 /// Optional sampling controls; each is sent only to models that accept sampling.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -121,6 +143,7 @@ impl fmt::Debug for OutputSchema {
         f.debug_struct("OutputSchema")
             .field("name_bytes", &self.name.len())
             .field("strict", &self.strict)
+            .field("validation", &self.validation)
             .finish()
     }
 }

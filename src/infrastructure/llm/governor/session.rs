@@ -65,6 +65,8 @@ pub enum SessionFailure {
     Ended,
     /// Not a question session, or its clean retry is already used.
     CleanRetryUnavailable,
+    /// Not an extraction session, no answer to retry yet, or the retry is used.
+    AnswerRetryUnavailable,
     Model(LlmError),
 }
 
@@ -81,6 +83,7 @@ impl fmt::Display for SessionError {
             SessionFailure::RequestsExhausted => f.write_str("model request cap reached"),
             SessionFailure::Ended => f.write_str("model session has ended"),
             SessionFailure::CleanRetryUnavailable => f.write_str("clean retry unavailable"),
+            SessionFailure::AnswerRetryUnavailable => f.write_str("answer retry unavailable"),
             SessionFailure::Model(error) => error.fmt(f),
         }
     }
@@ -179,13 +182,17 @@ impl<P: LlmProvider> ModelClient<P> {
             requeues_left: 1,
             question: true,
             clean_used: false,
+            completed: false,
+            answered: false,
+            answer_retry_used: false,
             ended: false,
         })
     }
 
-    /// One extraction completion at extraction priority: queues up to `wait`,
-    /// then `timeout` bounds the call. Its requests are capped at the runner's
-    /// attempts plus one reshape.
+    /// One extraction completion at extraction priority, plus at most one
+    /// [`Session::answer_retry`] after a reply the caller rejects: queues up to
+    /// `wait`, then `timeout` bounds the session. Requests are capped at the
+    /// runner's attempts plus one reshape, plus one reserved for the answer retry.
     pub async fn open_extraction(
         &self,
         who: impl Into<String>,
@@ -207,11 +214,14 @@ impl<P: LlmProvider> ModelClient<P> {
             role: Role::Extraction,
             ticket,
             deadline: Instant::now() + timeout,
-            max_requests: u32::from(self.max_attempts) + 1,
+            max_requests: u32::from(self.max_attempts) + 2,
             used: 0,
             requeues_left: 1,
             question: false,
             clean_used: false,
+            completed: false,
+            answered: false,
+            answer_retry_used: false,
             ended: false,
         })
     }
@@ -242,6 +252,12 @@ pub struct Session<'c, P> {
     requeues_left: u8,
     question: bool,
     clean_used: bool,
+    /// Extraction: the one `complete` has started (set before awaiting, so a
+    /// cancelled call cannot be repeated).
+    completed: bool,
+    /// Extraction: that call returned a reply, so an answer retry may follow.
+    answered: bool,
+    answer_retry_used: bool,
     ended: bool,
 }
 
@@ -274,8 +290,10 @@ impl<P: LlmProvider> Session<'_, P> {
         self.requeues_left == 0
     }
 
+    /// No further request may be sent.
     pub fn is_ended(&self) -> bool {
         self.ended
+            || (!self.question && self.completed && (!self.answered || self.answer_retry_used))
     }
 
     /// The alias every request of this session must name.
@@ -283,11 +301,36 @@ impl<P: LlmProvider> Session<'_, P> {
         self.permit.as_ref().map(Permit::alias)
     }
 
-    /// One model round. A question keeps one request in reserve for `clean_retry`.
+    /// One model round. A question keeps one request in reserve for
+    /// `clean_retry`, an extraction for `answer_retry`; an extraction has one call.
     pub async fn complete(
         &mut self,
         request: &ChatRequest,
     ) -> Result<CompletionResponse, SessionError> {
+        if self.question {
+            return self.send(request, false).await;
+        }
+        if self.completed {
+            return Err(refunded(SessionFailure::Ended));
+        }
+        self.completed = true;
+        let result = self.send(request, false).await;
+        self.answered = result.is_ok();
+        result
+    }
+
+    /// Once per extraction, after `complete` returned a reply the caller could
+    /// not accept: resend (v4's corrected-answer request) with the reserved
+    /// request. A content retry, not a failure retry: the group's retry budget
+    /// is not spent.
+    pub async fn answer_retry(
+        &mut self,
+        request: &ChatRequest,
+    ) -> Result<CompletionResponse, SessionError> {
+        if self.question || !self.answered || self.answer_retry_used {
+            return Err(refunded(SessionFailure::AnswerRetryUnavailable));
+        }
+        self.answer_retry_used = true;
         self.send(request, false).await
     }
 
@@ -326,14 +369,14 @@ impl<P: LlmProvider> Session<'_, P> {
             if request.model != permit.alias() {
                 return Err(invalid("session-alias"));
             }
-            let reserved = u32::from(self.question && !self.clean_used);
-            let cap = self.max_requests.saturating_sub(reserved);
+            let reserve_held = if self.question {
+                !self.clean_used
+            } else {
+                !self.answer_retry_used
+            };
+            let cap = self.max_requests.saturating_sub(u32::from(reserve_held));
             if self.used >= cap {
                 return Err(refunded(SessionFailure::RequestsExhausted));
-            }
-            // Set before awaiting so a cancelled extraction call cannot be repeated.
-            if !self.question {
-                self.ended = true;
             }
             let random = self.client.runner.random().clone();
             let mut gate = Gate::governed(

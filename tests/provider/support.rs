@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionResponse, CompletionRunner, ExecutionLimits, FakeAction, FakeProvider,
-    FinishReason, Message, OutputSchema, RetryPolicy, ToolCall, ToolCallRequest, ToolDefinition,
-    Usage,
+    FinishReason, Message, OutputSchema, OutputValidation, RetryPolicy, ToolCall, ToolCallRequest,
+    ToolDefinition, Usage,
 };
 use serde_json::{Map, Value, json};
 
@@ -27,6 +27,7 @@ pub fn request() -> ChatRequest {
             name: "answer".into(),
             schema: json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}),
             strict: true,
+            validation: OutputValidation::Runner,
         }),
         max_output_tokens: 128,
         reasoning: None,

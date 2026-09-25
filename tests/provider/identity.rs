@@ -1,6 +1,6 @@
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, FakeAction, FinishReason, Message, OutputSchema, ToolCall,
-    ToolCallRequest, ToolDefinition,
+    ChatRequest, CompletionResponse, FakeAction, FinishReason, Message, OutputSchema,
+    OutputValidation, ToolCall, ToolCallRequest, ToolDefinition,
     governor::{Role, RoleRoute},
     identity::{
         CodecMode, DecodeError, IdentityCodec, IdentitySession, Member, Passthrough, RouteRefused,
@@ -125,6 +125,7 @@ fn build_request(mut session: Option<&mut dyn IdentitySession>) -> ChatRequest {
                 "additionalProperties": false
             }),
             strict: true,
+            validation: OutputValidation::Runner,
         }),
         max_output_tokens: 256,
         reasoning: None,

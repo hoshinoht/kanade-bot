@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::{
-    ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmError, Message,
+    ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmError, Message, OutputValidation,
     schema::{self},
 };
 use super::{
@@ -89,7 +89,9 @@ pub(super) fn validate_response(
             &value_bounds(limits, limits.max_schema_bytes),
         )?;
     }
-    if let Some(output) = &request.output_schema {
+    if let Some(output) = &request.output_schema
+        && output.validation == OutputValidation::Runner
+    {
         let content = response
             .content
             .as_deref()

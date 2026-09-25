@@ -243,20 +243,20 @@ fn tagged_fixture() -> (Vec<Member>, Owned) {
     let owned = Owned {
         burst: vec![
             message(
-                "401",
+                MSG_401,
                 &roster[0],
                 "2026-08-30T13:01:00+08:00",
                 "kanon can u do wed? <@114200000000000022>",
             ),
             message(
-                "402",
+                MSG_402,
                 &roster[1],
                 "2026-08-30T13:05:00+08:00",
                 "ok for wed, Alvin tan",
             ),
         ],
         context: vec![message(
-            "398",
+            MSG_398,
             &roster[2],
             "2026-08-30T12:40:00+08:00",
             "alv free mon?",
@@ -282,6 +282,11 @@ fn tagged_fixture() -> (Vec<Member>, Owned) {
     };
     (roster, owned)
 }
+
+const MSG_398: &str = "1419000000000000398";
+const MSG_401: &str = "1419000000000000401";
+const MSG_402: &str = "1419000000000000402";
+const MESSAGE_IDS: [&str; 3] = [MSG_398, MSG_401, MSG_402];
 
 fn fixture_table() -> BossTable {
     let file = crate::support::load("prompt.json");
@@ -312,7 +317,11 @@ fn tagging_codec_keeps_every_roster_identity_out_of_the_request() {
         let messages = build_messages(context, session.as_mut());
         extraction_request("extractor", messages, None, session.as_ref())
     });
-    assert_eq!(find_request_leaks(&request, &roster), Vec::<String>::new());
+    // Message ids are snowflakes too, but name messages, not members; they
+    // stay visible so the model can cite evidence.
+    let mut leaks = find_request_leaks(&request, &roster);
+    leaks.retain(|leak| !MESSAGE_IDS.contains(&leak.as_str()));
+    assert_eq!(leaks, Vec::<String>::new());
     let schema = &request.output_schema.as_ref().expect("schema").schema;
     let refs = &schema["$defs"]["Amendment"]["properties"]["participants"]["items"]["enum"];
     assert_eq!(
@@ -320,10 +329,11 @@ fn tagging_codec_keeps_every_roster_identity_out_of_the_request() {
         json!(session.participant_enum().expect("tagging refs"))
     );
 
-    // The model answers in refs; the call decodes them back to user ids.
+    // The model answers in refs (a mention form included); participants decode
+    // to user ids and the member-facing summary to names.
     let tag = session.member_ref(&roster[1].user_id);
     let reply = format!(
-        r#"{{"amendments":[{{"kind":"rsvp","participants":["{tag}"],"rsvp":"yes","evidence_message_ids":["402"]}}],"summary":"{tag} agrees"}}"#
+        r#"{{"amendments":[{{"kind":"rsvp","participants":["<@{tag}>"],"rsvp":"yes","evidence_message_ids":["{MSG_402}"]}}],"summary":"{tag} agrees"}}"#
     );
     let mut attempts = ExtractionAttempts::new(request.messages.clone());
     let outcome = AttemptOutcome::Reply {
@@ -338,7 +348,10 @@ fn tagging_codec_keeps_every_roster_identity_out_of_the_request() {
         extraction.amendments[0].participants,
         [roster[1].user_id.clone()]
     );
-    assert_eq!(extraction.summary, format!("{} agrees", roster[1].user_id));
+    assert_eq!(
+        extraction.summary,
+        format!("{} agrees", roster[1].display_name)
+    );
 
     // A ref the session never issued is a malformed answer: retried, not trusted.
     let mut attempts = ExtractionAttempts::new(request.messages);

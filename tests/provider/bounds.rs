@@ -1,6 +1,6 @@
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message,
-    OutputSchema, ToolCall, ToolDefinition,
+    OutputSchema, OutputValidation, ToolCall, ToolDefinition,
 };
 use serde_json::json;
 
@@ -25,6 +25,7 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
             name: "output".into(),
             schema: json!({"type":"string"}),
             strict: true,
+            validation: OutputValidation::Runner,
         }),
         max_output_tokens: 1,
         reasoning: None,
@@ -88,6 +89,7 @@ async fn request_string_fields_are_each_bounded_before_provider_call() {
         name: long.clone(),
         schema: json!({"type":"string"}),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     cases.push(("output schema name", value));
 

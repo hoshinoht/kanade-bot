@@ -1,5 +1,6 @@
 use kanade::infrastructure::llm::{
-    CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message, OutputSchema,
+    CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message,
+    OutputSchema, OutputValidation,
 };
 use serde_json::{Map, Value, json};
 
@@ -65,6 +66,7 @@ async fn canonical_schema_size_matches_serde_json_at_both_boundaries() {
         name: "answer".into(),
         schema,
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let mut output_object = Map::new();
     output_object.insert(key.into(), json!(["ok"]));
@@ -151,6 +153,7 @@ async fn canonical_structured_output_size_matches_serde_json_at_both_boundaries(
             "additionalProperties":false
         }),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let mut output_object = Map::new();
     output_object.insert(
@@ -204,6 +207,7 @@ async fn encoded_large_all_of_schema_fails_before_provider_or_compilation() {
         name: "large".into(),
         schema,
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let (provider, runner) = build_runner_with(
         [FakeAction::Response(tiny_response("m"))],

@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits, HttpProviderConfig, Message,
-    ModelCapabilities, OpenAiCompatibleProvider, OutputSchema, Sampling, ToolDefinition,
-    shape_request,
+    ModelCapabilities, OpenAiCompatibleProvider, OutputSchema, OutputValidation, Sampling,
+    ToolDefinition, shape_request,
 };
 use serde_json::{Value, json};
 
@@ -41,6 +41,7 @@ fn structured(model: &str) -> ChatRequest {
             name: "answer".into(),
             schema: answer_schema(),
             strict: true,
+            validation: OutputValidation::Runner,
         }),
         max_output_tokens: 64,
         reasoning: Some(Effort::High),

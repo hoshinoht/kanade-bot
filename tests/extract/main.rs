@@ -9,6 +9,7 @@ mod parse;
 mod plan;
 mod prompt;
 mod resolve;
+mod session;
 mod shaping;
 mod support;
 mod window;

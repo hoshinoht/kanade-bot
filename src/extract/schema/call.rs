@@ -1,13 +1,33 @@
 //! v4 `Extractor.extract` as a pure retry decision: the caller sends
 //! [`ExtractionAttempts::messages`], reports what happened, and either sends
 //! again or has the final [`ExtractionCall`]. Nothing here performs I/O.
+//!
+//! With a governed extraction session the first attempt is `complete` and a
+//! [`Next::Retry`] is `answer_retry`, both with `extraction_request` built from
+//! the current [`ExtractionAttempts::messages`].
 
 use std::time::Duration;
 
 use super::{Extraction, parse_response};
 use crate::extract::prompt::prompt_text;
 use crate::infrastructure::llm::Message;
-use crate::infrastructure::llm::identity::IdentitySession;
+use crate::infrastructure::llm::identity::{DecodeError, IdentitySession};
+
+/// Map the identity-bearing fields back: `participants` are member refs (v4's
+/// coercion has already dropped any `<@!>` wrapping) and `summary` is text
+/// shown to members. Other fields carry no identities.
+fn decode(
+    mut extraction: Extraction,
+    session: &dyn IdentitySession,
+) -> Result<Extraction, DecodeError> {
+    for amendment in &mut extraction.amendments {
+        for participant in &mut amendment.participants {
+            *participant = session.decode_ref(participant)?;
+        }
+    }
+    extraction.summary = session.decode_reply(&extraction.summary)?;
+    Ok(extraction)
+}
 
 /// v4 `RETRY_INSTRUCTION`, sent after the first answer fails to validate.
 pub fn retry_instruction(error: &str) -> String {
@@ -107,8 +127,8 @@ impl ExtractionAttempts {
         })
     }
 
-    /// Report the current attempt. The reply is decoded through `session`
-    /// before validation; an unknown identity token is a malformed answer.
+    /// Report the current attempt. The validated reply is decoded through
+    /// `session`; an unknown identity ref is a malformed answer.
     pub fn record(&mut self, outcome: AttemptOutcome, session: &dyn IdentitySession) -> Next {
         let (content, reasoning) = match outcome {
             AttemptOutcome::Reply { content, reasoning } => (content, reasoning),
@@ -125,10 +145,9 @@ impl ExtractionAttempts {
         self.raw = crate::domain::pytext::strip(content.as_deref().unwrap_or_default()).to_owned();
         self.thinking =
             crate::domain::pytext::strip(reasoning.as_deref().unwrap_or_default()).to_owned();
-        let parsed = session
-            .decode_json(&self.raw)
+        let parsed = parse_response(&self.raw)
             .map_err(|error| error.to_string())
-            .and_then(|decoded| parse_response(&decoded).map_err(|error| error.to_string()));
+            .and_then(|extraction| decode(extraction, session).map_err(|error| error.to_string()));
         let error = match parsed {
             Ok(extraction) => return self.done(Some(extraction), None, false),
             Err(error) => error,

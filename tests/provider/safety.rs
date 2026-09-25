@@ -3,7 +3,8 @@ use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionFuture, CompletionResponse, CompletionRunner, ErrorCode,
     ExecutionLimits, FakeAction, FakeProvider, FinishReason, LlmProvider, Message, OutputSchema,
-    ProviderFailure, ProviderFailureKind, RetryPolicy, ToolCall, ToolCallRequest, ToolDefinition,
+    OutputValidation, ProviderFailure, ProviderFailureKind, RetryPolicy, ToolCall, ToolCallRequest,
+    ToolDefinition,
 };
 use serde_json::json;
 
@@ -20,6 +21,7 @@ async fn deeply_nested_values_are_rejected_before_schema_compilation() {
         name: "deep".into(),
         schema: deep_schema(128),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let (provider, runner) =
         build_runner([FakeAction::Response(tiny_response("synthetic-model-v1"))]);
@@ -39,6 +41,7 @@ async fn broad_values_are_rejected_before_an_unbounded_work_stack_is_built() {
         name: "wide".into(),
         schema: wide_value(50_000),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     let limits = ExecutionLimits {
         max_value_nodes: 4,
@@ -93,6 +96,7 @@ async fn every_public_debug_representation_redacts_nested_sentinels() {
             name: sentinel.into(),
             schema: nested,
             strict: true,
+            validation: OutputValidation::Runner,
         }),
         max_output_tokens: 1,
         reasoning: None,
@@ -263,6 +267,7 @@ fn request_schema_disposal_helper_is_iterative() {
         name: "small".into(),
         schema: deep_schema(8),
         strict: true,
+        validation: OutputValidation::Runner,
     });
     take_request_schemas(&mut input);
     assert!(input.output_schema.is_none());
