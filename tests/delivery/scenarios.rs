@@ -57,6 +57,7 @@ pub(crate) fn config() -> DeliveryConfig {
         post_channel_id: Some(POST.into()),
         quiet_mode: false,
         max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
+        max_notice_age: kanade::domain::notify::DEFAULT_MAX_NOTICE_AGE,
     }
 }
 

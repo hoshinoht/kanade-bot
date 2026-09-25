@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
@@ -48,7 +48,12 @@ pub struct DeliveryConfig {
     pub policy: SchedulePolicy,
     pub post_channel_id: Option<String>,
     pub quiet_mode: bool,
+    /// Claimed sends per tick for dispatch; the notice drain has its own
+    /// cap of the same size.
     pub max_sends_per_tick: usize,
+    /// Outbox notices older than this at drain time are retired `stale`
+    /// unsent ([`crate::domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
+    pub max_notice_age: TimeDelta,
 }
 
 impl DeliveryConfig {

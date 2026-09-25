@@ -267,6 +267,9 @@ pub(super) struct MergeInput<'a> {
     /// Written to the outbox with the draft's close when the merge finds it
     /// expired (a request's requester notice).
     pub expired_notice: Option<Notice>,
+    /// Replaces the per-channel summary notices (proposals: v4 announced
+    /// only an approved move); `None` keeps the summaries.
+    pub notices: Option<Vec<Notice>>,
 }
 
 pub(super) fn stale_of(id: &str, stale: DraftStale) -> DraftError {
@@ -849,6 +852,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 status_at_apply: BTreeSet::new(),
                 also_notify: Vec::new(),
                 expired_notice: None,
+                notices: None,
             },
             policy,
             directory,
@@ -882,6 +886,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             status_at_apply,
             also_notify,
             expired_notice,
+            notices: replaced,
         } = input;
         let draft_id = draft.id.as_str();
         // An expired draft is closed first (idempotently), so the window
@@ -949,14 +954,17 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             // the same way.
             let mut routine = Draft::new(flow.current.clone()).with_attendance(policy.attendance);
             materialise_weeks(&mut routine, &mut PreviewIds::default(), policy, now)?;
-            let notices = merge_notices(
-                &flow.current,
-                &routine,
-                &merged,
-                draft_id,
-                expected_version,
-                &summary,
-            );
+            let notices = match &replaced {
+                Some(notices) => notices.clone(),
+                None => merge_notices(
+                    &flow.current,
+                    &routine,
+                    &merged,
+                    draft_id,
+                    expected_version,
+                    &summary,
+                ),
+            };
             let weeks = analysis.weeks.clone();
             let changes = merged.into_changes();
             if changes.is_empty() {

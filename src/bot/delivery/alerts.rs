@@ -68,6 +68,16 @@ pub enum AdminAlert {
     /// A ✅/❌ on a proposal card failed for a reason members must not see
     /// (store failure, retries exhausted); nothing is posted publicly.
     CardAnswerFailed { proposal_id: String, detail: String },
+    /// A pending outbox notice's stored payload does not decode; it stays
+    /// pending and the drain goes on without it.
+    NoticeUndecodable {
+        source: String,
+        ordinal: i64,
+        detail: String,
+    },
+    /// Outbox notices older than the configured age were retired unsent
+    /// this tick (how many).
+    StaleNoticesRetired { count: usize },
 }
 
 impl AdminAlert {
@@ -101,6 +111,10 @@ impl AdminAlert {
             Self::AttendanceRecountFailed { .. } => "attendance-recount".to_owned(),
             Self::BacklogDropped { .. } => "extraction-backlog".to_owned(),
             Self::CardAnswerFailed { proposal_id, .. } => format!("card-answer:{proposal_id}"),
+            Self::NoticeUndecodable {
+                source, ordinal, ..
+            } => format!("notice-undecodable:{source}#{ordinal}"),
+            Self::StaleNoticesRetired { .. } => "notice-stale".to_owned(),
         }
     }
 }

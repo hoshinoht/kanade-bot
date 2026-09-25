@@ -103,6 +103,7 @@ async fn a4_writes_and_rollbacks_enqueue_their_notices_once() {
             .pending_notices()
             .await
             .unwrap()
+            .notices
             .iter()
             .all(|row| row.drained_at.is_none())
     );

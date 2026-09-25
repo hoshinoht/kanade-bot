@@ -342,10 +342,12 @@ impl ModelLogStore for MemoryScheduleStore {
         let messages = logs.messages.len();
         logs.messages
             .retain(|_, message| message.processed_at.is_none() || message.created_at >= before);
+        let notices = self.tables().outbox.purge_drained(before);
         Ok(PruneCounts {
             extractions: (extractions - logs.extractions.len()) as u64,
             chats: (chats - logs.chats.len()) as u64,
             messages: (messages - logs.messages.len()) as u64,
+            notices,
         })
     }
 

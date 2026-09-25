@@ -174,8 +174,13 @@ impl ModelLogStore for SqliteStore {
             total.extractions += done.extractions;
             total.chats += done.chats;
             total.messages += done.messages;
+            total.notices += done.notices;
             let full = u64::from(PRUNE_BATCH);
-            if done.extractions < full && done.chats < full && done.messages < full {
+            if done.extractions < full
+                && done.chats < full
+                && done.messages < full
+                && done.notices < full
+            {
                 return Ok(total);
             }
         }

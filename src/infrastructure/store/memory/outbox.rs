@@ -4,13 +4,23 @@
 use chrono::{DateTime, Utc};
 
 use super::MemoryScheduleStore;
-use crate::domain::notify::{JournalError, Lease, NoticeOutbox, OutboxNotice};
+use crate::domain::notify::{
+    DrainReason, JournalError, Lease, NoticeOutbox, OutboxNotice, PendingNotices, UndecodableNotice,
+};
 use crate::domain::schedule::Notice;
 use crate::domain::scheduler::StoreError;
 
+#[derive(Clone, Debug)]
+struct Row {
+    notice: OutboxNotice,
+    /// Set by [`MemoryScheduleStore::corrupt_notice`]: the stored payload
+    /// no longer decodes (the SQLite store's failure, for parity tests).
+    undecodable: Option<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct OutboxTable {
-    rows: Vec<OutboxNotice>,
+    rows: Vec<Row>,
 }
 
 impl OutboxTable {
@@ -26,38 +36,89 @@ impl OutboxTable {
             if self
                 .rows
                 .iter()
-                .any(|row| row.source == source && row.ordinal == ordinal)
+                .any(|row| row.notice.source == source && row.notice.ordinal == ordinal)
             {
                 return Err(StoreError::Constraint(format!(
                     "outbox notice {source}#{ordinal} already exists"
                 )));
             }
-            self.rows.push(OutboxNotice {
-                source: source.to_owned(),
-                ordinal,
-                notice: notice.clone(),
-                created_at: super::micros(at),
-                drained_at: None,
+            self.rows.push(Row {
+                notice: OutboxNotice {
+                    source: source.to_owned(),
+                    ordinal,
+                    notice: notice.clone(),
+                    created_at: super::micros(at),
+                    drained_at: None,
+                    drained_reason: None,
+                },
+                undecodable: None,
             });
         }
         Ok(())
     }
+
+    /// The retention purge: drained rows drained before `before`.
+    pub(super) fn purge_drained(&mut self, before: DateTime<Utc>) -> u64 {
+        let kept = self.rows.len();
+        self.rows.retain(|row| {
+            row.notice
+                .drained_at
+                .is_none_or(|drained| drained >= before)
+        });
+        (kept - self.rows.len()) as u64
+    }
+}
+
+impl MemoryScheduleStore {
+    /// Test support: make a stored notice undecodable, as a damaged SQLite
+    /// payload would be.
+    pub fn corrupt_notice(&self, source: &str, ordinal: i64, detail: &str) {
+        let mut tables = self.tables();
+        if let Some(row) = tables
+            .outbox
+            .rows
+            .iter_mut()
+            .find(|row| row.notice.source == source && row.notice.ordinal == ordinal)
+        {
+            row.undecodable = Some(detail.to_owned());
+        }
+    }
 }
 
 impl NoticeOutbox for MemoryScheduleStore {
-    async fn pending_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
+    async fn pending_notices(&self) -> Result<PendingNotices, JournalError> {
         let tables = self.tables();
-        Ok(tables
+        let mut pending = PendingNotices::default();
+        for row in tables
             .outbox
             .rows
             .iter()
-            .filter(|row| row.drained_at.is_none())
-            .cloned()
-            .collect())
+            .filter(|row| row.notice.drained_at.is_none())
+        {
+            match &row.undecodable {
+                None => pending.notices.push(row.notice.clone()),
+                Some(detail) => pending.undecodable.push(UndecodableNotice {
+                    source: row.notice.source.clone(),
+                    ordinal: row.notice.ordinal,
+                    detail: detail.clone(),
+                }),
+            }
+        }
+        Ok(pending)
     }
 
     async fn outbox_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
-        Ok(self.tables().outbox.rows.clone())
+        self.tables()
+            .outbox
+            .rows
+            .iter()
+            .map(|row| match &row.undecodable {
+                None => Ok(row.notice.clone()),
+                Some(detail) => Err(JournalError::Backend(format!(
+                    "stored journal row is unreadable: {detail}"
+                ))),
+            })
+            .collect()
     }
 
     async fn mark_drained(
@@ -65,6 +126,7 @@ impl NoticeOutbox for MemoryScheduleStore {
         lease: &Lease,
         source: &str,
         ordinal: i64,
+        reason: DrainReason,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
         self.journal_write(|tables| {
@@ -73,13 +135,16 @@ impl NoticeOutbox for MemoryScheduleStore {
                 .outbox
                 .rows
                 .iter_mut()
-                .find(|row| row.source == source && row.ordinal == ordinal)
+                .find(|row| row.notice.source == source && row.notice.ordinal == ordinal)
                 .ok_or_else(|| {
                     JournalError::StateChanged(format!(
                         "outbox notice {source}#{ordinal} does not exist"
                     ))
                 })?;
-            row.drained_at = row.drained_at.or(Some(super::micros(at)));
+            if row.notice.drained_at.is_none() {
+                row.notice.drained_at = Some(super::micros(at));
+                row.notice.drained_reason = Some(reason);
+            }
             Ok(())
         })
     }

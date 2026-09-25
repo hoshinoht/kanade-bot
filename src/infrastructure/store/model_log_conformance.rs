@@ -63,6 +63,7 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
             extractions: 1,
             chats: 1,
             messages: 1,
+            notices: 0,
         },
         "retention: strictly before the cutoff; unprocessed messages stay"
     );

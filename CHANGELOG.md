@@ -137,6 +137,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: the model client is built at startup from the configured Kanata endpoint, key and
   per-role models; an unreachable model list leaves extraction and chat degraded rather
   than stopping the bot, and unpublished reasoning levels are reported.
+- v5: schedule notices use v4's exact wording (moves, cancels, own time, done, restores,
+  swaps, weekly-timing changes, quiet mode, "via portal"); approving Kanade's card only
+  announces moves, as in v4; notices older than 6 h are dropped instead of posted late,
+  an unreadable one no longer stalls reminders, and delivered notices are purged after
+  90 days.
 - v5: notices from schedule changes (admin edits, inbox and ✅ approvals, requests,
   rollbacks, expiry) are saved with the change itself and posted once by the reminder
   tick, surviving crashes without being lost or sent twice.

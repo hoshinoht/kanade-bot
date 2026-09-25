@@ -10,8 +10,9 @@ use crate::domain::drafts::{
     MergeCommit, NewDraft,
 };
 use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface};
+use crate::domain::model_log::ModelLogStore;
 use crate::domain::notify::{
-    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, JournalError,
+    Claim, DeliveryJournal, DeliveryTarget, DrainReason, EffectKind, IntentContent, JournalError,
     NOT_SENT_ACTOR, NoticeOutbox, NotificationIntent, change_source, draft_source,
 };
 use crate::domain::schedule::{
@@ -22,13 +23,20 @@ use crate::domain::scheduler::{ScheduleStore, Scope, StoreError};
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S>(make: impl AsyncFn() -> S)
 where
-    S: ScheduleStore + ChangeHistory + DraftStore + DeliveryJournal + NoticeOutbox + Sync,
+    S: ScheduleStore
+        + ChangeHistory
+        + DraftStore
+        + DeliveryJournal
+        + NoticeOutbox
+        + ModelLogStore
+        + Sync,
 {
     commits_write_their_notices_once(make().await).await;
     refused_commits_write_nothing(make().await).await;
     merges_write_their_notices_once(make().await).await;
     closes_and_expiry_write_draft_notices(make().await).await;
     drained_is_final_and_needs_a_lease(make().await).await;
+    retention_purges_only_old_drained_notices(make().await).await;
     source_claims_hold_across_leases(make().await).await;
 }
 
@@ -155,7 +163,7 @@ async fn commits_write_their_notices_once<S: ScheduleStore + NoticeOutbox>(store
         expected,
         "commit: rows by seq and order"
     );
-    let pending = store.pending_notices().await.expect("pending");
+    let pending = store.pending_notices().await.expect("pending").notices;
     assert_eq!(pending.len(), 2, "commit: both pending");
     assert_eq!(
         pending[0].created_at,
@@ -434,11 +442,11 @@ async fn drained_is_final_and_needs_a_lease<S: ScheduleStore + DeliveryJournal +
         .await
         .expect("lease");
     store
-        .mark_drained(&lease, &source, 1, at(5))
+        .mark_drained(&lease, &source, 1, DrainReason::Stale, at(5))
         .await
         .expect("drain");
     store
-        .mark_drained(&lease, &source, 1, at(6))
+        .mark_drained(&lease, &source, 1, DrainReason::Journal, at(6))
         .await
         .expect("draining again is a no-op");
     let rows = store.outbox_notices().await.expect("outbox");
@@ -447,20 +455,96 @@ async fn drained_is_final_and_needs_a_lease<S: ScheduleStore + DeliveryJournal +
         Some(at(5)),
         "drained: the first time stands"
     );
-    let pending = store.pending_notices().await.expect("pending");
+    assert_eq!(rows[1].drained_reason, Some(DrainReason::Stale));
+    assert_eq!(rows[0].drained_reason, None);
+    let pending = store.pending_notices().await.expect("pending").notices;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].ordinal, 0);
     assert!(matches!(
-        store.mark_drained(&lease, &source, 7, at(5)).await,
+        store
+            .mark_drained(&lease, &source, 7, DrainReason::Journal, at(5))
+            .await,
         Err(JournalError::StateChanged(_))
     ));
     store.end_lease(&lease, at(5)).await.expect("end");
     assert_eq!(
-        store.mark_drained(&lease, &source, 0, at(6)).await,
+        store
+            .mark_drained(&lease, &source, 0, DrainReason::Journal, at(6))
+            .await,
         Err(JournalError::LeaseNotLive),
         "drained: only under a live lease"
     );
-    assert_eq!(store.pending_notices().await.expect("pending").len(), 1);
+    assert_eq!(
+        store
+            .pending_notices()
+            .await
+            .expect("pending")
+            .notices
+            .len(),
+        1
+    );
+}
+
+async fn retention_purges_only_old_drained_notices<
+    S: ScheduleStore + DeliveryJournal + NoticeOutbox + ModelLogStore,
+>(
+    store: S,
+) {
+    let committed = store
+        .commit(
+            revision(&store).await,
+            puts("r-1", 10),
+            meta(
+                "q-1",
+                vec![
+                    notice("r-1", RunStatus::Cancelled),
+                    notice("r-1", RunStatus::Done),
+                    notice("r-1", RunStatus::Otot),
+                ],
+            ),
+        )
+        .await
+        .expect("commit")
+        .expect("recorded");
+    let source = change_source(committed.seq);
+    let lease = store
+        .begin_lease("test", "outbox", at(5))
+        .await
+        .expect("lease");
+    for (ordinal, hour) in [(0, 5), (1, 9)] {
+        store
+            .mark_drained(&lease, &source, ordinal, DrainReason::Journal, at(hour))
+            .await
+            .expect("drain");
+    }
+    // Pending rows are kept however old; drained ones go by their drain time.
+    let pruned = store.prune_model_logs(at(9)).await.expect("prune");
+    assert_eq!(
+        pruned.notices, 1,
+        "retention: one drained before the cutoff"
+    );
+    let left: Vec<i64> = store
+        .outbox_notices()
+        .await
+        .expect("outbox")
+        .into_iter()
+        .map(|row| row.ordinal)
+        .collect();
+    assert_eq!(left, [1, 2]);
+    let later = store
+        .prune_model_logs(at(9) + chrono::TimeDelta::days(365))
+        .await
+        .expect("prune");
+    assert_eq!(later.notices, 1, "retention: pending rows are never purged");
+    assert_eq!(
+        store
+            .pending_notices()
+            .await
+            .expect("pending")
+            .notices
+            .len(),
+        1
+    );
 }
 
 async fn source_claims_hold_across_leases<S: ScheduleStore + DeliveryJournal>(store: S) {

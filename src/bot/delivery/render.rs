@@ -13,7 +13,7 @@ use crate::domain::attendance::{
     AttendanceMode, AttendancePolicy, Tally, snapshot_states, status_label,
 };
 use crate::domain::notify::{IntentContent, NotificationIntent};
-use crate::domain::schedule::{NoticeChange, Run, ScheduleSnapshot};
+use crate::domain::schedule::{Run, ScheduleSnapshot};
 
 fn stamp(at: DateTime<Utc>, style: char) -> String {
     format!("<t:{}:{style}>", at.timestamp())
@@ -110,24 +110,8 @@ pub fn render(
                 }
             }
         }
-        IntentContent::Notice(notice) => match &notice.change {
-            NoticeChange::Merged { title, run_ids, .. } => {
-                let lines: Vec<String> = run_ids.iter().map(line).collect();
-                let head = format!("Schedule update merged: {title}");
-                if lines.is_empty() {
-                    head
-                } else {
-                    format!("{head}\n{}", lines.join("\n"))
-                }
-            }
-            NoticeChange::RequestDecided {
-                decision, reason, ..
-            } => match reason {
-                Some(reason) => format!("Your request was {}: {reason}", decision.as_str()),
-                None => format!("Your request was {}.", decision.as_str()),
-            },
-            _ => "The schedule changed.".to_owned(),
-        },
+        // Outbox notices render through `render_notice` (v4 text).
+        IntentContent::Notice(_) => String::new(),
         // Rendered by their senders (`bot::cards`), never by the tick.
         IntentContent::ProposalCard { .. } | IntentContent::Plain => String::new(),
     };

@@ -5,7 +5,9 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqliteConnection};
 
 use super::{backend, check_live, corrupt, iso, payload};
-use crate::domain::notify::{JournalError, Lease, OutboxNotice};
+use crate::domain::notify::{
+    DrainReason, JournalError, Lease, OutboxNotice, PendingNotices, UndecodableNotice,
+};
 use crate::domain::schedule::Notice;
 use crate::domain::scheduler::StoreError;
 use crate::domain::time::from_iso;
@@ -38,42 +40,68 @@ pub(in crate::infrastructure::store::sqlite) async fn enqueue(
     Ok(())
 }
 
-fn row_of(row: &sqlx::sqlite::SqliteRow) -> Result<OutboxNotice, JournalError> {
-    let payload: String = row.try_get("payload").map_err(corrupt)?;
-    let created: String = row.try_get("created_at").map_err(corrupt)?;
-    let drained: Option<String> = row.try_get("drained_at").map_err(corrupt)?;
+const COLUMNS: &str = "source, ordinal, payload, created_at, drained_at, drained_reason";
+
+fn key_of(row: &sqlx::sqlite::SqliteRow) -> Result<(String, i64), JournalError> {
+    Ok((
+        row.try_get("source").map_err(corrupt)?,
+        row.try_get("ordinal").map_err(corrupt)?,
+    ))
+}
+
+/// The row's fields past its key; `Err` carries why they do not decode.
+fn decode_row(row: &sqlx::sqlite::SqliteRow, key: (String, i64)) -> Result<OutboxNotice, String> {
+    let text = |column: &str| -> Result<Option<String>, String> {
+        row.try_get(column).map_err(|error| error.to_string())
+    };
+    let instant = |value: String| from_iso(&value).map_err(|error| error.to_string());
+    let payload = text("payload")?.ok_or("payload is null")?;
+    let reason = match text("drained_reason")? {
+        None => None,
+        Some(value) => {
+            Some(DrainReason::parse(&value).ok_or_else(|| format!("drained_reason {value}"))?)
+        }
+    };
     Ok(OutboxNotice {
-        source: row.try_get("source").map_err(corrupt)?,
-        ordinal: row.try_get("ordinal").map_err(corrupt)?,
-        notice: payload::decode(&payload).map_err(corrupt)?,
-        created_at: from_iso(&created).map_err(corrupt)?,
-        drained_at: drained
-            .map(|text| from_iso(&text).map_err(corrupt))
-            .transpose()?,
+        source: key.0,
+        ordinal: key.1,
+        notice: payload::decode(&payload)?,
+        created_at: instant(text("created_at")?.ok_or("created_at is null")?)?,
+        drained_at: text("drained_at")?.map(instant).transpose()?,
+        drained_reason: reason,
     })
 }
 
-pub(super) async fn pending(
-    conn: &mut SqliteConnection,
-) -> Result<Vec<OutboxNotice>, JournalError> {
-    let rows = sqlx::query(
-        "SELECT source, ordinal, payload, created_at, drained_at FROM notice_outbox
-         WHERE state = 'pending' ORDER BY id",
-    )
+pub(super) async fn pending(conn: &mut SqliteConnection) -> Result<PendingNotices, JournalError> {
+    let rows = sqlx::query(&format!(
+        "SELECT {COLUMNS} FROM notice_outbox WHERE state = 'pending' ORDER BY id"
+    ))
     .fetch_all(conn)
     .await
     .map_err(backend)?;
-    rows.iter().map(row_of).collect()
+    let mut pending = PendingNotices::default();
+    for row in &rows {
+        let key = key_of(row)?;
+        match decode_row(row, key.clone()) {
+            Ok(notice) => pending.notices.push(notice),
+            Err(detail) => pending.undecodable.push(UndecodableNotice {
+                source: key.0,
+                ordinal: key.1,
+                detail,
+            }),
+        }
+    }
+    Ok(pending)
 }
 
 pub(super) async fn all(conn: &mut SqliteConnection) -> Result<Vec<OutboxNotice>, JournalError> {
-    let rows = sqlx::query(
-        "SELECT source, ordinal, payload, created_at, drained_at FROM notice_outbox ORDER BY id",
-    )
-    .fetch_all(conn)
-    .await
-    .map_err(backend)?;
-    rows.iter().map(row_of).collect()
+    let rows = sqlx::query(&format!("SELECT {COLUMNS} FROM notice_outbox ORDER BY id"))
+        .fetch_all(conn)
+        .await
+        .map_err(backend)?;
+    rows.iter()
+        .map(|row| decode_row(row, key_of(row)?).map_err(corrupt))
+        .collect()
 }
 
 pub(super) async fn mark_drained(
@@ -81,6 +109,7 @@ pub(super) async fn mark_drained(
     lease: &Lease,
     source: &str,
     ordinal: i64,
+    reason: DrainReason,
     at: DateTime<Utc>,
 ) -> Result<(), JournalError> {
     check_live(tx, lease).await?;
@@ -98,12 +127,13 @@ pub(super) async fn mark_drained(
         Some("drained") => Ok(()),
         Some(_) => {
             sqlx::query(
-                "UPDATE notice_outbox SET state = 'drained', drained_at = ?1
+                "UPDATE notice_outbox SET state = 'drained', drained_at = ?1, drained_reason = ?4
                  WHERE source = ?2 AND ordinal = ?3 AND state = 'pending'",
             )
             .bind(iso(&at)?)
             .bind(source)
             .bind(ordinal)
+            .bind(reason.as_str())
             .execute(tx)
             .await
             .map_err(backend)?;

@@ -27,7 +27,7 @@ use crate::domain::proposals::{
     fill_approver, live_timing_runs, may_commit, translate,
 };
 use crate::domain::schedule::{
-    OpResult, ScheduleError, SchedulePolicy, ScheduleSnapshot, utc_instant,
+    Notice, NoticeChange, OpResult, ScheduleError, SchedulePolicy, ScheduleSnapshot, utc_instant,
 };
 use crate::domain::time::to_iso;
 
@@ -179,6 +179,38 @@ fn surface_of(source: ProposalSource) -> Surface {
     match source {
         ProposalSource::Extraction => Surface::ExtractionApproval,
         ProposalSource::Chat => Surface::ChatApproval,
+    }
+}
+
+/// v4 parity: an approved proposal announces only a move (`_announce_move`,
+/// `amend_notice`); the card itself shows every other decision.
+fn move_notice(
+    subject: &ProposalSubject,
+    ops: &[DraftOp],
+    old_datetime: Option<DateTime<Utc>>,
+    snapshot: &ScheduleSnapshot,
+    approver: &Approver,
+) -> Vec<Notice> {
+    let to = ops.iter().find_map(|op| match op {
+        DraftOp::AmendRun { to, .. } => Some(*to),
+        _ => None,
+    });
+    let run = subject
+        .run_id
+        .as_ref()
+        .and_then(|id| snapshot.runs.iter().find(|run| &run.id == id));
+    match (subject.kind, run, old_datetime, to) {
+        (ChangeKind::Move, Some(run), Some(from), Some(to)) => vec![Notice {
+            change: NoticeChange::RunMoved {
+                run_id: run.id.clone(),
+                from,
+                to,
+            },
+            channel_id: run.channel_id.clone(),
+            listed: run.participants.clone(),
+            via_portal: approver.via_portal,
+        }],
+        _ => Vec::new(),
     }
 }
 
@@ -697,6 +729,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             .as_deref()
             .filter(|_| edited)
             .map(|fixed| live_timing_runs(&snapshot, fixed, policy, now));
+        let announced = move_notice(&subject, &ops, old_datetime, &snapshot, approver);
         let surface = surface_of(info.source);
         let removing = removes_timing(&ops);
         let still_allowed = |current: &ScheduleSnapshot| allowed(&subject, approver, current);
@@ -716,6 +749,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     status_at_apply: status_at_apply(&ops),
                     also_notify: Vec::new(),
                     expired_notice: None,
+                    notices: Some(announced),
                 },
                 policy,
                 directory,

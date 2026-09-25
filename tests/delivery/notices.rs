@@ -54,13 +54,23 @@ async fn cancel_with_notice<S: Store>(store: &S, request_id: &str) -> Result<(),
 }
 
 async fn pending<S: Store>(store: &S) -> usize {
-    store.pending_notices().await.expect("pending").len()
+    store
+        .pending_notices()
+        .await
+        .expect("pending")
+        .notices
+        .len()
 }
 
 /// Claim the only pending notice as the drain would, then stop: the crash
 /// after the claim. `bind` also records a delivered post before the crash.
 async fn claim_then_crash<S: Store>(store: &S, world: &World, bind: bool) {
-    let row = store.pending_notices().await.expect("pending").remove(0);
+    let row = store
+        .pending_notices()
+        .await
+        .expect("pending")
+        .notices
+        .remove(0);
     let settings = DeliverySettings {
         post_channel_id: Some(POST),
         quiet_mode: false,

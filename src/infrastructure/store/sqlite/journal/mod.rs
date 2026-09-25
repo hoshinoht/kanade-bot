@@ -21,8 +21,8 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
-    DeliveryJournal, DeliveryTarget, DigestLog, JournalError, Lease, NoticeOutbox,
-    NotificationIntent, OutboxNotice, Receipt, Recovery, WeeklyDigest,
+    DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeOutbox,
+    NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery, WeeklyDigest,
 };
 use crate::domain::time::{from_iso, to_iso};
 
@@ -482,7 +482,7 @@ impl DeliveryJournal for SqliteStore {
 }
 
 impl NoticeOutbox for SqliteStore {
-    async fn pending_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
+    async fn pending_notices(&self) -> Result<PendingNotices, JournalError> {
         let mut conn = self.readers.acquire().await.map_err(backend)?;
         outbox::pending(&mut conn).await
     }
@@ -497,8 +497,9 @@ impl NoticeOutbox for SqliteStore {
         lease: &Lease,
         source: &str,
         ordinal: i64,
+        reason: DrainReason,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => outbox::mark_drained(&mut tx, lease, source, ordinal, at))
+        write_tx!(self, tx => outbox::mark_drained(&mut tx, lease, source, ordinal, reason, at))
     }
 }

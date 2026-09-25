@@ -251,6 +251,7 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
         user_id: "1001".into(),
         has_role: true,
         is_admin: false,
+        via_portal: false,
     };
     store.broken.store(true, Ordering::SeqCst);
     let approved = service
@@ -299,6 +300,7 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
             user_id: user.into(),
             has_role,
             is_admin: false,
+            via_portal: false,
         };
         // Authority is checked before the proposal's state, so someone who
         // may not answer it now is simply unauthorised.

@@ -18,6 +18,8 @@ pub struct PruneCounts {
     pub extractions: u64,
     pub chats: u64,
     pub messages: u64,
+    /// Drained notice-outbox rows (pending ones are never deleted).
+    pub notices: u64,
 }
 
 /// The prune cutoff for `now`; `None` when it would leave the representable

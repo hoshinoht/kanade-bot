@@ -125,7 +125,7 @@ async fn raw(dir: &TempDir, sql: &str) {
 
 #[tokio::test]
 async fn a_merged_notice_renders_its_title_and_runs() {
-    use kanade::bot::delivery::render;
+    use kanade::bot::delivery::render_notice;
     use kanade::domain::notify::{DeliverySettings, plan_notice};
     use kanade::domain::schedule::{Notice, NoticeChange};
 
@@ -154,13 +154,15 @@ async fn a_merged_notice_renders_its_title_and_runs() {
     )
     .expect("plannable");
     assert_eq!(intent.channel_id, "222");
-    let message = render(
+    let message = render_notice(
+        &notice,
         &intent,
         &kanade::domain::schedule::ScheduleSnapshot::default(),
-        kanade::domain::attendance::AttendancePolicy::V4_COMPAT,
+        &world.roster,
+        chrono_tz::Asia::Kuala_Lumpur,
         false,
-    );
+    )
+    .expect("renders");
     let text = message.content.expect("text");
-    assert!(text.contains("retime the raid"), "{text}");
-    assert!(text.contains("• a run"), "{text}");
+    assert_eq!(text, "📝 Schedule updated: retime the raid\n_(via portal)_");
 }

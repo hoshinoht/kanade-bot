@@ -163,14 +163,19 @@ Which paths write what:
 | mutations (`set_status` with `announce`, `amend_run`, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices` |
 | rollbacks (revert, week restore, actor revert, checkpoint restore) | `change:<seq>` | one `Rollback` per channel |
 | cherry-picks | `change:<seq>` | `Picked.notices` |
-| draft merges, proposal approvals (inbox, edited, card ✅) | `change:<seq>` | the `Merged` summaries |
+| draft merges | `change:<seq>` | the `Merged` summaries |
+| proposal approvals (inbox, edited, card ✅) | `change:<seq>` | v4 parity: a move's `RunMoved` only (`(via portal)` when `Approver.via_portal`); every other kind nothing |
 | request approval | `change:<seq>` | the `Merged` summaries, then the requester's `approved` |
 | request rejection | `draft:<id>` | the requester's `rejected` |
 | request expiry (tick, or found at approval) | `draft:<id>` | the requester's `expired` |
 
 Services still return the notices (`Outcome`, `MergeOutcome`, `Approved`,
 `Rejected`, `DraftExpiry`, `Picked`, `RevertOutcome`) for reports; callers
-must not enqueue them again. The tick's expiry plans each due request's
+must not enqueue them again. Nothing about the actor suppresses a notice:
+a write that must stay quiet (the v4 import, routine materialisation) uses
+an operation that emits none (`add_fixed_run`, `materialise_weeks`,
+`StatusChange { announce: false, .. }`) or commits with an empty
+`ChangeMeta.outbox`. The tick's expiry plans each due request's
 notice before it expires them; submitting or editing an expired request is
 refused, so the set closed is the set planned.
 
@@ -914,9 +919,12 @@ enforced by the service, not the store; TTL 24 h.
   merged it (the draft's `closed_by`) or an administrator, and is still
   allowed to answer it on the current schedule, the idempotent follow-ups
   below are re-run first, so a crash between the merge and them is
-  repaired by the next ✅; anyone else's repeat has no effect at all. The
-  merge's summary notices (`NoticeChange::Merged`, title
-  `<kind> proposal`) are written to the notice outbox with the merge. After the commit
+  repaired by the next ✅; anyone else's repeat has no effect at all. As in
+  v4 (`_announce_move`, portal `approve`), only an approved move is
+  announced: one `RunMoved` in the run's channel listing its party
+  (`(via portal)` when `Approver.via_portal`, the inbox); every other kind
+  posts nothing, since the card shows the decision (contract change
+  2026-09-25, replacing the `Merged` summary). After the commit
   nothing returns an error: sibling live proposals about the same target
   that were created at or before the merge (the draft's merge time; never
   newer ones, on the first run or a re-run) are retired (v4 `commit`'s

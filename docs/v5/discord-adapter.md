@@ -360,9 +360,9 @@ Card parity (embeds, portraits, quiet lines) is a later slice.
   card went up, so I didn't apply it. Check the run and ask again if it
   still needs changing." Any other failure (store, retries, id reuse) raises
   `AdminAlert::CardAnswerFailed` and posts nothing; on ❌, member-readable
-  refusals (e.g. an expired card) stay silent. Merge notices are
-  written to the notice outbox with the merge; `CardReaction::notices`
-  only reports them.
+  refusals (e.g. an expired card) stay silent. An approved move's notice
+  (v4 `amend_notice`, the only kind a ✅ announces) is written to the
+  notice outbox with the merge; `CardReaction::notices` only reports it.
 - **Outbox** (`CardOutbox`): cards as above; link-first links as a
   journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
   pinged); chat answers through the reaction path (`apply_reaction` as the

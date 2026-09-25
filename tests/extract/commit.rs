@@ -75,6 +75,7 @@ fn admin() -> Approver {
         user_id: "admin".into(),
         has_role: true,
         is_admin: true,
+        via_portal: false,
     }
 }
 
@@ -362,6 +363,7 @@ impl Replay {
             user_id: text(&step["actor_id"]).into(),
             has_role: true,
             is_admin: true,
+            via_portal: false,
         };
         let approved = self
             .service

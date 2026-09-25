@@ -244,6 +244,7 @@ async fn retention_runs_in_bounded_batches_until_done() {
             extractions: old,
             chats: old,
             messages: old,
+            notices: 0,
         },
         "more than two batches of each"
     );

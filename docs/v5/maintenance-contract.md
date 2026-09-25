@@ -382,12 +382,30 @@ notices go through a durable outbox instead (migration 0012; parent decision
   active (intent, indeterminate, bound) or retired rejected or unproven
   attempts all hold it. The attempt then follows the executor table
   (`bind`, `mark_indeterminate`, `release_unsent`, `retire_rejected`).
-- After the send the notice is marked drained, except when the transport
-  proved it unsent (`NotSent`, rate limited: pending, claimed afresh next
-  tick) or a journal write failed (pending; the next claim is `Held` if the
-  attempt exists). A notice with no reachable channel stays pending (as a
-  queued reminder does) and does not use the per-tick cap; claimed notices
-  use a cap of `max_sends_per_tick` of their own.
+- After the send the notice is marked drained (`drained_reason = 'journal'`,
+  migration 0013), except when the transport proved it unsent (`NotSent`,
+  rate limited: pending, claimed afresh next tick) or a journal write failed
+  (pending; the next claim is `Held` if the attempt exists). A notice with
+  no reachable channel stays pending (as a queued reminder does) and does
+  not use the per-tick cap; claimed notices use a cap of
+  `max_sends_per_tick` of their own, separate from dispatch's.
+- Age limit (parent decision 2026-09-25): a notice older than
+  `DeliveryConfig.max_notice_age` (default 6 h) when the drain reaches it is
+  drained `stale` without a claim or a send, including one that stayed
+  unroutable; each tick that retires any raises one throttled
+  `AdminAlert::StaleNoticesRetired { count }`. A notice whose run or timing
+  is gone (nothing left to say) is drained `silent`, also unclaimed.
+- Order within a source: once a notice is left pending this tick (released,
+  failed, or over the cap), the same source's later ordinals wait for the
+  next tick, so a request's requester notice never overtakes its merge
+  summary. Unroutable and stale notices do not hold their source back.
+- A pending row whose payload does not decode is skipped (left pending) with
+  a throttled `AdminAlert::NoticeUndecodable` per row; it never aborts the
+  tick, and it is not aged out (its fields cannot be trusted).
+- Deletion (0013 trigger): pending rows can never be deleted. Drained rows
+  are deleted only by the log retention purge (`prune_model_logs`, drained
+  before the 90-day cutoff; the age is checked there, the trigger checks
+  only that the row was drained, since SQL cannot see the injected clock).
 
 Crash windows:
 
@@ -401,4 +419,5 @@ Crash windows:
 | `release_unsent` | attempt retired not-sent | claimed fresh, sent once |
 
 Tests: `tests/delivery/notices.rs` (memory and SQLite, including real SQLite
-reopen), `outbox_conformance` (both stores).
+reopen), `tests/delivery/outbox_policy.rs` (age, order, undecodable rows),
+`outbox_conformance` (both stores, including the retention purge).

@@ -9,6 +9,9 @@ pub struct Approver {
     /// Holds the bossing role (live member, else the synced roster).
     pub has_role: bool,
     pub is_admin: bool,
+    /// Approved outside the card's channel (the admin inbox): its notice
+    /// carries v4's `(via portal)` mark. A ✅ on the card is not.
+    pub via_portal: bool,
 }
 
 /// v4 `may_commit`: an admin or owner always; otherwise the bossing role

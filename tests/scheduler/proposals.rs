@@ -73,6 +73,7 @@ fn member(id: &str) -> Approver {
         user_id: id.into(),
         has_role: true,
         is_admin: false,
+        via_portal: false,
     }
 }
 
@@ -219,7 +220,7 @@ impl Fixture {
 }
 
 #[tokio::test]
-async fn a_participant_approves_through_the_source_surface_with_merge_notices() {
+async fn a_participant_approves_through_the_source_surface_quietly() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let id = f.propose(cancel(&f.run.clone(), "222")).await;
     let approved = f.approve(&id, &member("1002")).await.unwrap();
@@ -234,13 +235,9 @@ async fn a_participant_approves_through_the_source_surface_with_merge_notices() 
         .unwrap();
     assert_eq!(record.origin.actor, Actor::member("1002"));
     assert_eq!(record.origin.surface, Surface::ExtractionApproval);
-    // The same outbox notices as a draft merge: one summary per channel.
-    assert_eq!(approved.merge.notices.len(), 1);
-    assert_eq!(approved.merge.notices[0].channel_id.as_deref(), Some("222"));
-    assert!(matches!(
-        &approved.merge.notices[0].change,
-        NoticeChange::Merged { draft, title, .. } if draft == &id && title == "cancel proposal"
-    ));
+    // v4 parity: an approved cancel announces nothing (the card says it).
+    assert!(approved.merge.notices.is_empty());
+    assert!(record.notices.is_empty());
 
     let timing_run = f.timing_run.clone();
     let chat = f
@@ -291,6 +288,7 @@ async fn only_participants_admins_and_the_owner_may_answer() {
     let admin = Approver {
         has_role: false,
         is_admin: true,
+        via_portal: false,
         ..member("9999")
     };
     f.approve(&id, &admin).await.unwrap();
@@ -583,6 +581,7 @@ async fn proposals_leave_member_request_limits_alone() {
     let id = f.propose(cancel(&run, "222")).await;
     let admin = Approver {
         is_admin: true,
+        via_portal: false,
         ..member("1004")
     };
     f.approve(&id, &admin).await.unwrap();
@@ -1217,4 +1216,50 @@ async fn an_edited_retry_after_the_reset_answers_its_first_result() {
             .unwrap_err(),
         ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
     ));
+}
+
+/// v4 parity: an approved move is the one proposal that announces, as v4's
+/// `amend_notice` in the run's channel, marked `(via portal)` only when
+/// approved outside the card.
+#[tokio::test]
+async fn an_approved_move_announces_the_move_and_nothing_else() {
+    for via_portal in [false, true] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        let from = snapshot(&f.service)
+            .await
+            .runs
+            .iter()
+            .find(|row| row.id == run)
+            .unwrap()
+            .datetime;
+        let to = utc(kl(9, 1, 21, 30));
+        let id = f.propose(move_to(&run, to)).await;
+        let approver = Approver {
+            via_portal,
+            ..member("1002")
+        };
+        let approved = f.approve(&id, &approver).await.unwrap();
+        let notices = &approved.merge.notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert_eq!(
+            notices[0].change,
+            NoticeChange::RunMoved {
+                run_id: run.clone(),
+                from,
+                to,
+            }
+        );
+        assert_eq!(notices[0].channel_id.as_deref(), Some("222"));
+        assert_eq!(notices[0].listed, ["1001", "1002", "1003"]);
+        assert_eq!(notices[0].via_portal, via_portal);
+        let record = f
+            .service
+            .store()
+            .load_change(approved.merge.seq)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.notices, ["notice.run.move.moved"]);
+    }
 }

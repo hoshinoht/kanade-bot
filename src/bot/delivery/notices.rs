@@ -8,17 +8,26 @@
 //! is `Held`, so it is drained without a second send. Only a send the
 //! transport proved undelivered (`NotSent`, rate limited) stays pending and
 //! is claimed afresh.
+//!
+//! A notice older than `max_notice_age` is retired `stale` unsent (a backlog
+//! written while nothing drained must not flood the channels). Within one
+//! source, a notice left pending (released, failed or over the cap) holds
+//! back the source's later ordinals for the rest of the tick, so a merge's
+//! requester notice never overtakes its summary. Undecodable rows stay
+//! pending and are alerted, never fatal.
+
+use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 
-use super::alerts::AlertSink;
+use super::alerts::{AdminAlert, AlertSink};
 use super::executor::{SendOutcome, SendReport};
-use super::render::render;
+use super::notice_text::render_notice;
 use super::tick::{Delivery, DeliveryError, settle};
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
-use crate::domain::notify::{DeliveryJournal, Lease, NoticeOutbox, plan_notice};
+use crate::domain::notify::{DeliveryJournal, DrainReason, Lease, NoticeOutbox, plan_notice};
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// One drained (or retried) notice.
@@ -36,10 +45,18 @@ pub struct NoticeSend {
 pub struct NoticeReport {
     pub sends: Vec<NoticeSend>,
     /// Pending with neither its home channel nor the post channel reachable;
-    /// retried next tick, as queued reminders are.
+    /// retried next tick until it goes stale.
     pub unroutable: usize,
     /// Not attempted because the per-tick cap was reached.
     pub deferred: usize,
+    /// Held back behind an earlier notice of the same source still pending.
+    pub waiting: usize,
+    /// Retired unsent: older than `max_notice_age`.
+    pub stale: usize,
+    /// Drained unsent: nothing to post any more (e.g. its run is gone).
+    pub silent: usize,
+    /// Pending rows whose stored payload does not decode; left pending.
+    pub undecodable: usize,
 }
 
 /// Released sends never reached Discord and a failed journal write is
@@ -77,15 +94,41 @@ where
         now: DateTime<Utc>,
     ) -> Result<NoticeReport, DeliveryError> {
         let pending = self.store.pending_notices().await?;
-        let mut report = NoticeReport::default();
-        if pending.is_empty() {
+        let executor = self.executor(lease);
+        let mut report = NoticeReport {
+            undecodable: pending.undecodable.len(),
+            ..NoticeReport::default()
+        };
+        for bad in pending.undecodable {
+            executor.raise(
+                AdminAlert::NoticeUndecodable {
+                    source: bad.source,
+                    ordinal: bad.ordinal,
+                    detail: bad.detail,
+                },
+                now,
+            );
+        }
+        if pending.notices.is_empty() {
             return Ok(report);
         }
         let schedule = self.store.load(&Scope::All).await?;
-        let executor = self.executor(lease);
         let limit = self.config.max_sends_per_tick;
+        let zone = self.config.policy.zone();
         let mut claimed = 0;
-        for row in pending {
+        let mut held_back = BTreeSet::new();
+        for row in pending.notices {
+            if now - row.created_at > self.config.max_notice_age {
+                self.store
+                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
+                    .await?;
+                report.stale += 1;
+                continue;
+            }
+            if held_back.contains(&row.source) {
+                report.waiting += 1;
+                continue;
+            }
             let Some(intent) = plan_notice(
                 &row.notice,
                 self.members,
@@ -97,14 +140,23 @@ where
             };
             if claimed >= limit {
                 report.deferred += 1;
+                held_back.insert(row.source);
                 continue;
             }
-            let message = render(
+            let Some(message) = render_notice(
+                &row.notice,
                 &intent,
                 &schedule,
-                self.config.policy.attendance,
+                self.members,
+                zone,
                 self.config.quiet_mode,
-            );
+            ) else {
+                self.store
+                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
+                    .await?;
+                report.silent += 1;
+                continue;
+            };
             let result = executor
                 .execute_source(&intent, &message, &row.source, row.ordinal, now)
                 .await;
@@ -117,8 +169,10 @@ where
             let drained = drains(&outcome);
             if drained {
                 self.store
-                    .mark_drained(lease, &row.source, row.ordinal, now)
+                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Journal, now)
                     .await?;
+            } else {
+                held_back.insert(row.source.clone());
             }
             report.sends.push(NoticeSend {
                 source: row.source,
@@ -126,6 +180,14 @@ where
                 send: SendReport { intent, outcome },
                 drained,
             });
+        }
+        if report.stale > 0 {
+            executor.raise(
+                AdminAlert::StaleNoticesRetired {
+                    count: report.stale,
+                },
+                now,
+            );
         }
         Ok(report)
     }

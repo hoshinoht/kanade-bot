@@ -128,6 +128,7 @@ pub trait ModelLogStore {
 
     /// Delete extraction and chat logs with `at` before `before`, and
     /// processed cached messages created before it (unprocessed ones are
+    /// kept), and notice-outbox rows drained before it (pending ones are
     /// kept). Runs in write transactions of at most
     /// [`PRUNE_BATCH`](super::PRUNE_BATCH) rows per table until nothing is
     /// left, so other writers interleave; each batch is atomic.

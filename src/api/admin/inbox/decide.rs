@@ -111,6 +111,7 @@ fn approver(session: &AdminSession, profiles: &[MemberProfile]) -> Result<Approv
             profile.member.user_id == user_id && profile.member.has_role && !profile.member.is_bot
         }),
         is_admin: true,
+        via_portal: true,
     })
 }
 

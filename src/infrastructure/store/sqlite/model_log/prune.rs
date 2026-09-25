@@ -14,7 +14,7 @@ const OLD_EXTRACTIONS: &str = "SELECT id FROM extractions WHERE at < ?1 ORDER BY
 const OLD_CHATS: &str = "SELECT id FROM chat_interactions WHERE at < ?1 ORDER BY at, id LIMIT ?2";
 
 /// `(statement, counted)`; only parent deletes count.
-pub(super) fn statements() -> [(String, bool); 6] {
+pub(super) fn statements() -> [(String, bool); 7] {
     [
         (
             format!("DELETE FROM extraction_members WHERE extraction_id IN ({OLD_EXTRACTIONS})"),
@@ -42,6 +42,12 @@ pub(super) fn statements() -> [(String, bool); 6] {
                 .to_owned(),
             true,
         ),
+        (
+            "DELETE FROM notice_outbox WHERE id IN (SELECT id FROM notice_outbox \
+             WHERE state = 'drained' AND drained_at < ?1 ORDER BY drained_at, id LIMIT ?2)"
+                .to_owned(),
+            true,
+        ),
     ]
 }
 
@@ -51,7 +57,7 @@ pub(super) async fn batch(
     size: u32,
 ) -> Result<PruneCounts, StoreError> {
     let before = instant(before)?;
-    let mut counted = Vec::with_capacity(3);
+    let mut counted = Vec::with_capacity(4);
     for (sql, count) in statements() {
         let done = sqlx::query(&sql)
             .bind(&before)
@@ -67,5 +73,6 @@ pub(super) async fn batch(
         extractions: counted[0],
         chats: counted[1],
         messages: counted[2],
+        notices: counted[3],
     })
 }

@@ -117,6 +117,7 @@ impl Authority for Staff {
             user_id: user_id.into(),
             has_role: Roster.member(user_id).is_some(),
             is_admin: user_id == ADMIN,
+            via_portal: false,
         }
     }
 }

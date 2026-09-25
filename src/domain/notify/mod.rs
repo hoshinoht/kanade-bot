@@ -37,5 +37,8 @@ pub use journal::{
     request_fingerprint,
 };
 pub use notice::plan_notice;
-pub use outbox::{NoticeOutbox, OutboxNotice, change_source, draft_source};
+pub use outbox::{
+    DEFAULT_MAX_NOTICE_AGE, DrainReason, NoticeOutbox, OutboxNotice, PendingNotices,
+    UndecodableNotice, change_source, draft_source,
+};
 pub use policy::{AllowedMentions, PingKind, allowed_mentions, wants_mention};

@@ -193,8 +193,12 @@ serve shutdown must call `Rescans::close`.
 Admin writes' notices (A4 run and timing notices, rollbacks, inbox merge and
 requester notices) are written to the store's notice outbox with the change
 and posted by the delivery tick's outbox drain once serve runs the tick
-(`maintenance-contract.md`, *Notice outbox*). Still dropped until then: the
-inbox's Discord card refresh/close (and its superseded siblings' cards).
+(`maintenance-contract.md`, *Notice outbox*). `DeliveryConfig.max_notice_age`
+(default `DEFAULT_MAX_NOTICE_AGE`, 6 h; parent decision 2026-09-25) retires
+older notices unsent at drain time, so the backlog written before serve
+first ticks (admin edits, an import) never floods the channels; serve builds
+it with that default. Still dropped until serve: the inbox's Discord card
+refresh/close (and its superseded siblings' cards).
 Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
 `/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
 the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.

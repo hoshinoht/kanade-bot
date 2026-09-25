@@ -538,6 +538,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     status_at_apply: Default::default(),
                     also_notify: vec![approved.clone()],
                     expired_notice: Some(expired.clone()),
+                    notices: None,
                 },
                 policy,
                 directory,

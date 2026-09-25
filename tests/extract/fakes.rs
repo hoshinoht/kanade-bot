@@ -215,6 +215,7 @@ impl Scheduler {
             user_id: "admin".into(),
             has_role: true,
             is_admin: true,
+            via_portal: false,
         };
         self.service()
             .approve_proposal(id, &admin, &policy(), &self.directory)
