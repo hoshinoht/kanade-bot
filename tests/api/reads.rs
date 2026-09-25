@@ -21,7 +21,10 @@ use kanade::{
         },
         listeners::Site,
         rescan::RescanDesk,
-        state::{ApiState, ChannelEntry, GuildAccess, PersonaOption, StaticChannels},
+        state::{
+            ApiState, ChannelEntry, ChannelList, GuildAccess, PersonaOption, RoleEntry,
+            StaticChannels,
+        },
         write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
@@ -452,7 +455,7 @@ impl Reads {
                 reset,
             ),
             catalog: Arc::new(catalog()),
-            channels: Arc::new(StaticChannels(vec![
+            channels: Arc::new(ReadyGuild(StaticChannels(vec![
                 ChannelEntry {
                     id: "kalos-four".into(),
                     name: "#kalos-four".into(),
@@ -468,7 +471,7 @@ impl Reads {
                     name: "#limbo-trio".into(),
                     watched: true,
                 },
-            ])),
+            ]))),
             personas: vec![
                 PersonaOption {
                     key: "default".into(),
@@ -832,6 +835,20 @@ async fn members_channels_personas_and_fixed() {
         channels[0],
         serde_json::json!({"id": "kalos-four", "name": "#kalos-four"})
     );
+    let roles = reads
+        .read("/api/admin/roles", "common.json#/$defs/Roles")
+        .await;
+    assert_eq!(
+        roles,
+        serde_json::json!([
+            {"id": "700", "name": "Officer", "color": "#0a0bff"},
+            {"id": "701", "name": "Bossing"},
+        ])
+    );
+    let identity = reads
+        .read("/api/identity", "identity.json#/$defs/Identity")
+        .await;
+    assert_eq!(identity["bot_user_id"], "42");
     let personas = reads
         .read("/api/admin/personas", "members.json#/$defs/Personas")
         .await;
@@ -939,6 +956,7 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
         "/api/admin/reminders",
         "/api/admin/members",
         "/api/admin/channels",
+        "/api/admin/roles",
         "/api/admin/personas",
         "/api/admin/bosses",
         "/api/admin/bosses/events",
@@ -1006,4 +1024,32 @@ async fn staff_sign_in_reads_the_persisted_member_rows() {
         StaffCheck::NotStaff,
         "never a bot"
     );
+}
+
+/// A gateway-ready guild: the fixed channels plus roles and the bot's id.
+struct ReadyGuild(StaticChannels);
+
+impl ChannelList for ReadyGuild {
+    fn channels(&self) -> Vec<ChannelEntry> {
+        self.0.channels()
+    }
+
+    fn roles(&self) -> Vec<RoleEntry> {
+        vec![
+            RoleEntry {
+                id: "700".into(),
+                name: "Officer".into(),
+                color: Some(0x0a0bff),
+            },
+            RoleEntry {
+                id: "701".into(),
+                name: "Bossing".into(),
+                color: None,
+            },
+        ]
+    }
+
+    fn bot_user_id(&self) -> Option<String> {
+        Some("42".into())
+    }
 }

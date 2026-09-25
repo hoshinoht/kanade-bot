@@ -80,6 +80,7 @@
             "properties": {
               "id": { "type": "string" },
               "author": { "type": "string" },
+              "author_id": { "type": "string", "description": "Always sent by the server; optional so earlier fixtures stay valid." },
               "at": { "type": "string" },
               "content": { "type": "string" }
             }

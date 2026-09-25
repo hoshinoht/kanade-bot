@@ -12,7 +12,7 @@ const EDGE_SECRET: &[u8] = b"edge-secret-shared-with-the-caddy-edge!!";
 const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
 /// Every admin path the PWA calls (docs/v5/admin-api.md) plus test/mock hooks.
-const ADMIN_PATHS: [&str; 43] = [
+const ADMIN_PATHS: [&str; 44] = [
     "/api/admin/week?week=next",
     "/api/admin/stats",
     "/api/admin/summary",
@@ -20,6 +20,7 @@ const ADMIN_PATHS: [&str; 43] = [
     "/api/admin/members/m1",
     "/api/admin/members/m1/aliases",
     "/api/admin/channels",
+    "/api/admin/roles",
     "/api/admin/session",
     "/api/admin/runs/r1/move",
     "/api/admin/runs/r1/status",
@@ -265,6 +266,7 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
 
     let identity = get(public, PUBLIC_HOST, "/api/identity").await.json();
     assert_eq!(identity["avatar"], "/identity/avatar");
+    assert_eq!(identity["bot_user_id"], serde_json::Value::Null);
     assert_eq!(
         get(public, PUBLIC_HOST, "/").await.text(),
         "<!doctype html>public shell"

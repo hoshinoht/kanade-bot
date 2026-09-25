@@ -28,6 +28,8 @@ use crate::domain::{
 pub struct Evidence {
     pub id: String,
     pub author: String,
+    /// `None` when the message is gone.
+    pub author_id: Option<String>,
     pub at: String,
     pub content: Option<String>,
     pub url: Option<String>,

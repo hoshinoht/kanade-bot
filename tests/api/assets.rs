@@ -145,6 +145,7 @@ async fn identity_uses_cached_art_or_generated_stand_ins() {
             "avatar": "/identity/avatar",
             "banner": "/identity/banner",
             "cached": false,
+            "bot_user_id": null,
         })
     );
     let avatar = get(admin, ADMIN_HOST, "/identity/avatar").await;

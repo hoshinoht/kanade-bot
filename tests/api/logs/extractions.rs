@@ -113,7 +113,7 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     // The pruned message is left out.
     assert_eq!(
         detail["messages"],
-        json!([{"id": "m-said", "author": "Alice", "at": "2026-09-29T01:50:00Z",
+        json!([{"id": "m-said", "author": "Alice", "author_id": "1001", "at": "2026-09-29T01:50:00Z",
                 "content": "kalos wed 9pm instead?"}])
     );
     assert_eq!(

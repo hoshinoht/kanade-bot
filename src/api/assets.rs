@@ -26,6 +26,8 @@ pub struct Identity {
     avatar: &'static str,
     banner: &'static str,
     cached: bool,
+    /// Admin origin only, once the gateway is `READY`.
+    bot_user_id: Option<String>,
 }
 
 pub async fn identity(State(site): State<Arc<Site>>) -> Json<Identity> {
@@ -34,6 +36,10 @@ pub async fn identity(State(site): State<Arc<Site>>) -> Json<Identity> {
         avatar: "/identity/avatar",
         banner: "/identity/banner",
         cached: identity_file(&site, "avatar").is_some(),
+        bot_user_id: site
+            .state
+            .as_ref()
+            .and_then(|state| state.channels.bot_user_id()),
     })
 }
 

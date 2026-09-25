@@ -40,6 +40,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
+| `GET /api/admin/roles` | `common.json#/$defs/Roles` |
 | `GET /api/admin/fixed` | `fixed.json#/$defs/FixedRows` |
 | `POST /api/admin/fixed`, `PATCH /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRow` (request body `FixedRequest`; PATCH requires `version`) |
 | `DELETE /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRetired` |
@@ -102,3 +103,9 @@ Pointers are `<file>#/$defs/<Name>`.
 - Reasoning variants: `config.json` `ModelInfo.variant_of`/`fixed_effort`
   and the same two fields on `RoleModel` (all optional, sent only for a listed
   `<base>:<level>` alias whose base is listed).
+- Names: `GET /api/admin/roles` (`common.json` `Roles`, gateway cache, highest
+  first, `@everyone` left out; `[]` offline); `identity.json`
+  `Identity.bot_user_id`; `inbox.json` `Evidence.author_id`;
+  `extractions.json` `Extraction.messages[].author_id`; `chat.json`
+  `ChatRow`/`ChatDetail` `member_id`. All optional in the schema so earlier
+  responses stay valid; the server always sends them.

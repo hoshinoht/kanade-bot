@@ -528,6 +528,7 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
     assert_eq!(moved["expires_at"], "Wed 30 Sep 12:00");
     let evidence = moved["evidence"].as_array().unwrap();
     assert_eq!(evidence[0]["author"], "Alice");
+    assert_eq!(evidence[0]["author_id"], "1001");
     assert_eq!(evidence[0]["content"], "wed 9pm instead?");
     assert_eq!(evidence[0]["missing"], false);
     assert!(
@@ -538,6 +539,7 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
     );
     assert_eq!(evidence[1]["missing"], true);
     assert_eq!(evidence[1]["content"], Value::Null);
+    assert_eq!(evidence[1]["author_id"], Value::Null);
     assert_eq!(
         moved["preview"],
         json!({"no_effect": false, "changes": [

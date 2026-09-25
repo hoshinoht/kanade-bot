@@ -60,6 +60,24 @@ impl CachedChannel {
     }
 }
 
+/// A role's display facts for the admin app's id→name lookup.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleName {
+    pub name: String,
+    pub color: u32,
+    pub position: i64,
+}
+
+impl RoleName {
+    fn of(role: &Role) -> Self {
+        Self {
+            name: role.name.clone(),
+            color: role.colors.primary_color,
+            position: role.position,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct State {
     available: bool,
@@ -68,6 +86,7 @@ struct State {
     /// `None` until the bot's own member is seen: permissions are unknown.
     self_roles: Option<Vec<Id<RoleMarker>>>,
     roles: HashMap<Id<RoleMarker>, Permissions>,
+    role_names: HashMap<Id<RoleMarker>, RoleName>,
     channels: HashMap<Id<ChannelMarker>, CachedChannel>,
     watch: WatchList,
 }
@@ -119,6 +138,11 @@ impl GuildCache {
             .iter()
             .map(|role| (role.id, role.permissions))
             .collect();
+        state.role_names = guild
+            .roles
+            .iter()
+            .map(|role| (role.id, RoleName::of(role)))
+            .collect();
         state.channels = guild
             .channels
             .iter()
@@ -149,15 +173,22 @@ impl GuildCache {
             .iter()
             .map(|role| (role.id, role.permissions))
             .collect();
+        state.role_names = roles
+            .iter()
+            .map(|role| (role.id, RoleName::of(role)))
+            .collect();
     }
 
     pub fn put_role(&self, role: &Role) {
-        self.write().roles.insert(role.id, role.permissions);
+        let mut state = self.write();
+        state.roles.insert(role.id, role.permissions);
+        state.role_names.insert(role.id, RoleName::of(role));
     }
 
     pub fn remove_role(&self, role_id: Id<RoleMarker>) {
         let mut state = self.write();
         state.roles.remove(&role_id);
+        state.role_names.remove(&role_id);
         if let Some(roles) = state.self_roles.as_mut() {
             roles.retain(|role| *role != role_id);
         }
@@ -169,6 +200,20 @@ impl GuildCache {
         if state.self_id == Some(user_id) {
             state.self_roles = Some(roles.to_vec());
         }
+    }
+
+    /// Every known role's display facts.
+    pub fn role_names(&self) -> Vec<(Id<RoleMarker>, RoleName)> {
+        self.read()
+            .role_names
+            .iter()
+            .map(|(id, role)| (*id, role.clone()))
+            .collect()
+    }
+
+    /// The bot's own user id once `READY` arrived.
+    pub fn self_id(&self) -> Option<Id<UserMarker>> {
+        self.read().self_id
     }
 
     /// Channel or thread create/update.

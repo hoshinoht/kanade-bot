@@ -339,9 +339,28 @@ pub struct ChannelEntry {
     pub watched: bool,
 }
 
+/// A guild role for id→name display.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleEntry {
+    pub id: String,
+    pub name: String,
+    /// `0xRRGGBB`; `None` when the role has no colour.
+    pub color: Option<u32>,
+}
+
 /// Guild channels as the bot sees them (gateway cache in production).
 pub trait ChannelList: Send + Sync {
     fn channels(&self) -> Vec<ChannelEntry>;
+
+    /// Offline and test lists know no roles.
+    fn roles(&self) -> Vec<RoleEntry> {
+        Vec::new()
+    }
+
+    /// The bot's own Discord user id, once the gateway said `READY`.
+    fn bot_user_id(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A fixed list: offline use and tests.

@@ -6,7 +6,7 @@ use twilight_model::channel::ChannelType;
 use twilight_model::id::{Id, marker::ChannelMarker};
 
 use super::{CachedChannel, GuildCache};
-use crate::api::state::{ChannelEntry, ChannelList};
+use crate::api::state::{ChannelEntry, ChannelList, RoleEntry};
 use crate::bot::ids::{id_text, parse_id};
 use crate::chat::gate::{ChannelDirectory, ChannelInfo};
 use crate::domain::notify::ChannelDirectory as PostDirectory;
@@ -74,6 +74,29 @@ impl ChannelList for GuildCache {
             })
             .collect()
     }
+
+    /// Highest first, as Discord lists them; `@everyone` is left out.
+    fn roles(&self) -> Vec<RoleEntry> {
+        let guild = self.guild_id().cast();
+        let mut roles: Vec<_> = self
+            .role_names()
+            .into_iter()
+            .filter(|(id, _)| *id != guild)
+            .collect();
+        roles.sort_by_key(|(id, role)| (std::cmp::Reverse(role.position), *id));
+        roles
+            .into_iter()
+            .map(|(id, role)| RoleEntry {
+                id: id_text(id),
+                name: role.name,
+                color: (role.color != 0).then_some(role.color),
+            })
+            .collect()
+    }
+
+    fn bot_user_id(&self) -> Option<String> {
+        self.self_id().map(id_text)
+    }
 }
 
 impl ChannelDirectory for GuildCache {
@@ -96,5 +119,53 @@ impl ChannelDirectory for GuildCache {
 impl PostDirectory for GuildCache {
     fn is_reachable(&self, channel_id: &str) -> bool {
         parse_id(channel_id).is_some_and(|id| self.can_send(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use twilight_model::guild::Role;
+    use twilight_model::id::Id;
+
+    use super::*;
+
+    fn role(id: u64, name: &str, color: u32, position: i64) -> Role {
+        serde_json::from_value(serde_json::json!({
+            "id": id.to_string(), "name": name, "color": color,
+            "colors": {"primary_color": color, "secondary_color": null, "tertiary_color": null},
+            "hoist": false, "managed": false, "mentionable": false,
+            "permissions": "0", "position": position, "flags": 0,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn roles_list_highest_first_without_everyone() {
+        let cache = GuildCache::new(Id::new(1));
+        assert_eq!(ChannelList::bot_user_id(&cache), None);
+        cache.update_guild(
+            Id::new(9),
+            &[role(1, "@everyone", 0, 0), role(5, "Bossing", 0, 1)],
+        );
+        cache.put_role(&role(6, "Officer", 0x0a0bff, 2));
+        cache.set_self(Id::new(42));
+        assert_eq!(
+            ChannelList::roles(&cache),
+            vec![
+                RoleEntry {
+                    id: "6".into(),
+                    name: "Officer".into(),
+                    color: Some(0x0a0bff),
+                },
+                RoleEntry {
+                    id: "5".into(),
+                    name: "Bossing".into(),
+                    color: None,
+                },
+            ]
+        );
+        cache.remove_role(Id::new(6));
+        assert_eq!(ChannelList::roles(&cache).len(), 1);
+        assert_eq!(ChannelList::bot_user_id(&cache), Some("42".into()));
     }
 }

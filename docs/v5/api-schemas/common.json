@@ -72,6 +72,17 @@
       }
     },
     "Channels": { "type": "array", "items": { "$ref": "#/$defs/Channel" } },
+    "Role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$", "description": "Absent when the role has no colour." }
+      }
+    },
+    "Roles": { "type": "array", "items": { "$ref": "#/$defs/Role" } },
     "WeekDay": {
       "type": "object",
       "additionalProperties": false,

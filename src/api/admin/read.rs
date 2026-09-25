@@ -32,6 +32,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/api/admin/reminders", get(reminders))
         .route("/api/admin/members", get(members))
         .route("/api/admin/channels", get(channels))
+        .route("/api/admin/roles", get(roles))
         .route("/api/admin/personas", get(personas))
         .route("/api/admin/bosses", get(bosses))
         .route("/api/admin/bosses/events", get(events))
@@ -147,6 +148,11 @@ async fn channels(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         })
         .collect();
     Ok(Json(channels).into_response())
+}
+
+async fn roles(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
+    let state = state(&site)?;
+    Ok(Json(dto::roles(&state.channels.roles())).into_response())
 }
 
 async fn personas(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

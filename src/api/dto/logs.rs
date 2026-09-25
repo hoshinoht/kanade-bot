@@ -101,6 +101,8 @@ pub fn chat_row(names: &Names<'_>, chat: &ChatInteraction) -> Value {
         "id": chat.id,
         "at": iso_instant(chat.at),
         "member": names.member(chat.member_id.as_deref()),
+        // The app resolves `user <short id>` placeholders once the roster fills.
+        "member_id": chat.member_id,
         "channel": names.channel(chat.channel_id.as_deref()),
         "channel_id": chat.channel_id.as_deref().unwrap_or_default(),
         "model": models.first().copied().unwrap_or(NO_MODEL),
@@ -422,6 +424,7 @@ pub fn extraction(
             json!({
                 "id": message.id,
                 "author": member_name(names.roster, &message.author_id),
+                "author_id": message.author_id,
                 "at": iso_instant(message.created_at),
                 "content": message.content,
             })

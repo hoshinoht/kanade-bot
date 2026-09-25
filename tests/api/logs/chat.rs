@@ -44,6 +44,7 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
             "id": "c-answer",
             "at": "2026-09-28T12:00:00Z",
             "member": {"id": "1001", "name": "Alice"},
+            "member_id": "1001",
             "channel": "#kalos-four",
             "channel_id": "kalos-four",
             "model": "kanata/chat",

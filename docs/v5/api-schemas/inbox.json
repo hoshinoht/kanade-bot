@@ -10,6 +10,7 @@
       "properties": {
         "id": { "type": "string" },
         "author": { "type": "string" },
+        "author_id": { "$ref": "common.json#/$defs/NullableString", "description": "Null when the message is gone. Always sent by the server; optional so earlier fixtures stay valid." },
         "at": { "type": "string" },
         "content": { "$ref": "common.json#/$defs/NullableString" },
         "url": { "$ref": "common.json#/$defs/NullableString" },

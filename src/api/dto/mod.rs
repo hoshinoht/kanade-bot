@@ -191,6 +191,26 @@ pub struct Named {
     pub name: String,
 }
 
+/// `GET /api/admin/roles` row; `color` is `#rrggbb`, absent when uncoloured.
+#[derive(Serialize)]
+pub struct RoleRow {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+pub fn roles(roles: &[crate::api::state::RoleEntry]) -> Vec<RoleRow> {
+    roles
+        .iter()
+        .map(|role| RoleRow {
+            id: role.id.clone(),
+            name: role.name.clone(),
+            color: role.color.map(|color| format!("#{color:06x}")),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

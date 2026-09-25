@@ -11,7 +11,8 @@
         "name": { "type": "string" },
         "avatar": { "type": "string" },
         "banner": { "type": "string" },
-        "cached": { "type": "boolean" }
+        "cached": { "type": "boolean" },
+        "bot_user_id": { "$ref": "common.json#/$defs/NullableString", "description": "The bot's Discord user id; null on the public origin and before the gateway is ready. Always sent by the server; optional so earlier fixtures stay valid." }
       }
     },
     "Session": {

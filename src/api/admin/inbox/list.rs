@@ -76,6 +76,7 @@ async fn evidence(
                 Some(message) => Evidence {
                     id: id.clone(),
                     author: ctx.name(&message.author_id),
+                    author_id: Some(message.author_id.clone()),
                     at: when(message.created_at, ctx.zone),
                     content: Some(message.content.clone()),
                     url: message_url(ctx, &message.channel_id, id),
@@ -84,6 +85,7 @@ async fn evidence(
                 None => Evidence {
                     id: id.clone(),
                     author: "someone".into(),
+                    author_id: None,
                     at: snowflake_time(id).map_or_else(String::new, |at| when(at, ctx.zone)),
                     content: None,
                     url: None,
