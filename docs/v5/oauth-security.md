@@ -56,7 +56,11 @@ for the public origin when it opens.
     for the break-glass token (login and bearer) the global bucket counts and
     refuses wrong tokens only, so guesses from many addresses cannot lock out
     the right token; its ≥ 32-byte entropy makes online guessing moot. Per-IP
-    limits apply to every attempt.
+    limits apply to every attempt. Wrong guesses are still charged to the
+    global bucket, but it no longer bounds how many comparisons run: the
+    per-IP limit (5/min) does. When the 4096-client table is full of active
+    buckets, new addresses are served unremembered (global bucket only)
+    rather than refused.
 15. Never log the code, state, verifier, tokens or cookies; log the user id,
     outcome and request id.
 

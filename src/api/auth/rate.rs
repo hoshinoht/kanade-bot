@@ -65,7 +65,7 @@ enum Buckets {
 }
 
 /// Bounds memory: beyond this many tracked clients, idle ones are dropped and
-/// then unknown clients are refused (the global bucket still bounds work).
+/// then unknown clients go unremembered (the global bucket still bounds work).
 const MAX_CLIENTS: usize = 4096;
 
 #[derive(Clone, Copy, Debug)]
@@ -158,15 +158,17 @@ impl RateLimits {
         let key = (route, client);
         let use_client = buckets != Buckets::Global;
         let use_global = buckets != Buckets::Client;
+        let mut remember = true;
         if use_client && !state.clients.contains_key(&key) && state.clients.len() >= MAX_CLIENTS {
             state.clients.retain(|(route, _), bucket| {
                 let rule = (self.limits)(*route).per_ip;
                 bucket.refill(rule, now);
                 bucket.tokens < rule.burst
             });
-            if state.clients.len() >= MAX_CLIENTS {
-                return false;
-            }
+            // Still full: serve this client from an unremembered full bucket
+            // rather than refusing it, so a flood of addresses cannot lock out
+            // a correct token; the global bucket bounds wrong guesses.
+            remember = state.clients.len() < MAX_CLIENTS;
         }
         let mut global = *state
             .global
@@ -189,7 +191,7 @@ impl RateLimits {
             }
         }
         state.global.insert(route, global);
-        if use_client {
+        if use_client && remember {
             state.clients.insert(key, own);
         }
         allowed
@@ -237,5 +239,19 @@ mod tests {
         let later = now + TimeDelta::minutes(1);
         assert!(limits.allows(Route::TokenLogin, a, later));
         assert!(limits.take(Route::TokenLogin, a, later));
+    }
+
+    #[test]
+    fn a_full_client_table_serves_new_clients_without_remembering_them() {
+        let limits = RateLimits::new(tiny);
+        let now = DateTime::UNIX_EPOCH;
+        for n in 0..MAX_CLIENTS as u32 {
+            let ip = Some(IpAddr::from(n.to_be_bytes()));
+            assert!(limits.take_client(Route::TokenLogin, ip, now));
+        }
+        let newcomer = Some([192, 168, 9, 9].into());
+        assert!(limits.take_client(Route::TokenLogin, newcomer, now));
+        assert!(limits.take_client(Route::TokenLogin, newcomer, now));
+        assert_eq!(limits.state().clients.len(), MAX_CLIENTS);
     }
 }

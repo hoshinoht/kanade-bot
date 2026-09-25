@@ -46,12 +46,14 @@ async fn week(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
     let now = state.now();
     let [this, following] = frames(state, now)?;
     let frame = if next { following } else { this };
+    // Head first: a commit landing in between makes `version` lag the data
+    // (a spurious 409 later), never lead it (a lost update under API-1).
+    let version = state.store.head().await.map_err(unavailable)?.seq;
     let snapshot = state
         .store
         .snapshot(Scope::Weeks(vec![frame.start]))
         .await
         .map_err(unavailable)?;
-    let version = state.store.head().await.map_err(unavailable)?.seq;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     Ok(Json(dto::week::week(&ctx, &snapshot, &frame, version)).into_response())
