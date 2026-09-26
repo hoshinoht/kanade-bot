@@ -17,7 +17,7 @@ mod words;
 
 use std::{collections::HashSet, fmt, sync::Arc};
 
-use super::codec::{CodecMode, IdentityCodec, IdentitySession, Member};
+use super::codec::{CodecMode, IdentityCodec, IdentitySession, Member, MentionNames};
 use super::scan::ScanExemptions;
 use crate::infrastructure::llm::governor::Random;
 use normalize::{name_keys, near_match, normalise};
@@ -81,6 +81,8 @@ pub(super) struct Shared {
     lexicon: CodeLexicon,
     bot: BotIdentity,
     random: Arc<dyn Random>,
+    /// Channel and role names for `<#id>`/`<@&id>`; unknown ones become refs.
+    mentions: Option<Arc<dyn MentionNames>>,
 }
 
 pub struct PseudonymCodec {
@@ -117,6 +119,7 @@ impl PseudonymCodec {
                 lexicon: config.lexicon,
                 bot: config.bot,
                 random: config.random,
+                mentions: None,
             }),
         }
     }
@@ -125,6 +128,15 @@ impl PseudonymCodec {
     /// schemas, the rendered boss table) the boundary scanner must not flag.
     pub fn with_scan_exemptions(mut self, exemptions: &ScanExemptions) -> Self {
         self.exemptions = Arc::new(self.exemptions.as_ref().clone().extend(exemptions));
+        self
+    }
+
+    /// Renders `<#id>` as `#name` and `<@&id>` as `@name` where known. Call
+    /// before opening sessions.
+    pub fn with_mention_names(mut self, names: Arc<dyn MentionNames>) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.mentions = Some(names);
+        }
         self
     }
 

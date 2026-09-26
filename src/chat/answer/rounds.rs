@@ -16,6 +16,7 @@ use super::{
     RoundOutcome,
 };
 use crate::chat::context::{budgeted, card_focus};
+use crate::chat::prompts;
 use crate::chat::tools::bundles::{Mode, ToolOffer};
 use crate::chat::tools::dispatch;
 use crate::chat::tools::propose::{ProposalCard, Proposer};
@@ -24,10 +25,11 @@ use crate::chat::tools::schemas::surface_text;
 use crate::chat::tools::{FAILED, LOOKUP_FAILED, REFUSED, ToolName, ToolOutcome};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::members::member_name;
+use crate::domain::model_log::{MaskedRound, MaskedTurn};
 use crate::domain::pytext::strip;
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
 use crate::infrastructure::llm::governor::{Session, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::IdentitySession;
+use crate::infrastructure::llm::identity::{IdentitySession, Protected, encode_protected};
 use crate::infrastructure::llm::{
     ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmProvider, Message, Sampling,
     ToolCallRequest, ToolDefinition,
@@ -63,10 +65,14 @@ fn definition(tool: ToolName) -> ToolDefinition {
     }
 }
 
-fn encode(identity: &mut dyn IdentitySession, message: &Message) -> Message {
+/// The conversation through the identity session. The system prompt keeps
+/// its code-owned pieces literal (policies, clock header, runtime line) and
+/// encodes the rest (persona text, the focus card); every other turn is
+/// encoded whole. History carries no tool calls (`assemble` builds none).
+fn encode(identity: &mut dyn IdentitySession, message: &Message, owned: &[Protected]) -> Message {
     match message {
         Message::System { content } => Message::System {
-            content: identity.text(content),
+            content: encode_protected(identity, content, owned),
         },
         Message::User { content } => Message::User {
             content: identity.text(content),
@@ -131,6 +137,8 @@ struct Loop<'q, 'g> {
     guild: &'q GuildView<'g>,
     generation: Generation,
     reminder: String,
+    /// Masked turns only: each request as sent and the raw reply.
+    view: Option<Vec<MaskedRound>>,
 }
 
 impl Loop<'_, '_> {
@@ -148,6 +156,33 @@ impl Loop<'_, '_> {
                 ..Sampling::default()
             }),
         }
+    }
+
+    /// The Model view of one answered request (masked turns only).
+    fn capture(
+        &mut self,
+        round: u32,
+        clean: bool,
+        request: &ChatRequest,
+        response: &CompletionResponse,
+    ) {
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        view.push(MaskedRound {
+            round,
+            clean,
+            request: serde_json::to_value(&request.messages)
+                .unwrap_or_else(|_| Value::Array(Vec::new())),
+            reply: response.content.clone(),
+            tool_calls: Value::Array(
+                response
+                    .tool_calls
+                    .iter()
+                    .map(|call| serde_json::json!({"name": call.name, "arguments": call.arguments}))
+                    .collect(),
+            ),
+        });
     }
 
     fn record(
@@ -206,10 +241,11 @@ where
 {
     let alias = session.alias().unwrap_or_default().to_owned();
     let mut offer = question.offer.clone();
+    let owned = prompts::protected();
     let mut messages: Vec<Message> = question
         .conversation
         .iter()
-        .map(|message| encode(identity, message))
+        .map(|message| encode(identity, message, &owned))
         .collect();
     let clean_base: Vec<Message> = messages
         .first()
@@ -223,10 +259,14 @@ where
         .cloned()
         .collect();
     let mut state = Loop {
-        reminder: identity.text(&question.reminder),
+        reminder: encode_protected(identity, &question.reminder, &owned),
         question: &question,
         guild,
-        generation: Generation::default(),
+        generation: Generation {
+            pseudonymized: identity.masks(),
+            ..Generation::default()
+        },
+        view: identity.masks().then(Vec::new),
     };
     let settings = question.settings;
     let seconds = settings.timeout.as_secs();
@@ -303,6 +343,7 @@ where
             },
         };
         let bundles = bundle_names(&offer, with_tools);
+        state.capture(round, false, &request, &response);
         state.record(round, &response, identity, (bundles, latency, false));
         if response.tool_calls.is_empty() {
             let content = strip(response.content.as_deref().unwrap_or_default());
@@ -472,9 +513,24 @@ where
         Some(retry) => state.generation.failure = Some(retry.failure()),
         None => {}
     }
+    let view = state.view.take();
     let mut generation = state.generation;
     generation.requests = session.requests_used();
     finish(&mut generation);
+    generation.model_view = view.map(|rounds| MaskedTurn {
+        rounds,
+        reply: generation.reply.clone(),
+        mapping: identity
+            .mapping()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|name| crate::domain::model_log::MaskedName {
+                token: name.token,
+                user_id: name.user_id,
+                display_name: name.display_name,
+            })
+            .collect(),
+    });
     generation.blocked = generation.reply.is_empty()
         && (filtered || generation.failure == Some(AnswerFailure::ContentBlocked));
     generation
@@ -520,6 +576,7 @@ async fn clean_retry<P: LlmProvider>(
         }
     };
     state.generation.clean_retry = true;
+    state.capture(round, true, &request, &response);
     state.record(round, &response, identity, (Vec::new(), latency, true));
     let content = strip(response.content.as_deref().unwrap_or_default());
     match identity.decode_reply(content) {

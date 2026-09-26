@@ -22,8 +22,8 @@ use super::rows;
 use super::schedule::store_error;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets,
-    LogPage, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, ReadMessage, RescanJob,
-    WatchedMessage,
+    LogPage, MaskedTurn, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, ReadMessage,
+    RescanJob, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -154,6 +154,24 @@ impl ModelLogStore for SqliteStore {
 
     async fn load_chat(&self, id: &str) -> Result<Option<ChatInteraction>, StoreError> {
         read_txn!(self, tx, chat::load(&mut tx, id))
+    }
+
+    async fn record_masked_chat(
+        &self,
+        interaction: ChatInteraction,
+        masked: MaskedTurn,
+    ) -> Result<(), StoreError> {
+        interaction.check_shape()?;
+        masked.check_shape()?;
+        write_txn!(
+            self,
+            tx,
+            chat::insert_masked(&mut tx, &interaction, &masked)
+        )
+    }
+
+    async fn load_masked_chat(&self, id: &str) -> Result<Option<MaskedTurn>, StoreError> {
+        read_txn!(self, tx, chat::load_masked(&mut tx, id))
     }
 
     async fn list_chats(

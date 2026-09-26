@@ -14,7 +14,7 @@ const OLD_EXTRACTIONS: &str = "SELECT id FROM extractions WHERE at < ?1 ORDER BY
 const OLD_CHATS: &str = "SELECT id FROM chat_interactions WHERE at < ?1 ORDER BY at, id LIMIT ?2";
 
 /// `(statement, counted)`; only parent deletes count.
-pub(super) fn statements() -> [(String, bool); 7] {
+pub(super) fn statements() -> [(String, bool); 8] {
     [
         (
             format!("DELETE FROM extraction_members WHERE extraction_id IN ({OLD_EXTRACTIONS})"),
@@ -30,6 +30,10 @@ pub(super) fn statements() -> [(String, bool); 7] {
         ),
         (
             format!("DELETE FROM chat_rounds WHERE interaction_id IN ({OLD_CHATS})"),
+            false,
+        ),
+        (
+            format!("DELETE FROM chat_masked WHERE interaction_id IN ({OLD_CHATS})"),
             false,
         ),
         (

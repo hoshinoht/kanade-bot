@@ -25,7 +25,9 @@ use crate::extract::prompt::{
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use crate::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::{IdentitySession, Member, open_session, unmasked};
+use crate::infrastructure::llm::identity::{
+    IdentityLeakBlocked, IdentitySession, Member, open_session, unmasked,
+};
 use crate::infrastructure::llm::{ErrorCode, LlmProvider, Message};
 
 /// Why a call produced no answer.
@@ -37,6 +39,9 @@ pub enum Failure {
     },
     /// The provider's content filter stopped the answer (`ContentFiltered`).
     ContentBlocked,
+    /// The boundary scanner refused the request: nothing was sent. The
+    /// messages are marked processed (a rescan reads them again).
+    IdentityLeak,
     Failed,
 }
 
@@ -133,6 +138,10 @@ pub(crate) struct CallRecord {
     pub nudges: Vec<&'static str>,
     /// Sent to an external route without pseudonymization (operator override).
     pub external_unmasked: bool,
+    /// Built through a masking identity session.
+    pub pseudonymized: bool,
+    /// The scanner's refusal (kinds and count only).
+    pub leak: Option<IdentityLeakBlocked>,
 }
 
 impl CallRecord {
@@ -143,6 +152,12 @@ impl CallRecord {
 
     pub fn ok(&self) -> bool {
         self.failure.is_none()
+    }
+
+    /// Its messages count as read: answered, or refused for an identity
+    /// leak (retrying the same prompt would be refused again).
+    pub fn consumed(&self) -> bool {
+        matches!(self.failure, None | Some(Failure::IdentityLeak))
     }
 }
 
@@ -220,9 +235,13 @@ fn classify(error: &SessionError, limit: Duration) -> (AttemptOutcome, Failure) 
             ),
             _ => (failed(), Failure::Failed),
         },
+        SessionFailure::IdentityLeakBlocked(_) => (failed(), Failure::IdentityLeak),
         _ => (failed(), Failure::Failed),
     }
 }
+
+/// The error of a masked call with no roster: nothing is sent.
+pub const ROSTER_UNAVAILABLE: &str = "the member roster is unavailable; masked extraction needs it";
 
 impl<S, P, X, O> Extractor<S, P, X, O>
 where
@@ -269,6 +288,8 @@ where
             redirected: 0,
             nudges: Vec::new(),
             external_unmasked: false,
+            pseudonymized: false,
+            leak: None,
         }
     }
 
@@ -395,6 +416,13 @@ where
             }
         };
         record.external_unmasked = unmasked(&route, self.codec.as_ref());
+        record.pseudonymized = identity.masks();
+        // D4: masking without the roster could not hide member names; fail
+        // closed and leave the messages unprocessed for a later read.
+        if record.pseudonymized && loaded.members.is_empty() {
+            record.fail(Failure::Failed, ROSTER_UNAVAILABLE.into());
+            return record;
+        }
         let prepared = self.prepare(channel_id, loaded, chunk, identity.as_mut());
         record.prompt = prompt_text(&prepared.messages);
         record.authors.extend(prepared.author_ids.clone());
@@ -471,6 +499,9 @@ where
                 },
                 Err(error) => {
                     let (outcome, kind) = classify(&error, timeout);
+                    if let SessionFailure::IdentityLeakBlocked(blocked) = &error.failure {
+                        record.leak = Some(blocked.clone());
+                    }
                     failure = Some(kind);
                     outcome
                 }

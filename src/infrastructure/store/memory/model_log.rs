@@ -8,8 +8,8 @@ use chrono::{DateTime, Utc};
 use super::{MemoryScheduleStore, micros};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ExtractionFilter, ExtractionLog,
-    LogCursor, LogFacets, LogPage, MessageUpsert, ModelLogStore, PruneCounts, ReadMessage,
-    RescanJob, WatchedMessage, in_order, page_size,
+    LogCursor, LogFacets, LogPage, MaskedTurn, MessageUpsert, ModelLogStore, PruneCounts,
+    ReadMessage, RescanJob, WatchedMessage, in_order, page_size,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -18,6 +18,7 @@ pub(super) struct LogTables {
     messages: BTreeMap<String, WatchedMessage>,
     extractions: BTreeMap<String, ExtractionLog>,
     chats: BTreeMap<String, ChatInteraction>,
+    masked: BTreeMap<String, MaskedTurn>,
     rescans: BTreeMap<String, RescanJob>,
     allowances: BTreeMap<String, AllowanceOverride>,
     tips: BTreeSet<(String, DateTime<Utc>)>,
@@ -260,6 +261,22 @@ impl ModelLogStore for MemoryScheduleStore {
         Ok(self.logs().chats.get(id).cloned())
     }
 
+    async fn record_masked_chat(
+        &self,
+        interaction: ChatInteraction,
+        masked: MaskedTurn,
+    ) -> Result<(), StoreError> {
+        masked.check_shape()?;
+        let id = interaction.id.clone();
+        self.record_chat(interaction).await?;
+        self.logs().masked.insert(id, masked);
+        Ok(())
+    }
+
+    async fn load_masked_chat(&self, id: &str) -> Result<Option<MaskedTurn>, StoreError> {
+        Ok(self.logs().masked.get(id).cloned())
+    }
+
     async fn list_chats(
         &self,
         filter: &ChatFilter,
@@ -339,6 +356,12 @@ impl ModelLogStore for MemoryScheduleStore {
         logs.extractions.retain(|_, log| log.at >= before);
         let chats = logs.chats.len();
         logs.chats.retain(|_, chat| chat.at >= before);
+        let LogTables {
+            chats: kept,
+            masked,
+            ..
+        } = &mut *logs;
+        masked.retain(|id, _| kept.contains_key(id));
         let messages = logs.messages.len();
         logs.messages
             .retain(|_, message| message.processed_at.is_none() || message.created_at >= before);

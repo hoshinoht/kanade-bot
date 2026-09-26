@@ -5,6 +5,7 @@ use serde_json::Value;
 use super::super::codec::ScanNeedles;
 use super::super::pseudonym::matcher::{digit_run, fold, match_at, prev_char};
 use super::{LeakFound, LeakKind, ScanExemptions};
+use crate::infrastructure::llm::{ChatRequest, Message};
 
 const SNOWFLAKE_DIGITS: std::ops::RangeInclusive<usize> = 17..=20;
 
@@ -34,21 +35,101 @@ impl Finder {
         }
     }
 
-    /// Every key and string (unescaped) and every number of a serialized
-    /// request, except the top-level `model` alias (route config).
-    pub(super) fn request(&self, request: &Value, found: &mut LeakFound) {
-        let mut stack: Vec<&Value> = Vec::new();
-        match request {
-            Value::Object(map) => {
-                for (key, item) in map {
-                    self.text(key, found);
-                    if key != "model" {
-                        stack.push(item);
+    /// The content-bearing fields of a request: message text, tool-call
+    /// names and arguments, tool results, and tool definitions and output
+    /// schemas (every key, string and number). Fixed structure (the model
+    /// alias, roles, token limits, reasoning, sampling, `strict`, validation)
+    /// is never scanned. Model-issued call ids get known-id matching only;
+    /// an assistant turn equal to something this model wrote (`echoes`) is
+    /// skipped.
+    pub(super) fn request(
+        &self,
+        request: &ChatRequest,
+        echoes: &HashSet<String>,
+        found: &mut LeakFound,
+    ) {
+        for message in &request.messages {
+            match message {
+                Message::System { content } | Message::User { content } => {
+                    self.text(content, found);
+                }
+                // The model's own words, repeated verbatim, are not scanned.
+                Message::Assistant {
+                    content,
+                    tool_calls,
+                } => {
+                    if let Some(content) = content.as_ref().filter(|text| !echoes.contains(*text)) {
+                        self.text(content, found);
+                    }
+                    for call in tool_calls {
+                        self.call_id(&call.id, found);
+                        self.text(&call.name, found);
+                        if !echoes.contains(&call.arguments) {
+                            self.embedded(&call.arguments, found);
+                        }
                     }
                 }
+                Message::Tool {
+                    tool_call_id,
+                    content,
+                } => {
+                    self.call_id(tool_call_id, found);
+                    self.embedded(content, found);
+                }
             }
-            other => stack.push(other),
         }
+        for tool in &request.tools {
+            self.text(&tool.name, found);
+            if let Some(description) = &tool.description {
+                self.text(description, found);
+            }
+            self.value(&tool.input_schema, found);
+        }
+        if let Some(schema) = &request.output_schema {
+            self.text(&schema.name, found);
+            self.value(&schema.schema, found);
+        }
+    }
+
+    /// Text that may itself be JSON (tool arguments and results): a JSON
+    /// object or array is scanned structurally (every unescaped key and
+    /// string, every number), so escapes such as `\u0041lice` cannot hide a
+    /// name; anything else as text.
+    fn embedded(&self, text: &str, found: &mut LeakFound) {
+        let head = text.trim_start();
+        if (head.starts_with('{') || head.starts_with('['))
+            && let Ok(value) = serde_json::from_str::<Value>(text)
+        {
+            self.value(&value, found);
+        } else {
+            self.text(text, found);
+        }
+    }
+
+    /// A provider-issued call id: a known member id is a leak, a long digit
+    /// run alone is not (ids like `call_123…` are opaque).
+    fn call_id(&self, id: &str, found: &mut LeakFound) {
+        let mut i = 0;
+        while i < id.len() {
+            let rest = &id[i..];
+            let prev = id[..i].chars().next_back();
+            if prev.is_none_or(|ch| !ch.is_ascii_digit()) {
+                let digits = digit_run(rest);
+                if !digits.is_empty() {
+                    if self.ids.contains(digits) {
+                        found.add(LeakKind::Id);
+                    }
+                    i += digits.len();
+                    continue;
+                }
+            }
+            i += rest.chars().next().map_or(1, char::len_utf8);
+        }
+    }
+
+    /// Every key, string and number of a JSON value.
+    fn value(&self, value: &Value, found: &mut LeakFound) {
+        let mut stack = vec![value];
         while let Some(value) = stack.pop() {
             match value {
                 Value::String(text) => self.text(text, found),

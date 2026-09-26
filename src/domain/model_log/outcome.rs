@@ -52,7 +52,8 @@ spelled! {
 }
 
 spelled! {
-    /// How one extraction pass ended; `unknown` as for chat.
+    /// How one extraction pass ended (`identity_leak`: the provider-boundary
+    /// scanner refused the request, nothing was sent); `unknown` as for chat.
     ExtractionOutcome {
         Proposed => "proposed",
         NoChange => "no_change",
@@ -60,6 +61,7 @@ spelled! {
         TurnedAway => "turned_away",
         ContentBlocked => "content_blocked",
         SelfServiceLink => "self_service_link",
+        IdentityLeak => "identity_leak",
         Unknown => "unknown",
     }
 }

@@ -10,6 +10,7 @@ mod cards;
 mod commit;
 mod fakes;
 mod gate;
+mod masking;
 mod matching;
 mod merge;
 mod nudge;

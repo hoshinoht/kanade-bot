@@ -89,6 +89,7 @@ fn model_stack(
         roles: ModelRoles::from(&settings.models),
         permits: u32::from(models.permits),
         allow_external_unmasked: models.allow_external_unmasked,
+        pseudonymize: models.pseudonymize,
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     match build_with_groups(setup, &models.groups, random) {
@@ -148,6 +149,7 @@ pub async fn compose(
             model_permits: u32::from(config.models.permits),
             model_groups: config.models.groups.clone(),
             allow_external_unmasked: config.models.allow_external_unmasked,
+            pseudonymize: config.models.pseudonymize,
             chat_pilot_role_id: config.guild.chat_pilot_role_id.map(|id| id.to_string()),
         },
         personas: Some(PersonaFiles {

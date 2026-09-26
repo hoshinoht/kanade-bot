@@ -14,6 +14,7 @@ use crate::{
 
 const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
 const UNMASKED: &str = "KANADE_ALLOW_EXTERNAL_UNMASKED";
+const PSEUDONYMIZE: &str = "KANADE_PSEUDONYMIZE";
 const ALIASES: [&str; 3] = [
     "KANADE_EXTRACT_MODEL",
     "KANADE_CHAT_MODEL",
@@ -45,6 +46,9 @@ pub struct ModelSettings {
     /// `KANADE_ALLOW_EXTERNAL_UNMASKED=1`: external routes may run without
     /// pseudonymization (provider testing only).
     pub allow_external_unmasked: bool,
+    /// `KANADE_PSEUDONYMIZE=1` (`models.pseudonymize`): member identities
+    /// reach every model role as per-request fictional names. Default off.
+    pub pseudonymize: bool,
 }
 
 impl ModelSettings {
@@ -77,13 +81,8 @@ impl ModelSettings {
             rewrite_reasoning: rewrite_reasoning?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
             groups: groups::parse(values)?,
-            allow_external_unmasked: match non_empty(values, UNMASKED) {
-                None | Some("0") => false,
-                Some("1") => true,
-                Some(_) => {
-                    return Err(Error::Configuration(format!("{UNMASKED} must be 0 or 1")));
-                }
-            },
+            allow_external_unmasked: flag(values, UNMASKED)?,
+            pseudonymize: flag(values, PSEUDONYMIZE)?,
             base_url,
         };
         if settings.base_url.is_none() {
@@ -106,6 +105,14 @@ impl ModelSettings {
             .as_deref()
             .map(|path| Redacted::read(path, KEY_FILE))
             .transpose()
+    }
+}
+
+fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<bool, Error> {
+    match non_empty(values, key) {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
     }
 }
 
@@ -181,6 +188,16 @@ mod tests {
             .entry("KANADE_MODEL_BASE_URL".into())
             .or_insert_with(|| "https://gw.example/v1".into());
         ModelSettings::from_mapping(&values).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn pseudonymize_is_an_off_by_default_flag() {
+        assert!(!parse(&[]).unwrap().pseudonymize);
+        assert!(parse(&[("KANADE_PSEUDONYMIZE", "1")]).unwrap().pseudonymize);
+        assert_eq!(
+            parse(&[("KANADE_PSEUDONYMIZE", "yes")]).unwrap_err(),
+            "KANADE_PSEUDONYMIZE must be 0 or 1"
+        );
     }
 
     #[test]

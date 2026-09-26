@@ -27,11 +27,12 @@ use twilight_model::id::Id;
 
 use super::{
     api::Composition,
-    chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
+    chat::{self, ChatInputs, ChatRecall, ChatRuntime, ServeAnswerer},
     chat_cards::ChatDesk,
     commands,
     extract::{self, Extraction, ExtractionStatus, Timing},
     health::GatewayProbe,
+    names::NameHistory,
     tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
 };
 use crate::{
@@ -189,6 +190,10 @@ where
     let policy = composition.admin.state.policy.clone();
     cache.set_watch(watch_list(&composition.settings));
     let roster = Arc::new(LiveRoster::new(Arc::clone(&cache)));
+    // Every roster the bot renders names from is remembered for masking.
+    let names = Arc::new(NameHistory::new());
+    let seen = Arc::clone(&names);
+    roster.observe(Arc::new(move |profiles| seen.observe_profiles(profiles)));
     let (stop_workers, stopped) = watch::channel(false);
 
     let (roster_jobs, roster_queue) = mpsc::unbounded_channel();
@@ -266,6 +271,8 @@ where
         Arc::clone(&composition.admin.state.catalog),
         composition.models.as_ref(),
         Arc::clone(&composition.personas),
+        &cache,
+        &roster,
     );
     let quiet = Arc::new(AtomicBool::new(
         composition.settings.notifications.quiet_mode,
@@ -340,6 +347,7 @@ where
             pilot_role: access.pilot_role.clone(),
             clock: Arc::clone(&wiring.clock),
             desk: Arc::clone(&desk),
+            recall: Arc::new(ChatRecall::new(names)),
         },
         transport: Arc::clone(&wiring.transport),
         handle: composition.admin.state.chat.clone(),

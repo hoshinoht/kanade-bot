@@ -62,7 +62,7 @@ impl PseudonymSession {
             let end = i + digits.len();
             let whole = (i == 0 || !matches!(bytes[i - 1], b'-' | b'.' | b'e' | b'E' | b'+'))
                 && !matches!(bytes.get(end), Some(b'.' | b'e' | b'E'));
-            match whole.then(|| self.id_token(digits)).flatten() {
+            match whole.then(|| self.digits_token(digits)).flatten() {
                 Some(token) => out.push_str(&quote(&token)),
                 None => out.push_str(digits),
             }

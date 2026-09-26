@@ -10,6 +10,7 @@ mod context;
 mod gate;
 mod identity;
 mod looping;
+mod masking;
 mod model;
 mod pilot;
 mod propose;

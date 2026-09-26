@@ -9,6 +9,7 @@ use crate::chat::sanitize::looks_like_clarification;
 use crate::chat::tools::{REFUSED, ToolContext, ToolName};
 use crate::domain::model_log::{ChatInteraction, ChatOutcome, ChatRound};
 use crate::infrastructure::llm::governor::{Refused, SessionFailure};
+use crate::infrastructure::llm::identity::IdentityLeakBlocked;
 use crate::infrastructure::llm::{Effort, ErrorCode};
 
 /// How the question ended. `rate_limited` and `withheld` are decided before
@@ -20,6 +21,12 @@ fn chat_guardrail(generation: &Generation) -> Value {
     }
     if generation.external_unmasked {
         guardrail.insert("external_unmasked".into(), Value::Bool(true));
+    }
+    if generation.pseudonymized {
+        guardrail.insert("pseudonymized".into(), Value::Bool(true));
+    }
+    if let Some(blocked) = generation.leak_blocked() {
+        guardrail.insert(IdentityLeakBlocked::EVENT.into(), blocked.payload());
     }
     Value::Object(guardrail)
 }

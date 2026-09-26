@@ -43,7 +43,7 @@ impl LeakFound {
         self.count += 1;
     }
 
-    pub(super) fn unscannable() -> Self {
+    pub(in crate::infrastructure::llm) fn unscannable() -> Self {
         Self {
             kinds: vec![LeakKind::Unscannable],
             count: 0,
@@ -83,6 +83,18 @@ impl IdentityLeakBlocked {
             "kinds": self.kinds.iter().map(|kind| kind.as_str()).collect::<Vec<_>>(),
             "count": self.count,
         })
+    }
+}
+
+impl IdentityLeakBlocked {
+    /// A structured WARN line for ports without the runtime logger: the
+    /// event name and the payload fields, nothing else.
+    pub fn log_line(&self) -> Value {
+        let mut line = json!({"level": "WARN", "event": Self::EVENT});
+        if let (Some(fields), Value::Object(payload)) = (line.as_object_mut(), self.payload()) {
+            fields.extend(payload);
+        }
+        line
     }
 }
 

@@ -1,7 +1,7 @@
 //! The stored member rows, held in memory for synchronous readers.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 
 use tokio::sync::watch;
 
@@ -12,13 +12,18 @@ use crate::domain::members::{Directory, Member, MemberProfile};
 /// A snapshot of the `members` table plus the guild cache's watch list.
 /// Refreshed by the roster task after its writes and by the tick before
 /// each run (portal edits such as ping levels land there).
-#[derive(Debug)]
 pub struct LiveRoster {
     cache: Arc<GuildCache>,
     rows: RwLock<Arc<BTreeMap<String, MemberProfile>>>,
     /// Set after the first startup reconcile (success or not) was applied.
     reconciled: watch::Sender<bool>,
+    /// Told every roster before readers can see it (pseudonymization keeps
+    /// every name a member was known by).
+    observer: OnceLock<RosterObserver>,
 }
+
+/// Called with each full roster [`LiveRoster::replace`] installs.
+pub type RosterObserver = Arc<dyn Fn(&[MemberProfile]) + Send + Sync>;
 
 impl LiveRoster {
     pub fn new(cache: Arc<GuildCache>) -> Self {
@@ -26,7 +31,13 @@ impl LiveRoster {
             cache,
             rows: RwLock::default(),
             reconciled: watch::Sender::new(false),
+            observer: OnceLock::new(),
         }
+    }
+
+    /// Set once, before the roster is first filled; `false` if one was set.
+    pub fn observe(&self, observer: RosterObserver) -> bool {
+        self.observer.set(observer).is_ok()
     }
 
     pub fn mark_reconciled(&self) {
@@ -39,6 +50,9 @@ impl LiveRoster {
     }
 
     pub fn replace(&self, profiles: Vec<MemberProfile>) {
+        if let Some(observer) = self.observer.get() {
+            observer(&profiles);
+        }
         let rows = profiles
             .into_iter()
             .map(|profile| (profile.member.user_id.clone(), profile))
@@ -62,6 +76,22 @@ impl LiveRoster {
             .unwrap_or_else(PoisonError::into_inner)
             .get(user_id)
             .cloned()
+    }
+}
+
+impl std::fmt::Debug for LiveRoster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiveRoster")
+            .field(
+                "rows",
+                &self
+                    .rows
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .len(),
+            )
+            .field("observed", &self.observer.get().is_some())
+            .finish_non_exhaustive()
     }
 }
 

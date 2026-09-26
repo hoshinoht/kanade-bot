@@ -194,6 +194,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
             let failure = match outcome {
                 Ok(response) => {
                     gate.finish(Some(Outcome::Success));
+                    gate.echo(&response);
                     let charge = |error| failed(error, true);
                     let known = response
                         .usage
@@ -214,8 +215,10 @@ impl<P: LlmProvider> CompletionRunner<P> {
                         )));
                     }
                     let validation = gate.kind().tool_call_validation();
-                    return validate_response(current, response, &self.limits, validation)
-                        .map_err(charge);
+                    let valid = validate_response(current, response, &self.limits, validation)
+                        .map_err(charge)?;
+                    gate.echo(&valid);
+                    return Ok(valid);
                 }
                 Err(failure) => failure,
             };

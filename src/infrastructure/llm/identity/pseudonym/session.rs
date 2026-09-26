@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt,
     sync::Arc,
 };
@@ -11,8 +11,17 @@ use super::{
     normalize::{name_keys, near_match, normalise},
 };
 use crate::infrastructure::llm::identity::codec::{
-    DecodeError, IdentitySession, Member, ScanName, ScanNeedles,
+    DecodeError, IdentitySession, IssuedName, Member, ScanName, ScanNeedles,
 };
+
+/// Prefix of the opaque tokens that stand for stray snowflakes (ids of
+/// nobody in the session: messages, channels, roles, outsiders).
+const OPAQUE: &str = "Ref";
+
+/// A 17–20 digit run that is no known id: a stray snowflake.
+pub(super) fn is_snowflake(digits: &str) -> bool {
+    (17..=20).contains(&digits.len())
+}
 
 /// A name the session masks in text.
 pub(super) struct Needle {
@@ -34,6 +43,12 @@ pub struct PseudonymSession {
     skipped_short: usize,
     roster_ids: BTreeSet<String>,
     pub(super) issuer: Issuer,
+    /// Extraction message refs: `[n]` stands for `message_refs[n - 1]`.
+    message_refs: Vec<String>,
+    /// Stray snowflakes: `Ref<n>` stands for `opaque[n - 1]`.
+    opaque: Vec<String>,
+    /// `Ref<n>` words seen in source text (lowercase); never issued.
+    pub(super) source_refs: HashSet<String>,
 }
 
 impl PseudonymSession {
@@ -50,6 +65,9 @@ impl PseudonymSession {
             skipped_short: 0,
             roster_ids: BTreeSet::new(),
             issuer,
+            message_refs: Vec::new(),
+            opaque: Vec::new(),
+            source_refs: HashSet::new(),
         };
         for member in roster {
             if session.is_bot(&member.user_id) {
@@ -125,6 +143,53 @@ impl PseudonymSession {
             return self.bot_name().to_owned();
         }
         self.issuer.member(user_id).to_owned()
+    }
+
+    /// The opaque token for a stray snowflake (issued once per digits).
+    pub(super) fn opaque_token(&mut self, digits: &str) -> String {
+        let index = match self.opaque.iter().position(|known| known == digits) {
+            Some(index) => index,
+            None => {
+                self.opaque.push(digits.to_owned());
+                self.opaque.len() - 1
+            }
+        };
+        self.opaque_name(index)
+    }
+
+    /// `Ref<n>`, skipping any `Ref<n>` spelled in source text.
+    fn opaque_name(&self, index: usize) -> String {
+        let mut n = 0;
+        let mut seen = 0;
+        loop {
+            n += 1;
+            let name = format!("{OPAQUE}{n}");
+            if self.source_refs.contains(&name.to_ascii_lowercase()) {
+                continue;
+            }
+            if seen == index {
+                return name;
+            }
+            seen += 1;
+        }
+    }
+
+    /// The digits an issued opaque token stands for.
+    pub(super) fn opaque_digits(&self, word: &str) -> Option<&str> {
+        if !Self::is_opaque_form(word) {
+            return None;
+        }
+        (0..self.opaque.len())
+            .find(|&index| self.opaque_name(index).eq_ignore_ascii_case(word))
+            .map(|index| self.opaque[index].as_str())
+    }
+
+    /// Whether a source word spells an opaque token (`ref12`).
+    pub(super) fn is_opaque_form(word: &str) -> bool {
+        word.len() > OPAQUE.len()
+            && word.is_char_boundary(OPAQUE.len())
+            && word[..OPAQUE.len()].eq_ignore_ascii_case(OPAQUE)
+            && word[OPAQUE.len()..].bytes().all(|b| b.is_ascii_digit())
     }
 
     /// What a boundary scanner must not see in a request built through this
@@ -217,6 +282,65 @@ impl IdentitySession for PseudonymSession {
     fn scan_needles(&self) -> Option<ScanNeedles> {
         Some(self.needles())
     }
+
+    fn former_name(&mut self, user_id: &str, name: &str) {
+        if self.is_bot(user_id) {
+            return;
+        }
+        self.add_needle(name, user_id);
+        // Registered oldest first, so a departed member shows the latest.
+        if !self.roster_ids.contains(user_id) && !name.trim().is_empty() {
+            self.names
+                .insert(user_id.to_owned(), name.trim().to_owned());
+        }
+    }
+
+    fn masks(&self) -> bool {
+        true
+    }
+
+    fn message_ref(&mut self, message_id: &str) -> String {
+        let index = match self.message_refs.iter().position(|id| id == message_id) {
+            Some(index) => index,
+            None => {
+                self.message_refs.push(message_id.to_owned());
+                self.message_refs.len() - 1
+            }
+        };
+        (index + 1).to_string()
+    }
+
+    fn decode_message_ref(&self, value: &str) -> Result<String, DecodeError> {
+        let trimmed = value.trim();
+        let bare = trimmed
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+            .unwrap_or(trimmed)
+            .trim();
+        bare.parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|index| self.message_refs.get(index))
+            .cloned()
+            .ok_or(DecodeError::UnknownToken { offset: 0 })
+    }
+
+    fn mapping(&self) -> Option<Vec<IssuedName>> {
+        Some(
+            self.issuer
+                .issued
+                .iter()
+                .filter_map(|issued| match &issued.holder {
+                    super::issuer::Holder::Member(user_id) => Some(IssuedName {
+                        token: issued.token.clone(),
+                        user_id: user_id.clone(),
+                        display_name: self.names.get(user_id).cloned(),
+                    }),
+                    super::issuer::Holder::Literal(_) => None,
+                })
+                .collect(),
+        )
+    }
 }
 
 impl fmt::Debug for PseudonymSession {
@@ -230,6 +354,8 @@ impl fmt::Debug for PseudonymSession {
             )
             .field("skipped_short", &self.skipped_short)
             .field("literals", &self.issuer.literal_count())
+            .field("message_refs", &self.message_refs.len())
+            .field("opaque", &self.opaque.len())
             .field("pool_available", &self.issuer.available())
             .finish()
     }

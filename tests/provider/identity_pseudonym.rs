@@ -273,8 +273,12 @@ fn unknown_authors_and_ids_are_masked_in_later_text() {
         Ok("Zed Quill and someone".to_owned())
     );
     assert_eq!(session.decode_ref(&stranger), Ok(STRANGER_ID.to_owned()));
-    // Stray snowflakes of nobody in the session are left for message refs.
-    assert_eq!(session.text("555555555555555555"), "555555555555555555");
+    // Stray snowflakes of nobody in the session become opaque refs.
+    assert_eq!(session.text("555555555555555555"), "Ref1");
+    assert_eq!(
+        session.decode_reply("Ref1"),
+        Ok("555555555555555555".to_owned())
+    );
 }
 
 #[test]

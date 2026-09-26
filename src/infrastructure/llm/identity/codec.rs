@@ -158,4 +158,66 @@ pub trait IdentitySession: Send {
     fn scan_needles(&self) -> Option<ScanNeedles> {
         None
     }
+
+    /// A name this member was known by before (a nickname, display name or
+    /// alias since changed or removed, or a member who left): masked and
+    /// scanned from now on like a current name, without issuing a token
+    /// until it is used. Stored text (chat history, anchors, the bot's own
+    /// earlier replies) may still carry it.
+    fn former_name(&mut self, _user_id: &str, _name: &str) {}
+
+    /// Whether this session hides identities (cheap; no needle copy).
+    fn masks(&self) -> bool {
+        false
+    }
+
+    /// How a prompt shows a Discord message id (extraction's `[msg_id]`):
+    /// a short per-session ref when masking, the id itself otherwise.
+    fn message_ref(&mut self, message_id: &str) -> String {
+        message_id.to_owned()
+    }
+
+    /// A message ref from model output back to its message id; a ref this
+    /// session never issued is `UnknownToken`.
+    fn decode_message_ref(&self, value: &str) -> Result<String, DecodeError> {
+        Ok(value.to_owned())
+    }
+
+    /// Every member token issued so far with the identity it stands for,
+    /// for the admin Model view. Never log it; `None` when nothing is masked.
+    fn mapping(&self) -> Option<Vec<IssuedName>> {
+        None
+    }
+}
+
+/// One issued member token: what the model saw and who it was. Stored only
+/// with the admin-only chat log; `Debug` hides everything but sizes.
+#[derive(Clone, PartialEq, Eq)]
+pub struct IssuedName {
+    pub token: String,
+    pub user_id: String,
+    /// The roster display name, else the last author label, at issue time.
+    pub display_name: Option<String>,
+}
+
+impl fmt::Debug for IssuedName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IssuedName")
+            .field("token_bytes", &self.token.len())
+            .field("has_name", &self.display_name.is_some())
+            .finish()
+    }
+}
+
+/// The roster a port loads per call; `None` when it cannot be read (a
+/// masking port then fails closed).
+pub trait RosterSource: Send + Sync {
+    fn roster(&self) -> Option<Vec<Member>>;
+}
+
+/// Channel and role names for `<#id>` and `<@&id>` mentions (the guild
+/// cache); unknown ids become opaque refs instead.
+pub trait MentionNames: Send + Sync {
+    fn channel(&self, id: &str) -> Option<String>;
+    fn role(&self, id: &str) -> Option<String>;
 }

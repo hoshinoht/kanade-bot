@@ -8,8 +8,8 @@ use serde_json::json;
 
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
-    ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MessageUpsert, ModelLogStore,
-    ReadMessage, RescanJob, RescanStatus, WatchedMessage,
+    ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MaskedName, MaskedRound,
+    MaskedTurn, MessageUpsert, ModelLogStore, ReadMessage, RescanJob, RescanStatus, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -20,6 +20,8 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     extraction_logs_round_trip_and_refuse_bad_rows(make().await).await;
     extraction_filters_combine_and_page(make().await).await;
     chat_logs_round_trip_with_rounds(make().await).await;
+    masked_chat_views_round_trip_and_prune(make().await).await;
+    identity_leak_is_an_extraction_outcome(make().await).await;
     chat_filters_match_rounds_flags_and_latency(make().await).await;
     rescan_jobs_stop_changing_once_final(make().await).await;
     allowance_overrides_replace_and_clear(make().await).await;
@@ -555,6 +557,107 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
         "chat: tool_calls must be an array"
     );
     assert_eq!(store.load_chat("c-2").await.expect("load"), None);
+}
+
+fn masked() -> MaskedTurn {
+    MaskedTurn {
+        rounds: vec![
+            MaskedRound {
+                round: 1,
+                clean: false,
+                request: json!([{"role": "user", "content": "Haruka: when is Lotus?"}]),
+                reply: None,
+                tool_calls: json!([{"name": "get_schedule", "arguments": "{}"}]),
+            },
+            MaskedRound {
+                round: 2,
+                clean: true,
+                request: json!([]),
+                reply: Some("Haruka, it is Friday.".into()),
+                tool_calls: json!([]),
+            },
+        ],
+        reply: "Alice, it is Friday.".into(),
+        mapping: vec![
+            MaskedName {
+                token: "Haruka".into(),
+                user_id: "1".into(),
+                display_name: Some("Alice".into()),
+            },
+            MaskedName {
+                token: "Sora".into(),
+                user_id: "2".into(),
+                display_name: None,
+            },
+        ],
+    }
+}
+
+async fn masked_chat_views_round_trip_and_prune<S: ModelLogStore>(store: S) {
+    let cutoff = utc(20, 0, 0);
+    let old = cutoff - chrono::TimeDelta::microseconds(1);
+    store
+        .record_masked_chat(chat("c-masked", old), masked())
+        .await
+        .expect("record");
+    store
+        .record_chat(chat("c-plain", cutoff))
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_masked_chat("c-masked").await.expect("load"),
+        Some(masked()),
+        "masked chat: round trip"
+    );
+    assert_eq!(
+        store.load_chat("c-masked").await.expect("load"),
+        Some(chat("c-masked", old)),
+        "masked chat: the interaction is written with it"
+    );
+    assert_eq!(
+        store.load_masked_chat("c-plain").await.expect("load"),
+        None,
+        "masked chat: a passthrough turn stores nothing extra"
+    );
+    let mut bad = masked();
+    bad.rounds[0].request = json!({});
+    assert!(
+        matches!(
+            store.record_masked_chat(chat("c-bad", old), bad).await,
+            Err(StoreError::Constraint(_))
+        ),
+        "masked chat: the request must be an array"
+    );
+    assert_eq!(store.load_chat("c-bad").await.expect("load"), None);
+    store.prune_model_logs(cutoff).await.expect("prune");
+    assert_eq!(
+        store.load_masked_chat("c-masked").await.expect("load"),
+        None,
+        "masked chat: pruned with its interaction"
+    );
+    assert_eq!(store.load_chat("c-masked").await.expect("load"), None);
+    assert!(store.load_chat("c-plain").await.expect("load").is_some());
+}
+
+async fn identity_leak_is_an_extraction_outcome<S: ModelLogStore>(store: S) {
+    let mut log = extraction("x-leak", utc(20, 12, 0));
+    log.outcome = ExtractionOutcome::IdentityLeak;
+    log.guardrail =
+        json!({"identity_leak_blocked": {"role": "extraction", "kinds": ["name"], "count": 1}});
+    store.record_extraction(log.clone()).await.expect("record");
+    assert_eq!(
+        store.load_extraction("x-leak").await.expect("load"),
+        Some(log),
+        "extractions: identity_leak round trip"
+    );
+    let page = store
+        .list_extractions(&ExtractionFilter {
+            outcomes: vec![ExtractionOutcome::IdentityLeak],
+            ..ExtractionFilter::default()
+        })
+        .await
+        .expect("list");
+    assert_eq!(ids(&page.items, |log| &log.id), ["x-leak"]);
 }
 
 async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S) {

@@ -491,3 +491,112 @@ async fn a_pseudonymizing_session_without_needles_fails_closed() {
     assert_eq!(blocked(&error).kinds, vec![LeakKind::Unscannable]);
     assert!(provider.requests().is_empty());
 }
+
+#[tokio::test(start_paused = true)]
+async fn only_content_is_scanned_so_word_names_are_caught_but_structure_is_not() {
+    use kanade::infrastructure::llm::{Effort, OutputSchema, OutputValidation, ToolCallRequest};
+    let (governor, provider, client) = setup([ok(), ok()]);
+    let route = governor.route(Role::Chat).unwrap();
+    let words = [
+        member("114200000000000061", "Max", &[]),
+        member("114200000000000062", "User", &[]),
+        member("114200000000000063", "Content", &[]),
+        member("114200000000000064", "Low", &[]),
+        member("114200000000000065", "Strict", &[]),
+    ];
+    let identity = open_session(&codec(), &route, &words).unwrap();
+    let mut question = client
+        .open_question("member", false, limits())
+        .await
+        .unwrap()
+        .with_scanner(identity.scanner());
+    let mut structured = request("hi", "hello");
+    structured.reasoning = Some(Effort::Max);
+    structured.output_schema = Some(OutputSchema {
+        name: "reply".into(),
+        schema: serde_json::json!({"type": "object"}),
+        strict: true,
+        validation: OutputValidation::CallerValidates,
+    });
+    // A provider-issued call id may be any long digit run.
+    structured.messages.push(Message::Assistant {
+        content: None,
+        tool_calls: vec![ToolCallRequest {
+            id: "call_123456789012345678".into(),
+            name: "get_run".into(),
+            arguments: "{}".into(),
+        }],
+    });
+    structured.messages.push(Message::Tool {
+        tool_call_id: "call_123456789012345678".into(),
+        content: "done".into(),
+    });
+    question.complete(&structured).await.unwrap();
+    for leaky in ["max is in", "ask the user"] {
+        let error = question.complete(&request("hi", leaky)).await.unwrap_err();
+        assert_eq!(blocked(&error).kinds, vec![LeakKind::Name], "{leaky}");
+    }
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn json_in_tool_content_is_walked_and_call_ids_match_known_ids_only() {
+    use kanade::infrastructure::llm::ToolCallRequest;
+    let (governor, provider, client) = setup([]);
+    let identity = grant(&governor, &codec(), Role::Chat);
+    let mut question = client
+        .open_question("member", false, limits())
+        .await
+        .unwrap()
+        .with_scanner(identity.scanner());
+    let call = |id: &str, result: &str| {
+        let mut request = request("x", "y");
+        request.messages.push(Message::Assistant {
+            content: None,
+            tool_calls: vec![ToolCallRequest {
+                id: id.into(),
+                name: "get_run".into(),
+                arguments: "{}".into(),
+            }],
+        });
+        request.messages.push(Message::Tool {
+            tool_call_id: id.into(),
+            content: result.into(),
+        });
+        request
+    };
+    let escaped = call("c1", r#"{"who": "\u0041lice"}"#);
+    let error = question.complete(&escaped).await.unwrap_err();
+    assert_eq!(blocked(&error).kinds, vec![LeakKind::Name]);
+    let known = call(&format!("call_{ALICE_ID}"), "ok");
+    let error = question.complete(&known).await.unwrap_err();
+    assert_eq!(blocked(&error).kinds, vec![LeakKind::Id]);
+    assert!(provider.requests().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_masking_client_refuses_a_session_without_a_scanner() {
+    let (governor, provider, client) = setup([ok()]);
+    let client = client.with_masking(true);
+    let before = spent(&governor);
+    let mut question = client
+        .open_question("member", false, limits())
+        .await
+        .unwrap();
+    let error = question.complete(&request("x", "hi")).await.unwrap_err();
+    assert_eq!(
+        blocked(&error),
+        &IdentityLeakBlocked {
+            role: Role::Chat,
+            kinds: vec![LeakKind::Unscannable],
+            count: 0
+        }
+    );
+    assert!(provider.requests().is_empty());
+    assert_eq!(spent(&governor), before);
+    // An active scanner lets it through.
+    let identity = grant(&governor, &codec(), Role::Chat);
+    let mut question = question.with_scanner(identity.scanner());
+    question.complete(&request("x", "hi")).await.unwrap();
+    assert_eq!(provider.requests().len(), 1);
+}

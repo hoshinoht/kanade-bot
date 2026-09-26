@@ -154,11 +154,14 @@ fn known_ids_inside_urls_are_masked() {
     ));
     let alice = session.member_ref(ALICE_ID);
     let bob = session.member_ref(BOB_ID);
+    // A stray snowflake in a URL becomes an opaque ref, decoded back.
     assert_eq!(
         encoded,
-        format!(
-            "see https://discord.com/users/{alice} and https://x.io/555555555555555555\\n{bob}"
-        )
+        format!("see https://discord.com/users/{alice} and https://x.io/Ref1\\n{bob}")
+    );
+    assert_eq!(
+        session.decode_reply("https://x.io/Ref1"),
+        Ok("https://x.io/555555555555555555".to_owned())
     );
 }
 

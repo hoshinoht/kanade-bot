@@ -534,6 +534,169 @@ async fn the_unmasked_override_answers_and_marks_the_guardrail() {
 }
 
 #[tokio::test]
+async fn masking_with_no_roster_sends_nothing() {
+    let stub = ModelStub::start("external", "should never be asked").await;
+    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
+        sleep(Duration::from_millis(300)).await;
+        assert_eq!(stub.completions(), 0, "fail closed without a roster");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_masked_external_turn_is_answered_and_stores_its_model_view() {
+    use crate::domain::members::{Member, MemberProfile, MemberStore};
+    let stub = ModelStub::start("external", "Lotus is at nine tonight.").await;
+    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    live.store
+        .put_member(MemberProfile {
+            member: Member {
+                user_id: ALICE.to_string(),
+                display_name: Some("Alicia Quartz".into()),
+                has_role: true,
+                ..Member::default()
+            },
+            aliases: vec!["quartzy".into()],
+            reply_style: None,
+            roles: Vec::new(),
+            is_guild_admin: false,
+        })
+        .await
+        .unwrap();
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
+        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
+        assert!(replies(&live.fake, THREAD)[0].0.contains("Lotus"));
+        let row = one_chat(&live.store).await;
+        assert_eq!(row.outcome, ChatOutcome::Answered);
+        assert_eq!(row.guardrail, json!({"pseudonymized": true}));
+        let sent = serde_json::to_string(&*stub.completions.lock().unwrap()).unwrap();
+        for raw in ["Alicia", "Quartz", "quartzy", "1001"] {
+            assert!(!sent.contains(raw), "{raw} reached the model");
+        }
+        let view = live
+            .store
+            .load_masked_chat(&row.id)
+            .await
+            .unwrap()
+            .expect("the Model view is stored");
+        assert_eq!(view.rounds.len(), 1);
+        assert_eq!(view.reply, replies(&live.fake, THREAD)[0].0);
+        assert!(
+            view.mapping
+                .iter()
+                .any(|name| name.user_id == ALICE.to_string()
+                    && name.display_name.as_deref() == Some("Alicia Quartz"))
+        );
+    })
+    .await;
+}
+
+fn alice(nickname: &str, aliases: &[&str]) -> crate::domain::members::MemberProfile {
+    use crate::domain::members::{Member, MemberProfile};
+    MemberProfile {
+        member: Member {
+            user_id: ALICE.to_string(),
+            display_name: Some("Alicia Quartz".into()),
+            nickname: Some(nickname.into()),
+            has_role: true,
+            ..Member::default()
+        },
+        aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
+        reply_style: None,
+        roles: Vec::new(),
+        is_guild_admin: false,
+    }
+}
+
+/// History and anchors keep turns rendered with the names of their time: a
+/// rename (or a removed alias) before the next question must not send the
+/// old name unmasked.
+#[tokio::test]
+async fn a_renamed_members_old_names_in_history_stay_masked() {
+    use crate::domain::members::MemberStore;
+    let stub = ModelStub::start("external", "Sure Oldnick, Lotus is at nine.").await;
+    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    live.store
+        .put_member(alice("Oldnick", &["zorblax"]))
+        .await
+        .unwrap();
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        let mut first = question_json(5001, &[PILOT_ROLE]);
+        first["content"] = json!(format!("<@{SELF}> zorblax here, when is lotus?"));
+        live.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                first,
+            ))))
+            .unwrap();
+        eventually!("the first reply", replies(&live.fake, THREAD).len() == 1);
+        // Renamed and the alias removed before the next question.
+        live.store.put_member(alice("Newnick", &[])).await.unwrap();
+        live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
+        eventually!("the second reply", replies(&live.fake, THREAD).len() == 2);
+        let bodies = stub.completions.lock().unwrap().clone();
+        assert_eq!(bodies.len(), 2);
+        let second = bodies[1].to_string();
+        assert!(second.contains("lotus"), "history went out: {second}");
+        for old in ["Oldnick", "zorblax", "Alicia", "Newnick"] {
+            assert!(
+                !second.to_lowercase().contains(&old.to_lowercase()),
+                "{old}: {second}"
+            );
+        }
+    })
+    .await;
+}
+
+/// A name current only while no masked question ran (a notice naming a
+/// ping-off member) is still masked after a rename: the roster refresh
+/// records it, not only chat.
+#[tokio::test]
+async fn a_notice_name_seen_only_by_the_roster_stays_masked_after_a_rename() {
+    use crate::domain::members::MemberStore;
+    let stub = ModelStub::start("external", "Cleared indeed.").await;
+    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    live.store.put_member(alice("Oldnick", &[])).await.unwrap();
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        // Several ticks refresh the live roster with Oldnick.
+        sleep(Duration::from_millis(300)).await;
+        live.store.put_member(alice("Newnick", &[])).await.unwrap();
+        sleep(Duration::from_millis(300)).await;
+        // A reply to the bot's notice, which named the member as they were.
+        let mut notice = question_json(4000, &[]);
+        notice["author"] = user_json(SELF, "kanade", true);
+        notice["content"] = json!("🏁 Will cleared — Oldnick Bob");
+        notice["mentions"] = json!([]);
+        let mut asked = question_json(5001, &[PILOT_ROLE]);
+        asked["message_reference"] = json!({
+            "message_id": "4000", "channel_id": THREAD.to_string(), "guild_id": GUILD.to_string(),
+        });
+        asked["referenced_message"] = notice;
+        live.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                asked,
+            ))))
+            .unwrap();
+        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
+        let bodies = stub.completions.lock().unwrap().clone();
+        let sent = bodies[0].to_string();
+        assert!(sent.contains("cleared"), "the notice went out: {sent}");
+        assert!(!sent.contains("Oldnick"), "{sent}");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn chat_off_ignores_questions_and_health_says_disabled() {
     let stub = ModelStub::start("local", "x").await;
     let (live, discord) = live(&stub, &[("KANADE_CHAT_ENABLED", "0")]).await;

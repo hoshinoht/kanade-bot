@@ -585,3 +585,80 @@ async fn a_cut_off_half_open_probe_frees_the_probe_slot() {
         .expect("probe slot freed");
     assert!(next.try_begin_request().expect("admitted").is_probe());
 }
+
+fn masking_codec() -> kanade::infrastructure::llm::identity::PseudonymCodec {
+    use kanade::infrastructure::llm::governor::XorShift;
+    use kanade::infrastructure::llm::identity::{
+        BotIdentity, CodeLexicon, NamePool, PseudonymCodec, PseudonymConfig,
+    };
+    PseudonymCodec::new(PseudonymConfig {
+        pool: NamePool::curated(),
+        lexicon: CodeLexicon::builtin(),
+        bot: BotIdentity::default(),
+        extra_exclusions: Vec::new(),
+        random: Arc::new(XorShift::new(29)),
+    })
+}
+
+struct PriyaRoster(Option<Vec<Member>>);
+
+impl kanade::infrastructure::llm::identity::RosterSource for PriyaRoster {
+    fn roster(&self) -> Option<Vec<Member>> {
+        self.0.clone()
+    }
+}
+
+fn priya() -> Vec<Member> {
+    vec![Member {
+        user_id: crate::fakes::PRIYA.into(),
+        display_name: "Priya".into(),
+        nickname: None,
+        aliases: Vec::new(),
+    }]
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_masked_rewrite_encodes_member_names_and_decodes_the_reply() {
+    use kanade::infrastructure::llm::identity::IdentityCodec;
+    // Same seed, same first draw: the token the rewrite will issue.
+    let token = masking_codec()
+        .open(&priya())
+        .member_ref(crate::fakes::PRIYA);
+    let (provider, client) = client(vec![reply(&format!("{token} says fix it!"))], true);
+    let rewriter = GovernedRewriter::new(client, Arc::new(masking_codec()))
+        .with_roster(Arc::new(PriyaRoster(Some(priya()))));
+    let prompt = RewritePrompt::build(
+        &kanade(),
+        NudgeMood::Playful,
+        "Priya says {boss} is right here.",
+    );
+    let rewritten = rewriter.rewrite(&prompt, DEADLINE).await;
+    assert_eq!(rewritten.as_deref(), Ok("Priya says fix it!"));
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(find_request_leaks(&requests[0], &priya()).is_empty());
+    let Message::User { content } = &requests[0].messages[1] else {
+        panic!("seed");
+    };
+    assert_eq!(content, &format!("{token} says {{boss}} is right here."));
+    let Message::System { content } = &requests[0].messages[0] else {
+        panic!("system");
+    };
+    assert!(content.starts_with(kanade::chat::nudge::NUDGE_REWRITE_INSTRUCTION));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_masked_rewrite_without_a_roster_sends_nothing() {
+    for roster in [None, Some(Vec::new())] {
+        let (provider, client) = client(vec![reply("x")], true);
+        let mut rewriter = GovernedRewriter::new(client, Arc::new(masking_codec()));
+        if let Some(members) = roster {
+            rewriter = rewriter.with_roster(Arc::new(PriyaRoster(Some(members))));
+        }
+        assert_eq!(
+            rewriter.rewrite(&rewrite_prompt(), DEADLINE).await,
+            Err(RewriteFailure::Misconfigured)
+        );
+        assert!(provider.requests().is_empty());
+    }
+}

@@ -3,10 +3,10 @@
 //! the scheduler for proposals and the card desk for their cards), the
 //! driver start (withheld ids reloaded before any admission) and its stop.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::json;
 use tokio::sync::watch;
@@ -36,17 +36,13 @@ use crate::{
         catalog::BossTable,
         ids::RandomIds,
         members::{MemberStore, Roster},
-        model_log::{ChatInteraction, ModelLogStore},
+        model_log::{ChatInteraction, MaskedTurn, ModelLogStore},
         schedule::SchedulePolicy,
         scheduler::SchedulerService,
         settings::RuntimeSettings,
     },
     infrastructure::{
-        llm::{
-            governor::Role,
-            identity::{self, Passthrough},
-            setup::ModelStack,
-        },
+        llm::{governor::Role, identity, setup::ModelStack},
         store::SqliteStore,
     },
     runtime::{error::Error, logging},
@@ -55,12 +51,58 @@ use crate::{
 use super::chat_cards::{self as cards, ChatDesk};
 use super::chat_log;
 use super::discord::GatewayTransport;
+use super::names::NameHistory;
+use super::privacy;
 
 impl ChatAllowance for ChatHandle {
     fn snapshot(&self) -> AllowanceSnapshot {
         self.allowance()
     }
 }
+
+/// What masked chat remembers across questions.
+#[derive(Default)]
+pub struct ChatRecall {
+    /// Model views from `answer` until `record` stores them with their row
+    /// (keyed by interaction id).
+    views: Mutex<HashMap<String, MaskedTurn>>,
+    /// Shared with the live roster, which feeds it on every refresh.
+    names: Arc<NameHistory>,
+}
+
+impl ChatRecall {
+    pub fn new(names: Arc<NameHistory>) -> Self {
+        Self {
+            views: Mutex::default(),
+            names,
+        }
+    }
+
+    /// Record the question's roster; returns every name ever seen.
+    fn names_seen(&self, roster: &[identity::Member]) -> Vec<(String, String)> {
+        self.names.observe(roster);
+        self.names.pairs()
+    }
+}
+
+impl std::fmt::Debug for ChatRecall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatRecall")
+            .field(
+                "views",
+                &self
+                    .views
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .len(),
+            )
+            .field("names", &self.names)
+            .finish()
+    }
+}
+
+/// Model views waiting for their row; more means rows were never recorded.
+const MAX_PENDING_VIEWS: usize = 64;
 
 /// The model side of live chat.
 pub struct ServeAnswerer<T> {
@@ -75,6 +117,8 @@ pub struct ServeAnswerer<T> {
     pub pilot_role: Option<String>,
     pub clock: Clock,
     pub desk: Arc<ChatDesk<T>>,
+    /// Masked turns' Model views and the members' former names.
+    pub recall: Arc<ChatRecall>,
 }
 
 impl<T> ServeAnswerer<T> {
@@ -89,6 +133,10 @@ impl<T> ServeAnswerer<T> {
             category_ids: settings.chatbot.category_ids.clone(),
             role_id: self.pilot_role.clone(),
         }
+    }
+
+    fn masking(&self) -> bool {
+        self.models.as_ref().is_some_and(|stack| stack.masking())
     }
 
     fn route(&self) -> Option<(&Arc<ModelStack>, String)> {
@@ -142,10 +190,26 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         let members = match self.store.list_members().await {
             Ok(members) => members,
             Err(_) => {
-                logging::event("WARN", "chat_members_unreadable", json!({}));
+                logging::event(
+                    "WARN",
+                    "chat_members_unreadable",
+                    json!({"masking": self.masking()}),
+                );
+                // D4: masking cannot hide names it does not know; no request.
+                if self.masking() {
+                    return None;
+                }
                 Vec::new()
             }
         };
+        if self.masking() && members.is_empty() {
+            logging::event(
+                "WARN",
+                "chat_members_unreadable",
+                json!({"masking": true, "empty": true}),
+            );
+            return None;
+        }
         let snapshot = self.personas.pin();
         let active = snapshot.active()?;
         // The member's saved reply style, when it is still readable.
@@ -185,7 +249,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     }
 
     async fn answer(&self, job: Job<'_>) -> Generation {
-        let Some((stack, _)) = self.route() else {
+        let Some((stack, alias)) = self.route() else {
             return Generation::default();
         };
         let prepared = job.prepared;
@@ -195,10 +259,24 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             .iter()
             .map(|profile| profile.member.clone())
             .collect();
+        let codec = privacy::codec(
+            stack.masking(),
+            // The runtime line names the model alias (route config).
+            || privacy::chat_exemptions(prepared.zone, &self.catalog).with_texts([&alias]),
+            &self.catalog,
+            &self.cache,
+            privacy::persona_names(&self.personas),
+        );
+        let former = if stack.masking() {
+            self.recall.names_seen(&roster)
+        } else {
+            Vec::new()
+        };
         let deps = AnswerDeps {
             client: &stack.client,
-            codec: &Passthrough,
+            codec: codec.as_ref(),
             roster: &roster,
+            former: &former,
         };
         let guild = GuildView {
             members: &members,
@@ -224,11 +302,35 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             zone: prepared.zone,
             cancelled: job.cancelled,
         };
-        answer(&deps, job.question, &guild, &mut proposer, &ports).await
+        let row_id = job.question.ctx.source_id.clone();
+        let mut generation = answer(&deps, job.question, &guild, &mut proposer, &ports).await;
+        if let Some(view) = generation.model_view.take() {
+            let mut views = self
+                .recall
+                .views
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            // A turn cut before `record` never collects its view.
+            if views.len() >= MAX_PENDING_VIEWS {
+                views.clear();
+            }
+            views.insert(row_id, view);
+        }
+        generation
     }
 
     async fn record(&self, row: ChatInteraction) {
-        if self.store.record_chat(row).await.is_err() {
+        let view = self
+            .recall
+            .views
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&row.id);
+        let stored = match view {
+            Some(view) => self.store.record_masked_chat(row, view).await,
+            None => self.store.record_chat(row).await,
+        };
+        if stored.is_err() {
             logging::event("WARN", "chat_log_failed", json!({}));
         }
     }

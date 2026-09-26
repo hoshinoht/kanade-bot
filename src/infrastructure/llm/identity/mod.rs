@@ -7,6 +7,7 @@
 
 mod codec;
 mod passthrough;
+mod protect;
 mod pseudonym;
 mod route;
 mod scan;
@@ -14,9 +15,11 @@ mod scan;
 mod tagging;
 
 pub use codec::{
-    CodecMode, DecodeError, IdentityCodec, IdentitySession, Member, ScanName, ScanNeedles,
+    CodecMode, DecodeError, IdentityCodec, IdentitySession, IssuedName, Member, MentionNames,
+    RosterSource, ScanName, ScanNeedles,
 };
 pub use passthrough::{Passthrough, PassthroughSession};
+pub use protect::{Protected, encode_protected};
 pub use pseudonym::{
     BotIdentity, CodeLexicon, NamePool, PseudonymCodec, PseudonymConfig, PseudonymSession,
     SystemRng,

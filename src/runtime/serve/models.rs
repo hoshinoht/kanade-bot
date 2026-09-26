@@ -152,11 +152,7 @@ fn lines(stack: &ModelStack, report: &StartupReport, sources: &Sources) -> Vec<L
                 .unwrap_or(Source::Default)
                 .as_str()
         };
-        let route_kind = match (route.external, route.unmasked_allowed) {
-            (false, _) => "homelab",
-            (true, false) => "external_refused",
-            (true, true) => "external_unmasked",
-        };
+        let route_kind = stack.route_kind(role).unwrap_or("homelab");
         out.push((
             "INFO",
             "model_role",
@@ -166,6 +162,7 @@ fn lines(stack: &ModelStack, report: &StartupReport, sources: &Sources) -> Vec<L
                 "effort": status.map(|status| status.effort.as_str()),
                 "source": source,
                 "route": route_kind,
+                "masking": stack.masking(),
             }),
         ));
     }
@@ -173,6 +170,7 @@ fn lines(stack: &ModelStack, report: &StartupReport, sources: &Sources) -> Vec<L
         let (level, kind) = match warning {
             StartupWarning::ExternalUnmasked { .. } => ("WARN", "external_unmasked"),
             StartupWarning::ExternalRefused { .. } => ("WARN", "external_refused"),
+            StartupWarning::OverrideUnused => ("WARN", "override_unused"),
             StartupWarning::UnpublishedEffort { .. } => ("INFO", "unpublished_effort"),
             StartupWarning::Governor(ConfigWarning::PermitsAboveGateway { .. }) => {
                 ("WARN", "capacity")

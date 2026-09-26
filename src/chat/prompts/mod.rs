@@ -3,9 +3,11 @@
 
 mod context;
 mod nudges;
+mod owned;
 
 pub use context::{clock_header, focus_line, runtime_line};
 pub use nudges::builtin_nudges;
+pub use owned::{code_owned_texts, protected};
 
 /// Assistant scope; `{assistant_name}` is replaced literally with the identity name.
 pub const ASSISTANT_SCOPE: &str = include_str!("assistant-scope.md");

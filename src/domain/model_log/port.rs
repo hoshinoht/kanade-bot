@@ -6,6 +6,7 @@ use std::future::Future;
 use chrono::{DateTime, Utc};
 
 use super::filter::{ChatFilter, ExtractionFilter, LogFacets, LogPage};
+use super::masked::MaskedTurn;
 use super::records::{
     AllowanceOverride, ChatInteraction, ExtractionLog, RescanJob, WatchedMessage,
 };
@@ -118,6 +119,21 @@ pub trait ModelLogStore {
         &self,
         id: &str,
     ) -> impl Future<Output = Result<Option<ChatInteraction>, StoreError>> + Send;
+
+    /// Insert an interaction with its rounds and the Model view of its
+    /// masked turn, atomically (pseudonymization on only).
+    fn record_masked_chat(
+        &self,
+        interaction: ChatInteraction,
+        masked: MaskedTurn,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// The Model view stored with a chat interaction; `None` for a
+    /// passthrough turn, a missing or a pruned one.
+    fn load_masked_chat(
+        &self,
+        id: &str,
+    ) -> impl Future<Output = Result<Option<MaskedTurn>, StoreError>> + Send;
 
     fn list_chats(
         &self,

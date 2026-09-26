@@ -34,6 +34,11 @@ impl PseudonymSession {
             }
             if at_word_start(prev, rest) {
                 let word = word_run(rest);
+                if let Some(digits) = self.opaque_digits(word) {
+                    out.push_str(digits);
+                    i += word.len();
+                    continue;
+                }
                 if !word.is_empty() {
                     match self.lookup_at(word, i)? {
                         Lookup::Token { index, core } => {

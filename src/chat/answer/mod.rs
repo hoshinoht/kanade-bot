@@ -28,7 +28,9 @@ use crate::chat::tools::read::{PendingCard, StrategyGuides};
 use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member};
-use crate::infrastructure::llm::governor::{Charge, SessionError};
+use crate::domain::model_log::MaskedTurn;
+use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
+use crate::infrastructure::llm::identity::IdentityLeakBlocked;
 use crate::infrastructure::llm::{Effort, Message};
 
 /// v4's reply when a posted card could not be delivered.
@@ -188,6 +190,12 @@ pub struct Generation {
     pub tools_ms: u64,
     /// Sent to an external route without pseudonymization (operator override).
     pub external_unmasked: bool,
+    /// Every request of this question went through a masking session.
+    pub pseudonymized: bool,
+    /// The chat route leaves the homelab (masked or by operator override).
+    pub external: bool,
+    /// Masked turns only: the admin Model view, stored with the chat log.
+    pub model_view: Option<MaskedTurn>,
 }
 
 impl Generation {
@@ -207,6 +215,26 @@ impl Generation {
     fn add_usage(&mut self, prompt: u32, completion: u32) {
         *self.prompt_tokens.get_or_insert(0) += u64::from(prompt);
         *self.completion_tokens.get_or_insert(0) += u64::from(completion);
+    }
+
+    /// The boundary scanner refused a request of this question.
+    pub fn leak_blocked(&self) -> Option<&IdentityLeakBlocked> {
+        match &self.failure {
+            Some(AnswerFailure::Session(SessionError {
+                failure: SessionFailure::IdentityLeakBlocked(blocked),
+                ..
+            })) => Some(blocked),
+            _ => None,
+        }
+    }
+
+    /// `homelab`, `external_masked` or `external_unmasked`.
+    pub fn route(&self) -> &'static str {
+        match (self.external, self.pseudonymized) {
+            (false, _) => "homelab",
+            (true, true) => "external_masked",
+            (true, false) => "external_unmasked",
+        }
     }
 
     /// Tool outcomes without their rounds.

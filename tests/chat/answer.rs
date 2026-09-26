@@ -112,6 +112,7 @@ async fn run_routed(
         client: &client,
         codec,
         roster: &roster,
+        former: &[],
     };
     let conversation = vec![
         Message::System {
@@ -791,6 +792,7 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
         client: &client,
         codec: &Passthrough,
         roster: &roster,
+        former: &[],
     };
     let ports = Ports::default();
     let question = Question {

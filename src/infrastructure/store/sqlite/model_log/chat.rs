@@ -10,7 +10,8 @@ use super::{
     read_optional_u64, read_u64, text,
 };
 use crate::domain::model_log::{
-    ChatFilter, ChatInteraction, ChatOutcome, ChatRound, LogCursor, LogFacets, LogPage, page_size,
+    ChatFilter, ChatInteraction, ChatOutcome, ChatRound, LogCursor, LogFacets, LogPage, MaskedTurn,
+    page_size,
 };
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
@@ -157,6 +158,48 @@ pub(super) async fn insert(
         .map_err(store_error)?;
     }
     Ok(())
+}
+
+/// The interaction and its Model view in one transaction.
+pub(super) async fn insert_masked(
+    conn: &mut SqliteConnection,
+    chat: &ChatInteraction,
+    masked: &MaskedTurn,
+) -> Result<(), StoreError> {
+    insert(conn, chat).await?;
+    sqlx::query(
+        "INSERT INTO chat_masked (interaction_id, rounds, reply, mapping) VALUES (?1, ?2, ?3, ?4)",
+    )
+    .bind(&chat.id)
+    .bind(json_text(&masked.rounds_json()))
+    .bind(&masked.reply)
+    .bind(json_text(&masked.mapping_json()))
+    .execute(&mut *conn)
+    .await
+    .map_err(store_error)?;
+    Ok(())
+}
+
+pub(super) async fn load_masked(
+    conn: &mut SqliteConnection,
+    id: &str,
+) -> Result<Option<MaskedTurn>, StoreError> {
+    let row =
+        sqlx::query("SELECT rounds, reply, mapping FROM chat_masked WHERE interaction_id = ?1")
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(store_error)?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    MaskedTurn::from_json(
+        &read_json(&row, "rounds")?,
+        text(&row, "reply")?,
+        &read_json(&row, "mapping")?,
+    )
+    .map(Some)
+    .ok_or_else(|| StoreError::Backend("chat_masked row is unreadable".into()))
 }
 
 pub(super) async fn load(

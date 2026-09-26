@@ -1,9 +1,10 @@
 use super::{
     issuer::Lookup,
     matcher::{
-        at_word_start, digit_run, escape_len, match_at, mention_at, prev_char, url_len, word_run,
+        at_word_start, channel_or_role_at, digit_run, escape_len, match_at, mention_at, prev_char,
+        url_len, word_run,
     },
-    session::PseudonymSession,
+    session::{PseudonymSession, is_snowflake},
 };
 
 impl PseudonymSession {
@@ -29,6 +30,12 @@ impl PseudonymSession {
                 i += len;
                 continue;
             }
+            if let Some((len, digits, role)) = channel_or_role_at(rest) {
+                let rendered = self.channel_or_role(digits, role);
+                out.push_str(&rendered);
+                i += len;
+                continue;
+            }
             if at_word_start(prev, rest)
                 && let Some(len) = url_len(rest)
             {
@@ -45,7 +52,7 @@ impl PseudonymSession {
             if prev.is_none_or(|ch| !ch.is_ascii_digit()) {
                 let digits = digit_run(rest);
                 if !digits.is_empty() {
-                    let masked = self.id_token(digits);
+                    let masked = self.digits_token(digits);
                     out.push_str(masked.as_deref().unwrap_or(digits));
                     i += digits.len();
                     continue;
@@ -73,6 +80,36 @@ impl PseudonymSession {
         (self.is_bot(digits) || self.is_known_id(digits)).then(|| self.token(digits))
     }
 
+    /// A known id's token, else an opaque `Ref<n>` for a stray snowflake.
+    pub(super) fn digits_token(&mut self, digits: &str) -> Option<String> {
+        self.id_token(digits)
+            .or_else(|| is_snowflake(digits).then(|| self.opaque_token(digits)))
+    }
+
+    /// `#name` / `@name` (the name encoded as text) when the guild knows the
+    /// channel or role, else the mention around an opaque ref.
+    fn channel_or_role(&mut self, digits: &str, role: bool) -> String {
+        let named = self.shared.mentions.as_ref().and_then(|names| {
+            if role {
+                names.role(digits)
+            } else {
+                names.channel(digits)
+            }
+        });
+        match named {
+            Some(name) => {
+                let name = self.encode(&name);
+                format!("{}{name}", if role { '@' } else { '#' })
+            }
+            None => {
+                let token = self
+                    .digits_token(digits)
+                    .unwrap_or_else(|| digits.to_owned());
+                format!("{}{token}>", if role { "<@&" } else { "<#" })
+            }
+        }
+    }
+
     /// URLs keep their text except digit runs that are known ids.
     fn encode_url(&mut self, url: &str) -> String {
         let mut out = String::with_capacity(url.len());
@@ -81,7 +118,7 @@ impl PseudonymSession {
             let rest = &url[i..];
             let digits = digit_run(rest);
             if !digits.is_empty() {
-                let masked = self.id_token(digits);
+                let masked = self.digits_token(digits);
                 out.push_str(masked.as_deref().unwrap_or(digits));
                 i += digits.len();
                 continue;
@@ -106,6 +143,9 @@ impl PseudonymSession {
             }
             let word = word_run(rest);
             if !word.is_empty() && at_word_start(prev_char(text, i), rest) {
+                if Self::is_opaque_form(word) {
+                    self.source_refs.insert(word.to_ascii_lowercase());
+                }
                 self.issuer.note_source(word);
                 i += word.len();
             } else {

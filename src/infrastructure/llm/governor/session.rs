@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider,
     execution::{Cause, CompletionRunner, Denied, ExecutionLimits, Gate, RetryPolicy, RunError},
-    identity::{IdentityLeakBlocked, LeakScanner},
+    identity::{IdentityLeakBlocked, LeakFound, LeakScanner},
 };
 use super::{CallKind, Governor, Permit, Priority, Refused, Role, Ticket, full_jitter};
 
@@ -149,6 +149,10 @@ pub struct ModelClient<P> {
     /// Random per client so ids from different processes rarely collide in gateway logs.
     instance: u32,
     sessions: AtomicU64,
+    /// Pseudonymization is on: a session with no active boundary scanner
+    /// refuses every request (`unscannable`), so a port that forgot
+    /// `Session::with_scanner` fails closed.
+    masking: bool,
 }
 
 impl<P> fmt::Debug for ModelClient<P> {
@@ -176,7 +180,18 @@ impl<P: LlmProvider> ModelClient<P> {
             max_attempts,
             instance,
             sessions: AtomicU64::new(0),
+            masking: false,
         })
+    }
+
+    /// Requires an active scanner on every session (pseudonymization on).
+    pub fn with_masking(mut self, masking: bool) -> Self {
+        self.masking = masking;
+        self
+    }
+
+    pub fn masking(&self) -> bool {
+        self.masking
     }
 
     /// `kanade-{kind}-{instance}-{sequence}`: always a valid `x-request-id` stem.
@@ -478,6 +493,11 @@ impl<P: LlmProvider> Session<'_, P> {
         clean: bool,
     ) -> Result<CompletionResponse, SessionError> {
         let mut retry_first = clean;
+        if self.client.masking && !self.scanner.is_active() {
+            return Err(refunded(SessionFailure::IdentityLeakBlocked(
+                IdentityLeakBlocked::new(self.role, LeakFound::unscannable()),
+            )));
+        }
         loop {
             let permit = match (&self.permit, self.ended) {
                 (Some(permit), false) => permit,

@@ -40,6 +40,7 @@ pub(super) fn setup(base_url: Option<String>) -> ModelSetup {
         roles: roles("sumi-structured"),
         permits: 2,
         allow_external_unmasked: false,
+        pseudonymize: false,
     }
 }
 

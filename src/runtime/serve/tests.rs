@@ -355,6 +355,38 @@ async fn compose_logs_the_model_report_with_effective_efforts_and_routes() {
 }
 
 #[tokio::test]
+async fn masking_routes_external_models_masked_and_flags_an_unused_override() {
+    let url = model_gateway(serde_json::json!({"object": "list", "data": [
+        {"id": "ext", "kanata": {"reasoning_control": false}},
+    ]}))
+    .await;
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", url.as_str()),
+        ("KANADE_CHAT_MODEL", "ext"),
+        ("KANADE_PSEUDONYMIZE", "1"),
+        ("KANADE_ALLOW_EXTERNAL_UNMASKED", "1"),
+    ]);
+    let lines = compose_and_report(&config).await;
+    let role = lines
+        .iter()
+        .find(|line| line["event"] == "model_role")
+        .expect("role line");
+    assert_eq!(role["route"], "external_masked");
+    assert_eq!(role["masking"], true);
+    let kinds: Vec<&str> = lines
+        .iter()
+        .filter(|line| line["event"] == "model_warning")
+        .map(|line| line["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["override_unused"],
+        "no external_* warning when masked"
+    );
+}
+
+#[tokio::test]
 async fn compose_logs_a_degraded_listing_and_disabled_models() {
     let temp = Temp::new();
     let degraded = temp.config(&[

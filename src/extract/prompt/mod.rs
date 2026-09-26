@@ -8,6 +8,7 @@
 //! `Passthrough` renders v4's bytes and a pseudonymizing session hides them.
 
 mod budget;
+mod owned;
 mod render;
 mod system;
 
@@ -20,8 +21,12 @@ pub use budget::{
     CHARS_PER_TOKEN, CONTEXT_RESERVE, TOKENS_PER_ID, estimate_messages, estimate_tokens,
     prompt_budget, prompt_text, schema_instruction_tokens,
 };
+pub use owned::{code_owned_schema, code_owned_texts};
 pub use render::{member_name, named_bosses, relevant_roster};
 pub use system::SYSTEM_PROMPT;
+
+/// The RUNS heading's scope when the channel has runs of its own.
+const CHANNEL_SCOPE: &str = "this channel";
 
 use crate::domain::catalog::BossTable;
 use crate::domain::schedule::{FixedRun, Run};
@@ -62,6 +67,11 @@ pub struct PromptContext<'a> {
 
 fn build_user_prompt(context: &PromptContext<'_>, session: &mut dyn IdentitySession) -> String {
     let zone = context.zone;
+    // Every author's name is masked from the first line on, so a message
+    // naming a later author (not on the roster) never goes out raw.
+    for message in context.context.iter().chain(context.burst) {
+        session.author_label(&message.author_id, &message.author_name);
+    }
     let roster = relevant_roster(context);
     let names: HashMap<&str, &str> = roster
         .iter()
@@ -77,7 +87,7 @@ fn build_user_prompt(context: &PromptContext<'_>, session: &mut dyn IdentitySess
             "the guild (this channel has no runs of its own)",
         )
     } else {
-        (context.runs, "this channel")
+        (context.runs, CHANNEL_SCOPE)
     };
 
     let mut parts: Vec<String> = Vec::new();

@@ -273,7 +273,7 @@ const PROFILES: [(&str, &str, bool, &str, &str); 4] = [
     ),
 ];
 
-/// As the server: pseudonymisation is not available in this build.
+/// As the server's default (`models.pseudonymize` off); read-only there too.
 pub const PII_PSEUDONYMISE: bool = false;
 
 pub fn defaults() -> Config {
@@ -514,8 +514,8 @@ impl Store {
                 { "key": "KANADE_TIMEZONE", "label": "Timezone", "value": "Asia/Kuala_Lumpur", "reason": "Every stored time is converted with it; a change needs a restart." },
                 { "key": "KANADE_RESET", "label": "Boss week starts", "value": "Thu 00:00", "reason": "Defines boss-week boundaries for every stored run." },
                 { "key": "KANATA_BASE_URL", "label": "Model gateway", "value": "https://kanata.example.internal", "reason": "The gateway address is deployment wiring; repointing it would redirect the bearer key, so only the operator changes it." },
-                { "key": "pseudonymisation", "label": "PII pseudonymisation", "value": if PII_PSEUDONYMISE { "on" } else { "off" }, "reason": "Not available in this build: member names reach the model as written, so models that leave the homelab are refused." },
-                { "key": "KANADE_ALLOW_EXTERNAL_UNMASKED", "label": "Unmasked external models", "value": "off", "reason": "Lets models that leave the homelab see member data unmasked (provider testing only); a privacy control only the operator may change." },
+                { "key": "KANADE_PSEUDONYMIZE", "label": "PII pseudonymisation", "value": if PII_PSEUDONYMISE { "on" } else { "off" }, "reason": if PII_PSEUDONYMISE { "Member names and ids reach every model as per-request fictional names; a request still carrying one is refused. A privacy control only the operator may change (kanade.toml models.pseudonymize)." } else { "Off: member names reach the model as written, so models that leave the homelab are refused. A privacy control only the operator may change (kanade.toml models.pseudonymize)." } },
+                { "key": "KANADE_ALLOW_EXTERNAL_UNMASKED", "label": "Unmasked external models", "value": "off", "reason": if PII_PSEUDONYMISE { "Unused while pseudonymisation is on: models that leave the homelab only ever see masked data." } else { "Lets models that leave the homelab see member data unmasked (provider testing only); a privacy control only the operator may change." } },
                 { "key": "KANADE_MODEL_GROUPS", "label": "Capacity groups", "value": if c.declared_groups.is_some() { "declared in kanade.toml" } else { "default: one gateway group" }, "reason": "Set in kanade.toml ([[models.groups]]); restart to apply." },
                 { "key": "KANADE_MIN_CONFIDENCE", "label": "Minimum confidence", "value": "0.6", "reason": "Tuned with the extraction vectors, not at runtime." },
                 { "key": "KANADE_DIGEST_CHANNEL", "label": "Digest channel", "value": "#boss-schedule", "reason": "Set with the guild's channel layout." },

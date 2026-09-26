@@ -1,7 +1,7 @@
 use tokio::time::Instant;
 
 use super::super::{
-    ChatRequest,
+    ChatRequest, CompletionResponse,
     governor::{Attempt, CallKind, Outcome, Permit, Random, Refused},
     identity::{LeakFound, LeakScanner},
 };
@@ -69,6 +69,13 @@ impl<'a> Gate<'a> {
     /// admission so a refusal spends no request, rate token or retry.
     pub(super) fn scan(&self, request: &ChatRequest) -> Result<(), LeakFound> {
         self.scanner.map_or(Ok(()), |scanner| scanner.scan(request))
+    }
+
+    /// Remembers a reply so the scanner lets the model's own words back in.
+    pub(super) fn echo(&self, response: &CompletionResponse) {
+        if let Some(scanner) = self.scanner {
+            scanner.echo(response);
+        }
     }
 
     /// Id of the request admitted last (numbered from 1 within the session).

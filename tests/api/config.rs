@@ -254,6 +254,7 @@ impl Config {
                         model_permits: 2,
                         model_groups: groups.clone(),
                         allow_external_unmasked: true,
+                        pseudonymize: false,
                         chat_pilot_role_id: Some("30".into()),
                     },
                     personas: Some(PersonaFiles {
@@ -428,7 +429,8 @@ async fn get_shows_settings_models_personas_and_env_facts() {
             .clone()
     };
     assert_eq!(env("KANADE_ALLOW_EXTERNAL_UNMASKED"), "on");
-    assert_eq!(env("pseudonymisation"), "off");
+    assert_eq!(env("KANADE_PSEUDONYMIZE"), "off");
+    assert_eq!(view["models"]["pii_pseudonymise"], false);
     assert_eq!(env("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
     assert_eq!(env("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(env("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "Thu 00:00");

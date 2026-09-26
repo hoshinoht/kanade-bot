@@ -17,6 +17,10 @@ pub struct AnswerDeps<'a, P> {
     pub codec: &'a dyn IdentityCodec,
     /// Roster for the identity session.
     pub roster: &'a [Member],
+    /// `(user id, name)` every name members were known by this process
+    /// (renamed, removed aliases, left the roster): stored history and the
+    /// bot's earlier replies may carry them, so each is masked and scanned.
+    pub former: &'a [(String, String)],
 }
 
 /// Answer one question: one identity session and one question session
@@ -46,6 +50,9 @@ where
         Ok(identity) => identity,
         Err(refused) => return Generation::failed(AnswerFailure::Route(refused.to_string())),
     };
+    for (user_id, name) in deps.former {
+        identity.former_name(user_id, name);
+    }
     let limits = QuestionLimits {
         tool_rounds: question.settings.tool_rounds,
         timeout: question.settings.timeout,
@@ -69,5 +76,6 @@ where
     )
     .await;
     generation.external_unmasked = unmasked(&route, deps.codec);
+    generation.external = route.external;
     generation
 }

@@ -4,58 +4,12 @@ use serde_json::Value;
 
 use super::super::pseudonym::matcher::is_word;
 use crate::domain::catalog::BossTable;
-use crate::infrastructure::llm::{
-    ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling, ToolCallRequest,
-    ToolDefinition, schema_instruction, wire::EMPTY_TOOL_RESULT,
-};
-
-/// Weekday and month names as rendered timestamps spell them.
-const CALENDAR: &[&str] = &[
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-    "Mon",
-    "Tue",
-    "Wed",
-    "Thu",
-    "Fri",
-    "Sat",
-    "Sun",
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-];
+use crate::infrastructure::llm::{schema_instruction, wire::EMPTY_TOOL_RESULT};
 
 static BUILTIN: LazyLock<ScanExemptions> = LazyLock::new(|| {
     ScanExemptions::default()
-        .with_texts(CALENDAR)
         .with_texts([EMPTY_TOOL_RESULT])
         .with_texts(schema_instruction(&Value::Null).ok())
-        .with_value(&wire_sample())
 });
 
 /// Words of code-owned prompt text (whole words, Unicode lowercase). The
@@ -68,9 +22,9 @@ pub struct ScanExemptions {
 }
 
 impl ScanExemptions {
-    /// Wire vocabulary of a serialized `ChatRequest` (keys, role tags, effort
-    /// and validation names), the runner's own placeholder and schema
-    /// instruction, and weekday/month names.
+    /// Only what the runner itself adds to a request: its empty-tool-result
+    /// placeholder and schema instruction. Everything else comes from each
+    /// role's real code-owned sources.
     pub fn builtin() -> Self {
         BUILTIN.clone()
     }
@@ -157,65 +111,4 @@ fn words(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split(|c: char| !is_word(c))
         .filter(|word| !word.is_empty())
         .map(|word| word.chars().flat_map(char::to_lowercase).collect())
-}
-
-/// One of every message shape with empty content, so its keys and tags are
-/// exactly the structural words serde writes.
-fn wire_sample() -> Value {
-    let request = ChatRequest {
-        model: String::new(),
-        messages: vec![
-            Message::System {
-                content: String::new(),
-            },
-            Message::User {
-                content: String::new(),
-            },
-            Message::Assistant {
-                content: None,
-                tool_calls: vec![ToolCallRequest {
-                    id: String::new(),
-                    name: String::new(),
-                    arguments: String::new(),
-                }],
-            },
-            Message::Tool {
-                tool_call_id: String::new(),
-                content: String::new(),
-            },
-        ],
-        tools: vec![ToolDefinition {
-            name: String::new(),
-            description: None,
-            input_schema: Value::Null,
-        }],
-        output_schema: Some(OutputSchema {
-            name: String::new(),
-            schema: Value::Null,
-            strict: false,
-            validation: OutputValidation::CallerValidates,
-        }),
-        max_output_tokens: 0,
-        reasoning: Some(Effort::Off),
-        sampling: Some(Sampling {
-            temperature: Some(0.0),
-            seed: Some(0),
-            top_p: Some(0.0),
-        }),
-    };
-    let efforts = [
-        Effort::Off,
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::Xhigh,
-        Effort::Max,
-    ];
-    let mut values: Vec<Value> = efforts
-        .iter()
-        .filter_map(|effort| serde_json::to_value(effort).ok())
-        .collect();
-    values.extend(serde_json::to_value(&request).ok());
-    Value::Array(values)
 }

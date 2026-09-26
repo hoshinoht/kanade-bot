@@ -129,6 +129,8 @@ pub struct FakeGuild {
     pub roles: HashSet<String>,
     pub bosses: Arc<BossTable>,
     pub enabled: AtomicBool,
+    /// The roster reads empty (an unloaded roster).
+    pub vacant: AtomicBool,
 }
 
 impl FakeGuild {
@@ -148,6 +150,7 @@ impl FakeGuild {
             roles: [MY, ALVIN, PRIYA, KANON].map(str::to_owned).into(),
             bosses: Arc::new(bosses),
             enabled: AtomicBool::new(true),
+            vacant: AtomicBool::new(false),
         }
     }
 }
@@ -162,6 +165,9 @@ impl Guild for FakeGuild {
     }
 
     fn members(&self) -> Vec<Member> {
+        if self.vacant.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
         self.members.clone()
     }
 

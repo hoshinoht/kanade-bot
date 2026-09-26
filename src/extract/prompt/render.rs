@@ -16,7 +16,9 @@ use crate::infrastructure::llm::identity::{IdentitySession, Member};
 
 static MENTION: LazyLock<Regex> = LazyLock::new(|| pattern(r"<@!?(\d+)>"));
 
-const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+pub(super) const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/// Fixed words of run and timing lines.
+pub(super) const LINE_WORDS: [&str; 3] = ["own time", "every", "(none)"];
 
 fn weekday_name(weekday: Weekday) -> &'static str {
     WEEKDAY_NAMES[weekday.num_days_from_monday() as usize]
@@ -82,7 +84,8 @@ fn splitlines(text: &str) -> Vec<&str> {
     lines
 }
 
-/// `[123] [2026-08-30 13:07 Sun] [kanon <@114...>] then weds lah`.
+/// `[123] [2026-08-30 13:07 Sun] [kanon <@114...>] then weds lah` (the id is
+/// the session's message ref: the id itself in passthrough).
 pub(super) fn render_message(
     message: &PromptMessage,
     zone: Tz,
@@ -96,9 +99,10 @@ pub(super) fn render_message(
     let label = session.author_label(&message.author_id, &message.author_name);
     let mention = session.mention(&message.author_id);
     let content = session.text(&lines.join(" / "));
+    // A per-request ref when masking (so no snowflake reaches the model).
+    let id = session.message_ref(&message.id);
     format!(
-        "[{}] [{}] [{label} {mention}] {content}",
-        message.id,
+        "[{id}] [{}] [{label} {mention}] {content}",
         render_time(message.created_at, zone)
     )
 }

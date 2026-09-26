@@ -36,7 +36,54 @@ are C3. Serve wiring is `chat::driver` (below).
   question, one requeue). Every conversation message, tool result and the
   voice reminder is encoded through the identity session; tool arguments are
   decoded by the dispatcher; the final reply is decoded (an unknown token is
-  a malformed answer).
+  a malformed answer). The system prompt and the reminder go through
+  `encode_protected` with `chat::prompts::protected()`: the code-owned pieces
+  (policies, the scope around the assistant name, voice and reminder cues,
+  the focus line's fixed words, and the whole clock-header and runtime lines)
+  stay literal, and only persona text, the focus card and member text are
+  encoded, so a member named like a rules word (`Will`, `May`) never rewrites
+  the rules. History carries no tool calls (`assemble` builds none), so no
+  earlier model-written arguments need encoding.
+- Pseudonymization (`models.pseudonymize`, see `runtime-bootstrap.md`): serve
+  builds the chat codec per question (`runtime::serve::privacy`: a
+  `PseudonymCodec` over the guild cache's bot id and names, the persona name,
+  the boss catalog and chat's code-owned words as scanner exemptions); the
+  roster is the stored member list. Stored history, anchors, focus cards,
+  the bot's own earlier replies and its notices and cards (reached through a
+  reply chain, whose parent text comes from Discord) are text rendered with
+  the names of their time, so serve keeps every name each member has been
+  known by since it started (`runtime::serve::names::NameHistory`: display
+  names, nicknames, aliases). It is fed by every live-roster refresh
+  (`LiveRoster::observe`, before readers see the rows: startup load, roster
+  task, tick) and by each question's roster read, and every question
+  registers all of them (`AnswerDeps::former` → `IdentitySession::former_name`,
+  former names oldest first so a departed member shows the latest): a
+  rename, a removed alias or a member who left is masked and scanned like a
+  current name. Current names never count against the cap of 32 former
+  names per member; beyond 4096 members the least recently seen departed
+  member is forgotten (`former_names_evicted` WARN, once). In memory; `Debug`
+  shows counts. Embeds (reminder cards) never enter the reply chain (only
+  message content does). Residuals: names retired before serve started,
+  single words of multi-word names, and non-roster speakers, which are
+  labelled `user <short id>` (an id tail, not a name). A read failure or an empty roster
+  sends nothing (D4: the question is not prepared, refunded, and
+  `chat_members_unreadable` is logged with `masking`). Every request passes
+  the provider-boundary scanner (`provider-contract.md`); a refusal is
+  `SessionFailure::IdentityLeakBlocked`: the question fails with the fixed
+  failure line (a card posted earlier in the question stays posted), the
+  allowance is refunded, the storm guard counts it like a spent clean
+  retry, and `identity_leak_blocked` is logged with its payload (role, kinds,
+  count) only. The row's `guardrail` gains `pseudonymized: true` and, on a
+  refusal, `identity_leak_blocked: {role, kinds, count}`.
+- Model view (user decision D7, extended): for a masked turn the loop keeps,
+  per request, the masked messages exactly as passed to the runner and the
+  model's raw reply and tool-call arguments (before decoding), then the
+  finished reply and the session's issued-name mapping (token → user id and
+  display name at the time, non-roster authors included). Serve stores it
+  with the row in one transaction (`ModelLogStore::record_masked_chat`,
+  `chat_masked`); passthrough turns store nothing extra. Same retention and
+  purge as the chat log, admin-only, never logged; `Debug` shows sizes. Not
+  exposed by the API yet (`admin-api.md`).
 - Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). A bundle
   `request_tools` adds is held until the next round starts, so every call is
   judged against the tools its round was actually sent (a tool requested in

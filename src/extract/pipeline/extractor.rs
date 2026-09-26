@@ -380,6 +380,12 @@ where
         let chunks = split_until(
             &rows,
             |chunk| {
+                // The one allowed use of `codec.open` outside `open_session`:
+                // an estimate, never sent, so there is nothing to guard or
+                // scan. A session of the same codec renders the same shapes
+                // (tokens drawn from the same pool, the same message refs);
+                // only the drawn names' lengths differ, a few characters per
+                // mention, inside CONTEXT_RESERVE.
                 let mut session = self.codec.open(&loaded.members);
                 let prepared = self.prepare(channel_id, &loaded, chunk, session.as_mut());
                 estimate_messages(&prepared.messages) <= budget

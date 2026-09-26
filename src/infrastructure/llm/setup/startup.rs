@@ -48,6 +48,9 @@ pub enum StartupWarning {
         role: Role,
         alias: String,
     },
+    /// `KANADE_ALLOW_EXTERNAL_UNMASKED` is set but has no effect: masking is
+    /// on, or no route leaves the homelab.
+    OverrideUnused,
 }
 
 impl fmt::Display for StartupWarning {
@@ -93,6 +96,10 @@ impl fmt::Display for StartupWarning {
                 "UNMASKED: {} model {alias} leaves the homelab and member data is sent \
                  without pseudonymization (KANADE_ALLOW_EXTERNAL_UNMASKED)",
                 role.as_str()
+            ),
+            Self::OverrideUnused => f.write_str(
+                "KANADE_ALLOW_EXTERNAL_UNMASKED is set but unused: pseudonymization is on \
+                 or no model leaves the homelab",
             ),
             Self::ExternalRefused { role, alias } => write!(
                 f,
@@ -150,6 +157,7 @@ impl ModelStack {
             },
         };
         let efforts = self.efforts();
+        let mut any_external = false;
         for role in super::ModelRoles::ALL {
             let Some(route) = self.governor.route(role) else {
                 continue;
@@ -164,7 +172,8 @@ impl ModelStack {
                     sent: status.effort,
                 });
             }
-            if route.external {
+            any_external |= route.external;
+            if route.external && !self.masking {
                 let (role, alias) = (role, route.alias);
                 warnings.push(if route.unmasked_allowed {
                     StartupWarning::ExternalUnmasked { role, alias }
@@ -172,6 +181,9 @@ impl ModelStack {
                     StartupWarning::ExternalRefused { role, alias }
                 });
             }
+        }
+        if self.unmasked_override && (self.masking || !any_external) {
+            warnings.push(StartupWarning::OverrideUnused);
         }
         StartupReport { listing, warnings }
     }

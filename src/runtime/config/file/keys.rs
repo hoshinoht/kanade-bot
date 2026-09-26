@@ -111,6 +111,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         "KANADE_ALLOW_EXTERNAL_UNMASKED",
         Flag,
     ),
+    ("models.pseudonymize", "KANADE_PSEUDONYMIZE", Flag),
     ("models.groups", "KANADE_MODEL_GROUPS", Groups),
     ("models.extraction.model", "KANADE_EXTRACT_MODEL", Text),
     (

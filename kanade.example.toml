@@ -91,8 +91,13 @@ key_file = "/run/secrets/kanade_model_api_key"
 # Concurrent calls in the single `gateway` group, 1-16 (default 2). Exclusive
 # with [[models.groups]], which replace that group.
 # permits = 2
+# true replaces member names, ids and stray Discord ids in every model request
+# with per-request fictional names and refs (KANADE_PSEUDONYMIZE overrides).
+# Roles whose model leaves the homelab may then run; requests that still carry
+# a raw identity are refused before sending.
+# pseudonymize = false
 # true lets roles whose model leaves the homelab run without pseudonymization
-# (provider testing only).
+# (provider testing only; unused while pseudonymize is on).
 # allow_external_unmasked = false
 
 # Per-role seeds, used only where no saved setting exists. Reasoning: off,

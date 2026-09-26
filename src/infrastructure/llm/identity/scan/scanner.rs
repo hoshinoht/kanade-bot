@@ -1,12 +1,13 @@
 use std::{
+    collections::HashSet,
     fmt,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-use super::super::codec::{DecodeError, IdentitySession, ScanNeedles};
+use super::super::codec::{DecodeError, IdentitySession, IssuedName, ScanNeedles};
 use super::{LeakFound, ScanExemptions, finder::Finder};
-use crate::infrastructure::llm::ChatRequest;
+use crate::infrastructure::llm::{ChatRequest, CompletionResponse};
 
 type Shared = Arc<Mutex<Box<dyn IdentitySession>>>;
 
@@ -27,6 +28,11 @@ pub struct LeakScanner {
 struct Active {
     session: Shared,
     exemptions: Arc<ScanExemptions>,
+    /// What the model itself wrote in this session (reply text and tool-call
+    /// arguments, raw and trimmed). Sending its own words back discloses
+    /// nothing new, so an assistant turn that repeats one exactly is not
+    /// scanned (the model saying "will" must not refuse a member `Will`).
+    echoes: Arc<Mutex<HashSet<String>>>,
 }
 
 impl LeakScanner {
@@ -48,12 +54,27 @@ impl LeakScanner {
         let Some(needles) = lock(&active.session).scan_needles() else {
             return Err(LeakFound::unscannable());
         };
-        let Ok(value) = serde_json::to_value(request) else {
-            return Err(LeakFound::unscannable());
-        };
+        let echoes = active.echoes.lock().unwrap_or_else(PoisonError::into_inner);
         let mut found = LeakFound::default();
-        Finder::new(&needles, &active.exemptions).request(&value, &mut found);
+        Finder::new(&needles, &active.exemptions).request(request, &echoes, &mut found);
         if found.is_empty() { Ok(()) } else { Err(found) }
+    }
+
+    /// Remember what the model answered, so repeating it later is not
+    /// mistaken for a leak. Runs for every reply of a scanned session.
+    pub fn echo(&self, response: &CompletionResponse) {
+        let Some(active) = &self.active else {
+            return;
+        };
+        let mut echoes = active.echoes.lock().unwrap_or_else(PoisonError::into_inner);
+        let texts = response
+            .content
+            .iter()
+            .chain(response.tool_calls.iter().map(|call| &call.arguments));
+        for text in texts {
+            echoes.insert(text.clone());
+            echoes.insert(text.trim().to_owned());
+        }
     }
 }
 
@@ -98,6 +119,7 @@ impl IdentityGrant {
                 active: Some(Active {
                     session: shared,
                     exemptions,
+                    echoes: Arc::default(),
                 }),
             },
         }
@@ -182,5 +204,25 @@ impl IdentitySession for SharedSession {
 
     fn scan_needles(&self) -> Option<ScanNeedles> {
         lock(&self.0).scan_needles()
+    }
+
+    fn former_name(&mut self, user_id: &str, name: &str) {
+        lock(&self.0).former_name(user_id, name);
+    }
+
+    fn masks(&self) -> bool {
+        lock(&self.0).masks()
+    }
+
+    fn message_ref(&mut self, message_id: &str) -> String {
+        lock(&self.0).message_ref(message_id)
+    }
+
+    fn decode_message_ref(&self, value: &str) -> Result<String, DecodeError> {
+        lock(&self.0).decode_message_ref(value)
+    }
+
+    fn mapping(&self) -> Option<Vec<IssuedName>> {
+        lock(&self.0).mapping()
     }
 }

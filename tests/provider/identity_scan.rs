@@ -98,11 +98,13 @@ fn a_name_is_exempt_only_when_every_word_is_code_owned() {
         format!("{exemptions:?}"),
         format!("ScanExemptions {{ words: {} }}", exemptions.len())
     );
+    // Only what the runner itself adds; request structure is never scanned
+    // and calendar words come from each role's real sources.
     let builtin = ScanExemptions::builtin();
-    for word in ["Sun", "May", "Wednesday", "assistant", "xhigh", "content"] {
+    for word in ["output", "format", "schema", "no"] {
         assert!(builtin.covers(word), "{word}");
     }
-    for word in ["Ken", "Will", "Alice"] {
+    for word in ["Ken", "Will", "Alice", "Max", "Low", "User", "Sun", "May"] {
         assert!(!builtin.covers(word), "{word}");
     }
 }

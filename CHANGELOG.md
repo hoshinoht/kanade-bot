@@ -483,6 +483,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   portrait and day-of entry artwork uploaded as attachments; the day-of heading is
   rewritten in the persona's voice by the small rewrite model (v4 text as fallback),
   and cards refresh after ✅/❌ reactions.
+- v5: pseudonymization switch `models.pseudonymize` (`KANADE_PSEUDONYMIZE`, off by
+  default) masks member identities in chat, extraction and rewrite prompts, fails
+  closed without a roster, logs `external_masked` routes and `identity_leak_blocked`
+  refusals, and stores each masked chat turn's model view and name mapping for admins.
 
 **Changed**
 

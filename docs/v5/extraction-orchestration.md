@@ -96,6 +96,27 @@ fails closed), and runs the reference loop: `complete`, then on
 direct provider call. The answer goes through `plan_burst` with the
 injected wall clock as `now`.
 
+With pseudonymization on (`models.pseudonymize`) serve composes a live
+`PseudonymCodec` (bot identity from the guild cache, the boss catalog's
+lexicon, `<#channel>`/`<@&role>` names from the cache, and extraction's
+code-owned words as scanner exemptions: the system prompt, the user
+prompt's headings, weekday names, the retry instruction, the schema and the
+rendered BOSSES table). Every author is registered before any text is
+encoded; message ids render as per-request refs (`[1]`, `[2]`, …) and
+`evidence_message_ids` decode back through them (an unknown ref is a
+malformed answer, answered with the retry); stray snowflakes become opaque
+`Ref<n>`. Passthrough renders exactly v4's bytes. An empty roster sends
+nothing (the call fails, its messages stay unprocessed). A scanner refusal
+is outcome `identity_leak` (`Failure::IdentityLeak`): nothing was sent, the
+messages are marked processed (retrying the same prompt would be refused
+again), `identity_leak_blocked` is logged with the payload only, and the log
+row (its `message_ids`, `guardrail.identity_leak_blocked`) is the audit
+entry an operator rescans from. Rows built through a masking session carry
+`guardrail.pseudonymized: true`. The prompt-budget estimate opens its own
+session with `codec.open` (the one allowed exception to `open_session`: it
+is never sent), so it renders the same tokens and refs within a few
+characters per mention.
+
 ## Proposals
 
 - **Chat answers** (`rsvp` yes/no on a matched run) go to
@@ -116,7 +137,12 @@ injected wall clock as `now`.
   `guardrail` as `{"nudges": [...]}`; the model's text is never logged.
 - **Rewrite.** `GovernedRewriter` guards the `rewrite` route with the
   identity codec (an external route under passthrough is refused), opens
-  `ModelClient::open_rewrite` and sends one plain request. Content filter,
+  `ModelClient::open_rewrite` and sends one plain request. While the codec
+  pseudonymizes it needs a roster (`with_roster(RosterSource)`; none or an
+  empty one is `Misconfigured`, nothing sent): the persona text and seed are
+  encoded (instruction, moods, `Voice:` and `{boss}`/`{day}`/`{time}` stay
+  literal), the reply decoded, and a scanner refusal is `Unavailable` (the
+  seed line). Content filter,
   cut-off or empty replies are `RewriteFailure::Refused`, misconfiguration
   (`SessionError::is_misconfiguration`, a missing or refused route) is
   `Misconfigured`, anything else `Unavailable`; every case uses the seed.

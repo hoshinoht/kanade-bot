@@ -5,6 +5,7 @@
 //! the store port only; nothing here does I/O.
 
 mod filter;
+mod masked;
 mod outcome;
 mod port;
 mod records;
@@ -13,6 +14,7 @@ mod retention;
 pub use filter::{
     ChatFilter, ExtractionFilter, LogCursor, LogFacets, LogPage, MAX_PAGE, page_size,
 };
+pub use masked::{MaskedName, MaskedRound, MaskedTurn};
 pub use outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
 pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
 pub use records::{

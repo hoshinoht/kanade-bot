@@ -14,7 +14,8 @@ use crate::infrastructure::llm::Message;
 use crate::infrastructure::llm::identity::{DecodeError, IdentitySession};
 
 /// Map the identity-bearing fields back: `participants` are member refs (v4's
-/// coercion has already dropped any `<@!>` wrapping) and `summary` is text
+/// coercion has already dropped any `<@!>` wrapping), `evidence_message_ids`
+/// are message refs (an unknown one is malformed) and `summary` is text
 /// shown to members. Other fields carry no identities.
 fn decode(
     mut extraction: Extraction,
@@ -23,6 +24,9 @@ fn decode(
     for amendment in &mut extraction.amendments {
         for participant in &mut amendment.participants {
             *participant = session.decode_ref(participant)?;
+        }
+        for message in &mut amendment.evidence_message_ids {
+            *message = session.decode_message_ref(message)?;
         }
     }
     extraction.summary = session.decode_reply(&extraction.summary)?;

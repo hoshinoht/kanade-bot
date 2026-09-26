@@ -162,6 +162,23 @@ impl IdentitySession for TaggingSession {
         })
     }
 
+    fn former_name(&mut self, user_id: &str, name: &str) {
+        if !name.trim().is_empty()
+            && !self
+                .needles
+                .iter()
+                .any(|(n, id)| n == name && id == user_id)
+        {
+            self.needles.push((name.to_owned(), user_id.to_owned()));
+            self.needles
+                .sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+        }
+    }
+
+    fn masks(&self) -> bool {
+        true
+    }
+
     fn scan_needles(&self) -> Option<ScanNeedles> {
         let mut ids: Vec<String> = self.roster.iter().map(|m| m.user_id.clone()).collect();
         ids.extend(self.issued.iter().cloned());

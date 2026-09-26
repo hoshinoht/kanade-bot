@@ -135,6 +135,18 @@ pub(super) fn mention_at(rest: &str) -> Option<(usize, &str)> {
         .then(|| (skip + digits.len() + 1, digits))
 }
 
+/// `<#123>` (channel) or `<@&123>` (role): (matched length, digits, is_role).
+pub(super) fn channel_or_role_at(rest: &str) -> Option<(usize, &str, bool)> {
+    let (skip, body, role) = if let Some(body) = rest.strip_prefix("<#") {
+        (2, body, false)
+    } else {
+        (3, rest.strip_prefix("<@&")?, true)
+    };
+    let digits = digit_run(body);
+    (!digits.is_empty() && body[digits.len()..].starts_with('>'))
+        .then(|| (skip + digits.len() + 1, digits, role))
+}
+
 /// `<@Word>` or `<@!Word>`: (matched length, offset of the word, word).
 pub(super) fn token_mention_at(rest: &str) -> Option<(usize, usize, &str)> {
     let (skip, body) = mention_body(rest)?;

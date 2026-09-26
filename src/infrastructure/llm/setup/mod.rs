@@ -102,6 +102,9 @@ pub struct ModelSetup {
     pub permits: u32,
     /// Lets external routes run without pseudonymization (provider testing).
     pub allow_external_unmasked: bool,
+    /// Pseudonymization on: every session must carry an active boundary
+    /// scanner (fail closed), and external routes are masked, not refused.
+    pub pseudonymize: bool,
 }
 
 /// Operator-declared backend group; aliases sharing hardware share its permits.
@@ -121,6 +124,7 @@ impl fmt::Debug for ModelSetup {
             .field("roles", &self.roles)
             .field("permits", &self.permits)
             .field("allow_external_unmasked", &self.allow_external_unmasked)
+            .field("pseudonymize", &self.pseudonymize)
             .finish()
     }
 }
@@ -165,6 +169,8 @@ pub struct ModelStack {
     config: GovernorConfig,
     roles: ModelRoles,
     catalog: Arc<CatalogState>,
+    masking: bool,
+    unmasked_override: bool,
 }
 
 /// `https` needs `runtime::tls::install_ring_provider` first. The base URL goes
@@ -214,7 +220,8 @@ pub fn build_with_groups(
         ExecutionLimits::default(),
         RetryPolicy::default(),
     )
-    .map_err(SetupError::Client)?;
+    .map_err(SetupError::Client)?
+    .with_masking(setup.pseudonymize);
     Ok(Models::Ready(Box::new(ModelStack {
         provider,
         governor,
@@ -222,6 +229,8 @@ pub fn build_with_groups(
         config,
         roles: setup.roles,
         catalog,
+        masking: setup.pseudonymize,
+        unmasked_override: setup.allow_external_unmasked,
     })))
 }
 
@@ -279,6 +288,25 @@ impl ModelStack {
 
     pub fn roles(&self) -> &ModelRoles {
         &self.roles
+    }
+
+    /// Pseudonymization is on for every role.
+    pub fn masking(&self) -> bool {
+        self.masking
+    }
+
+    /// How a route's member data leaves: `homelab`, `external_masked`,
+    /// `external_unmasked` (operator override) or `external_refused`.
+    pub fn route_kind(&self, role: Role) -> Option<&'static str> {
+        let route = self.governor.route(role)?;
+        Some(
+            match (route.external, self.masking, route.unmasked_allowed) {
+                (false, _, _) => "homelab",
+                (true, true, _) => "external_masked",
+                (true, false, true) => "external_unmasked",
+                (true, false, false) => "external_refused",
+            },
+        )
     }
 
     /// The last successful listing; empty and `listed: false` before one.

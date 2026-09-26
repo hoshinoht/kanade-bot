@@ -347,7 +347,7 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
     store.backup(&backup).await.expect("backup");
     let manifest = BackupManifest::read(&BackupManifest::path_for(&backup)).expect("manifest");
     assert_eq!(manifest.history_head, head, "the manifest anchors the head");
-    assert_eq!(manifest.schema_version, 14);
+    assert_eq!(manifest.schema_version, 15);
     history(&store, 2).await;
     store.close().await.expect("close");
 
@@ -578,6 +578,7 @@ async fn upgrading_to_the_blame_index_backfills_earlier_records() {
          DROP TABLE self_service_tips;
          DROP TABLE chat_allowance_overrides;
          DROP TABLE rescan_jobs;
+         DROP TABLE chat_masked;
          DROP TABLE chat_tools;
          DROP TABLE chat_rounds;
          DROP TABLE chat_interactions;
@@ -599,7 +600,7 @@ async fn upgrading_to_the_blame_index_backfills_earlier_records() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 14);
+    assert_eq!(store.schema_version().await.expect("version"), 15);
     assert!(
         verify(&store).await.is_intact(),
         "the backfilled index verifies"

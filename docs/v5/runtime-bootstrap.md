@@ -118,7 +118,8 @@ lists are comma-separated.
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
-| `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. |
+| `KANADE_PSEUDONYMIZE` | `0` | `1` (`models.pseudonymize`) replaces member names, aliases, ids, extraction message ids and stray Discord ids in every model request with per-request fictional names and refs (`provider-contract.md`), for every role; roles whose model leaves the homelab then run masked. Every request is scanned before sending and refused (`identity_leak_blocked`) if a raw identity remains; chat and extraction send nothing without a readable, non-empty roster. Read-only in the admin config view. |
+| `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. Unused (startup warns `override_unused`) while `KANADE_PSEUDONYMIZE=1` or when no model leaves the homelab. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
@@ -204,6 +205,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `models.key_file` | `KANADE_MODEL_KEY_FILE` | string |
 | `models.ca_file` | `KANADE_MODEL_CA_FILE` | string |
 | `models.permits` | `KANADE_MODEL_PERMITS` | integer |
+| `models.pseudonymize` | `KANADE_PSEUDONYMIZE` | bool |
 | `models.allow_external_unmasked` | `KANADE_ALLOW_EXTERNAL_UNMASKED` | bool |
 | `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
 | `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
@@ -249,9 +251,12 @@ listing fails (every route then stays external until one succeeds);
 `fixed` (a `<base>:<level>` variant), `floor` (the configured level is not
 accepted; the lowest accepted one is used), `inherit` (extraction's level),
 else where the role's own level came from: `stored`, `env` or `default`.
-`route` is `homelab`, `external_refused` or `external_unmasked`; warnings
-`external_unmasked`, `external_refused`, `capacity` and `ungrouped` are WARN,
-`unpublished_effort` INFO. The catalog refresh task (every 300 s, 30 s until
+`route` is `homelab`, `external_masked` (pseudonymization on),
+`external_refused` or `external_unmasked`, and `masking` says whether
+pseudonymization is on; warnings `external_unmasked`, `external_refused`
+(both only while masking is off), `override_unused` (the unmasked override is
+set but masking is on or no route leaves the homelab), `capacity` and
+`ungrouped` are WARN, `unpublished_effort` INFO. The catalog refresh task (every 300 s, 30 s until
 a listing succeeds) is aborted at shutdown.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
@@ -590,5 +595,8 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | `chat_setup_changed` | INFO; WARN when enabled but not ready | `enabled`, `ready`, `not_ready` (`no_model_route`/`no_persona`) | chat start, then when either flag flips (read on the next message, status read or settings change) |
 | `chat_admitted` | INFO | `interaction_id`, `channel` (`thread`/`channel`), `position` (null when it runs at once) | the gate took a question |
 | `chat_ignored` | INFO | `reason` (`disabled`/`not_ready`/`not_chat_category`/`no_pilot_role`/`staff_only`/`rate_limited`/`shed`/`bot_author`) | a message that summoned the bot was not taken; never for ordinary chatter |
-| `chat_answered` / `chat_failed` | INFO / WARN | `interaction_id`, `outcome`, `persona`, `profile`, `profile_source` (`saved`/`role`/`default`), `saved_style_unavailable`, `model`, `reasoning`, `route` (`homelab`/`external_unmasked`), `rounds`, `tools`, `latency_ms`, `model_ms`, `tools_ms`, `clean_retry`, `withheld` | a question concluded after a model attempt |
+| `chat_answered` / `chat_failed` | INFO / WARN | `interaction_id`, `outcome`, `persona`, `profile`, `profile_source` (`saved`/`role`/`default`), `saved_style_unavailable`, `model`, `reasoning`, `route` (`homelab`/`external_masked`/`external_unmasked`), `masking`, `rounds`, `tools`, `latency_ms`, `model_ms`, `tools_ms`, `clean_retry`, `withheld` | a question concluded after a model attempt |
+| `identity_leak_blocked` | WARN | `role` (`chat`/`extraction`/`rewrite`), `kinds` (`name`/`id`/`snowflake`/`unscannable`), `count`; never the matched text | the provider-boundary scanner refused a pseudonymized request before sending (chat: the failure line; extraction: outcome `identity_leak`, messages marked read; rewrite: the seed line) |
+| `former_names_evicted` | WARN | `remembered` (4096) | once, when the masked-chat name history first forgets a departed member |
+| `chat_members_unreadable` | WARN | `masking`, `empty` (masking with an empty roster) | the member list could not be read; with masking on the question is not prepared (refunded, nothing sent) |
 | `chat_cancelled` | INFO | `interaction_id`, `reason` (`deleted`/`shutdown`/`expired`/`not_admitted`/`not_ready`/`aborted`) | an admitted question ended without an answer |
