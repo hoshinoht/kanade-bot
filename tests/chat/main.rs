@@ -15,6 +15,7 @@ mod masking;
 mod model;
 mod pilot;
 mod propose;
+mod pseudonym;
 mod read_tools;
 mod sanitize;
 mod slow_store;

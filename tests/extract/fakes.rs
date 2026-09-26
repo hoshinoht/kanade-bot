@@ -454,12 +454,21 @@ impl World {
         tune: impl FnOnce(&mut PipelineConfig),
         codec: Arc<dyn IdentityCodec>,
     ) -> Self {
-        Self::build(actions, tune, codec, true, false).await
+        Self::build(actions, tune, codec, true, false, None).await
+    }
+
+    pub async fn with_members(
+        actions: Vec<FakeAction>,
+        tune: impl FnOnce(&mut PipelineConfig),
+        codec: Arc<dyn IdentityCodec>,
+        members: Vec<Member>,
+    ) -> Self {
+        Self::build(actions, tune, codec, true, false, Some(members)).await
     }
 
     /// Extraction routed to an ungrouped alias.
     pub async fn ungrouped(actions: Vec<FakeAction>) -> Self {
-        Self::build(actions, |_| {}, Arc::new(Passthrough), false, false).await
+        Self::build(actions, |_| {}, Arc::new(Passthrough), false, false, None).await
     }
 
     /// With self-service links wired: the portal at [`PORTAL`], the tracked
@@ -468,7 +477,7 @@ impl World {
         actions: Vec<FakeAction>,
         tune: impl FnOnce(&mut PipelineConfig),
     ) -> Self {
-        Self::build(actions, tune, Arc::new(Passthrough), true, true).await
+        Self::build(actions, tune, Arc::new(Passthrough), true, true, None).await
     }
 
     async fn build(
@@ -477,10 +486,15 @@ impl World {
         codec: Arc<dyn IdentityCodec>,
         grouped: bool,
         self_service: bool,
+        members: Option<Vec<Member>>,
     ) -> Self {
         let store = Arc::new(MemoryScheduleStore::new());
         let clock = TestClock::new(now().fixed_offset());
-        let guild = Arc::new(FakeGuild::new());
+        let mut fake_guild = FakeGuild::new();
+        if let Some(members) = members {
+            fake_guild.members = members;
+        }
+        let guild = Arc::new(fake_guild);
         let scheduler = Arc::new(Scheduler {
             store: store.clone(),
             clock: clock.clone(),

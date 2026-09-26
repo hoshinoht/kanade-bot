@@ -18,6 +18,7 @@ mod parse;
 mod pipeline;
 mod plan;
 mod prompt;
+mod pseudonym;
 mod redirect;
 mod rescan;
 mod resolve;
