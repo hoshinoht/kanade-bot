@@ -7,6 +7,7 @@ use super::super::{
     ProviderFailureKind,
     governor::{CallKind, Outcome, Random, full_jitter},
     http::KEY_EXPIRED,
+    identity::LeakFound,
     shaping,
 };
 use super::{
@@ -29,6 +30,9 @@ pub struct CompletionRunner<P> {
 pub(in crate::infrastructure::llm) enum RunError {
     /// The gate refused the first request; nothing was sent.
     Denied(Denied),
+    /// The boundary scanner found a raw identity in the request about to be
+    /// sent; nothing was sent for it and it is never retried.
+    Leak(LeakFound),
     Failed(RunFailure),
 }
 
@@ -107,6 +111,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
             .map_err(|error| match error {
                 RunError::Failed(failure) => failure.error,
                 RunError::Denied(_) => LlmError::new(ErrorCode::BudgetExceeded, "gate"),
+                RunError::Leak(_) => LlmError::new(ErrorCode::RequestInvalid, "identity-leak"),
             })
     }
 
@@ -143,6 +148,8 @@ impl<P: LlmProvider> CompletionRunner<P> {
         let mut last: Option<RunFailure> = None;
         loop {
             let current = shaped.as_ref().unwrap_or(request);
+            // Every attempt (reshaped, transient retry, requeue) is scanned as sent.
+            gate.scan(current).map_err(RunError::Leak)?;
             let reservation = estimate(request_bytes, current.max_output_tokens)
                 .map_err(|error| failed(error, charged))?;
             if reservation > remaining {

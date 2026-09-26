@@ -421,7 +421,7 @@ where
             }
         };
         let mut session = match opened {
-            Ok(session) => session,
+            Ok(session) => session.with_scanner(identity.scanner()),
             Err(error) => {
                 let (_, failure) = classify(&error, timeout);
                 record.fail(failure, error.to_string());

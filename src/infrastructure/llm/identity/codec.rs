@@ -1,4 +1,6 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
+
+use super::scan::ScanExemptions;
 
 /// Whether a codec hides member identities from the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +105,11 @@ impl fmt::Debug for ScanName {
 pub trait IdentityCodec: Send + Sync {
     fn mode(&self) -> CodecMode;
     fn open(&self, roster: &[Member]) -> Box<dyn IdentitySession>;
+
+    /// Code-owned words the boundary scanner never flags as a name.
+    fn scan_exemptions(&self) -> Arc<ScanExemptions> {
+        Arc::new(ScanExemptions::builtin())
+    }
 }
 
 /// Encodes everything identity-bearing that the ports put in a prompt and

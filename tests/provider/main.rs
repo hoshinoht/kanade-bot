@@ -10,6 +10,7 @@ mod identity;
 mod identity_pool;
 mod identity_pseudonym;
 mod identity_regressions;
+mod identity_scan;
 mod kanata_contract;
 mod payload;
 mod runner;

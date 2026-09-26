@@ -1,6 +1,7 @@
 use std::fmt;
 
-use super::codec::{CodecMode, IdentityCodec, IdentitySession, Member};
+use super::codec::{CodecMode, IdentityCodec, Member};
+use super::scan::IdentityGrant;
 use crate::infrastructure::llm::governor::{Role, RoleRoute};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,12 +47,18 @@ pub fn check_routes(routes: &[RoleRoute], codec: &dyn IdentityCodec) -> Result<(
 }
 
 /// The only way ports should open a session: the guard runs on every call,
-/// so a route flipped to `external` cannot bypass the startup check.
+/// so a route flipped to `external` cannot bypass the startup check. A
+/// pseudonymizing codec's grant carries an active boundary scanner; attach it
+/// to the governed session (`Session::with_scanner`).
 pub fn open_session(
     codec: &dyn IdentityCodec,
     route: &RoleRoute,
     roster: &[Member],
-) -> Result<Box<dyn IdentitySession>, RouteRefused> {
+) -> Result<IdentityGrant, RouteRefused> {
     guard(route, codec)?;
-    Ok(codec.open(roster))
+    let session = codec.open(roster);
+    Ok(match codec.mode() {
+        CodecMode::Passthrough => IdentityGrant::unscanned(session),
+        CodecMode::Pseudonymizing => IdentityGrant::scanned(session, codec.scan_exemptions()),
+    })
 }

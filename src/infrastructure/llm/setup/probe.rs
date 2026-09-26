@@ -9,7 +9,7 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, Effort, FinishReason, Message,
     governor::{QuestionLimits, Refused, Role, SessionError, SessionFailure},
-    identity::{IdentityCodec, guard},
+    identity::{IdentityCodec, LeakScanner, open_session},
 };
 use super::ModelStack;
 
@@ -58,9 +58,11 @@ impl ModelStack {
             effort,
             outcome,
         };
-        if let Err(refused) = guard(&route, codec) {
-            return Some(result(ProbeOutcome::Refused(refused.to_string())));
-        }
+        // The fixed prompt carries no member data: an empty-roster grant.
+        let scanner = match open_session(codec, &route, &[]) {
+            Ok(identity) => identity.scanner(),
+            Err(refused) => return Some(result(ProbeOutcome::Refused(refused.to_string()))),
+        };
         let request = ChatRequest {
             model: route.alias.clone(),
             messages: vec![
@@ -77,14 +79,14 @@ impl ModelStack {
             reasoning: Some(effort),
             sampling: None,
         };
-        let mut outcome = self.attempt(role, &request, timeout).await;
+        let mut outcome = self.attempt(role, &request, &scanner, timeout).await;
         // Rewrites never wait for a rate token; the probes before this one may
         // have just emptied the bucket, so wait out the refill once.
         if let (Role::Rewrite, Err(Refusal::Rate(wait))) = (role, &outcome)
             && *wait < timeout
         {
             tokio::time::sleep(*wait).await;
-            outcome = self.attempt(role, &request, timeout).await;
+            outcome = self.attempt(role, &request, &scanner, timeout).await;
         }
         Some(result(match outcome {
             Ok(outcome) => outcome,
@@ -102,6 +104,7 @@ impl ModelStack {
         &self,
         role: Role,
         request: &ChatRequest,
+        scanner: &LeakScanner,
         timeout: Duration,
     ) -> Result<ProbeOutcome, Refusal> {
         let client = &self.client;
@@ -116,7 +119,9 @@ impl ModelStack {
             }
             Role::Rewrite => client.open_rewrite(WHO, timeout),
         };
-        let mut session = session.map_err(Refusal::from)?;
+        let mut session = session
+            .map_err(Refusal::from)?
+            .with_scanner(scanner.clone());
         let started = Instant::now();
         match session.complete(request).await {
             Ok(response) => Ok(ProbeOutcome::Ok {

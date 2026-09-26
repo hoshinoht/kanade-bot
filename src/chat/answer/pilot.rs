@@ -56,7 +56,7 @@ where
         .open_question(ctx.author_id.clone(), ctx.is_admin, limits)
         .await
     {
-        Ok(session) => session,
+        Ok(session) => session.with_scanner(identity.scanner()),
         Err(error) => return Generation::failed(AnswerFailure::Session(error)),
     };
     let mut generation = run_question(

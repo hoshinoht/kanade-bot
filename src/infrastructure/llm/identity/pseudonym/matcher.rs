@@ -1,7 +1,7 @@
 //! Offset-safe text scanning: word boundaries, Unicode case-insensitive needle
 //! matching, mentions, URLs and digit runs. All offsets are char boundaries.
 
-pub(super) fn is_word(ch: char) -> bool {
+pub(in crate::infrastructure::llm::identity) fn is_word(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
 
@@ -31,7 +31,7 @@ fn joins(a: char, b: char) -> bool {
 /// as a word boundary so escaped text cannot hide a name. Whether the
 /// backslash is itself escaped is ignored: masking under both readings is the
 /// safe side, and decoding reads it the same way.
-pub(super) fn prev_char(text: &str, at: usize) -> Option<char> {
+pub(in crate::infrastructure::llm::identity) fn prev_char(text: &str, at: usize) -> Option<char> {
     let head = &text[..at];
     if after_escape(head.as_bytes()) {
         return None;
@@ -72,13 +72,17 @@ pub(super) fn at_word_start(prev: Option<char>, rest: &str) -> bool {
 }
 
 /// Lowercased chars of a needle, compared char by char against text.
-pub(super) fn fold(text: &str) -> Vec<char> {
+pub(in crate::infrastructure::llm::identity) fn fold(text: &str) -> Vec<char> {
     text.chars().flat_map(char::to_lowercase).collect()
 }
 
 /// Byte length of `rest`'s prefix that equals `folded` case-insensitively
 /// and does not split a word on either side.
-pub(super) fn match_at(prev: Option<char>, rest: &str, folded: &[char]) -> Option<usize> {
+pub(in crate::infrastructure::llm::identity) fn match_at(
+    prev: Option<char>,
+    rest: &str,
+    folded: &[char],
+) -> Option<usize> {
     let mut matched = 0;
     let mut end = None;
     for (at, ch) in rest.char_indices() {
@@ -118,7 +122,7 @@ pub(super) fn word_run(rest: &str) -> &str {
     &rest[..len]
 }
 
-pub(super) fn digit_run(rest: &str) -> &str {
+pub(in crate::infrastructure::llm::identity) fn digit_run(rest: &str) -> &str {
     let len = rest.bytes().take_while(u8::is_ascii_digit).count();
     &rest[..len]
 }

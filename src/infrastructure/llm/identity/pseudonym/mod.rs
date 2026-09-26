@@ -8,7 +8,7 @@ mod encode;
 mod issuer;
 mod json;
 mod lexicon;
-mod matcher;
+pub(super) mod matcher;
 mod normalize;
 mod pool;
 mod random;
@@ -18,6 +18,7 @@ mod words;
 use std::{collections::HashSet, fmt, sync::Arc};
 
 use super::codec::{CodecMode, IdentityCodec, IdentitySession, Member};
+use super::scan::ScanExemptions;
 use crate::infrastructure::llm::governor::Random;
 use normalize::{name_keys, near_match, normalise};
 
@@ -84,6 +85,7 @@ pub(super) struct Shared {
 
 pub struct PseudonymCodec {
     shared: Arc<Shared>,
+    exemptions: Arc<ScanExemptions>,
 }
 
 impl PseudonymCodec {
@@ -104,7 +106,11 @@ impl PseudonymCodec {
             .filter(|c| !blocked.iter().any(|key| near_match(&c.key, key)))
             .collect();
         let forms = pool.iter().map(|c| c.name.to_ascii_lowercase()).collect();
+        // The bot is never masked, so its names never refuse a request.
+        let exemptions = ScanExemptions::builtin()
+            .with_texts(std::iter::once(&config.bot.name).chain(&config.bot.aliases));
         Self {
+            exemptions: Arc::new(exemptions),
             shared: Arc::new(Shared {
                 pool,
                 forms: Arc::new(forms),
@@ -113,6 +119,13 @@ impl PseudonymCodec {
                 random: config.random,
             }),
         }
+    }
+
+    /// Adds code-owned prompt words (system prompts, tool definitions,
+    /// schemas, the rendered boss table) the boundary scanner must not flag.
+    pub fn with_scan_exemptions(mut self, exemptions: &ScanExemptions) -> Self {
+        self.exemptions = Arc::new(self.exemptions.as_ref().clone().extend(exemptions));
+        self
     }
 
     /// Pool names left after construction-time filters (before any roster).
@@ -134,6 +147,10 @@ impl IdentityCodec for PseudonymCodec {
     fn open(&self, roster: &[Member]) -> Box<dyn IdentitySession> {
         Box::new(self.open_session(roster))
     }
+
+    fn scan_exemptions(&self) -> Arc<ScanExemptions> {
+        Arc::clone(&self.exemptions)
+    }
 }
 
 impl fmt::Debug for PseudonymCodec {
@@ -142,6 +159,7 @@ impl fmt::Debug for PseudonymCodec {
             .field("pool", &self.shared.pool.len())
             .field("lexicon", &self.shared.lexicon)
             .field("bot", &self.shared.bot)
+            .field("exemptions", &self.exemptions)
             .finish()
     }
 }

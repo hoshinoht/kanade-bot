@@ -16,6 +16,7 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider,
     execution::{Cause, CompletionRunner, Denied, ExecutionLimits, Gate, RetryPolicy, RunError},
+    identity::{IdentityLeakBlocked, LeakScanner},
 };
 use super::{CallKind, Governor, Permit, Priority, Refused, Role, Ticket, full_jitter};
 
@@ -74,6 +75,9 @@ pub enum SessionFailure {
     CleanRetryUnavailable,
     /// Not an extraction session, no answer to retry yet, or the retry is used.
     AnswerRetryUnavailable,
+    /// The boundary scanner found a raw member identity in the request;
+    /// nothing was sent and it is not retried.
+    IdentityLeakBlocked(IdentityLeakBlocked),
     Model(LlmError),
 }
 
@@ -91,6 +95,7 @@ impl fmt::Display for SessionError {
             SessionFailure::Ended => f.write_str("model session has ended"),
             SessionFailure::CleanRetryUnavailable => f.write_str("clean retry unavailable"),
             SessionFailure::AnswerRetryUnavailable => f.write_str("answer retry unavailable"),
+            SessionFailure::IdentityLeakBlocked(blocked) => blocked.fmt(f),
             SessionFailure::Model(error) => error.fmt(f),
         }
     }
@@ -229,6 +234,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
+            scanner: LeakScanner::off(),
             id: self.next_id(CallKind::Chat),
         })
     }
@@ -267,6 +273,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
+            scanner: LeakScanner::off(),
             id: self.next_id(CallKind::Extraction),
         })
     }
@@ -311,6 +318,7 @@ impl<P: LlmProvider> ModelClient<P> {
             // No answer retry, so no request is held in reserve for one.
             answer_retry_used: true,
             ended: false,
+            scanner: LeakScanner::off(),
             id: self.next_id(CallKind::Rewrite),
         })
     }
@@ -348,6 +356,8 @@ pub struct Session<'c, P> {
     answered: bool,
     answer_retry_used: bool,
     ended: bool,
+    /// Runs on every request before admission; off unless attached.
+    scanner: LeakScanner,
     id: String,
 }
 
@@ -358,7 +368,18 @@ impl<P> fmt::Debug for Session<'_, P> {
             .field("used", &self.used)
             .field("max_requests", &self.max_requests)
             .field("ended", &self.ended)
+            .field("scanner", &self.scanner)
             .finish_non_exhaustive()
+    }
+}
+
+impl<P> Session<'_, P> {
+    /// Attaches the identity grant's boundary scanner: every request this
+    /// session sends from now on (retries, reshapes, requeues, clean and
+    /// answer retries) is scanned first.
+    pub fn with_scanner(mut self, scanner: LeakScanner) -> Self {
+        self.scanner = scanner;
+        self
     }
 }
 
@@ -484,7 +505,8 @@ impl<P: LlmProvider> Session<'_, P> {
                 retry_first,
                 random.as_ref(),
             )
-            .tagged(&self.id);
+            .tagged(&self.id)
+            .scanned(&self.scanner);
             let result = self.client.runner.run(request, &mut gate).await;
             drop(gate);
             let failure = match result {
@@ -494,6 +516,11 @@ impl<P: LlmProvider> Session<'_, P> {
                 }
                 Err(RunError::Denied(Denied::RequestLimit)) => {
                     return Err(refunded(SessionFailure::RequestsExhausted));
+                }
+                Err(RunError::Leak(found)) => {
+                    return Err(refunded(SessionFailure::IdentityLeakBlocked(
+                        IdentityLeakBlocked::new(self.role, found),
+                    )));
                 }
                 Err(RunError::Failed(failure)) => failure,
             };

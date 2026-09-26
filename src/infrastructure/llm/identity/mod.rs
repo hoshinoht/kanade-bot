@@ -2,12 +2,14 @@
 //! prompt fragment and model output through a session. `Passthrough` is what
 //! runs; `PseudonymCodec` (fictional-name tokens) exists but is not wired yet.
 //! An `external` route fails closed while passthrough is active unless the
-//! operator override allows it.
+//! operator override allows it. `scan/` refuses pseudonymized requests that
+//! still carry a raw identity.
 
 mod codec;
 mod passthrough;
 mod pseudonym;
 mod route;
+mod scan;
 #[cfg(any(test, feature = "test-support"))]
 mod tagging;
 
@@ -20,5 +22,8 @@ pub use pseudonym::{
     SystemRng,
 };
 pub use route::{RouteRefused, check_routes, guard, open_session, unmasked};
+pub use scan::{
+    IdentityGrant, IdentityLeakBlocked, LeakFound, LeakKind, LeakScanner, ScanExemptions,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub use tagging::{TaggingCodec, TaggingSession, find_leaks, find_request_leaks};

@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::codec::{CodecMode, DecodeError, IdentityCodec, IdentitySession, Member};
+use super::codec::{
+    CodecMode, DecodeError, IdentityCodec, IdentitySession, Member, ScanName, ScanNeedles,
+};
 use crate::infrastructure::llm::ChatRequest;
 
 const SNOWFLAKE_DIGITS: std::ops::RangeInclusive<usize> = 17..=20;
@@ -157,6 +159,27 @@ impl IdentitySession for TaggingSession {
                 .iter()
                 .find(|m| m.user_id == user_id)
                 .map_or_else(|| user_id.to_owned(), |m| m.display_name.clone())
+        })
+    }
+
+    fn scan_needles(&self) -> Option<ScanNeedles> {
+        let mut ids: Vec<String> = self.roster.iter().map(|m| m.user_id.clone()).collect();
+        ids.extend(self.issued.iter().cloned());
+        ids.sort();
+        ids.dedup();
+        Some(ScanNeedles {
+            names: self
+                .needles
+                .iter()
+                .map(|(text, _)| ScanName {
+                    text: text.clone(),
+                    collides: false,
+                    token_clash: false,
+                })
+                .collect(),
+            ids,
+            tokens: (1..=self.issued.len()).map(|n| format!("ID{n}")).collect(),
+            skipped_short: 0,
         })
     }
 }

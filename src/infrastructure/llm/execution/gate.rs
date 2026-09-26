@@ -1,6 +1,10 @@
 use tokio::time::Instant;
 
-use super::super::governor::{Attempt, CallKind, Outcome, Permit, Random, Refused};
+use super::super::{
+    ChatRequest,
+    governor::{Attempt, CallKind, Outcome, Permit, Random, Refused},
+    identity::{LeakFound, LeakScanner},
+};
 
 /// Admission for one runner call: every provider request passes the permit's
 /// rate ceiling, breaker and (for retries) retry budget, and is capped by the
@@ -17,6 +21,7 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     attempt: Option<Attempt>,
     /// Session id; each request is tagged `{tag}-{n}` for gateway log correlation.
     tag: Option<&'a str>,
+    scanner: Option<&'a LeakScanner>,
 }
 
 pub(in crate::infrastructure::llm) enum Denied {
@@ -46,12 +51,24 @@ impl<'a> Gate<'a> {
             random,
             attempt: None,
             tag: None,
+            scanner: None,
         }
     }
 
     pub(in crate::infrastructure::llm) fn tagged(mut self, tag: &'a str) -> Self {
         self.tag = Some(tag);
         self
+    }
+
+    pub(in crate::infrastructure::llm) fn scanned(mut self, scanner: &'a LeakScanner) -> Self {
+        self.scanner = Some(scanner);
+        self
+    }
+
+    /// Boundary scan of the exact request about to be sent; runs before
+    /// admission so a refusal spends no request, rate token or retry.
+    pub(super) fn scan(&self, request: &ChatRequest) -> Result<(), LeakFound> {
+        self.scanner.map_or(Ok(()), |scanner| scanner.scan(request))
     }
 
     /// Id of the request admitted last (numbered from 1 within the session).
@@ -71,6 +88,7 @@ impl<'a> Gate<'a> {
             random,
             attempt: None,
             tag: None,
+            scanner: None,
         }
     }
 
