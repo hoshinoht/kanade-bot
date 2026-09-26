@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use super::fence::map_prose;
 use super::pattern;
 use crate::chat::tools::MAX_MEMBER_REPLY;
 use crate::domain::pytext::strip;
@@ -48,12 +49,17 @@ fn chars(text: &str) -> usize {
     text.chars().count()
 }
 
-/// Normalise, then bound to [`MAX_MEMBER_REPLY`]; a `protected` block (the
-/// canonical schedule listing) is kept whole and whatever surrounds it is
-/// dropped first.
+/// Normalise outside fenced code, then bound to [`MAX_MEMBER_REPLY`]; a
+/// `protected` block (the canonical schedule listing) is kept whole and
+/// whatever surrounds it is dropped first.
 pub fn tidy(content: &str, protected: Option<&str>) -> String {
-    let text = tidy_blank_lines(content);
-    let text = unglue_first_bullet(strip(&text));
+    let text = map_prose(content, tidy_blank_lines);
+    let text = strip(&text);
+    let text = if text.contains("\n- ") {
+        map_prose(text, |prose| prose.replace(GLUED_BULLET, ":\n\n- "))
+    } else {
+        text.to_owned()
+    };
     if let Some(protected) = protected.filter(|p| !p.is_empty() && text.contains(*p)) {
         let (before, after) = text.split_once(protected).expect("contains");
         let mut parts = vec![protected];

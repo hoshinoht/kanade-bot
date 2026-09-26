@@ -85,7 +85,10 @@ are C3. Serve wiring is `chat::driver` (below).
 - Finishing (v4 order): an unposted write overwrites a claiming reply unless
   it already asks a question; new-card claims are stripped on turns that
   posted nothing; then schedule regrounding, member-facing scrubbing and
-  bounds (`sanitize::shape_reply`).
+  bounds (`sanitize::shape_reply`). Named v5 differences: `D-CODE-FENCES`
+  (text inside paired ```` ``` ```` fences skips scrubbing and blank-line
+  tidying, so code keeps its indentation) and `D-ELLIPSIS` (runs of three or
+  more dots are kept; v4 turned `Mou...` into `Mou..`).
 - Failures are typed (`AnswerFailure`) with their allowance charge; timeouts
   read v4's `no answer within Ns`.
 

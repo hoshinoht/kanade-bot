@@ -81,3 +81,23 @@ async fn the_sanitize_family_replays_exactly() {
     let counts = check_family("sanitize", &[], |case| async move { replay(&case) }).await;
     assert_eq!(counts, (6, 64));
 }
+
+/// `D-CODE-FENCES`: fenced code survives shaping byte for byte.
+#[test]
+fn fenced_code_keeps_its_indentation_through_shaping() {
+    let code = "```python\ndef two_sum(nums, target):\n    seen = {}\n\n\n    for i, n in enumerate(nums):\n        if target - n in seen:  # found\n            return [seen[target - n], i]\n```";
+    let reply = format!("Here  you go:\n\n{code}\n\nNext run  is Tuesday .");
+    let shaped = shape_reply(&reply, &[]);
+    assert!(shaped.contains(code), "{shaped}");
+    assert!(shaped.starts_with("Here you go:"), "{shaped}");
+    assert!(shaped.ends_with("Next run is Tuesday."), "{shaped}");
+}
+
+/// `D-ELLIPSIS`: an ellipsis keeps every dot; stray dots are still tidied.
+#[test]
+fn ellipses_survive_member_facing() {
+    assert_eq!(member_facing("Mou... fine."), "Mou... fine.");
+    assert_eq!(member_facing("Well .... maybe"), "Well .... maybe");
+    assert_eq!(member_facing("Done . ."), "Done.");
+    assert_eq!(member_facing("Done.."), "Done.");
+}

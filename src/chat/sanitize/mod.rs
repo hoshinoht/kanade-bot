@@ -7,6 +7,7 @@
 
 mod claims;
 mod defaults;
+mod fence;
 mod ground;
 mod member;
 mod notes;

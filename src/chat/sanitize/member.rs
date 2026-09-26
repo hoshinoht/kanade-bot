@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 
 use regex::{Captures, Regex, RegexBuilder};
 
+use super::fence::map_prose;
 use super::{is_word, pattern, pattern_i};
 
 static EMPTY_PLACEHOLDER: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"`?<\s*none\s*>`?"));
@@ -43,6 +44,7 @@ static WEEKLY_TRUE: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"\bweekly\s*=\
 static RUNS_OF_SPACE: LazyLock<Regex> = LazyLock::new(|| pattern(r"[ \t]{2,}"));
 static SPACE_DOT: LazyLock<Regex> = LazyLock::new(|| pattern(r"\s+\."));
 static DOUBLE_DOT: LazyLock<Regex> = LazyLock::new(|| pattern(r"\.\s*\."));
+static ELLIPSIS: LazyLock<Regex> = LazyLock::new(|| pattern(r"\.{3,}"));
 
 /// Model-only tool instructions that must never reach a member.
 fn strip_tool_directives(text: &str) -> String {
@@ -61,8 +63,25 @@ fn strip_tool_directives(text: &str) -> String {
         .into_owned();
     cleaned = WEEKLY_TRUE.replace_all(&cleaned, "weekly").into_owned();
     cleaned = RUNS_OF_SPACE.replace_all(&cleaned, " ").into_owned();
-    cleaned = SPACE_DOT.replace_all(&cleaned, ".").into_owned();
-    DOUBLE_DOT.replace_all(&cleaned, ".").into_owned()
+    tidy_dots(&cleaned)
+}
+
+/// v4's stray-dot cleanup around, never inside, an ellipsis (named v5
+/// difference `D-ELLIPSIS`: v4 turned `Mou...` into `Mou..`).
+fn tidy_dots(text: &str) -> String {
+    let dots = |gap: &str| {
+        let gap = SPACE_DOT.replace_all(gap, ".");
+        DOUBLE_DOT.replace_all(&gap, ".").into_owned()
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for ellipsis in ELLIPSIS.find_iter(text) {
+        out.push_str(&dots(&text[last..ellipsis.start()]));
+        out.push_str(ellipsis.as_str());
+        last = ellipsis.end();
+    }
+    out.push_str(&dots(&text[last..]));
+    out
 }
 
 fn natural_argument(found: &Captures<'_>) -> String {
@@ -118,8 +137,13 @@ fn internal_week_modes(text: &str) -> String {
     out
 }
 
-/// Remove scheduler internals while keeping Discord channel links.
+/// Remove scheduler internals while keeping Discord channel links; fenced
+/// code is left untouched.
 pub fn member_facing(text: &str) -> String {
+    map_prose(text, member_facing_prose)
+}
+
+fn member_facing_prose(text: &str) -> String {
     let cleaned = EMPTY_PLACEHOLDER.replace_all(text, "");
     let cleaned = strip_tool_directives(&cleaned);
     let cleaned = SCHEDULE_CALL.replace_all(&cleaned, "the schedule");
