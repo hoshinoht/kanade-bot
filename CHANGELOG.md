@@ -531,6 +531,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 - v5 chat replies keep code-block indentation and persona ellipses (`Mou...`
   no longer becomes `Mou..`).
+- v5 admin: tool-trace buttons announce a short preview, selecting text in a
+  viewer no longer closes it, pagers stay in range after a reload, and copied
+  Markdown transcripts fence the question and reply.
 - v5 admin Chat log: long questions are clamped to two lines (full text in the
   tooltip and on the turn page) instead of stretching the row.
 - v5 admin Config → Channel access now shows the bot's permissions per watched

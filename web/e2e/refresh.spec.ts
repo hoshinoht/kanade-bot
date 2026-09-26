@@ -65,9 +65,23 @@ for (const [name, path, selector, setup] of [
     await page.waitForLoadState('networkidle');
     if (setup) await page.getByRole('tab', { name: setup }).click();
     await page.locator(selector).first().waitFor();
-    const scroller = page.locator('.shell');
+    // The shell never scrolls (fixed 100dvh): mark the panel that does, around the watched content.
+    const scrolls = await page.locator(selector).first().evaluate((el) => {
+      for (let at = el.parentElement; at; at = at.parentElement) {
+        const y = getComputedStyle(at).overflowY;
+        if ((y === 'auto' || y === 'scroll') && at.scrollHeight > at.clientHeight + 40) {
+          at.setAttribute('data-scroller', '');
+          return true;
+        }
+      }
+      return false;
+    });
+    // The planner board and the first Config section fit this frame: only the remount check applies.
+    if (!scrolls) test.info().annotations.push({ type: 'note', description: `${name}: nothing to scroll at this size` });
+    const scroller = page.locator(scrolls ? '[data-scroller]' : '.shell');
     await scroller.evaluate((el) => el.scrollTo(0, 40));
     const before = await scroller.evaluate((el) => el.scrollTop);
+    if (scrolls) expect(before).toBeGreaterThan(0);
     await watch(page, selector);
     await refreshTimes(page, 3);
     expect(await survived(page)).toEqual({ removed: 0, kept: true });

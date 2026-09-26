@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { clampPage, rangeLabel } from './paging';
+
   let {
     page = $bindable(1),
     pages,
@@ -18,16 +20,17 @@
     forward?: string;
   } = $props();
   const uid = $props.id();
-  const range = $derived(size ? `${(page - 1) * size + 1}–${Math.min(page * size, total)} of ${total.toLocaleString('en')}` : '');
+  const at = $derived(clampPage(page, pages));
+  const range = $derived(size ? rangeLabel(at, size, total) : '');
 </script>
 
 <!-- v4 macros.pager: newer/older on the outside edges, "page N of M" between. -->
 {#if pages > 1}
   <nav class="pager" aria-label="Pages" aria-describedby="{uid}-at">
-    <button class="btn" type="button" disabled={page <= 1} onclick={() => (page -= 1)}>{back}</button>
+    <button class="btn" type="button" disabled={at <= 1} onclick={() => (page = at - 1)}>{back}</button>
     <span class="pager__at mono" id="{uid}-at" aria-live="polite">
-      {#if range}{range} {noun}s{:else}Page {page} of {pages} · {total.toLocaleString('en')} {noun}{total === 1 ? '' : 's'}{/if}
+      {#if range}{range} {noun}s{:else}Page {at} of {pages} · {total.toLocaleString('en')} {noun}{total === 1 ? '' : 's'}{/if}
     </span>
-    <button class="btn" type="button" disabled={page >= pages} onclick={() => (page += 1)}>{forward}</button>
+    <button class="btn" type="button" disabled={at >= pages} onclick={() => (page = at + 1)}>{forward}</button>
   </nav>
 {/if}

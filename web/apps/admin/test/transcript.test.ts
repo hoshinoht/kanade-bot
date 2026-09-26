@@ -68,6 +68,16 @@ describe('chat transcript', () => {
     expect(JSON.parse(transcriptJson(t, { timeZone: 'UTC' })).rounds[0].calls[0].arguments).toBe(W);
   });
 
+  it('fences the question and reply, so a stray fence or heading cannot break the document', () => {
+    const md = transcriptMarkdown(turn({ asked: '# Two Sum\n```py\ndef f(): pass', said: 'use ````a hash map````' }), { timeZone: 'UTC' });
+    expect(md).toContain('## Question\n\n````\n# Two Sum\n```py\ndef f(): pass\n````\n\n## Reply');
+    expect(md).toContain('## Reply\n\n`````\nuse ````a hash map````\n`````\n');
+  });
+
+  it('leaves a reply that was never sent unfenced', () => {
+    expect(transcriptMarkdown(turn({ said: '' }), { timeZone: 'UTC' })).toContain('## Reply\n\n— nothing was sent —\n');
+  });
+
   it('fences text that holds backticks with a longer fence', () => {
     const md = transcriptMarkdown(turn({ raw: 'a ``` b' }), { timeZone: 'UTC' });
     expect(md).toContain('````\na ``` b\n````');

@@ -80,11 +80,11 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
     '',
     '## Question',
     '',
-    mentionsText(turn.asked),
+    fence(mentionsText(turn.asked)),
     '',
     '## Reply',
     '',
-    turn.said ? mentionsText(turn.said) : '— nothing was sent —',
+    turn.said ? fence(mentionsText(turn.said)) : '— nothing was sent —',
   ];
   for (const r of rounds(turn)) {
     lines.push('', `## Round ${r.round}${r.model ? ` — ${r.model}` : ''}`, '', `- Finish: ${r.finish || '—'}`, `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`);

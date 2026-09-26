@@ -32,6 +32,8 @@
   const uid = $props.id();
   let dialog: HTMLDialogElement;
   let returnTo: HTMLElement | null = null;
+  // A selection drag from the panel that ends on the backdrop is not a dismiss: both ends must hit it.
+  let downOnBackdrop = false;
 
   $effect(() => {
     if (open && !dialog.open) {
@@ -62,9 +64,12 @@
   class:modal--wide={wide}
   aria-labelledby="{uid}-title"
   onclose={handleClose}
+  onpointerdown={(event) => (downOnBackdrop = event.target === dialog)}
   onclick={(event) => {
     // The dialog element itself is only hit on its backdrop; the panel covers the rest.
-    if (lightDismiss && event.target === dialog) close();
+    const dismiss = lightDismiss && downOnBackdrop && event.target === dialog;
+    downOnBackdrop = false;
+    if (dismiss) close();
   }}
 >
   <div class="modal__panel">

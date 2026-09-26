@@ -42,6 +42,23 @@ test('tool trace: one line per call; long text opens in a keyboard-reachable mod
   await expect(args).toBeVisible();
   await page.mouse.click(5, 5);
   await expect(args).toBeHidden();
+
+  // A text-selection drag from the panel that ends on the backdrop keeps it open.
+  await row.getByRole('button', { name: /open the full return/ }).click();
+  await expect(dialog).toBeVisible();
+  // Chrome sends that click to the <dialog> (the common ancestor); dispatched here, as a synthetic drag varies by engine.
+  await dialog.evaluate((el) => {
+    el.querySelector('pre')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  // The preview is short, so a screen reader is not read the whole result.
+  const name = await open.evaluate((el) => el.textContent ?? '');
+  expect(name.length).toBeLessThan(200);
+  expect(name).not.toContain('\n');
 });
 
 test('tool trace: a withheld turn shows the placeholder, with nothing to open', async ({ page }) => {
@@ -59,7 +76,7 @@ test('copy transcript: Markdown by default, JSON on request, names not ids', asy
   await expect(page.getByText('Transcript copied as Markdown.')).toBeVisible();
   const md = await page.evaluate(() => navigator.clipboard.readText());
   expect(md).toMatch(/^# Chat turn c-guide/);
-  expect(md).toContain('## Question\n\nany tips for hard limbo');
+  expect(md).toContain('## Question\n\n```\nany tips for hard limbo\n```');
   expect(md).toContain('### knowledge.read — ok, 12 ms');
   expect(md).toContain('… [truncated, 12034 bytes]');
   expect(md).toContain('- Channel: #limbo-trio');
@@ -79,7 +96,7 @@ test('copy transcript: a withheld turn stays redacted', async ({ page, context }
   await page.goto(`${ADMIN}/chat/c-withheld?sw=off`);
   await page.getByRole('button', { name: 'Copy transcript' }).click();
   const md = await page.evaluate(() => navigator.clipboard.readText());
-  expect(md).toContain('## Question\n\n[message withheld]');
+  expect(md).toContain('## Question\n\n```\n[message withheld]\n```');
   expect(md).not.toContain('admin token');
   expect(md).not.toContain('secret');
 });

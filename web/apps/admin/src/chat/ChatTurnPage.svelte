@@ -2,7 +2,7 @@
   import '@kanade/ui/styles/evidence.scss';
   import type { ChatTurn } from '@kanade/api-types';
   import { Tabs, type TabItem, type Toaster } from '@kanade/ui';
-  import { duration } from '../logs/format';
+  import { duration, preview } from '../logs/format';
   import { Resource } from '../resource.svelte';
   import { copyText } from '../shared/copy';
   import TextModal from '../shared/TextModal.svelte';
@@ -29,6 +29,12 @@
   // One viewer for any long text on the page: a tool's arguments or result, or a transcript that could not be copied.
   let viewer = $state({ open: false, title: '', eyebrow: '', text: '' });
   const show = (title: string, eyebrow: string, text: string) => (viewer = { open: true, title, eyebrow, text });
+  // The cell shows one line; a short button name keeps screen readers from reading up to 8 KiB.
+  const PREVIEW = 120;
+  const short = (text: string) => {
+    const line = preview(text);
+    return line.length > PREVIEW ? `${line.slice(0, PREVIEW)}…` : line;
+  };
 
   let format = $state<'markdown' | 'json'>('markdown');
   async function copyTranscript() {
@@ -85,7 +91,7 @@
                         {#if !text}—
                         {:else if text === WITHHELD}<span class="note">{WITHHELD}</span>
                         {:else}<button type="button" class="trace__preview" onclick={() => show(`${t.name}: ${what?.toLowerCase()}`, `Call ${i + 1}`, text!)}
-                            ><span class="trace__text">{text}</span><span class="vh">, open the full {what?.toLowerCase()}</span></button
+                            ><span class="trace__text">{short(text!)}</span><span class="vh">, open the full {what?.toLowerCase()}</span></button
                           >{/if}
                       </td>
                     {/each}
