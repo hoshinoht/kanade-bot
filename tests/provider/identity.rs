@@ -11,11 +11,11 @@ use serde_json::json;
 
 use super::support::build_runner;
 
-const ALICE_ID: &str = "112233445566778899";
-const BOB_ID: &str = "998877665544332211";
-const OUTSIDER_ID: &str = "123456789012345678";
+pub(super) const ALICE_ID: &str = "112233445566778899";
+pub(super) const BOB_ID: &str = "998877665544332211";
+pub(super) const OUTSIDER_ID: &str = "123456789012345678";
 
-fn roster() -> Vec<Member> {
+pub(super) fn roster() -> Vec<Member> {
     vec![
         Member {
             user_id: ALICE_ID.into(),
@@ -57,7 +57,7 @@ const BURST: [Line<'static>; 3] = [
 ];
 
 /// A port-shaped prompt; `None` renders exactly as a port without a codec would.
-fn build_request(mut session: Option<&mut dyn IdentitySession>) -> ChatRequest {
+pub(super) fn build_request(mut session: Option<&mut dyn IdentitySession>) -> ChatRequest {
     let mut lines = vec!["RUNS: #a1 HMaleficStar Mon 21:30".to_owned()];
     let participants: Vec<String> = match session.as_deref_mut() {
         Some(s) => s.participants(&[ALICE_ID, BOB_ID]),
@@ -144,7 +144,10 @@ fn reply(content: &str) -> CompletionResponse {
 }
 
 /// The request exactly as the provider received it, its JSON, and the reply.
-async fn capture(request: &ChatRequest, answer: &str) -> (ChatRequest, String, CompletionResponse) {
+pub(super) async fn capture(
+    request: &ChatRequest,
+    answer: &str,
+) -> (ChatRequest, String, CompletionResponse) {
     let (provider, runner) = build_runner([FakeAction::Response(reply(answer))]);
     let response = runner.complete(request).await.expect("fake completion");
     let mut sent = provider.requests();
@@ -154,7 +157,7 @@ async fn capture(request: &ChatRequest, answer: &str) -> (ChatRequest, String, C
     (sent, wire, response)
 }
 
-fn route(external: bool) -> RoleRoute {
+pub(super) fn route(external: bool) -> RoleRoute {
     RoleRoute {
         role: Role::Chat,
         alias: "cloud-chat".into(),

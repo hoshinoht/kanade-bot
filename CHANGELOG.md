@@ -474,6 +474,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   aliases. Selections are audited, stored as runtime config rows seeded once from
   `EXTRACT_MODEL`/`CHAT_PILOT_MODEL`/`EXTRACT_REASONING`/`CHAT_PILOT_THINK`, carried
   in bundle `runtime_config`, and honored by startup checks.
+- v5: production pseudonym codec (`PseudonymCodec`) that replaces member names,
+  aliases, mentions and ids with per-session random fictional given names and
+  decodes model output back; not yet wired into chat or extraction (off by default).
 
 **Changed**
 

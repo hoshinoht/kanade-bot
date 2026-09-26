@@ -45,9 +45,61 @@ impl fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
+/// Raw identities a session masks, for a provider-boundary scanner. Memory
+/// only; `Debug` shows counts.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ScanNeedles {
+    /// Names, nicknames, aliases and author labels the session masks.
+    pub names: Vec<ScanName>,
+    /// User ids the session masks (roster and every issued id).
+    pub ids: Vec<String>,
+    /// Every token issued so far; these may appear in requests.
+    pub tokens: Vec<String>,
+    /// Names shorter than two characters, which are never masked.
+    pub skipped_short: usize,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ScanName {
+    pub text: String,
+    /// Equals a code-lexicon word or stopword; masking it also masks that
+    /// word in member text, and a scanner must not flag it in code-owned text.
+    pub collides: bool,
+    /// Equals or near-matches an issued token (an author registered after
+    /// that token was issued), so the scanner cannot tell the two apart.
+    pub token_clash: bool,
+}
+
+impl ScanNeedles {
+    pub fn collisions(&self) -> usize {
+        self.names.iter().filter(|name| name.collides).count()
+    }
+}
+
+impl fmt::Debug for ScanNeedles {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScanNeedles")
+            .field("names", &self.names.len())
+            .field("ids", &self.ids.len())
+            .field("tokens", &self.tokens.len())
+            .field("collisions", &self.collisions())
+            .field("skipped_short", &self.skipped_short)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ScanName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScanName")
+            .field("bytes", &self.text.len())
+            .field("collides", &self.collides)
+            .field("token_clash", &self.token_clash)
+            .finish()
+    }
+}
+
 /// Chooses how member identities appear in model traffic. Extraction opens one
-/// session per request; chat keeps one session for a whole conversation so
-/// tokens stay consistent across rounds.
+/// session per request and chat one per question; mappings never outlive it.
 pub trait IdentityCodec: Send + Sync {
     fn mode(&self) -> CodecMode;
     fn open(&self, roster: &[Member]) -> Box<dyn IdentitySession>;
@@ -58,6 +110,8 @@ pub trait IdentityCodec: Send + Sync {
 /// lives only in the session and is never persisted.
 pub trait IdentitySession: Send {
     /// The label shown for a message author (`name` is their Discord name).
+    /// The name is masked in text encoded afterwards, so register every author
+    /// before encoding text that may mention them.
     fn author_label(&mut self, user_id: &str, name: &str) -> String;
 
     /// How the model refers to a member in participant lists, extractor
@@ -91,4 +145,10 @@ pub trait IdentitySession: Send {
 
     /// A free-text reply that will be shown to members.
     fn decode_reply(&self, text: &str) -> Result<String, DecodeError>;
+
+    /// What this session masks, for a boundary scanner; `None` when it masks
+    /// nothing (passthrough).
+    fn scan_needles(&self) -> Option<ScanNeedles> {
+        None
+    }
 }
