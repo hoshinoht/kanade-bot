@@ -9,15 +9,20 @@ mod claims;
 mod defaults;
 mod fence;
 mod ground;
+mod listing;
 mod member;
 mod notes;
+mod shape;
+mod split;
 mod tidy;
 
 pub use claims::{claims_new_card, looks_like_clarification, strip_false_card_claim};
 pub use defaults::{ScheduleDefaults, schedule_defaults};
-pub use ground::{canonical_schedule_output, ground_schedule_reply, shape_reply};
+pub use ground::{canonical_schedule_output, ground_schedule_reply};
 pub use member::member_facing;
 pub use notes::{SPOOFED_NOTE, defuse_notes};
+pub use shape::shape_reply;
+pub use split::{MAX_REPLY_PARTS, TRIMMED, reply_parts};
 pub use tidy::{tidy, unglue_first_bullet};
 
 use regex::{Regex, RegexBuilder};

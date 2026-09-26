@@ -3,6 +3,8 @@
 //! cancels its question. `surface.rs` is the driver's Discord side.
 
 mod surface;
+#[cfg(test)]
+mod surface_tests;
 
 use std::sync::Arc;
 

@@ -502,6 +502,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: masking now also covers single words of multi-word member names (e.g. a
   first name inside party channel names); words shared by two members get a
   neutral fake name that decodes to nobody.
+- v5: chat schedule answers show only the runs the model named (named difference
+  D-GROUND-FILTERED) and keep the rest of the answer, including code; replies too
+  long for one message continue in follow-up messages instead of being cut.
 
 **Changed**
 

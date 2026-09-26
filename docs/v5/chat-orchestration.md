@@ -141,8 +141,39 @@ are C3. Serve wiring is `chat::driver` (below).
   posted nothing; then schedule regrounding, member-facing scrubbing and
   bounds (`sanitize::shape_reply`). Named v5 differences: `D-CODE-FENCES`
   (text inside paired ```` ``` ```` fences skips scrubbing and blank-line
-  tidying, so code keeps its indentation) and `D-ELLIPSIS` (runs of three or
-  more dots are kept; v4 turned `Mou...` into `Mou..`).
+  tidying, so code keeps its indentation), `D-ELLIPSIS` (runs of three or
+  more dots are kept; v4 turned `Mou...` into `Mou..`) and
+  `D-GROUND-FILTERED` (user decision 2026-09-27). Regrounding never reads
+  or replaces fenced code, even when every run is named. A reply naming
+  only some of the listing's runs (by id) gets just those runs' canonical
+  records at the first named run, under its own heading; naming all of them
+  inserts the tool's full listing as v4 did. A record-shaped line whose
+  `[id]` no tool output carries is dropped (never with a real run's line)
+  whenever real runs are named, all of them included; the listing then goes
+  at the first real run. With no run named, v4's full listing stands (a
+  reply with code but no schedule text keeps its text, listing appended).
+  Grounding matches v4 exactly only for a reply without fenced code or
+  invented record lines that names every run or none. Over the
+  member bound (`MAX_MEMBER_REPLY`, 1200 characters) runs that already
+  happened leave the listing (counted in `*(and N more)*`) while an upcoming
+  one remains; nothing else is cut (v4 kept the listing and dropped the text
+  around it, and cut any other reply at the bound). The chat log keeps the
+  whole reply. Posting (`sanitize::reply_parts`, user decision 2026-09-27):
+  a reply within the bound is one message, unchanged; a longer one is split
+  at paragraph breaks outside fenced code into parts within the bound (and
+  Discord's 2000 UTF-16 units), a fence too long for one part is split at
+  line boundaries into fences that reopen its opening line, a single line
+  too long for one part is cut by characters, and at most
+  `MAX_REPLY_PARTS` (4) parts post, the last ending `*(reply trimmed)*`.
+  `DiscordSurface` posts the first part as the reply and the rest as plain
+  follow-ups in order, all pinging nobody; a failed follow-up is logged
+  (`chat_followup_failed`, `chat_followup_stopped`) and ends the reply
+  without failing or retrying the answer. A fence is reopened with ```` ``` ````
+  plus its language only (a short bare word alone on the opening line), a
+  cut never lands inside a fence marker or a joined emoji, and a cut at a
+  fence's closing line leaves no empty fence. Known limitation: only the
+  first part's message id is kept, so replying to a follow-up part does not
+  anchor to the answer the way replying to the first part does.
 - Failures are typed (`AnswerFailure`) with their allowance charge; timeouts
   read v4's `no answer within Ns`.
 
@@ -292,6 +323,8 @@ v4's 4. Named: `D-SHAPING` (sampled requests carry the runner's
 (folded into `D-CLEAN-RETRY`, one step: a reply with a duplicate call id or
 non-JSON arguments is unreadable to the runner as a whole, where v4 renamed
 the id or ran the call with `{}`), `D-USAGE-PAIRS` (a round's usage counts
-only when both counts are integers) and `D-TYPED-FAILURES` (governor/runner
-error text). Tools-withheld rounds, the read-only turn and unoffered calls
+only when both counts are integers), `D-TYPED-FAILURES` (governor/runner
+error text) and `D-GROUND-FILTERED` (`read-then-grounded-answer` step 0's
+reply shows only the run the model named; also `sanitize` case
+`schedule-grounding` step 8). Tools-withheld rounds, the read-only turn and unoffered calls
 replay as v4.

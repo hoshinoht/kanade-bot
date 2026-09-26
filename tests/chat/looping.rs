@@ -301,6 +301,7 @@ fn named() -> Vec<Named> {
     let mut usage = Vec::new();
     let mut failures = Vec::new();
     let mut floor = Vec::new();
+    let mut grounding = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -353,12 +354,21 @@ fn named() -> Vec<Named> {
             match (case_id, index) {
                 // A round's usage counts only when both counts are integers
                 // (the second round reported `"150"` and `null`).
-                ("read-then-grounded-answer", 0) => usage.push(dev(
-                    case_id,
-                    format!("{pointer}/prompt_tokens"),
-                    json!(250),
-                    json!(100),
-                )),
+                ("read-then-grounded-answer", 0) => {
+                    usage.push(dev(
+                        case_id,
+                        format!("{pointer}/prompt_tokens"),
+                        json!(250),
+                        json!(100),
+                    ));
+                    // The model named only the upcoming run: just its record.
+                    grounding.push(dev(
+                        case_id,
+                        format!("{pointer}/reply"),
+                        json!("Ara~ this week:\n\n**2 runs this boss week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\nAsk the schedule for more!"),
+                        json!("Ara~ this week:\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\nAsk the schedule for more!"),
+                    ));
+                }
                 ("transport-failures", 1) => failures.push(error(
                     "LLM completion failed (BackendUnavailable, digest=d3382fb842105fb8)",
                 )),
@@ -421,6 +431,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-REASONING-FLOOR",
             entries: floor,
+        },
+        Named {
+            name: "D-GROUND-FILTERED",
+            entries: grounding,
         },
     ]
 }

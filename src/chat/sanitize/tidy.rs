@@ -53,17 +53,45 @@ fn chars(text: &str) -> usize {
 /// `protected` block (the canonical schedule listing) is kept whole and
 /// whatever surrounds it is dropped first.
 pub fn tidy(content: &str, protected: Option<&str>) -> String {
+    bound(&normalise(content), protected)
+}
+
+/// [`tidy`] when its bound drops nothing.
+pub(super) fn tidy_whole(content: &str, protected: Option<&str>) -> Option<String> {
+    let text = normalise(content);
+    let whole = match around(&text, protected) {
+        Some((prefix, protected, suffix)) => [prefix, protected, suffix]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        None => strip(&text).to_owned(),
+    };
+    let bounded = bound(&text, protected);
+    (bounded == whole).then_some(bounded)
+}
+
+/// [`tidy`] without the bound.
+pub(super) fn normalise(content: &str) -> String {
     let text = map_prose(content, tidy_blank_lines);
     let text = strip(&text);
-    let text = if text.contains("\n- ") {
+    if text.contains("\n- ") {
         map_prose(text, |prose| prose.replace(GLUED_BULLET, ":\n\n- "))
     } else {
         text.to_owned()
-    };
-    if let Some(protected) = protected.filter(|p| !p.is_empty() && text.contains(*p)) {
-        let (before, after) = text.split_once(protected).expect("contains");
+    }
+}
+
+/// The stripped text before and after a contained `protected` block.
+fn around<'a>(text: &'a str, protected: Option<&'a str>) -> Option<(&'a str, &'a str, &'a str)> {
+    let protected = protected.filter(|p| !p.is_empty() && text.contains(*p))?;
+    let (before, after) = text.split_once(protected).expect("contains");
+    Some((strip(before), protected, strip(after)))
+}
+
+fn bound(text: &str, protected: Option<&str>) -> String {
+    if let Some((prefix, protected, suffix)) = around(text, protected) {
         let mut parts = vec![protected];
-        let (prefix, suffix) = (strip(before), strip(after));
         if !prefix.is_empty() && chars(prefix) + chars(protected) + 2 <= MAX_MEMBER_REPLY {
             parts.insert(0, prefix);
         }
