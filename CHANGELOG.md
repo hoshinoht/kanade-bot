@@ -531,6 +531,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 - v5 chat replies keep code-block indentation and persona ellipses (`Mou...`
   no longer becomes `Mou..`).
+- v5 admin Config → Channel access now shows the bot's permissions per watched
+  and digest channel instead of "not available on this server yet".
 - v5 public app: boss entry art on the week board rendered as full-size images
   covering the cards (the run-card styles were missing from the public stylesheet);
   a browser test now checks the art stays inside its card on both apps.

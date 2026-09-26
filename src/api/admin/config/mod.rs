@@ -5,6 +5,7 @@
 //! for another body is `422 idempotency_mismatch`); the reload is naturally
 //! repeatable.
 
+mod access;
 mod changes;
 mod desk;
 mod models;
@@ -40,6 +41,8 @@ pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/api/admin/config", get(read).patch(update))
         .route("/api/admin/config/profiles/reload", post(reload_profiles))
+        .route("/api/admin/access", get(access::read))
+        .route("/api/admin/access/recheck", post(access::recheck))
 }
 
 fn desk(state: &ApiState) -> Result<&ConfigDesk, Refusal> {

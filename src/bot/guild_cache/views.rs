@@ -3,10 +3,11 @@
 use std::collections::BTreeSet;
 
 use twilight_model::channel::ChannelType;
+use twilight_model::guild::Permissions;
 use twilight_model::id::{Id, marker::ChannelMarker};
 
 use super::{CachedChannel, GuildCache};
-use crate::api::state::{ChannelEntry, ChannelList, RoleEntry};
+use crate::api::state::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 use crate::bot::ids::{id_text, parse_id};
 use crate::chat::gate::{ChannelDirectory, ChannelInfo};
 use crate::domain::notify::ChannelDirectory as PostDirectory;
@@ -100,6 +101,22 @@ impl ChannelList for GuildCache {
 
     fn bot_name(&self) -> Option<String> {
         self.display_name()
+    }
+
+    fn connected(&self) -> bool {
+        self.is_available()
+    }
+
+    fn grants(&self, id: &str) -> Option<ChannelGrants> {
+        let granted = self.permissions(parse_id(id)?)?;
+        Some(ChannelGrants {
+            view: granted.contains(Permissions::VIEW_CHANNEL),
+            send: granted.contains(Permissions::SEND_MESSAGES),
+            history: granted.contains(Permissions::READ_MESSAGE_HISTORY),
+            embed: granted.contains(Permissions::EMBED_LINKS),
+            react: granted.contains(Permissions::ADD_REACTIONS),
+            manage_messages: granted.contains(Permissions::MANAGE_MESSAGES),
+        })
     }
 }
 

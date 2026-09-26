@@ -22,8 +22,8 @@ use kanade::{
         listeners::Site,
         rescan::RescanDesk,
         state::{
-            ApiState, ChannelEntry, ChannelList, GuildAccess, PersonaOption, RoleEntry,
-            StaticChannels,
+            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, PersonaOption,
+            RoleEntry, StaticChannels,
         },
         write::{ApiClock, SchedulerWriter},
     },
@@ -1059,5 +1059,22 @@ impl ChannelList for ReadyGuild {
 
     fn bot_name(&self) -> Option<String> {
         Some("mikan".into())
+    }
+
+    fn connected(&self) -> bool {
+        true
+    }
+
+    /// `kalos-four` is not known yet; `limbo-trio` may not post or tidy.
+    fn grants(&self, id: &str) -> Option<ChannelGrants> {
+        match id {
+            "kalos-four" => None,
+            "limbo-trio" => Some(ChannelGrants {
+                send: false,
+                manage_messages: false,
+                ..ChannelGrants::UNKNOWN
+            }),
+            _ => Some(ChannelGrants::UNKNOWN),
+        }
     }
 }

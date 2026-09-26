@@ -366,6 +366,41 @@ pub trait ChannelList: Send + Sync {
     fn bot_name(&self) -> Option<String> {
         None
     }
+
+    /// The guild is loaded, so [`ChannelList::grants`] can answer.
+    fn connected(&self) -> bool {
+        false
+    }
+
+    /// What the bot may do in one channel; `None` while its permissions are
+    /// unknown (v4 counts unknown as allowed).
+    fn grants(&self, _id: &str) -> Option<ChannelGrants> {
+        None
+    }
+}
+
+/// The bot's effective permissions in a channel, as the access report needs
+/// them (v4 `access_report`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChannelGrants {
+    pub view: bool,
+    pub send: bool,
+    pub history: bool,
+    pub embed: bool,
+    pub react: bool,
+    pub manage_messages: bool,
+}
+
+impl ChannelGrants {
+    /// v4's reading of unknown permissions.
+    pub const UNKNOWN: Self = Self {
+        view: true,
+        send: true,
+        history: true,
+        embed: true,
+        react: true,
+        manage_messages: true,
+    };
 }
 
 impl std::fmt::Debug for dyn ChannelList {

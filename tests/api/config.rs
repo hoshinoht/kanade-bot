@@ -220,6 +220,14 @@ impl Config {
     }
 
     async fn with_groups(gateway: bool, groups: Vec<CapacityGroup>) -> Self {
+        Self::with_settings(gateway, groups, settings()).await
+    }
+
+    async fn with_settings(
+        gateway: bool,
+        groups: Vec<CapacityGroup>,
+        settings: RuntimeSettings,
+    ) -> Self {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
@@ -237,7 +245,7 @@ impl Config {
             );
             Reads::with_config(move |store| {
                 let desk = Arc::new(ConfigDesk::new(ConfigInputs {
-                    settings: settings(),
+                    settings,
                     store,
                     models: gateway.then_some(catalog as Arc<dyn ModelCatalog>),
                     facts: ConfigFacts {
@@ -910,14 +918,93 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         refused(&reply, 403, "csrf", path);
     }
     assert!(!config.desk.settings().await.watching.paused);
-    // Still unmounted: they need the Discord wiring.
-    for (method, path) in [
-        ("GET", "/api/admin/access"),
-        ("POST", "/api/admin/access/recheck"),
-        ("POST", "/api/admin/digest"),
-    ] {
-        let reply = config.send(method, path, None, &json!({})).await;
-        assert_eq!(reply.status, 404, "{path}");
+    // Still unmounted: it needs the Discord wiring.
+    let reply = config
+        .send("POST", "/api/admin/digest", None, &json!({}))
+        .await;
+    assert_eq!(reply.status, 404);
+}
+
+const ACCESS: &str = "/api/admin/access";
+const RECHECK: &str = "/api/admin/access/recheck";
+
+#[tokio::test]
+async fn access_reports_watched_and_digest_channels() {
+    let mut digest = settings();
+    // Not watched: listed as the digest channel only.
+    digest.posting.channel_id = Some("star".into());
+    let config = Config::with_settings(true, Vec::new(), digest).await;
+    let admin = config.reads.admin;
+    for (method, path) in [("GET", ACCESS), ("POST", RECHECK)] {
+        let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
+        refused(&reply, 401, "unauthenticated", path);
+    }
+    let reply = send(
+        admin,
+        "POST",
+        ADMIN_HOST,
+        RECHECK,
+        &[ORIGIN, ("Cookie", &config.reads.cookie)],
+        Some("{}"),
+    )
+    .await;
+    refused(&reply, 403, "csrf", RECHECK);
+
+    let get = request(
+        admin,
+        "GET",
+        ADMIN_HOST,
+        ACCESS,
+        &[("Cookie", &config.reads.cookie)],
+    )
+    .await;
+    let recheck = config.send("POST", RECHECK, None, &json!({})).await;
+    for reply in [get, recheck] {
+        assert_eq!(reply.status, 200, "{}", reply.text());
+        let report = reply.json();
+        assert_valid("config.json#/$defs/AccessReport", "access", &report);
+        assert_eq!(report["connected"], true);
+        assert!(
+            report["checked_at"].as_str().unwrap().len() == 16,
+            "{report}"
+        );
+        let rows = report["rows"].as_array().unwrap();
+        let flags = |row: &Value| {
+            [
+                "view",
+                "send",
+                "history",
+                "embed",
+                "react",
+                "manage_messages",
+            ]
+            .map(|key| row[key].as_bool().unwrap())
+        };
+        let summary: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row["id"].as_str().unwrap(),
+                    row["watched"].as_bool().unwrap(),
+                    row["digest"].as_bool().unwrap(),
+                    flags(row),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                // Unknown permissions count as allowed (v4).
+                ("kalos-four", true, false, [true; 6]),
+                ("star", false, true, [true, true, true, true, true, true]),
+                (
+                    "limbo-trio",
+                    true,
+                    false,
+                    [true, false, true, true, true, false]
+                ),
+            ]
+        );
     }
 }
 
