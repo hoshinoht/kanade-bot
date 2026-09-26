@@ -201,6 +201,25 @@ through `ReplyPort::post_reply`, the adapter wires it later).
 - Not here: strategy prefetch and source attribution (no boss-knowledge v2
   renderer outside `api`), and a model pre-screen.
 
+### Lifecycle events (`Answerer::observe`)
+
+The driver reports lifecycle facts through `Answerer::observe(&ChatEvent)`
+(`src/chat/driver/events.rs`; default no-op). Events carry ids, counts and
+classes only — never question or reply text, nor member ids;
+`interaction_id` links to the chat-log row. Serve maps them to JSON log
+lines in `src/runtime/serve/chat_log.rs`:
+
+| Event | When | Log line |
+| --- | --- | --- |
+| `Admitted { interaction_id, thread, position }` | taken; `position` is the 1-based queue slot, `None` when it runs at once | `chat_admitted` (INFO) |
+| `Ignored { reason }` | a summons not taken: `bot_author`, `disabled`, `not_ready`, `not_chat_category`, `no_pilot_role`, `staff_only`, `rate_limited`, `shed`; refusals about another guild or a DM are not reported | `chat_ignored` (INFO) |
+| `Cancelled { interaction_id, reason }` | dropped after admission: `deleted`, `expired`, `not_admitted` (re-gate failed at dequeue), `not_ready` (`prepare` found no persona or route), `shutdown` (cut after the grace), `aborted` (the `Held` guard concluded a dropped future: a panic or abort) | `chat_cancelled` (INFO) |
+| `Finished { interaction, generation, persona, model, reasoning }` | concluded after a model attempt | `chat_answered` (INFO) or `chat_failed` (WARN) with outcome, persona/profile, model, effort, route, rounds, tools, timings, clean retry and withheld |
+| `SetupChanged { enabled, ready }` | the live `Setup` differs from the last reading (the first included) | `chat_setup_changed` (WARN when enabled but not ready, with `not_ready` causes) |
+
+`observe` runs inline on the driver's path, so implementations must be
+cheap and must not block or fail.
+
 ## Vectors and named differences
 
 `tests/chat/{context,looping}.rs` replay `context` (6/58, exact) and `loop`
