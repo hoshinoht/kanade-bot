@@ -33,7 +33,7 @@ const MONTH_NAMES: [&str; 12] = [
 /// v4 `VIA_PORTAL`.
 const VIA_PORTAL: &str = "_(via portal)_";
 /// v4 `QUIET_NOTE`.
-const QUIET_NOTE: &str = "🔕 quiet mode - nobody was notified";
+pub(super) const QUIET_NOTE: &str = "🔕 quiet mode - nobody was notified";
 
 fn react_hint() -> String {
     format!("React {EMOJI_YES} if you're on, {EMOJI_NO} if not.")

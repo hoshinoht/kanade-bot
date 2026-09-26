@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use sqlx::Connection;
 
 use super::SqliteStore;
-use super::drafts::instant as read_instant;
 use super::rows::instant;
 use super::schedule::store_error;
 use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
@@ -36,7 +35,9 @@ impl DebugCardStore for SqliteStore {
                         message_id,
                         run_id,
                         kind,
-                        posted_at: read_instant(&posted_at, "posted_at")?,
+                        posted_at: crate::domain::time::from_iso(&posted_at).map_err(|error| {
+                            StoreError::Backend(format!("debug_cards.posted_at: {error}"))
+                        })?,
                     })
                 })
                 .collect()

@@ -26,6 +26,7 @@ pub use store::{DebugCardStore, PostedDebugCard};
 use super::alerts::{AlertThrottle, LogAlerts};
 use super::cards::{self, CardContext, CardKit, fetch_art};
 use super::executor::{Executor, SendOutcome};
+use super::notice_text::QUIET_NOTE;
 use super::refresh::Now;
 use crate::bot::commands::{DebugCards, PortFuture, TestKind, TestPosted};
 use crate::bot::ids::parse_id;
@@ -109,7 +110,7 @@ where
         let mentioned = test_mentions(&*self.members, run, quiet);
         let message = self
             .render(&schedule, run, kind, &mentioned, requested_by, quiet)
-            .await;
+            .await?;
         let intent = NotificationIntent {
             effect: EffectKind::DebugCard,
             effect_context: vec![run.id.clone(), kind.as_str().to_owned()],
@@ -146,11 +147,14 @@ where
             Ok(SendOutcome::Unavailable(detail)) => Err(detail),
             // Maybe posted, refused or never sent: say so, as v4 did.
             Ok(_) => Ok(TestPosted::Unconfirmed),
+            // Discord took it but the journal write after failed: it may be up.
+            Err(failure) if failure.maybe_delivered => Ok(TestPosted::Unconfirmed),
             Err(failure) => Err(format!("journal: {}", failure.error)),
         }
     }
 
-    /// The real message of `kind` for `run`, prefixed.
+    /// The real message of `kind` for `run`, prefixed; plain texts carry
+    /// v4's quiet line while quiet (cards never announce it).
     async fn render(
         &self,
         schedule: &ScheduleSnapshot,
@@ -159,7 +163,7 @@ where
         mentioned: &[String],
         requested_by: &str,
         quiet: bool,
-    ) -> OutgoingMessage {
+    ) -> Result<OutgoingMessage, String> {
         let ctx = CardContext {
             schedule,
             attendance: self.policy.attendance,
@@ -168,7 +172,7 @@ where
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
         };
-        let content = match kind {
+        let card_content = match kind {
             TestKind::DayOf => Some(IntentContent::DayOf {
                 run_ids: vec![run.id.clone()],
             }),
@@ -182,15 +186,15 @@ where
             }),
             TestKind::Amend | TestKind::Decline => None,
         };
-        if let Some(card) =
-            content.and_then(|content| cards::build(&content, &ctx, None, mentioned))
-        {
+        if let Some(content) = card_content {
+            let card = cards::build(&content, &ctx, None, mentioned)
+                .ok_or_else(|| format!("no {} card for run {}", kind.as_str(), run.id))?;
             let card = cards::Card {
                 content: format!("{TEST_PREFIX}{}", card.content),
                 ..card
             };
             let pictures = fetch_art(self.cards.art.as_ref(), &card, true).await;
-            return card.message(mentioned, &pictures);
+            return Ok(card.message(mentioned, &pictures));
         }
         let text = if kind == TestKind::Decline {
             let name = self.members.display_name(requested_by).unwrap_or_else(|| {
@@ -204,13 +208,18 @@ where
         } else {
             text::amend_text(&ctx, run, mentioned)
         };
-        OutgoingMessage {
-            content: Some(format!("{TEST_PREFIX}{text}")),
+        let mut content = format!("{TEST_PREFIX}{text}");
+        if quiet {
+            // v4 `formatting.quieted` for a message without an embed.
+            content = format!("{content}\n_{QUIET_NOTE}_");
+        }
+        Ok(OutgoingMessage {
+            content: Some(content),
             embeds: Vec::new(),
             allowed_mentions: mentions::allow_users(mentioned),
             reply_to: None,
             attachments: Vec::new(),
-        }
+        })
     }
 
     /// Delete each test card in `channel_id` since `since`; a message

@@ -12,11 +12,12 @@ use chrono::TimeDelta;
 use kanade::bot::commands::{DebugCards, TestKind, TestPosted};
 use kanade::bot::delivery::cards::{CardKit, REACT_HINT};
 use kanade::bot::delivery::{
-    AlertThrottle, CardRefresh, DebugCardStore, DebugDesk, StoreRef, TEST_PREFIX,
+    AlertThrottle, CardRefresh, DebugCardStore, DebugDesk, SendOutcome, StoreRef, TEST_PREFIX,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
 use kanade::domain::ids::{RandomIds, short_id};
+use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::schedule::{RsvpState, RunStatus};
 use kanade::domain::scheduler::SchedulerService;
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -26,6 +27,7 @@ use crate::cards::{
     STAR_COLOUR, allowed, art_dir, created, due, edits, fields, kit, pictures, run, tonight,
     uploads, world,
 };
+use crate::intercept::Intercept;
 use crate::scenarios::{self, HOME, POST, World, now};
 use crate::support::{self, Store, TempDir};
 
@@ -269,6 +271,23 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].run_id, run_id);
     assert_eq!(results[0].state, Some(RsvpState::Yes));
+    // Someone not on the run reacting changes nothing.
+    let rsvps = support::snapshot(&*store).await.rsvps;
+    let stranger = router
+        .route(&RsvpReaction {
+            channel_id: Id::new(222),
+            message_id: Id::new(messages[0]),
+            user_id: Id::new(1009),
+            answer: RsvpAnswer::No,
+            added: true,
+        })
+        .await
+        .expect("route");
+    assert!(
+        stranger.iter().all(|result| !result.applied),
+        "{stranger:?}"
+    );
+    assert_eq!(support::snapshot(&*store).await.rsvps, rsvps);
     // The day-of test card is re-rendered with its prefix; the amend text is not.
     let refresh = CardRefresh {
         store: Arc::clone(&store),
@@ -385,4 +404,115 @@ async fn an_unreachable_home_falls_back_to_the_post_channel_or_refuses() {
         ping(&fallback, &run_id, TestKind::DayOf, "1001").await,
         TestPosted::Unconfirmed
     );
+}
+
+async fn the_real_reminder_still_posts<S: Store + DebugCardStore + 'static>(store: Arc<S>) {
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let run_id = star(&*store).await;
+    let desk = desk(&store, &fake, &world, kit(None), &[HOME], None);
+    ping(&desk, &run_id, TestKind::DayOf, "1001").await;
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake);
+    let report = delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert!(
+        matches!(report.sends.as_slice(), [send] if matches!(send.outcome, SendOutcome::Bound(_))),
+        "the real day-of is claimed fresh and posted: {report:?}"
+    );
+    let posts = created(&fake);
+    assert_eq!(posts.len(), 2);
+    assert!(
+        !posts[1]
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .starts_with(TEST_PREFIX)
+    );
+}
+
+#[tokio::test]
+async fn a_bound_test_card_never_holds_the_runs_real_reminder() {
+    on_both_arcs!(the_real_reminder_still_posts);
+}
+
+#[tokio::test]
+async fn quiet_plain_test_texts_carry_v4s_quiet_line() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let run_id = star(&*store).await;
+    let quiet = DebugDesk {
+        quiet: Arc::new(AtomicBool::new(true)),
+        ..desk(&store, &fake, &world, kit(None), &[HOME], None)
+    };
+    let note = "\n_🔕 quiet mode - nobody was notified_";
+    ping(&quiet, &run_id, TestKind::Amend, "1002").await;
+    let amend = created(&fake).pop().expect("amend");
+    assert_eq!(
+        amend.content.as_deref(),
+        Some(
+            format!(
+                "{TEST_PREFIX}🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:00** \
+                 — Aria Bex\n{REACT_HINT}{note}"
+            )
+            .as_str()
+        )
+    );
+    assert!(allowed(&amend).is_empty());
+    ping(&quiet, &run_id, TestKind::Decline, "1002").await;
+    assert_eq!(
+        content(&fake),
+        format!(
+            "{TEST_PREFIX}Aria Bex can't make **HMaleficStar** (Thu 10 Sep 21:00) — \
+             reschedule? `/amend run_id:{} to:...`{note}",
+            short_id(&run_id)
+        )
+    );
+    // Cards announce nothing (v5 rule for embeds).
+    ping(&quiet, &run_id, TestKind::DayOf, "1002").await;
+    assert!(!content(&fake).contains("quiet mode"));
+}
+
+/// Discord accepted the post, then the journal could not record it: the
+/// reply says to check the channel, never a generic failure.
+#[tokio::test]
+async fn a_post_the_journal_could_not_record_is_unconfirmed() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake: &'static FakeDiscord = Box::leak(Box::new(support::fake()));
+    let run_id = star(&*store).await;
+    let orphaning = Arc::clone(&store);
+    let transport = Intercept::new(fake).on_create(move |outcome| {
+        let store = Arc::clone(&orphaning);
+        Box::pin(async move {
+            // A restart's recovery in between: the lease is gone.
+            store.recover_on_start(now()).await.expect("recover");
+            outcome
+        })
+    });
+    let base = desk(
+        &store,
+        &Arc::new(support::fake()),
+        &world,
+        kit(None),
+        &[HOME],
+        None,
+    );
+    let desk = DebugDesk {
+        store: base.store,
+        transport: Arc::new(transport),
+        members: base.members,
+        channels: base.channels,
+        cards: base.cards,
+        policy: base.policy,
+        quiet: base.quiet,
+        post_channel: base.post_channel,
+        instance_id: base.instance_id,
+        now: base.now,
+        throttle: base.throttle,
+    };
+    assert_eq!(
+        desk.post(run_id, TestKind::DayOf, "1001".into()).await,
+        Ok(TestPosted::Unconfirmed)
+    );
+    assert_eq!(created(fake).len(), 1, "it was posted");
 }

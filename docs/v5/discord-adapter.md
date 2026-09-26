@@ -435,6 +435,11 @@ reason (`no_rewriter`, `no_persona`, `timeout`, `unavailable`, `refused`,
   last 24 h; a message already gone counts as deleted; each deleted card is
   marked `cleared_at` (released: no longer listed or refreshed). A refused
   delete is counted as failed and stays listed.
+- A crash, an ambiguous post or a failed bind leaves its `debug_cards` row
+  unbound (no message id): `clear_test` cannot reach it, as in v4; delete
+  such a message by hand. A post Discord accepted but the journal could not
+  record replies `Unconfirmed`. In quiet mode the `amend`/`decline` texts end
+  with v4's quiet line (`_🔕 quiet mode - nobody was notified_`); cards don't.
 
 ## Proposal cards
 
