@@ -81,6 +81,7 @@ export const OUTCOME_LABEL: Record<string, string> = {
   no_change: 'no change',
   failed: 'failed',
   self_service_link: 'self-service link sent',
+  identity_leak: 'identity leak blocked',
 };
 
 /** The pill profile for a log outcome (the word is always shown too). */

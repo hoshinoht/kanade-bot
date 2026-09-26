@@ -334,7 +334,10 @@ where
     .with_feed(extraction.feed.take());
     let messages = handler.messages.clone();
     let started = chat::start(ChatInputs {
-        config: DriverConfig::default(),
+        config: DriverConfig {
+            model_context_tokens: super::CONTEXT_TOKENS,
+            ..DriverConfig::default()
+        },
         answerer: ServeAnswerer {
             store: Arc::clone(&store),
             models: composition.models.clone(),

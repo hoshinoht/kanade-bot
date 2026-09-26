@@ -5,6 +5,7 @@
  */
 import type { ChatTurn } from '@kanade/api-types';
 import { duration, logTime } from '../logs/format';
+import { profileText, routeLabel, took } from './facts';
 import { directory } from '../names/directory.svelte';
 import { parseMentions } from '../names/mentions';
 
@@ -16,8 +17,11 @@ type Call = ChatTurn['tools'][number];
 
 export interface Round {
   round: number;
-  /** The round's model when the API lists one per round; else null. */
+  /** The alias the round's request named; null when not recorded. */
   model: string | null;
+  effort: string | null;
+  route: ChatTurn['route'];
+  latency_ms: number | null;
   finish: string;
   requested_tools: string[];
   calls: Call[];
@@ -31,21 +35,32 @@ export function mentionsText(text: string): string {
 }
 
 /**
- * Rounds with their tool calls. The API lists calls flat, in round order, and
- * each round names the tools it requested, so calls are dealt out by that
- * count; any left over belong to the last round.
+ * Rounds with their tool calls, grouped by each call's `round`; a call naming
+ * no listed round belongs to the last one. A turn with no rounds (withheld)
+ * keeps its calls in [`unrounded`].
  */
 export function rounds(turn: ChatTurn): Round[] {
   const perRound = turn.models.length === turn.rounds.length;
-  let next = 0;
-  const out = turn.rounds.map((r, i) => {
-    const calls = turn.tools.slice(next, next + r.requested_tools.length);
-    next += calls.length;
-    return { round: r.round, model: perRound ? turn.models[i]! : null, finish: r.finish, requested_tools: r.requested_tools, calls };
-  });
-  if (next < turn.tools.length && out.length) out[out.length - 1]!.calls.push(...turn.tools.slice(next));
+  const out: Round[] = turn.rounds.map((r, i) => ({
+    round: r.round,
+    model: r.model || (perRound ? turn.models[i]! : null),
+    effort: r.effort ?? null,
+    route: r.route ?? null,
+    latency_ms: r.latency_ms ?? null,
+    finish: r.finish,
+    requested_tools: r.requested_tools,
+    calls: [],
+  }));
+  for (const call of turn.tools) (out.find((r) => r.round === call.round) ?? out[out.length - 1])?.calls.push(call);
   return out;
 }
+
+/** Tool calls of a turn that has no rounds to hold them. */
+export function unrounded(turn: ChatTurn): Call[] {
+  return turn.rounds.length ? [] : turn.tools;
+}
+
+const callLines = (c: Call) => ['', `### ${c.name} — ${c.outcome || '—'}, ${took(c.took_ms)}`, '', 'Arguments:', '', fence(c.arguments, 'json'), '', 'Result:', '', fence(c.result)];
 
 function header(turn: ChatTurn, ctx: TranscriptContext) {
   return {
@@ -55,8 +70,14 @@ function header(turn: ChatTurn, ctx: TranscriptContext) {
     who: directory.label('member', turn.member_id || turn.member.id, turn.member.name),
     channel: turn.channel_id ? directory.label('channel', turn.channel_id, turn.channel ?? '') : null,
     outcome: turn.outcome,
+    error: turn.error ?? null,
+    error_code: turn.error_code ?? null,
     latency_ms: turn.latency_ms,
     models: [...new Set(turn.models)],
+    persona: turn.persona ?? null,
+    profile: turn.profile ?? null,
+    profile_source: turn.profile_source ?? null,
+    route: turn.route ?? null,
   };
 }
 
@@ -75,6 +96,10 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
     `- Who: ${h.who}`,
     `- Channel: ${h.channel ?? '—'}`,
     `- Outcome: ${h.outcome}`,
+    ...(h.error || h.error_code ? [`- Error: ${h.error ?? '—'}${h.error_code ? ` (${h.error_code})` : ''}`] : []),
+    `- Persona: ${h.persona ?? '—'}`,
+    `- Reply profile: ${profileText(turn)}`,
+    `- Route: ${routeLabel(h.route)}`,
     `- Models: ${h.models.join(', ') || '—'}`,
     `- Took: ${duration(turn.latency_ms)}`,
     '',
@@ -87,10 +112,22 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
     turn.said ? fence(mentionsText(turn.said)) : '— nothing was sent —',
   ];
   for (const r of rounds(turn)) {
-    lines.push('', `## Round ${r.round}${r.model ? ` — ${r.model}` : ''}`, '', `- Finish: ${r.finish || '—'}`, `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`);
-    for (const c of r.calls) {
-      lines.push('', `### ${c.name} — ${c.outcome || '—'}, ${duration(c.took_ms)}`, '', 'Arguments:', '', fence(c.arguments, 'json'), '', 'Result:', '', fence(c.result));
-    }
+    lines.push(
+      '',
+      `## Round ${r.round}${r.model ? ` — ${r.model}` : ''}`,
+      '',
+      `- Effort: ${r.effort ?? '—'}`,
+      `- Route: ${routeLabel(r.route)}`,
+      `- Latency: ${took(r.latency_ms)}`,
+      `- Finish: ${r.finish || '—'}`,
+      `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`,
+    );
+    for (const c of r.calls) lines.push(...callLines(c));
+  }
+  const loose = unrounded(turn);
+  if (loose.length) {
+    lines.push('', '## Tool calls');
+    for (const c of loose) lines.push(...callLines(c));
   }
   if (turn.cards.length) {
     lines.push('', '## Cards', '', ...turn.cards.map((c) => `- ${c.kind}: ${c.url}`));
@@ -106,6 +143,7 @@ export function transcriptJson(turn: ChatTurn, ctx: TranscriptContext): string {
       question: mentionsText(turn.asked),
       reply: turn.said ? mentionsText(turn.said) : '',
       rounds: rounds(turn),
+      ...(unrounded(turn).length ? { tool_calls: unrounded(turn) } : {}),
       cards: turn.cards,
       raw: turn.raw,
     },

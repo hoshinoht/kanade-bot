@@ -51,6 +51,7 @@ const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/extractions/x-kalos'],
   ['admin', ADMIN, '/chat'],
   ['admin', ADMIN, '/chat/c-move'],
+  ['admin', ADMIN, '/chat/c-when'],
   ['admin', ADMIN, '/limits'],
   ['admin', ADMIN, '/history'],
   ['admin', ADMIN, '/config'],

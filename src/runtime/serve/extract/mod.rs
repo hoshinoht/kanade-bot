@@ -190,6 +190,7 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
     );
     tuning.debounce = inputs.timing.debounce;
     tuning.drain_interval = inputs.timing.drain_interval;
+    tuning.context_tokens = super::CONTEXT_TOKENS;
     // The configured level; the runner floors `off` per call.
     tuning.reasoning = stack.effort(Role::Extraction);
     let clock = Arc::new(ApiClock(Arc::clone(&inputs.clock)));

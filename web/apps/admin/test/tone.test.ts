@@ -9,7 +9,7 @@ describe('pill profiles', () => {
     expect([outcomeTone('error'), outcomeTone('timeout'), outcomeTone('failed'), outcomeTone('content_blocked')]).toEqual(['danger', 'danger', 'danger', 'danger']);
     expect([outcomeTone('clarified'), outcomeTone('self_service_link')]).toEqual(['info', 'info']);
     expect([outcomeTone('no_change'), outcomeTone('withheld')]).toEqual(['neutral', 'neutral']);
-    expect([outcomeTone('rate_limited'), outcomeTone('turned_away')]).toEqual(['warning', 'warning']);
+    expect([outcomeTone('rate_limited'), outcomeTone('turned_away'), outcomeTone('identity_leak')]).toEqual(['warning', 'warning', 'warning']);
     expect(RUN_TONE).toEqual({ planned: 'warning', confirmed: 'success', at_risk: 'danger', otot: 'info', done: 'neutral', cancelled: 'neutral' });
     expect(CHECK_TONE).toEqual({ ok: 'success', warning: 'warning', error: 'danger' });
     expect(FLAG_TONE.conflict).toBe('danger');

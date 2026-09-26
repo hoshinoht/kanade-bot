@@ -9,6 +9,8 @@ directory.setMembers([{ id: '1004', name: 'Yuzu' }] as never);
 directory.setChannels([{ id: '123', name: 'limbo-trio' }] as never);
 directory.setIdentity({ name: 'Kanade', avatar: '', banner: '', cached: false, bot_user_id: '777' });
 
+const ROUND = { model: 'kanata/chat', effort: 'low', route: 'homelab', latency_ms: 2951, guardrail: { clean: false, content_filter: false } } as const;
+
 const turn = (over: Partial<ChatTurn> = {}): ChatTurn => ({
   id: 'c-1',
   at: '2026-09-29T04:00:00Z',
@@ -23,13 +25,22 @@ const turn = (over: Partial<ChatTurn> = {}): ChatTurn => ({
   asked: '<@777> tips for <#123>?',
   tools_used: ['knowledge.read'],
   said: 'Three tips.',
-  tools: [{ name: 'knowledge.read', arguments: '{"boss":"Limbo"}', result: 'line 1\nline 2\n… [truncated, 12034 bytes]', took_ms: 12, outcome: 'ok' }],
+  tools: [{ round: 1, name: 'knowledge.read', arguments: '{"boss":"Limbo"}', result: 'line 1\nline 2\n… [truncated, 12034 bytes]', took_ms: 12, outcome: 'ok' }],
   rounds: [
-    { round: 1, requested_tools: ['knowledge.read'], finish: 'tool_calls' },
-    { round: 2, requested_tools: [], finish: 'stop' },
+    { ...ROUND, round: 1, requested_tools: ['knowledge.read'], finish: 'tool_calls' },
+    { ...ROUND, round: 2, requested_tools: [], finish: 'stop', latency_ms: null },
   ],
   cards: [{ kind: 'proposal', url: 'https://discord.com/channels/0/0/1' }],
   raw: '{"role":"assistant"}',
+  persona: 'kanade',
+  profile: 'gentle',
+  profile_source: 'saved',
+  route: 'homelab',
+  error: null,
+  error_code: null,
+  guardrail: {},
+  masked: false,
+  model_view: null,
   ...over,
 });
 
@@ -38,6 +49,22 @@ describe('chat transcript', () => {
     const r = rounds(turn());
     expect(r.map((x) => x.calls.length)).toEqual([1, 0]);
     expect(r[0]!.model).toBe('kanata/chat');
+  });
+
+  it('groups calls by their round, not by the requested count', () => {
+    const call = turn().tools[0]!;
+    const r = rounds(turn({ tools: [{ ...call, round: 2 }, { ...call, round: 1 }, { ...call, round: 9 }] }));
+    expect(r.map((x) => x.calls.length)).toEqual([1, 2]);
+  });
+
+  it('writes round facts, the reply profile and unknown timings', () => {
+    const t = turn({ tools: [{ ...turn().tools[0]!, took_ms: null }], error: 'no answer within 60s', error_code: 'timeout' });
+    const md = transcriptMarkdown(t, { timeZone: 'UTC' });
+    expect(md).toContain('- Reply profile: gentle (saved)');
+    expect(md).toContain('- Error: no answer within 60s (timeout)');
+    expect(md).toContain('- Effort: low\n- Route: Homelab\n- Latency: 3.0 s');
+    expect(md).toContain('- Latency: unknown');
+    expect(md).toContain('### knowledge.read — ok, unknown');
   });
 
   it('writes Markdown with names, not ids, and the full tool result', () => {
@@ -61,11 +88,33 @@ describe('chat transcript', () => {
 
   it('keeps a withheld turn redacted', () => {
     const W = '[message withheld]';
-    const t = turn({ outcome: 'withheld', asked: W, said: '', raw: W, tools: [{ name: 'schedule.read', arguments: W, result: W, took_ms: 3, outcome: 'ok' }] });
+    const t = turn({ outcome: 'withheld', asked: W, said: '', raw: W, tools: [{ round: 1, name: 'schedule.read', arguments: W, result: W, took_ms: 3, outcome: 'ok' }] });
     const md = transcriptMarkdown(t, { timeZone: 'UTC' });
     expect(md).toContain(W);
     expect(md).not.toContain('Limbo');
     expect(JSON.parse(transcriptJson(t, { timeZone: 'UTC' })).rounds[0].calls[0].arguments).toBe(W);
+  });
+
+  it('keeps the tool calls of a turn with no rounds', () => {
+    const t = turn({ rounds: [], models: [], tools: [{ round: 1, name: 'schedule.read', arguments: '{}', result: 'ok', took_ms: null, outcome: 'ok' }] });
+    const md = transcriptMarkdown(t, { timeZone: 'UTC' });
+    expect(md).toContain('## Tool calls\n\n### schedule.read — ok, unknown');
+    expect(JSON.parse(transcriptJson(t, { timeZone: 'UTC' })).tool_calls[0].name).toBe('schedule.read');
+    expect(JSON.parse(transcriptJson(turn(), { timeZone: 'UTC' })).tool_calls).toBeUndefined();
+  });
+
+  it('never copies the masked model view', () => {
+    const model_view = {
+      rounds: [{ round: 1, clean: false, request: [{ role: 'user', content: 'Midori asks about Limbo' }], reply: 'Midori: SECRET-RAW', tool_calls: [{ name: 'x', arguments: '{"who":"Midori"}' }] }],
+      reply: 'Yuzu: done',
+      mapping: [{ token: 'Midori', name: 'Yuzu' }],
+    };
+    const t = turn({ masked: true, model_view } as Partial<ChatTurn>);
+    for (const out of [transcriptMarkdown(t, { timeZone: 'UTC' }), transcriptJson(t, { timeZone: 'UTC' })]) {
+      expect(out).not.toContain('Midori');
+      expect(out).not.toContain('SECRET-RAW');
+      expect(out).not.toContain('model_view');
+    }
   });
 
   it('fences the question and reply, so a stray fence or heading cannot break the document', () => {
