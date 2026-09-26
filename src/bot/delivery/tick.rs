@@ -14,6 +14,8 @@ use std::fmt;
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
+use super::card_records;
+use super::cards::{CardContext, CardKit, ReminderCardStore};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
@@ -30,6 +32,7 @@ use crate::domain::notify::{
     SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
 };
 use crate::domain::schedule::SchedulePolicy;
+use crate::domain::schedule::ScheduleSnapshot;
 use crate::domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
@@ -205,6 +208,8 @@ pub struct Delivery<'a, S, I, T, A> {
     pub members: &'a (dyn Directory + Sync),
     pub channels: &'a (dyn ChannelDirectory + Sync),
     pub config: DeliveryConfig,
+    /// Catalog, art and the day-of heading rewrite for cards.
+    pub cards: CardKit,
     /// The boss week last materialised by this process; `None` materialises
     /// on the first tick (v4 kept it in config; rematerialising is idempotent).
     materialised_week: Option<DateTime<Utc>>,
@@ -214,7 +219,13 @@ pub struct Delivery<'a, S, I, T, A> {
 
 impl<'a, S, I, T, A> Delivery<'a, S, I, T, A>
 where
-    S: ScheduleStore + DeliveryJournal + NoticeOutbox + Checkpoints + ProposalStore + Sync,
+    S: ScheduleStore
+        + DeliveryJournal
+        + NoticeOutbox
+        + Checkpoints
+        + ProposalStore
+        + ReminderCardStore
+        + Sync,
     I: IdSource,
     T: DiscordTransport,
     A: AlertSink,
@@ -236,8 +247,27 @@ where
             members,
             channels,
             config,
+            cards: CardKit::default(),
             materialised_week: None,
             throttle: AlertThrottle::new(),
+        }
+    }
+
+    /// Render cards with this catalog, art and heading rewrite.
+    #[must_use]
+    pub fn with_cards(mut self, cards: CardKit) -> Self {
+        self.cards = cards;
+        self
+    }
+
+    fn card_context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
+        CardContext {
+            schedule,
+            attendance: self.config.policy.attendance,
+            zone: self.config.policy.zone(),
+            quiet: self.config.quiet_mode,
+            members: self.members,
+            catalog: self.cards.catalog.as_deref(),
         }
     }
 
@@ -549,9 +579,9 @@ where
         }
         let message = render(
             &post.send.intent,
-            &week,
-            self.config.policy.attendance,
-            self.config.quiet_mode,
+            &self.card_context(&week),
+            None,
+            self.cards.art.as_deref(),
         );
         let outcome = settle(
             executor
@@ -602,12 +632,16 @@ where
                 report.deferred += 1;
                 continue;
             }
-            let message = render(
-                &send.intent,
-                &schedule,
-                self.config.policy.attendance,
-                self.config.quiet_mode,
-            );
+            let ctx = self.card_context(&schedule);
+            // Held or suppressed sends post nothing: no record, no rewrite.
+            let record = match send.disposition {
+                SendDisposition::Send => {
+                    card_records::prepare(self.store, &self.cards, &ctx, &send.intent, now).await
+                }
+                SendDisposition::Suppressed => None,
+            };
+            let heading = record.as_ref().and_then(|record| record.heading.as_deref());
+            let message = render(&send.intent, &ctx, heading, self.cards.art.as_deref());
             let result = executor.execute(&send, &message, None, None, now).await;
             if matches!(&result, Err(failure) if failure.attempt.is_some())
                 || result.as_ref().is_ok_and(SendOutcome::claimed)

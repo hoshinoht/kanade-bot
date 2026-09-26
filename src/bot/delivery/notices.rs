@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 
 use super::alerts::{AdminAlert, AlertSink};
+use super::cards::ReminderCardStore;
 use super::executor::{SendOutcome, SendReport};
 use super::notice_text::render_notice;
 use super::tick::{Delivery, DeliveryError, settle};
@@ -67,7 +68,13 @@ fn drains(outcome: &SendOutcome) -> bool {
 
 impl<S, I, T, A> Delivery<'_, S, I, T, A>
 where
-    S: ScheduleStore + DeliveryJournal + NoticeOutbox + Checkpoints + ProposalStore + Sync,
+    S: ScheduleStore
+        + DeliveryJournal
+        + NoticeOutbox
+        + Checkpoints
+        + ProposalStore
+        + ReminderCardStore
+        + Sync,
     I: IdSource,
     T: DiscordTransport,
     A: AlertSink,

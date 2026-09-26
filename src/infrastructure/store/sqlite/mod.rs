@@ -19,6 +19,7 @@ mod model_log;
 mod owner;
 mod proposal_cards;
 mod proposals;
+mod reminder_cards;
 mod rows;
 mod schedule;
 mod settings;

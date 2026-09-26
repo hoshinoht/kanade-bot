@@ -9,6 +9,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::MessageMarker;
 
 use super::{MemoryScheduleStore, Tables};
+use crate::bot::delivery::cards::{CardRecord, DAY_OF_KIND, PostedCard, ReminderCardStore};
 use crate::bot::events::{CardIndex, LookupError};
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_REPLACEMENT_ACTOR,
@@ -16,6 +17,7 @@ use crate::domain::notify::{
     JournalError, Lease, NOT_SENT_ACTOR, NotificationIntent, REJECTED_ACTOR, Receipt, Recovery,
     WeeklyDigest, check_resolution, effect_ordinal,
 };
+use crate::domain::scheduler::StoreError;
 use crate::domain::time::{from_iso, to_iso};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +62,8 @@ pub(super) struct JournalTables {
     marker: Option<String>,
     /// `(message_id, run_id)` written at bind, as SQLite `delivery_card_runs`.
     card_runs: BTreeSet<(String, String)>,
+    /// Reminder card records by dedupe key, as SQLite `reminder_cards`.
+    reminder_cards: BTreeMap<String, CardRecord>,
 }
 
 impl JournalTables {
@@ -780,5 +784,77 @@ impl CardIndex for MemoryScheduleStore {
                 .map(|row| row.run_id.clone()),
         );
         Ok(runs.into_iter().collect())
+    }
+}
+
+/// SQLite's `reminder_cards` CHECKs.
+fn valid_record(dedupe_key: &str, record: &CardRecord) -> bool {
+    let key = dedupe_key.len() == 64
+        && dedupe_key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    let kind = record.kind == DAY_OF_KIND || record.kind.starts_with("countdown_");
+    key && kind && (record.heading.is_none() || record.kind == DAY_OF_KIND)
+}
+
+impl ReminderCardStore for MemoryScheduleStore {
+    async fn card_record(&self, dedupe_key: &str) -> Result<Option<CardRecord>, StoreError> {
+        Ok(self
+            .tables()
+            .journal
+            .reminder_cards
+            .get(dedupe_key)
+            .cloned())
+    }
+
+    async fn save_card_record(
+        &self,
+        dedupe_key: &str,
+        record: &CardRecord,
+        _at: DateTime<Utc>,
+    ) -> Result<CardRecord, StoreError> {
+        if !valid_record(dedupe_key, record) {
+            return Err(StoreError::Constraint(
+                "reminder card record is invalid".into(),
+            ));
+        }
+        let mut tables = self.tables();
+        Ok(tables
+            .journal
+            .reminder_cards
+            .entry(dedupe_key.to_owned())
+            .or_insert_with(|| record.clone())
+            .clone())
+    }
+
+    async fn posted_cards(&self, run_id: &str) -> Result<Vec<PostedCard>, StoreError> {
+        let tables = self.tables();
+        let journal = &tables.journal;
+        let mut cards: Vec<PostedCard> = journal
+            .attempts
+            .values()
+            .filter(|row| row.state == AttemptState::Bound && row.effect == "reminder")
+            .filter_map(|row| {
+                let message = row.message_id.clone()?;
+                journal
+                    .card_runs
+                    .contains(&(message.clone(), run_id.to_owned()))
+                    .then_some(())?;
+                let record = journal.reminder_cards.get(row.dedupe_key.as_str())?;
+                Some(PostedCard {
+                    channel_id: row.channel_id.clone(),
+                    run_ids: journal
+                        .card_runs
+                        .iter()
+                        .filter(|(id, _)| *id == message)
+                        .map(|(_, run)| run.clone())
+                        .collect(),
+                    message_id: message,
+                    record: record.clone(),
+                })
+            })
+            .collect();
+        cards.sort_by(|a, b| a.message_id.cmp(&b.message_id));
+        Ok(cards)
     }
 }

@@ -54,6 +54,7 @@ impl<T: DiscordTransport + 'static> Surface for DiscordSurface<T> {
             // Names only; the asker is not pinged by the reply either.
             allowed_mentions: mentions::none(),
             reply_to: parse_id(reply_to),
+            attachments: Vec::new(),
         };
         let outcome = self.0.create_message(channel, &message).await;
         failed("chat_reply_failed", &outcome);

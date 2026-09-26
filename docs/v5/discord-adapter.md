@@ -28,7 +28,10 @@ the final image keeps `ca-certificates`.
 ## Seams
 
 - `transport::DiscordTransport`: create (content, embeds, required
-  allowed-mentions, optional `reply_to`), edit, delete, add/remove own
+  allowed-mentions, optional `reply_to`, `attachments` as `Upload`
+  `{filename, bytes}` sent multipart and referenced from an embed as
+  `attachment://<filename>`), edit (never sends attachments, so a message
+  keeps the files it was posted with), delete, add/remove own
   unicode reaction, message presence, interaction reply, deferral and
   deferred completion, guild command registration, and the reads
   `list_members(guild, after, limit ≤ 1000)`, `channel_messages(channel,
@@ -315,11 +318,74 @@ A clock that moved backwards never suppresses one. The alerts are:
 - `BacklogDropped` (extraction backlog overflow).
 - `CardAnswerFailed` (a ✅/❌ failure members must not see).
 
-Quiet mode is never announced publicly: the rendered text has no mention tags
-and the allow-list is empty.
+Quiet mode is never announced publicly: cards carry no mention tags (a
+member without a known name reads `(unnamed)`) and the allow-list is empty.
 
-Rendering is minimal plain text (bosses, Discord timestamps, mention tags).
-Card parity (embeds, portraits, quiet lines) is a later slice.
+## Reminder and digest cards
+
+`src/bot/delivery/cards/` ports v4 `bot.agent.formatting` (`day_of_card`,
+`countdown_card`, `digest_card` and their helpers) byte for byte where v4
+and v5 agree; `render.rs` turns a card into the post. Tests:
+`tests/delivery/cards.rs` (both stores, FakeDiscord) and
+`tests/delivery/attendance.rs`.
+
+- **Day-of** (`day_of.rs`): content `📅 **<heading>**` plus everyone on the
+  runs; one field per run, `🕘 HH:MM  ·  <bosses>` (`🕒 own time` for own-time
+  runs), valued boss detail (`**XKalos** · Gatekeeper Kalos (Extreme,
+  Lv265)`), status line (`⚠️ unconfirmed · 1/5 ✅`) and the party; footer
+  `React ✅ if you're on, ❌ if not.`; the lead boss's colour (else blurple),
+  portrait thumbnail and entry artwork as the image.
+- **Countdown** (`countdown.rs`): `⏰ **<bosses>** in <1h|15m|1h30m> (HH:MM) —
+  <waiting>`, waiting being `everyone's confirmed ✅` or the party still on
+  plus `<declined> out` (decliners are named, never pinged); description
+  boss detail, status line and `Still to answer: …` while answers are
+  pending; the react hint only while pending; yellow while pending or
+  someone is out, green when all set (a catalog colour wins, as v4); the
+  portrait thumbnail, no image.
+- **Digest** (`digest.rs`): `🗓️ Boss week of <Ddd DD Mon>`, the summary
+  (`**c/n Cleared** · n run(s) across d day(s)` + unconfirmed/at-risk
+  counts), one field per local day of `digest_line`s, v4's footer, no art,
+  no mentions.
+- Bosses are the stored tokens joined with ` + ` (v4 `format_bosses`); the
+  catalog supplies the detail line, colour and art. People follow v4's
+  `Audience`: allow-listed members are `<@id>`, others their name.
+- v5 attendance mode keeps the v5 tally in status and digest lines
+  (`4/4 (2 assumed), expected`); v4-compat renders v4's `1/5 ✅ · 1 ❌`.
+- **Art** (`art.rs`, `infrastructure::files::BossArt` over
+  `KANADE_BOSS_DIR`): `portraits/<portrait or key>.<png|webp|jpg|jpeg>` and
+  `artwork/entry/<key>.<ext>`, matched exactly (case included) against the
+  directory listing, at most 4 MiB each. Uploaded as `<file>` and
+  `image-<file>` (v4 `IMAGE_PREFIX`). Missing, oversized or unreadable art
+  drops the picture, never the send.
+- **Records** (migration 0014 `reminder_cards`, `ReminderCardStore`, both
+  stores + journal conformance): before a reminder card is claimed, its kind
+  (`day_of` / `countdown_<M>`) and day-of heading are stored under the
+  send's native dedupe key, first write wins. A retry after `NotSent`, a
+  restart and every edit reuse them. Dedupe and request fingerprints are
+  unchanged: both hash the intent, never the rendered payload, so embeds and
+  attachments cannot affect them.
+- **Edits** (`refresh.rs`, `CardRefresh`, v4 `refresh_run_cards`): after the
+  reaction worker applies an RSVP, every bound reminder card with a record
+  naming a run that has not started is re-rendered from current answers and
+  edited: same heading, art referenced by the posted names, nothing
+  uploaded, allow-list empty. Mentions in the text are planned as dispatch
+  plans them; quiet mode is read live from the tick. Cards posted before
+  records existed are left as they are. Digest edits are not wired.
+
+**Named difference from v4 — day-of heading (user decision 2026-09-26).**
+The heading is rewritten in the guild default persona's voice (bundle, no
+member profile) by the small `rewrite` model role through the nudge
+rewriter (`heading.rs`): seed `Today — {day}` (v4's text), mood playful,
+`{day}` left to the model and filled afterwards; code keeps the `📅 `
+prefix, the bold and the mentions line. The prompt holds the code-owned
+instruction, the persona and the seed only: no member, boss or schedule
+data. It is tried once per card before the claim, bounded by the 2 s
+`REWRITE_DEADLINE` (`try_acquire`, no queueing, no retries) and checked by
+`accept_rewrite`; failure, timeout, rejection, no `rewrite` role or no
+persona → exactly v4's `Today — <Ddd DD Mon>`. The chosen line is stored in
+the card record; `day_of_heading` logs `source` (`rewrite`/`seed`) and a
+reason, never the text. Serve wires it in `runtime::serve::tick::card_kit`
+(identity codec: `Passthrough`; the prompt carries no member data).
 
 ## Proposal cards
 
@@ -411,7 +477,7 @@ autocomplete goes through `commands::spawn_interaction`.
 ## Deferred
 
 Opposite-reaction removal and decline notices (chat answers apply without
-them); card portraits/artwork; withdrawing a card whose message was deleted;
+them); proposal-card portraits/artwork; withdrawing a card whose message was deleted;
 converting `BotEvent::Message*` into anything beyond chat and extraction;
 archived threads in rescans; attachments; an admin-alert
 destination beyond the log; an

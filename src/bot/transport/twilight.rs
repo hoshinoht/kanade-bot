@@ -33,6 +33,7 @@ use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::{Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
+use twilight_model::http::attachment::Attachment;
 use twilight_model::http::interaction::{
     InteractionResponse, InteractionResponseData, InteractionResponseType,
 };
@@ -297,6 +298,17 @@ impl DiscordTransport for TwilightTransport {
         }
         if let Some(target) = message.reply_to {
             request = request.reply(target).fail_if_not_exists(false);
+        }
+        let files: Vec<Attachment> = message
+            .attachments
+            .iter()
+            .zip(0_u64..)
+            .map(|(upload, id)| {
+                Attachment::from_bytes(upload.filename.clone(), upload.bytes.to_vec(), id)
+            })
+            .collect();
+        if !files.is_empty() {
+            request = request.attachments(&files);
         }
         Self::send(request, self.config.deadline, |response| async {
             // Delivered from here on; an unreadable id cannot be bound.

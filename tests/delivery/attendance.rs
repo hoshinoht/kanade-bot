@@ -19,8 +19,9 @@ fn start() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 12, 13, 0, 0).unwrap()
 }
 
-/// `(content, mentioned user ids)` of every message created so far.
-fn posts(calls: &[Call]) -> Vec<(String, Vec<String>)> {
+/// `(content, mentioned user ids, embed text)` of every message created so
+/// far; the embed text is its description and field values, one per line.
+fn posts(calls: &[Call]) -> Vec<(String, Vec<String>, String)> {
     calls
         .iter()
         .filter_map(|call| match call {
@@ -32,6 +33,18 @@ fn posts(calls: &[Call]) -> Vec<(String, Vec<String>)> {
                     .iter()
                     .map(|id| id.get().to_string())
                     .collect(),
+                message
+                    .embeds
+                    .iter()
+                    .flat_map(|embed| {
+                        embed
+                            .description
+                            .iter()
+                            .cloned()
+                            .chain(embed.fields.iter().map(|field| field.value.clone()))
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             )),
             _ => None,
         })
@@ -111,9 +124,9 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
     let digest = posts(&world.fake.calls());
     assert_eq!(digest.len(), 1, "the digest posted");
     assert!(
-        digest[0].0.contains("\n• Kalos <t:") && digest[0].0.ends_with(" · 1/2 (1 assumed)"),
+        digest[0].2.contains("`21:00` · 1/2 (1 assumed) · <#222>"),
         "digest tally: {:?}",
-        digest[0].0
+        digest[0].2
     );
     // One minute before the window: nothing changes.
     let early = delivery
@@ -132,9 +145,9 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
     assert_eq!(run_status(store, &run).await, RunStatus::AtRisk);
     let morning = posts(&world.fake.calls()).pop().expect("morning ping");
     assert!(
-        morning.0.starts_with("Today's runs:") && morning.0.contains(" · 1/2 (1 assumed)"),
-        "{:?}",
-        morning.0
+        morning.0.starts_with("📅 **Today — Sat 12 Sep**\n")
+            && morning.2.contains("❗ at risk · 1/2 (1 assumed)"),
+        "{morning:?}"
     );
     assert_eq!(morning.1, ["1002"], "morning mentions unknowns only");
     // 1002 answers: confirmed, and cards say "expected" (1001 is assumed).
@@ -152,11 +165,11 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
         .expect("tick");
     let countdown = posts(&world.fake.calls()).pop().expect("countdown");
     assert!(
-        countdown
-            .0
-            .contains(" · 2/2 (1 assumed), expected starts in 60 min."),
-        "{:?}",
-        countdown.0
+        countdown.0 == "⏰ **Kalos** in 1h (21:00) — everyone's confirmed ✅"
+            && countdown
+                .2
+                .contains("✅ confirmed · 2/2 (1 assumed), expected"),
+        "{countdown:?}"
     );
     assert_eq!(countdown.1, ["1001", "1002"], "countdowns keep v4");
 }
@@ -177,9 +190,9 @@ async fn v4_compat_tick_is_unchanged<S: Store>(store: &S) {
     let digest = posts(&world.fake.calls());
     assert_eq!(digest.len(), 1);
     assert!(
-        !digest[0].0.contains('\n') && digest[0].0.starts_with("Boss week from "),
-        "v4 digest text: {:?}",
-        digest[0].0
+        digest[0].0 == "🗓️ Boss week of Wed 09 Sep" && digest[0].2.contains("`21:00` · 0/2 ✅"),
+        "v4 digest card: {:?}",
+        digest[0]
     );
     let opened = delivery
         .tick_at(start() - TimeDelta::hours(12))
@@ -187,7 +200,10 @@ async fn v4_compat_tick_is_unchanged<S: Store>(store: &S) {
         .expect("tick");
     assert!(opened.recounted.is_empty(), "no recount in v4-compat mode");
     let morning = posts(&world.fake.calls()).pop().expect("morning ping");
-    assert!(!morning.0.contains(" · "), "no tally: {:?}", morning.0);
+    assert!(
+        morning.2.contains("⚠️ unconfirmed · 0/2 ✅") && !morning.2.contains("assumed"),
+        "v4 tally: {morning:?}"
+    );
     assert_eq!(morning.1, ["1001", "1002"], "v4 names everyone");
     let run = snapshot(store)
         .await

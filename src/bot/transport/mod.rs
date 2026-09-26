@@ -11,6 +11,7 @@ mod fake;
 
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::{AllowedMentions, Embed};
@@ -44,6 +45,26 @@ pub struct OutgoingMessage {
     /// `fail_if_not_exists = false` (a deleted target still posts); whether
     /// the author is pinged stays with `allowed_mentions.replied_user`.
     pub reply_to: Option<MessageId>,
+    /// Files posted with the message (multipart); an embed refers to one as
+    /// `attachment://<filename>`.
+    pub attachments: Vec<Upload>,
+}
+
+/// One uploaded file. Filenames are ASCII alphanumerics, `.`, `-` and `_`
+/// (Discord's rule; Twilight refuses others unsent as `Invalid`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct Upload {
+    pub filename: String,
+    pub bytes: Arc<[u8]>,
+}
+
+impl fmt::Debug for Upload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Upload")
+            .field("filename", &self.filename)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
 }
 
 /// Which page of a channel's history to read. Discord returns every page
@@ -55,7 +76,9 @@ pub enum HistoryPage {
     After(MessageId),
 }
 
-/// An edit; `None` fields are left unchanged.
+/// An edit; `None` fields are left unchanged. Attachments are never sent
+/// with an edit, so the message keeps the files it was posted with and a
+/// re-rendered embed's `attachment://` references keep resolving.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageEdit {
     pub content: Option<String>,

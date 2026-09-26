@@ -6,10 +6,11 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
+use crate::bot::delivery::cards::{CardRecord, PostedCard, ReminderCardStore};
 use crate::bot::events::CardIndex;
 use crate::domain::notify::{
-    AttemptId, AttemptState, Claim, DeliverySettings, DeliveryTarget, DigestPostInput, EffectKind,
-    IntentContent, JournalError, JournalView, Lease, NotificationIntent, PlannedSend,
+    AttemptId, AttemptState, Claim, DedupeKey, DeliverySettings, DeliveryTarget, DigestPostInput,
+    EffectKind, IntentContent, JournalError, JournalView, Lease, NotificationIntent, PlannedSend,
     REJECTED_ACTOR, Receipt, SendDisposition, WeeklyDigest, plan_digest_post,
 };
 use crate::domain::notify::{
@@ -22,7 +23,9 @@ use crate::domain::scheduler::{ScheduleStore, Scope};
 use crate::domain::time::to_iso;
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ScheduleStore + DeliveryJournal + CardIndex>(make: impl AsyncFn() -> S) {
+pub async fn run_suite<S: ScheduleStore + DeliveryJournal + CardIndex + ReminderCardStore>(
+    make: impl AsyncFn() -> S,
+) {
     claim_holds_its_targets(&make().await).await;
     concurrent_double_claim_is_held_once(&make().await).await;
     target_gone_or_sent_after_planning_is_refused(&make().await).await;
@@ -39,6 +42,7 @@ pub async fn run_suite<S: ScheduleStore + DeliveryJournal + CardIndex>(make: imp
     unsent_release_frees_the_target_for_a_fresh_claim(&make().await).await;
     digest_week_is_recorded_without_a_post(&make().await).await;
     older_digests_are_retired_and_kept(&make().await).await;
+    reminder_card_records_are_written_once_and_found_when_bound(&make().await).await;
 }
 
 const HOME: &str = "900";
@@ -840,4 +844,91 @@ async fn older_digests_are_retired_and_kept<S: ScheduleStore + DeliveryJournal>(
         "attempts are left alone"
     );
     assert_eq!(state(store, &current).await, AttemptState::Bound);
+}
+
+async fn reminder_card_records_are_written_once_and_found_when_bound<
+    S: ScheduleStore + DeliveryJournal + ReminderCardStore,
+>(
+    store: &S,
+) {
+    seed(store).await;
+    let day_of = intent(&["m-1"], HOME);
+    let key = DedupeKey::native(&day_of.targets).expect("key");
+    let first = CardRecord {
+        kind: "day_of".into(),
+        heading: Some("Today — Mon 31 Aug".into()),
+    };
+    assert_eq!(store.card_record(key.as_str()).await.expect("read"), None);
+    let saved = store
+        .save_card_record(key.as_str(), &first, at(8))
+        .await
+        .expect("save");
+    assert_eq!(saved, first);
+    let second = CardRecord {
+        kind: "day_of".into(),
+        heading: Some("Rise and shine — Mon 31 Aug".into()),
+    };
+    assert_eq!(
+        store
+            .save_card_record(key.as_str(), &second, at(9))
+            .await
+            .expect("save again"),
+        first,
+        "the first record wins"
+    );
+    for (bad_key, bad) in [
+        ("A".repeat(64), first.clone()),
+        (
+            key.as_str().to_owned(),
+            CardRecord {
+                kind: "digest".into(),
+                heading: None,
+            },
+        ),
+    ] {
+        assert!(
+            store.save_card_record(&bad_key, &bad, at(9)).await.is_err(),
+            "{bad_key} {bad:?} is refused"
+        );
+    }
+    assert!(
+        store
+            .save_card_record(
+                "b".repeat(64).as_str(),
+                &CardRecord {
+                    kind: "countdown_60".into(),
+                    heading: Some("x".into()),
+                },
+                at(9),
+            )
+            .await
+            .is_err(),
+        "only day-of cards carry a heading"
+    );
+    // Claimed but unbound: nothing to refresh yet.
+    let lease = lease(store).await;
+    let attempt = fresh(store, &lease, &day_of).await;
+    assert!(store.posted_cards("r-1").await.expect("read").is_empty());
+    store
+        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
+        .await
+        .expect("bind");
+    assert_eq!(
+        store.posted_cards("r-1").await.expect("read"),
+        [PostedCard {
+            channel_id: HOME.into(),
+            message_id: "5001".into(),
+            run_ids: vec!["r-1".into()],
+            record: first,
+        }]
+    );
+    assert!(store.posted_cards("r-2").await.expect("read").is_empty());
+    // A bound card without a record (posted before records) is not listed.
+    let countdown = intent(&["m-2"], HOME);
+    let attempt = fresh(store, &lease, &countdown).await;
+    store
+        .bind(&lease, &attempt, &receipt(HOME, "5002"), None, at(8))
+        .await
+        .expect("bind");
+    assert_eq!(store.posted_cards("r-1").await.expect("read").len(), 1);
 }

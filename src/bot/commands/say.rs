@@ -91,6 +91,7 @@ impl<T: DiscordTransport> SayCommand<T> {
             embeds: Vec::new(),
             allowed_mentions: mentions::allow_users(&users),
             reply_to: None,
+            attachments: Vec::new(),
         };
         match self.transport.create_message(channel, &message).await {
             Outcome::Delivered(_) => {}

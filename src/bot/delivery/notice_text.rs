@@ -243,6 +243,7 @@ pub fn render_notice(
         embeds: Vec::new(),
         allowed_mentions: mentions::for_intent(intent),
         reply_to: None,
+        attachments: Vec::new(),
     })
 }
 

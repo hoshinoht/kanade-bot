@@ -2,8 +2,11 @@
 //! `KANADE_TICK_SECONDS` under its own lease. The outbox drain, reminders,
 //! digests and expiry all run inside `Delivery::tick_at` in v4's order.
 //! A tick is never cancelled midway: stopping waits for the running one.
+//! Cards read the boss catalog and art and rewrite the day-of heading
+//! through the `rewrite` model role ([`card_kit`]).
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -18,18 +21,27 @@ use crate::{
         delivery::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
+            cards::{ArtSource, CardKit, HeadingRewrite, PersonaSource},
         },
         guild_cache::{GuildCache, WatchList},
         ids::parse_id,
         roster::LiveRoster,
         transport::DiscordTransport,
     },
+    chat::{
+        nudge::{GovernedRewriter, SharedRewriter},
+        persona::{CompiledPersona, PersonaStore},
+    },
     domain::notify::DeliveryJournal,
     domain::{
-        ids::RandomIds, members::MemberStore, notify::DEFAULT_MAX_NOTICE_AGE,
+        catalog::BossTable, ids::RandomIds, members::MemberStore, notify::DEFAULT_MAX_NOTICE_AGE,
         settings::RuntimeSettings,
     },
-    infrastructure::store::SqliteStore,
+    infrastructure::{
+        files::BossArt,
+        llm::{governor::Role, identity::Passthrough, setup::ModelStack},
+        store::SqliteStore,
+    },
     runtime::{config::SettingSeeds, error::Error, logging},
 };
 use chrono::{DateTime, Utc};
@@ -101,6 +113,49 @@ pub struct TickLoop<T> {
     pub seeds: SettingSeeds,
     pub config: DeliveryConfig,
     pub status: Arc<TickStatus>,
+    pub cards: CardKit,
+    /// Shared with the reaction worker's card edits.
+    pub quiet: Arc<AtomicBool>,
+}
+
+/// Card inputs for the tick and card edits: the catalog, the boss art
+/// directory (none: no pictures) and the day-of heading rewrite (the
+/// `rewrite` role through the nudge rewriter, the guild's default persona;
+/// no role or no persona: v4's heading).
+pub fn card_kit(
+    boss_dir: Option<&Path>,
+    catalog: Arc<BossTable>,
+    models: Option<&Arc<ModelStack>>,
+    personas: Arc<PersonaStore>,
+) -> CardKit {
+    // The heading prompt carries no member data, so nothing needs masking.
+    let rewriter = models
+        .filter(|stack| stack.has_role(Role::Rewrite))
+        .map(|stack| {
+            SharedRewriter(Arc::new(GovernedRewriter::new(
+                Arc::clone(&stack.client),
+                Arc::new(Passthrough),
+            )))
+        });
+    let persona: PersonaSource = Arc::new(move || {
+        let snapshot = personas.pin();
+        let active = snapshot.active()?;
+        Some(CompiledPersona::compile(&active.bundle.value, None))
+    });
+    let art = boss_dir.map(|dir| Arc::new(BossArt::new(dir)) as Arc<dyn ArtSource>);
+    logging::event(
+        "INFO",
+        "cards_ready",
+        json!({"art": art.is_some(), "heading_rewrite": rewriter.is_some()}),
+    );
+    CardKit {
+        catalog: Some(catalog),
+        art,
+        heading: HeadingRewrite {
+            rewriter,
+            persona: Some(persona),
+        },
+    }
 }
 
 /// The delivery settings from startup (policy, which the API also fixes at
@@ -153,7 +208,8 @@ impl<T: DiscordTransport> TickLoop<T> {
             &*self.roster,
             &*self.cache,
             self.config.clone(),
-        );
+        )
+        .with_cards(self.cards.clone());
         let mut interval = tokio::time::interval(self.period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         self.status.set(RUNNING);
@@ -182,6 +238,7 @@ impl<T: DiscordTransport> TickLoop<T> {
         if let Ok(settings) = settings::load(&self.store, &self.seeds).await {
             config.post_channel_id = settings.posting.channel_id.clone();
             config.quiet_mode = settings.notifications.quiet_mode;
+            self.quiet.store(config.quiet_mode, Ordering::Relaxed);
             self.cache.set_watch(watch_list(&settings));
         }
         if let Ok(rows) = self.store.list_members().await {

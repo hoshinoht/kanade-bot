@@ -35,6 +35,7 @@ pub trait Store:
     + kanade::domain::notify::NoticeOutbox
     + kanade::domain::history::Checkpoints
     + kanade::domain::drafts::ProposalStore
+    + kanade::bot::delivery::cards::ReminderCardStore
     + Sync
 {
 }
@@ -46,6 +47,7 @@ impl<S> Store for S where
         + kanade::domain::notify::NoticeOutbox
         + kanade::domain::history::Checkpoints
         + kanade::domain::drafts::ProposalStore
+        + kanade::bot::delivery::cards::ReminderCardStore
         + Sync
 {
 }
@@ -65,6 +67,10 @@ impl TempDir {
                 .expect("temp dir");
         }
         Self(path)
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.0
     }
 
     pub fn config(&self) -> SqliteStoreConfig {

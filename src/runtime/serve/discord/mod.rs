@@ -17,6 +17,7 @@ mod ports;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use serde_json::json;
@@ -31,7 +32,7 @@ use super::{
     commands,
     extract::{self, Extraction, ExtractionStatus, Timing},
     health::GatewayProbe,
-    tick::{self, TickLoop, TickStatus, delivery_config, watch_list},
+    tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
 };
 use crate::{
     api::{
@@ -40,7 +41,7 @@ use crate::{
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::LogAlerts,
+        delivery::{CardRefresh, LogAlerts},
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -260,6 +261,24 @@ where
             ));
         }
     }
+    let cards = card_kit(
+        config.runtime.http.boss_dir.as_deref(),
+        Arc::clone(&composition.admin.state.catalog),
+        composition.models.as_ref(),
+        Arc::clone(&composition.personas),
+    );
+    let quiet = Arc::new(AtomicBool::new(
+        composition.settings.notifications.quiet_mode,
+    ));
+    let refresh = Arc::new(CardRefresh {
+        store: Arc::clone(&store),
+        transport: Arc::clone(&wiring.transport),
+        members: roster.clone(),
+        cards: cards.clone(),
+        policy: policy.clone(),
+        quiet: Arc::clone(&quiet),
+        now: Arc::clone(&wiring.clock),
+    });
     let tick = TickLoop {
         store: Arc::clone(&store),
         transport: Arc::clone(&wiring.transport),
@@ -270,6 +289,8 @@ where
         seeds: config.seeds.clone(),
         config: delivery_config(&config.instance_id, policy, &composition.settings),
         status: tick_status,
+        cards,
+        quiet,
     };
 
     let dispatcher = match commands::factory(
@@ -332,7 +353,14 @@ where
 
     let mut workers = vec![
         tokio::spawn(roster_task.run(roster_queue)),
-        tokio::spawn(Reactions { desk, rsvp }.run(reaction_queue)),
+        tokio::spawn(
+            Reactions {
+                desk,
+                rsvp,
+                refresh: Some(refresh),
+            }
+            .run(reaction_queue),
+        ),
     ];
     let identity_dir = config.runtime.http.identity_dir.as_deref();
     let transport = Arc::clone(&wiring.transport);

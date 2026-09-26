@@ -5,6 +5,7 @@
 mod support;
 
 mod attendance;
+mod cards;
 mod checkpoints;
 mod digest_replay;
 mod dispatch_replay;

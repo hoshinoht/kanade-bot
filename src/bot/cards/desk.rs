@@ -389,6 +389,7 @@ where
             embeds: vec![embed(&view)],
             allowed_mentions: mentions::allow_users(&view.mention_users),
             reply_to: None,
+            attachments: Vec::new(),
         };
         let intent = NotificationIntent {
             effect: EffectKind::Card,
@@ -559,6 +560,7 @@ where
             embeds: Vec::new(),
             allowed_mentions: mentions::none(),
             reply_to: None,
+            attachments: Vec::new(),
         };
         let intent = NotificationIntent {
             effect: EffectKind::Notice(kind.to_owned()),

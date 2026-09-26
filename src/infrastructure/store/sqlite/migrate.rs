@@ -67,6 +67,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 13,
         sql: include_str!("migrations/0013_notice_outbox_retention.sql"),
     },
+    Migration {
+        version: 14,
+        sql: include_str!("migrations/0014_reminder_cards.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the

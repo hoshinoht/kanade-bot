@@ -19,6 +19,7 @@ fn message(text: &str) -> OutgoingMessage {
         embeds: Vec::new(),
         allowed_mentions: mentions::allow_users(&["1001"]),
         reply_to: None,
+        attachments: Vec::new(),
     }
 }
 

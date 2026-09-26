@@ -477,6 +477,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: production pseudonym codec (`PseudonymCodec`) that replaces member names,
   aliases, mentions and ids with per-session random fictional given names and
   decodes model output back; not yet wired into chat or extraction (off by default).
+- v5: provider-boundary leak scanner that refuses a masked model request still
+  carrying a member name, id or Discord snowflake, before anything is sent.
+- v5: reminders and the weekly digest post as v4-style embed cards with boss
+  portrait and day-of entry artwork uploaded as attachments; the day-of heading is
+  rewritten in the persona's voice by the small rewrite model (v4 text as fallback),
+  and cards refresh after ✅/❌ reactions.
 
 **Changed**
 

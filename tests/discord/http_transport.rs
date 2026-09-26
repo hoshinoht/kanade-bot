@@ -15,7 +15,7 @@ use twilight_model::id::Id;
 use kanade::bot::mentions;
 use kanade::bot::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
-    Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig, TwilightTransport,
+    Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig, TwilightTransport, Upload,
 };
 
 use super::support::{
@@ -200,6 +200,7 @@ fn post() -> OutgoingMessage {
         embeds: Vec::new(),
         allowed_mentions: mentions::allow_users(&["1001"]),
         reply_to: None,
+        attachments: Vec::new(),
     }
 }
 
@@ -239,6 +240,34 @@ async fn create_delivers_with_explicit_allow_list_on_the_wire() {
         body["allowed_mentions"],
         json!({ "parse": [], "users": ["1001"] }),
         "content mentions cannot widen the list"
+    );
+}
+
+#[tokio::test]
+async fn attachments_go_multipart_with_the_payload_and_files() {
+    let (stub, addr) = Stub::start(vec![json_reply(200, json!({ "id": "7" }))]).await;
+    let message = OutgoingMessage {
+        attachments: vec![Upload {
+            filename: "MaleficStar.png".into(),
+            bytes: Arc::from(&b"star-bytes"[..]),
+        }],
+        ..post()
+    };
+    let outcome = quick(addr).create_message(Id::new(CHANNEL), &message).await;
+    assert_eq!(outcome, Outcome::Delivered(Id::new(7)));
+    let seen = stub.seen();
+    assert!(
+        seen[0]
+            .headers
+            .to_ascii_lowercase()
+            .contains("content-type: multipart/form-data")
+    );
+    let body = String::from_utf8_lossy(&seen[0].body);
+    assert!(body.contains("filename=\"MaleficStar.png\""), "{body}");
+    assert!(body.contains("star-bytes"));
+    assert!(
+        body.contains(r#""allowed_mentions":{"parse":[],"users":["1001"]}"#),
+        "the allow-list travels in payload_json: {body}"
     );
 }
 
