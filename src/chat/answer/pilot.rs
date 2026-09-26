@@ -7,7 +7,7 @@ use crate::domain::drafts::ProposalStore;
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore};
 use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::{
-    Charge, ModelClient, QuestionLimits, Refused, Role, SessionError, SessionFailure,
+    Charge, ModelClient, QuestionLimits, Refused, Role, RoleRoute, SessionError, SessionFailure,
 };
 use crate::infrastructure::llm::identity::{IdentityCodec, Member, open_session, unmasked};
 
@@ -21,6 +21,9 @@ pub struct AnswerDeps<'a, P> {
     /// (renamed, removed aliases, left the roster): stored history and the
     /// bot's earlier replies may carry them, so each is masked and scanned.
     pub former: &'a [(String, String)],
+    /// The chat route read when the question was prepared; `None` reads it
+    /// now. Identity check, permit and requests all use this one route.
+    pub route: Option<&'a RoleRoute>,
 }
 
 /// Answer one question: one identity session and one question session
@@ -40,7 +43,11 @@ where
     C: Clock,
     X: ChatPorts,
 {
-    let Some(route) = deps.client.governor().route(Role::Chat) else {
+    let route = deps
+        .route
+        .cloned()
+        .or_else(|| deps.client.governor().route(Role::Chat));
+    let Some(route) = route else {
         return Generation::failed(AnswerFailure::Session(SessionError {
             failure: SessionFailure::Refused(Refused::UnknownRole),
             charge: Charge::Refunded,
@@ -63,7 +70,7 @@ where
     let ctx = question.ctx;
     let mut session = match deps
         .client
-        .open_question(ctx.author_id.clone(), ctx.is_admin, limits)
+        .open_question_on(&route, ctx.author_id.clone(), ctx.is_admin, limits)
         .await
     {
         Ok(session) => session.with_scanner(identity.scanner()),

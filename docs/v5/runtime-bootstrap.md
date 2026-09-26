@@ -271,11 +271,16 @@ before/after values) each role whose running alias or effort changed logs
 
 (`null` for an unrouted side), and `model_roles_not_applied` (WARN) if the
 stack refused them (the save stands and a notice says they apply at
-restart). `chat_answered`/`chat_failed` carry the `model` and `reasoning`
-each question used, and each extraction log row its `model` and
-`reasoning`. Extraction and the heading rewriter are still composed at
-startup: a role with no alias then gets its route live, but extraction and
-heading rewrites for it start only after a restart. `model_role` lines are
+restart). Chat reads its route once when a question is prepared; the
+system prompt's runtime line, the identity check, the permit, the requests,
+the chat row and `chat_answered`/`chat_failed` (`model`, `reasoning`) all use
+that one route, so a save landing mid-question applies from the next
+question. Each extraction log row carries its `model` and `reasoning`.
+Extraction and the heading rewriter are still composed at startup: a role
+with no alias then gets its route live, but extraction and heading rewrites
+for it start only after a restart — the save says so in `notices` ("The
+extraction model had none when the bot started: restart to start extraction
+with …") and the view shows no `running` for it. `model_role` lines are
 startup-only.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks

@@ -18,7 +18,7 @@ use super::super::{
     execution::{Cause, CompletionRunner, Denied, ExecutionLimits, Gate, RetryPolicy, RunError},
     identity::{IdentityLeakBlocked, LeakFound, LeakScanner},
 };
-use super::{CallKind, Governor, Permit, Priority, Refused, Role, Ticket, full_jitter};
+use super::{CallKind, Governor, Permit, Priority, Refused, Role, RoleRoute, Ticket, full_jitter};
 
 /// User decision: default tool-round cap, admin-adjustable 1..=12.
 pub const DEFAULT_TOOL_ROUNDS: u8 = 8;
@@ -225,6 +225,30 @@ impl<P: LlmProvider> ModelClient<P> {
         admin: bool,
         limits: QuestionLimits,
     ) -> Result<Session<'_, P>, SessionError> {
+        self.open_question_with(None, who, admin, limits).await
+    }
+
+    /// As [`Self::open_question`] on `route`, read earlier (the one the
+    /// identity guard checked), so a live switch in between cannot move the
+    /// question to another model.
+    pub async fn open_question_on(
+        &self,
+        route: &RoleRoute,
+        who: impl Into<String>,
+        admin: bool,
+        limits: QuestionLimits,
+    ) -> Result<Session<'_, P>, SessionError> {
+        self.open_question_with(Some(route), who, admin, limits)
+            .await
+    }
+
+    async fn open_question_with(
+        &self,
+        route: Option<&RoleRoute>,
+        who: impl Into<String>,
+        admin: bool,
+        limits: QuestionLimits,
+    ) -> Result<Session<'_, P>, SessionError> {
         limits.validate()?;
         let deadline = Instant::now() + limits.timeout;
         let (first, requeue) = if admin {
@@ -237,9 +261,17 @@ impl<P: LlmProvider> ModelClient<P> {
             kind: CallKind::Chat,
             who: who.into(),
         };
-        let permit = self
-            .acquire(Role::Chat, ticket.clone(), limits.timeout)
-            .await?;
+        let permit = match route {
+            Some(route) => self
+                .governor
+                .acquire_route(route, ticket.clone(), limits.timeout)
+                .await
+                .map_err(|refused| refunded(SessionFailure::Refused(refused)))?,
+            None => {
+                self.acquire(Role::Chat, ticket.clone(), limits.timeout)
+                    .await?
+            }
+        };
         Ok(Session {
             client: self,
             permit: Some(permit),

@@ -7,10 +7,15 @@ use std::{sync::Arc, time::Duration};
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionResponse, Effort, ExecutionLimits, FakeAction, FakeProvider,
     FinishReason, Message, RetryPolicy,
-    governor::{GovernorConfig, ModelClient, Priority, QuestionLimits, Refused, Role},
+    governor::{GovernorConfig, ModelClient, Priority, QuestionLimits, Refused, Role, RouteTarget},
 };
 
 use crate::support::{ALIAS, LONG, build, group, roles, single, ticket, wall};
+
+/// One role to `alias` (no effort, zone unknown); `None` unroutes it.
+fn to(role: Role, alias: Option<&str>) -> [(Role, Option<RouteTarget>); 1] {
+    [(role, alias.map(RouteTarget::alias))]
+}
 
 #[tokio::test(start_paused = true)]
 async fn the_next_permit_follows_the_new_alias_and_held_ones_keep_theirs() {
@@ -23,15 +28,17 @@ async fn the_next_permit_follows_the_new_alias_and_held_ones_keep_theirs() {
         .acquire(Role::Chat, ticket(Priority::ChatNew, "a"), LONG)
         .await
         .unwrap();
-    assert!(
+    assert_eq!(
         governor
-            .reroute(Role::Chat, Some("cloud-model"), None)
-            .unwrap()
+            .reroute(to(Role::Chat, Some("cloud-model")), None)
+            .unwrap(),
+        [Role::Chat]
     );
     assert!(
-        !governor
-            .reroute(Role::Chat, Some("cloud-model"), None)
+        governor
+            .reroute(to(Role::Chat, Some("cloud-model")), None)
             .unwrap()
+            .is_empty()
     );
     let route = governor.route(Role::Chat).unwrap();
     assert_eq!(route.group.as_deref(), Some("cloud"));
@@ -44,7 +51,7 @@ async fn the_next_permit_follows_the_new_alias_and_held_ones_keep_theirs() {
     assert_eq!((next.alias(), next.group()), ("cloud-model", "cloud"));
     // Other roles are untouched; unrouting refuses the role's next permit.
     assert_eq!(governor.route(Role::Extraction).unwrap().alias, ALIAS);
-    governor.reroute(Role::Chat, None, None).unwrap();
+    governor.reroute(to(Role::Chat, None), None).unwrap();
     assert_eq!(
         governor
             .acquire(Role::Chat, ticket(Priority::ChatNew, "c"), LONG)
@@ -58,7 +65,9 @@ async fn the_next_permit_follows_the_new_alias_and_held_ones_keep_theirs() {
 async fn only_the_open_group_takes_an_unlisted_alias() {
     let config = single(2, 6_000);
     let governor = build(&config);
-    governor.reroute(Role::Chat, Some("stray"), None).unwrap();
+    governor
+        .reroute(to(Role::Chat, Some("stray")), None)
+        .unwrap();
     assert_eq!(
         governor
             .acquire(Role::Chat, ticket(Priority::ChatNew, "a"), LONG)
@@ -67,9 +76,9 @@ async fn only_the_open_group_takes_an_unlisted_alias() {
         Refused::Ungrouped
     );
     let open = group("local", 2, 6_000, &[]);
-    governor.reroute(Role::Chat, None, Some(&open)).unwrap();
+    governor.reroute(to(Role::Chat, None), Some(&open)).unwrap();
     governor
-        .reroute(Role::Chat, Some("stray"), Some(&open))
+        .reroute(to(Role::Chat, Some("stray")), Some(&open))
         .unwrap();
     let permit = governor
         .acquire(Role::Chat, ticket(Priority::ChatNew, "b"), LONG)
@@ -88,7 +97,7 @@ async fn only_the_open_group_takes_an_unlisted_alias() {
     });
     let open = group("gateway", 3, 6_000, &[]);
     empty
-        .reroute(Role::Rewrite, Some("new"), Some(&open))
+        .reroute(to(Role::Rewrite, Some("new")), Some(&open))
         .unwrap();
     let groups = empty.snapshot(wall());
     assert_eq!(
@@ -96,26 +105,79 @@ async fn only_the_open_group_takes_an_unlisted_alias() {
         ("gateway", 3)
     );
     assert_eq!(groups[0].models, ["new"]);
-    assert!(empty.reroute(Role::Chat, Some("  "), Some(&open)).is_err());
+    assert!(
+        empty
+            .reroute(to(Role::Chat, Some("  ")), Some(&open))
+            .is_err()
+    );
 }
 
 #[test]
-fn zones_and_efforts_follow_each_routes_current_alias() {
+fn one_reroute_installs_alias_effort_and_zone_together() {
     let mut config = single(1, 6_000);
     config.roles = roles(ALIAS, true);
+    config.groups.push(group("cloud", 1, 6_000, &["other"]));
     let governor = build(&config);
     governor.set_effort(Role::Chat, Some(Effort::High));
-    governor.reroute(Role::Chat, Some("other"), None).unwrap();
+    // Alias, effort and zone of two roles land in one write.
+    let changed = governor
+        .reroute(
+            [
+                (
+                    Role::Chat,
+                    Some(RouteTarget {
+                        alias: "other".into(),
+                        effort: Some(Effort::Low),
+                        external: Some(false),
+                    }),
+                ),
+                (
+                    Role::Extraction,
+                    Some(RouteTarget {
+                        alias: ALIAS.into(),
+                        effort: Some(Effort::Medium),
+                        external: None,
+                    }),
+                ),
+            ],
+            None,
+        )
+        .unwrap();
+    assert_eq!(changed, [Role::Chat]);
+    let chat = governor.route(Role::Chat).unwrap();
     assert_eq!(
-        governor.route(Role::Chat).unwrap().effort,
-        Some(Effort::High),
-        "kept until the setup pushes the new level"
+        (
+            chat.alias.as_str(),
+            chat.effort,
+            chat.external,
+            chat.group.as_deref()
+        ),
+        ("other", Some(Effort::Low), false, Some("cloud"))
     );
+    let extraction = governor.route(Role::Extraction).unwrap();
+    assert_eq!(extraction.effort, Some(Effort::Medium));
+    assert!(extraction.external, "same alias, unknown zone: kept");
+    // A new alias with no zone fails closed; one bad target moves nothing.
+    governor
+        .reroute(to(Role::Rewrite, Some("fresh")), None)
+        .unwrap();
+    assert!(governor.route(Role::Rewrite).unwrap().external);
+    assert!(
+        governor
+            .reroute(
+                [
+                    (Role::Chat, Some(RouteTarget::alias(ALIAS))),
+                    (Role::Rewrite, Some(RouteTarget::alias(" "))),
+                ],
+                None,
+            )
+            .is_err()
+    );
+    assert_eq!(governor.route(Role::Chat).unwrap().alias, "other");
+    // The listing observer still re-derives zones from each current alias.
     governor.rederive_external(|alias| alias != ALIAS);
     assert!(!governor.route(Role::Extraction).unwrap().external);
     assert!(governor.route(Role::Chat).unwrap().external);
-    assert!(governor.set_effort(Role::Chat, None));
-    assert_eq!(governor.route(Role::Chat).unwrap().effort, None);
 }
 
 #[tokio::test(start_paused = true)]
@@ -158,7 +220,7 @@ async fn a_requeue_returns_to_the_alias_the_session_opened_with() {
         .await
         .unwrap();
     governor
-        .reroute(Role::Chat, Some("cloud-model"), None)
+        .reroute(to(Role::Chat, Some("cloud-model")), None)
         .unwrap();
     let request = ChatRequest {
         model: ALIAS.into(),

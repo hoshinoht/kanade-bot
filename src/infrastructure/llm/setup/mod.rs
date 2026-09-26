@@ -171,6 +171,8 @@ pub struct ModelStack {
     pub client: Arc<GatewayClient>,
     config: GovernorConfig,
     roles: Arc<LiveRoles>,
+    /// Roles routed when the stack was built.
+    started: BTreeSet<Role>,
     catalog: Arc<CatalogState>,
     masking: bool,
     unmasked_override: bool,
@@ -210,6 +212,7 @@ pub fn build_with_groups(
     }
     let provider = Arc::new(OpenAiCompatibleProvider::new(config).map_err(SetupError::Http)?);
     let aliases = setup.roles.aliases();
+    let started = aliases.keys().copied().collect();
     let config = governor_config(&aliases, setup.permits, groups);
     let governor = Arc::new(Governor::new(&config, random).map_err(SetupError::Governor)?);
     governor.allow_external_unmasked(setup.allow_external_unmasked);
@@ -237,6 +240,7 @@ pub fn build_with_groups(
         client: Arc::new(client),
         config,
         roles,
+        started,
         catalog,
         masking: setup.pseudonymize,
         unmasked_override: setup.allow_external_unmasked,
@@ -305,6 +309,12 @@ impl ModelStack {
     /// The running roles (the last applied, else the startup ones).
     pub fn roles(&self) -> ModelRoles {
         self.roles.get()
+    }
+
+    /// The role had a model when the stack was built (serve composes
+    /// extraction and the heading rewriter only for those).
+    pub fn routed_at_start(&self, role: Role) -> bool {
+        self.started.contains(&role)
     }
 
     /// Switches the running roles; the next session of each role opens

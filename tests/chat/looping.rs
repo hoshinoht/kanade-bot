@@ -193,6 +193,7 @@ async fn replay(case: Value) -> Vec<Value> {
             codec: &Passthrough,
             roster: &roster,
             former: &[],
+            route: None,
         };
         let (guild, mut proposer) = world.question_parts();
         let generation = answer(&deps, question, &guild, &mut proposer, &ports).await;

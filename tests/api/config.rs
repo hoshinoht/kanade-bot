@@ -123,6 +123,7 @@ pub struct FakeCatalog(
     Mutex<CatalogRead>,
     Mutex<Vec<Models>>,
     Mutex<BTreeMap<Role, RunningRole>>,
+    Mutex<Vec<Role>>,
 );
 
 impl FakeCatalog {
@@ -157,6 +158,10 @@ impl ModelCatalog for FakeCatalog {
 
     fn running(&self) -> BTreeMap<Role, RunningRole> {
         self.2.lock().unwrap().clone()
+    }
+
+    fn awaiting_restart(&self) -> Vec<Role> {
+        self.3.lock().unwrap().clone()
     }
 }
 
@@ -256,6 +261,7 @@ impl Config {
                 reachable: true,
                 snapshot: catalog(),
             }),
+            Mutex::default(),
             Mutex::default(),
             Mutex::default(),
         ));
@@ -1310,4 +1316,32 @@ async fn a_role_switched_to_an_ungrouped_alias_is_refused_and_nothing_moves() {
         .patch(json!({"models": {"roles": {"chat": {"alias": "kanata/chat", "reasoning": "low"}}}}))
         .await;
     assert_eq!(config.catalog.applied().len(), 1);
+}
+
+#[tokio::test]
+async fn a_first_extraction_or_rewrite_model_says_it_starts_after_a_restart() {
+    let mut start = settings();
+    start.models.extraction.alias = None;
+    start.models.rewrite.alias = None;
+    let config = Config::with_settings(true, Vec::new(), start).await;
+    // What the stack reports once those roles have a model it did not start with.
+    *config.catalog.3.lock().unwrap() = vec![Role::Extraction, Role::Rewrite];
+    let saved = config
+        .patch(json!({"models": {"roles": {
+            "extraction": {"alias": "kanata/extract", "reasoning": "low"},
+            "rewrite": {"alias": "kanata/rewrite-small", "reasoning": "off"},
+        }}}))
+        .await;
+    assert_eq!(
+        saved["notices"],
+        json!([
+            "The extraction model had none when the bot started: restart to start extraction with kanata/extract.",
+            "The rewrite model had none when the bot started: restart to start heading rewrites with kanata/rewrite-small.",
+        ])
+    );
+    // A later save that leaves those aliases alone says nothing more.
+    let again = config
+        .patch(json!({"models": {"roles": {"extraction": {"reasoning": "medium"}}}}))
+        .await;
+    assert_eq!(again["notices"], json!([]));
 }

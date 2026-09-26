@@ -659,6 +659,7 @@ async fn filtered_then(
         codec: &Passthrough,
         roster: &roster,
         former: &[],
+        route: None,
     };
     let generation = {
         let (guild, mut proposer) = world.question_parts();

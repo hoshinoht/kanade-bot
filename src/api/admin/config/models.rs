@@ -321,6 +321,33 @@ pub fn ungrouped(current: &Models, next: &Models, declared: &[CapacityGroup]) ->
         .collect()
 }
 
+/// A notice for each role this save gave a model whose feature only starts
+/// with the bot (`waiting`: extraction or rewrite had none at startup).
+pub fn awaiting_restart(
+    before: &Models,
+    after: &Models,
+    waiting: &[crate::infrastructure::llm::governor::Role],
+) -> Vec<String> {
+    use crate::infrastructure::llm::governor::Role as Live;
+    waiting
+        .iter()
+        .filter_map(|&role| {
+            let (role, feature) = match role {
+                Live::Extraction => (Role::Extraction, "extraction"),
+                Live::Rewrite => (Role::Rewrite, "heading rewrites"),
+                Live::Chat => return None,
+            };
+            let alias = role.of(after).alias.as_ref()?;
+            (role.of(before).alias.as_ref() != Some(alias)).then(|| {
+                format!(
+                    "The {} model had none when the bot started: restart to start {feature} with {alias}.",
+                    role.name()
+                )
+            })
+        })
+        .collect()
+}
+
 fn distinct_aliases(models: &Models) -> Vec<String> {
     let aliases: BTreeSet<&String> = Role::ALL
         .into_iter()

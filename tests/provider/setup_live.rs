@@ -4,6 +4,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use kanade::api::admin::config::ModelCatalog;
 use kanade::infrastructure::llm::{
     ChatRequest, Effort, Message,
     governor::{QuestionLimits, Refused, Role, SessionFailure, XorShift},
@@ -277,6 +278,7 @@ async fn a_role_unrouted_at_startup_gets_the_default_group_live() {
             .is_empty()
     );
     assert!(!stack.has_role(Role::Chat));
+    assert!(!stack.routed_at_start(Role::Chat));
 
     let next = ModelRoles {
         chat: role("home-a", RoleEffort::Level(Effort::Medium)),
@@ -288,6 +290,21 @@ async fn a_role_unrouted_at_startup_gets_the_default_group_live() {
     let groups = stack.governor.snapshot(chrono::DateTime::UNIX_EPOCH);
     assert_eq!(groups[0].name, "gateway");
     assert_eq!(groups[0].permits.total, 2);
+
+    // Extraction and heading rewrites are composed at startup only: a first
+    // model for them waits for a restart and is not shown as running.
+    let mut first = ModelRoles {
+        chat: role("home-a", RoleEffort::Level(Effort::Medium)),
+        ..ModelRoles::default()
+    };
+    first.extraction.alias = Some("home-b".into());
+    first.extraction.effort = RoleEffort::Level(Effort::Low);
+    stack.apply_roles(first).unwrap();
+    assert!(stack.has_role(Role::Extraction));
+    assert_eq!(ModelCatalog::awaiting_restart(&stack), [Role::Extraction]);
+    let running = ModelCatalog::running(&stack);
+    assert!(running.contains_key(&Role::Chat));
+    assert!(!running.contains_key(&Role::Extraction));
 
     // Clearing the alias unroutes the role and empties the group.
     stack.apply_roles(ModelRoles::default()).unwrap();

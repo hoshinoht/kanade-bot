@@ -61,9 +61,16 @@ pub trait ModelCatalog: Send + Sync {
         Ok(Vec::new())
     }
 
-    /// Alias and effort each routed role runs with now.
+    /// Alias and effort each routed role runs with now; a role waiting for
+    /// a restart ([`Self::awaiting_restart`]) is left out.
     fn running(&self) -> BTreeMap<Role, RunningRole> {
         BTreeMap::new()
+    }
+
+    /// Roles that have a model now but whose feature only starts with the
+    /// bot (extraction and heading rewrites had none at startup).
+    fn awaiting_restart(&self) -> Vec<Role> {
+        Vec::new()
     }
 }
 

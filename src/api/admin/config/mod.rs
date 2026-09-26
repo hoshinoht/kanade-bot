@@ -211,6 +211,7 @@ async fn update(
     } else if next != *current {
         desk.store.save(section).await.map_err(stored)?;
     }
+    let saved_before = current.models.clone();
     if next != *current {
         let revision = desk.publish(name_of(name), actor.clone(), &next);
         changes::settings_changed(
@@ -223,9 +224,16 @@ async fn update(
         *current = next.clone();
     }
     // Every models save re-applies, so a stack left behind catches up.
-    if let ("models", Some(models)) = (name_of(name), &desk.models) {
-        match models.apply(&next.models) {
-            Ok(swaps) => changes::models_applied(&swaps),
+    if let ("models", Some(stack)) = (name_of(name), &desk.models) {
+        match stack.apply(&next.models) {
+            Ok(swaps) => {
+                changes::models_applied(&swaps);
+                notices.extend(models::awaiting_restart(
+                    &saved_before,
+                    &next.models,
+                    &stack.awaiting_restart(),
+                ));
+            }
             Err(error) => {
                 changes::models_apply_failed(&error);
                 notices.push(

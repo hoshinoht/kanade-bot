@@ -186,7 +186,9 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     }
 
     async fn prepare(&self, asked: &Asked) -> Option<Prepared> {
-        let (stack, model) = self.route()?;
+        // Read once: the prompt's runtime line, logs, identity check, permit
+        // and requests all use this route, whatever is saved meanwhile.
+        let route = self.models.as_ref()?.governor.route(Role::Chat)?;
         let members = match self.store.list_members().await {
             Ok(members) => members,
             Err(_) => {
@@ -239,8 +241,9 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             directory: Arc::new(roster),
             members,
             pilot: self.pilot(&settings),
-            model,
-            reasoning: stack.effort(Role::Chat),
+            model: route.alias.clone(),
+            reasoning: route.effort,
+            route: Some(route),
             now: (self.clock)(),
             zone: self.policy.zone(),
             reset: (self.policy.reset_weekday, self.policy.reset_time),
@@ -249,10 +252,11 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     }
 
     async fn answer(&self, job: Job<'_>) -> Generation {
-        let Some((stack, alias)) = self.route() else {
+        let Some(stack) = self.models.as_ref() else {
             return Generation::default();
         };
         let prepared = job.prepared;
+        let alias = prepared.model.clone();
         let roster = identity_roster(&prepared.members);
         let members: Vec<_> = prepared
             .members
@@ -277,6 +281,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             codec: codec.as_ref(),
             roster: &roster,
             former: &former,
+            route: prepared.route.as_ref(),
         };
         let guild = GuildView {
             members: &members,

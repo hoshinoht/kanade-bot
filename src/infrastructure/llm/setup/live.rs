@@ -10,7 +10,7 @@ use std::{
 
 use super::super::{
     Effort, ListedModel,
-    governor::{ConfigError, Governor, GroupConfig, Role},
+    governor::{ConfigError, Governor, GroupConfig, Role, RouteTarget},
 };
 use super::{
     ModelRoles, RoleEffort, SetupError,
@@ -72,9 +72,10 @@ impl LiveRoles {
         push_efforts(&roles, governor, catalog);
     }
 
-    /// Reroutes changed aliases (new ones start external until a listing
-    /// confirms their zone; the cached listing counts) and pushes the
-    /// resolved efforts. All-or-nothing: checked before anything moves.
+    /// Resolves every role's alias, effort and zone (from the cached
+    /// listing; a new alias with none starts external) and installs them in
+    /// one governor write, so a call never sees half a switch.
+    /// All-or-nothing: checked before anything moves.
     pub fn apply(
         &self,
         next: ModelRoles,
@@ -96,16 +97,22 @@ impl LiveRoles {
         }
         let mut roles = self.lock();
         let before = running(governor);
-        for role in ModelRoles::ALL {
-            governor
-                .reroute(role, next.get(role).alias.as_deref(), self.open.as_ref())
-                .map_err(SetupError::Governor)?;
-        }
+        let listing = catalog.listing();
+        let efforts = efforts(&next, listing.as_deref());
+        let targets = ModelRoles::ALL.into_iter().map(|role| {
+            let target = next.get(role).alias.as_ref().map(|alias| RouteTarget {
+                alias: alias.trim().to_owned(),
+                effort: efforts.get(&role).map(|status| status.effort),
+                external: listing.as_deref().map(|listed| {
+                    catalog::leaves_homelab(alias.trim(), catalog::published(listed, alias.trim()))
+                }),
+            });
+            (role, target)
+        });
+        governor
+            .reroute(targets, self.open.as_ref())
+            .map_err(SetupError::Governor)?;
         *roles = next;
-        if let Some(listing) = catalog.listing() {
-            catalog::rederive(&listing, governor);
-        }
-        push_efforts(&roles, governor, catalog);
         let after = running(governor);
         Ok(ModelRoles::ALL
             .into_iter()

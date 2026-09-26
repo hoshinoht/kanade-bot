@@ -16,7 +16,7 @@ use crate::chat::persona::CompiledPersona;
 use crate::chat::pilot::StormAlert;
 use crate::domain::members::{Directory, MemberProfile};
 use crate::domain::model_log::ChatInteraction;
-use crate::infrastructure::llm::Effort;
+use crate::infrastructure::llm::{Effort, governor::RoleRoute};
 
 /// One member message as the adapter hands it over.
 #[derive(Clone)]
@@ -60,8 +60,13 @@ pub struct Prepared {
     /// The member rows the directory was built from (tools, identity).
     pub members: Vec<MemberProfile>,
     pub pilot: PilotSettings,
+    /// `route`'s alias and effort: the system prompt, logs and requests
+    /// all use them.
     pub model: String,
     pub reasoning: Option<Effort>,
+    /// The chat route read once for this question; the answer opens its
+    /// session on it (`None`: the answerer reads its own).
+    pub route: Option<RoleRoute>,
     /// The question's single wall-clock reading.
     pub now: DateTime<Utc>,
     pub zone: Tz,

@@ -34,6 +34,18 @@ impl ModelCatalog for ModelStack {
     }
 
     fn running(&self) -> BTreeMap<Role, RunningRole> {
-        ModelStack::running(self)
+        let waiting = self.awaiting_restart();
+        let mut running = ModelStack::running(self);
+        running.retain(|role, _| !waiting.contains(role));
+        running
+    }
+
+    /// Serve composes extraction and the heading rewriter at startup, only
+    /// for roles that had a model then (chat reads its route per question).
+    fn awaiting_restart(&self) -> Vec<Role> {
+        [Role::Extraction, Role::Rewrite]
+            .into_iter()
+            .filter(|&role| self.has_role(role) && !self.routed_at_start(role))
+            .collect()
     }
 }

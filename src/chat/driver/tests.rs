@@ -145,6 +145,7 @@ impl Answerer for Arc<Fake> {
             pilot: self.setup().pilot,
             model: "chat-model".into(),
             reasoning: None,
+            route: None,
             now: when(),
             zone: chrono_tz::Asia::Kuala_Lumpur,
             reset: (Weekday::Thu, NaiveTime::MIN),

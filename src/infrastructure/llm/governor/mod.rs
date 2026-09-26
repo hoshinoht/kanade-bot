@@ -50,6 +50,26 @@ use group::Group;
 
 use super::{AdmissionLimits, Effort};
 
+/// What [`Governor::reroute`] points a role at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteTarget {
+    pub alias: String,
+    pub effort: Option<Effort>,
+    /// `None`: no listing names the zone yet.
+    pub external: Option<bool>,
+}
+
+impl RouteTarget {
+    /// No effort, zone unknown.
+    pub fn alias(alias: impl Into<String>) -> Self {
+        Self {
+            alias: alias.into(),
+            effort: None,
+            external: None,
+        }
+    }
+}
+
 /// Replaced whole on a reroute; permits already taken keep their own group
 /// and alias.
 struct Route {
@@ -176,78 +196,98 @@ impl Governor {
             .is_some()
     }
 
-    /// Points `role` at `alias` from the next session on (`None` unroutes
-    /// it); open sessions keep their permit's alias and group. A new alias
-    /// starts `external` (fail closed) until the listing re-derives it, and
-    /// takes the group that lists it. An alias no group lists joins `open`
-    /// (the default single group, created on first use) and leaves it when
-    /// no role uses it; without `open` it is ungrouped and its calls are
-    /// refused, as at startup. Returns whether the alias changed.
+    /// Installs every target in one routes write, so no reader sees a new
+    /// alias with the old effort or zone (`None` unroutes a role); open
+    /// sessions keep their permit's alias and group. A target's `external`
+    /// `None` keeps the current zone for the same alias and is `true` (fail
+    /// closed) for a new one. A new alias takes the group that lists it; one
+    /// no group lists joins `open` (the default single group, created on
+    /// first use) and leaves it when no role uses it; without `open` it is
+    /// ungrouped and its calls are refused, as at startup. Checked before
+    /// anything moves. Returns the roles whose alias changed.
     pub fn reroute(
         &self,
-        role: Role,
-        alias: Option<&str>,
+        targets: impl IntoIterator<Item = (Role, Option<RouteTarget>)>,
         open: Option<&GroupConfig>,
-    ) -> Result<bool, ConfigError> {
-        let mut routes = self.write_routes();
-        let current = routes.get(&role).map(|entry| entry.route.alias.as_str());
-        let alias = alias.map(str::trim);
-        if current == alias {
-            return Ok(false);
-        }
-        let Some(alias) = alias else {
-            routes.remove(&role);
-            self.sync_open(&routes, open);
-            return Ok(true);
-        };
-        if alias.is_empty() {
-            return Err(ConfigError::EmptyRoleAlias { role });
-        }
-        let group = {
-            let mut groups = self.groups.write().unwrap_or_else(PoisonError::into_inner);
-            let listed = groups
-                .iter()
-                .find(|group| group.aliases().iter().any(|known| known == alias))
-                .cloned();
-            match (listed, open) {
-                (Some(group), _) => Some(group),
-                (None, Some(open)) => {
-                    let existing = groups.iter().find(|group| group.name == open.name).cloned();
-                    Some(existing.unwrap_or_else(|| {
-                        let config = GroupConfig {
-                            aliases: vec![alias.to_owned()],
-                            ..open.clone()
-                        };
-                        let group = Arc::new(Group::new(
-                            &config,
-                            &self.policy,
-                            self.random.clone(),
-                            Instant::now(),
-                        ));
-                        groups.push(group.clone());
-                        group
-                    }))
+    ) -> Result<Vec<Role>, ConfigError> {
+        let mut targets: Vec<(Role, Option<RouteTarget>)> = targets.into_iter().collect();
+        for (role, target) in &mut targets {
+            if let Some(target) = target {
+                target.alias = target.alias.trim().to_owned();
+                if target.alias.is_empty() {
+                    return Err(ConfigError::EmptyRoleAlias { role: *role });
                 }
-                (None, None) => None,
             }
-        };
-        let effort = routes.get(&role).and_then(|entry| entry.route.effort);
-        routes.insert(
-            role,
-            Route {
-                route: RoleRoute {
-                    role,
-                    alias: alias.to_owned(),
-                    group: group.as_ref().map(|group| group.name.clone()),
-                    external: true,
-                    unmasked_allowed: false,
-                    effort,
+        }
+        let mut routes = self.write_routes();
+        let mut changed = Vec::new();
+        for (role, target) in targets {
+            let current = routes.get(&role);
+            if current.map(|entry| &entry.route.alias) != target.as_ref().map(|t| &t.alias) {
+                changed.push(role);
+            }
+            let Some(target) = target else {
+                routes.remove(&role);
+                continue;
+            };
+            let entry = match current {
+                Some(entry) if entry.route.alias == target.alias => Route {
+                    route: RoleRoute {
+                        external: target.external.unwrap_or(entry.route.external),
+                        effort: target.effort,
+                        ..entry.route.clone()
+                    },
+                    group: entry.group.clone(),
                 },
-                group,
-            },
-        );
+                _ => {
+                    let group = self.group_for(&target.alias, open);
+                    Route {
+                        route: RoleRoute {
+                            role,
+                            alias: target.alias,
+                            group: group.as_ref().map(|group| group.name.clone()),
+                            external: target.external.unwrap_or(true),
+                            unmasked_allowed: false,
+                            effort: target.effort,
+                        },
+                        group,
+                    }
+                }
+            };
+            routes.insert(role, entry);
+        }
         self.sync_open(&routes, open);
-        Ok(true)
+        Ok(changed)
+    }
+
+    /// The group listing `alias`, else `open` (created on first use).
+    fn group_for(&self, alias: &str, open: Option<&GroupConfig>) -> Option<Arc<Group>> {
+        let mut groups = self.groups.write().unwrap_or_else(PoisonError::into_inner);
+        let listed = groups
+            .iter()
+            .find(|group| group.aliases().iter().any(|known| known == alias))
+            .cloned();
+        match (listed, open) {
+            (Some(group), _) => Some(group),
+            (None, Some(open)) => {
+                let existing = groups.iter().find(|group| group.name == open.name).cloned();
+                Some(existing.unwrap_or_else(|| {
+                    let config = GroupConfig {
+                        aliases: vec![alias.to_owned()],
+                        ..open.clone()
+                    };
+                    let group = Arc::new(Group::new(
+                        &config,
+                        &self.policy,
+                        self.random.clone(),
+                        Instant::now(),
+                    ));
+                    groups.push(group.clone());
+                    group
+                }))
+            }
+            (None, None) => None,
+        }
     }
 
     /// The open group lists exactly the aliases routed to it.
@@ -291,6 +331,30 @@ impl Governor {
         }
         let (route, group) = self.resolve(role)?;
         permit::acquire(group, route.alias, ticket, wait).await
+    }
+
+    /// As [`Self::acquire`] on a route read earlier (the one the identity
+    /// guard checked): its alias and group, even if the role moved since.
+    pub async fn acquire_route(
+        &self,
+        route: &RoleRoute,
+        ticket: Ticket,
+        wait: Duration,
+    ) -> Result<Permit, Refused> {
+        if !ticket.kind.may_wait() {
+            return Err(Refused::MustNotWait);
+        }
+        let group = route
+            .group
+            .as_ref()
+            .and_then(|name| {
+                self.read_groups()
+                    .iter()
+                    .find(|group| &group.name == name)
+                    .cloned()
+            })
+            .ok_or(Refused::Ungrouped)?;
+        permit::acquire(group, route.alias.clone(), ticket, wait).await
     }
 
     /// Takes a permit only if one is free now, nobody is queued and the breaker

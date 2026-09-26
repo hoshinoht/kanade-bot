@@ -157,6 +157,7 @@ async fn ask_tuned(
         codec,
         roster: &roster,
         former,
+        route: None,
     };
     let mut conversation = vec![Message::System { content: system() }];
     conversation.extend(history.unwrap_or_else(|| {

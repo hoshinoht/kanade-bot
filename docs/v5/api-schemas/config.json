@@ -72,7 +72,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["alias", "reasoning"],
-          "description": "What the role's next session opens with (saved roles apply live); absent while the role is unrouted or no gateway is configured.",
+          "description": "What the role's next session opens with (saved roles apply live); absent while the role is unrouted, no gateway is configured, or its feature waits for a restart (extraction or heading rewrites with no model at startup).",
           "properties": {
             "alias": { "type": "string" },
             "reasoning": { "type": ["string", "null"], "description": "The level requests send: inherit resolved, a variant's fixed level or a published floor applied." }

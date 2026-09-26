@@ -64,6 +64,10 @@ pub struct Config {
     pub declared_groups: Option<Vec<Group>>,
     /// `models.permits`: the default group's permits.
     pub permits: u32,
+    /// Roles with a model when the bot started: extraction and heading
+    /// rewrites run only for those until a restart.
+    #[serde(skip)]
+    pub started: Vec<&'static str>,
 }
 
 struct ModelInfo {
@@ -323,6 +327,7 @@ pub fn defaults() -> Config {
         // The default: one gateway group over the role aliases.
         declared_groups: None,
         permits: 1,
+        started: vec!["extraction", "chat", "rewrite"],
     }
 }
 
@@ -427,6 +432,16 @@ fn valid_reasoning(info: &ModelInfo, effort: &str) -> bool {
     }
 }
 
+/// Serve composes extraction and the heading rewriter at startup only.
+fn awaiting_restart(c: &Config, role: &str) -> bool {
+    let alias = match role {
+        "extraction" => &c.extraction.alias,
+        "rewrite" => &c.rewrite.alias,
+        _ => return false,
+    };
+    !alias.is_empty() && !c.started.contains(&role)
+}
+
 fn resolve<'a>(reasoning: &'a str, extraction: &'a str) -> &'a str {
     if reasoning.is_empty() {
         extraction
@@ -459,7 +474,7 @@ impl Store {
         }
         // A stored variant is shown as "<base> (fixed: <level>)"; saved roles
         // run at once (`running`: inherit and a variant's level resolved).
-        let role = |r: &RoleModel| {
+        let role = |name: &str, r: &RoleModel| {
             let mut v = json!(r);
             let mut running = resolve(&r.reasoning, &c.extraction.reasoning).to_owned();
             if let Some((base, effort)) = variant(&r.alias) {
@@ -467,7 +482,7 @@ impl Store {
                 v["fixed_effort"] = json!(effort);
                 running = effort.into();
             }
-            if !r.alias.is_empty() {
+            if !r.alias.is_empty() && !awaiting_restart(c, name) {
                 v["running"] = json!({ "alias": r.alias, "reasoning": running });
             }
             v
@@ -501,7 +516,7 @@ impl Store {
             "models": {
                 "reachable": true,
                 "catalog": models,
-                "roles": { "extraction": role(&c.extraction), "chat": role(&c.chat), "rewrite": role(&c.rewrite) },
+                "roles": { "extraction": role("extraction", &c.extraction), "chat": role("chat", &c.chat), "rewrite": role("rewrite", &c.rewrite) },
                 "groups": effective_groups(c),
                 "groups_source": if c.declared_groups.is_some() { "config" } else { "default" },
                 // Variants are listed too, as the server does; the app shows base models only.
@@ -749,6 +764,27 @@ impl Store {
                 .collect();
             if !errors.is_empty() {
                 return Err(MoveError::Invalid(errors.join(" ")));
+            }
+        }
+        for (role, feature, before, after) in [
+            (
+                "extraction",
+                "extraction",
+                &self.config.extraction,
+                &next.extraction,
+            ),
+            (
+                "rewrite",
+                "heading rewrites",
+                &self.config.rewrite,
+                &next.rewrite,
+            ),
+        ] {
+            if awaiting_restart(&next, role) && before.alias != after.alias {
+                notices.push(format!(
+                    "The {role} model had none when the bot started: restart to start {feature} with {}.",
+                    after.alias
+                ));
             }
         }
         self.config = next;
@@ -1115,6 +1151,27 @@ mod tests {
             refused,
             crate::mock::MoveError::Coded(422, "ungrouped", _)
         ));
+        // A first extraction model waits for a restart, and says so.
+        s.config.declared_groups = None;
+        s.config.extraction.alias.clear();
+        s.config.started.retain(|role| *role != "extraction");
+        let saved = s
+            .patch_config(
+                &json!({ "models": { "roles": { "extraction": { "alias": "kanata/extract" } } } }),
+            )
+            .ok()
+            .expect("saved");
+        assert_eq!(
+            saved["notices"],
+            json!([
+                "The extraction model had none when the bot started: restart to start extraction with kanata/extract."
+            ])
+        );
+        assert!(
+            saved["models"]["roles"]["extraction"]
+                .get("running")
+                .is_none()
+        );
         // Saved roles run at once: the view names what the next call uses.
         assert_eq!(
             view["models"]["roles"]["chat"]["running"]["alias"],
