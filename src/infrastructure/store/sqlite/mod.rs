@@ -186,6 +186,8 @@ impl std::error::Error for SqliteStoreError {
 pub struct SqliteStore {
     writer: Writer,
     readers: SqlitePool,
+    /// Told the runs each committed change touched.
+    runs_written: crate::infrastructure::store::observer::Observer,
     unclosed: UnclosedWarning,
     // Declared last: SQLite handles drop before ownership is released.
     owner: StoreOwner,
@@ -205,6 +207,16 @@ impl Drop for UnclosedWarning {
 }
 
 impl SqliteStore {
+    /// Install the run-write hook (once; `false` if already set). It runs
+    /// after each committed `commit`/`commit_merge` with the touched runs.
+    pub fn observe_run_writes(&self, observer: crate::infrastructure::store::RunObserver) -> bool {
+        self.runs_written.set(observer)
+    }
+
+    pub(super) fn runs_written(&self, runs: &[String]) {
+        self.runs_written.notify(runs);
+    }
+
     pub(super) async fn writer_lease(&self) -> Result<writer::WriterLease<'_>, writer::LeaseError> {
         self.writer.lease().await
     }
@@ -310,6 +322,7 @@ impl SqliteStore {
         Ok(Self {
             writer: Writer::new(db_path.to_owned(), owner.identity(), writer),
             readers,
+            runs_written: Default::default(),
             unclosed: UnclosedWarning {
                 armed: true,
                 db_path: db_path.to_owned(),

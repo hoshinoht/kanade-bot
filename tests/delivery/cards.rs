@@ -9,10 +9,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use kanade::bot::delivery::cards::{
-    ArtKind, ArtSource, COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DIGEST, CardKit, DIGEST_FOOTER,
-    HeadingRewrite, PersonaSource, REACT_HINT, UNNAMED,
+    ArtFile, ArtKind, ArtSource, COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DIGEST, CardKit,
+    DIGEST_FOOTER, HeadingRewrite, PersonaSource, REACT_HINT, UNNAMED,
 };
-use kanade::bot::delivery::{CardRefresh, SendOutcome};
+use kanade::bot::delivery::{CardRefresh, MAX_PENDING_RUNS, RefreshQueue, SendOutcome};
 use kanade::bot::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
@@ -22,6 +22,7 @@ use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, 
 use kanade::domain::history::{Actor, Origin, Surface};
 use kanade::domain::ids::{RandomIds, short_id};
 use kanade::domain::members::{Member, PingLevel, Roster};
+use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::schedule::{EMOJI_NO, EMOJI_YES, NewRun, RunSource, RunStatus};
 use kanade::infrastructure::files::BossArt;
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -474,12 +475,11 @@ async fn digest_card_pins_v4_summary_and_days() {
 struct Unreadable;
 
 impl ArtSource for Unreadable {
-    fn locate(&self, _kind: ArtKind, basename: &str) -> Option<String> {
-        Some(format!("{basename}.png"))
-    }
-
-    fn read(&self, _kind: ArtKind, _file_name: &str) -> Option<Vec<u8>> {
-        None
+    fn find(&self, _kind: ArtKind, basename: &str, _read: bool) -> Option<ArtFile> {
+        Some(ArtFile {
+            file_name: format!("{basename}.png"),
+            bytes: None,
+        })
     }
 }
 
@@ -759,4 +759,205 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         ..refresh
     };
     assert_eq!(later.refresh(std::slice::from_ref(&star)).await, 0);
+}
+
+/// Counts lookups; every picture exists with fixed bytes.
+#[derive(Default)]
+struct Counting {
+    finds: AtomicUsize,
+    reads: AtomicUsize,
+}
+
+impl ArtSource for Counting {
+    fn find(&self, _kind: ArtKind, basename: &str, read: bool) -> Option<ArtFile> {
+        self.finds.fetch_add(1, Ordering::SeqCst);
+        if read {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+        }
+        Some(ArtFile {
+            file_name: format!("{basename}.png"),
+            bytes: read.then(|| b"art".to_vec()),
+        })
+    }
+}
+
+#[tokio::test]
+async fn art_is_resolved_once_per_picture_and_never_for_suppressed_sends() {
+    let store = MemoryScheduleStore::new();
+    let world = world();
+    let art = Arc::new(Counting::default());
+    let cards = CardKit {
+        art: Some(art.clone()),
+        ..kit(None)
+    };
+    seed_day_of(&store).await;
+    // The morning card may have posted: it is held and never resent.
+    world.fake.script(
+        Op::Create,
+        Step::Ambiguous {
+            kind: kanade::bot::transport::AmbiguousKind::Timeout,
+            applied: true,
+        },
+    );
+    let mut delivery = scenarios::delivery(&store, &world, &world.fake).with_cards(cards);
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert_eq!(
+        (
+            art.finds.load(Ordering::SeqCst),
+            art.reads.load(Ordering::SeqCst)
+        ),
+        (2, 2),
+        "portrait and entry art, each found and read in one lookup"
+    );
+    assert_eq!(uploads(&created(&world.fake)[0]).len(), 2);
+    let report = delivery
+        .dispatch_reminders(now() + TimeDelta::seconds(30))
+        .await
+        .expect("dispatch");
+    assert!(
+        !report.sends.is_empty()
+            && report
+                .sends
+                .iter()
+                .all(|send| send.outcome == SendOutcome::Suppressed),
+        "{report:?}"
+    );
+    assert_eq!(
+        art.finds.load(Ordering::SeqCst),
+        2,
+        "no art for a held send"
+    );
+}
+
+#[test]
+fn refresh_requests_coalesce_and_are_bounded() {
+    let queue = RefreshQueue::default();
+    queue.request(&["r1".into(), "r2".into()]);
+    queue.request(&["r1".into()]);
+    assert_eq!(queue.take(), ["r1", "r2"]);
+    assert!(queue.take().is_empty());
+    let many: Vec<String> = (0..MAX_PENDING_RUNS + 10)
+        .map(|n| format!("r{n}"))
+        .collect();
+    queue.request(&many);
+    queue.request(&["r0".into()]);
+    assert_eq!(
+        queue.take().len(),
+        MAX_PENDING_RUNS,
+        "bounded; repeats still fit"
+    );
+}
+
+fn refresher(
+    store: &Arc<MemoryScheduleStore>,
+    fake: &Arc<FakeDiscord>,
+    world: &World,
+    cards: CardKit,
+) -> CardRefresh<MemoryScheduleStore, FakeDiscord> {
+    CardRefresh {
+        store: Arc::clone(store),
+        transport: Arc::clone(fake),
+        members: Arc::new(world.roster.clone()),
+        cards,
+        policy: scenarios::config().policy,
+        quiet: Arc::new(AtomicBool::new(false)),
+        now: Arc::new(|| now() + TimeDelta::minutes(1)),
+    }
+}
+
+/// Any run write committed through the store queues a refresh; the task
+/// edits the reminder card and the week's digest, then stops on request.
+#[tokio::test]
+async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let (star, _) = seed_day_of(&*store).await;
+    with_lease(&*store, now(), async |lease| {
+        store
+            .record_digest_week(lease, previous_week(), now())
+            .await
+            .expect("digest week");
+    })
+    .await;
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(kit(None));
+    delivery.post_week_digest(now()).await.expect("digest");
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert_eq!(created(&fake).len(), 2, "digest and morning card");
+
+    let queue = Arc::new(RefreshQueue::default());
+    let queued = Arc::clone(&queue);
+    assert!(store.observe_run_writes(Arc::new(move |runs: &[String]| queued.request(runs))));
+    let refresh = Arc::new(refresher(&store, &fake, &world, kit(None)));
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let task = {
+        let (refresh, queue) = (Arc::clone(&refresh), Arc::clone(&queue));
+        tokio::spawn(async move { refresh.run(&queue, stopped).await })
+    };
+    // 1002 answers through the scheduler (any surface): one commit.
+    answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
+    let edited = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if edits(&fake).len() >= 2 {
+                break edits(&fake);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("both cards edited");
+    let texts: Vec<String> = edited
+        .iter()
+        .map(|edit| {
+            let embed = &edit.embeds.as_ref().expect("embed")[0];
+            fields(embed)
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("⚠️ unconfirmed · 1/2 ✅")),
+        "the morning card: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|text| text.contains("`21:00` · 1/2 ✅")),
+        "the week's digest: {texts:?}"
+    );
+    stop.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .expect("stops promptly")
+        .expect("no panic");
+}
+
+#[tokio::test]
+async fn both_stores_report_committed_run_writes_once() {
+    async fn check<S: Store>(
+        store: &S,
+        observe: impl FnOnce(kanade::infrastructure::store::RunObserver) -> bool,
+    ) {
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = Arc::clone(&seen);
+        assert!(observe(Arc::new(move |runs: &[String]| {
+            sink.lock().unwrap().extend_from_slice(runs);
+        })));
+        let id = run(store, &["XKalos"], &["1001"], tonight(), RunStatus::Planned).await;
+        answer(store, &id, "1001", true, now()).await;
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen, [id.clone(), id], "the create, then the answer");
+    }
+    let memory = MemoryScheduleStore::new();
+    check(&memory, |observer| memory.observe_run_writes(observer)).await;
+    let dir = TempDir::new();
+    let sqlite = dir.open().await;
+    check(&sqlite, |observer| sqlite.observe_run_writes(observer)).await;
+    assert!(
+        !sqlite.observe_run_writes(Arc::new(|_: &[String]| {})),
+        "installed once"
+    );
+    sqlite.close().await.expect("close");
 }

@@ -3,6 +3,7 @@
 //! pass are test support.
 
 mod history;
+mod observer;
 mod order;
 pub mod sqlite;
 pub mod web_sessions;
@@ -40,4 +41,5 @@ pub mod web_sessions_conformance;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::MemoryScheduleStore;
+pub use observer::RunObserver;
 pub use sqlite::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};

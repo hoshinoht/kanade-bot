@@ -869,7 +869,8 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
         expected_version: u64,
         note: Option<String>,
     ) -> Result<MergeCommit, StoreError> {
-        write_txn!(
+        let runs = crate::infrastructure::store::observer::touched_runs(&changes);
+        let result = write_txn!(
             self,
             tx,
             commit_merge_in(
@@ -881,7 +882,13 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
                 expected_version,
                 note.as_deref()
             )
-        )
+        );
+        if let Ok(MergeCommit::Committed(committed)) = &result
+            && !committed.replayed
+        {
+            self.runs_written(&runs);
+        }
+        result
     }
 
     async fn expire_drafts(

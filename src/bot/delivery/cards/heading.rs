@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde_json::json;
 
 use crate::chat::nudge::{
-    NudgeRewriter, REWRITE_DEADLINE, RewritePrompt, SharedRewriter, accept_rewrite,
+    NudgeRewriter, REWRITE_DEADLINE, RewriteFailure, RewritePrompt, SharedRewriter, accept_rewrite,
 };
 use crate::chat::persona::{CompiledPersona, NudgeMood};
 use crate::runtime::logging;
@@ -35,6 +35,16 @@ impl HeadingSource {
             Self::Rewrite => "rewrite",
             Self::Seed => "seed",
         }
+    }
+}
+
+/// The `day_of_heading` log reason for a rewriter failure; operator
+/// settings stay distinguishable from outages.
+pub fn failure_reason(failure: RewriteFailure) -> &'static str {
+    match failure {
+        RewriteFailure::Unavailable => "unavailable",
+        RewriteFailure::Refused => "refused",
+        RewriteFailure::Misconfigured => "misconfigured",
     }
 }
 
@@ -94,11 +104,26 @@ impl HeadingRewrite {
         let call = rewriter.rewrite(&prompt, REWRITE_DEADLINE);
         match tokio::time::timeout(REWRITE_DEADLINE, call).await {
             Err(_) => (seed(), HeadingSource::Seed, "timeout"),
-            Ok(Err(_)) => (seed(), HeadingSource::Seed, "unavailable"),
+            Ok(Err(failure)) => (seed(), HeadingSource::Seed, failure_reason(failure)),
             Ok(Ok(text)) => match accept_rewrite(&text, DAY_OF_HEADING_SEED) {
                 Ok(line) => (line, HeadingSource::Rewrite, "accepted"),
                 Err(_) => (seed(), HeadingSource::Seed, "rejected"),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_failure_logs_its_own_reason() {
+        assert_eq!(failure_reason(RewriteFailure::Unavailable), "unavailable");
+        assert_eq!(failure_reason(RewriteFailure::Refused), "refused");
+        assert_eq!(
+            failure_reason(RewriteFailure::Misconfigured),
+            "misconfigured"
+        );
     }
 }

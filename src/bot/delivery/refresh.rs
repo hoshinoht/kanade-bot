@@ -1,27 +1,80 @@
-//! Re-rendering posted reminder cards after an RSVP (v4 `refresh_run_cards`
-//! for reminders): each bound card with a record naming a run still ahead is
-//! edited in place from the current answers. The edit keeps the posted
-//! attachments, reuses the stored day-of heading and notifies nobody.
-//! Cards posted before records existed (plain text) are left alone.
+//! Re-rendering posted cards after a run changes (v4 `card_needs_refresh`,
+//! `refresh_run_cards`, `refresh_weekly_digest`). Every run write queues the
+//! run ids ([`RefreshQueue`], fed by the store's run-write observer); one
+//! task ([`CardRefresh::run`]) drains them in coalesced batches, off the
+//! reaction worker and the tick. Per batch: each bound reminder card with a
+//! record naming a run still ahead is edited from current answers (same
+//! heading, art referenced by its posted names, nothing uploaded, nobody
+//! notified), then the active digest of each touched week. Cards posted
+//! before records existed (plain text) are left alone.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, Utc};
+use serde_json::json;
+use tokio::sync::{Notify, watch};
 
-use super::cards::{self, CardContext, CardKit, DAY_OF_KIND, PostedCard, ReminderCardStore};
+use super::cards::{
+    self, CardArt, CardContext, CardKit, DAY_OF_KIND, PostedCard, ReminderCardStore, fetch_art,
+};
 use crate::bot::ids::parse_id;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::attendance::{AttendanceMode, countdown_mentions, morning_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    IntentContent, PingKind, countdown_minutes, everyone_on, resolve_mentions,
+    DeliveryJournal, IntentContent, PingKind, countdown_minutes, digest_inclusion, everyone_on,
+    resolve_mentions,
 };
 use crate::domain::schedule::{SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};
+use crate::runtime::logging;
 
 pub type Now = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
+
+/// Distinct runs held for the next batch; more are dropped (and logged):
+/// a stale tally is cosmetic, an unbounded queue is not.
+pub const MAX_PENDING_RUNS: usize = 1024;
+
+/// Runs whose posted cards need a re-render. Requests coalesce: a run
+/// queued many times before the task wakes is refreshed once.
+#[derive(Debug, Default)]
+pub struct RefreshQueue {
+    pending: Mutex<BTreeSet<String>>,
+    wake: Notify,
+}
+
+impl RefreshQueue {
+    /// Queue `run_ids`; cheap and non-blocking, safe from a store commit.
+    pub fn request(&self, run_ids: &[String]) {
+        if run_ids.is_empty() {
+            return;
+        }
+        let mut dropped = 0;
+        {
+            let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            for id in run_ids {
+                if pending.len() < MAX_PENDING_RUNS || pending.contains(id) {
+                    pending.insert(id.clone());
+                } else {
+                    dropped += 1;
+                }
+            }
+        }
+        if dropped > 0 {
+            logging::event("WARN", "card_refresh_dropped", json!({"runs": dropped}));
+        }
+        self.wake.notify_one();
+    }
+
+    /// Everything queued so far, emptied.
+    pub fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.pending.lock().unwrap_or_else(PoisonError::into_inner))
+            .into_iter()
+            .collect()
+    }
+}
 
 pub struct CardRefresh<S, T> {
     pub store: Arc<S>,
@@ -36,11 +89,34 @@ pub struct CardRefresh<S, T> {
 
 impl<S, T> CardRefresh<S, T>
 where
-    S: ScheduleStore + ReminderCardStore + Sync,
+    S: ScheduleStore + ReminderCardStore + DeliveryJournal + Sync,
     T: DiscordTransport,
 {
-    /// Edit the posted cards of `run_ids`; returns how many edits landed.
-    /// Failures are skipped: a stale tally is cosmetic.
+    /// Drain `queue` until `stop` turns true; a batch in flight is abandoned
+    /// at stop (edits are idempotent and nothing is journalled).
+    pub async fn run(&self, queue: &RefreshQueue, mut stop: watch::Receiver<bool>) {
+        loop {
+            tokio::select! {
+                biased;
+                _ = stop.wait_for(|stop| *stop) => return,
+                () = queue.wake.notified() => {}
+            }
+            loop {
+                let batch = queue.take();
+                if batch.is_empty() {
+                    break;
+                }
+                tokio::select! {
+                    biased;
+                    _ = stop.wait_for(|stop| *stop) => return,
+                    _ = self.refresh(&batch) => {}
+                }
+            }
+        }
+    }
+
+    /// Edit the posted cards of `run_ids` and their weeks' digests; returns
+    /// how many edits landed. Failures are skipped: a stale tally is cosmetic.
     pub async fn refresh(&self, run_ids: &[String]) -> usize {
         let now = (self.now)();
         let Ok(schedule) = self.store.load(&Scope::All).await else {
@@ -66,7 +142,67 @@ where
                 }
             }
         }
+        edited + self.refresh_digests(&schedule, run_ids).await
+    }
+
+    /// v4 `refresh_weekly_digest`: the active digest of each touched week,
+    /// including runs that already happened (it records the week).
+    async fn refresh_digests(&self, schedule: &ScheduleSnapshot, run_ids: &[String]) -> usize {
+        let weeks: BTreeSet<DateTime<Utc>> = schedule
+            .runs
+            .iter()
+            .filter(|run| run_ids.contains(&run.id))
+            .map(|run| run.week_start)
+            .collect();
+        if weeks.is_empty() {
+            return 0;
+        }
+        let Ok(log) = self.store.load_digests().await else {
+            return 0;
+        };
+        let zone = self.policy.zone();
+        let mut edited = 0;
+        for digest in log
+            .digests
+            .iter()
+            .filter(|digest| digest.retired_at.is_none() && weeks.contains(&digest.week_start))
+        {
+            let (Some(channel), Some(message), Ok(inclusion)) = (
+                parse_id(&digest.channel_id),
+                parse_id(&digest.message_id),
+                digest_inclusion(&schedule.runs, digest.week_start, zone),
+            ) else {
+                continue;
+            };
+            let content = IntentContent::Digest {
+                week_start: digest.week_start,
+                inclusion,
+            };
+            let Some(card) = cards::build(&content, &self.context(schedule), None, &[]) else {
+                continue;
+            };
+            let edit = card.edit(&CardArt::default());
+            if self
+                .transport
+                .edit_message(channel, message, &edit)
+                .await
+                .is_delivered()
+            {
+                edited += 1;
+            }
+        }
         edited
+    }
+
+    fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
+        CardContext {
+            schedule,
+            attendance: self.policy.attendance,
+            zone: self.policy.zone(),
+            quiet: self.quiet.load(Ordering::Relaxed),
+            members: &*self.members,
+            catalog: self.cards.catalog.as_deref(),
+        }
     }
 
     async fn edit(&self, schedule: &ScheduleSnapshot, posted: &PostedCard) -> bool {
@@ -91,20 +227,14 @@ where
                 minutes,
             }
         };
-        let ctx = CardContext {
-            schedule,
-            attendance: self.policy.attendance,
-            zone: self.policy.zone(),
-            quiet: self.quiet.load(Ordering::Relaxed),
-            members: &*self.members,
-            catalog: self.cards.catalog.as_deref(),
-        };
+        let ctx = self.context(schedule);
         let mentioned = self.mentioned(&ctx, &content);
         let Some(card) = cards::build(&content, &ctx, posted.record.heading.as_deref(), &mentioned)
         else {
             return false;
         };
-        let edit = card.edit(self.cards.art.as_deref());
+        let pictures = fetch_art(self.cards.art.as_ref(), &card, false).await;
+        let edit = card.edit(&pictures);
         self.transport
             .edit_message(channel, message, &edit)
             .await

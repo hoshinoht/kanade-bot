@@ -19,7 +19,7 @@ use super::cards::{CardContext, CardKit, ReminderCardStore};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
-use super::render::render;
+use super::render::{render, unrendered};
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{
@@ -577,12 +577,18 @@ where
             report.outcome = DigestOutcome::ReplacementSuppressed(reason);
             return Ok(report);
         }
-        let message = render(
-            &post.send.intent,
-            &self.card_context(&week),
-            None,
-            self.cards.art.as_deref(),
-        );
+        let message = match post.send.disposition {
+            SendDisposition::Send => {
+                render(
+                    &post.send.intent,
+                    &self.card_context(&week),
+                    None,
+                    self.cards.art.as_ref(),
+                )
+                .await
+            }
+            SendDisposition::Suppressed => unrendered(),
+        };
         let outcome = settle(
             executor
                 .execute(&post.send, &message, None, post.record_week, now)
@@ -632,16 +638,18 @@ where
                 report.deferred += 1;
                 continue;
             }
-            let ctx = self.card_context(&schedule);
-            // Held or suppressed sends post nothing: no record, no rewrite.
-            let record = match send.disposition {
+            // Suppressed sends post nothing: no record, rewrite or art read.
+            let message = match send.disposition {
                 SendDisposition::Send => {
-                    card_records::prepare(self.store, &self.cards, &ctx, &send.intent, now).await
+                    let ctx = self.card_context(&schedule);
+                    let record =
+                        card_records::prepare(self.store, &self.cards, &ctx, &send.intent, now)
+                            .await;
+                    let heading = record.as_ref().and_then(|record| record.heading.as_deref());
+                    render(&send.intent, &ctx, heading, self.cards.art.as_ref()).await
                 }
-                SendDisposition::Suppressed => None,
+                SendDisposition::Suppressed => unrendered(),
             };
-            let heading = record.as_ref().and_then(|record| record.heading.as_deref());
-            let message = render(&send.intent, &ctx, heading, self.cards.art.as_deref());
             let result = executor.execute(&send, &message, None, None, now).await;
             if matches!(&result, Err(failure) if failure.attempt.is_some())
                 || result.as_ref().is_ok_and(SendOutcome::claimed)

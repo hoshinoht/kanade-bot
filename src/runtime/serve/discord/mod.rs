@@ -8,7 +8,7 @@
 //! registration tasks) → chat stops (waiting questions refunded, running
 //! ones finish within the grace or are cut, each concluded) → extraction
 //! (feed, pipeline, `Rescans::close`; calls in flight cancelled) → roster and
-//! reaction workers drain → the running tick finishes (polled throughout) →
+//! reaction and card-refresh workers drain → the running tick finishes (polled throughout) →
 //! (caller) HTTP drain → store close.
 
 mod late;
@@ -41,7 +41,7 @@ use crate::{
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::{CardRefresh, LogAlerts},
+        delivery::{CardRefresh, LogAlerts, RefreshQueue},
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -279,6 +279,11 @@ where
         quiet: Arc::clone(&quiet),
         now: Arc::clone(&wiring.clock),
     });
+    // Every committed run write (reactions, commands, API, chat, proposals,
+    // the tick) queues a card refresh; one task drains it.
+    let refresh_queue = Arc::new(RefreshQueue::default());
+    let queued = Arc::clone(&refresh_queue);
+    store.observe_run_writes(Arc::new(move |runs: &[String]| queued.request(runs)));
     let tick = TickLoop {
         store: Arc::clone(&store),
         transport: Arc::clone(&wiring.transport),
@@ -353,15 +358,12 @@ where
 
     let mut workers = vec![
         tokio::spawn(roster_task.run(roster_queue)),
-        tokio::spawn(
-            Reactions {
-                desk,
-                rsvp,
-                refresh: Some(refresh),
-            }
-            .run(reaction_queue),
-        ),
+        tokio::spawn(Reactions { desk, rsvp }.run(reaction_queue)),
     ];
+    let refresh_stop = stopped.clone();
+    workers.push(tokio::spawn(async move {
+        refresh.run(&refresh_queue, refresh_stop).await;
+    }));
     let identity_dir = config.runtime.http.identity_dir.as_deref();
     let transport = Arc::clone(&wiring.transport);
     workers.extend(identity::spawn(

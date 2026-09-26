@@ -354,9 +354,13 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
 - **Art** (`art.rs`, `infrastructure::files::BossArt` over
   `KANADE_BOSS_DIR`): `portraits/<portrait or key>.<png|webp|jpg|jpeg>` and
   `artwork/entry/<key>.<ext>`, matched exactly (case included) against the
-  directory listing, at most 4 MiB each. Uploaded as `<file>` and
-  `image-<file>` (v4 `IMAGE_PREFIX`). Missing, oversized or unreadable art
-  drops the picture, never the send.
+  directory listing, at most 1.5 MiB each (the shipped art peaks at
+  ~1.2 MB entry / ~0.2 MB portrait, so a post stays well inside the 10 s
+  upload attempt: a timed-out upload is ambiguous and never resent).
+  Uploaded as `<file>` and `image-<file>` (v4 `IMAGE_PREFIX`). Missing,
+  oversized (logged `card_art_skipped`) or unreadable art drops the
+  picture, never the send. Each picture is resolved and read in one lookup
+  on the blocking pool (`fetch_art`); suppressed sends are not rendered.
 - **Records** (migration 0014 `reminder_cards`, `ReminderCardStore`, both
   stores + journal conformance): before a reminder card is claimed, its kind
   (`day_of` / `countdown_<M>`) and day-of heading are stored under the
@@ -364,13 +368,24 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
   restart and every edit reuse them. Dedupe and request fingerprints are
   unchanged: both hash the intent, never the rendered payload, so embeds and
   attachments cannot affect them.
-- **Edits** (`refresh.rs`, `CardRefresh`, v4 `refresh_run_cards`): after the
-  reaction worker applies an RSVP, every bound reminder card with a record
-  naming a run that has not started is re-rendered from current answers and
-  edited: same heading, art referenced by the posted names, nothing
-  uploaded, allow-list empty. Mentions in the text are planned as dispatch
-  plans them; quiet mode is read live from the tick. Cards posted before
-  records existed are left as they are. Digest edits are not wired.
+- **Edits** (`refresh.rs`, v4 `card_needs_refresh` / `refresh_run_cards` /
+  `refresh_weekly_digest`): the store's run-write observer
+  (`observe_run_writes`, called after every committed `commit` /
+  `commit_merge` with the runs whose row or RSVPs it wrote) queues run ids
+  in a `RefreshQueue` (coalesced per run, at most 1024 pending, excess
+  dropped and logged). One worker (`CardRefresh::run`) drains it in batches,
+  off the reaction worker and the tick, and stops at shutdown mid-batch.
+  So reactions, `/rsvp` and other commands, the portal/admin API, chat,
+  applied proposals, extraction and the tick's own status changes all
+  refresh. Per batch: every bound reminder card with a record naming a run
+  that has not started is re-rendered from current answers and edited (same
+  heading, art referenced by the posted names, nothing uploaded, allow-list
+  empty; mentions in the text planned as dispatch plans them; quiet mode
+  read live from the tick), then the active digest of each touched week
+  (also for runs already done). Cards posted before records existed are
+  left as they are. Not covered: weekly-timing-only writes (standing
+  answers, attendance default) that change v5 derived states without a run
+  write.
 
 **Named difference from v4 — day-of heading (user decision 2026-09-26).**
 The heading is rewritten in the guild default persona's voice (bundle, no
@@ -384,7 +399,8 @@ data. It is tried once per card before the claim, bounded by the 2 s
 `accept_rewrite`; failure, timeout, rejection, no `rewrite` role or no
 persona → exactly v4's `Today — <Ddd DD Mon>`. The chosen line is stored in
 the card record; `day_of_heading` logs `source` (`rewrite`/`seed`) and a
-reason, never the text. Serve wires it in `runtime::serve::tick::card_kit`
+reason (`no_rewriter`, `no_persona`, `timeout`, `unavailable`, `refused`,
+`misconfigured`, `rejected`, `accepted`), never the text. Serve wires it in `runtime::serve::tick::card_kit`
 (identity codec: `Passthrough`; the prompt carries no member data).
 
 ## Proposal cards

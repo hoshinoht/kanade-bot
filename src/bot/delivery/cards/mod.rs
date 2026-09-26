@@ -20,8 +20,8 @@ use twilight_model::channel::message::embed::{
 };
 
 pub use art::{
-    ArtKind, ArtRef, ArtSource, IMAGE_PREFIX, MAX_ART_BYTES, attachment_name, lead_entry_art,
-    lead_portrait,
+    ArtFile, ArtKind, ArtRef, ArtSource, CardArt, IMAGE_PREFIX, MAX_ART_BYTES, Picture,
+    attachment_name, fetch_art, lead_entry_art, lead_portrait,
 };
 pub use common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DAY_OF, COLOUR_DIGEST, CardContext, REACT_HINT,
@@ -31,7 +31,7 @@ pub use countdown::countdown_card;
 pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
-    DAY_OF_HEADING_SEED, HeadingRewrite, HeadingSource, PersonaSource, seed_heading,
+    DAY_OF_HEADING_SEED, HeadingRewrite, HeadingSource, PersonaSource, failure_reason, seed_heading,
 };
 pub use record::{CardRecord, DAY_OF_KIND, PostedCard, ReminderCardStore};
 
@@ -108,23 +108,6 @@ pub fn build(
     }
 }
 
-/// An art reference resolved to its file and attachment name.
-struct Located {
-    kind: ArtKind,
-    file_name: String,
-    attachment: String,
-}
-
-fn locate(art: Option<&dyn ArtSource>, wanted: Option<&ArtRef>) -> Option<Located> {
-    let wanted = wanted?;
-    let file_name = art?.locate(wanted.kind, &wanted.basename)?;
-    Some(Located {
-        kind: wanted.kind,
-        attachment: attachment_name(wanted.kind, &file_name),
-        file_name,
-    })
-}
-
 impl Card {
     fn embed(&self, thumbnail: Option<&str>, image: Option<&str>) -> Embed {
         let url = |name: &str| format!("attachment://{name}");
@@ -167,21 +150,20 @@ impl Card {
         }
     }
 
-    /// The post: art read and uploaded now; a picture that cannot be read
-    /// is left off rather than failing the send.
-    pub fn message(&self, mentioned: &[String], art: Option<&dyn ArtSource>) -> OutgoingMessage {
+    /// The post, with the pictures [`fetch_art`] read (`read = true`); a
+    /// picture that could not be read is left off rather than failing it.
+    pub fn message(&self, mentioned: &[String], art: &CardArt) -> OutgoingMessage {
         let mut uploads = Vec::new();
-        let mut attach = |wanted: Option<&ArtRef>| {
-            let located = locate(art, wanted)?;
-            let bytes = art?.read(located.kind, &located.file_name)?;
+        let mut attach = |picture: Option<&Picture>| {
+            let picture = picture?;
             uploads.push(Upload {
-                filename: located.attachment.clone(),
-                bytes: bytes.into(),
+                filename: picture.attachment.clone(),
+                bytes: picture.bytes.clone()?,
             });
-            Some(located.attachment)
+            Some(picture.attachment.clone())
         };
-        let thumbnail = attach(self.thumbnail.as_ref());
-        let image = attach(self.image.as_ref());
+        let thumbnail = attach(art.thumbnail.as_ref());
+        let image = attach(art.image.as_ref());
         OutgoingMessage {
             content: Some(self.content.clone()),
             embeds: vec![self.embed(thumbnail.as_deref(), image.as_deref())],
@@ -192,13 +174,15 @@ impl Card {
     }
 
     /// A re-render of a posted card: nothing is uploaded again and nobody is
-    /// notified. Art is referenced by the name it was posted under.
-    pub fn edit(&self, art: Option<&dyn ArtSource>) -> MessageEdit {
-        let thumbnail = locate(art, self.thumbnail.as_ref()).map(|found| found.attachment);
-        let image = locate(art, self.image.as_ref()).map(|found| found.attachment);
+    /// notified. Pictures (from [`fetch_art`] with `read = false`) are
+    /// referenced by the name they were posted under.
+    pub fn edit(&self, art: &CardArt) -> MessageEdit {
+        let name = |picture: &Option<Picture>| picture.as_ref().map(|p| p.attachment.clone());
         MessageEdit {
             content: Some(self.content.clone()),
-            embeds: Some(vec![self.embed(thumbnail.as_deref(), image.as_deref())]),
+            embeds: Some(vec![
+                self.embed(name(&art.thumbnail).as_deref(), name(&art.image).as_deref()),
+            ]),
             allowed_mentions: mentions::none(),
         }
     }

@@ -1,16 +1,23 @@
 //! Boss art on cards (v4 `lead_portrait`, `lead_entry_art`): the lead boss's
 //! portrait as the thumbnail and, on day-of cards only, its entry artwork as
 //! the image. Files are uploaded with the post and referenced as
-//! `attachment://<name>`; missing or unreadable art only drops the picture.
+//! `attachment://<name>`; missing, oversized or unreadable art only drops
+//! the picture. Lookups block on the filesystem, so they run off the async
+//! runtime ([`fetch_art`]), once per picture.
 
+use std::sync::Arc;
+
+use super::Card;
 use crate::domain::catalog::BossTable;
 
 /// v4 `IMAGE_PREFIX`: the entry art's attachment name, so it never collides
 /// with the portrait's.
 pub const IMAGE_PREFIX: &str = "image-";
-/// Largest art file uploaded; bigger files are skipped (Discord's default
-/// upload limit is 10 MiB per message).
-pub const MAX_ART_BYTES: u64 = 4 * 1024 * 1024;
+/// Largest art file uploaded; bigger files are skipped and logged. The
+/// shipped art peaks at ~1.2 MB (entry) and ~0.2 MB (portraits), so a day-of
+/// post stays under ~3 MiB: small enough to upload well inside the 10 s
+/// attempt timeout, since a timed-out upload is ambiguous and never resent.
+pub const MAX_ART_BYTES: u64 = 3 * 512 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArtKind {
@@ -27,15 +34,66 @@ pub struct ArtRef {
     pub basename: String,
 }
 
+/// One located picture: its file name (`<basename>.<ext>`) and, when read,
+/// its bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtFile {
+    pub file_name: String,
+    pub bytes: Option<Vec<u8>>,
+}
+
 /// Where boss art is read from (the configured boss directory in serve).
 /// Lookups are exact-case on every platform.
 pub trait ArtSource: Send + Sync {
-    /// The file name (`<basename>.<ext>`) if the art exists as a regular
-    /// file of at most [`MAX_ART_BYTES`].
-    fn locate(&self, kind: ArtKind, basename: &str) -> Option<String>;
+    /// Blocking: resolve the art once and, with `read`, read it. `None` if it
+    /// is not a regular file of at most [`MAX_ART_BYTES`]. Call through
+    /// [`fetch_art`].
+    fn find(&self, kind: ArtKind, basename: &str, read: bool) -> Option<ArtFile>;
+}
 
-    /// The bytes of a located file; `None` if it cannot be read in bounds.
-    fn read(&self, kind: ArtKind, file_name: &str) -> Option<Vec<u8>>;
+/// A picture resolved for one card: its attachment name and, for a post,
+/// its bytes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Picture {
+    pub attachment: String,
+    pub bytes: Option<Arc<[u8]>>,
+}
+
+/// The card's thumbnail and image, resolved.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CardArt {
+    pub thumbnail: Option<Picture>,
+    pub image: Option<Picture>,
+}
+
+/// Resolve (and with `read`, read) the card's pictures on the blocking pool.
+/// Any failure leaves the picture off.
+pub async fn fetch_art(art: Option<&Arc<dyn ArtSource>>, card: &Card, read: bool) -> CardArt {
+    let Some(art) = art.cloned() else {
+        return CardArt::default();
+    };
+    let wanted = [card.thumbnail.clone(), card.image.clone()];
+    if wanted.iter().all(Option::is_none) {
+        return CardArt::default();
+    }
+    let found = tokio::task::spawn_blocking(move || {
+        wanted.map(|wanted| {
+            let wanted = wanted?;
+            let file = art.find(wanted.kind, &wanted.basename, read)?;
+            if read && file.bytes.is_none() {
+                return None;
+            }
+            Some(Picture {
+                attachment: attachment_name(wanted.kind, &file.file_name),
+                bytes: file.bytes.map(Arc::from),
+            })
+        })
+    })
+    .await;
+    match found {
+        Ok([thumbnail, image]) => CardArt { thumbnail, image },
+        Err(_) => CardArt::default(),
+    }
 }
 
 /// The lead boss's portrait: the catalog `portrait` basename, else its key.

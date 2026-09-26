@@ -5,9 +5,12 @@
 
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::bot::delivery::cards::{ArtKind, ArtSource, MAX_ART_BYTES};
+use serde_json::json;
+
+use crate::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, MAX_ART_BYTES};
+use crate::runtime::logging;
 
 /// Accepted extensions, in lookup order (as the portal's `/art`).
 const SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
@@ -28,14 +31,6 @@ impl BossArt {
             ArtKind::Entry => self.root.join("artwork").join("entry"),
         }
     }
-
-    /// `path` if it is a regular file inside the boss directory within bounds.
-    fn usable(&self, path: &Path) -> Option<PathBuf> {
-        let root = self.root.canonicalize().ok()?;
-        let file = path.canonicalize().ok()?;
-        let meta = fs::metadata(&file).ok()?;
-        (file.starts_with(&root) && meta.is_file() && meta.len() <= MAX_ART_BYTES).then_some(file)
-    }
 }
 
 /// Catalog basenames only: ASCII alphanumerics, `_` and `-`.
@@ -46,8 +41,23 @@ fn plain(basename: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
+fn kind_name(kind: ArtKind) -> &'static str {
+    match kind {
+        ArtKind::Portrait => "portrait",
+        ArtKind::Entry => "entry",
+    }
+}
+
+fn skipped(kind: ArtKind, basename: &str, reason: &str) {
+    logging::event(
+        "WARN",
+        "card_art_skipped",
+        json!({"kind": kind_name(kind), "boss": basename, "reason": reason}),
+    );
+}
+
 impl ArtSource for BossArt {
-    fn locate(&self, kind: ArtKind, basename: &str) -> Option<String> {
+    fn find(&self, kind: ArtKind, basename: &str, read: bool) -> Option<ArtFile> {
         if !plain(basename) {
             return None;
         }
@@ -56,25 +66,33 @@ impl ArtSource for BossArt {
             .ok()?
             .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
             .collect();
-        SUFFIXES
+        let file_name = SUFFIXES
             .iter()
             .map(|suffix| format!("{basename}.{suffix}"))
-            .find(|name| names.contains(name) && self.usable(&dir.join(name)).is_some())
-    }
-
-    fn read(&self, kind: ArtKind, file_name: &str) -> Option<Vec<u8>> {
-        let (stem, _) = file_name.rsplit_once('.')?;
-        if self.locate(kind, stem).as_deref() != Some(file_name) {
+            .find(|name| names.contains(name))?;
+        let root = self.root.canonicalize().ok()?;
+        let path = dir.join(&file_name).canonicalize().ok()?;
+        let meta = fs::metadata(&path).ok()?;
+        if !path.starts_with(&root) || !meta.is_file() {
             return None;
         }
-        let path = self.usable(&self.dir(kind).join(file_name))?;
-        let mut bytes = Vec::new();
-        fs::File::open(path)
-            .ok()?
-            .take(MAX_ART_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .ok()?;
-        (bytes.len() as u64 <= MAX_ART_BYTES).then_some(bytes)
+        if meta.len() > MAX_ART_BYTES {
+            skipped(kind, basename, "too_large");
+            return None;
+        }
+        let bytes = if read {
+            let mut bytes = Vec::new();
+            let opened = fs::File::open(&path)
+                .and_then(|file| file.take(MAX_ART_BYTES + 1).read_to_end(&mut bytes));
+            if opened.is_err() || bytes.len() as u64 > MAX_ART_BYTES {
+                skipped(kind, basename, "unreadable");
+                return None;
+            }
+            Some(bytes)
+        } else {
+            None
+        };
+        Some(ArtFile { file_name, bytes })
     }
 }
 
@@ -91,6 +109,10 @@ mod tests {
         dir
     }
 
+    fn name(file: Option<ArtFile>) -> Option<String> {
+        file.map(|file| file.file_name)
+    }
+
     #[test]
     fn names_match_exactly_including_case() {
         let root = temp();
@@ -98,18 +120,22 @@ mod tests {
         fs::write(root.join("artwork/entry/Kalos.webp"), b"kalos").unwrap();
         let art = BossArt::new(&root);
         assert_eq!(
-            art.locate(ArtKind::Portrait, "MaleficStar").as_deref(),
-            Some("MaleficStar.png")
+            art.find(ArtKind::Portrait, "MaleficStar", false),
+            Some(ArtFile {
+                file_name: "MaleficStar.png".into(),
+                bytes: None
+            })
         );
-        assert_eq!(art.locate(ArtKind::Portrait, "maleficstar"), None);
-        assert_eq!(art.locate(ArtKind::Portrait, "Kalos"), None);
+        assert_eq!(name(art.find(ArtKind::Portrait, "maleficstar", true)), None);
+        assert_eq!(name(art.find(ArtKind::Portrait, "Kalos", true)), None);
         assert_eq!(
-            art.read(ArtKind::Entry, "Kalos.webp").as_deref(),
+            art.find(ArtKind::Entry, "Kalos", true)
+                .and_then(|file| file.bytes)
+                .as_deref(),
             Some(&b"kalos"[..])
         );
-        assert_eq!(art.read(ArtKind::Entry, "kalos.webp"), None);
         assert_eq!(
-            art.locate(ArtKind::Portrait, "../portraits/MaleficStar"),
+            name(art.find(ArtKind::Portrait, "../portraits/MaleficStar", true)),
             None
         );
         fs::remove_dir_all(root).unwrap();
@@ -120,11 +146,17 @@ mod tests {
         let root = temp();
         let big = vec![0_u8; usize::try_from(MAX_ART_BYTES).unwrap() + 1];
         fs::write(root.join("portraits/Seren.png"), big).unwrap();
+        let fits = vec![0_u8; usize::try_from(MAX_ART_BYTES).unwrap()];
+        fs::write(root.join("artwork/entry/Seren.png"), fits).unwrap();
         let art = BossArt::new(&root);
-        assert_eq!(art.locate(ArtKind::Portrait, "Seren"), None);
-        assert_eq!(art.read(ArtKind::Portrait, "Seren.png"), None);
+        assert_eq!(art.find(ArtKind::Portrait, "Seren", false), None);
+        assert_eq!(art.find(ArtKind::Portrait, "Seren", true), None);
+        assert!(
+            art.find(ArtKind::Entry, "Seren", true).is_some(),
+            "at the cap"
+        );
         assert_eq!(
-            BossArt::new(root.join("absent")).locate(ArtKind::Entry, "Seren"),
+            BossArt::new(root.join("absent")).find(ArtKind::Entry, "Seren", true),
             None
         );
         fs::remove_dir_all(root).unwrap();

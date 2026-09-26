@@ -444,8 +444,14 @@ impl ScheduleStore for SqliteStore {
             .lease()
             .await
             .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let runs = crate::infrastructure::store::observer::touched_runs(&changes);
         let (result, healthy) = commit_on(lease.conn(), expected_revision, changes, meta).await;
         lease.finish(healthy);
+        if let Ok(Some(committed)) = &result
+            && !committed.replayed
+        {
+            self.runs_written(&runs);
+        }
         result
     }
 }
