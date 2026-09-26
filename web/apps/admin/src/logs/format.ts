@@ -44,3 +44,11 @@ export function duration(ms: number | null | undefined): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
   return `${(ms / 60_000).toFixed(1)} min`;
 }
+
+// Opening/closing code fences, with an optional info string (```py).
+const FENCE = /```[\w+#.-]*/g;
+
+/** One-line preview of free text for a log cell: fences dropped, newlines and whitespace runs as single spaces. */
+export function preview(text: string): string {
+  return text.replace(FENCE, ' ').replace(/\s+/g, ' ').trim();
+}

@@ -47,6 +47,19 @@ td {
   vertical-align: top;
 }
 
+// Free text in a log row (a pasted question, a message) stays two lines at
+// most; the full text is on the row's own page and in the cell's tooltip.
+.cell-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-width: 12rem;
+  max-width: 42rem;
+}
+
 td.num,
 th.num {
   text-align: right;

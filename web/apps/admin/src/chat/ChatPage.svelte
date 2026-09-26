@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
   import LogTime from '../logs/LogTime.svelte';
-  import { duration } from '../logs/format';
+  import { duration, preview } from '../logs/format';
+  import { mentionsText } from './transcript';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -102,7 +103,7 @@
             {#each shown.rows as row (row.id)}
               {@const models = row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}
               <tr>
-                <th scope="row"><a href="/chat/{row.id}"><Mentions text={row.asked} plain asked dropBot /></a></th>
+                <th scope="row"><a class="cell-clamp" href="/chat/{row.id}" title={mentionsText(row.asked)}><Mentions text={preview(row.asked)} plain asked dropBot /></a></th>
                 <td class="log__who"><Name kind="member" id={row.member_id || row.member.id} name={row.member.name} clip /><div class="id"><Name kind="channel" id={row.channel_id} name={row.channel} clip /></div></td>
                 <td class="mono"><LogTime at={row.at} timeZone={tz} /></td>
                 <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
