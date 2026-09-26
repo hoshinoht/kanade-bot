@@ -560,6 +560,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 Discord sign-in consumes a one-time callback state even when that callback
+  is rate-limited, preventing it from being replayed after the quota resets.
 - v5 chat replies keep code-block indentation and persona ellipses (`Mou...`
   no longer becomes `Mou..`).
 - v5 admin: tool-trace buttons announce a short preview, selecting text in a

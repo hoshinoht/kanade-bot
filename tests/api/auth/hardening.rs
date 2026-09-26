@@ -232,6 +232,39 @@ async fn discord_start_and_callback_are_rate_limited_per_client() {
 }
 
 #[tokio::test]
+async fn rate_limited_valid_callback_consumes_its_pending_login() {
+    let harness = Harness::new().await;
+    harness.guild.put(member(111, &[ADMIN_ROLE], false));
+    let (path, login_cookie) = harness.discord_approved(user(111, "Alice"), "%2F").await;
+
+    for _ in 0..10 {
+        let reply = harness
+            .get("/api/admin/auth/discord/callback?code=x&state=y", &[])
+            .await;
+        assert_eq!(reply.destination().as_deref(), Some("/?login_error=state"));
+    }
+    let limited = harness.get(&path, &[("Cookie", &login_cookie)]).await;
+    assert_eq!(
+        limited.destination().as_deref(),
+        Some("/?login_error=rate_limited")
+    );
+    assert_eq!(
+        harness.discord.exchanges(),
+        0,
+        "refusal must not call Discord"
+    );
+
+    harness.advance(TimeDelta::minutes(1));
+    let replay = harness.get(&path, &[("Cookie", &login_cookie)]).await;
+    assert_eq!(replay.destination().as_deref(), Some("/?login_error=state"));
+    assert_eq!(
+        harness.discord.exchanges(),
+        0,
+        "replay must not call Discord"
+    );
+}
+
+#[tokio::test]
 async fn token_logins_and_bearer_failures_are_rate_limited() {
     let harness = Harness::new().await;
     for _ in 0..5 {

@@ -248,6 +248,14 @@ async fn discord_callback(
     let Some((auth, discord)) = discord_of(&site) else {
         return login_error("unavailable");
     };
+    let pairs = wire::query_pairs(uri.query());
+    let resumed = match (
+        wire::cookie(&headers, LOGIN_COOKIE),
+        wire::query_value(&pairs, "state"),
+    ) {
+        (Some(login_id), Some(state)) => discord.resume(&login_id, &state, auth.now()),
+        _ => None,
+    };
     if !admitted(auth, &context, Route::DiscordCallback) {
         return login_error("rate_limited");
     }
@@ -265,14 +273,6 @@ async fn discord_callback(
     let cooled = |wait| {
         discord.cool_down(auth.now(), wait);
         refused("discord_rate_limited", None, "unavailable")
-    };
-    let pairs = wire::query_pairs(uri.query());
-    let resumed = match (
-        wire::cookie(&headers, LOGIN_COOKIE),
-        wire::query_value(&pairs, "state"),
-    ) {
-        (Some(login_id), Some(state)) => discord.resume(&login_id, &state, auth.now()),
-        _ => None,
     };
     let Some(resumed) = resumed else {
         return refused("state", None, "state");
