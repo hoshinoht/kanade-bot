@@ -106,8 +106,11 @@ pub(super) async fn bind(
                     )));
                 }
             }
+            // Test cards have no target rows (bound below).
+            DeliveryTarget::DebugCard { .. } => {}
         }
     }
+    bind_debug_card(tx, attempt, receipt, &stamp).await?;
     if let Some(week) = record_week {
         raise_marker(tx, week, at).await?;
     }
@@ -154,4 +157,43 @@ pub(super) async fn record_digest_week(
 ) -> Result<(), JournalError> {
     check_live(tx, lease).await?;
     raise_marker(tx, week, at).await
+}
+
+/// A test card claimed with this attempt: stamp its message and register it
+/// for its run, so reactions on it drive the run's RSVPs.
+async fn bind_debug_card(
+    tx: &mut SqliteConnection,
+    attempt: &AttemptId,
+    receipt: &Receipt,
+    stamp: &str,
+) -> Result<(), JournalError> {
+    let run: Option<String> = sqlx::query_scalar(
+        "SELECT run_id FROM debug_cards WHERE attempt_id = ?1 AND message_id IS NULL",
+    )
+    .bind(&attempt.0)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(backend)?;
+    let Some(run) = run else {
+        return Ok(());
+    };
+    sqlx::query("UPDATE debug_cards SET message_id = ?1, posted_at = ?2 WHERE attempt_id = ?3")
+        .bind(&receipt.message_id)
+        .bind(stamp)
+        .bind(&attempt.0)
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO delivery_card_runs (attempt_id, channel_id, message_id, run_id)
+         VALUES (?1, ?2, ?3, ?4)",
+    )
+    .bind(&attempt.0)
+    .bind(&receipt.channel_id)
+    .bind(&receipt.message_id)
+    .bind(&run)
+    .execute(&mut *tx)
+    .await
+    .map_err(backend)?;
+    Ok(())
 }

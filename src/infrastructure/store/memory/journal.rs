@@ -10,6 +10,7 @@ use twilight_model::id::marker::MessageMarker;
 
 use super::{MemoryScheduleStore, Tables};
 use crate::bot::delivery::cards::{CardRecord, DAY_OF_KIND, PostedCard, ReminderCardStore};
+use crate::bot::delivery::debug::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::{CardIndex, LookupError};
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_REPLACEMENT_ACTOR,
@@ -64,6 +65,19 @@ pub(super) struct JournalTables {
     card_runs: BTreeSet<(String, String)>,
     /// Reminder card records by dedupe key, as SQLite `reminder_cards`.
     reminder_cards: BTreeMap<String, CardRecord>,
+    /// Test cards by attempt id, as SQLite `debug_cards`.
+    pub(super) debug_cards: BTreeMap<String, DebugRow>,
+}
+
+/// One `/debug ping` test card (SQLite `debug_cards`).
+#[derive(Clone, Debug)]
+pub(super) struct DebugRow {
+    pub(super) run_id: String,
+    pub(super) kind: String,
+    pub(super) channel_id: String,
+    pub(super) message_id: Option<String>,
+    pub(super) posted_at: Option<DateTime<Utc>>,
+    pub(super) cleared_at: Option<DateTime<Utc>>,
 }
 
 impl JournalTables {
@@ -165,6 +179,7 @@ fn suppress_natives(
             DeliveryTarget::Digest(week) => tables.journal.raise_marker(*week, at)?,
             // A refused card stays unposted and may be claimed again.
             DeliveryTarget::Card(_) => {}
+            DeliveryTarget::DebugCard { .. } => {}
         }
     }
     Ok(())
@@ -213,7 +228,8 @@ fn claim_in(
     if ordinal < next {
         return Ok(Claim::Held);
     }
-    let key = if intent.targets.is_empty() {
+    let debug = intent.debug_card()?;
+    let key = if intent.operation_scoped() {
         DedupeKey::operation(&lease.operation_id, ordinal)
     } else {
         DedupeKey::native(&intent.targets)?
@@ -278,9 +294,22 @@ fn claim_in(
                     ));
                 }
             }
+            DeliveryTarget::DebugCard { run_id, .. } => {
+                if !tables.runs.contains_key(run_id) {
+                    return Err(JournalError::TargetUnavailable(format!(
+                        "run {run_id} does not exist"
+                    )));
+                }
+            }
         }
     }
-    let mut targets: Vec<DeliveryTarget> = intent.targets.clone();
+    // Test cards are no target rows (SQLite parity): they hold nothing.
+    let mut targets: Vec<DeliveryTarget> = intent
+        .targets
+        .iter()
+        .filter(|target| target.is_native())
+        .cloned()
+        .collect();
     targets.sort();
     targets.dedup();
     let id = uuid::Uuid::new_v4().to_string();
@@ -306,6 +335,19 @@ fn claim_in(
                 .collect(),
         },
     );
+    if let Some((run_id, kind)) = debug {
+        tables.journal.debug_cards.insert(
+            id.clone(),
+            DebugRow {
+                run_id: run_id.to_owned(),
+                kind: kind.to_owned(),
+                channel_id: intent.channel_id.clone(),
+                message_id: None,
+                posted_at: None,
+                cleared_at: None,
+            },
+        );
+    }
     Ok(Claim::Fresh(AttemptId(id)))
 }
 
@@ -434,7 +476,22 @@ fn bind_in(
                 card.message_id = Some(receipt.message_id.clone());
                 card.posted_at = Some(super::micros(at));
             }
+            DeliveryTarget::DebugCard { .. } => {}
         }
+    }
+    if let Some(debug) = tables
+        .journal
+        .debug_cards
+        .get_mut(&attempt.0)
+        .filter(|row| row.message_id.is_none())
+    {
+        debug.message_id = Some(receipt.message_id.clone());
+        debug.posted_at = Some(super::micros(at));
+        let run_id = debug.run_id.clone();
+        tables
+            .journal
+            .card_runs
+            .insert((receipt.message_id.clone(), run_id));
     }
     if let Some(week) = record_week {
         tables.journal.raise_marker(week, at)?;
@@ -851,10 +908,74 @@ impl ReminderCardStore for MemoryScheduleStore {
                         .collect(),
                     message_id: message,
                     record: record.clone(),
+                    test: false,
                 })
             })
             .collect();
+        cards.extend(journal.debug_cards.iter().filter_map(|(attempt, row)| {
+            let bound = journal
+                .attempts
+                .get(attempt)
+                .is_some_and(|attempt| attempt.state == AttemptState::Bound);
+            let card_kind = row.kind == DAY_OF_KIND || row.kind.starts_with("countdown_");
+            (bound && row.run_id == run_id && row.cleared_at.is_none() && card_kind).then(|| {
+                Some(PostedCard {
+                    channel_id: row.channel_id.clone(),
+                    message_id: row.message_id.clone()?,
+                    run_ids: vec![row.run_id.clone()],
+                    record: CardRecord {
+                        kind: row.kind.clone(),
+                        heading: None,
+                    },
+                    test: true,
+                })
+            })?
+        }));
         cards.sort_by(|a, b| a.message_id.cmp(&b.message_id));
         Ok(cards)
+    }
+}
+
+impl DebugCardStore for MemoryScheduleStore {
+    async fn debug_cards_in(
+        &self,
+        channel_id: &str,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<PostedDebugCard>, StoreError> {
+        let tables = self.tables();
+        let mut cards: Vec<PostedDebugCard> = tables
+            .journal
+            .debug_cards
+            .values()
+            .filter(|row| row.channel_id == channel_id && row.cleared_at.is_none())
+            .filter_map(|row| {
+                let posted_at = row.posted_at.filter(|at| *at >= since)?;
+                Some(PostedDebugCard {
+                    channel_id: row.channel_id.clone(),
+                    message_id: row.message_id.clone()?,
+                    run_id: row.run_id.clone(),
+                    kind: row.kind.clone(),
+                    posted_at,
+                })
+            })
+            .collect();
+        cards.sort_by(|a, b| (a.posted_at, &a.message_id).cmp(&(b.posted_at, &b.message_id)));
+        Ok(cards)
+    }
+
+    async fn clear_debug_card(
+        &self,
+        message_id: &str,
+        at: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let mut tables = self.tables();
+        let row =
+            tables.journal.debug_cards.values_mut().find(|row| {
+                row.message_id.as_deref() == Some(message_id) && row.cleared_at.is_none()
+            });
+        Ok(row.is_some_and(|row| {
+            row.cleared_at = Some(super::micros(at));
+            true
+        }))
     }
 }

@@ -18,6 +18,10 @@ pub enum DeliveryTarget {
     Digest(DateTime<Utc>),
     /// A proposal's card, by proposal (draft) id (v4 `DeliveryTarget.card`).
     Card(String),
+    /// A `/debug ping` test card for a run (v4 `DeliveryTarget.debug_card`).
+    /// Not a native row: it holds nothing, is claimed per operation and is
+    /// registered for the run only once bound.
+    DebugCard { run_id: String, kind: String },
 }
 
 impl DeliveryTarget {
@@ -27,7 +31,13 @@ impl DeliveryTarget {
             Self::Reminder(_) => "reminder",
             Self::Digest(_) => "digest",
             Self::Card(_) => "card",
+            Self::DebugCard { .. } => "debug_card",
         }
+    }
+
+    /// Whether the target is a native row the journal holds and dedupes by.
+    pub fn is_native(&self) -> bool {
+        !matches!(self, Self::DebugCard { .. })
     }
 
     /// v4 `key_primary`: the reminder id, or the week start as UTC ISO text.
@@ -37,6 +47,7 @@ impl DeliveryTarget {
     pub fn key_primary(&self) -> Result<String, DateOutOfRange> {
         match self {
             Self::Reminder(id) | Self::Card(id) => Ok(id.clone()),
+            Self::DebugCard { run_id, .. } => Ok(run_id.clone()),
             Self::Digest(week) => to_iso(week),
         }
     }
@@ -62,6 +73,8 @@ pub enum EffectKind {
     Digest,
     /// A proposal card (v4 effect kind `card`).
     Card,
+    /// A `/debug ping` test card (v4 effect kind `debug_card`).
+    DebugCard,
     /// A change notice, e.g. `notice.run.status.cancelled`.
     Notice(String),
 }
@@ -72,6 +85,7 @@ impl EffectKind {
             Self::Reminder => "reminder",
             Self::Digest => "digest",
             Self::Card => "card",
+            Self::DebugCard => "debug_card",
             Self::Notice(kind) => kind,
         }
     }
@@ -140,6 +154,28 @@ pub struct NotificationIntent {
     pub mentions: Vec<String>,
     pub content: IntentContent,
     pub warnings: Vec<DeliveryWarning>,
+}
+
+impl NotificationIntent {
+    /// Operation-scoped: no native target (notices, test cards).
+    pub fn operation_scoped(&self) -> bool {
+        self.targets.iter().all(|target| !target.is_native())
+    }
+
+    /// The test card this intent posts, if any: `(run_id, kind)`.
+    ///
+    /// # Errors
+    /// [`super::JournalError::InvalidInput`] when a test card is mixed with
+    /// other targets or repeated.
+    pub fn debug_card(&self) -> Result<Option<(&str, &str)>, super::JournalError> {
+        match self.targets.as_slice() {
+            [DeliveryTarget::DebugCard { run_id, kind }] => Ok(Some((run_id, kind))),
+            targets if targets.iter().all(DeliveryTarget::is_native) => Ok(None),
+            _ => Err(super::JournalError::InvalidInput(
+                "a test card is claimed alone".into(),
+            )),
+        }
+    }
 }
 
 /// v4 `SendPayload`'s canonical allow-list: sorted as text, duplicates dropped.

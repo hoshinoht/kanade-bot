@@ -6,7 +6,8 @@
 //! record naming a run still ahead is edited from current answers (same
 //! heading, art referenced by its posted names, nothing uploaded, nobody
 //! notified), then the active digest of each touched week. Cards posted
-//! before records existed (plain text) are left alone.
+//! before records existed (plain text) are left alone. `/debug ping` test
+//! cards of day-of/countdown kind are refreshed too, keeping their prefix.
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,7 @@ use tokio::sync::{Notify, watch};
 use super::cards::{
     self, CardArt, CardContext, CardKit, DAY_OF_KIND, PostedCard, ReminderCardStore, fetch_art,
 };
+use super::debug::{TEST_PREFIX, test_mentions};
 use crate::bot::ids::parse_id;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::attendance::{AttendanceMode, countdown_mentions, morning_mentions};
@@ -228,11 +230,23 @@ where
             }
         };
         let ctx = self.context(schedule);
-        let mentioned = self.mentioned(&ctx, &content);
-        let Some(card) = cards::build(&content, &ctx, posted.record.heading.as_deref(), &mentioned)
+        // A test card keeps its `test` audience and prefix (v4 `_rebuild_test_card`).
+        let mentioned = if posted.test {
+            match posted.run_ids.first().and_then(|id| ctx.run(id)) {
+                Some(run) => test_mentions(&*self.members, run, ctx.quiet),
+                None => return false,
+            }
+        } else {
+            self.mentioned(&ctx, &content)
+        };
+        let Some(mut card) =
+            cards::build(&content, &ctx, posted.record.heading.as_deref(), &mentioned)
         else {
             return false;
         };
+        if posted.test {
+            card.content = format!("{TEST_PREFIX}{}", card.content);
+        }
         let pictures = fetch_art(self.cards.art.as_ref(), &card, false).await;
         let edit = card.edit(&pictures);
         self.transport

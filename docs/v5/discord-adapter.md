@@ -403,6 +403,39 @@ reason (`no_rewriter`, `no_persona`, `timeout`, `unavailable`, `refused`,
 `misconfigured`, `rejected`, `accepted`), never the text. Serve wires it in `runtime::serve::tick::card_kit`
 (identity codec: `Passthrough`; the prompt carries no member data).
 
+## Test cards (`/debug ping`, `/debug clear_test`)
+
+`src/bot/delivery/debug/` (`DebugDesk`, the `DebugCards` port; v4
+`DebugGroup.ping`/`clear_test`, `effects.delete_debug_message`). Tests:
+`tests/delivery/debug.rs`, journal conformance.
+
+- **Ping** posts the run's real message of that kind, content prefixed
+  `🧪 TEST — `: `day_of` and `countdown_60`/`countdown_15` are the reminder
+  cards (embed, portrait, day-of entry art, uploads); `amend` is v4's
+  `amend_notice` for a move from a day earlier and `decline` v4's
+  `decline_notice` as the invoker (plain text). The day-of heading is v4's
+  `Today — <day>` (no persona rewrite, as v4 rendered the real card). People
+  follow v4's `test` audience: named, pinged only at ping level `all`; quiet
+  mode pings and tags nobody. Channel: the run's home channel, else the live
+  post channel (v4 `post_channel`), else `Unreachable` with nothing posted.
+- **Journal**: effect `debug_card`, target `DeliveryTarget::DebugCard{run_id,
+  kind}` claimed under its own `debug_card` lease with operation dedupe (v4
+  `DedupePolicy.operation`): every ping is a new post, a retry inside the
+  operation is held. A test card is not a native row: no target row, holds
+  nothing, and is mixed with no other target. The claim writes a
+  `debug_cards` row (migration 0017); bind stamps its message and registers
+  it in `delivery_card_runs`, so ✅/❌ (added by the executor) drive the run's
+  RSVPs through the normal card index. The run's reminder rows are never
+  touched. Bound → `Posted`; anything else short of a vanished run →
+  `Unconfirmed` (v4's "not confirmed").
+- **Refresh**: bound, uncleared `day_of`/`countdown_*` test cards are
+  re-rendered with the reminder cards (prefix and test audience kept, v4
+  `_rebuild_test_card`); `amend`/`decline` texts are not.
+- **clear_test** deletes the invoking channel's uncleared test cards of the
+  last 24 h; a message already gone counts as deleted; each deleted card is
+  marked `cleared_at` (released: no longer listed or refreshed). A refused
+  delete is counted as failed and stays listed.
+
 ## Proposal cards
 
 `src/bot/cards/` (slice E5; v4 `formatting.proposal_card`,
@@ -485,8 +518,9 @@ in-memory member snapshot (`Directory`) the tick and cards read.
 `delivery::LogAlerts` is the beta alert destination (structured log).
 Commands: `runtime::serve::commands` builds a `CommandContext` from the
 API's own store, writer, policy, catalog, personas, access and clock (the
-gateway cache as `GuildChannels`, the bot's name from `READY`; rescans and
-test cards `None`, `/limits` reads the chat pilot's allowance) and `register_retained`; the dispatcher is
+gateway cache as `GuildChannels`, the bot's name from `READY`; rescans
+`None`, test cards through `delivery::DebugDesk` (below), `/limits` reads the
+chat pilot's allowance) and `register_retained`; the dispatcher is
 built on the first `READY` and every guild-registered command and
 autocomplete goes through `commands::spawn_interaction`.
 

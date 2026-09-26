@@ -57,7 +57,9 @@ impl<J: DeliveryJournal + Sync> HeldReminders for JournalHeld<'_, J> {
             .iter()
             .filter_map(|target| match target {
                 DeliveryTarget::Reminder(id) => Some(id.clone()),
-                DeliveryTarget::Digest(_) | DeliveryTarget::Card(_) => None,
+                DeliveryTarget::Digest(_)
+                | DeliveryTarget::Card(_)
+                | DeliveryTarget::DebugCard { .. } => None,
             })
             .collect())
     }

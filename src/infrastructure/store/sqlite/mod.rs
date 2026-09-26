@@ -10,6 +10,7 @@ mod txn;
 
 mod backup;
 mod connect;
+mod debug_cards;
 mod drafts;
 mod history;
 mod journal;

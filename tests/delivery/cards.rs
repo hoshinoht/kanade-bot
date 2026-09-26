@@ -37,9 +37,9 @@ use twilight_model::channel::message::Embed;
 use crate::scenarios::{self, HOME, World, now, previous_week, week};
 use crate::support::{self, Store, TempDir, on_both_stores, with_lease};
 
-const STAR_COLOUR: u32 = 0xF8DD4A;
+pub(crate) const STAR_COLOUR: u32 = 0xF8DD4A;
 
-fn catalog() -> BossTable {
+pub(crate) fn catalog() -> BossTable {
     let difficulty = |prefix: &str, label: &str| DifficultySpec {
         prefix: prefix.into(),
         label: label.into(),
@@ -73,7 +73,7 @@ fn catalog() -> BossTable {
 
 /// Art on disk with exact-case names: both Malefic Star pictures, and only
 /// Kalos's portrait.
-fn art_dir() -> TempDir {
+pub(crate) fn art_dir() -> TempDir {
     let dir = TempDir::new();
     let write = |relative: &str, bytes: &[u8]| {
         let path = dir.path().join(relative);
@@ -86,7 +86,7 @@ fn art_dir() -> TempDir {
     dir
 }
 
-fn kit(art: Option<&TempDir>) -> CardKit {
+pub(crate) fn kit(art: Option<&TempDir>) -> CardKit {
     CardKit {
         catalog: Some(Arc::new(catalog())),
         art: art.map(|dir| Arc::new(BossArt::new(dir.path())) as Arc<dyn ArtSource>),
@@ -95,7 +95,7 @@ fn kit(art: Option<&TempDir>) -> CardKit {
 }
 
 /// 1001 "Aria" wants every ping; 1002 "Bex" none (named, never tagged).
-fn world() -> World {
+pub(crate) fn world() -> World {
     let mut roster = Roster::new();
     for (user, name, level) in [
         ("1001", "Aria", PingLevel::All),
@@ -115,7 +115,7 @@ fn world() -> World {
     }
 }
 
-async fn run<S: Store>(
+pub(crate) async fn run<S: Store>(
     store: &S,
     bosses: &[&str],
     party: &[&str],
@@ -139,7 +139,7 @@ async fn run<S: Store>(
         .expect("run")
 }
 
-async fn due<S: Store>(store: &S, run: &str, kind: &str) {
+pub(crate) async fn due<S: Store>(store: &S, run: &str, kind: &str) {
     let mut ids = RandomIds;
     support::service(store, &mut ids, now())
         .as_origin(Origin::for_tests())
@@ -149,7 +149,13 @@ async fn due<S: Store>(store: &S, run: &str, kind: &str) {
         .expect("new reminder");
 }
 
-async fn answer<S: Store>(store: &S, run: &str, user: &str, yes: bool, at: DateTime<Utc>) {
+pub(crate) async fn answer<S: Store>(
+    store: &S,
+    run: &str,
+    user: &str,
+    yes: bool,
+    at: DateTime<Utc>,
+) {
     let mut ids = RandomIds;
     support::service(store, &mut ids, at)
         .as_origin(Origin::new(Actor::member(user), Surface::Discord))
@@ -158,7 +164,7 @@ async fn answer<S: Store>(store: &S, run: &str, user: &str, yes: bool, at: DateT
         .expect("reaction");
 }
 
-fn created(fake: &FakeDiscord) -> Vec<OutgoingMessage> {
+pub(crate) fn created(fake: &FakeDiscord) -> Vec<OutgoingMessage> {
     fake.calls()
         .into_iter()
         .filter_map(|call| match call {
@@ -168,7 +174,7 @@ fn created(fake: &FakeDiscord) -> Vec<OutgoingMessage> {
         .collect()
 }
 
-fn edits(fake: &FakeDiscord) -> Vec<MessageEdit> {
+pub(crate) fn edits(fake: &FakeDiscord) -> Vec<MessageEdit> {
     fake.calls()
         .into_iter()
         .filter_map(|call| match call {
@@ -178,7 +184,7 @@ fn edits(fake: &FakeDiscord) -> Vec<MessageEdit> {
         .collect()
 }
 
-fn fields(embed: &Embed) -> Vec<(String, String)> {
+pub(crate) fn fields(embed: &Embed) -> Vec<(String, String)> {
     embed
         .fields
         .iter()
@@ -186,14 +192,14 @@ fn fields(embed: &Embed) -> Vec<(String, String)> {
         .collect()
 }
 
-fn pictures(embed: &Embed) -> (Option<String>, Option<String>) {
+pub(crate) fn pictures(embed: &Embed) -> (Option<String>, Option<String>) {
     (
         embed.thumbnail.as_ref().map(|thumb| thumb.url.clone()),
         embed.image.as_ref().map(|image| image.url.clone()),
     )
 }
 
-fn uploads(message: &OutgoingMessage) -> Vec<(String, Vec<u8>)> {
+pub(crate) fn uploads(message: &OutgoingMessage) -> Vec<(String, Vec<u8>)> {
     message
         .attachments
         .iter()
@@ -201,7 +207,7 @@ fn uploads(message: &OutgoingMessage) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
-fn allowed(message: &OutgoingMessage) -> Vec<String> {
+pub(crate) fn allowed(message: &OutgoingMessage) -> Vec<String> {
     message
         .allowed_mentions
         .users
@@ -211,12 +217,12 @@ fn allowed(message: &OutgoingMessage) -> Vec<String> {
 }
 
 /// Thu 10 Sep 21:00 and 22:30 in Kuala Lumpur.
-fn tonight() -> DateTime<Utc> {
+pub(crate) fn tonight() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 10, 13, 0, 0).unwrap()
 }
 
 /// Two runs tonight; the later is own time. Returns their ids.
-async fn seed_day_of<S: Store>(store: &S) -> (String, String) {
+pub(crate) async fn seed_day_of<S: Store>(store: &S) -> (String, String) {
     let star = run(
         store,
         &["HMaleficStar"],

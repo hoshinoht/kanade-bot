@@ -16,8 +16,8 @@ mod ports;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use serde_json::json;
@@ -277,6 +277,14 @@ where
     let quiet = Arc::new(AtomicBool::new(
         composition.settings.notifications.quiet_mode,
     ));
+    let post_channel = Arc::new(RwLock::new(composition.settings.posting.channel_id.clone()));
+    let debug = commands::DebugParts {
+        cards: cards.clone(),
+        roster: Arc::clone(&roster),
+        quiet: Arc::clone(&quiet),
+        post_channel: Arc::clone(&post_channel),
+        instance_id: config.instance_id.clone(),
+    };
     let refresh = Arc::new(CardRefresh {
         store: Arc::clone(&store),
         transport: Arc::clone(&wiring.transport),
@@ -303,6 +311,7 @@ where
         status: tick_status,
         cards,
         quiet,
+        post_channel,
     };
 
     let dispatcher = match commands::factory(
@@ -310,6 +319,7 @@ where
         Arc::clone(&store),
         Arc::clone(&cache),
         Arc::clone(&wiring.transport),
+        debug,
     ) {
         Ok(dispatcher) => dispatcher,
         Err(error) => {

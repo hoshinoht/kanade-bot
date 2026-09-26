@@ -29,7 +29,7 @@ async fn held(
     if active.is_some() {
         return Ok(true);
     }
-    for target in targets {
+    for target in targets.iter().filter(|target| target.is_native()) {
         let (kind, primary) = encode(target)?;
         let claimed: Option<i64> = sqlx::query_scalar(
             "SELECT 1 FROM delivery_attempt_targets t JOIN delivery_attempts a USING (attempt_id)
@@ -137,6 +137,16 @@ async fn check_targets(
                     Some((false, true, false)) => {}
                 }
             }
+            DeliveryTarget::DebugCard { run_id, .. } => {
+                let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM runs WHERE id = ?1")
+                    .bind(run_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(backend)?;
+                if exists.is_none() {
+                    return Err(unavailable(format!("run {run_id} does not exist")));
+                }
+            }
         }
     }
     Ok(())
@@ -201,7 +211,8 @@ pub(super) async fn claim(
         // The operation already ran this effect (v4 `_operation_attempt`).
         return Ok(Claim::Held);
     }
-    let (scope, key) = if intent.targets.is_empty() {
+    intent.debug_card()?;
+    let (scope, key) = if intent.operation_scoped() {
         (
             "operation",
             DedupeKey::operation(&lease.operation_id, ordinal),
@@ -262,6 +273,7 @@ async fn insert_attempt(
     let mut keys = intent
         .targets
         .iter()
+        .filter(|target| target.is_native())
         .map(claim_key)
         .collect::<Result<Vec<_>, _>>()?;
     keys.sort();
@@ -276,6 +288,18 @@ async fn insert_attempt(
         .bind(i64::try_from(ordinal).unwrap_or(i64::MAX))
         .bind(kind)
         .bind(primary)
+        .execute(&mut *tx)
+        .await
+        .map_err(backend)?;
+    }
+    if let Some((run_id, kind)) = intent.debug_card()? {
+        sqlx::query(
+            "INSERT INTO debug_cards (attempt_id, run_id, kind, channel_id) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(&attempt.0)
+        .bind(run_id)
+        .bind(kind)
+        .bind(&intent.channel_id)
         .execute(&mut *tx)
         .await
         .map_err(backend)?;

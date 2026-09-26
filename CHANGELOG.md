@@ -496,6 +496,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   Kanata lists them; ungrouped aliases are refused); rewrites now send the rewrite
   role's reasoning level.
 - v5: temporary 64k context window for chat and extraction.
+- v5: `/debug ping` posts a `🧪 TEST — ` copy of a run's day-of, countdown, amend
+  or decline message (embed cards with art) whose ✅/❌ drive real RSVPs, and
+  `/debug clear_test` deletes the channel's recent test cards.
 
 **Changed**
 

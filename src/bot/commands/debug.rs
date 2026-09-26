@@ -21,7 +21,7 @@ use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
 use crate::domain::ids::{resolve_id, short_id};
 
-pub const TEST_PREFIX: &str = "🧪 TEST — ";
+pub use crate::bot::delivery::TEST_PREFIX;
 /// Until test cards have a delivery path.
 pub const TEST_CARDS_UNAVAILABLE: &str = "Test cards aren't available right now.";
 

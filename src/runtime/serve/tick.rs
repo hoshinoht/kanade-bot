@@ -7,7 +7,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
 use serde_json::json;
@@ -120,6 +120,8 @@ pub struct TickLoop<T> {
     pub cards: CardKit,
     /// Shared with the reaction worker's card edits.
     pub quiet: Arc<AtomicBool>,
+    /// The live post channel, shared with `/debug ping`.
+    pub post_channel: Arc<RwLock<Option<String>>>,
 }
 
 /// The heading's rewriter over the `rewrite` role. Masking off: passthrough,
@@ -274,6 +276,12 @@ impl<T: DiscordTransport> TickLoop<T> {
             config.post_channel_id = settings.posting.channel_id.clone();
             config.quiet_mode = settings.notifications.quiet_mode;
             self.quiet.store(config.quiet_mode, Ordering::Relaxed);
+            config.post_channel_id.clone_into(
+                &mut self
+                    .post_channel
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner),
+            );
             self.cache.set_watch(watch_list(&settings));
         }
         if let Ok(rows) = self.store.list_members().await {

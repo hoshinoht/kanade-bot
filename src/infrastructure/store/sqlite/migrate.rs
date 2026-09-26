@@ -79,6 +79,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 16,
         sql: include_str!("migrations/0016_chat_turn_facts.sql"),
     },
+    Migration {
+        version: 17,
+        sql: include_str!("migrations/0017_debug_cards.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -194,7 +198,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("0015+"), 16);
+        assert_eq!(apply(&mut conn).await.expect("0015+"), 17);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -268,7 +272,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016"), 16);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 17);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",

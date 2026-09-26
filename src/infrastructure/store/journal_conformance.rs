@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use crate::bot::delivery::cards::{CardRecord, PostedCard, ReminderCardStore};
+use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::CardIndex;
 use crate::domain::notify::{
     AttemptId, AttemptState, Claim, DedupeKey, DeliverySettings, DeliveryTarget, DigestPostInput,
@@ -23,7 +24,9 @@ use crate::domain::scheduler::{ScheduleStore, Scope};
 use crate::domain::time::to_iso;
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ScheduleStore + DeliveryJournal + CardIndex + ReminderCardStore>(
+pub async fn run_suite<
+    S: ScheduleStore + DeliveryJournal + CardIndex + ReminderCardStore + DebugCardStore,
+>(
     make: impl AsyncFn() -> S,
 ) {
     claim_holds_its_targets(&make().await).await;
@@ -43,6 +46,7 @@ pub async fn run_suite<S: ScheduleStore + DeliveryJournal + CardIndex + Reminder
     digest_week_is_recorded_without_a_post(&make().await).await;
     older_digests_are_retired_and_kept(&make().await).await;
     reminder_card_records_are_written_once_and_found_when_bound(&make().await).await;
+    test_cards_are_per_operation_registered_and_cleared(&make().await).await;
 }
 
 const HOME: &str = "900";
@@ -920,6 +924,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
             message_id: "5001".into(),
             run_ids: vec!["r-1".into()],
             record: first,
+            test: false,
         }]
     );
     assert!(store.posted_cards("r-2").await.expect("read").is_empty());
@@ -931,4 +936,148 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
         .await
         .expect("bind");
     assert_eq!(store.posted_cards("r-1").await.expect("read").len(), 1);
+}
+
+fn test_card(run_id: &str, kind: &str) -> NotificationIntent {
+    NotificationIntent {
+        effect: EffectKind::DebugCard,
+        effect_context: vec![run_id.into(), kind.into()],
+        channel_id: HOME.into(),
+        targets: vec![DeliveryTarget::DebugCard {
+            run_id: run_id.into(),
+            kind: kind.into(),
+        }],
+        mentions: Vec::new(),
+        content: IntentContent::Plain,
+        warnings: Vec::new(),
+    }
+}
+
+/// `/debug ping` cards: operation-scoped (a repeat posts again, a retry in
+/// the same operation is held), no held target, registered for the run on
+/// bind, reminder rows untouched, listed until cleared.
+async fn test_cards_are_per_operation_registered_and_cleared<
+    S: ScheduleStore + DeliveryJournal + CardIndex + ReminderCardStore + DebugCardStore,
+>(
+    store: &S,
+) {
+    seed(store).await;
+    let before = snapshot(store).await.reminders;
+    let first_lease = lease(store).await;
+    let first = fresh(store, &first_lease, &test_card("r-1", "day_of")).await;
+    assert_eq!(
+        store
+            .claim(&first_lease, &test_card("r-1", "day_of"), Some(0), at(8))
+            .await,
+        Ok(Claim::Held),
+        "the operation already posted it"
+    );
+    assert!(
+        store.load_view().await.expect("view").targets().is_empty(),
+        "a test card holds nothing"
+    );
+    let second_lease = lease_named(store).await;
+    let second = fresh(store, &second_lease, &test_card("r-1", "day_of")).await;
+    let amend = fresh(store, &second_lease, &test_card("r-1", "amend")).await;
+    assert!(matches!(
+        store
+            .claim(&second_lease, &test_card("r-gone", "day_of"), None, at(8))
+            .await,
+        Err(JournalError::TargetUnavailable(_))
+    ));
+    let mut mixed = test_card("r-1", "day_of");
+    mixed.targets.push(DeliveryTarget::Reminder("m-1".into()));
+    assert!(matches!(
+        store.claim(&second_lease, &mixed, None, at(8)).await,
+        Err(JournalError::InvalidInput(_))
+    ));
+    for (lease, attempt, message) in [
+        (&first_lease, &first, "7001"),
+        (&second_lease, &second, "7002"),
+        (&second_lease, &amend, "7003"),
+    ] {
+        store
+            .bind(lease, attempt, &receipt(HOME, message), None, at(8))
+            .await
+            .expect("bind");
+    }
+    assert_eq!(
+        snapshot(store).await.reminders,
+        before,
+        "reminder rows untouched"
+    );
+    let message = |id: &str| twilight_model::id::Id::new(id.parse::<u64>().expect("id"));
+    assert_eq!(
+        store
+            .runs_for_message(message("7003"))
+            .await
+            .expect("index"),
+        ["r-1"],
+        "reactions on a test card reach its run"
+    );
+    let posted = store.posted_cards("r-1").await.expect("posted");
+    assert_eq!(
+        posted
+            .iter()
+            .map(|card| (
+                card.message_id.as_str(),
+                card.test,
+                card.record.kind.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        [("7001", true, "day_of"), ("7002", true, "day_of")],
+        "day-of/countdown test cards are refreshed; plain texts are not"
+    );
+    let listed = store.debug_cards_in(HOME, at(7)).await.expect("list");
+    assert_eq!(
+        listed,
+        ["7001", "7002", "7003"]
+            .iter()
+            .zip(["day_of", "day_of", "amend"])
+            .map(|(message, kind)| PostedDebugCard {
+                channel_id: HOME.into(),
+                message_id: (*message).into(),
+                run_id: "r-1".into(),
+                kind: kind.into(),
+                posted_at: at(8),
+            })
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        store
+            .debug_cards_in(HOME, at(9))
+            .await
+            .expect("list")
+            .is_empty()
+    );
+    assert!(
+        store
+            .debug_cards_in(FALLBACK, at(7))
+            .await
+            .expect("list")
+            .is_empty()
+    );
+    assert!(store.clear_debug_card("7001", at(9)).await.expect("clear"));
+    assert!(!store.clear_debug_card("7001", at(9)).await.expect("again"));
+    assert!(
+        !store
+            .clear_debug_card("9999", at(9))
+            .await
+            .expect("unknown")
+    );
+    assert_eq!(
+        store.debug_cards_in(HOME, at(7)).await.expect("list").len(),
+        2
+    );
+    assert_eq!(
+        store
+            .posted_cards("r-1")
+            .await
+            .expect("posted")
+            .iter()
+            .map(|card| card.message_id.as_str())
+            .collect::<Vec<_>>(),
+        ["7002"],
+        "a cleared card is no longer refreshed"
+    );
 }

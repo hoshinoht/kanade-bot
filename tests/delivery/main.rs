@@ -7,6 +7,7 @@ mod support;
 mod attendance;
 mod cards;
 mod checkpoints;
+mod debug;
 mod digest_replay;
 mod dispatch_replay;
 mod drafts;

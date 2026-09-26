@@ -230,6 +230,8 @@ async fn suppress_natives(
             // A refused card stays unposted; the next pass in its channel
             // may claim it again.
             DeliveryTarget::Card(_) => {}
+            // Never a target row: nothing to suppress.
+            DeliveryTarget::DebugCard { .. } => {}
         }
     }
     Ok(())

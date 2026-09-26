@@ -305,8 +305,10 @@ where
             self.journal.mark_indeterminate(self.lease, attempt).await?;
             return Ok(SendOutcome::Uncertain);
         }
-        if matches!(intent.effect, EffectKind::Reminder | EffectKind::Card)
-            && let Some(channel) = parse_id(&intent.channel_id)
+        if matches!(
+            intent.effect,
+            EffectKind::Reminder | EffectKind::Card | EffectKind::DebugCard
+        ) && let Some(channel) = parse_id(&intent.channel_id)
         {
             // Best effort, as v4: a card without reactions still counts.
             for emoji in [EMOJI_YES, EMOJI_NO] {

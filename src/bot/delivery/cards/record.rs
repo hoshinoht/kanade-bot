@@ -28,6 +28,8 @@ pub struct PostedCard {
     /// Every run the card is for (its card→run rows).
     pub run_ids: Vec<String>,
     pub record: CardRecord,
+    /// A `/debug ping` test card (no record row; the heading is the seed).
+    pub test: bool,
 }
 
 /// Reminder card records (migration 0014 `reminder_cards`).
@@ -45,7 +47,8 @@ pub trait ReminderCardStore: Send + Sync {
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<CardRecord, StoreError>> + Send;
 
-    /// Bound reminder cards naming `run_id` that have a record, by message id.
+    /// Bound reminder cards naming `run_id` that have a record, and its
+    /// bound, uncleared day-of/countdown test cards, by message id.
     fn posted_cards(
         &self,
         run_id: &str,

@@ -1,18 +1,22 @@
 //! The slash commands serve registers (guild bulk overwrite on the first
 //! guild availability after each ready) and dispatches: S11's retained set
-//! over the same store, writer and settings the API uses.
+//! over the same store, writer and settings the API uses. `/debug ping`
+//! posts through a [`DebugDesk`] over the tick's card kit and live settings.
 
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     api::state::ApiState,
     bot::{
         commands::{
-            ChatAllowance, CommandContext, Dispatcher, DuplicateCommand, MemberRows,
+            ChatAllowance, CommandContext, DebugCards, Dispatcher, DuplicateCommand, MemberRows,
             register_retained,
         },
+        delivery::{AlertThrottle, DebugDesk, cards::CardKit},
         guild_cache::GuildCache,
         handler::CommandsFn,
+        roster::LiveRoster,
     },
     infrastructure::store::SqliteStore,
     runtime::error::Error,
@@ -26,6 +30,17 @@ struct Commands<T> {
     members: Arc<SqliteStore>,
     channels: Arc<GuildCache>,
     transport: Arc<T>,
+    debug: Arc<dyn DebugCards>,
+}
+
+/// What `/debug ping` shares with the tick: its card kit, the live roster
+/// and the live quiet-mode and post-channel settings.
+pub struct DebugParts {
+    pub cards: CardKit,
+    pub roster: Arc<LiveRoster>,
+    pub quiet: Arc<AtomicBool>,
+    pub post_channel: Arc<RwLock<Option<String>>>,
+    pub instance_id: String,
 }
 
 impl<T: GatewayTransport> Commands<T> {
@@ -46,7 +61,7 @@ impl<T: GatewayTransport> Commands<T> {
                 .chat
                 .clone()
                 .map(|chat| chat as Arc<dyn ChatAllowance>),
-            debug_cards: None,
+            debug_cards: Some(Arc::clone(&self.debug)),
             bot_name,
             clock: Arc::clone(&state.clock),
         });
@@ -65,12 +80,27 @@ pub fn factory<T: GatewayTransport>(
     members: Arc<SqliteStore>,
     channels: Arc<GuildCache>,
     transport: Arc<T>,
+    debug: DebugParts,
 ) -> Result<CommandsFn, Error> {
+    let desk: Arc<dyn DebugCards> = Arc::new(DebugDesk {
+        store: Arc::clone(&members),
+        transport: Arc::clone(&transport),
+        members: debug.roster,
+        channels: Arc::clone(&channels) as _,
+        cards: debug.cards,
+        policy: state.policy.clone(),
+        quiet: debug.quiet,
+        post_channel: debug.post_channel,
+        instance_id: debug.instance_id,
+        now: Arc::clone(&state.clock),
+        throttle: AlertThrottle::new(),
+    });
     let commands = Commands {
         state,
         members,
         channels,
         transport,
+        debug: desk,
     };
     let checked = Arc::new(
         commands

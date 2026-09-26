@@ -142,10 +142,14 @@ impl DedupeKey {
 /// # Errors
 /// [`DateOutOfRange`] for a digest week outside v4's years.
 pub fn claim_key(target: &DeliveryTarget) -> Result<(String, String, String), DateOutOfRange> {
+    let secondary = match target {
+        DeliveryTarget::DebugCard { kind, .. } => kind.clone(),
+        _ => String::new(),
+    };
     Ok((
         target.binding_type().to_owned(),
         target.key_primary()?,
-        String::new(),
+        secondary,
     ))
 }
 
@@ -232,7 +236,7 @@ pub fn effect_ordinal(
 ) -> Result<i64, JournalError> {
     match requested {
         None => Ok(next),
-        Some(_) if !intent.targets.is_empty() => Err(JournalError::InvalidInput(
+        Some(_) if !intent.operation_scoped() => Err(JournalError::InvalidInput(
             "effect ordinals key target-less effects only".into(),
         )),
         Some(ordinal) if ordinal < 0 || ordinal > next => Err(JournalError::InvalidInput(format!(

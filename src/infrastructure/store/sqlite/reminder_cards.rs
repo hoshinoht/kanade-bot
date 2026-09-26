@@ -85,8 +85,34 @@ impl ReminderCardStore for SqliteStore {
                         kind: row.try_get("kind").map_err(store_error)?,
                         heading: row.try_get("heading").map_err(store_error)?,
                     },
+                    test: false,
                 });
             }
+            let tests: Vec<(String, String, String)> = sqlx::query_as(
+                "SELECT d.channel_id, d.message_id, d.kind FROM debug_cards d \
+                 JOIN delivery_attempts a ON a.attempt_id = d.attempt_id \
+                 WHERE d.run_id = ?1 AND a.state = 'bound' AND d.message_id IS NOT NULL \
+                 AND d.cleared_at IS NULL AND (d.kind = 'day_of' OR d.kind GLOB 'countdown_*')",
+            )
+            .bind(run_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(store_error)?;
+            cards.extend(
+                tests
+                    .into_iter()
+                    .map(|(channel_id, message_id, kind)| PostedCard {
+                        channel_id,
+                        message_id,
+                        run_ids: vec![run_id.to_owned()],
+                        record: CardRecord {
+                            kind,
+                            heading: None,
+                        },
+                        test: true,
+                    }),
+            );
+            cards.sort_by(|a, b| a.message_id.cmp(&b.message_id));
             Ok(cards)
         })
     }
