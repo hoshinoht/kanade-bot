@@ -222,8 +222,9 @@ pub fn watch_list(settings: &RuntimeSettings) -> WatchList {
 }
 
 impl<T: DiscordTransport> TickLoop<T> {
-    /// Wait for the guild, then tick until `stop`. Returns after the running
-    /// tick completes. [`recover`] must already have run.
+    /// Wait for the guild and its initial roster reconciliation attempt, then
+    /// tick until `stop`. Returns after the running tick completes.
+    /// [`recover`] must already have run.
     pub async fn run(
         self,
         mut guild_ready: watch::Receiver<bool>,
@@ -235,6 +236,11 @@ impl<T: DiscordTransport> TickLoop<T> {
             ready = guild_ready.wait_for(|ready| *ready) => if ready.is_err() {
                 return self.status.set(STOPPED);
             },
+        }
+        tokio::select! {
+            biased;
+            _ = stop.wait_for(|stop| *stop) => return self.status.set(STOPPED),
+            _ = self.roster.reconciled() => {}
         }
         let alerts = LogAlerts;
         let mut delivery = Delivery::new(

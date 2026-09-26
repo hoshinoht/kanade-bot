@@ -6,12 +6,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use twilight_gateway::Event;
 use twilight_model::application::command::{Command, CommandType};
-use twilight_model::application::interaction::{Interaction, InteractionContextType};
+use twilight_model::application::interaction::{
+    Interaction, InteractionContextType, InteractionData,
+};
 use twilight_model::gateway::payload::incoming::InteractionCreate;
 use twilight_model::guild::Permissions;
 use twilight_model::id::Id;
@@ -20,12 +22,14 @@ use kanade::bot::commands::{
     AccessPolicy, CommandError, CommandFuture, Denial, Dispatcher, Disposition, GENERIC_FAILURE,
     Gate, Handled, Invocation, SlashCommand, spawn_interaction,
 };
-use kanade::bot::events::{BotEvent, EventHandler};
+use kanade::bot::events::{AdminRoles, BotEvent, EventHandler};
 use kanade::bot::gateway::{EventSource, GatewayError, RunExit, RunnerConfig, run};
+use kanade::bot::handler::Fanout;
 use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, InteractionReply, Op, Outcome,
     RejectionKind, Step,
 };
+use kanade::domain::members::Roster;
 
 use super::support::*;
 
@@ -349,6 +353,109 @@ fn slow_dispatcher() -> Arc<Dispatcher> {
 
 fn slow(roles: &[u64]) -> Interaction {
     command_interaction(Some(GUILD), ALICE, roles, 0, "slow", json!([]))
+}
+
+struct Fast;
+
+impl SlashCommand for Fast {
+    fn definition(&self) -> Command {
+        plain_command("fast")
+    }
+
+    fn gate(&self) -> Gate {
+        Gate::BossingRole
+    }
+
+    fn run<'a>(&'a self, _: &'a Invocation) -> CommandFuture<'a> {
+        Box::pin(async { Ok(InteractionReply::ephemeral("fast done")) })
+    }
+}
+
+fn drain_dispatcher() -> Arc<Dispatcher> {
+    Arc::new(
+        Dispatcher::new(policy())
+            .register(Slow)
+            .unwrap()
+            .register(Fast)
+            .unwrap(),
+    )
+}
+
+fn registered(mut interaction: Interaction, id: u64) -> Interaction {
+    interaction.id = Id::new(id);
+    let Some(InteractionData::ApplicationCommand(command)) = &mut interaction.data else {
+        panic!("application command fixture");
+    };
+    command.guild_id = Some(guild());
+    interaction
+}
+
+#[tokio::test(start_paused = true)]
+async fn fanout_bounds_task_drain_and_aborts_hanging_command_tasks() {
+    let transport = Arc::new(FakeDiscord::new());
+    let dispatcher = drain_dispatcher();
+    let (roster, _roster_jobs) = mpsc::unbounded_channel();
+    let (reactions, _reaction_jobs) = mpsc::unbounded_channel();
+    let (guild_ready, _ready) = watch::channel(false);
+    let commands = Arc::clone(&dispatcher);
+    let mut fanout = Fanout::new(
+        guild(),
+        Arc::clone(&transport),
+        Box::new(move |_| Arc::clone(&commands)),
+        Arc::new(|| None),
+        Arc::new(Roster::new()),
+        roster,
+        reactions,
+        Box::new(|_| {}),
+        guild_ready,
+    );
+
+    fanout
+        .handle(BotEvent::Ready {
+            self_id: user(SELF_ID),
+            application_id: Id::new(9),
+            name: "kanade".into(),
+        })
+        .await;
+    fanout
+        .handle(BotEvent::GuildAvailable {
+            owner_id: user(OWNER),
+            admin_roles: AdminRoles::default(),
+        })
+        .await;
+    fanout
+        .handle(BotEvent::Interaction(Box::new(registered(
+            slow(&[BOSSING_ROLE]),
+            8_001,
+        ))))
+        .await;
+    fanout
+        .handle(BotEvent::Interaction(Box::new(registered(
+            command_interaction(Some(GUILD), ALICE, &[BOSSING_ROLE], 0, "fast", json!([])),
+            8_002,
+        ))))
+        .await;
+
+    let started = Instant::now();
+    tokio::time::timeout(Duration::from_secs(3), fanout.finish())
+        .await
+        .expect("the shared handler-task grace bounds shutdown");
+    assert!(started.elapsed() < Duration::from_secs(3));
+
+    // If cancelling the outer logger task detached its nested command, this
+    // advance would let the slow command complete its deferred response.
+    tokio::time::advance(Duration::from_secs(60)).await;
+    tokio::task::yield_now().await;
+    let calls = transport.calls();
+    assert!(calls.iter().any(|call| matches!(call,
+        Call::Respond { reply, .. } if reply.content == "fast done"
+    )));
+    assert!(calls.iter().any(|call| matches!(call, Call::Defer { .. })));
+    assert!(
+        !calls
+            .iter()
+            .any(|call| matches!(call, Call::CompleteDeferred { .. }))
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -150,9 +150,12 @@ reconciliation must cover them.
 
 Handler contract: `EventHandler::handle` runs inline in the loop, so it must
 be short and must not await Discord transport calls. Interaction and
-transport work is spawned (`commands::spawn_interaction`), so the shard keeps
-being polled for heartbeats. A test shows a one-minute command does not hold
-up the next event. `BotEvent`'s `Debug` redacts the interaction token.
+transport work is spawned as tracked tasks, so the shard keeps being polled
+for heartbeats. After the gateway stops, `Fanout::finish` gives interaction
+and registration tasks one shared 2 s grace, then cancels and joins any
+stragglers before the store closes (`gateway_tasks_aborted`). A test shows a
+one-minute command does not hold up the next event. `BotEvent`'s `Debug`
+redacts the interaction token.
 
 ## Event mapping
 
@@ -513,13 +516,15 @@ reason (`no_rewriter`, `no_persona`, `timeout`, `unavailable`, `refused`,
 tick, and a `ConnectionStatus` for health; `handler::Fanout` (the
 `EventHandler`) sends roster jobs to `roster::RosterTask`, RSVP reactions to
 `handler::Reactions` (card ✅/❌ → `CardDesk::on_reaction`, else the
-`ReactionRouter`), spawns interaction and command-registration tasks, offers created messages
-to the chat pilot (`chat_feed::ChatFeed`: resolved roles, mentions and the
-replied-to message, nothing fetched; deletions cancel) and counts message
-events. `roster::reconcile` pages `list_members` and diffs it
+`ReactionRouter`), tracks spawned interaction and command-registration tasks,
+offers created messages to the chat pilot (`chat_feed::ChatFeed`: resolved
+roles, mentions and the replied-to message, nothing fetched; deletions cancel)
+and counts message events. `roster::reconcile` pages `list_members` and diffs it
 against the stored rows (`Seen` for changed members, `Left` for rows still
 holding a role, roles or Administrator); `roster::LiveRoster` is the
-in-memory member snapshot (`Directory`) the tick and cards read.
+in-memory member snapshot (`Directory`) the tick and cards read. The first
+delivery tick waits for `LiveRoster::reconciled` after the guild becomes
+available; shutdown still releases it if reconciliation never completes.
 `delivery::LogAlerts` is the beta alert destination (structured log).
 Commands: `runtime::serve::commands` builds a `CommandContext` from the
 API's own store, writer, policy, catalog, personas, access and clock (the

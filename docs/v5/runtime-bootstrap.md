@@ -319,10 +319,13 @@ The Discord side (`serve/discord/`) runs one gateway session for
 - `recover_on_start` runs once before the gateway starts (an attempt a
   previous process left in flight becomes indeterminate and is never
   resent), so nothing (reactions, commands, the tick) can send first; a
-  failed recovery fails startup. The delivery tick waits for the guild, then
-  ticks every `KANADE_TICK_SECONDS` under one lease per
-  tick in v4's order (materialise, mark done, expiry, notice outbox drain
-  with `DEFAULT_MAX_NOTICE_AGE`, digest, reminders). The post channel, quiet
+  failed recovery fails startup. The delivery tick waits for the guild and
+  the initial roster reconciliation attempt before its first tick; the roster
+  task marks that attempt complete even when fetching members fails, so a
+  failed page neither sends early nor deadlocks startup. It then ticks every
+  `KANADE_TICK_SECONDS` under one lease per tick in v4's order (materialise,
+  mark done, expiry, notice outbox drain with `DEFAULT_MAX_NOTICE_AGE`,
+  digest, reminders). The post channel, quiet
   mode, watch list and members are re-read each tick; the schedule policy
   is fixed at startup, as in the API. Reachability is the shared
   `GuildCache`.
@@ -397,9 +400,10 @@ The Discord side (`serve/discord/`) runs one gateway session for
   disconnects reconnect with Twilight's backoff (health `discord:
   disconnected` meanwhile).
 
-Shutdown (`SIGINT`/`SIGTERM`): the gateway closes (and its spawned
-interaction/registration tasks finish), chat stops (waiting questions are
-refunded, running ones get 3 s to finish and are then cut, refunded and
+Shutdown (`SIGINT`/`SIGTERM`): the gateway closes; its spawned
+interaction/registration tasks share a 2 s drain grace, then unfinished tasks
+are cancelled and joined (`gateway_tasks_aborted`). Chat stops (waiting
+questions are refunded, running ones get 3 s to finish and are then cut, refunded and
 concluded with a `cancelled` log row; tidy-up gets 2 s more plus 1 s for
 the log writes of anything aborted, so chat adds at most 6 s; logged
 `chat_stopped`), extraction stops (`Rescans::close`: queued jobs end

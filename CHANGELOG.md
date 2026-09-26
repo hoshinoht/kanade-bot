@@ -560,6 +560,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 waits for the initial roster reconciliation before its first delivery
+  tick, and bounds Discord command-task draining on shutdown so stalled
+  interactions cannot hold the store past the grace period.
 - v5 Discord sign-in consumes a one-time callback state even when that callback
   is rate-limited, preventing it from being replayed after the quota resets.
 - v5 chat replies keep code-block indentation and persona ellipses (`Mou...`

@@ -1,11 +1,14 @@
 //! Live serve with the Discord side wired: a scripted gateway, the fake
 //! transport and a temp SQLite store. Nothing touches the network.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, RwLock, atomic::AtomicBool},
+    time::Duration,
+};
 
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::{Instant, sleep};
 use twilight_gateway::Event;
 use twilight_model::gateway::CloseFrame;
@@ -34,7 +37,9 @@ use crate::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
         delivery::{FixedClock, LogAlerts, StoreRef},
         gateway::{EventSource, GatewayError},
-        transport::{Call, FakeDiscord, Op},
+        guild_cache::GuildCache,
+        roster::LiveRoster,
+        transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
     domain::{
         drafts::{DraftStatus, ProposalSource, ProposalStore},
@@ -730,9 +735,136 @@ async fn countdown_message(store: &SqliteStore, run: &str) -> Option<String> {
         .and_then(|row| row.message_id)
 }
 
+fn controlled_tick(
+    harness: &Harness,
+    store: Arc<SqliteStore>,
+    cache: Arc<GuildCache>,
+    roster: Arc<LiveRoster>,
+    now: DateTime<Utc>,
+    policy: SchedulePolicy,
+) -> super::tick::TickLoop<FakeDiscord> {
+    let clock_now = now;
+    super::tick::TickLoop {
+        store,
+        transport: Arc::clone(&harness.fake),
+        cache,
+        roster,
+        clock: Arc::new(move || clock_now),
+        period: TICK,
+        seeds: harness.config.seeds.clone(),
+        config: super::tick::delivery_config(
+            &harness.config.instance_id,
+            policy,
+            &super::settings::seed(&harness.config.seeds),
+        ),
+        status: Arc::new(super::tick::TickStatus::new(TICK)),
+        cards: Default::default(),
+        quiet: Arc::new(AtomicBool::new(false)),
+        post_channel: Arc::new(RwLock::new(None)),
+    }
+}
+
+fn cache_with_test_channel() -> Arc<GuildCache> {
+    let cache = Arc::new(GuildCache::new(Id::new(GUILD)));
+    let Event::GuildCreate(create) = guild_create(&[HOME_C]) else {
+        unreachable!();
+    };
+    let GuildCreate::Available(guild) = *create else {
+        unreachable!();
+    };
+    cache.reset(&guild);
+    cache
+}
+
+#[tokio::test]
+async fn first_tick_waits_for_roster_reconciliation_before_sending() {
+    let harness = Harness::new();
+    let policy = policy(&harness);
+    let now = auth::system_now();
+    let store = store::open(&harness.config.store).await.unwrap();
+    let start = now + chrono::Duration::seconds(59 * 60 + 30);
+    let run = create_run(&store, &policy, now, HOME_C, start).await;
+    SchedulerService::new(&store, RandomIds, FixedClock(now))
+        .with_attendance(policy.attendance)
+        .as_origin(Origin::for_tests())
+        .add_reminder(
+            &run,
+            "countdown_60",
+            start - chrono::Duration::minutes(60),
+            None,
+        )
+        .await
+        .unwrap()
+        .expect("a new reminder");
+    super::tick::recover(&store, now).await.unwrap();
+
+    let cache = cache_with_test_channel();
+    let roster = Arc::new(LiveRoster::new(Arc::clone(&cache)));
+    let tick = controlled_tick(
+        &harness,
+        Arc::clone(&store),
+        cache,
+        Arc::clone(&roster),
+        now,
+        policy,
+    );
+    let (guild_ready, ready) = watch::channel(false);
+    let (stopped, stop) = watch::channel(false);
+    let tick = tick.run(ready, stop);
+    tokio::pin!(tick);
+    let control = async {
+        guild_ready.send_replace(true);
+        tokio::task::yield_now().await;
+        sleep(TICK * 4).await;
+        tokio::task::yield_now().await;
+        assert_eq!(harness.fake.count(Op::Create), 0, "no pre-reconcile send");
+
+        roster.mark_reconciled();
+        eventually!("the first delivery", harness.fake.count(Op::Create) == 1);
+        assert_eq!(harness.fake.count(Op::Create), 1);
+        stopped.send_replace(true);
+    };
+    tokio::join!(tick, control);
+    store::close(store, Duration::ZERO).await;
+}
+
+#[tokio::test]
+async fn stop_interrupts_a_tick_waiting_for_reconciliation() {
+    let harness = Harness::new();
+    let policy = policy(&harness);
+    let now = auth::system_now();
+    let store = store::open(&harness.config.store).await.unwrap();
+    super::tick::recover(&store, now).await.unwrap();
+
+    let cache = cache_with_test_channel();
+    let roster = Arc::new(LiveRoster::new(Arc::clone(&cache)));
+    let tick = controlled_tick(&harness, Arc::clone(&store), cache, roster, now, policy);
+    let (guild_ready, ready) = watch::channel(false);
+    let (stopped, stop) = watch::channel(false);
+    let tick = tick.run(ready, stop);
+    tokio::pin!(tick);
+    guild_ready.send_replace(true);
+    tokio::select! {
+        biased;
+        () = &mut tick => panic!("tick stopped before the stop signal"),
+        _ = tokio::task::yield_now() => {}
+    }
+    stopped.send_replace(true);
+
+    tokio::time::timeout(Duration::from_secs(1), &mut tick)
+        .await
+        .expect("shutdown must not wait for reconciliation");
+    assert!(harness.fake.calls().is_empty());
+    store::close(store, Duration::ZERO).await;
+}
+
 #[tokio::test]
 async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
     let harness = Harness::new();
+    // An unsuccessful roster fetch still completes the reconciliation attempt.
+    harness
+        .fake
+        .script(Op::ListMembers, Step::Reject(RejectionKind::MissingAccess));
     let policy = policy(&harness);
     let now = auth::system_now();
     let mut due_run = String::new();

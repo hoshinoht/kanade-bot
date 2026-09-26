@@ -6,10 +6,12 @@ mod reactions;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
+use tokio::time::{Instant, timeout_at};
 use twilight_model::application::interaction::{Interaction, InteractionData};
 use twilight_model::id::{
     Id,
@@ -17,7 +19,7 @@ use twilight_model::id::{
 };
 
 use crate::bot::chat_feed::ChatFeed;
-use crate::bot::commands::{Dispatcher, Disposition, spawn_interaction};
+use crate::bot::commands::{Dispatcher, Disposition};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::extract_feed::{FeedItem, MessageFeed};
 use crate::bot::roster::RosterJob;
@@ -26,6 +28,8 @@ use crate::domain::members::Directory;
 use crate::runtime::logging;
 
 pub use reactions::{Reacted, Reactions};
+
+const TASK_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
 /// Guild messages seen (created, updated, deleted).
 #[derive(Clone, Debug, Default)]
@@ -68,7 +72,8 @@ pub struct Fanout<T> {
     /// Called on every `READY` with the application id (before any
     /// interaction or registration uses the transport).
     pub on_ready: Box<dyn FnMut(Id<ApplicationMarker>) + Send>,
-    /// Set once the guild first became available (the tick waits for it).
+    /// Set once the guild first became available (the tick also waits for
+    /// roster reconciliation).
     pub guild_ready: watch::Sender<bool>,
     pub messages: MessageCounts,
     /// The chat pilot's input; `None` leaves chat off.
@@ -127,11 +132,26 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         }
     }
 
-    /// Wait for spawned interaction and registration tasks (after the
-    /// gateway stopped), so nothing still holds the store.
+    /// Drain spawned interaction and registration tasks, then cancel stragglers.
     pub async fn finish(&mut self) {
-        for task in self.tasks.drain(..) {
-            let _ = task.await;
+        let deadline = Instant::now() + TASK_DRAIN_GRACE;
+        let mut pending = Vec::new();
+        for mut task in std::mem::take(&mut self.tasks) {
+            if timeout_at(deadline, &mut task).await.is_err() {
+                pending.push(task);
+            }
+        }
+        if !pending.is_empty() {
+            let count = pending.len();
+            for task in &pending {
+                task.abort();
+            }
+            // Join cancelled tasks before the store closes so their futures
+            // have dropped any in-flight store operation.
+            for task in pending {
+                let _ = task.await;
+            }
+            logging::event("WARN", "gateway_tasks_aborted", json!({"tasks": count}));
         }
     }
 
@@ -181,15 +201,14 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
                 return;
             }
         };
-        let handled = spawn_interaction(
-            dispatcher,
-            Arc::clone(&self.transport),
-            self.guild,
-            interaction,
-            (self.owner)(),
-        );
+        let transport = Arc::clone(&self.transport);
+        let guild = self.guild;
+        let owner_id = (self.owner)();
         self.spawn(async move {
-            if let Ok(Some((disposition, outcome))) = handled.await {
+            if let Some((disposition, outcome)) = dispatcher
+                .handle(transport.as_ref(), guild, &interaction, owner_id)
+                .await
+            {
                 // A failure's detail can quote store errors; the kind is enough.
                 let level = match &disposition {
                     Disposition::Failed(_) => "WARN",
