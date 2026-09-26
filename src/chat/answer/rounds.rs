@@ -231,9 +231,13 @@ impl Loop<'_, '_> {
 
 /// Run one question over an open session; never fails, the generation says
 /// what happened. The reply is finished (write/read claims, grounding,
-/// member-facing scrubbing, bounds) and identity-decoded.
+/// member-facing scrubbing, bounds) and identity-decoded. `alias` is the
+/// route the identity guard checked: requests name it, so a session whose
+/// permit went to another alias (a live switch in between) fails as
+/// `session-alias` instead of reaching an unchecked route.
 pub async fn run_question<P, S, I, C, X>(
     question: Question<'_>,
+    alias: &str,
     session: &mut Session<'_, P>,
     identity: &mut dyn IdentitySession,
     guild: &GuildView<'_>,
@@ -247,7 +251,7 @@ where
     C: Clock,
     X: ChatPorts,
 {
-    let alias = session.alias().unwrap_or_default().to_owned();
+    let alias = alias.to_owned();
     let mut offer = question.offer.clone();
     let owned = prompts::protected();
     let mut messages: Vec<Message> = question

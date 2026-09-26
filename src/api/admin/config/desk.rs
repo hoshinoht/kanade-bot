@@ -4,7 +4,7 @@
 //! (gateway watch lists, tick, extractor, chat) subscribes to.
 
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     future::Future,
     path::PathBuf,
     pin::Pin,
@@ -20,8 +20,13 @@ use crate::{
         state::ChannelEntry,
     },
     chat::persona::PersonaStore,
-    domain::settings::{RuntimeSettings, Section, SettingsError, SettingsStore, save_section},
-    infrastructure::llm::setup::{CapacityGroup, CatalogSnapshot},
+    domain::settings::{
+        Models, RuntimeSettings, Section, SettingsError, SettingsStore, save_section,
+    },
+    infrastructure::llm::{
+        governor::Role,
+        setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
+    },
 };
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -45,9 +50,21 @@ pub struct CatalogRead {
     pub snapshot: CatalogSnapshot,
 }
 
-/// The gateway's live model list (`ModelStack` in production).
+/// The gateway's live model list and the running role models (`ModelStack`
+/// in production).
 pub trait ModelCatalog: Send + Sync {
     fn read(&self) -> ConfigFuture<'_, CatalogRead>;
+
+    /// Switches the running roles to saved `models`; the next session of each
+    /// role uses them. Returns the roles whose alias or effort changed.
+    fn apply(&self, _models: &Models) -> Result<Vec<RoleSwap>, String> {
+        Ok(Vec::new())
+    }
+
+    /// Alias and effort each routed role runs with now.
+    fn running(&self) -> BTreeMap<Role, RunningRole> {
+        BTreeMap::new()
+    }
 }
 
 /// Deployment facts the page shows read-only (plain inputs; no env reads here).
@@ -133,8 +150,9 @@ impl ConfigDesk {
     }
 
     /// Every saved change, latest value first. Live now: the persona switch
-    /// and profile reload (the snapshot swaps). Everything else applies once
-    /// its consumer subscribes here, else at restart.
+    /// and profile reload (the snapshot swaps) and model roles (applied to the
+    /// stack by the save itself). Everything else applies once its consumer
+    /// subscribes here, else at restart.
     pub fn subscribe(&self) -> watch::Receiver<SettingsChanged> {
         self.changes.subscribe()
     }
@@ -249,7 +267,7 @@ impl ConfigDesk {
                     .iter()
                     .map(|model| dto::model_info(model, &catalog.snapshot))
                     .collect(),
-                roles: dto::roles(settings, &catalog.snapshot),
+                roles: dto::roles(settings, &catalog.snapshot, &self.running()),
                 groups: groups
                     .iter()
                     .flat_map(|group| {
@@ -281,6 +299,13 @@ impl ConfigDesk {
             notices,
             env: self.env(settings, channels),
         }
+    }
+
+    pub(super) fn running(&self) -> BTreeMap<Role, RunningRole> {
+        self.models
+            .as_ref()
+            .map(|models| models.running())
+            .unwrap_or_default()
     }
 
     /// The groups the governor runs, as `serve` configured it.

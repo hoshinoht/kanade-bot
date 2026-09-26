@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use super::super::AdmissionLimits;
+use super::super::{AdmissionLimits, Effort};
 
 pub const MAX_PERMITS: u32 = 64;
 pub const MAX_REQUESTS_PER_MIN: u32 = 6_000;
@@ -102,6 +102,9 @@ pub struct RoleRoute {
     pub external: bool,
     /// Operator override: an `external` route may run without pseudonymization.
     pub unmasked_allowed: bool,
+    /// The level the role's requests send, as the model setup resolved it;
+    /// `None` where no setup manages it (callers use their own).
+    pub effort: Option<Effort>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -255,6 +258,7 @@ impl GovernorConfig {
                 group,
                 external: config.external,
                 unmasked_allowed: false,
+                effort: None,
             });
         }
         Ok((routes, warnings))

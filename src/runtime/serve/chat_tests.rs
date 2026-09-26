@@ -45,6 +45,8 @@ const CHANNEL: u64 = 50;
 const THREAD: u64 = 60;
 const BOT_ROLE: u64 = 35;
 const ALIAS: &str = "home-chat";
+/// A second homelab alias a saved switch can move chat to.
+const OTHER: &str = "home-chat-b";
 
 // ---- Loopback model gateway ----
 
@@ -70,8 +72,9 @@ impl ModelStub {
                     let answer = if path.ends_with("/models") {
                         listing(zone)
                     } else {
+                        let model = body["model"].as_str().unwrap_or(ALIAS).to_owned();
                         seen.lock().unwrap().push(body);
-                        completion(reply)
+                        completion(&model, reply)
                     };
                     let text = answer.to_string();
                     let response = format!(
@@ -92,6 +95,21 @@ impl ModelStub {
 
     fn completions(&self) -> usize {
         self.completions.lock().unwrap().len()
+    }
+
+    /// `(model, reasoning_effort)` of every completion request so far.
+    fn sent(&self) -> Vec<(String, Option<String>)> {
+        self.completions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|body| {
+                (
+                    body["model"].as_str().unwrap_or_default().to_owned(),
+                    body["reasoning_effort"].as_str().map(str::to_owned),
+                )
+            })
+            .collect()
     }
 }
 
@@ -130,28 +148,31 @@ async fn read_request(stream: &mut tokio::net::TcpStream) -> Option<(String, Val
 }
 
 fn listing(zone: &str) -> Value {
-    json!({"object": "list", "data": [{
-        "id": ALIAS,
-        "object": "model",
-        "kanata": {
-            "operations": ["chat"],
-            "structured_output": true,
-            "sampling_controls": true,
-            "reasoning_control": true,
-            "function_tools": true,
-            "streaming": false,
-            "trust_zone": zone,
-            "reasoning_efforts": ["none", "low", "medium", "high"],
-            "context_tokens": 32768,
-        },
-    }]})
+    let entry = |id: &str| {
+        json!({
+            "id": id,
+            "object": "model",
+            "kanata": {
+                "operations": ["chat"],
+                "structured_output": true,
+                "sampling_controls": true,
+                "reasoning_control": true,
+                "function_tools": true,
+                "streaming": false,
+                "trust_zone": zone,
+                "reasoning_efforts": ["none", "low", "medium", "high"],
+                "context_tokens": 32768,
+            },
+        })
+    };
+    json!({"object": "list", "data": [entry(ALIAS), entry(OTHER)]})
 }
 
-fn completion(content: &str) -> Value {
+fn completion(model: &str, content: &str) -> Value {
     json!({
         "id": "chatcmpl-synthetic",
         "object": "chat.completion",
-        "model": ALIAS,
+        "model": model,
         "choices": [{
             "index": 0,
             "message": {"role": "assistant", "content": content},
@@ -493,6 +514,59 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
             replies(&live.fake, THREAD).len() == 2
         );
         assert_eq!(replies(&live.fake, THREAD)[1].1, Some(5003));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
+    use crate::api::admin::config::ModelCatalog;
+    use crate::domain::settings::Reasoning;
+
+    let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;
+    let (live, discord) = live(&stub, &[("KANADE_CHAT_REASONING", "low")]).await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
+        eventually!("the first reply", replies(&live.fake, THREAD).len() == 1);
+        assert_eq!(stub.sent(), [(ALIAS.to_owned(), Some("low".to_owned()))]);
+
+        // What a config PATCH applies after saving: the reasoning first.
+        let stack = live.composition.models.clone().unwrap();
+        let mut models = live.composition.settings.models.clone();
+        models.chat.reasoning = Reasoning::High;
+        stack.apply(&models).unwrap();
+        live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
+        eventually!("the second reply", replies(&live.fake, THREAD).len() == 2);
+        assert_eq!(stub.sent()[1], (ALIAS.to_owned(), Some("high".to_owned())));
+
+        // Then another alias with its own level.
+        models.chat.alias = Some(OTHER.to_owned());
+        models.chat.reasoning = Reasoning::Medium;
+        stack.apply(&models).unwrap();
+        live.events.send(question(5003, &[PILOT_ROLE])).unwrap();
+        eventually!("the third reply", replies(&live.fake, THREAD).len() == 3);
+        assert_eq!(
+            stub.sent()[2],
+            (OTHER.to_owned(), Some("medium".to_owned()))
+        );
+        // Each chat row's round records what that question actually sent.
+        eventually!("three chat rows", chats(&live.store).await.len() == 3);
+        let mut rows = chats(&live.store).await;
+        rows.sort_by(|a, b| a.message_id.cmp(&b.message_id));
+        let rounds: Vec<(String, Option<String>)> = rows
+            .iter()
+            .map(|row| (row.rounds[0].model.clone(), row.rounds[0].reasoning.clone()))
+            .collect();
+        assert_eq!(
+            rounds,
+            [
+                (ALIAS.to_owned(), Some("low".to_owned())),
+                (ALIAS.to_owned(), Some("high".to_owned())),
+                (OTHER.to_owned(), Some("medium".to_owned())),
+            ]
+        );
     })
     .await;
 }

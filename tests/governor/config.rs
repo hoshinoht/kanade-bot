@@ -42,6 +42,7 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 group: Some("gpu".into()),
                 external: false,
                 unmasked_allowed: false,
+                effort: None,
             },
             RoleRoute {
                 role: Role::Chat,
@@ -49,6 +50,7 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 group: Some("cloud".into()),
                 external: true,
                 unmasked_allowed: false,
+                effort: None,
             },
             RoleRoute {
                 role: Role::Rewrite,
@@ -56,6 +58,7 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 group: Some("gpu".into()),
                 external: false,
                 unmasked_allowed: false,
+                effort: None,
             },
         ]
     );

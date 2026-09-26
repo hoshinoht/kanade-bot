@@ -601,19 +601,19 @@ impl<P: LlmProvider> Session<'_, P> {
             return Ok(false);
         }
         // Checked while still holding the slot: no pointless wait and requeue.
-        match &self.permit {
-            Some(permit) if permit.check_retry(false).is_ok() => {}
+        let (group, alias) = match &self.permit {
+            Some(permit) if permit.check_retry(false).is_ok() => permit.pinned(),
             _ => return Ok(false),
-        }
+        };
         self.requeues_left -= 1;
         self.permit = None;
         self.ended = true;
         tokio::time::sleep(pause).await;
         let wait = self.deadline.saturating_duration_since(Instant::now());
-        let permit = self
-            .client
-            .acquire(self.role, self.ticket.clone(), wait)
-            .await?;
+        // Back to the same model and group even if the role was rerouted.
+        let permit = super::permit::acquire(group, alias, self.ticket.clone(), wait)
+            .await
+            .map_err(|refused| refunded(SessionFailure::Refused(refused)))?;
         self.permit = Some(permit);
         self.ended = false;
         Ok(true)

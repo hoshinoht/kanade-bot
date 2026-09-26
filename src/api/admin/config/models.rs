@@ -297,6 +297,30 @@ pub fn apply_roles(
     Ok((next, notices))
 }
 
+/// Roles this change points at an alias no declared group lists: refused
+/// like at startup (the governor would refuse every call). Without declared
+/// groups every alias joins the default group, and an alias already saved
+/// never blocks an unrelated save.
+pub fn ungrouped(current: &Models, next: &Models, declared: &[CapacityGroup]) -> Vec<String> {
+    if declared.is_empty() {
+        return Vec::new();
+    }
+    Role::ALL
+        .into_iter()
+        .filter_map(|role| {
+            let alias = role.of(next).alias.as_ref()?;
+            let changed = role.of(current).alias.as_ref() != Some(alias);
+            let grouped = declared.iter().any(|group| group.aliases.contains(alias));
+            (changed && !grouped).then(|| {
+                format!(
+                    "The {} model {alias} is in no capacity group; add it to [[models.groups]] in kanade.toml and restart, or pick a grouped model.",
+                    role.name()
+                )
+            })
+        })
+        .collect()
+}
+
 fn distinct_aliases(models: &Models) -> Vec<String> {
     let aliases: BTreeSet<&String> = Role::ALL
         .into_iter()

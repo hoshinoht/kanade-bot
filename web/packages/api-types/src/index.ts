@@ -852,6 +852,8 @@ export interface RoleModel {
   variant_of?: string;
   /** That variant's baked-in level; it wins over `reasoning`. */
   fixed_effort?: string;
+  /** What the role's next session opens with (saved roles apply live); absent while unrouted. */
+  running?: { alias: string; reasoning: string | null };
 }
 
 export interface CapacityGroup {

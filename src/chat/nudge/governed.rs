@@ -148,7 +148,8 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
             tools: Vec::new(),
             output_schema: None,
             max_output_tokens: REWRITE_MAX_OUTPUT_TOKENS,
-            reasoning: None,
+            // The rewrite role's live level (read once, with the alias).
+            reasoning: route.effort,
             sampling: None,
         };
         let response = session.complete(&request).await.map_err(|error| {

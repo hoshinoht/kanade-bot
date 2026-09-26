@@ -5,6 +5,7 @@ mod identity_scan;
 mod pool;
 mod rate;
 mod recovery;
+mod reroute;
 mod reservation;
 mod rewrite;
 mod session;

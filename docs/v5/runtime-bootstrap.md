@@ -117,7 +117,7 @@ lists are comma-separated.
 | `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200); seeds for a role with no saved alias. |
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
-| `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
+| `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
 | `KANADE_PSEUDONYMIZE` | `0` | `1` (`models.pseudonymize`) replaces member names, aliases, ids, extraction message ids and stray Discord ids in every model request with per-request fictional names and refs (`provider-contract.md`), for every role; roles whose model leaves the homelab then run masked. Every request is scanned before sending and refused (`identity_leak_blocked`) if a raw identity remains; chat and extraction send nothing without a readable, non-empty roster. Read-only in the admin config view. |
 | `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. Unused (startup warns `override_unused`) while `KANADE_PSEUDONYMIZE=1` or when no model leaves the homelab. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
@@ -258,6 +258,25 @@ pseudonymization is on; warnings `external_unmasked`, `external_refused`
 set but masking is on or no route leaves the homelab), `capacity` and
 `ungrouped` are WARN, `unpublished_effort` INFO. The catalog refresh task (every 300 s, 30 s until
 a listing succeeds) is aborted at shutdown.
+
+Model roles saved in the config API switch the running stack at once
+(`ModelStack::apply_roles`): each role's next question, extraction call or
+rewrite opens with the new alias and resolved effort, and calls already
+running keep theirs. After `settings_changed` (which carries the stored
+before/after values) each role whose running alias or effort changed logs
+
+```json
+{"level":"INFO","event":"model_role_switched","role":"chat","from":{"alias":"gpt-6-luna","effort":"low"},"to":{"alias":"gpt-6-luna","effort":"high"}}
+```
+
+(`null` for an unrouted side), and `model_roles_not_applied` (WARN) if the
+stack refused them (the save stands and a notice says they apply at
+restart). `chat_answered`/`chat_failed` carry the `model` and `reasoning`
+each question used, and each extraction log row its `model` and
+`reasoning`. Extraction and the heading rewriter are still composed at
+startup: a role with no alias then gets its route live, but extraction and
+heading rewrites for it start only after a restart. `model_role` lines are
+startup-only.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
 `KANADE_EXPECT_V4_STOPPED`, opens and owns the store, loads the catalog,

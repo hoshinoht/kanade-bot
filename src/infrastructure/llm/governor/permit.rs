@@ -124,6 +124,12 @@ impl Permit {
         &self.alias
     }
 
+    /// The group and alias a requeue must return to, whatever the role's
+    /// route is by then (sessions keep the model they opened with).
+    pub(super) fn pinned(&self) -> (Arc<Group>, String) {
+        (self.group.clone(), self.alias.clone())
+    }
+
     /// Admits one first-attempt request, waiting at most `max_wait` for the rate ceiling.
     pub async fn begin_request(&self, max_wait: Duration) -> Result<Attempt, Refused> {
         self.begin(false, max_wait).await

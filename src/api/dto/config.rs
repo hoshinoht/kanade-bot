@@ -1,6 +1,8 @@
 //! `config.json#/$defs/ConfigView` and its projections from runtime settings,
 //! the live model catalog, the persona files and deployment facts.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::{
@@ -8,7 +10,8 @@ use crate::{
     domain::settings::{Rate as StoredRate, RoleModel as StoredRole, RuntimeSettings},
     infrastructure::llm::{
         TrustZone,
-        setup::{CatalogModel, CatalogSnapshot},
+        governor::Role,
+        setup::{CatalogModel, CatalogSnapshot, RunningRole},
     },
 };
 
@@ -144,9 +147,23 @@ pub struct RoleModel {
     pub variant_of: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fixed_effort: Option<&'static str>,
+    /// What the role's next session opens with; absent while unrouted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running: Option<Running>,
 }
 
-fn role_model(role: &StoredRole, catalog: &CatalogSnapshot) -> RoleModel {
+/// The running alias and the level requests send (inherit and floors resolved).
+#[derive(Clone, Debug, Serialize)]
+pub struct Running {
+    pub alias: String,
+    pub reasoning: Option<&'static str>,
+}
+
+fn role_model(
+    role: &StoredRole,
+    catalog: &CatalogSnapshot,
+    running: Option<&RunningRole>,
+) -> RoleModel {
     let variant = role
         .alias
         .as_deref()
@@ -156,6 +173,10 @@ fn role_model(role: &StoredRole, catalog: &CatalogSnapshot) -> RoleModel {
         reasoning: role.reasoning.as_str(),
         fixed_effort: variant.as_ref().map(|variant| variant.effort.as_str()),
         variant_of: variant.map(|variant| variant.base),
+        running: running.map(|running| Running {
+            alias: running.alias.clone(),
+            reasoning: running.effort.map(|effort| effort.as_str()),
+        }),
     }
 }
 
@@ -237,11 +258,16 @@ pub fn self_service(settings: &RuntimeSettings) -> SelfService {
     }
 }
 
-pub fn roles(settings: &RuntimeSettings, catalog: &CatalogSnapshot) -> Roles {
+pub fn roles(
+    settings: &RuntimeSettings,
+    catalog: &CatalogSnapshot,
+    running: &BTreeMap<Role, RunningRole>,
+) -> Roles {
+    let role = |stored, role| role_model(stored, catalog, running.get(&role));
     Roles {
-        extraction: role_model(&settings.models.extraction, catalog),
-        chat: role_model(&settings.models.chat, catalog),
-        rewrite: role_model(&settings.models.rewrite, catalog),
+        extraction: role(&settings.models.extraction, Role::Extraction),
+        chat: role(&settings.models.chat, Role::Chat),
+        rewrite: role(&settings.models.rewrite, Role::Rewrite),
     }
 }
 

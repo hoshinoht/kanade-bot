@@ -164,6 +164,7 @@ pub(super) fn route(external: bool) -> RoleRoute {
         group: Some("cloud".into()),
         external,
         unmasked_allowed: false,
+        effort: None,
     }
 }
 

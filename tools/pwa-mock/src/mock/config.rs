@@ -457,12 +457,18 @@ impl Store {
                 models.push(v);
             }
         }
-        // A stored variant is shown as "<base> (fixed: <level>)".
+        // A stored variant is shown as "<base> (fixed: <level>)"; saved roles
+        // run at once (`running`: inherit and a variant's level resolved).
         let role = |r: &RoleModel| {
             let mut v = json!(r);
+            let mut running = resolve(&r.reasoning, &c.extraction.reasoning).to_owned();
             if let Some((base, effort)) = variant(&r.alias) {
                 v["variant_of"] = json!(base);
                 v["fixed_effort"] = json!(effort);
+                running = effort.into();
+            }
+            if !r.alias.is_empty() {
+                v["running"] = json!({ "alias": r.alias, "reasoning": running });
             }
             v
         };
@@ -628,6 +634,19 @@ impl Store {
                         return Err(MoveError::Invalid(format!(
                             "{alias} cannot call tools, which the chatbot needs."
                         )));
+                    }
+                    // Declared groups: a switch to an alias none lists is refused.
+                    if let Some(declared) = &self.config.declared_groups
+                        && slot.alias != alias
+                        && !declared.iter().any(|g| g.model == alias)
+                    {
+                        return Err(MoveError::Coded(
+                            422,
+                            "ungrouped",
+                            format!(
+                                "The {role} model {alias} is in no capacity group; add it to [[models.groups]] in kanade.toml and restart, or pick a grouped model."
+                            ),
+                        ));
                     }
                     slot.alias = alias.into();
                 }
@@ -1086,6 +1105,21 @@ mod tests {
             &"The extraction model kanata/extract is in no capacity group; its calls are refused."
         ));
         assert!(warnings.contains(&"Group chat uses 2 of the 4 permits Kanata admits."));
+        // Switching a role to an alias no declared group lists is refused.
+        let refused = s
+            .patch_config(
+                &json!({ "models": { "roles": { "rewrite": { "alias": "kanata/legacy" } } } }),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            refused,
+            crate::mock::MoveError::Coded(422, "ungrouped", _)
+        ));
+        // Saved roles run at once: the view names what the next call uses.
+        assert_eq!(
+            view["models"]["roles"]["chat"]["running"]["alias"],
+            view["models"]["roles"]["chat"]["alias"]
+        );
         // Variants are listed with their base; the reasoning-only model hides `off`.
         let catalog = view["models"]["catalog"].as_array().unwrap();
         let chat_high = catalog

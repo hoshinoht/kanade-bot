@@ -372,10 +372,7 @@ where
                 channel_id: Some(channel_id.to_owned()),
                 member_ids: record.member_ids,
                 model: record.model,
-                reasoning: self
-                    .config
-                    .reasoning
-                    .map(|effort| effort.as_str().to_owned()),
+                reasoning: record.reasoning.map(|effort| effort.as_str().to_owned()),
                 prompt: record.prompt,
                 raw_response: record.raw,
                 latency_ms: record.latency_ms,

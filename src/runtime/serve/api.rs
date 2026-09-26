@@ -50,8 +50,8 @@ pub struct Composition {
     pub settings: RuntimeSettings,
     /// The live persona snapshot; the config API swaps it on a switch or reload.
     pub personas: Arc<PersonaStore>,
-    /// `None` without `KANADE_MODEL_BASE_URL`. Role routes are fixed at build,
-    /// so role changes saved in the config API apply at restart.
+    /// `None` without `KANADE_MODEL_BASE_URL`. Role aliases and reasoning
+    /// saved in the config API switch it live (next session per role).
     pub models: Option<Arc<ModelStack>>,
     /// Catalog refresh and the startup report; aborted when dropped.
     pub model_tasks: ModelTasks,

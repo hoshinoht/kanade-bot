@@ -491,6 +491,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   and route as actually sent, errors and tool rounds, and show admins a "Model view
   (masked)" section with the masked rounds and fake-name table; extractions can be
   filtered by `identity_leak`.
+- v5: model and reasoning changes saved in Config apply from the next chat question,
+  extraction call and rewrite without a restart (new aliases stay fail-closed until
+  Kanata lists them; ungrouped aliases are refused); rewrites now send the rewrite
+  role's reasoning level.
+- v5: temporary 64k context window for chat and extraction.
 
 **Changed**
 

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use tokio::time::Instant;
 
@@ -36,7 +36,8 @@ pub struct Counters {
 pub(super) struct Group {
     pub(super) name: String,
     pub(super) backend: String,
-    pub(super) aliases: Vec<String>,
+    /// Shown on the Limits page; the default group follows live role swaps.
+    aliases: RwLock<Vec<String>>,
     pub(super) random: Arc<dyn Random>,
     state: Mutex<GroupState>,
 }
@@ -59,7 +60,7 @@ impl Group {
         Self {
             name: config.name.clone(),
             backend: config.backend.clone(),
-            aliases: config.aliases.clone(),
+            aliases: RwLock::new(config.aliases.clone()),
             random,
             state: Mutex::new(GroupState {
                 pool: PermitPool::new(config.permits),
@@ -73,6 +74,17 @@ impl Group {
                 counters: Counters::default(),
             }),
         }
+    }
+
+    pub(super) fn aliases(&self) -> Vec<String> {
+        self.aliases
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(super) fn set_aliases(&self, aliases: Vec<String>) {
+        *self.aliases.write().unwrap_or_else(PoisonError::into_inner) = aliases;
     }
 
     /// Never held across an await.

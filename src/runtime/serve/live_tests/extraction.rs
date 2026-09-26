@@ -44,28 +44,46 @@ struct Model {
     answer: Arc<Mutex<String>>,
     /// How long each completion takes.
     delay: Arc<Mutex<Duration>>,
+    /// Each completion's `reasoning_effort` (`None`: not sent).
+    efforts: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 impl Model {
     async fn start(trust_zone: &str) -> Self {
+        Self::start_with(trust_zone, false).await
+    }
+
+    /// `reasoning`: the alias publishes `none` … `high`.
+    async fn start_with(trust_zone: &str, reasoning: bool) -> Self {
+        let mut kanata = json!({
+            "operations": ["chat"], "structured_output": true,
+            "sampling_controls": true, "reasoning_control": reasoning,
+            "function_tools": true, "streaming": false,
+            "trust_zone": trust_zone, "context_tokens": 32768,
+        });
+        if reasoning {
+            kanata["reasoning_efforts"] = json!(["none", "low", "medium", "high"]);
+        }
         let listing = json!({"object": "list", "data": [{
-            "id": ALIAS, "object": "model",
-            "kanata": {
-                "operations": ["chat"], "structured_output": true,
-                "sampling_controls": true, "reasoning_control": false,
-                "function_tools": true, "streaming": false,
-                "trust_zone": trust_zone, "context_tokens": 32768,
-            },
+            "id": ALIAS, "object": "model", "kanata": kanata,
         }]});
         let chats = Arc::new(AtomicUsize::new(0));
         let answer = Arc::new(Mutex::new(nothing()));
         let delay = Arc::new(Mutex::new(Duration::ZERO));
-        let (count, reply, wait) = (chats.clone(), answer.clone(), delay.clone());
+        let efforts = Arc::new(Mutex::new(Vec::new()));
+        let (count, reply, wait, seen) = (
+            chats.clone(),
+            answer.clone(),
+            delay.clone(),
+            efforts.clone(),
+        );
         let app = Router::new()
             .route("/v1/models", get(move || async move { Json(listing) }))
             .route(
                 "/v1/chat/completions",
-                post(move || async move {
+                post(move |Json(body): Json<Value>| async move {
+                    let effort = body["reasoning_effort"].as_str().map(str::to_owned);
+                    seen.lock().unwrap().push(effort);
                     count.fetch_add(1, Ordering::SeqCst);
                     let pause = *wait.lock().unwrap();
                     sleep(pause).await;
@@ -88,7 +106,12 @@ impl Model {
             chats,
             answer,
             delay,
+            efforts,
         }
+    }
+
+    fn efforts(&self) -> Vec<Option<String>> {
+        self.efforts.lock().unwrap().clone()
     }
 
     fn chats(&self) -> usize {
@@ -900,6 +923,63 @@ async fn saved_settings_switch_extraction_live() {
             "tick_stopped"
         ]
     );
+    finish(&harness, ctx).await;
+}
+
+#[tokio::test]
+async fn a_saved_reasoning_level_reaches_the_next_extraction_call() {
+    let model = Model::start_with("local", true).await;
+    let harness = harness_with(&model, true, &[("KANADE_EXTRACT_REASONING", "low")]);
+    let (mut discord, ctx) = started(&harness).await;
+    drive(&mut discord, async {
+        connect(&ctx).await;
+        let admin = Admin::start(&ctx, &harness).await;
+        let now = auth::system_now();
+        ctx.events
+            .send(posted(
+                snowflake(now, 1),
+                HOME_A,
+                ALICE,
+                "nkalos amend to 10pm",
+                now,
+            ))
+            .unwrap();
+        eventually!("the first call", logs(&ctx).await.len() == 1);
+        assert_eq!(model.efforts(), [Some("low".to_owned())]);
+
+        let (status, body) = admin
+            .send(
+                "PATCH",
+                "/api/admin/config",
+                Some(json!({"models": {"roles": {"extraction": {"reasoning": "high"}}}})),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(
+            body["models"]["roles"]["extraction"]["running"],
+            json!({"alias": ALIAS, "reasoning": "high"})
+        );
+        let now = auth::system_now();
+        ctx.events
+            .send(posted(
+                snowflake(now, 2),
+                HOME_A,
+                ALICE,
+                "nkalos amend to 11pm",
+                now,
+            ))
+            .unwrap();
+        eventually!("the second call", logs(&ctx).await.len() == 2);
+        assert_eq!(model.efforts()[1], Some("high".to_owned()));
+        let reasoning: Vec<Option<String>> = logs(&ctx)
+            .await
+            .into_iter()
+            .map(|log| log.reasoning)
+            .collect();
+        assert_eq!(reasoning, [Some("low".into()), Some("high".into())]);
+        admin.stop().await;
+    })
+    .await;
     finish(&harness, ctx).await;
 }
 

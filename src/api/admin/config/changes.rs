@@ -9,6 +9,7 @@ use serde_json::{Map, Value, json};
 use crate::{
     chat::persona::PersonaSnapshot,
     domain::settings::{RuntimeSettings, Section, section_rows},
+    infrastructure::llm::setup::{RoleSwap, RunningRole},
     runtime::logging,
 };
 
@@ -63,6 +64,35 @@ pub(super) fn settings_changed(
             "surface": "admin_portal",
         }),
     );
+}
+
+fn running(running: Option<&RunningRole>) -> Value {
+    running.map_or(Value::Null, |running| {
+        json!({
+            "alias": running.alias,
+            "effort": running.effort.map(|effort| effort.as_str()),
+        })
+    })
+}
+
+/// One line per role whose running alias or effort changed; the next
+/// session of that role opens with `to`.
+pub(super) fn models_applied(swaps: &[RoleSwap]) {
+    for swap in swaps {
+        logging::event(
+            "INFO",
+            "model_role_switched",
+            json!({
+                "role": swap.role.as_str(),
+                "from": running(swap.before.as_ref()),
+                "to": running(swap.after.as_ref()),
+            }),
+        );
+    }
+}
+
+pub(super) fn models_apply_failed(error: &str) {
+    logging::event("WARN", "model_roles_not_applied", json!({"error": error}));
 }
 
 fn profile_count(snapshot: &PersonaSnapshot) -> usize {

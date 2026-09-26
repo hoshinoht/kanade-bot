@@ -632,7 +632,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   // Chat needs tools: the tool-less model is offered disabled, with why.
   await expect(models.nth(1).locator('option[value="kanata/rewrite-small"]')).toHaveAttribute('disabled', '');
   await panel.getByRole('button', { name: 'Save models' }).click();
-  await expect(toast(page, /Models saved/)).toBeVisible();
+  await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
   // Capacity groups are read-only (kanade.toml): a table, no editor.
   await expect(panel.getByRole('button', { name: 'Save groups' })).toHaveCount(0);
@@ -787,7 +787,7 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
   await reasonings.first().selectOption('high');
   await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
   await panel.getByRole('button', { name: 'Save models' }).click();
-  await expect(toast(page, /Models saved/)).toBeVisible();
+  await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
   type Cfg = { models: { roles: Record<string, { alias: string; reasoning: string }>; catalog: { id: string; reasoning_efforts: string[] | null }[] } };
   const cfg = (await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as Cfg;

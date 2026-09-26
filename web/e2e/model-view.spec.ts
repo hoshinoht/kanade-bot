@@ -137,6 +137,7 @@ test('model view: at 390×844 only the tab panel scrolls, even when open', async
   });
   expect(got).toEqual({ doc: 0, docFits: true, panel: expect.any(Number), scrolls: true });
   expect(got.panel).toBeGreaterThan(0);
-  expect((await tab.boundingBox())?.y).toBe(before?.y);
+  // Sub-pixel layout can settle by under a pixel; the strip must not scroll.
+  expect(Math.abs((await tab.boundingBox())!.y - before!.y)).toBeLessThanOrEqual(1);
   await expect(page.getByRole('heading', { name: 'Final reply members saw' })).toBeInViewport();
 });

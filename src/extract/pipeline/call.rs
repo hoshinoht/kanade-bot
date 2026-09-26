@@ -28,7 +28,7 @@ use crate::infrastructure::llm::governor::{Refused, Role, SessionError, SessionF
 use crate::infrastructure::llm::identity::{
     IdentityLeakBlocked, IdentitySession, Member, open_session, unmasked,
 };
-use crate::infrastructure::llm::{ErrorCode, LlmProvider, Message};
+use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message};
 
 /// Why a call produced no answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +115,8 @@ pub(crate) struct CallRecord {
     pub log_id: String,
     pub at: DateTime<Utc>,
     pub model: String,
+    /// The level sent: the live route's, else the pipeline's configured one.
+    pub reasoning: Option<Effort>,
     pub prompt: String,
     pub raw: String,
     pub latency_ms: Option<u64>,
@@ -257,15 +259,15 @@ where
         members.dedup();
         let mut message_ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
         message_ids.sort();
+        let route = self.client.governor().route(Role::Extraction);
         CallRecord {
             log_id: self.new_id(),
             at: self.clock.now(),
-            model: self
-                .client
-                .governor()
-                .route(Role::Extraction)
-                .map(|route| route.alias)
-                .unwrap_or_default(),
+            reasoning: route
+                .as_ref()
+                .and_then(|route| route.effort)
+                .or(self.config.reasoning),
+            model: route.map(|route| route.alias).unwrap_or_default(),
             prompt: String::new(),
             raw: String::new(),
             latency_ms: None,
@@ -415,6 +417,9 @@ where
                 return record;
             }
         };
+        // Alias and level are read once here; the session keeps them.
+        record.model.clone_from(&route.alias);
+        record.reasoning = route.effort.or(self.config.reasoning);
         record.external_unmasked = unmasked(&route, self.codec.as_ref());
         record.pseudonymized = identity.masks();
         // D4: masking without the roster could not hide member names; fail
@@ -456,7 +461,10 @@ where
                 return record;
             }
         };
-        let alias = session.alias().map_or(route.alias.clone(), str::to_owned);
+        // The route's alias, not the permit's: a model switched between the
+        // identity check above and the permit fails as `session-alias`
+        // instead of reaching a route the check never saw.
+        let alias = route.alias.clone();
         let started = Instant::now();
         let mut attempts = ExtractionAttempts::new(prepared.messages.clone());
         let mut failure = None;
@@ -465,7 +473,7 @@ where
             let request = extraction_request(
                 &alias,
                 attempts.messages().to_vec(),
-                self.config.reasoning,
+                record.reasoning,
                 identity.as_ref(),
             );
             let sending = async {

@@ -4,6 +4,7 @@
 mod ca;
 mod catalog;
 mod effort;
+mod live;
 mod probe;
 mod settings;
 mod startup;
@@ -25,10 +26,12 @@ use super::{
 
 pub use catalog::{CatalogModel, CatalogSnapshot, Variant, leaves_homelab, variant_of};
 pub use effort::EffortStatus;
+pub use live::{RoleSwap, RunningRole};
 pub use probe::{PROBE_TIMEOUT, ProbeOutcome, ProbeResult};
 pub use startup::{Listing, StartupReport, StartupWarning};
 
 use catalog::CatalogState;
+use live::LiveRoles;
 
 const GROUP: &str = "gateway";
 /// Rate ceiling per permit; the gateway enforces its own admission on top.
@@ -167,7 +170,7 @@ pub struct ModelStack {
     pub governor: Arc<Governor>,
     pub client: Arc<GatewayClient>,
     config: GovernorConfig,
-    roles: ModelRoles,
+    roles: Arc<LiveRoles>,
     catalog: Arc<CatalogState>,
     masking: bool,
     unmasked_override: bool,
@@ -182,7 +185,8 @@ pub fn build(setup: ModelSetup, random: Arc<dyn Random>) -> Result<Models, Setup
 
 /// As [`build`]; non-empty `groups` replace the single `gateway` group
 /// (`setup.permits` is then unused). A role whose alias is in no group is
-/// reported ungrouped at startup and its calls are refused.
+/// reported ungrouped at startup and its calls are refused; without declared
+/// groups every alias a role is later switched to joins `gateway`.
 pub fn build_with_groups(
     setup: ModelSetup,
     groups: &[CapacityGroup],
@@ -209,10 +213,15 @@ pub fn build_with_groups(
     let config = governor_config(&aliases, setup.permits, groups);
     let governor = Arc::new(Governor::new(&config, random).map_err(SetupError::Governor)?);
     governor.allow_external_unmasked(setup.allow_external_unmasked);
+    let open = groups
+        .is_empty()
+        .then(|| gateway_group(setup.permits, Vec::new()));
+    let roles = Arc::new(LiveRoles::new(setup.roles, open));
     let catalog = Arc::new(CatalogState::default());
+    roles.refresh(&governor, &catalog);
     {
-        let (catalog, governor) = (catalog.clone(), governor.clone());
-        provider.observe_listings(move |listed| catalog.apply(listed, &governor, &aliases));
+        let (catalog, governor, roles) = (catalog.clone(), governor.clone(), roles.clone());
+        provider.observe_listings(move |listed| roles.observe(listed, &governor, &catalog));
     }
     let client = ModelClient::new(
         governor.clone(),
@@ -227,11 +236,22 @@ pub fn build_with_groups(
         governor,
         client: Arc::new(client),
         config,
-        roles: setup.roles,
+        roles,
         catalog,
         masking: setup.pseudonymize,
         unmasked_override: setup.allow_external_unmasked,
     })))
+}
+
+fn gateway_group(permits: u32, aliases: Vec<String>) -> GroupConfig {
+    GroupConfig {
+        name: GROUP.into(),
+        backend: "model gateway".into(),
+        permits,
+        requests_per_min: permits.saturating_mul(REQUESTS_PER_MIN_PER_PERMIT),
+        burst: None,
+        aliases,
+    }
 }
 
 fn governor_config(
@@ -255,14 +275,10 @@ fn governor_config(
     } else if distinct.is_empty() {
         Vec::new()
     } else {
-        vec![GroupConfig {
-            name: GROUP.into(),
-            backend: "model gateway".into(),
+        vec![gateway_group(
             permits,
-            requests_per_min: permits.saturating_mul(REQUESTS_PER_MIN_PER_PERMIT),
-            burst: None,
-            aliases: distinct.into_iter().cloned().collect(),
-        }]
+            distinct.into_iter().cloned().collect(),
+        )]
     };
     let roles = aliases
         .iter()
@@ -286,8 +302,20 @@ impl ModelStack {
         self.governor.route(role).is_some()
     }
 
-    pub fn roles(&self) -> &ModelRoles {
-        &self.roles
+    /// The running roles (the last applied, else the startup ones).
+    pub fn roles(&self) -> ModelRoles {
+        self.roles.get()
+    }
+
+    /// Switches the running roles; the next session of each role opens
+    /// with them (routing rules: `live.rs`).
+    pub fn apply_roles(&self, roles: ModelRoles) -> Result<Vec<RoleSwap>, SetupError> {
+        self.roles.apply(roles, &self.governor, &self.catalog)
+    }
+
+    /// Alias and effort each routed role's next session opens with.
+    pub fn running(&self) -> BTreeMap<Role, RunningRole> {
+        live::running(&self.governor)
     }
 
     /// Pseudonymization is on for every role.
@@ -318,21 +346,11 @@ impl ModelStack {
     /// resolved, a variant's fixed level applied, a stranded level reset to
     /// `off` or the lowest published level (reported in `stranded`).
     pub fn efforts(&self) -> BTreeMap<Role, EffortStatus> {
-        let listing = self.catalog.listing();
-        let listed = |alias: &str| {
-            listing
-                .as_deref()
-                .is_some_and(|models| models.iter().any(|model| model.id == alias))
-        };
-        effort::resolve(
-            &self.roles,
-            |alias| catalog::published(listing.as_deref()?, alias).cloned(),
-            |alias| variant_of(alias, listed).map(|variant| variant.effort),
-        )
+        live::efforts(&self.roles.get(), self.catalog.listing().as_deref())
     }
 
-    /// What a role's requests should send as `reasoning`.
+    /// What a role's requests should send as `reasoning` (its live route).
     pub fn effort(&self, role: Role) -> Option<Effort> {
-        self.efforts().get(&role).map(|status| status.effort)
+        self.governor.route(role)?.effort
     }
 }

@@ -67,7 +67,17 @@
         "alias": { "type": "string" },
         "reasoning": { "type": "string", "description": "`off`, a published effort, or `\"\"` = same as extraction (chat and rewrite only)." },
         "variant_of": { "type": "string", "description": "The stored alias is a listed variant of this base; show \"<variant_of> (fixed: <fixed_effort>)\"." },
-        "fixed_effort": { "type": "string", "description": "The stored variant's baked-in level; it wins over `reasoning`." }
+        "fixed_effort": { "type": "string", "description": "The stored variant's baked-in level; it wins over `reasoning`." },
+        "running": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alias", "reasoning"],
+          "description": "What the role's next session opens with (saved roles apply live); absent while the role is unrouted or no gateway is configured.",
+          "properties": {
+            "alias": { "type": "string" },
+            "reasoning": { "type": ["string", "null"], "description": "The level requests send: inherit resolved, a variant's fixed level or a published floor applied." }
+          }
+        }
       }
     },
     "CapacityGroup": {

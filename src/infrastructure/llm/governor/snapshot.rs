@@ -117,7 +117,7 @@ pub(super) fn capture(group: &Group, now: Instant, wall_now: DateTime<Utc>) -> G
     GroupSnapshot {
         name: group.name.clone(),
         backend: group.backend.clone(),
-        models: group.aliases.clone(),
+        models: group.aliases(),
         permits: PermitUsage {
             in_use: state.pool.in_use,
             total: state.pool.total,

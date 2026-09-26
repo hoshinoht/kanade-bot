@@ -9,6 +9,7 @@ mod bundles;
 mod context;
 mod gate;
 mod identity;
+mod live_switch;
 mod looping;
 mod masking;
 mod model;

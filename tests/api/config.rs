@@ -3,6 +3,7 @@
 //! `config.json`; refusals against `error.json`.
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
@@ -14,10 +15,11 @@ use kanade::{
         PersonaFiles,
     },
     chat::persona::{PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore},
-    domain::settings::{Reasoning, RoleModel, RuntimeSettings, load_settings},
+    domain::settings::{Models, Reasoning, RoleModel, RuntimeSettings, load_settings},
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot},
+        governor::Role,
+        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
     },
 };
 use serde_json::{Value, json};
@@ -116,9 +118,18 @@ fn catalog() -> CatalogSnapshot {
     }
 }
 
-pub struct FakeCatalog(Mutex<CatalogRead>);
+/// Records applied roles; `running` is whatever a test sets.
+pub struct FakeCatalog(
+    Mutex<CatalogRead>,
+    Mutex<Vec<Models>>,
+    Mutex<BTreeMap<Role, RunningRole>>,
+);
 
 impl FakeCatalog {
+    fn applied(&self) -> Vec<Models> {
+        self.1.lock().unwrap().clone()
+    }
+
     fn set_reachable(&self, reachable: bool) {
         self.0.lock().unwrap().reachable = reachable;
     }
@@ -137,6 +148,15 @@ impl ModelCatalog for FakeCatalog {
     fn read(&self) -> ConfigFuture<'_, CatalogRead> {
         let read = self.0.lock().unwrap().clone();
         Box::pin(async move { read })
+    }
+
+    fn apply(&self, models: &Models) -> Result<Vec<RoleSwap>, String> {
+        self.1.lock().unwrap().push(models.clone());
+        Ok(Vec::new())
+    }
+
+    fn running(&self) -> BTreeMap<Role, RunningRole> {
+        self.2.lock().unwrap().clone()
     }
 }
 
@@ -231,10 +251,14 @@ impl Config {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
-        let catalog = Arc::new(FakeCatalog(Mutex::new(CatalogRead {
-            reachable: true,
-            snapshot: catalog(),
-        })));
+        let catalog = Arc::new(FakeCatalog(
+            Mutex::new(CatalogRead {
+                reachable: true,
+                snapshot: catalog(),
+            }),
+            Mutex::default(),
+            Mutex::default(),
+        ));
         let slot = Arc::new(OnceLock::new());
         let reads = {
             let (slot, catalog, personas, dir) = (
@@ -1214,4 +1238,76 @@ async fn a_declared_group_over_kanata_limit_refuses_the_save() {
     config
         .patch(json!({"models": {"roles": {"extraction": {"reasoning": "low"}}}}))
         .await;
+}
+
+#[tokio::test]
+async fn a_models_save_switches_the_running_roles_and_the_view_shows_them() {
+    let config = Config::new().await;
+    config.catalog.2.lock().unwrap().insert(
+        Role::Chat,
+        RunningRole {
+            alias: "kanata/chat".into(),
+            effort: Some(Effort::Medium),
+        },
+    );
+    let view = config.get().await;
+    assert_eq!(
+        roles(&view)["chat"]["running"],
+        json!({"alias": "kanata/chat", "reasoning": "medium"})
+    );
+    assert!(roles(&view)["rewrite"].get("running").is_none(), "unrouted");
+    assert!(
+        config.catalog.applied().is_empty(),
+        "a read applies nothing"
+    );
+
+    let saved = config
+        .patch(
+            json!({"models": {"roles": {"chat": {"alias": "kanata/legacy", "reasoning": "high"}}}}),
+        )
+        .await;
+    assert_eq!(saved["notices"], json!([]));
+    let applied = config.catalog.applied();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0].chat, role("kanata/legacy", Reasoning::High));
+    assert_eq!(applied[0], config.desk.settings().await.models);
+    // Other sections never touch the running models.
+    config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert_eq!(config.catalog.applied().len(), 1);
+}
+
+#[tokio::test]
+async fn a_role_switched_to_an_ungrouped_alias_is_refused_and_nothing_moves() {
+    let config = Config::with_groups(
+        true,
+        vec![group(
+            "local",
+            8,
+            &["kanata/extract", "kanata/chat", "kanata/rewrite-small"],
+        )],
+    )
+    .await;
+    let message = config
+        .refused(
+            json!({"models": {"roles": {"chat": {"alias": "kanata/legacy"}}}}),
+            422,
+            "ungrouped",
+        )
+        .await;
+    assert_eq!(
+        message,
+        "The chat model kanata/legacy is in no capacity group; add it to [[models.groups]] in kanade.toml and restart, or pick a grouped model."
+    );
+    assert!(config.catalog.applied().is_empty());
+    assert_eq!(
+        config.desk.settings().await.models.chat,
+        role("kanata/chat", Reasoning::Inherit)
+    );
+    // A grouped alias switches.
+    config
+        .patch(json!({"models": {"roles": {"chat": {"alias": "kanata/chat", "reasoning": "low"}}}}))
+        .await;
+    assert_eq!(config.catalog.applied().len(), 1);
 }

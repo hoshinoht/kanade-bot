@@ -167,6 +167,14 @@ async fn update(
             }
             let (next, reset) =
                 models::apply_roles(&current.models, &fields["roles"], &read.snapshot)?;
+            let ungrouped = models::ungrouped(&current.models, &next, &desk.facts.model_groups);
+            if !ungrouped.is_empty() {
+                return Err(Refusal::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "ungrouped",
+                    ungrouped.join(" "),
+                ));
+            }
             let declared = !desk.facts.model_groups.is_empty();
             let before = models::capacity(
                 &current.models,
@@ -213,6 +221,19 @@ async fn update(
             &next,
         );
         *current = next.clone();
+    }
+    // Every models save re-applies, so a stack left behind catches up.
+    if let ("models", Some(models)) = (name_of(name), &desk.models) {
+        match models.apply(&next.models) {
+            Ok(swaps) => changes::models_applied(&swaps),
+            Err(error) => {
+                changes::models_apply_failed(&error);
+                notices.push(
+                    "Saved, but the running models could not switch; they apply when the bot restarts."
+                        .into(),
+                );
+            }
+        }
     }
     drop(current);
     if let Some(key) = key {

@@ -53,6 +53,9 @@ where
     for (user_id, name) in deps.former {
         identity.former_name(user_id, name);
     }
+    // The route's live level, read with its alias (callers' own otherwise).
+    let mut question = question;
+    question.settings.reasoning = route.effort.or(question.settings.reasoning);
     let limits = QuestionLimits {
         tool_rounds: question.settings.tool_rounds,
         timeout: question.settings.timeout,
@@ -68,6 +71,7 @@ where
     };
     let mut generation = run_question(
         question,
+        &route.alias,
         &mut session,
         identity.as_mut(),
         guild,

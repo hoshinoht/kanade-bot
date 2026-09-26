@@ -66,7 +66,7 @@
     const body = Object.fromEntries(
       ROLES.map(({ id }) => [id, roles[id].alias ? { alias: roles[id].alias, reasoning: roles[id].reasoning } : { reasoning: roles[id].reasoning }]),
     ) as Record<ModelRole, { alias?: string; reasoning: string }>;
-    rolesError = await save({ models: { roles: body } }, 'Models saved; they take effect when the bot restarts.');
+    rolesError = await save({ models: { roles: body } }, 'Models saved; the next question uses them.');
     // The server's answer is the truth (it may reset stranded levels): resync.
     if (!rolesError) {
       roles = structuredClone($state.snapshot(models.roles));

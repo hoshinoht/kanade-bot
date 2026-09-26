@@ -1,13 +1,9 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use serde::Serialize;
 
 use super::super::{
-    AdmissionLimits, Effort, ListedModel, ModelCapabilities, TrustZone,
-    governor::{Governor, Role},
+    AdmissionLimits, Effort, ListedModel, ModelCapabilities, TrustZone, governor::Governor,
     off_allowed, reasoning_floor,
 };
 
@@ -87,6 +83,11 @@ pub fn leaves_homelab(alias: &str, capabilities: Option<&ModelCapabilities>) -> 
     !home || alias.ends_with("-cloud")
 }
 
+/// Routes with no listing stay as they are (external until one confirms).
+pub(super) fn rederive(listed: &[ListedModel], governor: &Governor) {
+    governor.rederive_external(|alias| leaves_homelab(alias, published(listed, alias)));
+}
+
 pub(super) fn published<'a>(
     listed: &'a [ListedModel],
     alias: &str,
@@ -104,17 +105,11 @@ pub(super) struct CatalogState {
 
 impl CatalogState {
     /// Listing observer: keeps the snapshot and re-derives each route's
-    /// `external` flag. A failed refresh keeps the last derivation.
-    pub fn apply(
-        &self,
-        listed: &[ListedModel],
-        governor: &Governor,
-        aliases: &BTreeMap<Role, String>,
-    ) {
+    /// `external` flag from its current alias. A failed refresh keeps the
+    /// last derivation.
+    pub fn apply(&self, listed: &[ListedModel], governor: &Governor) {
         *self.listing.write().unwrap_or_else(|p| p.into_inner()) = Some(listed.into());
-        for (&role, alias) in aliases {
-            governor.set_external(role, leaves_homelab(alias, published(listed, alias)));
-        }
+        rederive(listed, governor);
     }
 
     pub fn listing(&self) -> Option<Arc<[ListedModel]>> {
