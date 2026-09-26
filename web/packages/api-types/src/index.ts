@@ -495,7 +495,15 @@ export interface Proposal {
 
 // ── Extractions and rescans ───────────────────────────────────────────────
 
-export type ExtractionOutcome = 'proposed' | 'no_change' | 'failed' | 'turned_away' | 'content_blocked' | 'self_service_link';
+/** `identity_leak`: pseudonymization's boundary scanner refused the request; nothing was sent. */
+export type ExtractionOutcome =
+  | 'proposed'
+  | 'no_change'
+  | 'failed'
+  | 'turned_away'
+  | 'content_blocked'
+  | 'self_service_link'
+  | 'identity_leak';
 
 export interface ExtractionRow {
   id: string;
@@ -598,12 +606,74 @@ export interface Chat {
   facets: LogFacets;
 }
 
+/** Where a round's member data went; null for rows recorded before routes were. */
+export type ChatRoute = 'homelab' | 'external_masked' | 'external_unmasked';
+
+export interface ChatToolCall {
+  /** The request round (1-based index into `rounds`) whose reply asked for it. */
+  round: number;
+  name: string;
+  arguments: string;
+  result: string;
+  /** Wall time; null when unknown (0 is a real 0 ms). */
+  took_ms: number | null;
+  outcome: string;
+}
+
+export interface ChatRoundFacts {
+  round: number;
+  requested_tools: string[];
+  finish: string;
+  /** Alias the request named, as sent. */
+  model: string;
+  /** Reasoning effort as sent (after capability shaping); null when none went out. */
+  effort: string | null;
+  route: ChatRoute | null;
+  /** null when unknown. */
+  latency_ms: number | null;
+  guardrail: { clean: boolean; content_filter: boolean };
+}
+
+/** A pseudonymized turn as the model saw it (admin only). */
+export interface ModelView {
+  rounds: {
+    round: number;
+    clean: boolean;
+    /** The request messages exactly as sent (masked). */
+    request: { role: 'system' | 'user' | 'assistant' | 'tool'; [key: string]: unknown }[];
+    /** The model's reply before names were restored. */
+    reply: string | null;
+    /** Tool-call arguments before names were restored. */
+    tool_calls: { name: string; arguments: string }[];
+  }[];
+  /** The decoded, finished reply members saw. */
+  reply: string;
+  /** Fake name → member display name; never user ids. */
+  mapping: { token: string; name: string }[];
+}
+
 export interface ChatTurn extends ChatRow {
   said: string;
-  tools: { name: string; arguments: string; result: string; took_ms: number; outcome: string }[];
-  rounds: { round: number; requested_tools: string[]; finish: string }[];
+  tools: ChatToolCall[];
+  rounds: ChatRoundFacts[];
   cards: { kind: string; url: string }[];
   raw: string;
+  /** Persona bundle id; null when none answered (rate limited, imported). */
+  persona: string | null;
+  /** Reply profile id; null for the bundle default voice. */
+  profile: string | null;
+  profile_source: 'saved' | 'role' | 'default' | null;
+  /** The turn's route (its last round's); null when no model ran. */
+  route: ChatRoute | null;
+  error: string | null;
+  /** Stable code: timeout, malformed, content_blocked, identity_leak_blocked, rate_limited, … */
+  error_code: string | null;
+  /** content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, … */
+  guardrail: Record<string, unknown>;
+  /** Pseudonymized, with a stored Model view. */
+  masked: boolean;
+  /** Null for passthrough and withheld turns. */
+  model_view: ModelView | null;
 }
 
 // ── Limits (v5: model backends behind the Kanata gateway) ─────────────────

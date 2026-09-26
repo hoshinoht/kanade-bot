@@ -22,81 +22,257 @@
     "ChatRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "at", "member", "channel", "channel_id", "model", "models", "latency_ms", "outcome", "asked", "tools_used"],
+      "required": [
+        "id",
+        "at",
+        "member",
+        "channel",
+        "channel_id",
+        "model",
+        "models",
+        "latency_ms",
+        "outcome",
+        "asked",
+        "tools_used"
+      ],
       "properties": {
-        "id": { "type": "string" },
-        "at": { "type": "string" },
-        "member": { "$ref": "common.json#/$defs/Member" },
-        "channel": { "$ref": "common.json#/$defs/NullableString" },
-        "member_id": { "$ref": "common.json#/$defs/NullableString", "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid." },
-        "channel_id": { "type": "string" },
-        "model": { "type": "string" },
-        "models": { "type": "array", "items": { "type": "string" } },
-        "latency_ms": { "type": "integer", "minimum": 0 },
-        "outcome": { "$ref": "#/$defs/ChatOutcome" },
-        "asked": { "type": "string" },
-        "tools_used": { "type": "array", "items": { "type": "string" } }
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "member": {
+          "$ref": "common.json#/$defs/Member"
+        },
+        "channel": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "member_id": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/ChatOutcome"
+        },
+        "asked": {
+          "type": "string"
+        },
+        "tools_used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "ChatSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model", "count", "answered", "refused", "errors", "p50_ms", "tool_calls"],
+      "required": [
+        "model",
+        "count",
+        "answered",
+        "refused",
+        "errors",
+        "p50_ms",
+        "tool_calls"
+      ],
       "properties": {
-        "model": { "type": "string" },
-        "count": { "type": "integer", "minimum": 0 },
-        "answered": { "type": "integer", "minimum": 0 },
-        "refused": { "type": "integer", "minimum": 0 },
-        "errors": { "type": "integer", "minimum": 0 },
-        "p50_ms": { "type": "integer", "minimum": 0 },
-        "tool_calls": { "type": "integer", "minimum": 0 }
+        "model": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "answered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "p50_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "Chat": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["summary", "rows", "total", "facets"],
+      "required": [
+        "summary",
+        "rows",
+        "total",
+        "facets"
+      ],
       "properties": {
-        "summary": { "type": "array", "items": { "$ref": "#/$defs/ChatSummary" } },
-        "rows": { "type": "array", "items": { "$ref": "#/$defs/ChatRow" } },
-        "total": { "type": "integer", "minimum": 0 },
-        "facets": { "$ref": "common.json#/$defs/LogFacets" }
+        "summary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChatSummary"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChatRow"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "facets": {
+          "$ref": "common.json#/$defs/LogFacets"
+        }
       }
     },
     "ChatTurn": {
-      "description": "ChatRow plus the full turn.",
+      "description": "ChatRow plus the full turn: persona and reply profile, per-round model facts as sent, tool calls with their round, the error, guardrail signals and (masked turns only) the Model view.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "at", "member", "channel", "channel_id", "model", "models", "latency_ms", "outcome", "asked", "tools_used",
-        "said", "tools", "rounds", "cards", "raw"
+        "id",
+        "at",
+        "member",
+        "channel",
+        "channel_id",
+        "model",
+        "models",
+        "latency_ms",
+        "outcome",
+        "asked",
+        "tools_used",
+        "said",
+        "tools",
+        "rounds",
+        "cards",
+        "raw",
+        "persona",
+        "profile",
+        "profile_source",
+        "route",
+        "error",
+        "error_code",
+        "guardrail",
+        "masked",
+        "model_view"
       ],
       "properties": {
-        "id": { "type": "string" },
-        "at": { "type": "string" },
-        "member": { "$ref": "common.json#/$defs/Member" },
-        "channel": { "$ref": "common.json#/$defs/NullableString" },
-        "member_id": { "$ref": "common.json#/$defs/NullableString", "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid." },
-        "channel_id": { "type": "string" },
-        "model": { "type": "string" },
-        "models": { "type": "array", "items": { "type": "string" } },
-        "latency_ms": { "type": "integer", "minimum": 0 },
-        "outcome": { "$ref": "#/$defs/ChatOutcome" },
-        "asked": { "type": "string" },
-        "tools_used": { "type": "array", "items": { "type": "string" } },
-        "said": { "type": "string" },
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "member": {
+          "$ref": "common.json#/$defs/Member"
+        },
+        "channel": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "member_id": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/ChatOutcome"
+        },
+        "asked": {
+          "type": "string"
+        },
+        "tools_used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "said": {
+          "type": "string"
+        },
         "tools": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "arguments", "result", "took_ms", "outcome"],
+            "required": [
+              "round",
+              "name",
+              "arguments",
+              "result",
+              "took_ms",
+              "outcome"
+            ],
             "properties": {
-              "name": { "type": "string" },
-              "arguments": { "type": "string" },
-              "result": { "type": "string" },
-              "took_ms": { "type": "integer", "minimum": 0 },
-              "outcome": { "type": "string" }
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The request round (index into `rounds`, 1-based) whose reply asked for this call."
+              },
+              "name": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "took_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Wall time of the call; null when unknown (never 0 for unknown)."
+              },
+              "outcome": {
+                "type": "string"
+              }
             }
           }
         },
@@ -105,11 +281,68 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["round", "requested_tools", "finish"],
+            "required": [
+              "round",
+              "requested_tools",
+              "finish",
+              "model",
+              "effort",
+              "route",
+              "latency_ms",
+              "guardrail"
+            ],
             "properties": {
-              "round": { "type": "integer", "minimum": 1 },
-              "requested_tools": { "type": "array", "items": { "type": "string" } },
-              "finish": { "type": "string" }
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based logged position; a clean retry after round N is N + 1."
+              },
+              "requested_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finish": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string",
+                "description": "Alias the request named, as sent."
+              },
+              "effort": {
+                "$ref": "common.json#/$defs/NullableString",
+                "description": "Reasoning effort as sent (after capability shaping); null when none went out."
+              },
+              "route": {
+                "$ref": "#/$defs/ChatRoute",
+                "description": "null for rows recorded before routes were."
+              },
+              "latency_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when unknown."
+              },
+              "guardrail": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "clean",
+                  "content_filter"
+                ],
+                "properties": {
+                  "clean": {
+                    "type": "boolean",
+                    "description": "The reserved clean-context retry."
+                  },
+                  "content_filter": {
+                    "type": "boolean"
+                  }
+                }
+              }
             }
           }
         },
@@ -118,14 +351,176 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["kind", "url"],
+            "required": [
+              "kind",
+              "url"
+            ],
             "properties": {
-              "kind": { "type": "string" },
-              "url": { "type": "string" }
+              "kind": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
             }
           }
         },
-        "raw": { "type": "string" }
+        "raw": {
+          "type": "string"
+        },
+        "persona": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Persona bundle id; null for rows without one (rate limited, imported)."
+        },
+        "profile": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Reply profile id; null for the bundle default voice."
+        },
+        "profile_source": {
+          "enum": [
+            "saved",
+            "role",
+            "default",
+            null
+          ]
+        },
+        "route": {
+          "$ref": "#/$defs/ChatRoute",
+          "description": "The turn's route (its last round's); null when no model ran."
+        },
+        "error": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "error_code": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Stable code: timeout, malformed, content_blocked, kept_calling_tools, context_budget, route_refused, identity_leak_blocked, rate_limited, a governor refusal (busy, queue_timeout, backend_unavailable, …) or a model error (upstream_timeout, invalid_output, …)."
+        },
+        "guardrail": {
+          "type": "object",
+          "description": "Signals: content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, nudges."
+        },
+        "masked": {
+          "type": "boolean",
+          "description": "The turn went through pseudonymization and has a stored Model view."
+        },
+        "model_view": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ModelView"
+            }
+          ],
+          "description": "Admin only; null for passthrough and withheld turns."
+        }
+      }
+    },
+    "ChatRoute": {
+      "enum": [
+        "homelab",
+        "external_masked",
+        "external_unmasked",
+        null
+      ]
+    },
+    "ModelView": {
+      "description": "A masked turn as the model saw it: per request the messages as the wire sent them (masked; an empty tool result shows the transport's `(no output)` placeholder), the raw reply and tool-call arguments before names were restored; the final reply members saw; the turn's token → member display name mapping (never user ids).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rounds",
+        "reply",
+        "mapping"
+      ],
+      "properties": {
+        "rounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "round",
+              "clean",
+              "request",
+              "reply",
+              "tool_calls"
+            ],
+            "properties": {
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The request's logged position, the same numbering as `ChatTurn.rounds[].round` and `tools[].round` (a clean retry after round N is N + 1), so the lists join on it."
+              },
+              "clean": {
+                "type": "boolean"
+              },
+              "request": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "role"
+                  ],
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "system",
+                        "user",
+                        "assistant",
+                        "tool"
+                      ]
+                    }
+                  }
+                }
+              },
+              "reply": {
+                "$ref": "common.json#/$defs/NullableString"
+              },
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "arguments"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "arguments": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "reply": {
+          "type": "string"
+        },
+        "mapping": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "token",
+              "name"
+            ],
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   }

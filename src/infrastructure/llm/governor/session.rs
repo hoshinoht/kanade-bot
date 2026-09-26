@@ -14,7 +14,7 @@ use std::{
 use tokio::time::Instant;
 
 use super::super::{
-    ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider,
+    ChatRequest, CompletionResponse, Effort, ErrorCode, LlmError, LlmProvider,
     execution::{Cause, CompletionRunner, Denied, ExecutionLimits, Gate, RetryPolicy, RunError},
     identity::{IdentityLeakBlocked, LeakFound, LeakScanner},
 };
@@ -52,6 +52,15 @@ impl QuestionLimits {
             Err(invalid("invalid-question-limits"))
         }
     }
+}
+
+/// What one provider request actually sent, after shaping: the source of
+/// truth for logs even when aliases or efforts change between questions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SentRequest {
+    pub alias: String,
+    /// `None`: no `reasoning_effort` went out.
+    pub effort: Option<Effort>,
 }
 
 /// Whether a failure counts against the member's chat allowance.
@@ -250,6 +259,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             scanner: LeakScanner::off(),
+            last_sent: None,
             id: self.next_id(CallKind::Chat),
         })
     }
@@ -289,6 +299,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             scanner: LeakScanner::off(),
+            last_sent: None,
             id: self.next_id(CallKind::Extraction),
         })
     }
@@ -334,6 +345,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: true,
             ended: false,
             scanner: LeakScanner::off(),
+            last_sent: None,
             id: self.next_id(CallKind::Rewrite),
         })
     }
@@ -373,6 +385,7 @@ pub struct Session<'c, P> {
     ended: bool,
     /// Runs on every request before admission; off unless attached.
     scanner: LeakScanner,
+    last_sent: Option<SentRequest>,
     id: String,
 }
 
@@ -402,6 +415,11 @@ impl<P: LlmProvider> Session<'_, P> {
     /// Provider requests sent so far (retries, reshapes and requeues included).
     pub fn requests_used(&self) -> u32 {
         self.used
+    }
+
+    /// What the last request this session sent carried (alias, effort).
+    pub fn last_sent(&self) -> Option<&SentRequest> {
+        self.last_sent.as_ref()
     }
 
     pub fn max_requests(&self) -> u32 {
@@ -528,6 +546,9 @@ impl<P: LlmProvider> Session<'_, P> {
             .tagged(&self.id)
             .scanned(&self.scanner);
             let result = self.client.runner.run(request, &mut gate).await;
+            if let Some(sent) = gate.take_sent() {
+                self.last_sent = Some(sent);
+            }
             drop(gate);
             let failure = match result {
                 Ok(response) => return Ok(response),

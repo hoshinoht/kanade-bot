@@ -76,6 +76,8 @@ fn round(model: &str, tools: &[&str], calls: Value, response: Option<&str>) -> C
         tools: tools.iter().map(|tool| (*tool).to_owned()).collect(),
         tool_calls: calls,
         response: response.map(str::to_owned),
+        route: None,
+        clean: false,
     }
 }
 
@@ -111,6 +113,10 @@ fn chat(
         prompt_tokens: None,
         completion_tokens: None,
         rounds,
+        persona: None,
+        profile: None,
+        profile_source: None,
+        error_code: None,
     }
 }
 
@@ -162,6 +168,19 @@ async fn seed_chats(reads: &Reads) {
             round("kanata/chat", &[], json!([]), Some("Tuesday 22:00.")),
         ],
     );
+    let answered = ChatInteraction {
+        persona: Some("kanade".into()),
+        profile: Some("gentle".into()),
+        profile_source: Some("saved".into()),
+        guardrail: json!({"pseudonymized": true}),
+        ..answered
+    };
+    let mut answered = answered;
+    answered.rounds[0].reasoning = Some("low".into());
+    answered.rounds[0].route = Some("homelab".into());
+    answered.rounds[1].route = Some("external_masked".into());
+    answered.rounds[1].latency_ms = None;
+    answered.rounds[1].clean = true;
     let mut withheld = chat(
         "c-withheld",
         utc(9, 27, 12, 0),

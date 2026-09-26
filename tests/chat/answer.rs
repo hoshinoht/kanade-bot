@@ -711,7 +711,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
         roster: &roster,
         channels: &channels,
     };
-    let turn = chat_turn(&names, &stored, &[], None);
+    let turn = chat_turn(&names, &stored, &[], None, None);
     assert_eq!(turn["tools"][0]["result"], output.as_str());
     assert_eq!(turn["tools"][0]["took_ms"], took);
 

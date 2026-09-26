@@ -5,10 +5,11 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider, ModelCapabilities,
     ProviderFailureKind,
-    governor::{CallKind, Outcome, Random, full_jitter},
+    governor::{CallKind, Outcome, Random, SentRequest, full_jitter},
     http::KEY_EXPIRED,
     identity::LeakFound,
     shaping,
+    wire::sent_effort,
 };
 use super::{
     accounting::estimate,
@@ -166,6 +167,16 @@ impl<P: LlmProvider> CompletionRunner<P> {
             }
             retry = false;
             remaining -= reservation;
+            // The alias and the effort as the wire body carries them (the
+            // same rule `chat_body` applies); unknown capabilities send the
+            // request's effort as is.
+            gate.note_sent(SentRequest {
+                alias: current.model.clone(),
+                effort: match &capabilities {
+                    Some(capabilities) => sent_effort(current, capabilities),
+                    None => current.reasoning,
+                },
+            });
             let Ok(wait) = remaining_time(deadline) else {
                 gate.finish(None);
                 return Err(failed(

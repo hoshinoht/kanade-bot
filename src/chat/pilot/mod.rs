@@ -22,7 +22,7 @@ pub use guard::{CleanRetryGuard, GuardLimits, GuardView, StormAlert};
 pub use reply::{CONTENT_BLOCKED_REPLY, failure_reply};
 pub use traffic::{Admission, Handoff, QueueView, Traffic, TrafficLimits, Waiting};
 
-use crate::chat::answer::{Generation, interaction};
+use crate::chat::answer::{Generation, interaction, with_persona};
 use crate::chat::context::{
     ChatTurn, Conversations, QuestionMessage, TurnRole, WITHHELD_CACHE, question_turn,
 };
@@ -159,6 +159,7 @@ impl ChatPilot {
         row.outcome = ChatOutcome::RateLimited;
         row.reply = reply.clone().unwrap_or_default();
         row.error = Some(decision.reason.to_owned());
+        row.error_code = Some("rate_limited".to_owned());
         (reply, row)
     }
 
@@ -228,6 +229,7 @@ impl ChatPilot {
         );
         row.reply = reply.clone();
         row.withheld = withheld;
+        with_persona(&mut row, done.persona.provenance());
         Concluded {
             reply,
             posted_id,

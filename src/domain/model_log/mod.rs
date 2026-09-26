@@ -18,7 +18,7 @@ pub use masked::{MaskedName, MaskedRound, MaskedTurn};
 pub use outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
 pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
 pub use records::{
-    AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, ExtractionRefusal, RescanJob,
-    WatchedMessage, in_order,
+    AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, ExtractionRefusal,
+    PROFILE_SOURCES, ROUTES, RescanJob, WatchedMessage, in_order,
 };
 pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};

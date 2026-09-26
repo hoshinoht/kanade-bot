@@ -37,8 +37,8 @@ pub use jitter::{Random, XorShift};
 pub use permit::{Attempt, Outcome, Permit, Refused, Ticket};
 pub use pool::{CallKind, Priority};
 pub use session::{
-    Charge, DEFAULT_TOOL_ROUNDS, MAX_TOOL_ROUNDS, ModelClient, QuestionLimits, Session,
-    SessionError, SessionFailure,
+    Charge, DEFAULT_TOOL_ROUNDS, MAX_TOOL_ROUNDS, ModelClient, QuestionLimits, SentRequest,
+    Session, SessionError, SessionFailure,
 };
 pub use snapshot::{
     BreakerView, GroupSnapshot, HeldPermit, PermitUsage, QueuedCall, RateLevel, RetryLevel,

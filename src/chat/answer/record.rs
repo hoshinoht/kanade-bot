@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
 use super::{AnswerFailure, Generation};
+use crate::chat::persona::{CompileProvenance, ProfileSource};
 use crate::chat::sanitize::looks_like_clarification;
 use crate::chat::tools::{REFUSED, ToolContext, ToolName};
 use crate::domain::model_log::{ChatInteraction, ChatOutcome, ChatRound};
@@ -124,14 +125,25 @@ pub fn interaction(
         .model_rounds
         .iter()
         .map(|round| ChatRound {
-            model: model.to_owned(),
-            reasoning: reasoning.map(|effort| effort.as_str().to_owned()),
+            // What the session sent; the question's settings only when a
+            // round predates that record.
+            model: round
+                .sent
+                .as_ref()
+                .map_or_else(|| model.to_owned(), |sent| sent.alias.clone()),
+            reasoning: match &round.sent {
+                Some(sent) => sent.effort,
+                None => reasoning,
+            }
+            .map(|effort| effort.as_str().to_owned()),
             finish_reason: round.finish_reason.clone(),
             latency_ms: Some(round.latency_ms),
             tool_bundles: round.bundles.clone(),
             tools: round.requested_tools.clone(),
             tool_calls: round_calls(generation, round.round, round.clean),
             response: round.content.clone(),
+            route: Some(generation.route().to_owned()),
+            clean: round.clean,
         })
         .collect();
     ChatInteraction {
@@ -154,5 +166,24 @@ pub fn interaction(
         prompt_tokens: generation.prompt_tokens,
         completion_tokens: generation.completion_tokens,
         rounds,
+        // The persona is the caller's to set (it resolved it).
+        persona: None,
+        profile: None,
+        profile_source: None,
+        error_code: generation.failure.as_ref().map(|f| f.code().to_owned()),
     }
+}
+
+/// The persona and reply profile a turn answered with, onto its row.
+pub fn with_persona(row: &mut ChatInteraction, provenance: &CompileProvenance) {
+    row.persona = Some(provenance.bundle.to_string());
+    row.profile = provenance.profile.as_ref().map(ToString::to_string);
+    row.profile_source = Some(
+        match provenance.profile_source {
+            Some(ProfileSource::MemberSelection) => "saved",
+            Some(ProfileSource::RoleAssignment) => "role",
+            Some(ProfileSource::BundleDefault { .. }) | None => "default",
+        }
+        .to_owned(),
+    );
 }

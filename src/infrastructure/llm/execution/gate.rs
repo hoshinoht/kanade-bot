@@ -2,7 +2,7 @@ use tokio::time::Instant;
 
 use super::super::{
     ChatRequest, CompletionResponse,
-    governor::{Attempt, CallKind, Outcome, Permit, Random, Refused},
+    governor::{Attempt, CallKind, Outcome, Permit, Random, Refused, SentRequest},
     identity::{LeakFound, LeakScanner},
 };
 
@@ -22,6 +22,8 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     /// Session id; each request is tagged `{tag}-{n}` for gateway log correlation.
     tag: Option<&'a str>,
     scanner: Option<&'a LeakScanner>,
+    /// The last admitted request as it went out.
+    sent: Option<SentRequest>,
 }
 
 pub(in crate::infrastructure::llm) enum Denied {
@@ -52,6 +54,7 @@ impl<'a> Gate<'a> {
             attempt: None,
             tag: None,
             scanner: None,
+            sent: None,
         }
     }
 
@@ -69,6 +72,15 @@ impl<'a> Gate<'a> {
     /// admission so a refusal spends no request, rate token or retry.
     pub(super) fn scan(&self, request: &ChatRequest) -> Result<(), LeakFound> {
         self.scanner.map_or(Ok(()), |scanner| scanner.scan(request))
+    }
+
+    pub(super) fn note_sent(&mut self, sent: SentRequest) {
+        self.sent = Some(sent);
+    }
+
+    /// What the last admitted request sent (alias and reasoning effort).
+    pub(in crate::infrastructure::llm) fn take_sent(&mut self) -> Option<SentRequest> {
+        self.sent.take()
     }
 
     /// Remembers a reply so the scanner lets the model's own words back in.
@@ -96,6 +108,7 @@ impl<'a> Gate<'a> {
             attempt: None,
             tag: None,
             scanner: None,
+            sent: None,
         }
     }
 

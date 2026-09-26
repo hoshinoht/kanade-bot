@@ -185,7 +185,105 @@ fn turns() -> Vec<Turn> {
     ]
 }
 
+/// `c-when` is the masked example: its route leaves the homelab masked.
+const MASKED: &str = "c-when";
+
+fn route(t: &Turn) -> Value {
+    if t.models.is_empty() {
+        Value::Null
+    } else if t.id == MASKED {
+        json!("external_masked")
+    } else {
+        json!("homelab")
+    }
+}
+
+/// The error code the server stores with a failed turn.
+fn error_code(outcome: &str) -> Option<&'static str> {
+    Some(match outcome {
+        "timeout" => "timeout",
+        "error" => "provider_permanent",
+        "turned_away" => "admission_refused",
+        "content_blocked" => "content_blocked",
+        "rate_limited" => "rate_limited",
+        _ => return None,
+    })
+}
+
+/// The Model view of the masked example, as the server builds it from the
+/// stored `chat_masked` row: tokens only in what the model saw, display
+/// names (never ids) in the mapping.
+fn model_view() -> Value {
+    json!({
+        "rounds": [
+            {
+                "round": 1,
+                "clean": false,
+                "request": [
+                    {"role": "system", "content": "You are Kanade. …"},
+                    {"role": "user", "content": "Haruka: @Kanade when is carling this week"},
+                ],
+                "reply": null,
+                "tool_calls": [{"name": "schedule.read", "arguments": "{\"bosses\":[\"HCarling\"]}"}],
+            },
+            {
+                "round": 2,
+                "clean": false,
+                "request": [
+                    {"role": "system", "content": "You are Kanade. …"},
+                    {"role": "user", "content": "Haruka: @Kanade when is carling this week"},
+                    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "name": "schedule.read", "arguments": "{\"bosses\":[\"HCarling\"]}"}]},
+                    {"role": "tool", "tool_call_id": "call_1", "content": "{\"runs\":1}"},
+                ],
+                "reply": "Carling + Radiant Malefic Star is Tuesday 22:00, Haruka — 4 of 7 on so far.",
+                "tool_calls": [],
+            },
+        ],
+        "reply": "Carling + Radiant Malefic Star is Tuesday 22:00, 4 of 7 on so far.",
+        "mapping": [{"token": "Haruka", "name": "Ren"}],
+    })
+}
+
 impl Store {
+    /// Turn-level facts: persona, reply profile, route, error, guardrail and
+    /// (the masked example only) the Model view.
+    fn turn_facts(t: &Turn, row: &mut Value) {
+        let ran = !t.models.is_empty();
+        let masked = t.id == MASKED;
+        row["persona"] = if t.outcome == "rate_limited" {
+            Value::Null
+        } else {
+            json!("kanade")
+        };
+        row["profile"] = if t.member == "1007" {
+            json!("gentle")
+        } else {
+            Value::Null
+        };
+        row["profile_source"] = match (t.outcome == "rate_limited", t.member == "1007") {
+            (true, _) => Value::Null,
+            (false, true) => json!("saved"),
+            (false, false) => json!("default"),
+        };
+        row["route"] = route(t);
+        row["error_code"] = json!(error_code(t.outcome));
+        row["error"] = json!(error_code(t.outcome).map(|code| match code {
+            "timeout" => "no answer within 60s",
+            "rate_limited" => "rate limited",
+            _ => "the model gave no usable answer",
+        }));
+        let mut guardrail = serde_json::Map::new();
+        if t.outcome == "content_blocked" {
+            guardrail.insert("content_filter".into(), json!(true));
+        }
+        if masked {
+            guardrail.insert("pseudonymized".into(), json!(true));
+        }
+        row["guardrail"] = Value::Object(guardrail);
+        row["masked"] = json!(masked && ran);
+        row["model_view"] = if masked { model_view() } else { Value::Null };
+    }
+
     fn chat_minute(t: &Turn) -> i64 {
         Self::start(false) * 1440 - 480 + t.hour * 60
     }
@@ -277,6 +375,7 @@ impl Store {
             t.tools
                 .iter()
                 .map(|(name, args, ret, took, outcome)| json!({
+                    "round": 1,
                     "name": name,
                     "arguments": if withheld { WITHHELD } else { args },
                     "result": if withheld { WITHHELD } else { ret },
@@ -288,10 +387,19 @@ impl Store {
             t.models
                 .iter()
                 .enumerate()
-                .map(|(i, _)| json!({
+                .map(|(i, model)| json!({
                     "round": i + 1,
                     "requested_tools": if i == 0 { t.tools.iter().map(|x| x.0).collect::<Vec<_>>() } else { vec![] },
-                    "finish": if i == 0 && !t.tools.is_empty() { "tool_calls" } else { "stop" },
+                    "finish": if i == 0 && !t.tools.is_empty() { "tool_calls" } else if t.outcome == "content_blocked" { "content_filter" } else { "stop" },
+                    // As sent: the alias and the effort after shaping.
+                    "model": model,
+                    "effort": if *model == CLOUD { Value::Null } else { json!("low") },
+                    "route": route(&t),
+                    "latency_ms": if t.outcome == "timeout" { Value::Null } else { json!(t.latency_ms / t.models.len().max(1) as u32) },
+                    "guardrail": {
+                        "clean": t.outcome == "clean_retry" && i + 1 == t.models.len(),
+                        "content_filter": t.outcome == "content_blocked",
+                    },
                 }))
                 .collect::<Vec<_>>()
         );
@@ -307,6 +415,7 @@ impl Store {
         } else {
             format!("{{\"role\":\"assistant\",\"content\":{:?}}}", t.said)
         });
+        Self::turn_facts(&t, &mut row);
         Ok(row)
     }
 }
@@ -366,5 +475,23 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn one_turn_is_masked_with_a_model_view_and_the_rest_are_not() {
+        let s = store();
+        let masked = s.chat_turn("c-when").ok().unwrap();
+        assert_eq!(masked["masked"], true);
+        assert_eq!(masked["route"], "external_masked");
+        let mapping = &masked["model_view"]["mapping"][0];
+        assert_eq!(mapping["name"], "Ren");
+        assert!(mapping.get("user_id").is_none());
+        let plain = s.chat_turn("c-move").ok().unwrap();
+        assert_eq!(plain["masked"], false);
+        assert!(plain["model_view"].is_null());
+        assert_eq!(plain["tools"][0]["round"], 1);
+        let limited = s.chat_turn("c-limit").ok().unwrap();
+        assert!(limited["persona"].is_null());
+        assert_eq!(limited["error_code"], "rate_limited");
     }
 }

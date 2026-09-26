@@ -18,7 +18,7 @@ use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 
 pub use pilot::{AnswerDeps, answer};
-pub use record::{chat_outcome, interaction};
+pub use record::{chat_outcome, interaction, with_persona};
 pub use rounds::run_question;
 
 use crate::chat::context::ContextBudgetError;
@@ -29,9 +29,11 @@ use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member};
 use crate::domain::model_log::MaskedTurn;
-use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
+use crate::infrastructure::llm::governor::{
+    Charge, Refused, SentRequest, SessionError, SessionFailure,
+};
 use crate::infrastructure::llm::identity::IdentityLeakBlocked;
-use crate::infrastructure::llm::{Effort, Message};
+use crate::infrastructure::llm::{Effort, ErrorCode, Message};
 
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
@@ -111,6 +113,8 @@ pub struct ModelRound {
     pub latency_ms: u64,
     /// The reserved clean-context retry.
     pub clean: bool,
+    /// What the governed session actually sent (alias, reasoning effort).
+    pub sent: Option<SentRequest>,
 }
 
 /// Why a question produced no answer. C3 turns these into member-facing
@@ -135,7 +139,57 @@ pub enum AnswerFailure {
     Session(SessionError),
 }
 
+fn model_code(code: ErrorCode) -> &'static str {
+    match code {
+        ErrorCode::RequestInvalid => "request_invalid",
+        ErrorCode::BudgetExceeded => "budget_exceeded",
+        ErrorCode::DeadlineExceeded => "deadline_exceeded",
+        ErrorCode::ProviderPermanent => "provider_permanent",
+        ErrorCode::ProviderAuthentication => "provider_authentication",
+        ErrorCode::InvalidOutput => "invalid_output",
+        ErrorCode::ModelMismatch => "model_mismatch",
+        ErrorCode::Incomplete => "incomplete",
+        ErrorCode::ContentFiltered => "content_filtered",
+        ErrorCode::UnsupportedCapability => "unsupported_capability",
+        ErrorCode::AdmissionRefused => "admission_refused",
+        ErrorCode::BackendUnavailable => "backend_unavailable",
+        ErrorCode::UpstreamTimeout => "upstream_timeout",
+        ErrorCode::KeyExpired => "key_expired",
+    }
+}
+
 impl AnswerFailure {
+    /// A stable code for the log and the admin transcript.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::KeptCallingTools => "kept_calling_tools",
+            Self::ContextBudget(_) => "context_budget",
+            Self::Timeout { .. } => "timeout",
+            Self::ContentBlocked => "content_blocked",
+            Self::Malformed => "malformed",
+            Self::Route(_) => "route_refused",
+            Self::Session(error) => match &error.failure {
+                SessionFailure::Refused(refused) => match refused {
+                    Refused::UnknownRole => "unknown_role",
+                    Refused::Ungrouped => "ungrouped",
+                    Refused::ExternalForbidden => "external_forbidden",
+                    Refused::MustNotWait => "must_not_wait",
+                    Refused::Busy => "busy",
+                    Refused::Timeout => "queue_timeout",
+                    Refused::Unavailable { .. } => "backend_unavailable",
+                    Refused::RateLimited { .. } => "rate_ceiling",
+                    Refused::RetryBudgetExhausted => "retry_budget_exhausted",
+                },
+                SessionFailure::RequestsExhausted => "requests_exhausted",
+                SessionFailure::Ended => "session_ended",
+                SessionFailure::CleanRetryUnavailable => "clean_retry_unavailable",
+                SessionFailure::AnswerRetryUnavailable => "answer_retry_unavailable",
+                SessionFailure::IdentityLeakBlocked(_) => "identity_leak_blocked",
+                SessionFailure::Model(model) => model_code(model.code),
+            },
+        }
+    }
+
     /// Whether the asker's allowance is spent.
     pub fn charge(&self) -> Charge {
         match self {

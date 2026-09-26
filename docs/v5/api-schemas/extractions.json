@@ -4,8 +4,8 @@
   "title": "Extraction log, call detail and rescan jobs",
   "$defs": {
     "ExtractionOutcome": {
-      "description": "`unknown`: a v4-imported call that maps to no other outcome (never a filter the PWA offers).",
-      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link", "unknown"]
+      "description": "`identity_leak`: the provider-boundary scanner refused the request (pseudonymization on; nothing was sent). `unknown`: a v4-imported call that maps to no other outcome (never a filter the PWA offers).",
+      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link", "identity_leak", "unknown"]
     },
     "ExtractionRow": {
       "type": "object",

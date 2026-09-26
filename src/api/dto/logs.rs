@@ -14,8 +14,10 @@ use crate::{
     domain::{
         drafts::{DraftStatus, LoadedDraft},
         ids::short_id,
-        members::{Roster, member_name},
-        model_log::{ChatInteraction, ChatOutcome, ExtractionLog, LogFacets, WatchedMessage},
+        members::{Directory, Roster, member_name},
+        model_log::{
+            ChatInteraction, ChatOutcome, ExtractionLog, LogFacets, MaskedTurn, WatchedMessage,
+        },
         proposals::StoredCard,
     },
     extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE},
@@ -146,14 +148,55 @@ fn text(value: Option<&Value>) -> String {
     }
 }
 
-/// A call's wall time: v5 `took_ms`, else v4's `ms`; 0 when absent or not
-/// a non-negative integer.
-fn took_ms(call: &Value) -> u64 {
+/// A call's wall time: v5 `took_ms`, else v4's `ms`; `null` when unknown
+/// (absent or not a non-negative integer), so 0 ms stays distinguishable.
+fn took_ms(call: &Value) -> Option<u64> {
     call.get("took_ms")
         .or_else(|| call.get("ms"))
         .and_then(Value::as_u64)
-        .unwrap_or_default()
 }
+
+/// The masked turn's Model view: each round's request exactly as the model
+/// received it, its raw reply and tool-call arguments before decoding, the
+/// decoded final reply, and token → display name (never a user id). `None`
+/// for a withheld turn (its requests quote the question).
+fn model_view(names: &Names<'_>, chat: &ChatInteraction, masked: &MaskedTurn) -> Value {
+    if chat.withheld {
+        return Value::Null;
+    }
+    json!({
+        "rounds": masked
+            .rounds
+            .iter()
+            .enumerate()
+            // The logged position, as `rounds[].round` and `tools[].round`
+            // (both lists hold one entry per answered request, in order).
+            .map(|(index, round)| json!({
+                "round": index + 1,
+                "clean": round.clean,
+                "request": round.request,
+                "reply": round.reply,
+                "tool_calls": round.tool_calls,
+            }))
+            .collect::<Vec<_>>(),
+        "reply": masked.reply,
+        "mapping": masked
+            .mapping
+            .iter()
+            .map(|name| json!({
+                "token": name.token,
+                "name": name
+                    .display_name
+                    .clone()
+                    .or_else(|| names.roster.member(&name.user_id).and_then(|m| m.name().map(str::to_owned)))
+                    .unwrap_or_else(|| UNNAMED.to_owned()),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// A mapped member with no known name (never their id).
+const UNNAMED: &str = "someone";
 
 /// The turn: tool calls with their results (v5 `result`, v4 `output`) and
 /// wall times, rounds, cards and the round responses.
@@ -162,15 +205,18 @@ pub fn chat_turn(
     chat: &ChatInteraction,
     cards: &[StoredCard],
     guild_id: Option<&str>,
+    masked: Option<&MaskedTurn>,
 ) -> Value {
     let mut turn = chat_row(names, chat);
     let tools: Vec<Value> = chat
         .rounds
         .iter()
-        .filter_map(|round| round.tool_calls.as_array())
-        .flatten()
-        .map(|call| {
+        .enumerate()
+        .filter_map(|(index, round)| Some((index, round.tool_calls.as_array()?)))
+        .flat_map(|(index, calls)| calls.iter().map(move |call| (index, call)))
+        .map(|(index, call)| {
             json!({
+                "round": index + 1,
                 "name": text(call.get("name")),
                 "arguments": if chat.withheld { WITHHELD.to_owned() } else { text(call.get("arguments")) },
                 "result": if chat.withheld {
@@ -192,6 +238,14 @@ pub fn chat_turn(
                 "round": index + 1,
                 "requested_tools": round.tools,
                 "finish": round.finish_reason.as_deref().unwrap_or_default(),
+                "model": round.model,
+                "effort": round.reasoning,
+                "route": round.route,
+                "latency_ms": round.latency_ms,
+                "guardrail": {
+                    "clean": round.clean,
+                    "content_filter": round.finish_reason.as_deref() == Some("content_filter"),
+                },
             })
         })
         .collect();
@@ -225,6 +279,26 @@ pub fn chat_turn(
     object.insert("rounds".into(), json!(rounds));
     object.insert("cards".into(), json!(cards));
     object.insert("raw".into(), json!(raw));
+    object.insert("persona".into(), json!(chat.persona));
+    object.insert("profile".into(), json!(chat.profile));
+    object.insert("profile_source".into(), json!(chat.profile_source));
+    object.insert(
+        "route".into(),
+        json!(
+            chat.rounds
+                .iter()
+                .rev()
+                .find_map(|round| round.route.as_deref())
+        ),
+    );
+    object.insert("error".into(), json!(chat.error));
+    object.insert("error_code".into(), json!(chat.error_code));
+    object.insert("guardrail".into(), chat.guardrail.clone());
+    object.insert("masked".into(), json!(masked.is_some()));
+    object.insert(
+        "model_view".into(),
+        masked.map_or(Value::Null, |masked| model_view(names, chat, masked)),
+    );
     turn
 }
 

@@ -27,7 +27,7 @@ use crate::{
         members::{MemberProfile, MemberStore, PortalEdit},
         model_log::{
             ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
-            ModelLogStore, WatchedMessage,
+            MaskedTurn, ModelLogStore, WatchedMessage,
         },
         notify::DeliveryJournal,
         proposals::{ProposalCardStore, StoredCard},
@@ -104,6 +104,8 @@ pub trait ReadStore: Send + Sync {
     fn chat_logs(&self, filter: ChatFilter) -> ReadFuture<'_, LogPage<ChatInteraction>>;
     fn chat_log(&self, id: String) -> ReadFuture<'_, Option<ChatInteraction>>;
     fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets>;
+    /// The Model view stored with a masked chat turn.
+    fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>>;
 }
 
 /// One history page: records and whether older ones exist.
@@ -327,6 +329,10 @@ where
 
     fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets> {
         Box::pin(self.chat_facets())
+    }
+
+    fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>> {
+        Box::pin(async move { self.load_masked_chat(&id).await })
     }
 }
 

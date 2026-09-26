@@ -172,16 +172,30 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
     assert_eq!(turn["said"], "Tuesday 22:00.");
     assert_eq!(
         turn["tools"],
-        json!([{"name": "schedule_read", "arguments": "{\"week\":\"this\"}",
+        json!([{"round": 1, "name": "schedule_read", "arguments": "{\"week\":\"this\"}",
                 "result": "Kalos: Tue 22:00", "took_ms": 12, "outcome": "ok"}])
     );
+    let clean = json!({"clean": false, "content_filter": false});
     assert_eq!(
         turn["rounds"],
         json!([
-            {"round": 1, "requested_tools": ["schedule_read"], "finish": "tool_calls"},
-            {"round": 2, "requested_tools": [], "finish": "stop"},
+            {"round": 1, "requested_tools": ["schedule_read"], "finish": "tool_calls",
+             "model": "kanata/chat", "effort": "low", "route": "homelab", "latency_ms": 1000,
+             "guardrail": clean},
+            {"round": 2, "requested_tools": [], "finish": "stop", "model": "kanata/chat",
+             "effort": null, "route": "external_masked", "latency_ms": null,
+             "guardrail": {"clean": true, "content_filter": false}},
         ])
     );
+    assert_eq!(turn["persona"], "kanade");
+    assert_eq!(turn["profile"], "gentle");
+    assert_eq!(turn["profile_source"], "saved");
+    assert_eq!(turn["route"], "external_masked");
+    assert_eq!(turn["error"], json!(null));
+    assert_eq!(turn["error_code"], json!(null));
+    assert_eq!(turn["guardrail"], json!({"pseudonymized": true}));
+    assert_eq!(turn["masked"], false, "no Model view stored");
+    assert_eq!(turn["model_view"], json!(null));
     assert_eq!(turn["cards"], json!([]));
     assert_eq!(turn["raw"], "Tuesday 22:00.");
 
@@ -226,7 +240,7 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
         roster: &roster,
         channels: &channels,
     };
-    let turn = chat_turn(&names, &row, &[], None);
+    let turn = chat_turn(&names, &row, &[], None, None);
     assert_valid(TURN, "v4 turn", &turn);
     let shown: Vec<_> = turn["tools"]
         .as_array()
@@ -238,13 +252,13 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
         shown,
         [
             (json!("Kalos strategy"), json!(12)),
-            (json!("x"), json!(0)),
-            (json!(""), json!(0)),
+            (json!("x"), json!(null)),
+            (json!(""), json!(null)),
         ]
     );
 
     row.withheld = true;
-    let turn = chat_turn(&names, &row, &[], None);
+    let turn = chat_turn(&names, &row, &[], None, None);
     assert!(
         turn["tools"]
             .as_array()
@@ -254,4 +268,131 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
         "{turn}"
     );
     assert_eq!(turn["tools"][0]["took_ms"], 12);
+}
+
+/// A masked turn's detail carries its Model view: requests as sent, raw
+/// replies and tool arguments, the final reply, and token → display name
+/// (never a user id). Signed-in admin only; withheld turns hide it.
+#[tokio::test]
+async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
+    use kanade::domain::model_log::{
+        ChatOutcome, MaskedName, MaskedRound, MaskedTurn, ModelLogStore,
+    };
+
+    let logs = Logs::new().await;
+    let view = MaskedTurn {
+        rounds: vec![
+            MaskedRound {
+                round: 1,
+                clean: false,
+                request: json!([
+                    {"role": "system", "content": "You are Kanade."},
+                    {"role": "user", "content": "Haruka: when is kalos with <@Sora>?"},
+                ]),
+                reply: None,
+                tool_calls: json!([{"name": "get_schedule", "arguments": "{\"participant\":\"<@Sora>\"}"}]),
+            },
+            // A clean retry stored with the loop's round number: the detail
+            // numbers it by position, as `rounds[]` and `tools[]` do.
+            MaskedRound {
+                round: 1,
+                clean: true,
+                request: json!([{"role": "user", "content": "Haruka: when is kalos?"}]),
+                reply: Some("Haruka, Sora is on Kalos.".into()),
+                tool_calls: json!([]),
+            },
+        ],
+        reply: "Alice, Bob is on Kalos.".into(),
+        mapping: vec![
+            MaskedName {
+                token: "Haruka".into(),
+                user_id: "1001".into(),
+                display_name: Some("Alice".into()),
+            },
+            MaskedName {
+                token: "Sora".into(),
+                user_id: "1002".into(),
+                display_name: None,
+            },
+            MaskedName {
+                token: "Kaede".into(),
+                user_id: "114200000000000099".into(),
+                display_name: None,
+            },
+        ],
+    };
+    let mut row = super::chat(
+        "c-masked",
+        super::utc(9, 29, 3, 0),
+        "1001",
+        "kalos-four",
+        "when is kalos with bob?",
+        "Alice, Bob is on Kalos.",
+        ChatOutcome::Answered,
+        Some(2000),
+        Vec::new(),
+    );
+    row.guardrail = json!({"pseudonymized": true});
+    logs.reads
+        .store
+        .record_masked_chat(row.clone(), view.clone())
+        .await
+        .unwrap();
+
+    let reply = logs.get("/api/admin/chat/c-masked").await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let turn = reply.json();
+    assert_valid(TURN, "masked turn", &turn);
+    assert_eq!(turn["masked"], true);
+    let shown = &turn["model_view"];
+    assert_eq!(shown["reply"], "Alice, Bob is on Kalos.");
+    assert_eq!(shown["rounds"][0]["request"], view.rounds[0].request);
+    assert_eq!(shown["rounds"][0]["tool_calls"], view.rounds[0].tool_calls);
+    assert_eq!(shown["rounds"][1]["reply"], "Haruka, Sora is on Kalos.");
+    assert_eq!(
+        (
+            shown["rounds"][1]["round"].clone(),
+            shown["rounds"][1]["clean"].clone()
+        ),
+        (json!(2), json!(true))
+    );
+    assert_eq!(
+        shown["mapping"],
+        json!([
+            {"token": "Haruka", "name": "Alice"},
+            {"token": "Sora", "name": "Bobby"},
+            {"token": "Kaede", "name": "someone"},
+        ])
+    );
+    let text = shown.to_string();
+    for id in ["1001", "1002", "114200000000000099", "user_id"] {
+        assert!(!text.contains(id), "{id} in {text}");
+    }
+
+    // Signed out: no turn at all.
+    let anonymous = crate::support::request(
+        logs.reads.admin,
+        "GET",
+        crate::support::ADMIN_HOST,
+        "/api/admin/chat/c-masked",
+        &[],
+    )
+    .await;
+    assert_eq!(anonymous.status, 401);
+
+    // A withheld masked turn keeps the flag but not the view (it quotes the question).
+    let mut withheld = row;
+    withheld.id = "c-masked-withheld".into();
+    withheld.withheld = true;
+    logs.reads
+        .store
+        .record_masked_chat(withheld, view)
+        .await
+        .unwrap();
+    let turn = logs.get("/api/admin/chat/c-masked-withheld").await.json();
+    assert_valid(TURN, "withheld masked turn", &turn);
+    assert_eq!(
+        (turn["masked"].clone(), turn["model_view"].clone()),
+        (json!(true), json!(null))
+    );
 }

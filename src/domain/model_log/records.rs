@@ -85,11 +85,17 @@ impl ExtractionRefusal {
     }
 }
 
+/// How a turn's reply profile was chosen.
+pub const PROFILE_SOURCES: [&str; 3] = ["saved", "role", "default"];
+/// Where a chat round's member data went.
+pub const ROUTES: [&str; 3] = ["homelab", "external_masked", "external_unmasked"];
+
 /// One model request within a chat question.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ChatRound {
-    /// Model alias.
+    /// Model alias the request named (as sent).
     pub model: String,
+    /// Reasoning effort as sent; `None` when none went out.
     pub reasoning: Option<String>,
     pub finish_reason: Option<String>,
     pub latency_ms: Option<u64>,
@@ -101,6 +107,11 @@ pub struct ChatRound {
     pub tool_calls: Value,
     /// The provider's response for the round (prompts are never stored).
     pub response: Option<String>,
+    /// `homelab`, `external_masked` or `external_unmasked`; `None` for rows
+    /// written before it was recorded.
+    pub route: Option<String>,
+    /// The reserved clean-context retry.
+    pub clean: bool,
 }
 
 /// One chat question (v4 `chat_interactions`, plus the v5 filter fields).
@@ -129,6 +140,14 @@ pub struct ChatInteraction {
     pub completion_tokens: Option<u64>,
     /// Model rounds in order.
     pub rounds: Vec<ChatRound>,
+    /// Persona bundle id the turn answered as.
+    pub persona: Option<String>,
+    /// Reply profile id; `None` for the bundle's default voice.
+    pub profile: Option<String>,
+    /// `saved`, `role` or `default`: how the profile was chosen.
+    pub profile_source: Option<String>,
+    /// A stable code for `error` (e.g. `timeout`, `identity_leak_blocked`).
+    pub error_code: Option<String>,
 }
 
 /// One rescan job (v4 `rescan_jobs`). `window` is kept as given (v4 and v5
@@ -181,8 +200,21 @@ impl ChatInteraction {
     /// The shape every store refuses to write otherwise.
     pub fn check_shape(&self) -> Result<(), StoreError> {
         shape(self.guardrail.is_object(), "chat guardrail")?;
+        shape(
+            self.profile_source
+                .as_deref()
+                .is_none_or(|source| PROFILE_SOURCES.contains(&source)),
+            "chat profile_source",
+        )?;
         for round in &self.rounds {
             shape(round.tool_calls.is_array(), "chat round tool_calls")?;
+            shape(
+                round
+                    .route
+                    .as_deref()
+                    .is_none_or(|route| ROUTES.contains(&route)),
+                "chat round route",
+            )?;
         }
         Ok(())
     }
@@ -256,6 +288,7 @@ impl fmt::Debug for ChatInteraction {
             .field("at", &self.at)
             .field("channel_id", &self.channel_id)
             .field("outcome", &self.outcome)
+            .field("error_code", &self.error_code)
             .field("clean_retry", &self.clean_retry)
             .field("withheld", &self.withheld)
             .field("request_count", &self.request_count)

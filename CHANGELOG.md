@@ -487,6 +487,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   default) masks member identities in chat, extraction and rewrite prompts, fails
   closed without a roster, logs `external_masked` routes and `identity_leak_blocked`
   refusals, and stores each masked chat turn's model view and name mapping for admins.
+- v5: chat turn details record the persona, reply profile, per-round model, effort
+  and route as actually sent, errors and tool rounds, and show admins a "Model view
+  (masked)" section with the masked rounds and fake-name table; extractions can be
+  filtered by `identity_leak`.
 
 **Changed**
 

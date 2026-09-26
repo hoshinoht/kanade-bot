@@ -38,3 +38,5 @@ pub use shaping::prepare as shape_request;
 pub use shaping::schema_instruction;
 #[cfg(any(test, feature = "test-support"))]
 pub use shaping::wire_body;
+/// What an empty tool result is sent as.
+pub(crate) use wire::EMPTY_TOOL_RESULT;

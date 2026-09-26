@@ -76,14 +76,17 @@ are C3. Serve wiring is `chat::driver` (below).
   count) only. The row's `guardrail` gains `pseudonymized: true` and, on a
   refusal, `identity_leak_blocked: {role, kinds, count}`.
 - Model view (user decision D7, extended): for a masked turn the loop keeps,
-  per request, the masked messages exactly as passed to the runner and the
+  per request (numbered by logged position, like the transcript's rounds),
+  the masked messages as the wire sends them (empty tool results carry the
+  `(no output)` placeholder) and the
   model's raw reply and tool-call arguments (before decoding), then the
   finished reply and the session's issued-name mapping (token → user id and
   display name at the time, non-roster authors included). Serve stores it
   with the row in one transaction (`ModelLogStore::record_masked_chat`,
   `chat_masked`); passthrough turns store nothing extra. Same retention and
-  purge as the chat log, admin-only, never logged; `Debug` shows sizes. Not
-  exposed by the API yet (`admin-api.md`).
+  purge as the chat log, admin-only, never logged; `Debug` shows sizes. The
+  admin chat detail shows it as `model_view` with display names only
+  (`admin-api.md`).
 - Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). A bundle
   `request_tools` adds is held until the next round starts, so every call is
   judged against the tools its round was actually sent (a tool requested in
@@ -144,6 +147,14 @@ are C3. Serve wiring is `chat::driver` (below).
 `answer::interaction` builds one `chat_interactions` row with a
 `chat_rounds` row per model request (alias, reasoning, finish reason,
 latency, bundles offered, tools called, response text; never the prompt).
+The round's alias and reasoning are what the governed session actually sent
+(`Session::last_sent`: the request's alias and the effort after capability
+shaping, `None` when no `reasoning_effort` went out), so a later alias or
+effort change never rewrites them; each round also records its `route`
+(`homelab`/`external_masked`/`external_unmasked`) and whether it was the
+clean retry. The row carries the persona bundle, the reply profile and how it
+was chosen (`with_persona`: `saved`/`role`/`default`) and a stable
+`error_code` (`AnswerFailure::code`; `rate_limited` for a limited question).
 Each round's `tool_calls` entry is `{name, outcome, arguments, created,
 posted, result, took_ms}` (user decision 2026-09-26, for agent debugging):
 `result` is the tool output the model read, before identity encoding (so

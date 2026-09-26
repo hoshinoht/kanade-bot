@@ -120,7 +120,6 @@ async fn ask(actions: Vec<FakeAction>, codec: &dyn IdentityCodec, ports: &Ports)
     ask_with(actions, codec, ports, &[], None).await
 }
 
-/// `history` replaces the stored turns before the question.
 async fn ask_with(
     actions: Vec<FakeAction>,
     codec: &dyn IdentityCodec,
@@ -128,11 +127,26 @@ async fn ask_with(
     former: &[(String, String)],
     history: Option<Vec<Message>>,
 ) -> Run {
+    ask_tuned(actions, codec, ports, former, history, |_| {}).await
+}
+
+/// `history` replaces the stored turns before the question; `tune` edits
+/// the model's published capabilities.
+async fn ask_tuned(
+    actions: Vec<FakeAction>,
+    codec: &dyn IdentityCodec,
+    ports: &Ports,
+    former: &[(String, String)],
+    history: Option<Vec<Message>>,
+    tune: impl FnOnce(&mut kanade::infrastructure::llm::ModelCapabilities),
+) -> Run {
     let input = load("loop.json")["cases"][0]["input"].clone();
     let mut world = World::new(&input).await;
+    let mut caps = capabilities(&input["caps"]);
+    tune(&mut caps);
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(actions),
-        caps: capabilities(&input["caps"]),
+        caps,
     });
     let (_governor, client) = client(Some(MODEL), provider.clone());
     let client = client.with_masking(true);
@@ -536,4 +550,103 @@ impl IdentitySession for RawTextSession {
     fn masks(&self) -> bool {
         true
     }
+}
+
+/// Each logged round names what the governed session actually sent: the
+/// alias, the effort after shaping (none when the model has no reasoning
+/// control), the route and the clean flag; the row carries the error code.
+#[tokio::test(start_paused = true)]
+async fn logged_rounds_record_what_was_sent() {
+    let run = ask_tuned(
+        vec![
+            FakeAction::Malformed,
+            FakeAction::Response(said(MODEL, "Here.")),
+        ],
+        &codec(),
+        &Ports::default(),
+        &[],
+        None,
+        |caps| caps.reasoning_control = false,
+    )
+    .await;
+    let rounds = &run.generation.model_rounds;
+    let sent = rounds[0].sent.as_ref().expect("sent facts");
+    assert_eq!((sent.alias.as_str(), sent.effort), (MODEL, None));
+    let row = interaction(
+        "chat-s".into(),
+        Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap(),
+        &run.ctx,
+        "q",
+        &run.generation,
+        "configured-alias",
+        Some(kanade::infrastructure::llm::Effort::High),
+        1,
+    );
+    assert_eq!(
+        row.rounds[0].model, MODEL,
+        "the alias as sent, not the configured one"
+    );
+    assert_eq!(row.rounds[0].reasoning, None, "no effort went out");
+    assert_eq!(row.rounds[0].route.as_deref(), Some("homelab"));
+    assert!(row.rounds.last().unwrap().clean);
+    assert_eq!(row.error_code, None);
+
+    let failed = ask(
+        vec![FakeAction::Malformed, FakeAction::Malformed],
+        &codec(),
+        &Ports::default(),
+    )
+    .await;
+    let row = interaction(
+        "chat-f".into(),
+        Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap(),
+        &failed.ctx,
+        "q",
+        &failed.generation,
+        MODEL,
+        None,
+        1,
+    );
+    assert_eq!(row.error_code.as_deref(), Some("malformed"));
+}
+
+/// The Model view numbers rounds by their logged position, as the
+/// transcript does: a clean retry after round 2 is round 3 in both.
+#[tokio::test(start_paused = true)]
+async fn model_view_rounds_join_the_logged_rounds_after_a_clean_retry() {
+    let run = ask(
+        vec![
+            wants(None, &[("g1", "get_run", json!({"query": "hstar"}))]),
+            // An empty answer spends the clean retry.
+            FakeAction::Response(said(MODEL, "")),
+            FakeAction::Response(said(MODEL, "Here.")),
+        ],
+        &codec(),
+        &Ports::default(),
+    )
+    .await;
+    assert!(run.generation.clean_retry);
+    let row = interaction(
+        "chat-n".into(),
+        Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap(),
+        &run.ctx,
+        "q",
+        &run.generation,
+        MODEL,
+        None,
+        1,
+    );
+    let view = run.generation.model_view.as_ref().expect("view");
+    assert_eq!(view.rounds.len(), row.rounds.len());
+    let numbers: Vec<u32> = view.rounds.iter().map(|round| round.round).collect();
+    assert_eq!(numbers, [1, 2, 3]);
+    let clean: Vec<bool> = view.rounds.iter().map(|round| round.clean).collect();
+    assert_eq!(
+        clean,
+        row.rounds
+            .iter()
+            .map(|round| round.clean)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(clean, [false, false, true]);
 }

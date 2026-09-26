@@ -19,10 +19,11 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 
 const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.question, \
     c.reply, c.outcome, c.error, c.clean_retry, c.withheld, c.guardrail, c.request_count, \
-    c.latency_ms, c.model_ms, c.tools_ms, c.prompt_tokens, c.completion_tokens";
+    c.latency_ms, c.model_ms, c.tools_ms, c.prompt_tokens, c.completion_tokens, c.persona, \
+    c.profile, c.profile_source, c.error_code";
 
 const ROUND_COLUMNS: &str = "model, reasoning, finish_reason, latency_ms, tool_bundles, tools, \
-    tool_calls, response";
+    tool_calls, response, route, clean";
 
 impl Keyed for ChatInteraction {
     fn cursor(&self) -> LogCursor {
@@ -63,6 +64,10 @@ fn interaction_of(row: &SqliteRow) -> Result<ChatInteraction, StoreError> {
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
         rounds: Vec::new(),
+        persona: optional_text(row, "persona")?,
+        profile: optional_text(row, "profile")?,
+        profile_source: optional_text(row, "profile_source")?,
+        error_code: optional_text(row, "error_code")?,
     })
 }
 
@@ -76,6 +81,10 @@ fn round_of(row: &SqliteRow) -> Result<ChatRound, StoreError> {
         tools: read_list(row, "tools")?,
         tool_calls: read_json(row, "tool_calls")?,
         response: optional_text(row, "response")?,
+        route: optional_text(row, "route")?,
+        clean: row
+            .try_get("clean")
+            .map_err(|error| StoreError::Backend(format!("chat_rounds.clean: {error}")))?,
     })
 }
 
@@ -101,8 +110,9 @@ pub(super) async fn insert(
     sqlx::query(
         "INSERT INTO chat_interactions (id, at, channel_id, message_id, member_id, question, \
          reply, outcome, error, clean_retry, withheld, guardrail, request_count, latency_ms, \
-         model_ms, tools_ms, prompt_tokens, completion_tokens) VALUES (?1, ?2, ?3, ?4, ?5, ?6, \
-         ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+         model_ms, tools_ms, prompt_tokens, completion_tokens, persona, profile, profile_source, \
+         error_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, \
+         ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
     )
     .bind(&chat.id)
     .bind(instant(&chat.at)?)
@@ -125,14 +135,18 @@ pub(super) async fn insert(
         chat.completion_tokens,
         "completion_tokens",
     )?)
+    .bind(&chat.persona)
+    .bind(&chat.profile)
+    .bind(&chat.profile_source)
+    .bind(&chat.error_code)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;
     for (ord, round) in chat.rounds.iter().enumerate() {
         sqlx::query(
             "INSERT INTO chat_rounds (interaction_id, ord, model, reasoning, finish_reason, \
-             latency_ms, tool_bundles, tools, tool_calls, response) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             latency_ms, tool_bundles, tools, tool_calls, response, route, clean) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )
         .bind(&chat.id)
         .bind(i64::try_from(ord).map_err(|_| StoreError::Constraint("too many rounds".into()))?)
@@ -144,6 +158,8 @@ pub(super) async fn insert(
         .bind(json_list(&round.tools))
         .bind(json_text(&round.tool_calls))
         .bind(&round.response)
+        .bind(&round.route)
+        .bind(round.clean)
         .execute(&mut *conn)
         .await
         .map_err(store_error)?;

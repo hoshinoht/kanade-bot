@@ -145,6 +145,8 @@ fn round(model: &str, tools: &[&str]) -> ChatRound {
         tools: tools.iter().map(|tool| (*tool).to_owned()).collect(),
         tool_calls: json!([]),
         response: None,
+        route: None,
+        clean: false,
     }
 }
 
@@ -169,6 +171,10 @@ fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
         prompt_tokens: Some(1000),
         completion_tokens: Some(40),
         rounds: vec![round("kanata/chat", &[])],
+        persona: None,
+        profile: None,
+        profile_source: None,
+        error_code: None,
     }
 }
 
@@ -537,6 +543,13 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
     interaction.guardrail = json!({"refusal": true});
     interaction.clean_retry = true;
     interaction.request_count = 3;
+    interaction.persona = Some("kanade".into());
+    interaction.profile = Some("gentle".into());
+    interaction.profile_source = Some("saved".into());
+    interaction.error_code = Some("timeout".into());
+    interaction.rounds[0].route = Some("homelab".into());
+    interaction.rounds[1].route = Some("external_masked".into());
+    interaction.rounds[1].clean = true;
     store
         .record_chat(interaction.clone())
         .await
@@ -557,6 +570,18 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
         "chat: tool_calls must be an array"
     );
     assert_eq!(store.load_chat("c-2").await.expect("load"), None);
+    let mut bad = chat("c-3", utc(20, 12, 0));
+    bad.profile_source = Some("guessed".into());
+    assert!(
+        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
+        "chat: profile_source is saved, role or default"
+    );
+    let mut bad = chat("c-4", utc(20, 12, 0));
+    bad.rounds[0].route = Some("cloud".into());
+    assert!(
+        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
+        "chat: a round's route is a known route"
+    );
 }
 
 fn masked() -> MaskedTurn {

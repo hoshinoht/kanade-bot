@@ -471,6 +471,12 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
         );
         assert_eq!(row.guardrail, json!({}));
         assert_eq!(stub.completions(), 1);
+        // The persona it answered as, and the round as sent.
+        assert_eq!(row.persona.as_deref(), Some("kanade"));
+        assert_eq!(row.profile, None);
+        assert_eq!(row.profile_source.as_deref(), Some("default"));
+        assert_eq!(row.rounds[0].model, ALIAS);
+        assert_eq!(row.rounds[0].route.as_deref(), Some("homelab"));
         // A member without the pilot role is ignored.
         live.events.send(question(5002, &[])).unwrap();
         sleep(Duration::from_millis(200)).await;

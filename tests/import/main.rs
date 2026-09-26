@@ -690,7 +690,13 @@ async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
             tools: Vec::new(),
             tool_calls: serde_json::json!([{"name": "get_boss_strategy"}]),
             response: None,
+            route: None,
+            clean: false,
         }],
+        persona: None,
+        profile: None,
+        profile_source: None,
+        error_code: None,
     };
     store.record_chat(stale.clone()).await.unwrap();
     stale.id = "native-1".into();

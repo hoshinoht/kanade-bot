@@ -91,6 +91,8 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
             tools: names(&calls),
             tool_calls: Value::Array(calls),
             response: None,
+            route: None,
+            clean: false,
         }];
     }
     recorded
@@ -122,6 +124,8 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
                     .get("content")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+                route: None,
+                clean: false,
             }
         })
         .collect()
@@ -165,6 +169,10 @@ pub fn chat(row: &V4Chat, at: DateTime<Utc>) -> ChatInteraction {
         prompt_tokens: count(row.prompt_tokens),
         completion_tokens: count(row.completion_tokens),
         rounds: rounds(row, &model),
+        persona: None,
+        profile: None,
+        profile_source: None,
+        error_code: None,
     }
 }
 

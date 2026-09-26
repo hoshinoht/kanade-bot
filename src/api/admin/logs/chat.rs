@@ -89,12 +89,18 @@ pub async fn detail(
         .cards(created_proposals(&chat))
         .await
         .map_err(store_down)?;
+    let masked = state
+        .store
+        .masked_chat(chat.id.clone())
+        .await
+        .map_err(store_down)?;
     let directory = Directory::load(state).await?;
     Ok(Json(chat_turn(
         &directory.names(),
         &chat,
         &cards,
         state.guild_id.as_deref(),
+        masked.as_ref(),
     ))
     .into_response())
 }

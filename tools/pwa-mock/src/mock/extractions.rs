@@ -17,7 +17,8 @@ struct Call {
     amendments: Vec<(&'static str, &'static str, &'static str, f32, &'static str)>,
     error: Option<&'static str>,
     model: &'static str,
-    /// proposed, no_change, failed, turned_away, content_blocked, self_service_link.
+    /// proposed, no_change, failed, turned_away, content_blocked,
+    /// self_service_link, identity_leak.
     outcome: &'static str,
 }
 
@@ -85,13 +86,16 @@ fn calls() -> Vec<Call> {
             3 => "turned_away",
             5 => "content_blocked",
             7 => "self_service_link",
+            // The boundary scanner refused it: nothing was sent.
+            9 => "identity_leak",
             _ => "no_change",
         };
         out.push(Call {
             id: format!("x-old{i}"),
             short_id: format!("{:08x}", 0x0dd0_0000 + i),
             hour: 60 - i64::from(i) * 2,
-            latency_ms: (outcome != "turned_away").then_some(8_000 + i * 97),
+            latency_ms: (!matches!(outcome, "turned_away" | "identity_leak"))
+                .then_some(8_000 + i * 97),
             channel: seed::CHANNELS[(i as usize) % seed::CHANNELS.len()].0,
             messages: vec![("1004", "gg")],
             amendments: vec![],

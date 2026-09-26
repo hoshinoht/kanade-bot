@@ -171,7 +171,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/rescan/{id}` | — | `RescanJob` | Polled per channel. **Implemented (A7)**. |
 | `DELETE /api/admin/rescan/{id}` | — | `RescanJob` | Cancel. v4 `POST …/cancel`. **Implemented (A7)**; safe to repeat. |
 | `GET /api/admin/chat` | — | `Chat` | **Implemented (A7)**. |
-| `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7)**; a withheld question is not shown. |
+| `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7; transcript fields)**; a withheld question is not shown; masked turns carry `model_view` (admin listener only). |
 | `GET /api/admin/limits` | — | `Limits` | See `limits-contract.md` (**proposed**). |
 | `DELETE /api/admin/limits/windows/{id}` | — | `{message}` | Clear one member's window. v4 `POST …/reset`. |
 
@@ -384,11 +384,37 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
 - **Chat rows**: `model` is the first round's alias (`—` when no model ran),
   `latency_ms` 0 when unrecorded, `member` `{id: "", name: "unknown"}`
   when the row has none. The turn's `tools` come from the rounds' logged
-  calls: `result` is the logged `result` (v4 imports: `output`), `took_ms`
-  the logged `took_ms` (v4: `ms`; 0 when absent or not a non-negative
-  integer; rows logged before 2026-09-26 show `""`/0),
-  `rounds[].finish` is the finish reason (`""` when
-  none), `cards` link the proposals the turn created once their card is
+  calls: `round` is the request round whose reply asked for the call
+  (1-based index into `rounds`; `rounds[].round`, `tools[].round` and
+  `model_view.rounds[].round` share this logged-position numbering, so a
+  clean retry after round N is N + 1 in all three and they join on it), `result` is the logged `result` (v4
+  imports: `output`), `took_ms` the logged `took_ms` (v4: `ms`; `null` when
+  absent or not a non-negative integer, so unknown and 0 ms differ; rows
+  logged before 2026-09-26 show `""`), `rounds[].finish` is the finish
+  reason (`""` when none). Each round also carries what the governed session
+  actually sent (recorded at send time, so later alias or effort changes do
+  not rewrite history): `model` (alias), `effort` (exactly what the body
+  carried after capability shaping; `null` when no `reasoning_effort` went
+  out, e.g. no reasoning control, or `off` for a model whose published list
+  lacks `none`), `route` (`homelab`,
+  `external_masked`, `external_unmasked`; `null` for rows recorded before
+  routes were), `latency_ms` (`null` when unknown) and `guardrail`
+  `{clean, content_filter}`. The turn adds `persona` (bundle id),
+  `profile` (reply profile id, `null` for the bundle default) and
+  `profile_source` (`saved`/`role`/`default`), `route` (its last round's),
+  `error` and a stable `error_code` (`timeout`, `malformed`,
+  `content_blocked`, `kept_calling_tools`, `context_budget`, `route_refused`,
+  `identity_leak_blocked`, `rate_limited`, a governor refusal such as `busy`
+  or `queue_timeout`, or a model error such as `upstream_timeout`), the
+  row's `guardrail` object, `masked` (pseudonymized with a stored Model
+  view) and `model_view`: per round the request messages as the wire sent
+  them (masked; an empty tool result shows the transport's `(no output)`
+  placeholder), the raw reply and tool-call arguments before names were
+  restored, the decoded final `reply`, and `mapping`
+  `[{token, name}]` with the member's display name at the time (else their
+  current roster name, else `someone`; never a user id). `model_view` is
+  `null` for passthrough turns and for withheld ones (it quotes the
+  question). `cards` link the proposals the turn created once their card is
   posted, `raw` joins the rounds' non-empty responses. **Withheld**
   (`chat-orchestration.md`, pollution containment): the question shows as
   `[message withheld]` in the list and the detail, and so do that turn's
@@ -467,11 +493,8 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   `self_service_link`, `identity_leak` (the provider-boundary scanner refused
   the request; nothing was sent). Guardrail keys include `pseudonymized`
   (masked request) and `identity_leak_blocked` (`{role, kinds, count}`,
-  never the matched text). A masked chat turn's Model view (per-round masked
-  request, raw reply and tool-call arguments, the final reply and the
-  token → member mapping) is **stored, not yet exposed**
-  (`ModelLogStore::load_masked_chat`; the surfaces/transcript-fields step
-  adds it to the chat detail, admin listener only). An unknown outcome, a malformed date, a `min_ms`
+  never the matched text). A masked chat turn's Model view is on the chat
+  detail (`model_view`, above; admin listener only). An unknown outcome, a malformed date, a `min_ms`
   that is not whole non-negative milliseconds (`1e3`, `-5`) or a Chat-only
   filter on Extractions is 422 `invalid_filter`, never a bare 400 (A7 also:
   an unknown, repeated or undecodable key and an inverted range). Cursor paging

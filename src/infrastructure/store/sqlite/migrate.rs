@@ -75,6 +75,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 15,
         sql: include_str!("migrations/0015_masked_chat.sql"),
     },
+    Migration {
+        version: 16,
+        sql: include_str!("migrations/0016_chat_turn_facts.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -190,7 +194,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("0015"), 15);
+        assert_eq!(apply(&mut conn).await.expect("0015+"), 16);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -233,6 +237,75 @@ mod tests {
                 .await
                 .is_err(),
             "still insert-only"
+        );
+    }
+
+    /// 0016 adds the chat turn facts to existing rows: nullable facts stay
+    /// NULL, `clean` defaults to 0, and the insert-only triggers still hold.
+    #[tokio::test]
+    async fn chat_turn_facts_default_on_existing_rows() {
+        let mut conn = SqliteConnection::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        conn.execute("PRAGMA foreign_keys = ON").await.expect("fk");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..15] {
+            conn.execute(migration.sql).await.expect("old migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger row");
+        }
+        conn.execute(
+            "INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, \
+             withheld, guardrail, request_count) VALUES ('c-1', \
+             '2026-09-01T00:00:00.000000+00:00', 'q', 'r', 'answered', 0, 0, '{}', 1);
+             INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, \
+             tool_calls) VALUES ('c-1', 0, 'kanata/chat', '[]', '[]', '[]');
+             INSERT INTO chat_masked VALUES ('c-1', '[]', 'r', '[]');",
+        )
+        .await
+        .expect("v15 rows");
+        assert_eq!(apply(&mut conn).await.expect("0016"), 16);
+        let row = sqlx::query(
+            "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
+             r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .expect("kept");
+        for column in [
+            "persona",
+            "profile",
+            "profile_source",
+            "error_code",
+            "route",
+        ] {
+            assert_eq!(row.get::<Option<String>, _>(column), None, "{column}");
+        }
+        assert_eq!(row.get::<i64, _>("clean"), 0);
+        assert_eq!(row.get::<String, _>("model"), "kanata/chat");
+        let masked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM chat_masked")
+            .fetch_one(&mut conn)
+            .await
+            .expect("masked");
+        assert_eq!(masked, 1);
+        assert!(
+            conn.execute("UPDATE chat_rounds SET clean = 1")
+                .await
+                .is_err(),
+            "still insert-only"
+        );
+        assert!(
+            conn.execute(
+                "INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, \
+                 tool_calls, route) VALUES ('c-1', 1, 'm', '[]', '[]', '[]', 'cloud')",
+            )
+            .await
+            .is_err(),
+            "route is checked"
         );
     }
 }

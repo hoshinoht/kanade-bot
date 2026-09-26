@@ -19,13 +19,14 @@ pub const CHAT_OUTCOMES: [&str; 10] = [
     "clean_retry",
 ];
 
-pub const EXTRACTION_OUTCOMES: [&str; 6] = [
+pub const EXTRACTION_OUTCOMES: [&str; 7] = [
     "proposed",
     "no_change",
     "failed",
     "turned_away",
     "content_blocked",
     "self_service_link",
+    "identity_leak",
 ];
 
 #[derive(Deserialize, Default)]

@@ -28,7 +28,8 @@ use crate::domain::members::member_name;
 use crate::domain::model_log::{MaskedRound, MaskedTurn};
 use crate::domain::pytext::strip;
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
-use crate::infrastructure::llm::governor::{Session, SessionError, SessionFailure};
+use crate::infrastructure::llm::EMPTY_TOOL_RESULT;
+use crate::infrastructure::llm::governor::{SentRequest, Session, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::{IdentitySession, Protected, encode_protected};
 use crate::infrastructure::llm::{
     ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmProvider, Message, Sampling,
@@ -158,22 +159,28 @@ impl Loop<'_, '_> {
         }
     }
 
-    /// The Model view of one answered request (masked turns only).
-    fn capture(
-        &mut self,
-        round: u32,
-        clean: bool,
-        request: &ChatRequest,
-        response: &CompletionResponse,
-    ) {
+    /// The Model view of one answered request (masked turns only). `round`
+    /// is the request's position in the logged rounds (1-based, a clean
+    /// retry after round N is N + 1), so it joins the transcript's rounds.
+    /// Messages are as the wire sends them: an empty tool result carries the
+    /// transport's placeholder.
+    fn capture(&mut self, clean: bool, request: &ChatRequest, response: &CompletionResponse) {
+        let position = u32::try_from(self.generation.model_rounds.len() + 1).unwrap_or(u32::MAX);
         let Some(view) = &mut self.view else {
             return;
         };
+        let mut messages = request.messages.clone();
+        for message in &mut messages {
+            if let Message::Tool { content, .. } = message
+                && content.is_empty()
+            {
+                EMPTY_TOOL_RESULT.clone_into(content);
+            }
+        }
         view.push(MaskedRound {
-            round,
+            round: position,
             clean,
-            request: serde_json::to_value(&request.messages)
-                .unwrap_or_else(|_| Value::Array(Vec::new())),
+            request: serde_json::to_value(&messages).unwrap_or_else(|_| Value::Array(Vec::new())),
             reply: response.content.clone(),
             tool_calls: Value::Array(
                 response
@@ -190,7 +197,7 @@ impl Loop<'_, '_> {
         round: u32,
         response: &CompletionResponse,
         identity: &dyn IdentitySession,
-        (bundles, latency_ms, clean): (Vec<String>, u64, bool),
+        (bundles, latency_ms, clean, sent): (Vec<String>, u64, bool, Option<SentRequest>),
     ) {
         if let Some(usage) = &response.usage {
             self.generation
@@ -208,6 +215,7 @@ impl Loop<'_, '_> {
             bundles,
             latency_ms,
             clean,
+            sent,
         });
     }
 
@@ -343,8 +351,9 @@ where
             },
         };
         let bundles = bundle_names(&offer, with_tools);
-        state.capture(round, false, &request, &response);
-        state.record(round, &response, identity, (bundles, latency, false));
+        state.capture(false, &request, &response);
+        let sent = session.last_sent().cloned();
+        state.record(round, &response, identity, (bundles, latency, false, sent));
         if response.tool_calls.is_empty() {
             let content = strip(response.content.as_deref().unwrap_or_default());
             match identity.decode_reply(content) {
@@ -576,8 +585,14 @@ async fn clean_retry<P: LlmProvider>(
         }
     };
     state.generation.clean_retry = true;
-    state.capture(round, true, &request, &response);
-    state.record(round, &response, identity, (Vec::new(), latency, true));
+    state.capture(true, &request, &response);
+    let sent = session.last_sent().cloned();
+    state.record(
+        round,
+        &response,
+        identity,
+        (Vec::new(), latency, true, sent),
+    );
     let content = strip(response.content.as_deref().unwrap_or_default());
     match identity.decode_reply(content) {
         Ok(reply) if response.tool_calls.is_empty() && !content.is_empty() => {

@@ -56,13 +56,23 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
             }
         }
     }
-    if capabilities.reasoning_control
-        && let Some(effort) = request.reasoning
-        && (effort != Effort::Off || publishes(capabilities, Effort::Off))
-    {
+    if let Some(effort) = sent_effort(request, capabilities) {
         body.insert("reasoning_effort".into(), json!(effort.wire_str()));
     }
     Value::Object(body)
+}
+
+/// The `reasoning_effort` the body carries, if any: only with reasoning
+/// control, and `off` only where the published list allows `none`. The
+/// runner records exactly this for the logs.
+pub(crate) fn sent_effort(
+    request: &ChatRequest,
+    capabilities: &ModelCapabilities,
+) -> Option<Effort> {
+    let effort = request.reasoning?;
+    (capabilities.reasoning_control
+        && (effort != Effort::Off || publishes(capabilities, Effort::Off)))
+    .then_some(effort)
 }
 
 /// Kanata publishes no list when a provider passes every level through, so `None`
@@ -115,4 +125,57 @@ fn tool_call(call: &ToolCallRequest) -> Value {
         "type": "function",
         "function": {"name": call.name, "arguments": call.arguments},
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(reasoning: Option<Effort>) -> ChatRequest {
+        ChatRequest {
+            model: "m".into(),
+            messages: vec![Message::User {
+                content: "hi".into(),
+            }],
+            tools: Vec::new(),
+            output_schema: None,
+            max_output_tokens: 16,
+            reasoning,
+            sampling: None,
+        }
+    }
+
+    fn caps(control: bool, efforts: Option<Vec<Effort>>) -> ModelCapabilities {
+        let mut caps = ModelCapabilities::minimal();
+        caps.reasoning_control = control;
+        caps.reasoning_efforts = efforts;
+        caps
+    }
+
+    /// What the logs record is exactly what the body carries.
+    #[test]
+    fn the_sent_effort_matches_the_body() {
+        let cases = [
+            (Some(Effort::Off), caps(true, Some(Vec::new())), None),
+            (Some(Effort::Off), caps(true, Some(vec![Effort::Low])), None),
+            (Some(Effort::Off), caps(true, None), Some(Effort::Off)),
+            (Some(Effort::Low), caps(false, None), None),
+            (
+                Some(Effort::Low),
+                caps(true, Some(vec![Effort::Low])),
+                Some(Effort::Low),
+            ),
+            (None, caps(true, None), None),
+        ];
+        for (effort, capabilities, sent) in cases {
+            let request = request(effort);
+            assert_eq!(sent_effort(&request, &capabilities), sent, "{effort:?}");
+            let body = chat_body(&request, &capabilities);
+            assert_eq!(
+                body.get("reasoning_effort").cloned(),
+                sent.map(|effort| json!(effort.wire_str())),
+                "{effort:?}"
+            );
+        }
+    }
 }
