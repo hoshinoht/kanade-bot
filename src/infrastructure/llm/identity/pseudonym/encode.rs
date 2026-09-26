@@ -4,7 +4,7 @@ use super::{
         at_word_start, channel_or_role_at, digit_run, escape_len, match_at, mention_at, prev_char,
         url_len, word_run,
     },
-    session::{PseudonymSession, is_snowflake},
+    session::{Owner, PseudonymSession, is_snowflake},
 };
 
 impl PseudonymSession {
@@ -44,8 +44,12 @@ impl PseudonymSession {
                 i += len;
                 continue;
             }
-            if let Some((len, user_id)) = self.needle_at(prev, rest) {
-                out.push_str(&self.token(&user_id));
+            if let Some((len, owner, word)) = self.needle_at(prev, rest) {
+                let token = match owner {
+                    Owner::Member(user_id) => self.token(&user_id),
+                    Owner::Shared => self.issuer.shared(&word).to_owned(),
+                };
+                out.push_str(&token);
                 i += len;
                 continue;
             }
@@ -154,13 +158,14 @@ impl PseudonymSession {
         }
     }
 
-    fn needle_at(&self, prev: Option<char>, rest: &str) -> Option<(usize, String)> {
+    fn needle_at(&self, prev: Option<char>, rest: &str) -> Option<(usize, Owner, String)> {
         let first = rest.chars().next()?.to_lowercase().next()?;
         self.needles.iter().find_map(|needle| {
             if needle.folded.first() != Some(&first) {
                 return None;
             }
-            match_at(prev, rest, &needle.folded).map(|len| (len, needle.user_id.clone()))
+            match_at(prev, rest, &needle.folded)
+                .map(|len| (len, needle.owner.clone(), needle.text.clone()))
         })
     }
 }

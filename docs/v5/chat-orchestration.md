@@ -63,9 +63,13 @@ are C3. Serve wiring is `chat::driver` (below).
   names per member; beyond 4096 members the least recently seen departed
   member is forgotten (`former_names_evicted` WARN, once). In memory; `Debug`
   shows counts. Embeds (reminder cards) never enter the reply chain (only
-  message content does). Residuals: names retired before serve started,
-  single words of multi-word names, and non-roster speakers, which are
-  labelled `user <short id>` (an id tail, not a name). A read failure or an empty roster
+  message content does). Words of multi-word names (`jonas` of `Jonas lau`)
+  are masked and scanned on their own (`provider-contract.md`, word needles),
+  including inside party channel names. Residuals: names retired before serve
+  started, name words under three characters or that are stopwords or code
+  terms, nicknames of people not on the roster (e.g. in channel names),
+  known names inside URL paths (persona credit links), and non-roster
+  speakers, which are labelled `user <short id>` (an id tail, not a name). A read failure or an empty roster
   sends nothing (D4: the question is not prepared, refunded, and
   `chat_members_unreadable` is logged with `masking`). Every request passes
   the provider-boundary scanner (`provider-contract.md`); a refusal is

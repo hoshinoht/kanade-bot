@@ -167,3 +167,200 @@ fn former_names_are_masked_and_a_departed_member_shows_the_latest() {
     let names = session.scan_needles().unwrap().names;
     assert!(names.iter().any(|name| name.text == "Oldnick"), "scanned");
 }
+
+fn word_roster() -> Vec<Member> {
+    vec![
+        Member {
+            user_id: "114200000000000031".into(),
+            display_name: "Jonas lau".into(),
+            nickname: None,
+            aliases: Vec::new(),
+        },
+        Member {
+            user_id: "114200000000000032".into(),
+            display_name: "hoshi".into(),
+            nickname: Some("Will Smith".into()),
+            aliases: vec!["Ken tan".into()],
+        },
+    ]
+}
+
+struct PartyNames;
+
+impl MentionNames for PartyNames {
+    fn channel(&self, id: &str) -> Option<String> {
+        (id == "900").then(|| "hbaldguy-jonas-cryz-hoshi".to_owned())
+    }
+
+    fn role(&self, _: &str) -> Option<String> {
+        None
+    }
+}
+
+/// The live shape: party channels named after members' first names.
+#[test]
+fn words_of_multi_word_names_are_masked_in_channel_names_and_tool_results() {
+    let codec = codec().with_mention_names(Arc::new(PartyNames));
+    let mut session = codec.open(&word_roster());
+    let jonas = session.member_ref("114200000000000031");
+    let hoshi = session.member_ref("114200000000000032");
+    let text = session.text("runs in <#900>: jonas, LAU and hoshi");
+    assert_eq!(
+        text,
+        format!("runs in #hbaldguy-{jonas}-cryz-{hoshi}: {jonas}, {jonas} and {hoshi}")
+    );
+    let result = session
+        .tool_result(r##"{"runs": [{"channel": "#hstar-jonas_lau-Yoshi", "who": "Jonas lau"}]}"##);
+    for raw in ["jonas", "Jonas", "lau"] {
+        assert!(!result.contains(raw), "{raw}: {result}");
+    }
+    assert_eq!(
+        session.decode_reply(&format!("{jonas} is on it")),
+        Ok("Jonas lau is on it".to_owned())
+    );
+    // Longest match still wins: the full name is one token, not two.
+    assert_eq!(session.text("Jonas lau"), jonas);
+    // Stopwords and lexicon words are not word needles (full names still are).
+    assert_eq!(session.text("tan will go"), "tan will go");
+    assert_eq!(session.text("ask smith"), format!("ask {hoshi}"));
+    assert_eq!(session.text("Ken tan"), hoshi);
+    assert_eq!(session.text("Will Smith"), hoshi);
+    // The scanner knows the words too.
+    let needles = session.scan_needles().unwrap();
+    for word in ["jonas", "lau", "Smith"] {
+        assert!(
+            needles
+                .names
+                .iter()
+                .any(|name| name.text.eq_ignore_ascii_case(word)),
+            "{word}"
+        );
+    }
+    for word in ["tan", "Will", "Ken"] {
+        assert!(
+            !needles.names.iter().any(|name| name.text == word),
+            "{word}"
+        );
+    }
+}
+
+fn person(user_id: &str, name: &str) -> Member {
+    Member {
+        user_id: user_id.into(),
+        display_name: name.into(),
+        nickname: None,
+        aliases: Vec::new(),
+    }
+}
+
+const ALEX_TAN: &str = "114200000000000041";
+const ALEX: &str = "114200000000000042";
+const KEVIN: &str = "114200000000000043";
+const SARAH: &str = "114200000000000044";
+
+/// A whole name outranks another member's name word, so `Alex` is Alex,
+/// never `Alex Tan`, however the roster is ordered.
+#[test]
+fn a_whole_name_beats_another_members_word() {
+    for roster in [
+        vec![person(ALEX_TAN, "Alex Tan"), person(ALEX, "Alex")],
+        vec![person(ALEX, "Alex"), person(ALEX_TAN, "Alex Tan")],
+    ] {
+        let mut session = codec().open(&roster);
+        let label = session.author_label(ALEX, "Alex");
+        let full = session.member_ref(ALEX_TAN);
+        assert_ne!(label, full);
+        assert_eq!(
+            session.text("is alex coming? #hstar-alex"),
+            format!("is {label} coming? #hstar-{label}")
+        );
+        assert_eq!(session.text("Alex Tan"), full);
+        assert_eq!(session.decode_ref(&label), Ok(ALEX.to_owned()));
+        assert_eq!(session.decode_reply(&label), Ok("Alex".to_owned()));
+        let issued = session.participant_enum().unwrap();
+        assert!(issued.contains(&label) && issued.contains(&full));
+    }
+}
+
+/// A word two members share (`Lim`) maps to neither: masked and scanned,
+/// but no participant and never decoded to a member.
+#[test]
+fn a_shared_surname_is_masked_but_belongs_to_nobody() {
+    let mut session = codec().open(&[person(KEVIN, "Kevin Lim"), person(SARAH, "Sarah Lim")]);
+    let kevin = session.member_ref(KEVIN);
+    let sarah = session.member_ref(SARAH);
+    let text = session.text("ask lim and kevin in #hstar-lim");
+    assert!(!text.to_lowercase().contains("lim"), "{text}");
+    let shared = text.split(' ').nth(1).unwrap().to_owned();
+    assert!(shared != kevin && shared != sarah, "{text}");
+    assert_eq!(text, format!("ask {shared} and {kevin} in #hstar-{shared}"));
+    assert!(matches!(
+        session.decode_ref(&shared),
+        Err(DecodeError::UnknownToken { .. })
+    ));
+    assert!(session.decode_json(&format!(r#"["{shared}"]"#)).is_err());
+    assert_eq!(
+        session.decode_reply(&format!("{shared} is in")),
+        Ok("Lim is in".to_owned())
+    );
+    assert!(!session.participant_enum().unwrap().contains(&shared));
+    assert!(
+        !session
+            .mapping()
+            .unwrap()
+            .iter()
+            .any(|name| name.token == shared)
+    );
+    let needles = session.scan_needles().unwrap();
+    assert!(
+        needles.names.iter().any(|name| name.text == "Lim"),
+        "scanned"
+    );
+}
+
+/// A word that becomes shared mid-session maps to nobody from then on;
+/// what was encoded before keeps its member.
+#[test]
+fn a_word_shared_later_is_ambiguous_from_then_on() {
+    let mut session = codec().open(&[person(KEVIN, "Kevin Lim")]);
+    let kevin = session.text("lim");
+    assert_eq!(session.decode_ref(&kevin), Ok(KEVIN.to_owned()));
+    session.author_label(SARAH, "Sarah Lim");
+    let later = session.text("lim");
+    assert_ne!(later, kevin);
+    assert!(session.decode_ref(&later).is_err());
+    assert_eq!(
+        session.decode_ref(&kevin),
+        Ok(KEVIN.to_owned()),
+        "never retroactive"
+    );
+}
+
+/// A member's name word never masks the bot's or the persona's own name.
+#[test]
+fn bot_and_persona_names_are_never_word_needles() {
+    let codec = PseudonymCodec::new(PseudonymConfig {
+        pool: NamePool::curated(),
+        lexicon: CodeLexicon::builtin(),
+        bot: BotIdentity {
+            user_id: Some("114200000000000001".into()),
+            name: "Kanade".into(),
+            aliases: vec!["Kanata".into()],
+        },
+        extra_exclusions: vec!["OtonoseKanade".into(), "Otonose".into()],
+        random: Arc::new(XorShift::new(3)),
+    });
+    let mut session = codec.open(&[
+        person("114200000000000051", "Kanade Fanclub"),
+        person("114200000000000052", "Otonose Mori"),
+    ]);
+    let text = session.text("You are Kanade (Kanata), Otonose; fanclub mori");
+    assert!(
+        text.starts_with("You are Kanade (Kanata), Otonose; "),
+        "{text}"
+    );
+    assert!(
+        !text.contains("fanclub") && !text.contains("mori"),
+        "{text}"
+    );
+}

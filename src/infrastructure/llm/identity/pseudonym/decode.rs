@@ -28,7 +28,7 @@ impl PseudonymSession {
                 && let Lookup::Token { index, core } = self.lookup_at(word, i + at)?
                 && core == word.len()
             {
-                out.push_str(self.render(index, true));
+                out.push_str(self.render(index, true, i + at)?);
                 i += len;
                 continue;
             }
@@ -42,7 +42,7 @@ impl PseudonymSession {
                 if !word.is_empty() {
                     match self.lookup_at(word, i)? {
                         Lookup::Token { index, core } => {
-                            out.push_str(self.render(index, reply));
+                            out.push_str(self.render(index, reply, i)?);
                             out.push_str(&word[core..]);
                         }
                         _ => out.push_str(word),
@@ -65,13 +65,16 @@ impl PseudonymSession {
         }
     }
 
-    fn render(&self, index: usize, reply: bool) -> &str {
-        match &self.issuer.issued[index].holder {
+    /// A shared name word is no member: refused as a ref, shown as the word.
+    fn render(&self, index: usize, reply: bool, offset: usize) -> Result<&str, DecodeError> {
+        Ok(match &self.issuer.issued[index].holder {
             Holder::Literal(text) => text,
+            Holder::Shared(word) if reply => word,
+            Holder::Shared(_) => return Err(DecodeError::UnknownToken { offset }),
             Holder::Member(user_id) if reply => {
                 self.names.get(user_id).map_or(NAMELESS, String::as_str)
             }
             Holder::Member(user_id) => user_id,
-        }
+        })
     }
 }

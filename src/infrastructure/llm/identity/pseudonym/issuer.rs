@@ -18,6 +18,9 @@ pub(super) enum Holder {
     Member(String),
     /// Source text that spelled an already issued token; decodes to itself.
     Literal(String),
+    /// A name word two or more members share (`Lim`): masked, but it stands
+    /// for no member; replies show the word, refs refuse it.
+    Shared(String),
 }
 
 pub(super) struct Issued {
@@ -107,6 +110,20 @@ impl Issuer {
             Some(&index) => index,
             None => {
                 let index = self.issue(Holder::Literal(core.to_owned()));
+                self.by_literal.insert(key, index);
+                index
+            }
+        };
+        &self.issued[index].token
+    }
+
+    /// The token for a name word shared by several members.
+    pub(super) fn shared(&mut self, word: &str) -> &str {
+        let key = format!("shared:{}", word.to_lowercase());
+        let index = match self.by_literal.get(&key) {
+            Some(&index) => index,
+            None => {
+                let index = self.issue(Holder::Shared(word.to_owned()));
                 self.by_literal.insert(key, index);
                 index
             }

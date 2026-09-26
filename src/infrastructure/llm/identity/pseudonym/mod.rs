@@ -78,6 +78,9 @@ pub(super) struct Shared {
     pool: Vec<Candidate>,
     /// Lowercase `pool` names.
     forms: Arc<HashSet<String>>,
+    /// Lowercase bot and persona names and their words: never word needles,
+    /// so a member called `Kanade Fan` cannot mask the persona's own name.
+    unmaskable: HashSet<String>,
     lexicon: CodeLexicon,
     bot: BotIdentity,
     random: Arc<dyn Random>,
@@ -108,6 +111,20 @@ impl PseudonymCodec {
             .filter(|c| !blocked.iter().any(|key| near_match(&c.key, key)))
             .collect();
         let forms = pool.iter().map(|c| c.name.to_ascii_lowercase()).collect();
+        let unmaskable = std::iter::once(&config.bot.name)
+            .chain(&config.bot.aliases)
+            .chain(&config.extra_exclusions)
+            .flat_map(|name| {
+                let lower = name.trim().to_lowercase();
+                let words: Vec<String> = lower
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                std::iter::once(lower).chain(words)
+            })
+            .filter(|name| !name.is_empty())
+            .collect();
         // The bot is never masked, so its names never refuse a request.
         let exemptions = ScanExemptions::builtin()
             .with_texts(std::iter::once(&config.bot.name).chain(&config.bot.aliases));
@@ -116,6 +133,7 @@ impl PseudonymCodec {
             shared: Arc::new(Shared {
                 pool,
                 forms: Arc::new(forms),
+                unmaskable,
                 lexicon: config.lexicon,
                 bot: config.bot,
                 random: config.random,

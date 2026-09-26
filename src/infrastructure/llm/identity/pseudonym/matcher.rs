@@ -1,8 +1,10 @@
 //! Offset-safe text scanning: word boundaries, Unicode case-insensitive needle
 //! matching, mentions, URLs and digit runs. All offsets are char boundaries.
 
+/// Letters and digits. `_` and `-` separate words, so a name inside a
+/// channel or code-ish name (`hstar-jonas_lau`) is still a whole word.
 pub(in crate::infrastructure::llm::identity) fn is_word(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_'
+    ch.is_alphanumeric()
 }
 
 /// Scripts written without spaces (kana, CJK ideographs, Thai), where a name

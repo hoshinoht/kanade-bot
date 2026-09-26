@@ -75,6 +75,7 @@ fn masked_roster(world: &World) -> Vec<Member> {
     members.push(member("114200000000000051", "Will", &[]));
     members.push(member("114200000000000052", "Sun", &[]));
     members.push(member("114200000000000053", "Ken", &[]));
+    members.push(member("114200000000000054", "Jonas lau", &[]));
     members
 }
 
@@ -650,4 +651,28 @@ async fn model_view_rounds_join_the_logged_rounds_after_a_clean_retry() {
             .collect::<Vec<_>>()
     );
     assert_eq!(clean, [false, false, true]);
+}
+
+/// Party channels named after members' first names (the live shape): the
+/// first name of a multi-word display name is masked in every round.
+#[tokio::test(start_paused = true)]
+async fn first_names_inside_channel_names_are_masked() {
+    let history = vec![Message::User {
+        content: "Alvin tan: is jonas in #hbaldguy-jonas-cryz or hstar_jonas?".into(),
+    }];
+    let run = ask_with(
+        vec![FakeAction::Response(said(MODEL, "Yes."))],
+        &codec(),
+        &Ports::default(),
+        &[],
+        Some(history),
+    )
+    .await;
+    assert_eq!(run.requests.len(), 1);
+    let sent = serde_json::to_string(&run.requests[0].messages).unwrap();
+    assert!(!sent.to_lowercase().contains("jonas"), "{sent}");
+    assert!(
+        sent.contains("#hbaldguy-"),
+        "the channel name keeps its other words"
+    );
 }

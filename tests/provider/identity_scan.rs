@@ -192,17 +192,13 @@ fn bot_names_are_exempt_and_scanning_follows_codec_word_rules() {
         scanner.scan(&chat("You are Kanade (Kanata).", "hi")),
         Ok(())
     );
-    for clean in [
-        "Maid",
-        "mail",
-        "Mai_x",
-        "120000000000000000001",
-        "1234567890123456",
-    ] {
+    for clean in ["Maid", "mail", "120000000000000000001", "1234567890123456"] {
         assert_eq!(scanner.scan(&chat("x", clean)), Ok(()), "{clean}");
     }
     for leaky in [
         "Mai!",
+        // `_` separates words, like `-` in channel names.
+        "Mai_x",
         "line\\nmai",
         "マイMai",
         "[\"mai\"]",
@@ -229,4 +225,21 @@ fn only_pseudonymizing_codecs_get_an_active_scanner() {
         (found.kinds, found.count),
         (vec![LeakKind::Name, LeakKind::Id], 2)
     );
+}
+
+/// Words of multi-word names are scanned too: an unencoded first name in a
+/// channel name is refused; the tailored code-owned list still exempts a
+/// word only where code text uses it.
+#[test]
+fn words_of_multi_word_names_are_scanned() {
+    let roster = [member("200000000000000031", "Jonas lau")];
+    let identity = open_session(&codec(), &route(false), &roster).unwrap();
+    for leaky in ["#hbaldguy-jonas-cryz", "hstar_jonas", "ask LAU"] {
+        let found = identity.scanner().scan(&chat("x", leaky)).unwrap_err();
+        assert_eq!(found.kinds, vec![LeakKind::Name], "{leaky}");
+    }
+    let tailored = codec().with_scan_exemptions(&ScanExemptions::default().with_texts(["lau"]));
+    let identity = open_session(&tailored, &route(false), &roster).unwrap();
+    assert_eq!(identity.scanner().scan(&chat("x", "lau")), Ok(()));
+    assert!(identity.scanner().scan(&chat("x", "jonas")).is_err());
 }

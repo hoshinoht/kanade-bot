@@ -499,6 +499,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5: `/debug ping` posts a `🧪 TEST — ` copy of a run's day-of, countdown, amend
   or decline message (embed cards with art) whose ✅/❌ drive real RSVPs, and
   `/debug clear_test` deletes the channel's recent test cards.
+- v5: masking now also covers single words of multi-word member names (e.g. a
+  first name inside party channel names); words shared by two members get a
+  neutral fake name that decodes to nobody.
 
 **Changed**
 

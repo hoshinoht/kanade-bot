@@ -18,17 +18,46 @@ use crate::infrastructure::llm::identity::codec::{
 /// nobody in the session: messages, channels, roles, outsiders).
 const OPAQUE: &str = "Ref";
 
+/// Word needles need at least this many characters: two-letter words
+/// (`Li`, `Ng`) would mask too much ordinary text and abbreviations.
+const WORD_NEEDLE_CHARS: usize = 3;
+
+/// The words of a name with two or more words, long enough to mask alone.
+fn name_words(name: &str) -> Vec<&str> {
+    let words: Vec<&str> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    if words.len() < 2 {
+        return Vec::new();
+    }
+    words
+        .into_iter()
+        .filter(|word| word.chars().count() >= WORD_NEEDLE_CHARS)
+        .collect()
+}
+
 /// A 17–20 digit run that is no known id: a stray snowflake.
 pub(super) fn is_snowflake(digits: &str) -> bool {
     (17..=20).contains(&digits.len())
+}
+
+/// Whom a needle stands for.
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum Owner {
+    Member(String),
+    /// A name word several members share: masked, attributed to nobody.
+    Shared,
 }
 
 /// A name the session masks in text.
 pub(super) struct Needle {
     pub(super) folded: Vec<char>,
     pub(super) text: String,
-    pub(super) user_id: String,
+    pub(super) owner: Owner,
     collides: bool,
+    /// One word of a multi-word name, not a whole name.
+    word: bool,
 }
 
 /// One prompt's (extraction request's, chat question's) identity mapping.
@@ -115,26 +144,72 @@ impl PseudonymSession {
         }
         let forms = std::iter::once(trimmed).chain((bare != trimmed).then_some(bare));
         for form in forms {
-            if form.chars().count() < 2 {
-                continue;
+            if form.chars().count() >= 2 {
+                self.push_whole(form, user_id);
             }
-            let folded = fold(form);
-            if self
-                .needles
-                .iter()
-                .any(|n| n.folded == folded && n.user_id == user_id)
-            {
-                continue;
-            }
-            self.needles.push(Needle {
-                folded,
-                text: form.to_owned(),
-                user_id: user_id.to_owned(),
-                collides: self.shared.lexicon.collides(form),
-            });
         }
+        // Each word of a multi-word name on its own (`jonas` of `Jonas lau`):
+        // guilds name party channels and nicknames after first names.
+        for word in name_words(trimmed) {
+            let lower = word.to_lowercase();
+            if !self.shared.lexicon.collides(word) && !self.shared.unmaskable.contains(&lower) {
+                self.push_word(word, user_id);
+            }
+        }
+        // Longest first; at equal length a whole name before a word.
         self.needles
-            .sort_by_key(|needle| std::cmp::Reverse(needle.folded.len()));
+            .sort_by_key(|needle| (std::cmp::Reverse(needle.folded.len()), needle.word));
+    }
+
+    /// A whole name: another member's word needle equal to it goes (a
+    /// whole name is never somebody else's word).
+    fn push_whole(&mut self, text: &str, user_id: &str) {
+        let folded = fold(text);
+        let owner = Owner::Member(user_id.to_owned());
+        self.needles
+            .retain(|n| !(n.word && n.folded == folded && n.owner != owner));
+        if self
+            .needles
+            .iter()
+            .any(|n| !n.word && n.folded == folded && n.owner == owner)
+        {
+            return;
+        }
+        self.needles.push(Needle {
+            folded,
+            text: text.to_owned(),
+            owner,
+            collides: self.shared.lexicon.collides(text),
+            word: false,
+        });
+    }
+
+    /// A name word: skipped where it is some member's whole name; shared by
+    /// two members it stands for nobody from now on (earlier text keeps the
+    /// member it was encoded for).
+    fn push_word(&mut self, text: &str, user_id: &str) {
+        let folded = fold(text);
+        let owner = Owner::Member(user_id.to_owned());
+        if self.needles.iter().any(|n| !n.word && n.folded == folded) {
+            return;
+        }
+        if let Some(existing) = self
+            .needles
+            .iter_mut()
+            .find(|n| n.word && n.folded == folded)
+        {
+            if existing.owner != owner {
+                existing.owner = Owner::Shared;
+            }
+            return;
+        }
+        self.needles.push(Needle {
+            folded,
+            text: text.to_owned(),
+            owner,
+            collides: false,
+            word: true,
+        });
     }
 
     /// The token for a member, or the bot's name for the bot.
@@ -336,7 +411,7 @@ impl IdentitySession for PseudonymSession {
                         user_id: user_id.clone(),
                         display_name: self.names.get(user_id).cloned(),
                     }),
-                    super::issuer::Holder::Literal(_) => None,
+                    super::issuer::Holder::Literal(_) | super::issuer::Holder::Shared(_) => None,
                 })
                 .collect(),
         )

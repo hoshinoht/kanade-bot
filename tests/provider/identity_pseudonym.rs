@@ -195,7 +195,8 @@ fn longest_match_and_word_boundaries() {
     assert_eq!(
         encoded,
         format!(
-            "{bob}, {bob}, ({bob}), {bob}'s; Bobcat BobLim {alice}-baba Alice Tanner https://x.io/Bob?u=Bob"
+            // `Alice` alone is a word of Alice's multi-word name.
+            "{bob}, {bob}, ({bob}), {bob}'s; Bobcat BobLim {alice}-baba {alice} Tanner https://x.io/Bob?u=Bob"
         )
     );
 }
