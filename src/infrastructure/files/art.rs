@@ -77,7 +77,10 @@ impl ArtSource for BossArt {
             return None;
         }
         if meta.len() > MAX_ART_BYTES {
-            skipped(kind, basename, "too_large");
+            // Once per post: edits only look names up and would repeat it.
+            if read {
+                skipped(kind, basename, "too_large");
+            }
             return None;
         }
         let bytes = if read {
@@ -149,8 +152,17 @@ mod tests {
         let fits = vec![0_u8; usize::try_from(MAX_ART_BYTES).unwrap()];
         fs::write(root.join("artwork/entry/Seren.png"), fits).unwrap();
         let art = BossArt::new(&root);
+        crate::runtime::logging::capture();
         assert_eq!(art.find(ArtKind::Portrait, "Seren", false), None);
+        assert!(
+            crate::runtime::logging::captured().is_empty(),
+            "an edit's lookup logs nothing"
+        );
         assert_eq!(art.find(ArtKind::Portrait, "Seren", true), None);
+        let lines = crate::runtime::logging::captured();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0]["event"], "card_art_skipped");
+        assert_eq!(lines[0]["reason"], "too_large");
         assert!(
             art.find(ArtKind::Entry, "Seren", true).is_some(),
             "at the cap"

@@ -19,11 +19,17 @@ use kanade::bot::transport::{
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
 use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
+use kanade::domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
 use kanade::domain::history::{Actor, Origin, Surface};
+use kanade::domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
 use kanade::domain::ids::{RandomIds, short_id};
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::DeliveryJournal;
-use kanade::domain::schedule::{EMOJI_NO, EMOJI_YES, NewRun, RunSource, RunStatus};
+use kanade::domain::schedule::{
+    Change, ChangeSet, EMOJI_NO, EMOJI_YES, NewRun, Rsvp, RsvpSource, RsvpState, Run, RunSource,
+    RunStatus,
+};
+use kanade::domain::scheduler::StoreError;
 use kanade::infrastructure::files::BossArt;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::channel::message::Embed;
@@ -934,30 +940,202 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
         .expect("no panic");
 }
 
+type Seen = Arc<Mutex<Vec<Vec<String>>>>;
+
+fn recorder() -> (Seen, kanade::infrastructure::store::RunObserver) {
+    let seen: Seen = Arc::default();
+    let sink = Arc::clone(&seen);
+    (
+        seen,
+        Arc::new(move |runs: &[String]| sink.lock().unwrap().push(runs.to_vec())),
+    )
+}
+
+fn take(seen: &Seen) -> Vec<Vec<String>> {
+    std::mem::take(&mut *seen.lock().unwrap())
+}
+
+fn raw_run(id: &str) -> Run {
+    Run {
+        id: id.into(),
+        fixed_run_id: None,
+        channel_id: Some(HOME.into()),
+        week_start: week(),
+        datetime: tonight(),
+        bosses: vec!["XKalos".into()],
+        participants: vec!["1001".into()],
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+        attendance: Vec::new(),
+        status_pin: None,
+    }
+}
+
+fn raw_meta(surface: Surface, request: Option<(&str, &str)>) -> ChangeMeta {
+    let mut origin = Origin::new(Actor::admin("root"), surface);
+    if let Some((id, _)) = request {
+        origin = origin.with_request_id(id);
+    }
+    ChangeMeta {
+        origin,
+        at: now(),
+        notices: Vec::new(),
+        refs: Vec::new(),
+        request_digest: request.map(|(_, digest)| digest.to_owned()),
+        expect: Expect::default(),
+        outbox: Vec::new(),
+    }
+}
+
+/// Only committed, non-replayed `commit`/`commit_merge` calls notify, each
+/// once with exactly the runs whose row or RSVPs it wrote.
+async fn observer_contract<S: Store + DraftStore + ChangeHistory>(store: &S, seen: &Seen) {
+    let revision = || async { support::snapshot(store).await.revision };
+    let put = |runs: &[&str]| ChangeSet {
+        changes: runs.iter().map(|id| Change::PutRun(raw_run(id))).collect(),
+    };
+    let request = Some(("req-1", "digest-1"));
+    let first = store
+        .commit(
+            revision().await,
+            put(&["r1"]),
+            raw_meta(Surface::AdminPortal, request),
+        )
+        .await
+        .expect("commit")
+        .expect("written");
+    assert!(!first.replayed);
+    assert_eq!(
+        take(seen),
+        [vec!["r1".to_owned()]],
+        "a commit notifies once"
+    );
+
+    let replay = store
+        .commit(
+            revision().await,
+            put(&["r1"]),
+            raw_meta(Surface::AdminPortal, request),
+        )
+        .await
+        .expect("replay")
+        .expect("recorded");
+    assert!(replay.replayed);
+    assert!(
+        take(seen).is_empty(),
+        "a replayed request id notifies nobody"
+    );
+
+    let stale_revision = revision().await - 1;
+    assert!(matches!(
+        store
+            .commit(
+                stale_revision,
+                put(&["r2"]),
+                raw_meta(Surface::AdminPortal, None)
+            )
+            .await,
+        Err(StoreError::Conflict { .. })
+    ));
+    let mut stale_edit = raw_meta(Surface::AdminPortal, None);
+    stale_edit.expect = Expect::fields([Precondition::new(
+        BlameTarget::Run("r1".into()),
+        "slot",
+        None,
+    )]);
+    let mut moved = raw_run("r1");
+    moved.datetime += TimeDelta::hours(1);
+    let refused = store
+        .commit(
+            revision().await,
+            ChangeSet {
+                changes: vec![Change::PutRun(moved)],
+            },
+            stale_edit,
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(StoreError::StaleEdit(_))),
+        "{refused:?}"
+    );
+    assert!(take(seen).is_empty(), "refused commits notify nobody");
+
+    let base = store.history_head().await.expect("head");
+    let DraftCreated::Created(draft) = store
+        .create_draft(NewDraft {
+            id: "draft-1".into(),
+            kind: DraftKind::Admin,
+            title: "retime".into(),
+            author: Actor::admin("root"),
+            base,
+            base_revision: revision().await,
+            request_type: None,
+            subject: None,
+            at: now(),
+            request: None,
+            submit: None,
+        })
+        .await
+        .expect("create")
+    else {
+        panic!("draft not created");
+    };
+    let merge = |changes, version, request| {
+        let draft_id = draft.id.clone();
+        async move {
+            store
+                .commit_merge(
+                    revision().await,
+                    changes,
+                    raw_meta(Surface::DraftMerge, Some(request)),
+                    &draft_id,
+                    version,
+                    None,
+                )
+                .await
+                .expect("merge call")
+        }
+    };
+    assert!(matches!(
+        merge(put(&["r3"]), 99, ("merge-0", "digest-0")).await,
+        MergeCommit::Stale(_)
+    ));
+    assert!(take(seen).is_empty(), "a stale merge notifies nobody");
+
+    let mut changes = put(&["r3"]);
+    changes.changes.push(Change::PutRsvp(Rsvp {
+        run_id: "r1".into(),
+        user_id: "1001".into(),
+        state: RsvpState::Yes,
+        source: RsvpSource::Chat,
+        at: now(),
+    }));
+    let MergeCommit::Committed(merged) = merge(changes, 1, ("merge-1", "digest-2")).await else {
+        panic!("merge not committed");
+    };
+    assert!(!merged.replayed);
+    assert_eq!(
+        take(seen),
+        [vec!["r1".to_owned(), "r3".to_owned()]],
+        "a merge notifies its touched runs once"
+    );
+}
+
 #[tokio::test]
 async fn both_stores_report_committed_run_writes_once() {
-    async fn check<S: Store>(
-        store: &S,
-        observe: impl FnOnce(kanade::infrastructure::store::RunObserver) -> bool,
-    ) {
-        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
-        let sink = Arc::clone(&seen);
-        assert!(observe(Arc::new(move |runs: &[String]| {
-            sink.lock().unwrap().extend_from_slice(runs);
-        })));
-        let id = run(store, &["XKalos"], &["1001"], tonight(), RunStatus::Planned).await;
-        answer(store, &id, "1001", true, now()).await;
-        let seen = seen.lock().unwrap().clone();
-        assert_eq!(seen, [id.clone(), id], "the create, then the answer");
-    }
     let memory = MemoryScheduleStore::new();
-    check(&memory, |observer| memory.observe_run_writes(observer)).await;
+    let (seen, observer) = recorder();
+    assert!(memory.observe_run_writes(observer));
+    observer_contract(&memory, &seen).await;
+
     let dir = TempDir::new();
     let sqlite = dir.open().await;
-    check(&sqlite, |observer| sqlite.observe_run_writes(observer)).await;
+    let (seen, observer) = recorder();
+    assert!(sqlite.observe_run_writes(observer));
     assert!(
         !sqlite.observe_run_writes(Arc::new(|_: &[String]| {})),
         "installed once"
     );
+    observer_contract(&sqlite, &seen).await;
     sqlite.close().await.expect("close");
 }
