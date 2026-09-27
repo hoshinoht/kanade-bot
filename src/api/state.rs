@@ -509,7 +509,6 @@ pub struct ApiState {
     pub policy: SchedulePolicy,
     pub catalog: Arc<BossTable>,
     pub channels: Arc<dyn ChannelList>,
-    pub personas: Vec<PersonaOption>,
     pub access: Arc<GuildAccess>,
     /// Tracked `boss/knowledge/` (schema v2).
     pub knowledge_dir: Option<PathBuf>,
@@ -529,13 +528,22 @@ impl std::fmt::Debug for ApiState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ApiState")
             .field("zone", &self.policy.zone())
-            .field("personas", &self.personas.len())
+            .field("personas", &self.profile_options().len())
             .field("knowledge_dir", &self.knowledge_dir)
             .finish_non_exhaustive()
     }
 }
 
 impl ApiState {
+    /// Public reply-profile choices from the config desk. Missing settings
+    /// fail closed rather than inferring visibility from readable files.
+    pub fn profile_options(&self) -> Vec<PersonaOption> {
+        self.config
+            .as_ref()
+            .map(|desk| desk.profile_choices().options)
+            .unwrap_or_default()
+    }
+
     pub fn now(&self) -> DateTime<Utc> {
         (self.clock)()
     }

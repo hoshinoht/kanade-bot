@@ -560,6 +560,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 Reply profiles default to private until explicitly published; admins can
+  change selected profiles without stale saves republishing someone else's
+  private choice, and member `/style` choices update without a restart.
 - v5 admin Chat log Name copy buttons meet minimum pointer target sizes on
   desktop and phones without widening the dense table; the full-page axe
   check now includes the Who column.

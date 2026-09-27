@@ -169,7 +169,6 @@ pub async fn compose(
         policy,
         catalog: Arc::new(catalog),
         channels,
-        personas: personas.options,
         access: access.clone(),
         knowledge_dir: knowledge.map(|dir| dir.path),
         guild_id: Some(config.guild.guild_id.to_string()),

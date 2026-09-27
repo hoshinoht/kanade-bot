@@ -148,11 +148,18 @@ impl MemberCommand {
     /// Selectable reply styles; `default` is offered separately.
     fn public_styles(&self) -> Vec<String> {
         self.ctx
-            .personas
-            .iter()
-            .map(|persona| persona.key.clone())
-            .filter(|key| key != "default")
-            .collect()
+            .config
+            .as_ref()
+            .map(|config| {
+                config
+                    .profile_choices()
+                    .options
+                    .into_iter()
+                    .map(|persona| persona.key)
+                    .filter(|key| key != "default")
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// v4 `_require_chat_access`: staff, or the chat pilot role.

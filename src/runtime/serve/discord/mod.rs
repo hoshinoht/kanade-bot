@@ -352,6 +352,14 @@ where
             store: Arc::clone(&store),
             models: composition.models.clone(),
             personas: Arc::clone(&composition.personas),
+            config: Arc::clone(
+                composition
+                    .admin
+                    .state
+                    .config
+                    .as_ref()
+                    .expect("serve always composes config settings"),
+            ),
             settings: settings_changes(composition),
             cache: Arc::clone(&cache),
             catalog: Arc::clone(&composition.admin.state.catalog),

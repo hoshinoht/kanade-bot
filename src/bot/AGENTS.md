@@ -1,5 +1,6 @@
 # Discord adapter guide
 
+- `/style` choices, autocomplete and validation read the live published-profile list; a saved private choice is retained but unavailable and chat falls back to the bundle default.
 - Twilight-based and storage-independent: persistence and scheduling are reached only through traits (`CardIndex`, `ReactionSink`, `DeliveryJournal`, `SchedulerService`).
 - `transport/`: the `DiscordTransport` trait (`mod.rs`), `TwilightTransport` (`twilight.rs`: 10 s attempt / 30 s call / 2.5 s interaction-response deadlines, ≤4 sends per call), `FakeDiscord` (`fake.rs`, test-support). Every call returns `Delivered`, `DefinitelyRejected` or `Ambiguous` (`outcome.rs`); an ambiguous create may have posted and must never be replayed. Connect failures are `NotSent`.
 - `mentions.rs` is the only way to build allowed mentions: explicit valid user IDs only, never `@everyone`/roles/replied user; an empty list pings nobody.

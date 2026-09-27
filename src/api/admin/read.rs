@@ -126,10 +126,11 @@ async fn members(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .await
         .map_err(unavailable)?;
     let profiles = state.store.members().await.map_err(unavailable)?;
+    let personas = state.profile_options();
     Ok(Json(dto::members::rows(
         &profiles,
         &state.access,
-        &state.personas,
+        &personas,
         &snapshot,
         this.start,
     ))
@@ -157,7 +158,8 @@ async fn roles(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 
 async fn personas(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
-    Ok(Json(dto::members::personas(&state.personas)).into_response())
+    let personas = state.profile_options();
+    Ok(Json(dto::members::personas(&personas)).into_response())
 }
 
 async fn bosses(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

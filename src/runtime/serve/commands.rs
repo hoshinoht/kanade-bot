@@ -55,7 +55,7 @@ impl<T: GatewayTransport> Commands<T> {
             catalog: Arc::clone(&state.catalog),
             channels: self.channels.clone(),
             access: Arc::clone(&state.access),
-            personas: state.personas.clone(),
+            config: state.config.clone(),
             rescans: state.rescans.as_ref().map(|desk| Arc::clone(&desk.runner)),
             allowance: state
                 .chat

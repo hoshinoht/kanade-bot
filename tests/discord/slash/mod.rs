@@ -22,14 +22,16 @@ use twilight_model::application::command::CommandOptionChoice;
 use twilight_model::application::command::CommandOptionChoiceValue;
 use twilight_model::application::interaction::Interaction;
 
+use kanade::api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs, PersonaFiles};
 use kanade::api::rescan::RescanRunner;
-use kanade::api::state::{GuildAccess, PersonaOption};
+use kanade::api::state::GuildAccess;
 use kanade::api::write::{ApiClock, SchedulerWriter};
 use kanade::bot::commands::{
     AccessPolicy, ChatAllowance, CommandContext, DebugCards, Dispatcher, Disposition,
     GuildChannels, register_retained,
 };
 use kanade::bot::transport::{Call, FakeDiscord, InteractionReply, Outcome};
+use kanade::chat::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
 use kanade::domain::attendance::AttendanceDefault;
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
@@ -39,6 +41,7 @@ use kanade::domain::schedule::{
     Change, ChangeSet, FixedRun, ReminderPolicy, Run, RunSource, RunStatus, SchedulePolicy,
 };
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
+use kanade::domain::settings::RuntimeSettings;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 
 use super::support::{ADMIN_ROLE, BOSSING_ROLE, GUILD, OWNER, guild, parse, role, user};
@@ -168,6 +171,43 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn profile_config(dir: &TempDir, store: Arc<SqliteStore>) -> Arc<ConfigDesk> {
+    let root = dir.0.join("personas");
+    std::fs::create_dir_all(root.join("bundles")).unwrap();
+    std::fs::create_dir_all(root.join("profiles")).unwrap();
+    std::fs::write(
+        root.join("bundles/kanade.yaml"),
+        "schema_version: 1\nid: kanade\nidentity: |\n  # Persona: Kanade\n\n  Synthetic identity.\nbehaviour:\n  voice: Synthetic voice.\n  prompt: Synthetic prompt.\nstaging:\n  schedule: Synthetic schedule\n  guide: Synthetic guide\n  guide_named: '{boss} synthetic guide'\n  write: Synthetic write\n  generic: Synthetic reply\n",
+    )
+    .unwrap();
+    for (id, label) in [("terse", "Terse"), ("loud", "Loud")] {
+        std::fs::write(
+            root.join(format!("profiles/{id}.yaml")),
+            format!(
+                "schema_version: 1\nid: {id}\nlabel: {label}\nvoice: Synthetic {label} voice.\nprompt: Synthetic {label} profile.\n"
+            ),
+        )
+        .unwrap();
+    }
+    let persona_root = PersonaRoot::open(&root).unwrap();
+    let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(
+        &persona_root,
+        None,
+    )));
+    let mut settings = RuntimeSettings::default();
+    settings.persona.profile_visibility = vec!["terse".into()];
+    Arc::new(ConfigDesk::new(ConfigInputs {
+        settings,
+        store,
+        models: None,
+        facts: ConfigFacts::default(),
+        personas: Some(PersonaFiles {
+            dir: root,
+            store: personas,
+        }),
+    }))
 }
 
 fn profile(id: u64, name: &str, has_role: bool) -> MemberProfile {
@@ -350,16 +390,7 @@ impl Slash {
                 policy.clone(),
                 Some(PILOT_ROLE.to_string()),
             )),
-            personas: vec![
-                PersonaOption {
-                    key: "default".into(),
-                    name: "Default".into(),
-                },
-                PersonaOption {
-                    key: "terse".into(),
-                    name: "Terse".into(),
-                },
-            ],
+            config: Some(profile_config(&dir, store.clone())),
             rescans: ports.rescans,
             allowance: ports.allowance,
             debug_cards: ports.debug_cards,

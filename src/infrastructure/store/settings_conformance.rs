@@ -14,6 +14,7 @@ use crate::domain::settings::{
 pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     unset_keys_fall_back_to_seed_then_default(make().await).await;
     sections_round_trip_and_keep_other_rows(make().await).await;
+    profile_visibility_is_private_by_default_and_deduplicated(make().await).await;
     v4_rows_read_as_v4_wrote_them(make().await).await;
     malformed_rows_are_errors_naming_the_key(make().await).await;
     refused_writes_store_nothing(make().await).await;
@@ -73,6 +74,22 @@ async fn unset_keys_fall_back_to_seed_then_default<S: SettingsStore>(store: S) {
     );
 }
 
+async fn profile_visibility_is_private_by_default_and_deduplicated<S: SettingsStore>(store: S) {
+    let defaults = load_settings(&store, &RuntimeSettings::default())
+        .await
+        .expect("load defaults");
+    assert!(defaults.persona.profile_visibility.is_empty());
+
+    store
+        .put_settings_rows(raw(&[(keys::PROFILE_VISIBILITY, "calm,terse,calm")]))
+        .await
+        .expect("put visibility");
+    let loaded = load_settings(&store, &RuntimeSettings::default())
+        .await
+        .expect("load visibility");
+    assert_eq!(loaded.persona.profile_visibility, ["calm", "terse"]);
+}
+
 async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     let mut wanted = seed();
     wanted.notifications.quiet_mode = true;
@@ -88,6 +105,7 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     wanted.models.extraction.alias = None;
     wanted.self_service.mode = SelfServiceMode::LinkFirst;
     wanted.self_service.public_portal = true;
+    wanted.persona.profile_visibility = vec!["terse".into(), "calm".into()];
     wanted.schedule.reset_time = time(3, 30);
     wanted.schedule.attendance = AttendanceMode::V5;
     wanted.posting.channel_id = Some("77".into());
@@ -95,6 +113,7 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
         Section::Chatbot(wanted.chatbot.clone()),
         Section::Models(wanted.models.clone()),
         Section::SelfService(wanted.self_service),
+        Section::Persona(wanted.persona.clone()),
         Section::Schedule(wanted.schedule),
         Section::Posting(wanted.posting.clone()),
     ] {
@@ -113,6 +132,10 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     assert_eq!(
         rows.get(keys::RESET_TIME).map(String::as_str),
         Some("03:30")
+    );
+    assert_eq!(
+        rows.get(keys::PROFILE_VISIBILITY).map(String::as_str),
+        Some("terse,calm")
     );
     assert!(
         !rows.contains_key(keys::DAY_OF_PING_TIME),

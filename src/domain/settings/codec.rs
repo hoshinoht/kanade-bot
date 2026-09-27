@@ -100,6 +100,23 @@ fn ids(key: &'static str, value: &str) -> Result<Vec<String>, SettingsError> {
         .collect()
 }
 
+fn profile_ids(key: &'static str, value: &str) -> Result<Vec<String>, SettingsError> {
+    let mut profiles = Vec::new();
+    for profile in parts(value) {
+        let mut chars = profile.bytes();
+        let valid = matches!(chars.next(), Some(b'a'..=b'z' | b'0'..=b'9'))
+            && profile.len() <= 50
+            && chars.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+        if !valid {
+            return Err(malformed(key, value, "expected profile ids"));
+        }
+        if !profiles.iter().any(|existing| existing == profile) {
+            profiles.push(profile.to_owned());
+        }
+    }
+    Ok(profiles)
+}
+
 fn id(key: &'static str, value: &str) -> Result<Option<String>, SettingsError> {
     match value.trim() {
         "" => Ok(None),
@@ -199,6 +216,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         }
         keys::PUBLIC_PORTAL => out.self_service.public_portal = flag(key, value)?,
         keys::PERSONA => value.clone_into(&mut out.persona.active),
+        keys::PROFILE_VISIBILITY => out.persona.profile_visibility = profile_ids(key, value)?,
         keys::EXTRACT_MODEL | keys::CHAT_MODEL | keys::REWRITE_MODEL => {
             if let Some(alias) = alias(value) {
                 role(&mut out.models, key).alias = Some(alias);
@@ -284,7 +302,13 @@ pub(super) fn encode(section: &Section) -> Rows {
             (keys::SELF_SERVICE_MODE, service.mode.as_str().to_owned()),
             (keys::PUBLIC_PORTAL, flag_text(service.public_portal)),
         ],
-        Section::Persona(persona) => vec![(keys::PERSONA, persona.active.clone())],
+        Section::Persona(persona) => vec![
+            (keys::PERSONA, persona.active.clone()),
+            (
+                keys::PROFILE_VISIBILITY,
+                persona.profile_visibility.join(","),
+            ),
+        ],
         Section::Models(models) => {
             let alias = |role: &RoleModel| role.alias.clone().unwrap_or_default();
             vec![

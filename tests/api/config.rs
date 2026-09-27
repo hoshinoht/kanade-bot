@@ -14,18 +14,22 @@ use kanade::{
         CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
         PersonaFiles,
     },
-    chat::persona::{PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore},
+    chat::persona::{
+        PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
+        ProfileSource,
+    },
     domain::settings::{Models, Reasoning, RoleModel, RuntimeSettings, load_settings},
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
         governor::Role,
         setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
     },
+    infrastructure::store::SqliteStore,
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::Reads,
+    reads::{EDGE_HEADERS, Reads},
     schemas::assert_valid,
     support::{ADMIN_HOST, Reply, request, send},
 };
@@ -253,6 +257,19 @@ impl Config {
         groups: Vec<CapacityGroup>,
         settings: RuntimeSettings,
     ) -> Self {
+        Self::with_settings_and_logins(gateway, groups, settings, false).await
+    }
+
+    async fn with_two_admins() -> Self {
+        Self::with_settings_and_logins(true, Vec::new(), settings(), true).await
+    }
+
+    async fn with_settings_and_logins(
+        gateway: bool,
+        groups: Vec<CapacityGroup>,
+        settings: RuntimeSettings,
+        two_admins: bool,
+    ) -> Self {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
@@ -273,7 +290,7 @@ impl Config {
                 personas.clone(),
                 dir.0.clone(),
             );
-            Reads::with_config(move |store| {
+            let make = move |store: Arc<SqliteStore>| {
                 let desk = Arc::new(ConfigDesk::new(ConfigInputs {
                     settings,
                     store,
@@ -294,8 +311,12 @@ impl Config {
                 }));
                 slot.set(desk.clone()).ok().unwrap();
                 desk
-            })
-            .await
+            };
+            if two_admins {
+                Reads::with_config_and_logins(make).await
+            } else {
+                Reads::with_config(make).await
+            }
         };
         Self {
             reads,
@@ -318,12 +339,41 @@ impl Config {
         view(&reply, "GET")
     }
 
+    async fn get_as(&self, cookie: &str, edge_login: &str) -> Value {
+        let mut headers = vec![("Cookie", cookie)];
+        let mut edge_headers = EDGE_HEADERS;
+        edge_headers[2] = ("Tailscale-User-Login", edge_login);
+        headers.extend_from_slice(&edge_headers);
+        let reply = request(self.reads.admin, "GET", ADMIN_HOST, PATH, &headers).await;
+        view(&reply, "GET as admin")
+    }
+
     async fn send(&self, method: &str, path: &str, key: Option<&str>, body: &Value) -> Reply {
-        let mut headers = vec![
-            ORIGIN,
-            ("Cookie", self.reads.cookie.as_str()),
-            ("X-Kanade-CSRF", self.reads.csrf.as_str()),
-        ];
+        self.send_as(
+            (&self.reads.cookie, &self.reads.csrf, None),
+            method,
+            path,
+            key,
+            body,
+        )
+        .await
+    }
+
+    async fn send_as(
+        &self,
+        session: (&str, &str, Option<&str>),
+        method: &str,
+        path: &str,
+        key: Option<&str>,
+        body: &Value,
+    ) -> Reply {
+        let (cookie, csrf, edge_login) = session;
+        let mut headers = vec![ORIGIN, ("Cookie", cookie), ("X-Kanade-CSRF", csrf)];
+        if let Some(login) = edge_login {
+            let mut edge_headers = EDGE_HEADERS;
+            edge_headers[2] = ("Tailscale-User-Login", login);
+            headers.extend_from_slice(&edge_headers);
+        }
         if let Some(key) = key {
             headers.push(("Idempotency-Key", key));
         }
@@ -476,6 +526,10 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(persona["personas"][1]["bundle"], "bundles/calm.yaml");
     assert_eq!(persona["profiles"].as_array().unwrap().len(), 1);
     assert_eq!(persona["profiles"][0]["key"], "calm");
+    assert_eq!(
+        persona["profiles"][0]["public"], false,
+        "missing is private"
+    );
     assert_eq!(persona["profiles"][0]["prompt_summary"], "# Reply profile");
     assert_eq!(persona["role_profiles"], json!([]));
 }
@@ -580,10 +634,6 @@ async fn unknown_read_only_and_bad_values_are_422_and_nothing_is_saved() {
             "read_only",
         ),
         (json!({"persona": {"role_profiles": []}}), "read_only"),
-        (
-            json!({"persona": {"visibility": [{"key": "calm", "public": false}]}}),
-            "read_only",
-        ),
         (json!({"persona": {"profiles": []}}), "read_only"),
         (json!({"pings": {"day_of_ping_time": "9:00"}}), "invalid"),
         (json!({"pings": {"countdown_minutes": [4]}}), "invalid"),
@@ -638,6 +688,307 @@ async fn unknown_read_only_and_bad_values_are_422_and_nothing_is_saved() {
     refused(&reply, 400, "invalid_body", "not JSON");
     assert_eq!(config.get().await, before);
     assert_eq!(config.desk.settings().await, settings());
+}
+
+#[tokio::test]
+async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
+    let config = Config::new().await;
+    let initial = config.get().await;
+    assert_eq!(initial["persona"]["profiles"][0]["public"], false);
+    assert!(config.desk.profile_choices().options.is_empty());
+    assert_eq!(
+        config
+            .reads
+            .read("/api/admin/personas", "members.json#/$defs/Personas")
+            .await,
+        json!([])
+    );
+
+    config.dir.profile("bold");
+    let reload = config.send("POST", RELOAD, None, &json!({})).await;
+    assert_eq!(reload.status, 200, "{}", reload.text());
+
+    let published = config
+        .patch(json!({"persona": {"active": "calm", "visibility": [
+            {"key": "calm", "public": true},
+            {"key": "bold", "public": true}
+        ]}}))
+        .await;
+    assert_eq!(published["persona"]["active"], "calm");
+    assert_eq!(
+        published["notices"],
+        json!(["Reply profile visibility updated."])
+    );
+    assert_eq!(published["persona"]["profiles"][0]["public"], true);
+    assert_eq!(
+        config
+            .desk
+            .profile_choices()
+            .options
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>(),
+        ["calm", "bold"]
+    );
+    let options = config
+        .reads
+        .read("/api/admin/personas", "members.json#/$defs/Personas")
+        .await;
+    assert_eq!(
+        options
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["key"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["calm", "bold"]
+    );
+
+    let member = config
+        .reads
+        .ok(
+            "PATCH",
+            "/api/admin/members/1001",
+            json!({"persona": "calm"}),
+            "members.json#/$defs/MemberRow",
+        )
+        .await;
+    assert_eq!(member["persona"], "calm");
+    assert_eq!(member["persona_available"], true);
+    let calm = ProfileId::parse("calm").unwrap();
+    let resolution = |choices: &kanade::api::admin::config::LiveProfileChoices| {
+        let query = ProfileQuery {
+            member_roles: &[],
+            role_assignments: &[],
+            saved_selection: Some(&calm),
+            selectable: &choices.selectable,
+        };
+        choices
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .resolve(&query)
+            .unwrap()
+            .profile_source
+    };
+    assert_eq!(
+        resolution(&config.desk.profile_choices()),
+        ProfileSource::MemberSelection
+    );
+
+    let private = config
+        .patch(json!({"persona": {"visibility": [{"key": "calm", "public": false}]}}))
+        .await;
+    let calm_profile = private["persona"]["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|profile| profile["key"] == "calm")
+        .unwrap();
+    assert_eq!(calm_profile["public"], false);
+    assert_eq!(
+        resolution(&config.desk.profile_choices()),
+        ProfileSource::BundleDefault {
+            saved_selection_unavailable: true
+        }
+    );
+    let rows = config
+        .reads
+        .read("/api/admin/members", "members.json#/$defs/MemberRows")
+        .await;
+    let alice = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "1001")
+        .unwrap();
+    assert_eq!(alice["persona"], "calm", "private selection is retained");
+    assert_eq!(alice["persona_available"], false);
+    assert_eq!(
+        config
+            .reads
+            .refused(
+                "PATCH",
+                "/api/admin/members/1001",
+                json!({"persona": "calm"}),
+            )
+            .await,
+        (422, "invalid".into())
+    );
+
+    config
+        .patch(json!({"persona": {"visibility": [{"key": "calm", "public": true}]}}))
+        .await;
+    fs::remove_file(config.dir.0.join("profiles/calm.yaml")).unwrap();
+    assert_eq!(
+        config.send("POST", RELOAD, None, &json!({})).await.status,
+        200
+    );
+    assert!(
+        !config
+            .desk
+            .profile_choices()
+            .options
+            .iter()
+            .any(|item| item.key == "calm")
+    );
+    config.dir.profile("calm");
+    assert_eq!(
+        config.send("POST", RELOAD, None, &json!({})).await.status,
+        200
+    );
+    assert!(
+        config
+            .desk
+            .profile_choices()
+            .options
+            .iter()
+            .any(|item| item.key == "calm")
+    );
+}
+
+#[tokio::test]
+async fn visibility_delta_rejects_unknown_ids_bad_flags_and_duplicate_keys() {
+    let config = Config::new().await;
+    for (body, code) in [
+        (
+            json!({"persona": {"visibility": [{"key": "../private", "public": true}]}}),
+            "invalid",
+        ),
+        (
+            json!({"persona": {"visibility": [{"key": "missing", "public": true}]}}),
+            "invalid",
+        ),
+        (
+            json!({"persona": {"visibility": [{"key": "calm", "public": "yes"}]}}),
+            "invalid",
+        ),
+        (
+            json!({"persona": {"visibility": [
+                {"key": "calm", "public": true}, {"key": "calm", "public": false}
+            ]}}),
+            "invalid",
+        ),
+        (
+            json!({"persona": {"visibility": [{"key": "calm", "public": true, "extra": 1}]}}),
+            "unknown_field",
+        ),
+        (
+            json!({"persona": {"visibility": {"key": "calm", "public": true}}}),
+            "invalid",
+        ),
+    ] {
+        config.refused(body, 422, code).await;
+    }
+    assert!(
+        config
+            .desk
+            .settings()
+            .await
+            .persona
+            .profile_visibility
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn stale_admin_visibility_deltas_do_not_republish_another_admins_private_profile() {
+    let config = Config::with_two_admins().await;
+    config.dir.profile("bold");
+    assert_eq!(
+        config.send("POST", RELOAD, None, &json!({})).await.status,
+        200
+    );
+    let (cookie_a, csrf_a) = config.reads.tailscale_session_as("ops@example.com").await;
+    let (cookie_b, csrf_b) = config
+        .reads
+        .tailscale_session_as("second-ops@example.com")
+        .await;
+
+    let publish_b = json!({"persona": {"visibility": [{"key": "bold", "public": true}]}});
+    let a = config
+        .send_as(
+            (&cookie_a, &csrf_a, Some("ops@example.com")),
+            "PATCH",
+            PATH,
+            None,
+            &publish_b,
+        )
+        .await;
+    view(&a, "admin A publishes bold");
+    let stale = config.get_as(&cookie_b, "second-ops@example.com").await;
+    assert_eq!(stale["persona"]["profiles"][0]["key"], "bold");
+    assert_eq!(stale["persona"]["profiles"][0]["public"], true);
+
+    let make_b_private = json!({"persona": {"visibility": [{"key": "bold", "public": false}]}});
+    let a = config
+        .send_as(
+            (&cookie_a, &csrf_a, Some("ops@example.com")),
+            "PATCH",
+            PATH,
+            None,
+            &make_b_private,
+        )
+        .await;
+    view(&a, "admin A makes bold private");
+    let publish_c = json!({"persona": {"visibility": [{"key": "calm", "public": true}]}});
+    let b = config
+        .send_as(
+            (&cookie_b, &csrf_b, Some("second-ops@example.com")),
+            "PATCH",
+            PATH,
+            None,
+            &publish_c,
+        )
+        .await;
+    let final_view = view(&b, "admin B publishes calm from stale view");
+    let profiles = final_view["persona"]["profiles"].as_array().unwrap();
+    let is_public = |key: &str| {
+        profiles
+            .iter()
+            .find(|profile| profile["key"] == key)
+            .unwrap()["public"]
+            .as_bool()
+            .unwrap()
+    };
+    assert!(!is_public("bold"));
+    assert!(is_public("calm"));
+    assert_eq!(
+        config.desk.settings().await.persona.profile_visibility,
+        ["calm"]
+    );
+}
+
+#[tokio::test]
+async fn concurrent_same_key_visibility_patches_have_one_winner() {
+    let config = Config::new().await;
+    let publish = json!({"persona": {"visibility": [{"key": "calm", "public": true}]}});
+    let private = json!({"persona": {"visibility": [{"key": "calm", "public": false}]}});
+    let (left, right) = tokio::join!(
+        config.send("PATCH", PATH, Some("visibility-race"), &publish),
+        config.send("PATCH", PATH, Some("visibility-race"), &private),
+    );
+    let (winner, loser) = if left.status == 200 {
+        (&left, &right)
+    } else {
+        (&right, &left)
+    };
+    assert_eq!(winner.status, 200, "{}", winner.text());
+    refused(loser, 422, "idempotency_mismatch", "concurrent key reuse");
+    let winning_public =
+        view(winner, "winning visibility request")["persona"]["profiles"][0]["public"]
+            .as_bool()
+            .unwrap();
+    assert_eq!(
+        config
+            .desk
+            .settings()
+            .await
+            .persona
+            .profile_visibility
+            .contains(&"calm".to_owned()),
+        winning_public
+    );
 }
 
 #[tokio::test]
@@ -936,7 +1287,7 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
         refused(&reply, 401, "unauthenticated", path);
     }
-    let body = r#"{"watching":{"paused":true}}"#;
+    let body = r#"{"persona":{"visibility":[{"key":"calm","public":true}]}}"#;
     for (method, path) in [("PATCH", PATH), ("POST", RELOAD)] {
         let reply = send(
             admin,
@@ -949,7 +1300,15 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         .await;
         refused(&reply, 403, "csrf", path);
     }
-    assert!(!config.desk.settings().await.watching.paused);
+    assert!(
+        config
+            .desk
+            .settings()
+            .await
+            .persona
+            .profile_visibility
+            .is_empty()
+    );
     // Still unmounted: it needs the Discord wiring.
     let reply = config
         .send("POST", "/api/admin/digest", None, &json!({}))

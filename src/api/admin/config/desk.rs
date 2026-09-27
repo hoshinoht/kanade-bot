@@ -17,9 +17,9 @@ use super::models;
 use crate::{
     api::{
         dto::config::{self as dto, ConfigView, EnvRow, KeyLimits, ManageMessages},
-        state::ChannelEntry,
+        state::{ChannelEntry, PersonaOption},
     },
-    chat::persona::PersonaStore,
+    chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
     domain::settings::{
         Models, RuntimeSettings, Section, SettingsError, SettingsStore, save_section,
     },
@@ -105,6 +105,49 @@ pub struct SettingsChanged {
     pub settings: Arc<RuntimeSettings>,
 }
 
+/// One live view of readable profiles and the member-selectable subset.
+#[derive(Clone, Debug, Default)]
+pub struct LiveProfileChoices {
+    pub snapshot: Option<Arc<PersonaSnapshot>>,
+    pub options: Vec<PersonaOption>,
+    pub readable: std::collections::BTreeSet<ProfileId>,
+    pub selectable: std::collections::BTreeSet<ProfileId>,
+}
+
+impl LiveProfileChoices {
+    fn new(snapshot: Option<Arc<PersonaSnapshot>>, visibility: &[String]) -> Self {
+        let Some(active) = snapshot.as_ref().and_then(|snapshot| snapshot.active()) else {
+            return Self {
+                snapshot,
+                ..Self::default()
+            };
+        };
+        let readable = active.profiles.readable.keys().cloned().collect();
+        let mut selectable = std::collections::BTreeSet::new();
+        let mut options = Vec::new();
+        for key in visibility {
+            let Ok(id) = ProfileId::parse(key) else {
+                continue;
+            };
+            let Some(profile) = active.profiles.get(&id) else {
+                continue;
+            };
+            if selectable.insert(id.clone()) {
+                options.push(PersonaOption {
+                    key: id.to_string(),
+                    name: profile.value.label.clone(),
+                });
+            }
+        }
+        Self {
+            snapshot,
+            options,
+            readable,
+            selectable,
+        }
+    }
+}
+
 pub struct ConfigInputs {
     pub settings: RuntimeSettings,
     pub store: Arc<dyn SettingsPort>,
@@ -167,6 +210,18 @@ impl ConfigDesk {
     /// The running settings.
     pub async fn settings(&self) -> RuntimeSettings {
         self.current.lock().await.clone()
+    }
+
+    /// The sole live member-choice source. It combines the latest saved list
+    /// with the current readable profile snapshot on every call.
+    pub fn profile_choices(&self) -> LiveProfileChoices {
+        let settings = Arc::clone(&self.changes.borrow().settings);
+        self.profile_choices_for(&settings)
+    }
+
+    pub fn profile_choices_for(&self, settings: &RuntimeSettings) -> LiveProfileChoices {
+        let snapshot = self.personas.as_ref().map(|files| files.store.pin());
+        LiveProfileChoices::new(snapshot, &settings.persona.profile_visibility)
     }
 
     pub(super) async fn lock(&self) -> MutexGuard<'_, RuntimeSettings> {
@@ -236,9 +291,9 @@ impl ConfigDesk {
         notices: Vec<String>,
     ) -> ConfigView {
         let missing_env = self.missing_env(settings);
-        let snapshot = self.personas.as_ref().map(|files| files.store.pin());
-        let persona = match &snapshot {
-            Some(snapshot) => dto::persona(&settings.persona.active, snapshot),
+        let choices = self.profile_choices_for(settings);
+        let persona = match &choices.snapshot {
+            Some(snapshot) => dto::persona(&settings.persona.active, snapshot, &choices.selectable),
             None => dto::Persona {
                 active: settings.persona.active.clone(),
                 personas: Vec::new(),

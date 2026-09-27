@@ -31,6 +31,7 @@ fn every_section_round_trips_through_its_rows() {
     settings.pings.countdown_minutes = vec![60, 15];
     settings.watching.channel_ids = vec!["11".into(), "12".into()];
     settings.chatbot.enabled = true;
+    settings.persona.profile_visibility = vec!["loud".into(), "terse".into()];
     settings.models.chat = RoleModel {
         alias: Some("kanata/chat".into()),
         reasoning: Reasoning::High,
@@ -96,6 +97,22 @@ fn v4_encodings_read_as_v4_did() {
 }
 
 #[test]
+fn profile_visibility_is_private_by_default_and_deduplicates_in_order() {
+    assert!(
+        RuntimeSettings::default()
+            .persona
+            .profile_visibility
+            .is_empty()
+    );
+    let settings = resolve(
+        &rows(&[(keys::PROFILE_VISIBILITY, "loud,terse,loud")]),
+        &RuntimeSettings::default(),
+    )
+    .expect("visibility list reads");
+    assert_eq!(settings.persona.profile_visibility, ["loud", "terse"]);
+}
+
+#[test]
 fn malformed_values_name_their_key() {
     for (key, value) in [
         ("quiet_mode", "true"),
@@ -107,6 +124,7 @@ fn malformed_values_name_their_key() {
         ("v5.watched_channel_ids", "12,general"),
         ("v5.reset_weekday", "someday"),
         ("v5.attendance_mode", "V5"),
+        ("v5.profile_visibility", "../private"),
     ] {
         let error =
             resolve(&rows(&[(key, value)]), &RuntimeSettings::default()).expect_err("malformed");

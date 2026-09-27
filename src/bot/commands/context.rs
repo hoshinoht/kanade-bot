@@ -13,8 +13,9 @@ use twilight_model::id::{Id, marker::InteractionMarker};
 
 use super::access::Invoker;
 use super::dispatch::CommandError;
+use crate::api::admin::config::ConfigDesk;
 use crate::api::rescan::RescanRunner;
-use crate::api::state::{GuildAccess, PersonaOption, ReadStore};
+use crate::api::state::{GuildAccess, ReadStore};
 use crate::api::write::{WriteContext, Writer};
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::{id_text, parse_id};
@@ -175,8 +176,8 @@ pub struct CommandContext {
     pub channels: Arc<dyn GuildChannels>,
     /// The staff rule, admin role and chat pilot role.
     pub access: Arc<GuildAccess>,
-    /// Reply styles members may pick (`default` is always offered).
-    pub personas: Vec<PersonaOption>,
+    /// Live saved publication list and persona file snapshot.
+    pub config: Option<Arc<ConfigDesk>>,
     /// `None` until the extractor's rescan runner is composed.
     pub rescans: Option<Arc<dyn RescanRunner>>,
     /// `None` until the chat pilot is composed.

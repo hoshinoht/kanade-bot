@@ -3,7 +3,7 @@
 //! the scheduler for proposals and the card desk for their cards), the
 //! driver start (withheld ids reloaded before any admission) and its stop.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -14,7 +14,11 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::{
-    api::{admin::config::SettingsChanged, auth::Clock, state::GuildAccess},
+    api::{
+        admin::config::{ConfigDesk, SettingsChanged},
+        auth::Clock,
+        state::GuildAccess,
+    },
     bot::{
         chat_feed::{ChatFeed, DiscordSurface, StaffFn},
         commands::{ChatAllowance, Invoker},
@@ -109,6 +113,7 @@ pub struct ServeAnswerer<T> {
     pub store: Arc<SqliteStore>,
     pub models: Option<Arc<ModelStack>>,
     pub personas: Arc<PersonaStore>,
+    pub config: Arc<ConfigDesk>,
     pub settings: watch::Receiver<SettingsChanged>,
     pub cache: Arc<GuildCache>,
     pub catalog: Arc<BossTable>,
@@ -212,10 +217,10 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             );
             return None;
         }
-        let snapshot = self.personas.pin();
+        let choices = self.config.profile_choices();
+        let snapshot = choices.snapshot.as_deref()?;
         let active = snapshot.active()?;
         // The member's saved reply style, when it is still readable.
-        let selectable: BTreeSet<ProfileId> = active.profiles.readable.keys().cloned().collect();
         let saved = members
             .iter()
             .find(|profile| profile.member.user_id == asked.message.author_id)
@@ -225,7 +230,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             member_roles: &[],
             role_assignments: &[],
             saved_selection: saved.as_ref(),
-            selectable: &selectable,
+            selectable: &choices.selectable,
         };
         let persona = snapshot.resolve(&query)?.compile();
         let bundle = &active.bundle.value;

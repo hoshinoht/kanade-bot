@@ -142,6 +142,8 @@ impl SelfService {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Persona {
     pub active: String,
+    /// Ordered readable profiles members may choose; missing means private.
+    pub profile_visibility: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

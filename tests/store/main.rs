@@ -13,6 +13,7 @@ mod owner;
 mod retry;
 mod support;
 
+use kanade::domain::settings::{RuntimeSettings, SettingsStore, keys, load_settings};
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
     cherry_pick_conformance, conformance, draft_conformance, history_conformance,
@@ -60,6 +61,36 @@ async fn sqlite_settings_conform() {
             .expect("fresh store opens")
     })
     .await;
+}
+
+#[tokio::test]
+async fn sqlite_profile_visibility_defaults_private_and_survives_reopen() {
+    let dir = support::TempDir::new();
+    let config = dir.config("profile-visibility");
+    let store = SqliteStore::open(&config).await.expect("fresh store opens");
+    assert!(
+        load_settings(&store, &RuntimeSettings::default())
+            .await
+            .expect("default settings")
+            .persona
+            .profile_visibility
+            .is_empty()
+    );
+    store
+        .put_settings_rows(vec![(
+            keys::PROFILE_VISIBILITY.to_owned(),
+            "bold,calm,bold".to_owned(),
+        )])
+        .await
+        .expect("save visibility");
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    let settings = load_settings(&reopened, &RuntimeSettings::default())
+        .await
+        .expect("reopened settings");
+    assert_eq!(settings.persona.profile_visibility, ["bold", "calm"]);
+    reopened.close().await.expect("close reopened store");
 }
 
 #[tokio::test]

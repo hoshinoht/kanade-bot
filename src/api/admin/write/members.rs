@@ -33,10 +33,11 @@ async fn reply(state: &ApiState, profile: &MemberProfile) -> Reply {
         .snapshot(Scope::Weeks(vec![this.start]))
         .await
         .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    let personas = state.profile_options();
     Ok(Json(dto::members::row(
         profile,
         &state.access,
-        &state.personas,
+        &personas,
         &snapshot,
         this.start,
     ))
@@ -83,6 +84,7 @@ pub async fn update(
 ) -> Reply {
     let Json(patch) = body.map_err(bad_body)?;
     let state = state(&site)?;
+    let personas = state.profile_options();
     let ping_level = patch
         .ping_level
         .as_deref()
@@ -93,8 +95,8 @@ pub async fn update(
         .transpose()?;
     let reply_style = match patch.persona.as_deref() {
         None => None,
-        Some("") => Some(None),
-        Some(key) if state.personas.iter().any(|persona| persona.key == key) => {
+        Some("" | "default") => Some(None),
+        Some(key) if personas.iter().any(|persona| persona.key == key) => {
             Some(Some(key.to_owned()))
         }
         Some(_) => return Err(Refusal::invalid("No such reply style.")),

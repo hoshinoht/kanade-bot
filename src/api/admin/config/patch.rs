@@ -1,16 +1,20 @@
-//! `ConfigPatch`: one section per request, partial, arrays replaced whole.
+//! `ConfigPatch`: one section per request, partial; arrays replace whole except
+//! for the selected-key `persona.visibility` delta.
 //! Unknown keys are `422 unknown_field`, read-only ones `422 read_only`,
 //! and values the section cannot take `422 invalid`. Values are normalised
 //! to stored form here, so `save_section` never sees an unrepresentable one.
 
 use axum::http::StatusCode;
 use chrono::NaiveTime;
+use std::collections::BTreeSet;
+
 use serde_json::{Map, Value};
 
 use crate::{
     api::admin::write::Refusal,
+    chat::persona::ProfileId,
     domain::settings::{
-        Chatbot, Notifications, Pings, Rate, SelfService, SelfServiceMode, Watching,
+        Chatbot, Notifications, Persona, Pings, Rate, SelfService, SelfServiceMode, Watching,
     },
 };
 
@@ -81,7 +85,7 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
         // Contracted as editable, but neither the settings port nor the
         // governor can hold them yet.
         ("models", "groups") => Some(GROUPS),
-        ("persona", "role_profiles" | "visibility") => Some(NOT_STORED),
+        ("persona", "role_profiles") => Some(NOT_STORED),
         _ => None,
     }
 }
@@ -121,7 +125,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("chatbot", "enabled" | "member_rate" | "guild_rate")
                 | ("notifications", "quiet_mode")
                 | ("self_service", "mode" | "public_portal")
-                | ("persona", "active")
+                | ("persona", "active" | "visibility")
                 | ("models", "roles")
         );
         if writable {
@@ -305,6 +309,61 @@ pub fn persona_active(body: &Map<String, Value>) -> Result<String, PatchError> {
         .filter(|id| !id.is_empty())
         .map(str::to_owned)
         .ok_or_else(|| PatchError::invalid("Pick a persona from the catalog."))
+}
+
+/// Merge the selected-key visibility delta onto the settings locked by the
+/// caller. Unknown or unreadable profiles cannot be published.
+pub fn persona(
+    current: &Persona,
+    body: &Map<String, Value>,
+    readable: &BTreeSet<ProfileId>,
+) -> Result<Persona, PatchError> {
+    let mut next = current.clone();
+    if body.contains_key("active") {
+        next.active = persona_active(body)?;
+    }
+    if let Some(value) = body.get("visibility") {
+        let updates = value.as_array().ok_or_else(|| {
+            field_error("persona.visibility", "an array of {key, public} changes")
+        })?;
+        let mut seen: Vec<String> = Vec::new();
+        for (index, update) in updates.iter().enumerate() {
+            let path = format!("persona.visibility[{index}]");
+            let fields = object(update, &path)?;
+            for field in fields.keys() {
+                if !matches!(field.as_str(), "key" | "public") {
+                    return Err(PatchError::unknown(format!("{path}.{field}")));
+                }
+            }
+            let key = fields
+                .get("key")
+                .and_then(Value::as_str)
+                .ok_or_else(|| field_error(&format!("{path}.key"), "a profile id"))?;
+            let id = ProfileId::parse(key)
+                .map_err(|_| PatchError::invalid("Pick a readable reply profile."))?;
+            if !readable.contains(&id) {
+                return Err(PatchError::invalid("Pick a readable reply profile."));
+            }
+            if seen.iter().any(|seen| seen == key) {
+                return Err(PatchError::invalid(
+                    "Each reply profile may appear only once per change.",
+                ));
+            }
+            seen.push(key.to_owned());
+            let public = fields
+                .get("public")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| field_error(&format!("{path}.public"), "true or false"))?;
+            if public {
+                if !next.profile_visibility.iter().any(|saved| saved == key) {
+                    next.profile_visibility.push(key.to_owned());
+                }
+            } else {
+                next.profile_visibility.retain(|saved| saved != key);
+            }
+        }
+    }
+    Ok(next)
 }
 
 #[cfg(test)]

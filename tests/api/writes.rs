@@ -795,7 +795,7 @@ async fn member_edits_and_aliases() {
         .await;
     assert_eq!(
         (row["ping_level"].clone(), row["persona"].clone()),
-        ("all".into(), "default".into())
+        ("all".into(), Value::Null)
     );
     let row = reads
         .ok(

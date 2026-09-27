@@ -22,8 +22,8 @@ use kanade::{
         listeners::Site,
         rescan::RescanDesk,
         state::{
-            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, PersonaOption,
-            RoleEntry, StaticChannels,
+            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, RoleEntry,
+            StaticChannels,
         },
         write::{ApiClock, SchedulerWriter},
     },
@@ -56,6 +56,7 @@ type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
 
 const TOKEN: &str = "break-glass-token-with-at-least-32-bytes!";
 const TAILSCALE_ADMIN: &str = "ops@example.com";
+const SECOND_TAILSCALE_ADMIN: &str = "second-ops@example.com";
 const EDGE_SECRET: &str = "edge-secret-shared-with-the-caddy-edge!!";
 /// What the trusted edge adds to every relayed request.
 pub const EDGE_HEADERS: [(&str, &str); 3] = [
@@ -381,6 +382,12 @@ impl Reads {
         Self::build(NaiveTime::MIN, false, Some(Box::new(make))).await
     }
 
+    pub async fn with_config_and_logins(
+        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
+    ) -> Self {
+        Self::build(NaiveTime::MIN, true, Some(Box::new(make))).await
+    }
+
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
@@ -433,7 +440,10 @@ impl Reads {
                     },
                     discord.clone(),
                 ))
-                .with_tailscale_logins([TAILSCALE_ADMIN.to_owned()]);
+                .with_tailscale_logins([
+                    TAILSCALE_ADMIN.to_owned(),
+                    SECOND_TAILSCALE_ADMIN.to_owned(),
+                ]);
         }
         let zone = chrono_tz::Asia::Kuala_Lumpur;
         let writer = Arc::new(SchedulerWriter::new(SchedulerService::new(
@@ -472,16 +482,6 @@ impl Reads {
                     watched: true,
                 },
             ]))),
-            personas: vec![
-                PersonaOption {
-                    key: "default".into(),
-                    name: "Default".into(),
-                },
-                PersonaOption {
-                    key: "terse".into(),
-                    name: "Terse".into(),
-                },
-            ],
             access,
             knowledge_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge")),
             guild_id: Some("900".into()),
@@ -584,8 +584,14 @@ impl Reads {
     /// A Tailscale session through the trusted edge: `(Cookie header, CSRF
     /// token)`; every later request must carry [`EDGE_HEADERS`] too.
     pub async fn tailscale_session(&self) -> (String, String) {
+        self.tailscale_session_as(TAILSCALE_ADMIN).await
+    }
+
+    pub async fn tailscale_session_as(&self, login_name: &str) -> (String, String) {
         let mut headers = vec![ORIGIN];
-        headers.extend_from_slice(&EDGE_HEADERS);
+        let mut edge_headers = EDGE_HEADERS;
+        edge_headers[2] = ("Tailscale-User-Login", login_name);
+        headers.extend_from_slice(&edge_headers);
         let login = send(
             self.admin,
             "POST",
@@ -824,7 +830,10 @@ async fn members_channels_personas_and_fixed() {
     assert_eq!(alice["aliases"], serde_json::json!(["ali"]));
     assert_eq!(alice["runs_this_week"], 2);
     assert_eq!(alice["persona"], "terse");
-    assert_eq!(alice["persona_available"], true);
+    assert_eq!(
+        alice["persona_available"], false,
+        "no visibility setting is private"
+    );
     assert_eq!(members[1]["name"], "Bobby");
     assert_eq!(members[1]["persona_available"], false);
     assert_eq!(members[4]["ping_level"], "off");
@@ -857,8 +866,9 @@ async fn members_channels_personas_and_fixed() {
         .read("/api/admin/personas", "members.json#/$defs/Personas")
         .await;
     assert_eq!(
-        personas[1],
-        serde_json::json!({"key": "terse", "name": "Terse"})
+        personas,
+        serde_json::json!([]),
+        "missing settings are private"
     );
 
     let fixed = reads

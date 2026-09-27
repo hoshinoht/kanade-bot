@@ -24,15 +24,15 @@ use axum::{
 use serde_json::{Value, json};
 
 pub use desk::{
-    CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog, PersonaFiles,
-    SettingsChanged, SettingsPort,
+    CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, LiveProfileChoices,
+    ModelCatalog, PersonaFiles, SettingsChanged, SettingsPort,
 };
 
 use super::write::{Refusal, bad_body, origin, state};
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ReloadError},
-    domain::settings::{Persona, RuntimeSettings, Section, SettingsError},
+    domain::settings::{RuntimeSettings, Section, SettingsError},
 };
 
 type Reply = Result<axum::response::Response, Refusal>;
@@ -138,6 +138,7 @@ async fn update(
     }
 
     let (name, fields) = patch::section(&body)?;
+    let switch_active_persona = name == "persona" && fields.contains_key("active");
     let mut notices = Vec::new();
     let mut catalog = None;
     let section = match name {
@@ -150,9 +151,10 @@ async fn update(
         )?),
         "notifications" => Section::Notifications(patch::notifications(fields)?),
         "self_service" => Section::SelfService(patch::self_service(&current.self_service, fields)?),
-        "persona" => Section::Persona(Persona {
-            active: patch::persona_active(fields)?,
-        }),
+        "persona" => {
+            let choices = desk.profile_choices_for(&current);
+            Section::Persona(patch::persona(&current.persona, fields, &choices.readable)?)
+        }
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -206,22 +208,29 @@ async fn update(
 
     let mut next = current.clone();
     put(&mut next, section.clone());
-    if let Section::Persona(persona) = &section {
+    if current.persona.profile_visibility != next.persona.profile_visibility {
+        notices.push("Reply profile visibility updated.".into());
+    }
+    if switch_active_persona {
+        let Section::Persona(persona) = &section else {
+            unreachable!("active persona patch makes a persona section")
+        };
         switch_persona(desk, &persona.active, section.clone()).await?;
     } else if next != *current {
         desk.store.save(section).await.map_err(stored)?;
     }
     let saved_before = current.models.clone();
     if next != *current {
+        let before = current.clone();
+        *current = next.clone();
         let revision = desk.publish(name_of(name), actor.clone(), &next);
         changes::settings_changed(
             revision,
             name_of(name),
             session.actor.kind(),
-            &current,
+            &before,
             &next,
         );
-        *current = next.clone();
     }
     // Every models save re-applies, so a stack left behind catches up.
     if let ("models", Some(stack)) = (name_of(name), &desk.models) {
@@ -243,7 +252,6 @@ async fn update(
             }
         }
     }
-    drop(current);
     if let Some(key) = key {
         desk.remember(desk::Remembered {
             actor,
@@ -252,6 +260,7 @@ async fn update(
             notices: notices.clone(),
         });
     }
+    drop(current);
     let catalog = match catalog {
         Some(catalog) => catalog,
         None => desk.catalog().await,

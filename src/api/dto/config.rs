@@ -1,12 +1,12 @@
 //! `config.json#/$defs/ConfigView` and its projections from runtime settings,
 //! the live model catalog, the persona files and deployment facts.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
 use crate::{
-    chat::persona::PersonaSnapshot,
+    chat::persona::{PersonaSnapshot, ProfileId},
     domain::settings::{Rate as StoredRate, RoleModel as StoredRole, RuntimeSettings},
     infrastructure::llm::{
         TrustZone,
@@ -320,8 +320,12 @@ pub fn alias_limits(catalog: &CatalogSnapshot) -> Vec<AliasLimit> {
         .collect()
 }
 
-/// Catalog entries (bundles) and readable reply profiles of the live snapshot.
-pub fn persona(active: &str, snapshot: &PersonaSnapshot) -> Persona {
+/// Catalog entries and readable profiles, with publication from saved settings.
+pub fn persona(
+    active: &str,
+    snapshot: &PersonaSnapshot,
+    selectable: &BTreeSet<ProfileId>,
+) -> Persona {
     let mut personas = Vec::new();
     let mut profiles = Vec::new();
     let mut active = active.to_owned();
@@ -347,13 +351,12 @@ pub fn persona(active: &str, snapshot: &PersonaSnapshot) -> Persona {
                 });
             }
         }
-        // Every readable profile is selectable until visibility is stored.
         profiles.extend(loaded.profiles.readable.values().map(|profile| {
             let profile = &profile.value;
             ReplyProfile {
                 key: profile.id.to_string(),
                 name: profile.label.clone(),
-                public: true,
+                public: selectable.contains(&profile.id),
                 voice: profile.voice.clone().unwrap_or_default(),
                 prompt_summary: summary(&profile.prompt),
             }
