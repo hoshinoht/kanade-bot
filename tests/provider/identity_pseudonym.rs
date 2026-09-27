@@ -187,17 +187,24 @@ fn decoding_is_possessive_and_case_safe() {
 fn longest_match_and_word_boundaries() {
     let codec = codec(9);
     let mut session = codec.open(&burst_roster());
-    let encoded = session.text(
-        "Bob Lim, bobby, (Bob), Bob's; Bobcat BobLim ali-baba Alice Tanner https://x.io/Bob?u=Bob",
-    );
+    let url = "https://x.io/Bob?u=Bob";
+    let encoded = session.text(&format!(
+        "Bob Lim, bobby, (Bob), Bob's; Bobcat BobLim ali-baba Alice Tanner {url}"
+    ));
     let alice = session.member_ref(ALICE_ID);
     let bob = session.member_ref(BOB_ID);
+    let link = session.text(url);
     assert_eq!(
         encoded,
         format!(
             // `Alice` alone is a word of Alice's multi-word name.
-            "{bob}, {bob}, ({bob}), {bob}'s; Bobcat BobLim {alice}-baba {alice} Tanner https://x.io/Bob?u=Bob"
+            "{bob}, {bob}, ({bob}), {bob}'s; Bobcat BobLim {alice}-baba {alice} Tanner {link}"
         )
+    );
+    assert!(!encoded.contains(url));
+    assert_eq!(
+        session.decode_reply(&encoded).unwrap().split(" ").last(),
+        Some(url)
     );
 }
 
@@ -332,6 +339,103 @@ fn unknown_tokens_are_quarantined() {
         session.decode_reply("Haruka Mira Midoriko"),
         Ok("Haruka Mira Midoriko".into())
     );
+    let unknown_link = "⟦!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~#⟧";
+    assert!(matches!(
+        session.decode_reply(unknown_link),
+        Err(DecodeError::UnknownToken { .. })
+    ));
+    assert!(
+        session
+            .decode_json(&format!(r#"{{"link":"{unknown_link}"}}"#))
+            .is_err()
+    );
+}
+
+#[test]
+fn link_tokens_are_per_turn_stable_unlinkable_and_only_locally_decoded() {
+    let codec = codec(32);
+    let roster = burst_roster();
+    let first_url = "https://example.invalid/users/EOWYN?ref=114299900000000903#credit";
+    let second_url = "http://example.invalid/other?q=2#part";
+    let mut first = codec.open(&roster);
+    let first_token = first.text(first_url);
+    assert_eq!(first.text(first_url), first_token);
+    let other_token = first.text(second_url);
+    assert_ne!(first_token, other_token);
+    assert!(!first_token.contains("http"));
+    assert_eq!(first.decode_reply(&first_token), Ok(first_url.to_owned()));
+    assert_eq!(
+        first.decode_json(&format!(r#"{{"link":"{first_token}"}}"#)),
+        Ok(format!(r#"{{"link":"{first_url}"}}"#))
+    );
+    assert_eq!(first.decode_json(&first_token), Ok(first_token.clone()));
+
+    let mut second = codec.open(&roster);
+    assert_ne!(second.decode_reply(&first_token), Ok(first_url.to_owned()));
+    assert_ne!(second.text(first_url), first_token);
+
+    let mut passthrough = Passthrough.open(&roster);
+    assert_eq!(passthrough.text(first_url), first_url);
+    let raw_json = format!(r#"{{"link":"{first_url}"}}"#);
+    assert_eq!(passthrough.tool_result(&raw_json), raw_json);
+}
+
+#[test]
+fn valid_json_decodes_link_tokens_with_unicode_escaped_delimiters() {
+    let mut session = codec(33).open(&burst_roster());
+    let url = "https://example.invalid/json/path?q=one#fragment";
+    let issued = session.text(url);
+    let escaped = issued.replace('⟦', r"\u27e6").replace('⟧', r"\u27e7");
+    let json = format!(r#"{{"link":"{escaped}"}}"#);
+    assert_eq!(
+        session.decode_json(&json),
+        Ok(format!(r#"{{"link":"{url}"}}"#))
+    );
+
+    let unknown = "⟦!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~#⟧";
+    let escaped_unknown = unknown.replace('⟦', r"\u27e6").replace('⟧', r"\u27e7");
+    assert!(
+        session
+            .decode_json(&format!(r#"{{"link":"{escaped_unknown}"}}"#))
+            .is_err()
+    );
+    assert_eq!(session.decode_reply(&escaped), Ok(escaped));
+}
+
+#[test]
+fn source_link_token_literals_stay_literal_and_link_maps_never_export() {
+    struct ZeroRandom;
+    impl kanade::infrastructure::llm::governor::Random for ZeroRandom {
+        fn next_u64(&self) -> u64 {
+            0
+        }
+    }
+
+    let codec = PseudonymCodec::new(PseudonymConfig {
+        pool: NamePool::curated(),
+        lexicon: CodeLexicon::builtin(),
+        bot: bot(),
+        extra_exclusions: Vec::new(),
+        random: Arc::new(ZeroRandom),
+    });
+    let source_token = "⟦!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~#⟧";
+    let url = "https://example.invalid/path?q=1#fragment";
+    let mut session = codec.open_session(&burst_roster());
+    let encoded = session.text(&format!("{source_token} {url}"));
+    let (source, link) = encoded.split_once(' ').expect("source literal and link");
+    assert_eq!(source, source_token);
+    assert_ne!(link, source_token, "issued token skips the source literal");
+    assert!(!encoded.contains(url));
+    assert_eq!(
+        session.decode_reply(&encoded),
+        Ok(format!("{source_token} {url}"))
+    );
+    let mapped = format!("{:?}", session.mapping().expect("member mapping"));
+    let debug = format!("{session:?}");
+    for view in [mapped, debug] {
+        assert!(!view.contains(url), "{view}");
+        assert!(!view.contains(link), "{view}");
+    }
 }
 
 #[test]
@@ -470,7 +574,6 @@ fn generated_text_round_trips_and_never_leaks() {
         "Kaori2",
         "HStar",
         "p2",
-        "https://x.io/Bob",
         "{\"participants\":[\"a\"]}",
         "é",
         "漢字",

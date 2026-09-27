@@ -8,7 +8,7 @@ use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, Next};
 use kanade::infrastructure::llm::governor::Random;
 use kanade::infrastructure::llm::identity::{
     BotIdentity, CodeLexicon, IdentityCodec, Member, NamePool, Passthrough, PseudonymCodec,
-    PseudonymConfig, ScanExemptions, find_request_leaks,
+    PseudonymConfig, ScanExemptions, TaggingCodec, find_request_leaks,
 };
 use kanade::infrastructure::llm::{ChatRequest, FakeAction};
 use serde_json::{Value, json};
@@ -308,7 +308,7 @@ async fn offline_ab_preserves_extraction_amendment_and_decoded_refs() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_member_name_in_an_extraction_url_is_an_expected_fail_closed_residual() {
+async fn a_roster_name_url_is_redacted_before_masked_extraction() {
     let fixture = fixture();
     let members = roster(&fixture);
     let probe = World::new(Vec::new()).await;
@@ -321,7 +321,7 @@ async fn a_member_name_in_an_extraction_url_is_an_expected_fail_closed_residual(
         .expect("target id");
     let content = fixture["extraction"]["name_in_url"]
         .as_str()
-        .expect("URL residual input");
+        .expect("synthetic URL input");
     let off = run_extract(
         Arc::new(Passthrough),
         &members,
@@ -333,26 +333,18 @@ async fn a_member_name_in_an_extraction_url_is_an_expected_fail_closed_residual(
     .await;
     let on = run_extract(pseudo, &members, message_id, target_id, content, nothing()).await;
     assert_eq!(off.requests.len(), 1);
-    assert!(on.requests.is_empty());
+    assert_eq!(on.requests.len(), 1);
     assert_eq!(off.logs[0].outcome, ExtractionOutcome::NoChange);
-    assert_eq!(on.logs[0].outcome, ExtractionOutcome::IdentityLeak);
-    println!(
-        "PRIVACY_RESIDUAL {}",
-        json!({
-            "family": "extract",
-            "category": "member_name_in_url",
-            "off_provider_sends": off.requests.len(),
-            "on_provider_sends": on.requests.len(),
-            "expected_scanner_blocks": 1,
-            "acceptance_blocker": true,
-            "required_followup": "redact identity-bearing URL paths; preserve the original link outside provider requests",
-            "quarantines": 0
-        })
-    );
+    assert_eq!(on.logs[0].outcome, ExtractionOutcome::NoChange);
+    let sent = serde_json::to_string(&on.requests).expect("captured request");
+    assert!(!sent.contains("https://"));
+    assert!(!sent.contains("EOWYN"));
+    assert!(sent.contains('⟦'));
+    assert!(content.contains("https://example.invalid/users/EOWYN"));
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_non_roster_url_handle_reaches_the_masked_extraction_provider() {
+async fn non_roster_url_handles_are_redacted_from_extraction_requests() {
     let fixture = fixture();
     let members = roster(&fixture);
     let probe = World::new(Vec::new()).await;
@@ -365,7 +357,7 @@ async fn a_non_roster_url_handle_reaches_the_masked_extraction_provider() {
         .expect("target id");
     let content = fixture["extraction"]["non_roster_url"]
         .as_str()
-        .expect("non-roster URL input");
+        .expect("synthetic non-roster URL input");
     let off = run_extract(
         Arc::new(Passthrough),
         &members,
@@ -377,21 +369,52 @@ async fn a_non_roster_url_handle_reaches_the_masked_extraction_provider() {
     .await;
     let on = run_extract(pseudo, &members, message_id, target_id, content, nothing()).await;
     let sent = serde_json::to_string(&on.requests).expect("captured requests");
+    let plain = serde_json::to_string(&off.requests).expect("captured passthrough requests");
     assert_eq!(off.requests.len(), 1);
     assert_eq!(on.requests.len(), 1);
     assert_eq!(on.logs[0].outcome, ExtractionOutcome::NoChange);
-    assert!(sent.contains("orbitquill42"));
-    println!(
-        "PRIVACY_RESIDUAL {}",
-        json!({
-            "family": "extract",
-            "category": "non_roster_identity_in_url",
-            "off_provider_sends": off.requests.len(),
-            "on_provider_sends": on.requests.len(),
-            "handle_visible_in_request": true,
-            "scanner_blocks": 0,
-            "acceptance_blocker": true,
-            "quarantines": 0
-        })
-    );
+    assert!(plain.contains("https://example.invalid/users/orbitquill42"));
+    assert!(!sent.contains("https://"));
+    assert!(!sent.contains("orbitquill42"));
+    assert!(sent.contains('⟦'));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_prefixed_extraction_url_is_masked_and_an_encoder_bypass_is_refused() {
+    let fixture = fixture();
+    let members = roster(&fixture);
+    let probe = World::new(Vec::new()).await;
+    let pseudo = Arc::new(codec(&probe.guild.bosses));
+    let message_id = fixture["extraction"]["message_id"]
+        .as_str()
+        .expect("synthetic message id");
+    let target_id = fixture["extraction"]["target_id"]
+        .as_str()
+        .expect("synthetic target id");
+    let source = fixture["extraction"]["non_roster_url"]
+        .as_str()
+        .expect("synthetic URL input");
+    let url = source
+        .split_once("https://")
+        .map(|(_, tail)| format!("https://{tail}"))
+        .expect("URL");
+    let content = format!("hfa wed 9pm? prefix{url}");
+    let captured = run_extract(pseudo, &members, message_id, target_id, &content, nothing()).await;
+    assert_eq!(captured.requests.len(), 1);
+    assert_eq!(captured.logs[0].outcome, ExtractionOutcome::NoChange);
+    let sent = serde_json::to_string(&captured.requests).expect("captured request");
+    assert!(!sent.contains(&url));
+    assert!(sent.contains('⟦'));
+
+    let missed = run_extract(
+        Arc::new(TaggingCodec),
+        &members,
+        message_id,
+        target_id,
+        &content,
+        nothing(),
+    )
+    .await;
+    assert!(missed.requests.is_empty());
+    assert_eq!(missed.logs[0].outcome, ExtractionOutcome::IdentityLeak);
 }

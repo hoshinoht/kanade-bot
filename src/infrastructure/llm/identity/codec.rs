@@ -47,15 +47,15 @@ impl fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-/// Raw identities a session masks, for a provider-boundary scanner. Memory
-/// only; `Debug` shows counts.
+/// What a session masks and which tokens it issued, for the scanner.
+/// Memory only; `Debug` shows counts.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct ScanNeedles {
     /// Names, nicknames, aliases and author labels the session masks.
     pub names: Vec<ScanName>,
     /// User ids the session masks (roster and every issued id).
     pub ids: Vec<String>,
-    /// Every token issued so far; these may appear in requests.
+    /// Every identity or link token issued so far; these may appear in requests.
     pub tokens: Vec<String>,
     /// Names shorter than two characters, which are never masked.
     pub skipped_short: usize,

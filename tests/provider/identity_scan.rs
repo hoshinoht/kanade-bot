@@ -1,17 +1,30 @@
 //! Boundary-scanner rules on their own: code-owned exemptions (wire
 //! vocabulary, prompts, the boss table), passthrough and test-codec grants.
 
-use std::sync::Arc;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use kanade::extract::prompt::SYSTEM_PROMPT;
 use kanade::infrastructure::llm::{
-    ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling, ToolCallRequest,
+    Capability, CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, Effort,
+    ExecutionLimits, FinishReason, LlmProvider, Message, ModelCapabilities, OutputSchema,
+    OutputValidation, ProviderFailure, ProviderFailureKind, RetryPolicy, Sampling, ToolCallRequest,
     ToolDefinition,
     governor::XorShift,
+    governor::{
+        Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, QuestionLimits, Role,
+        RoleConfig, SessionFailure,
+    },
     identity::{
-        BotIdentity, CodeLexicon, LeakKind, Member, NamePool, Passthrough, PseudonymCodec,
-        PseudonymConfig, ScanExemptions, TaggingCodec, open_session,
+        BotIdentity, CodeLexicon, CodecMode, DecodeError, IdentityCodec, IdentitySession, LeakKind,
+        Member, NamePool, Passthrough, PseudonymCodec, PseudonymConfig, ScanExemptions, ScanName,
+        ScanNeedles, TaggingCodec, open_session,
     },
 };
 use serde_json::json;
@@ -242,4 +255,297 @@ fn words_of_multi_word_names_are_scanned() {
     let identity = open_session(&tailored, &route(false), &roster).unwrap();
     assert_eq!(identity.scanner().scan(&chat("x", "lau")), Ok(()));
     assert!(identity.scanner().scan(&chat("x", "jonas")).is_err());
+}
+
+#[test]
+fn masked_url_guard_scans_text_json_tool_fields_and_schemas() {
+    const URL: &str = "https://example.invalid/host/path?query=one#fragment";
+    let prefixed = format!("prefix{URL}");
+    let identity = open_session(&codec(), &route(false), &[]).unwrap();
+    for content in [
+        URL,
+        prefixed.as_str(),
+        r#"{"link":"prefixhttps:\/\/example.invalid/host/path?query=one#fragment"}"#,
+    ] {
+        let found = identity.scanner().scan(&chat("x", content)).unwrap_err();
+        assert_eq!(found.kinds, vec![LeakKind::Url], "{content}");
+    }
+
+    let mut request = chat("x", "safe");
+    request.messages.push(Message::Assistant {
+        content: None,
+        tool_calls: vec![ToolCallRequest {
+            id: "call_2".into(),
+            name: "open_link".into(),
+            arguments: json!({"link": prefixed}).to_string(),
+        }],
+    });
+    request.tools.push(ToolDefinition {
+        name: "open_link".into(),
+        description: Some(prefixed.clone()),
+        input_schema: json!({URL: prefixed}),
+    });
+    request.output_schema = Some(OutputSchema {
+        name: "reply".into(),
+        schema: json!({"description": prefixed}),
+        strict: true,
+        validation: OutputValidation::CallerValidates,
+    });
+    let found = identity.scanner().scan(&request).unwrap_err();
+    assert_eq!(found.kinds, vec![LeakKind::Url]);
+    assert!(
+        found.count >= 5,
+        "tool args, description, key, value and schema"
+    );
+
+    let mut capabilities = ModelCapabilities::minimal();
+    capabilities.function_tools = true;
+    let shaped = kanade::infrastructure::llm::shape_request(&request, &capabilities)
+        .unwrap()
+        .expect("schema instruction reshapes request");
+    assert_eq!(
+        identity.scanner().scan(&shaped).unwrap_err().kinds,
+        vec![LeakKind::Url]
+    );
+
+    let scanner = identity.scanner();
+    let echoed_url = format!("prefix{URL}");
+    scanner.echo(&CompletionResponse {
+        model: "Carling".into(),
+        content: Some(echoed_url.clone()),
+        tool_calls: Vec::new(),
+        finish_reason: FinishReason::Stop,
+        usage: None,
+    });
+    let mut echoed = chat("x", "safe");
+    echoed.messages.push(Message::Assistant {
+        content: Some(echoed_url.clone()),
+        tool_calls: Vec::new(),
+    });
+    assert_eq!(
+        scanner.scan(&echoed).unwrap_err().kinds,
+        vec![LeakKind::Url]
+    );
+
+    let plain = open_session(&Passthrough, &route(false), &[]).unwrap();
+    assert_eq!(plain.scanner().scan(&chat("x", URL)), Ok(()));
+    assert_eq!(plain.scanner().scan(&chat("x", &prefixed)), Ok(()));
+}
+
+#[test]
+fn issued_link_tokens_do_not_collide_with_punctuation_only_names() {
+    struct ZeroRandom;
+    impl kanade::infrastructure::llm::governor::Random for ZeroRandom {
+        fn next_u64(&self) -> u64 {
+            0
+        }
+    }
+
+    let codec = PseudonymCodec::new(PseudonymConfig {
+        pool: NamePool::curated(),
+        lexicon: CodeLexicon::builtin(),
+        bot: BotIdentity::default(),
+        extra_exclusions: Vec::new(),
+        random: Arc::new(ZeroRandom),
+    });
+    let roster = [member("200000000000000099", "!!")];
+    let mut identity = open_session(&codec, &route(false), &roster).unwrap();
+    let token = identity.text("https://example.invalid/private");
+    assert_eq!(identity.scanner().scan(&chat("x", &token)), Ok(()));
+}
+
+struct ReshapeCodec(Arc<AtomicUsize>);
+
+impl IdentityCodec for ReshapeCodec {
+    fn mode(&self) -> CodecMode {
+        CodecMode::Pseudonymizing
+    }
+
+    fn open(&self, roster: &[Member]) -> Box<dyn IdentitySession> {
+        Box::new(ReshapeSession {
+            scans: Arc::clone(&self.0),
+            inner: Passthrough.open(roster),
+        })
+    }
+}
+
+struct ReshapeSession {
+    scans: Arc<AtomicUsize>,
+    inner: Box<dyn IdentitySession>,
+}
+
+impl IdentitySession for ReshapeSession {
+    fn author_label(&mut self, user_id: &str, name: &str) -> String {
+        self.inner.author_label(user_id, name)
+    }
+
+    fn member_ref(&mut self, user_id: &str) -> String {
+        self.inner.member_ref(user_id)
+    }
+
+    fn text(&mut self, text: &str) -> String {
+        self.inner.text(text)
+    }
+
+    fn tool_result(&mut self, content: &str) -> String {
+        self.inner.tool_result(content)
+    }
+
+    fn participant_enum(&self) -> Option<Vec<String>> {
+        self.inner.participant_enum()
+    }
+
+    fn decode_ref(&self, value: &str) -> Result<String, DecodeError> {
+        self.inner.decode_ref(value)
+    }
+
+    fn decode_json(&self, json: &str) -> Result<String, DecodeError> {
+        self.inner.decode_json(json)
+    }
+
+    fn decode_reply(&self, text: &str) -> Result<String, DecodeError> {
+        self.inner.decode_reply(text)
+    }
+
+    fn scan_needles(&self) -> Option<ScanNeedles> {
+        let name = (self.scans.fetch_add(1, Ordering::SeqCst) > 0).then(|| ScanName {
+            text: "Leakyname".into(),
+            collides: false,
+            token_clash: false,
+        });
+        Some(ScanNeedles {
+            names: name.into_iter().collect(),
+            ..ScanNeedles::default()
+        })
+    }
+
+    fn masks(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Default)]
+struct RejectStructuredOutputOnce(AtomicUsize);
+
+impl LlmProvider for RejectStructuredOutputOnce {
+    fn complete(&self, _request: &ChatRequest) -> CompletionFuture<'_> {
+        Box::pin(async {
+            Err(ProviderFailure {
+                kind: ProviderFailureKind::Permanent,
+                reason_code: "unexpected-unshaped-call",
+            })
+        })
+    }
+
+    fn capabilities<'a>(
+        &'a self,
+        _model: &'a str,
+        _deadline: tokio::time::Instant,
+    ) -> CapabilityFuture<'a> {
+        let mut capabilities = ModelCapabilities::minimal();
+        capabilities.structured_output = true;
+        Box::pin(async move { Some(capabilities) })
+    }
+
+    fn complete_with(
+        &self,
+        request: &ChatRequest,
+        _capabilities: &ModelCapabilities,
+    ) -> CompletionFuture<'_> {
+        let call = self.0.fetch_add(1, Ordering::SeqCst);
+        let model = request.model.clone();
+        Box::pin(async move {
+            if call == 0 {
+                Err(ProviderFailure {
+                    kind: ProviderFailureKind::CapabilityRejected(Capability::StructuredOutput),
+                    reason_code: "structured-output",
+                })
+            } else {
+                Ok(CompletionResponse {
+                    model,
+                    content: Some("{}".into()),
+                    tool_calls: Vec::new(),
+                    finish_reason: FinishReason::Stop,
+                    usage: None,
+                })
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn runner_rescans_reshaped_attempts_before_admission() {
+    let config = GovernorConfig {
+        groups: vec![GroupConfig {
+            name: "group".into(),
+            backend: "local".into(),
+            permits: 1,
+            requests_per_min: 6_000,
+            burst: Some(100),
+            aliases: vec!["model".into()],
+        }],
+        roles: [(
+            Role::Chat,
+            RoleConfig {
+                alias: "model".into(),
+                external: false,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        policy: GovernorPolicy::default(),
+    };
+    let governor = Arc::new(Governor::new(&config, Arc::new(XorShift::new(41))).expect("governor"));
+    let provider = Arc::new(RejectStructuredOutputOnce::default());
+    let client = ModelClient::new(
+        governor.clone(),
+        provider.clone(),
+        ExecutionLimits::default(),
+        RetryPolicy {
+            total_deadline: Duration::from_secs(20),
+            max_attempts: 3,
+            backoff: Duration::from_millis(1),
+        },
+    )
+    .unwrap()
+    .with_masking(true);
+    let scans = Arc::new(AtomicUsize::new(0));
+    let identity = open_session(
+        &ReshapeCodec(Arc::clone(&scans)),
+        &governor.route(Role::Chat).unwrap(),
+        &[],
+    )
+    .unwrap();
+    let route = governor.route(Role::Chat).unwrap();
+    let mut session = client
+        .open_question_on(
+            &route,
+            "reshape-test",
+            false,
+            QuestionLimits::new(Duration::from_secs(10)),
+        )
+        .await
+        .expect("chat permit")
+        .with_scanner(identity.scanner());
+    let mut request = chat("x", "Leakyname");
+    request.model = "model".into();
+    request.output_schema = Some(OutputSchema {
+        name: "reply".into(),
+        schema: json!({"type": "object"}),
+        strict: true,
+        validation: OutputValidation::Runner,
+    });
+
+    let error = session.complete(&request).await.unwrap_err();
+    assert!(matches!(
+        error.failure,
+        SessionFailure::IdentityLeakBlocked(ref blocked) if blocked.kinds == [LeakKind::Name]
+    ));
+    assert_eq!(provider.0.load(Ordering::SeqCst), 1);
+    assert_eq!(scans.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        session.requests_used(),
+        1,
+        "blocked reshape was not admitted"
+    );
 }

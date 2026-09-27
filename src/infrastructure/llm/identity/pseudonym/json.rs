@@ -1,20 +1,48 @@
-//! Tool results that are JSON objects or arrays are encoded structurally:
+//! Complete JSON objects, arrays and strings are encoded structurally:
 //! every string literal (keys included) is unescaped, encoded and re-escaped,
 //! so escapes cannot hide a name; bytes outside changed strings are kept.
 
 use serde::de::IgnoredAny;
 
 use super::{matcher::digit_run, session::PseudonymSession};
+use crate::infrastructure::llm::identity::codec::DecodeError;
 
 impl PseudonymSession {
-    pub(super) fn encode_tool_result(&mut self, content: &str) -> String {
+    pub(super) fn encode_text(&mut self, content: &str) -> String {
         let head = content.trim_start();
-        let container = head.starts_with('{') || head.starts_with('[');
-        if container && serde_json::from_str::<IgnoredAny>(content).is_ok() {
+        let structured = head.starts_with('{') || head.starts_with('[') || head.starts_with('"');
+        if structured && serde_json::from_str::<IgnoredAny>(content).is_ok() {
             self.encode_json(content)
         } else {
             self.encode(content)
         }
+    }
+
+    pub(super) fn encode_tool_result(&mut self, content: &str) -> String {
+        self.encode_text(content)
+    }
+
+    pub(super) fn decode_json_links(&self, json: &str) -> Result<String, DecodeError> {
+        let mut out = String::with_capacity(json.len());
+        let mut at = 0;
+        for (start, end) in string_spans(json) {
+            out.push_str(&json[at..start]);
+            let literal = &json[start..end];
+            let Some(text) = unescape(literal) else {
+                out.push_str(literal);
+                at = end;
+                continue;
+            };
+            let decoded = self.decode_links(&text, start + 1)?;
+            if decoded == text {
+                out.push_str(literal);
+            } else {
+                out.push_str(&quote(&decoded));
+            }
+            at = end;
+        }
+        out.push_str(&json[at..]);
+        Ok(out)
     }
 
     /// `json` must be valid JSON.

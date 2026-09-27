@@ -1,6 +1,6 @@
 use super::{
     issuer::{Holder, Lookup},
-    matcher::{at_word_start, escape_len, prev_char, token_mention_at, word_run},
+    matcher::{at_word_start, escape_len, link_token_at, prev_char, token_mention_at, word_run},
     session::PseudonymSession,
 };
 use crate::infrastructure::llm::identity::codec::DecodeError;
@@ -9,15 +9,56 @@ use crate::infrastructure::llm::identity::codec::DecodeError;
 const NAMELESS: &str = "someone";
 
 impl PseudonymSession {
+    pub(super) fn decode_links(&self, text: &str, offset: usize) -> Result<String, DecodeError> {
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        while i < text.len() {
+            let rest = &text[i..];
+            if let Some((len, token)) = link_token_at(rest) {
+                match self.link_target(token) {
+                    Some(
+                        super::session::LinkTarget::Url(url)
+                        | super::session::LinkTarget::Literal(url),
+                    ) => out.push_str(url),
+                    None if self.source_link_tokens.contains(token) => out.push_str(token),
+                    None => return Err(DecodeError::UnknownToken { offset: offset + i }),
+                }
+                i += len;
+                continue;
+            }
+            let ch = rest.chars().next().expect("non-empty rest");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+        Ok(out)
+    }
+
     /// Model output → identities: tokens become user ids (`reply` false) or
     /// the member's name (`reply` true; `<@Token>` loses its brackets). A pool
     /// form this session neither issued nor saw in source is an unknown token.
-    pub(super) fn decode(&self, text: &str, reply: bool) -> Result<String, DecodeError> {
+    pub(super) fn decode(
+        &self,
+        text: &str,
+        reply: bool,
+        restore_links: bool,
+    ) -> Result<String, DecodeError> {
         let mut out = String::with_capacity(text.len());
         let mut i = 0;
         while i < text.len() {
             let rest = &text[i..];
             let prev = prev_char(text, i);
+            if restore_links && let Some((len, token)) = link_token_at(rest) {
+                match self.link_target(token) {
+                    Some(
+                        super::session::LinkTarget::Url(url)
+                        | super::session::LinkTarget::Literal(url),
+                    ) => out.push_str(url),
+                    None if self.source_link_tokens.contains(token) => out.push_str(token),
+                    None => return Err(DecodeError::UnknownToken { offset: i }),
+                }
+                i += len;
+                continue;
+            }
             if let Some(len) = escape_len(text, i) {
                 out.push_str(&rest[..len]);
                 i += len;

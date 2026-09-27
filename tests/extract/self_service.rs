@@ -620,27 +620,33 @@ fn priya() -> Vec<Member> {
 #[tokio::test(start_paused = true)]
 async fn a_masked_rewrite_encodes_member_names_and_decodes_the_reply() {
     use kanade::infrastructure::llm::identity::IdentityCodec;
-    // Same seed, same first draw: the token the rewrite will issue.
-    let token = masking_codec()
-        .open(&priya())
-        .member_ref(crate::fakes::PRIYA);
-    let (provider, client) = client(vec![reply(&format!("{token} says fix it!"))], true);
+    let url = "https://example.invalid/persona/credit?tag=Priya#public";
+    // Same seed and URL namespace: this is the link token the rewrite issues.
+    let mut probe = masking_codec().open(&priya());
+    let token = probe.member_ref(crate::fakes::PRIYA);
+    let link = probe.text(url);
+    let (provider, client) = client(vec![reply(&format!("{token} says fix it! {link}"))], true);
     let rewriter = GovernedRewriter::new(client, Arc::new(masking_codec()))
         .with_roster(Arc::new(PriyaRoster(Some(priya()))));
     let prompt = RewritePrompt::build(
         &kanade(),
         NudgeMood::Playful,
-        "Priya says {boss} is right here.",
+        &format!("Priya says {{boss}} is right here. See {url}"),
     );
     let rewritten = rewriter.rewrite(&prompt, DEADLINE).await;
-    assert_eq!(rewritten.as_deref(), Ok("Priya says fix it!"));
+    assert_eq!(rewritten, Ok(format!("Priya says fix it! {url}")));
     let requests = provider.requests();
     assert_eq!(requests.len(), 1);
     assert!(find_request_leaks(&requests[0], &priya()).is_empty());
     let Message::User { content } = &requests[0].messages[1] else {
         panic!("seed");
     };
-    assert_eq!(content, &format!("{token} says {{boss}} is right here."));
+    assert_eq!(
+        content,
+        &format!("{token} says {{boss}} is right here. See {link}")
+    );
+    assert!(!content.contains("https://"));
+    assert!(!content.contains("example.invalid"));
     let Message::System { content } = &requests[0].messages[0] else {
         panic!("system");
     };

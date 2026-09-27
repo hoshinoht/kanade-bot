@@ -1,16 +1,15 @@
 use super::{
     issuer::Lookup,
     matcher::{
-        at_word_start, channel_or_role_at, digit_run, escape_len, match_at, mention_at, prev_char,
-        url_len, word_run,
+        at_word_start, channel_or_role_at, digit_run, escape_len, link_token_at, match_at,
+        mention_at, prev_char, url_len, word_run,
     },
     session::{Owner, PseudonymSession, is_snowflake},
 };
 
 impl PseudonymSession {
-    /// Member-sourced text → tokens. Order at each position: mention, URL
-    /// (copied except known ids), longest needle, known id digit run, a word
-    /// that spells an issued token (shadowed); anything else is copied.
+    /// Member-sourced text → tokens. Complete URLs become link tokens before
+    /// name/id matching, including when the scheme follows word characters.
     pub(super) fn encode(&mut self, text: &str) -> String {
         self.note_literals(text);
         let mut out = String::with_capacity(text.len());
@@ -36,9 +35,17 @@ impl PseudonymSession {
                 i += len;
                 continue;
             }
-            if at_word_start(prev, rest)
-                && let Some(len) = url_len(rest)
-            {
+            if let Some((len, token)) = link_token_at(rest) {
+                let replacement = if self.link_target(token).is_some() {
+                    self.shadow_link_literal(token)
+                } else {
+                    token.to_owned()
+                };
+                out.push_str(&replacement);
+                i += len;
+                continue;
+            }
+            if let Some(len) = url_len(rest) {
                 let url = self.encode_url(&rest[..len]);
                 out.push_str(&url);
                 i += len;
@@ -114,24 +121,9 @@ impl PseudonymSession {
         }
     }
 
-    /// URLs keep their text except digit runs that are known ids.
+    /// A whole URL is opaque to the model and can only be restored locally.
     fn encode_url(&mut self, url: &str) -> String {
-        let mut out = String::with_capacity(url.len());
-        let mut i = 0;
-        while i < url.len() {
-            let rest = &url[i..];
-            let digits = digit_run(rest);
-            if !digits.is_empty() {
-                let masked = self.digits_token(digits);
-                out.push_str(masked.as_deref().unwrap_or(digits));
-                i += digits.len();
-                continue;
-            }
-            let ch = rest.chars().next().expect("non-empty rest");
-            out.push(ch);
-            i += ch.len_utf8();
-        }
-        out
+        self.link_token(url)
     }
 
     /// Pool forms spelled in source text are never issued in this session.
@@ -139,6 +131,11 @@ impl PseudonymSession {
         let mut i = 0;
         while i < text.len() {
             let rest = &text[i..];
+            if let Some((len, token)) = link_token_at(rest) {
+                self.source_link_tokens.insert(token.to_owned());
+                i += len;
+                continue;
+            }
             if let Some(len) = escape_len(text, i) {
                 // Either reading of `\tomoe` may be a pool form.
                 self.issuer.note_source(word_run(&text[i + 1..]));

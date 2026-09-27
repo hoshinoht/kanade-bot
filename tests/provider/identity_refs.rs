@@ -1,5 +1,5 @@
 //! Wire-ports codec additions: extraction message refs, opaque refs for stray
-//! snowflakes (text, URLs, JSON), channel and role names, the issued-name
+//! snowflakes (text and JSON), opaque URLs, channel and role names, the issued-name
 //! mapping and code-owned text kept literal by `encode_protected`.
 
 use std::sync::Arc;
@@ -71,9 +71,16 @@ fn message_refs_are_short_per_session_and_decode_back() {
 #[test]
 fn stray_snowflakes_become_opaque_refs_everywhere_and_decode() {
     let mut session = codec().open(&roster());
-    let text = session.text(&format!("{STRAY} https://discord.com/x/{STRAY} <#{STRAY}>"));
+    let url = format!("https://discord.com/x/{STRAY}");
+    let text = session.text(&format!("{STRAY} {url} <#{STRAY}>"));
+    let link = text.split(' ').nth(1).expect("link token");
     assert!(!text.contains(STRAY), "{text}");
-    assert_eq!(text, "Ref1 https://discord.com/x/Ref1 <#Ref1>");
+    assert!(!text.contains(&url), "{text}");
+    assert_eq!(text, format!("Ref1 {link} <#Ref1>"));
+    assert_eq!(
+        session.decode_reply(&text),
+        Ok(format!("{STRAY} {url} <#{STRAY}>"))
+    );
     let json = session.tool_result(&format!(r#"{{"id": {STRAY}, "n": 5}}"#));
     assert_eq!(json, r#"{"id": "Ref1", "n": 5}"#);
     assert_eq!(
@@ -131,11 +138,17 @@ fn the_mapping_lists_issued_member_tokens_only() {
 fn protected_code_text_stays_literal_while_member_text_is_masked() {
     let mut session = codec().open(&roster());
     let rules = "You will read the chat.";
-    let text = format!("Will asked. {rules} Alice too.");
+    let url = "https://example.invalid/rewrite/credit?source=persona#public";
+    let text = format!("Will asked. {rules} Alice too. {url}");
     let encoded = encode_protected(session.as_mut(), &text, &[Protected::Exact(rules.into())]);
     assert!(encoded.contains(rules), "{encoded}");
     assert!(!encoded.starts_with("Will"), "{encoded}");
     assert!(!encoded.contains("Alice"));
+    assert!(!encoded.contains(url));
+    assert_eq!(
+        session.decode_reply(&encoded),
+        Ok(format!("Will asked. {rules} Alice too. {url}"))
+    );
     assert_eq!(
         encode_protected(
             &mut *Passthrough.open(&roster()),

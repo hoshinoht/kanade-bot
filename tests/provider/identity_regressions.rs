@@ -146,22 +146,50 @@ fn late_author_named_like_a_token_is_flagged_and_kept_apart() {
 }
 
 #[test]
-fn known_ids_inside_urls_are_masked() {
+fn known_ids_and_all_url_fields_are_hidden_inside_link_tokens() {
     let codec = tiny();
     let mut session = codec.open(&roster());
-    let encoded = session.text(&format!(
-        "see https://discord.com/users/{ALICE_ID} and https://x.io/555555555555555555\\nBob"
-    ));
-    let alice = session.member_ref(ALICE_ID);
-    let bob = session.member_ref(BOB_ID);
-    // A stray snowflake in a URL becomes an opaque ref, decoded back.
+    let first_url = format!("https://discord.com/users/{ALICE_ID}?q=private#profile");
+    let second_url = "https://x.io/path?ref=555555555555555555#section";
+    let source = format!("see {first_url} and {second_url}\\nBob");
+    let encoded = session.text(&source);
+    let links: Vec<_> = encoded.split(' ').collect();
+    assert_eq!(links[0], "see");
+    assert_ne!(links[1], first_url);
+    assert_ne!(links[2], second_url);
+    assert_ne!(links[1], links[2]);
+    assert!(!encoded.contains("https://"));
+    assert!(!encoded.contains(ALICE_ID));
     assert_eq!(
-        encoded,
-        format!("see https://discord.com/users/{alice} and https://x.io/Ref1\\n{bob}")
+        session.decode_reply(&encoded),
+        Ok(format!("see {first_url} and {second_url}\\nBob"))
     );
     assert_eq!(
-        session.decode_reply("https://x.io/Ref1"),
-        Ok("https://x.io/555555555555555555".to_owned())
+        session.decode_json(&format!(r#"{{"link":"{}"}}"#, links[1])),
+        Ok(format!(r#"{{"link":"{first_url}"}}"#))
+    );
+}
+
+#[test]
+fn urls_inside_word_runs_are_still_replaced_and_restored() {
+    let url = "https://private.example/path?token=fixture#fragment";
+    let source = format!("prefix{url}");
+    let mut session = tiny().open(&roster());
+    let encoded = session.text(&source);
+    assert!(!encoded.contains(url));
+    assert_eq!(session.decode_reply(&encoded), Ok(source));
+}
+
+#[test]
+fn escaped_urls_in_json_message_text_are_redacted_before_sending() {
+    let mut session = tiny().open(&roster());
+    let source = r#"{"link":"https:\/\/example.invalid/path?q=one#fragment"}"#;
+    let encoded = session.text(source);
+    assert!(!encoded.contains("https://"));
+    assert!(!encoded.contains("example.invalid"));
+    assert_eq!(
+        session.decode_json(&encoded),
+        Ok(r#"{"link":"https://example.invalid/path?q=one#fragment"}"#.into())
     );
 }
 

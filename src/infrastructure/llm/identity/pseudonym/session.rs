@@ -7,7 +7,7 @@ use std::{
 use super::{
     Shared,
     issuer::Issuer,
-    matcher::fold,
+    matcher::{LINK_SYMBOLS, fold},
     normalize::{name_keys, near_match, normalise},
 };
 use crate::infrastructure::llm::identity::codec::{
@@ -50,6 +50,11 @@ pub(super) enum Owner {
     Shared,
 }
 
+pub(super) enum LinkTarget {
+    Url(String),
+    Literal(String),
+}
+
 /// A name the session masks in text.
 pub(super) struct Needle {
     pub(super) folded: Vec<char>,
@@ -78,10 +83,17 @@ pub struct PseudonymSession {
     opaque: Vec<String>,
     /// `Ref<n>` words seen in source text (lowercase); never issued.
     pub(super) source_refs: HashSet<String>,
+    link_namespace: u128,
+    next_link: u64,
+    pub(super) source_link_tokens: HashSet<String>,
+    link_urls: HashMap<String, String>,
+    link_targets: HashMap<String, LinkTarget>,
 }
 
 impl PseudonymSession {
     pub(super) fn new(shared: Arc<Shared>, roster: &[Member]) -> Self {
+        let link_namespace =
+            (u128::from(shared.random.next_u64()) << 64) | u128::from(shared.random.next_u64());
         let issuer = Issuer::new(
             &shared.pool,
             Arc::clone(&shared.forms),
@@ -97,6 +109,11 @@ impl PseudonymSession {
             message_refs: Vec::new(),
             opaque: Vec::new(),
             source_refs: HashSet::new(),
+            link_namespace,
+            next_link: 1,
+            source_link_tokens: HashSet::new(),
+            link_urls: HashMap::new(),
+            link_targets: HashMap::new(),
         };
         for member in roster {
             if session.is_bot(&member.user_id) {
@@ -114,6 +131,35 @@ impl PseudonymSession {
             }
         }
         session
+    }
+
+    pub(super) fn link_token(&mut self, url: &str) -> String {
+        if let Some(token) = self.link_urls.get(url) {
+            return token.clone();
+        }
+        let token = self.issue_link(LinkTarget::Url(url.to_owned()));
+        self.link_urls.insert(url.to_owned(), token.clone());
+        token
+    }
+
+    pub(super) fn shadow_link_literal(&mut self, literal: &str) -> String {
+        self.issue_link(LinkTarget::Literal(literal.to_owned()))
+    }
+
+    fn issue_link(&mut self, target: LinkTarget) -> String {
+        loop {
+            let token = link_token(self.link_namespace, self.next_link);
+            self.next_link += 1;
+            if self.source_link_tokens.contains(&token) || self.link_targets.contains_key(&token) {
+                continue;
+            }
+            self.link_targets.insert(token.clone(), target);
+            return token;
+        }
+    }
+
+    pub(super) fn link_target(&self, token: &str) -> Option<&LinkTarget> {
+        self.link_targets.get(token)
     }
 
     pub(super) fn is_bot(&self, user_id: &str) -> bool {
@@ -270,8 +316,9 @@ impl PseudonymSession {
     /// What a boundary scanner must not see in a request built through this
     /// session (also available as [`IdentitySession::scan_needles`]).
     pub fn needles(&self) -> ScanNeedles {
-        let tokens: Vec<String> = self.issuer.issued.iter().map(|i| i.token.clone()).collect();
+        let mut tokens: Vec<String> = self.issuer.issued.iter().map(|i| i.token.clone()).collect();
         let token_keys: Vec<String> = tokens.iter().map(|t| normalise(t)).collect();
+        tokens.extend(self.link_targets.keys().cloned());
         ScanNeedles {
             names: self
                 .needles
@@ -325,7 +372,7 @@ impl IdentitySession for PseudonymSession {
     }
 
     fn text(&mut self, text: &str) -> String {
-        self.encode(text)
+        self.encode_text(text)
     }
 
     fn tool_result(&mut self, content: &str) -> String {
@@ -343,15 +390,21 @@ impl IdentitySession for PseudonymSession {
         {
             return Ok(bot_id.clone());
         }
-        self.decode(value, false)
+        self.decode(value, false, false)
     }
 
     fn decode_json(&self, json: &str) -> Result<String, DecodeError> {
-        self.decode(json, false)
+        let valid_json = serde_json::from_str::<serde_json::Value>(json).is_ok();
+        let identities = self.decode(json, false, false)?;
+        if valid_json {
+            self.decode_json_links(&identities)
+        } else {
+            Ok(identities)
+        }
     }
 
     fn decode_reply(&self, text: &str) -> Result<String, DecodeError> {
-        self.decode(text, true)
+        self.decode(text, true, true)
     }
 
     fn scan_needles(&self) -> Option<ScanNeedles> {
@@ -431,7 +484,26 @@ impl fmt::Debug for PseudonymSession {
             .field("literals", &self.issuer.literal_count())
             .field("message_refs", &self.message_refs.len())
             .field("opaque", &self.opaque.len())
+            .field("links", &self.link_targets.len())
             .field("pool_available", &self.issuer.available())
             .finish()
     }
+}
+
+fn link_token(namespace: u128, serial: u64) -> String {
+    let mut token = String::from("⟦");
+    for shift in (0..128).step_by(4).rev() {
+        token.push(LINK_SYMBOLS[((namespace >> shift) & 0x0f) as usize] as char);
+    }
+    token.push('~');
+    let serial = (0..16)
+        .rev()
+        .map(|shift| ((serial >> (shift * 4)) & 0x0f) as usize)
+        .skip_while(|&digit| digit == 0)
+        .collect::<Vec<_>>();
+    for digit in serial {
+        token.push(LINK_SYMBOLS[digit] as char);
+    }
+    token.push('⟧');
+    token
 }

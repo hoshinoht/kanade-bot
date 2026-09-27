@@ -66,7 +66,10 @@ fn after_escape(head: &[u8]) -> bool {
 }
 
 /// A word starts at `rest` (a match may begin here).
-pub(super) fn at_word_start(prev: Option<char>, rest: &str) -> bool {
+pub(in crate::infrastructure::llm::identity) fn at_word_start(
+    prev: Option<char>,
+    rest: &str,
+) -> bool {
     match (prev, rest.chars().next()) {
         (Some(p), Some(first)) => !joins(p, first),
         _ => true,
@@ -157,6 +160,34 @@ pub(super) fn token_mention_at(rest: &str) -> Option<(usize, usize, &str)> {
         .then(|| (skip + word.len() + 1, skip, word))
 }
 
+/// One opaque link token: a random 128-bit namespace and punctuation-only id.
+pub(in crate::infrastructure::llm::identity) fn link_token_at(rest: &str) -> Option<(usize, &str)> {
+    const OPEN: &str = "⟦";
+    const CLOSE: &str = "⟧";
+    const NAMESPACE_LEN: usize = 32;
+
+    let body = rest.strip_prefix(OPEN)?;
+    let bytes = body.as_bytes();
+    let namespace = bytes.get(..NAMESPACE_LEN)?;
+    if !namespace.iter().all(|byte| LINK_SYMBOLS.contains(byte))
+        || bytes.get(NAMESPACE_LEN) != Some(&b'~')
+    {
+        return None;
+    }
+    let serial = &bytes[NAMESPACE_LEN + 1..];
+    let serial_len = serial
+        .iter()
+        .take_while(|byte| LINK_SYMBOLS.contains(byte))
+        .count();
+    if serial_len == 0 || !body[NAMESPACE_LEN + 1 + serial_len..].starts_with(CLOSE) {
+        return None;
+    }
+    let len = OPEN.len() + NAMESPACE_LEN + 1 + serial_len + CLOSE.len();
+    Some((len, &rest[..len]))
+}
+
+pub(super) const LINK_SYMBOLS: &[u8] = b"!#$%&()*+,-./:;=";
+
 fn mention_body(rest: &str) -> Option<(usize, &str)> {
     let body = rest.strip_prefix("<@")?;
     Some(match body.strip_prefix('!') {
@@ -165,9 +196,9 @@ fn mention_body(rest: &str) -> Option<(usize, &str)> {
     })
 }
 
-/// An `http://` or `https://` URL runs to whitespace, `<`, `>`, `"`, a
-/// backtick or a backslash.
-pub(super) fn url_len(rest: &str) -> Option<usize> {
+/// A complete `http(s)://` URL runs to whitespace, `<`, `>`, `"`, a backtick
+/// or a backslash. Require a nonempty authority so a bare scheme is not a URL.
+pub(in crate::infrastructure::llm::identity) fn url_len(rest: &str) -> Option<usize> {
     let scheme = ["https://", "http://"].into_iter().find(|scheme| {
         rest.get(..scheme.len())
             .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
@@ -177,5 +208,10 @@ pub(super) fn url_len(rest: &str) -> Option<usize> {
         .skip(scheme.len())
         .find(|&(_, ch)| ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '`' | '\\'))
         .map_or(rest.len(), |(at, _)| at);
-    Some(len)
+    let url = rest.get(..len)?;
+    let authority = url[scheme.len()..]
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    (!authority.is_empty()).then_some(len)
 }

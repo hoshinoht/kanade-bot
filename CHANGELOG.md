@@ -560,6 +560,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 masks complete links—including unknown handles in URLs—before model calls
+  and refuses any URL left at the provider boundary; member-facing links are
+  restored locally without storing the token-to-link mapping.
 - v5 Reply profiles default to private until explicitly published; admins can
   change selected profiles without stale saves republishing someone else's
   private choice, and member `/style` choices update without a restart.

@@ -2,18 +2,20 @@
 
 use std::sync::Arc;
 
-use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
+use kanade::chat::answer::{AnswerDeps, Generation, Question, answer, interaction};
 use kanade::chat::prompts::{code_owned_texts, protected};
 use kanade::chat::tools::ToolName;
 use kanade::chat::tools::bundles::ToolOffer;
+use kanade::domain::model_log::ModelLogStore;
 use kanade::infrastructure::llm::governor::Random;
 use kanade::infrastructure::llm::identity::{
     BotIdentity, CodeLexicon, IdentityCodec, Member, NamePool, Passthrough, PseudonymCodec,
-    PseudonymConfig, ScanExemptions, find_request_leaks,
+    PseudonymConfig, ScanExemptions, TaggingCodec, find_request_leaks,
 };
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ToolCall,
 };
+use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, settings};
@@ -153,6 +155,7 @@ fn answer_action(content: &str) -> FakeAction {
 
 struct ChatRun {
     generation: Generation,
+    ctx: kanade::chat::tools::ToolContext,
     requests: Vec<ChatRequest>,
     cards: Vec<kanade::chat::tools::ProposalCard>,
 }
@@ -222,6 +225,7 @@ async fn run_chat(
     };
     ChatRun {
         generation,
+        ctx,
         requests: provider.fake.requests(),
         cards: ports.posted.into_inner().expect("posted cards"),
     }
@@ -268,6 +272,7 @@ async fn run_vector_chat(
     };
     ChatRun {
         generation,
+        ctx,
         requests: provider.fake.requests(),
         cards: ports.posted.into_inner().expect("posted cards"),
     }
@@ -383,6 +388,12 @@ async fn offline_ab_preserves_chat_reply_and_decoded_tool_arguments() {
     assert!(!off.generation.clean_retry && !on.generation.clean_retry);
     assert_eq!(off.requests.len(), 2);
     assert_eq!(on.requests.len(), 2);
+    let sent = serde_json::to_string(&on.requests).expect("captured requests");
+    assert!(!sent.contains("http://") && !sent.contains("https://"));
+    assert!(
+        sent.contains('⟦'),
+        "link token is present across both rounds"
+    );
     assert_eq!(off.generation.reply, on.generation.reply);
     assert_eq!(off.generation.reply, expected_reply);
     assert_eq!(off.generation.tool_calls, on.generation.tool_calls);
@@ -436,12 +447,12 @@ async fn offline_ab_preserves_chat_reply_and_decoded_tool_arguments() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_member_name_in_a_url_is_an_expected_fail_closed_residual() {
+async fn a_roster_name_url_is_redacted_before_each_masked_chat_round() {
     let fixture = fixture();
     let roster = roster(&fixture);
     let question = fixture["chat"]["name_in_url"]
         .as_str()
-        .expect("URL residual input");
+        .expect("synthetic URL input");
     let codec = codec();
     let off = run_chat(
         &fixture,
@@ -462,34 +473,30 @@ async fn a_member_name_in_a_url_is_an_expected_fail_closed_residual() {
     )
     .await;
     assert_eq!(off.requests.len(), 1);
-    assert!(
-        on.requests.is_empty(),
-        "leaking URL must not reach provider"
-    );
-    assert!(on.generation.leak_blocked().is_some());
-    println!(
-        "PRIVACY_RESIDUAL {}",
-        json!({
-            "family": "chat",
-            "category": "member_name_in_url",
-            "off_provider_sends": off.requests.len(),
-            "on_provider_sends": on.requests.len(),
-            "expected_scanner_blocks": 1,
-            "acceptance_blocker": true,
-            "required_followup": "redact identity-bearing URL paths; preserve the original link outside provider requests",
-            "quarantines": 0
-        })
-    );
+    assert_eq!(on.requests.len(), 1);
+    assert!(on.generation.failure.is_none());
+    assert!(on.generation.leak_blocked().is_none());
+    let sent = serde_json::to_string(&on.requests).expect("captured request");
+    assert!(!sent.contains("https://"));
+    assert!(!sent.contains("EOWYN"));
+    assert!(sent.contains('⟦'));
+    assert!(question.contains("https://example.invalid/users/EOWYN"));
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_non_roster_url_handle_reaches_the_masked_chat_provider() {
+async fn non_roster_url_is_redacted_and_an_issued_link_decodes_locally() {
     let fixture = fixture();
     let roster = roster(&fixture);
     let question = fixture["chat"]["non_roster_url"]
         .as_str()
-        .expect("non-roster URL input");
+        .expect("synthetic credit URL input");
     let codec = codec();
+    let url = question
+        .split_once("https://")
+        .map(|(_, tail)| format!("https://{tail}"))
+        .expect("URL");
+    let mut link_session = codec.open(&roster);
+    let link_token = link_session.text(&url);
     let off = run_chat(
         &fixture,
         &roster,
@@ -505,25 +512,130 @@ async fn a_non_roster_url_handle_reaches_the_masked_chat_provider() {
         &codec,
         true,
         question,
-        vec![answer_action("Received.")],
+        vec![answer_action(&format!("Credit: {link_token}"))],
     )
     .await;
     let sent = serde_json::to_string(&on.requests).expect("captured requests");
     assert_eq!(off.requests.len(), 1);
     assert_eq!(on.requests.len(), 1);
     assert!(on.generation.leak_blocked().is_none());
-    assert!(sent.contains("orbitquill42"));
-    println!(
-        "PRIVACY_RESIDUAL {}",
-        json!({
-            "family": "chat",
-            "category": "non_roster_identity_in_url",
-            "off_provider_sends": off.requests.len(),
-            "on_provider_sends": on.requests.len(),
-            "handle_visible_in_request": true,
-            "scanner_blocks": 0,
-            "acceptance_blocker": true,
-            "quarantines": 0
-        })
+    assert!(on.generation.failure.is_none());
+    let delivered = format!("Credit: {url}");
+    let raw_model_reply = format!("Credit: {link_token}");
+    assert_eq!(on.generation.reply, delivered);
+    assert!(!sent.contains("https://"));
+    assert!(!sent.contains("orbitquill42"));
+    assert!(sent.contains(&link_token));
+    let view = on.generation.model_view.as_ref().expect("masked view");
+    assert_eq!(view.reply, delivered);
+    assert_eq!(
+        view.rounds[0].reply.as_deref(),
+        Some(raw_model_reply.as_str())
     );
+    let model_request = serde_json::to_string(&view.rounds[0].request).expect("masked request");
+    assert!(!model_request.contains(&url));
+    assert!(model_request.contains(&link_token));
+    assert!(
+        !view
+            .mapping
+            .iter()
+            .any(|name| name.token.as_str() == link_token)
+    );
+    let stored_mapping = serde_json::to_string(&view.mapping_json()).unwrap();
+    assert!(!stored_mapping.contains(&url));
+    assert!(!stored_mapping.contains(&link_token));
+
+    let row = interaction(
+        "synthetic-url-turn".into(),
+        on.ctx.now,
+        &on.ctx,
+        question,
+        &on.generation,
+        MODEL,
+        None,
+        0,
+    );
+    assert_eq!(row.reply, delivered);
+
+    let store = MemoryScheduleStore::new();
+    store
+        .record_masked_chat(row, view.clone())
+        .await
+        .expect("persist masked turn");
+    let stored_chat = store
+        .load_chat("synthetic-url-turn")
+        .await
+        .expect("load chat")
+        .expect("stored chat");
+    assert_eq!(stored_chat.reply, delivered);
+    let stored_view = store
+        .load_masked_chat("synthetic-url-turn")
+        .await
+        .expect("load model view")
+        .expect("stored model view");
+    assert_eq!(stored_view.reply, delivered);
+    assert_eq!(
+        stored_view.rounds[0].reply.as_deref(),
+        Some(raw_model_reply.as_str())
+    );
+    let stored_rounds = serde_json::to_string(&stored_view.rounds_json()).unwrap();
+    assert!(!stored_rounds.contains(&url));
+    assert!(stored_rounds.contains(&link_token));
+    let persisted_mapping = serde_json::to_string(&stored_view.mapping_json()).unwrap();
+    assert!(!persisted_mapping.contains(&url));
+    assert!(!persisted_mapping.contains(&link_token));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_missed_url_encoder_is_refused_before_the_chat_provider() {
+    let fixture = fixture();
+    let roster = roster(&fixture);
+    let question = fixture["chat"]["non_roster_url"]
+        .as_str()
+        .expect("synthetic URL input");
+    let missed = run_chat(
+        &fixture,
+        &roster,
+        &TaggingCodec,
+        true,
+        question,
+        vec![answer_action("Received.")],
+    )
+    .await;
+    assert!(missed.requests.is_empty());
+    assert!(missed.generation.leak_blocked().is_some());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_url_substring_inside_a_word_is_masked_and_the_boundary_rejects_bypass() {
+    let fixture = fixture();
+    let roster = roster(&fixture);
+    let question = "prefixhttps://example.invalid/private/path?token=fixture#fragment";
+    let codec = codec();
+    let captured = run_chat(
+        &fixture,
+        &roster,
+        &codec,
+        true,
+        question,
+        vec![answer_action("Received.")],
+    )
+    .await;
+    assert_eq!(captured.requests.len(), 1);
+    assert!(captured.generation.failure.is_none());
+    let sent = serde_json::to_string(&captured.requests).expect("captured request");
+    assert!(!sent.contains("https://"));
+    assert!(sent.contains('⟦'));
+
+    let missed = run_chat(
+        &fixture,
+        &roster,
+        &TaggingCodec,
+        true,
+        question,
+        vec![answer_action("Received.")],
+    )
+    .await;
+    assert!(missed.requests.is_empty());
+    assert!(missed.generation.leak_blocked().is_some());
 }

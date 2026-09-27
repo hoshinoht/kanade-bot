@@ -13,6 +13,8 @@ pub enum LeakKind {
     Id,
     /// Any other 17–20 digit run.
     Snowflake,
+    /// A complete http(s) URL remains in masked provider-bound content.
+    Url,
     /// A pseudonymizing session reported nothing to scan for; fails closed.
     Unscannable,
 }
@@ -23,6 +25,7 @@ impl LeakKind {
             Self::Name => "name",
             Self::Id => "id",
             Self::Snowflake => "snowflake",
+            Self::Url => "url",
             Self::Unscannable => "unscannable",
         }
     }

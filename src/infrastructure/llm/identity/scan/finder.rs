@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use super::super::codec::ScanNeedles;
-use super::super::pseudonym::matcher::{digit_run, fold, match_at, prev_char};
+use super::super::pseudonym::matcher::{
+    digit_run, fold, link_token_at, match_at, prev_char, url_len,
+};
 use super::{LeakFound, LeakKind, ScanExemptions};
 use crate::infrastructure::llm::{ChatRequest, Message};
 
@@ -15,6 +17,7 @@ pub(super) struct Finder {
     names: Vec<Vec<char>>,
     ids: HashSet<String>,
     tokens: HashSet<String>,
+    link_tokens: HashSet<String>,
 }
 
 impl Finder {
@@ -28,10 +31,20 @@ impl Finder {
             .collect();
         names.sort_by_key(|folded| std::cmp::Reverse(folded.len()));
         names.dedup();
+        let mut tokens = HashSet::new();
+        let mut link_tokens = HashSet::new();
+        for token in &needles.tokens {
+            if link_token_at(token).is_some_and(|(len, _)| len == token.len()) {
+                link_tokens.insert(token.clone());
+            } else {
+                tokens.insert(lower(token));
+            }
+        }
         Self {
             names,
             ids: needles.ids.iter().cloned().collect(),
-            tokens: needles.tokens.iter().map(|t| lower(t)).collect(),
+            tokens,
+            link_tokens,
         }
     }
 
@@ -40,8 +53,8 @@ impl Finder {
     /// schemas (every key, string and number). Fixed structure (the model
     /// alias, roles, token limits, reasoning, sampling, `strict`, validation)
     /// is never scanned. Model-issued call ids get known-id matching only;
-    /// an assistant turn equal to something this model wrote (`echoes`) is
-    /// skipped.
+    /// identity words in an assistant turn equal to model output (`echoes`)
+    /// are skipped, but complete URLs remain blocked.
     pub(super) fn request(
         &self,
         request: &ChatRequest,
@@ -51,20 +64,26 @@ impl Finder {
         for message in &request.messages {
             match message {
                 Message::System { content } | Message::User { content } => {
-                    self.text(content, found);
+                    self.embedded(content, found);
                 }
-                // The model's own words, repeated verbatim, are not scanned.
+                // Echoes skip identity-name checks; the URL guard still runs.
                 Message::Assistant {
                     content,
                     tool_calls,
                 } => {
-                    if let Some(content) = content.as_ref().filter(|text| !echoes.contains(*text)) {
-                        self.text(content, found);
+                    if let Some(content) = content {
+                        if echoes.contains(content) {
+                            self.embedded_urls(content, found);
+                        } else {
+                            self.embedded(content, found);
+                        }
                     }
                     for call in tool_calls {
                         self.call_id(&call.id, found);
                         self.text(&call.name, found);
-                        if !echoes.contains(&call.arguments) {
+                        if echoes.contains(&call.arguments) {
+                            self.embedded_urls(&call.arguments, found);
+                        } else {
                             self.embedded(&call.arguments, found);
                         }
                     }
@@ -91,18 +110,34 @@ impl Finder {
         }
     }
 
-    /// Text that may itself be JSON (tool arguments and results): a JSON
-    /// object or array is scanned structurally (every unescaped key and
-    /// string, every number), so escapes such as `\u0041lice` cannot hide a
-    /// name; anything else as text.
+    /// Text that may itself be JSON is scanned structurally so escapes cannot
+    /// hide a name or URL; anything else is scanned as text.
     fn embedded(&self, text: &str, found: &mut LeakFound) {
-        let head = text.trim_start();
-        if (head.starts_with('{') || head.starts_with('['))
-            && let Ok(value) = serde_json::from_str::<Value>(text)
-        {
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
             self.value(&value, found);
         } else {
             self.text(text, found);
+        }
+    }
+
+    fn embedded_urls(&self, text: &str, found: &mut LeakFound) {
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
+            let mut stack = vec![&value];
+            while let Some(value) = stack.pop() {
+                match value {
+                    Value::String(text) => self.urls(text, found),
+                    Value::Array(items) => stack.extend(items),
+                    Value::Object(map) => {
+                        for (key, item) in map {
+                            self.urls(key, found);
+                            stack.push(item);
+                        }
+                    }
+                    Value::Number(_) | Value::Null | Value::Bool(_) => {}
+                }
+            }
+        } else {
+            self.urls(text, found);
         }
     }
 
@@ -154,6 +189,17 @@ impl Finder {
         while i < text.len() {
             let rest = &text[i..];
             let prev = prev_char(text, i);
+            if let Some((len, token)) = link_token_at(rest)
+                && self.link_tokens.contains(token)
+            {
+                i += len;
+                continue;
+            }
+            if let Some(len) = url_len(rest) {
+                found.add(LeakKind::Url);
+                i += len;
+                continue;
+            }
             if let Some(len) = self.name_at(prev, rest) {
                 // An issued token spelled exactly like a masked name (an
                 // author registered after the token was issued) is not a leak.
@@ -174,6 +220,19 @@ impl Finder {
                     i += digits.len();
                     continue;
                 }
+            }
+            i += rest.chars().next().map_or(1, char::len_utf8);
+        }
+    }
+
+    fn urls(&self, text: &str, found: &mut LeakFound) {
+        let mut i = 0;
+        while i < text.len() {
+            let rest = &text[i..];
+            if let Some(len) = url_len(rest) {
+                found.add(LeakKind::Url);
+                i += len;
+                continue;
             }
             i += rest.chars().next().map_or(1, char::len_utf8);
         }
