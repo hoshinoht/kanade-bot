@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- An opt-in, governed synthetic privacy re-identification probe that keeps
+  network calls out of tests and reports only aggregate recovery counts.
 - Source-checked v5 compatibility inventory covering routes, commands, runtime
   entrypoints, configuration, storage, workers, chat tools, and portal assets,
   with regression checks for missing entrypoints and environment dispositions.
