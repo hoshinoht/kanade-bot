@@ -29,10 +29,9 @@ pub struct Group {
     pub permits: u32,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct RoleProfile {
     pub role_id: String,
-    pub role_name: String,
     pub profile: String,
 }
 
@@ -56,6 +55,7 @@ pub struct Config {
     pub public_portal: bool,
     pub persona: String,
     pub role_profiles: Vec<RoleProfile>,
+    pub role_profiles_revision: u64,
     pub profile_visibility: Vec<ProfileVisibility>,
     pub extraction: RoleModel,
     pub chat: RoleModel,
@@ -296,15 +296,14 @@ pub fn defaults() -> Config {
         role_profiles: vec![
             RoleProfile {
                 role_id: "300001".into(),
-                role_name: "@staff".into(),
                 profile: "terse".into(),
             },
             RoleProfile {
                 role_id: "300002".into(),
-                role_name: "@newbies".into(),
                 profile: "default".into(),
             },
         ],
+        role_profiles_revision: 1,
         profile_visibility: PROFILES
             .iter()
             .map(|(key, _, public, _, _)| ProfileVisibility {
@@ -451,6 +450,27 @@ fn resolve<'a>(reasoning: &'a str, extraction: &'a str) -> &'a str {
 }
 
 impl Store {
+    pub fn roles() -> Value {
+        json!([
+            { "id": "300001", "name": "staff", "color": "#e0a458" },
+            { "id": "300003", "name": "bossers", "color": "#5b8def" },
+            { "id": "300002", "name": "newbies" },
+        ])
+    }
+
+    fn guild_role_name(id: &str) -> Option<&'static str> {
+        match id {
+            "300001" => Some("staff"),
+            "300002" => Some("newbies"),
+            "300003" => Some("bossers"),
+            _ => None,
+        }
+    }
+
+    fn role_profiles_digest(&self) -> String {
+        format!("role-profiles-v{}", self.config.role_profiles_revision)
+    }
+
     pub fn config_view(&self) -> Value {
         let c = &self.config;
         let entry = |id: &str, m: &ModelInfo| {
@@ -511,7 +531,12 @@ impl Store {
                     "key": key, "name": name, "public": profile_visible(c, key),
                     "voice": voice, "prompt_summary": summary,
                 })).collect::<Vec<_>>(),
-                "role_profiles": c.role_profiles,
+                "role_profiles": c.role_profiles.iter().map(|assignment| json!({
+                    "role_id": assignment.role_id,
+                    "role_name": Self::guild_role_name(&assignment.role_id),
+                    "profile": assignment.profile,
+                })).collect::<Vec<_>>(),
+                "role_profiles_digest": self.role_profiles_digest(),
             },
             "models": {
                 "reachable": true,
@@ -551,6 +576,26 @@ impl Store {
     /// Unknown or read-only keys are refused with 422, like the backend.
     pub fn patch_config(&mut self, patch: &Value) -> Result<Value, MoveError> {
         check_patch_keys(patch)?;
+        let persona = patch.get("persona");
+        let role_profiles = persona
+            .and_then(|p| p.get("role_profiles"))
+            .and_then(Value::as_array);
+        let role_digest = persona
+            .and_then(|p| p.get("role_profiles_digest"))
+            .and_then(Value::as_str);
+        if role_profiles.is_some() != role_digest.is_some() {
+            return Err(MoveError::invalid(
+                "Role assignments and role_profiles_digest must be sent together.",
+            ));
+        }
+        if role_profiles.is_some() && role_digest != Some(self.role_profiles_digest().as_str()) {
+            return Err(MoveError::Coded(
+                409,
+                "conflict",
+                "Role assignments changed since they were loaded; reload the latest configuration."
+                    .into(),
+            ));
+        }
         let mut next = self.config.clone();
         let mut notices: Vec<String> = Vec::new();
         let bad = |m: &str| MoveError::invalid(m.to_owned());
@@ -660,6 +705,47 @@ impl Store {
                         public,
                     });
                 }
+            }
+        }
+        if let Some(list) = role_profiles {
+            let mut assignments = Vec::with_capacity(list.len());
+            for item in list {
+                let role_id = item
+                    .get("role_id")
+                    .and_then(Value::as_str)
+                    .ok_or(bad("Each role assignment needs a role_id."))?;
+                let profile = item
+                    .get("profile")
+                    .and_then(Value::as_str)
+                    .ok_or(bad("Each role assignment needs a profile."))?;
+                if assignments
+                    .iter()
+                    .any(|assignment: &RoleProfile| assignment.role_id == role_id)
+                {
+                    return Err(bad("A role can have only one reply profile assignment."));
+                }
+                if !PROFILES.iter().any(|(key, ..)| *key == profile) {
+                    return Err(bad(&format!("No reply profile named {profile}.")));
+                }
+                if Self::guild_role_name(role_id).is_none()
+                    && !self
+                        .config
+                        .role_profiles
+                        .iter()
+                        .any(|saved| saved.role_id == role_id && saved.profile == profile)
+                {
+                    return Err(bad(
+                        "A new or changed role assignment must use a role in the current guild directory.",
+                    ));
+                }
+                assignments.push(RoleProfile {
+                    role_id: role_id.into(),
+                    profile: profile.into(),
+                });
+            }
+            if next.role_profiles != assignments {
+                next.role_profiles = assignments;
+                next.role_profiles_revision = self.config.role_profiles_revision + 1;
             }
         }
         if let Some(p) = patch.get("models") {
@@ -878,7 +964,12 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             "pings" => &["day_of_ping_time", "countdown_minutes"],
             "watching" => &["paused", "extract_enabled"],
             "chatbot" => &["enabled", "member_rate", "guild_rate"],
-            "persona" => &["active", "role_profiles", "visibility"],
+            "persona" => &[
+                "active",
+                "role_profiles",
+                "role_profiles_digest",
+                "visibility",
+            ],
             "models" => &["roles", "groups"],
             "self_service" => &["mode", "public_portal"],
             "notifications" => &["quiet_mode"],
@@ -890,10 +981,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                 return Err(bad(&format!("{section}.{key}")));
             }
             // As the server: contracted as editable, but it cannot store them yet.
-            if matches!(
-                (section.as_str(), key.as_str()),
-                ("models", "groups") | ("persona", "role_profiles")
-            ) {
+            if matches!((section.as_str(), key.as_str()), ("models", "groups")) {
                 return Err(MoveError::Coded(
                     422,
                     "read_only",
@@ -921,10 +1009,17 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                     for item in list {
                         if !item.as_object().is_some_and(|o| {
                             o.keys()
-                                .all(|k| ["role_id", "role_name", "profile"].contains(&k.as_str()))
+                                .all(|k| ["role_id", "profile"].contains(&k.as_str()))
+                                && o.contains_key("role_id")
+                                && o.contains_key("profile")
                         }) {
                             return Err(bad(&format!("{section}.{key}[]")));
                         }
+                    }
+                }
+                ("persona", "role_profiles_digest") => {
+                    if !value.as_str().is_some_and(|digest| !digest.is_empty()) {
+                        return Err(bad(&format!("{section}.{key}")));
                     }
                 }
                 ("persona", "visibility") => {
@@ -984,17 +1079,13 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn groups_and_role_profiles_are_read_only() {
+    fn groups_remain_read_only() {
         let mut s = store();
-        for patch in [
-            json!({ "models": { "groups": [] } }),
-            json!({ "persona": { "role_profiles": [] } }),
-        ] {
-            match s.patch_config(&patch) {
-                Err(crate::mock::MoveError::Coded(422, "read_only", _)) => {}
-                Err(other) => panic!("{patch}: wanted read_only, got {other}"),
-                Ok(_) => panic!("{patch}: saved"),
-            }
+        let patch = json!({ "models": { "groups": [] } });
+        match s.patch_config(&patch) {
+            Err(crate::mock::MoveError::Coded(422, "read_only", _)) => {}
+            Err(other) => panic!("{patch}: wanted read_only, got {other}"),
+            Ok(_) => panic!("{patch}: saved"),
         }
         // The server's startup check still describes the seeded groups.
         let view = s.config_view();
@@ -1003,6 +1094,97 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn role_profiles_replace_whole_and_reject_a_stale_digest() {
+        let mut s = store();
+        let before = s.config_view();
+        let digest = before["persona"]["role_profiles_digest"].as_str().unwrap();
+        let view = s
+            .patch_config(&json!({ "persona": {
+                "role_profiles": [
+                    { "role_id": "300003", "profile": "sparkly" },
+                    { "role_id": "300001", "profile": "kanade" }
+                ],
+                "role_profiles_digest": digest
+            } }))
+            .unwrap_or_else(|error| panic!("{error}"));
+        let assignments = view["persona"]["role_profiles"].as_array().unwrap();
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments[0]["role_id"], "300003");
+        assert_eq!(assignments[0]["role_name"], "bossers");
+        assert_eq!(assignments[0]["profile"], "sparkly");
+        assert_eq!(assignments[1]["role_id"], "300001");
+        let next_digest = view["persona"]["role_profiles_digest"].as_str().unwrap();
+        assert_ne!(digest, next_digest);
+
+        let stale = s
+            .patch_config(&json!({ "persona": {
+                "role_profiles": [],
+                "role_profiles_digest": digest
+            } }))
+            .unwrap_err();
+        assert!(matches!(
+            stale,
+            crate::mock::MoveError::Coded(409, "conflict", _)
+        ));
+        assert_eq!(
+            s.config_view()["persona"]["role_profiles"],
+            view["persona"]["role_profiles"]
+        );
+    }
+
+    #[test]
+    fn missing_roles_can_be_reordered_or_removed_but_not_changed_or_rebound() {
+        let mut s = store();
+        s.config.role_profiles.push(super::RoleProfile {
+            role_id: "390009".into(),
+            profile: "terse".into(),
+        });
+        let view = s.config_view();
+        let stale_digest = view["persona"]["role_profiles_digest"].as_str().unwrap();
+        assert!(view["persona"]["role_profiles"][2]["role_name"].is_null());
+
+        let reordered = s
+            .patch_config(&json!({ "persona": {
+                "role_profiles": [
+                    { "role_id": "390009", "profile": "terse" },
+                    { "role_id": "300002", "profile": "default" }
+                ],
+                "role_profiles_digest": stale_digest
+            } }))
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            reordered["persona"]["role_profiles"][0]["role_id"],
+            "390009"
+        );
+        let current_digest = reordered["persona"]["role_profiles_digest"]
+            .as_str()
+            .unwrap();
+
+        let changed_profile = s.patch_config(&json!({ "persona": {
+            "role_profiles": [{ "role_id": "390009", "profile": "default" }],
+            "role_profiles_digest": current_digest
+        } }));
+        assert!(
+            changed_profile.is_err(),
+            "a missing role's profile was changed"
+        );
+
+        let removed = s
+            .patch_config(&json!({ "persona": {
+                "role_profiles": [{ "role_id": "300002", "profile": "default" }],
+                "role_profiles_digest": current_digest
+            } }))
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            removed["persona"]["role_profiles"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
         );
     }
 

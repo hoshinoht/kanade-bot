@@ -420,11 +420,43 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "limits.json#/$defs/Limits",
     )
     .await;
-    h.ok(
-        "GET",
+    let config = h
+        .ok(
+            "GET",
+            "/api/admin/config",
+            None,
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    let digest = s(&config["persona"]["role_profiles_digest"]).to_owned();
+    let updated = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "persona": {
+                "role_profiles": [
+                    { "role_id": "300003", "profile": "sparkly" },
+                    { "role_id": "300001", "profile": "terse" }
+                ],
+                "role_profiles_digest": digest
+            } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(
+        updated["persona"]["role_profiles"][0]["role_name"],
+        "bossers"
+    );
+    h.expect(
+        false,
+        "PATCH",
         "/api/admin/config",
-        None,
-        "config.json#/$defs/ConfigView",
+        Some(json!({ "persona": {
+            "role_profiles": [],
+            "role_profiles_digest": digest
+        } })),
+        StatusCode::CONFLICT,
+        "",
     )
     .await;
     h.ok(

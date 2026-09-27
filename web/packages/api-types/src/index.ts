@@ -890,6 +890,14 @@ export interface RoleProfile {
   profile: string;
 }
 
+export interface RoleProfileView extends Omit<RoleProfile, 'role_name'> {
+  /** Current guild name, or null when the saved role is no longer present. */
+  role_name: string | null;
+}
+
+/** Writable fields for an ordered role-profile assignment; names are display-only. */
+export type RoleProfileWrite = Pick<RoleProfileView, 'role_id' | 'profile'>;
+
 /** A reply profile file: shown read-only (text is edited as files only). */
 export interface ReplyProfile {
   key: string;
@@ -923,7 +931,9 @@ export interface ConfigView {
     personas: { key: string; name: string; bundle: string }[];
     profiles: ReplyProfile[];
     /** Order is significant: the first matching role wins. Saved and applied whole. */
-    role_profiles: RoleProfile[];
+    role_profiles: RoleProfileView[];
+    /** Opaque revision for the ordered role/profile assignments. */
+    role_profiles_digest: string;
   };
   models: {
     reachable: boolean;

@@ -56,6 +56,7 @@ const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/history'],
   ['admin', ADMIN, '/config'],
   ['admin', ADMIN, '/config?section=models'],
+  ['admin', ADMIN, '/config?section=persona'],
   ['public', PUBLIC, '/'],
 ];
 

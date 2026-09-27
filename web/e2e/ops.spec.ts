@@ -578,14 +578,16 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(kanade).toContainText('Kanade Teases lightly');
   await expect(kanade).not.toContainText('**');
   await expect(profiles).not.toContainText('config/personas/profiles/kanade');
-  // Visibility is editable; profile text stays file-backed and role assignments stay read-only.
+  // Visibility is editable and profile text stays file-backed.
   const sparkly = profiles.getByRole('row', { name: /^Sparkly/ });
   await expect(sparkly).toContainText('private');
   await expect(sparkly.getByRole('button', { name: 'Publish' })).toBeVisible();
-  await expect(panel.getByText('Role assignments are read-only here.')).toBeVisible();
-  // Roles read by name, and copy their id.
-  await expect(panel.getByRole('button', { name: '@staff' })).toHaveAttribute('title', 'Role ID 300001 — click to copy');
-  await expect(panel.getByRole('button', { name: 'Save role profiles' })).toHaveCount(0);
+  // Role assignments use the current named guild directory; IDs are not picker input.
+  const roleAssignments = panel.getByRole('list', { name: 'Role assignments in precedence order' });
+  await expect(roleAssignments.getByRole('listitem')).toHaveCount(2);
+  await expect(roleAssignments.getByRole('listitem').nth(0)).toContainText('@staff');
+  await expect(panel.getByRole('combobox', { name: 'New assignment role' })).toBeEnabled();
+  await expect(panel.getByText(/The first matching readable role.*overrides a member's saved reply style/)).toBeVisible();
   const published = await page.request.patch(`${ADMIN}/api/admin/config`, {
     headers: await csrf(page.request),
     data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },

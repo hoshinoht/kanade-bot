@@ -12,7 +12,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   Rolling back to a v17 image requires the paired pre-upgrade volume backup.
 - v5 stores ordered Reply-profile assignments by Discord role and applies
   role-first styling live, with current-role validation and conflict-safe admin
-  updates; the named-role editor follows separately.
+  updates; Config now has a named guild-role picker and add, change, remove,
+  reorder and conflict-recovery controls.
 - An opt-in, governed synthetic privacy re-identification probe that keeps
   network calls out of tests and reports only aggregate recovery counts.
 - Source-checked v5 compatibility inventory covering routes, commands, runtime

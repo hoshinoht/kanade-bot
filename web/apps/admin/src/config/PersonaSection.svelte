@@ -1,22 +1,37 @@
 <!-- Persona catalog plus file-backed reply profiles; visibility is saved separately. -->
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
-  import type { ConfigView, ReplyProfile } from '@kanade/api-types';
+  import type { ConfigView, ReplyProfile, Role } from '@kanade/api-types';
   import { Modal, PendingLabel, type Toaster } from '@kanade/ui';
-  import Name from '../names/Name.svelte';
   import { send } from '../resource.svelte';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import TextModal from '../shared/TextModal.svelte';
   import { plainLines, plainText, preview } from './markdown';
-  import type { Save } from './save';
+  import type { Save, SaveRoleProfiles } from './save';
+  import RoleAssignmentsSection from './RoleAssignmentsSection.svelte';
 
   let {
     persona,
     save,
     toaster,
     refresh,
-  }: { persona: ConfigView['persona']; save: Save; toaster: Toaster; refresh: () => Promise<void> } = $props();
+    roles,
+    rolesLoading,
+    rolesError,
+    refreshRoles,
+    saveRoleProfiles,
+  }: {
+    persona: ConfigView['persona'];
+    save: Save;
+    toaster: Toaster;
+    refresh: () => Promise<ConfigView | null>;
+    roles: Role[] | null;
+    rolesLoading: boolean;
+    rolesError: string;
+    refreshRoles: () => Promise<void>;
+    saveRoleProfiles: SaveRoleProfiles;
+  } = $props();
   const uid = $props.id();
 
   // svelte-ignore state_referenced_locally
@@ -24,8 +39,6 @@
   const profiles = $derived(persona.profiles);
   let personaError = $state('');
   let reloading = $state(false);
-  const profileName = (key: string) => profiles.find((p) => p.key === key)?.name ?? key;
-
   // Search, visibility and page are this section's own state, so a Reload keeps them.
   let search = $state('');
   let visibility = $state<'all' | 'public' | 'private'>('all');
@@ -164,7 +177,7 @@
   </label>
   <button class="btn btn--primary" type="submit" disabled={!persona.personas.length}>Use this persona</button>
 </form>
-<p class="field__error" role="alert">{personaError}</p>
+{#if personaError}<p class="field__error" role="alert">{personaError}</p>{/if}
 <p class="note" id="{uid}-help">Changing persona swaps identity, default behaviour and staging together.</p>
 <p class="note" role="status">Effective: <strong>{current?.name ?? persona.active}</strong> <code>{current?.bundle ?? ''}</code></p>
 
@@ -277,26 +290,17 @@
   {/snippet}
 </Modal>
 
-<h4 class="settings__subtitle">Reply profile per Discord role</h4>
-<p class="note">If a member holds several of these roles, the first matching role in this order wins. Assignments never grant chatbot access.</p>
-<p class="note" id="{uid}-ro">Role assignments are read-only here.</p>
-<div class="table-wrap">
-  <table aria-describedby="{uid}-ro">
-    <caption>A member with one of these roles gets its profile unless they picked their own on Members.</caption>
-    <thead><tr><th scope="col" class="num">Order</th><th scope="col">Role</th><th scope="col">Profile</th></tr></thead>
-    <tbody>
-      {#each persona.role_profiles as role, index (index)}
-        <tr>
-          <td class="num">{index + 1}</td>
-          <th scope="row">{#if role.role_id}<Name kind="role" id={role.role_id} name={role.role_name} />{:else}{role.role_name}{/if}</th>
-          <td>{profileName(role.profile)}</td>
-        </tr>
-      {:else}
-        <tr><td colspan="3" class="note">No role assignments; everyone gets the persona's default.</td></tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+<RoleAssignmentsSection
+  profiles={persona.profiles}
+  assignments={persona.role_profiles}
+  digest={persona.role_profiles_digest}
+  {roles}
+  {rolesLoading}
+  {rolesError}
+  {refresh}
+  {refreshRoles}
+  {saveRoleProfiles}
+/>
 
 <style>
   .profile__prompt {

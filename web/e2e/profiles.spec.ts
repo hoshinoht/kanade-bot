@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, test } from './support';
 
 type Profile = { key: string; name: string; public: boolean; voice: string; prompt_summary: string };
 type ConfigResponse = { persona: { profiles: Profile[] } };
@@ -48,6 +48,16 @@ async function persona(page: Page) {
   return page.getByRole('table', { name: 'Reply profiles' });
 }
 
+async function roleEditor(page: Page) {
+  await persona(page);
+  await expect(page.getByRole('status').filter({ hasText: 'Current guild roles are loaded.' })).toBeVisible();
+  return page.getByRole('list', { name: 'Role assignments in precedence order' });
+}
+
+function roleRows(list: Locator) {
+  return list.locator('.role-profile__row');
+}
+
 function profileRow(table: Locator, name: string) {
   return table.getByRole('rowheader').filter({ hasText: name }).locator('xpath=..');
 }
@@ -64,7 +74,7 @@ test('reply profiles: search, visibility and pages, kept across Reload', async (
   await page.getByRole('button', { name: 'Next →' }).click();
   await expect(page.getByText('11–20 of 24 profiles')).toBeVisible();
 
-  const find = page.getByRole('searchbox', { name: 'Search' });
+  const find = page.getByRole('searchbox', { name: 'Search', exact: true });
   await find.fill('numbered');
   await expect(page.getByText('1–10 of 20 profiles')).toBeVisible();
   await page.getByRole('combobox', { name: 'Visibility' }).selectOption('private');
@@ -174,7 +184,7 @@ test('reply profiles: selection survives pages and filters without republishing 
   await profileRow(table, 'Extra 12').getByRole('checkbox', { name: 'Select Extra 12' }).check();
   await expect(page.getByText('2 profiles selected.', { exact: true })).toBeVisible();
 
-  await page.getByRole('searchbox', { name: 'Search' }).fill('numbered');
+  await page.getByRole('searchbox', { name: 'Search', exact: true }).fill('numbered');
   await page.getByRole('combobox', { name: 'Visibility' }).selectOption('private');
   await expect(page.getByText('2 profiles selected.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Publish selected' }).click();
@@ -182,7 +192,7 @@ test('reply profiles: selection survives pages and filters without republishing 
   await expect(dialog.locator('li')).toHaveText(['Extra 01']);
   await expect(dialog).toContainText('1 selected profile is already public and will stay unchanged.');
   await dialog.getByRole('button', { name: 'Publish 1 profile' }).click();
-  await expect(page.getByRole('searchbox', { name: 'Search' })).toHaveValue('numbered');
+  await expect(page.getByRole('searchbox', { name: 'Search', exact: true })).toHaveValue('numbered');
   await expect(page.getByRole('combobox', { name: 'Visibility' })).toHaveValue('private');
   await expect(profileRow(table, 'Extra 01')).toHaveCount(0);
   await expect(page.getByText('1 profile selected. Published 1 reply profile.', { exact: true })).toBeVisible();
@@ -255,20 +265,174 @@ test('reply profiles: visibility save stays busy, explains refusal and can recov
   await expect(page.getByText('0 profiles selected. Made 1 reply profile private.', { exact: true })).toBeVisible();
 });
 
+test('role profiles: add, change, reorder and remove save one ordered ID-backed patch', async ({ page }) => {
+  const list = await roleEditor(page);
+  const rows = roleRows(list);
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@staff');
+  await expect(rows.nth(0)).not.toContainText('300001');
+
+  const config = (await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as {
+    persona: { role_profiles_digest: string };
+  };
+  const add = page.locator('.role-profile__add');
+  await add.getByRole('searchbox', { name: 'Search current guild roles' }).fill('boss');
+  const picker = add.getByRole('combobox', { name: 'New assignment role' });
+  await expect(picker.locator('option')).toHaveText(['Choose a role…', '@bossers']);
+  await picker.selectOption('300003');
+  await add.getByRole('combobox', { name: 'Reply profile' }).selectOption('sparkly');
+  await add.getByRole('button', { name: 'Add assignment' }).click();
+  await expect(rows).toHaveCount(3);
+
+  await rows.nth(0).getByRole('combobox', { name: 'Reply profile' }).selectOption('kanade');
+  await rows.nth(2).getByRole('button', { name: 'Move up' }).click();
+  await rows.nth(1).getByRole('button', { name: 'Move up' }).click();
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@bossers');
+  await expect(rows.nth(1).locator('.role-profile__identity strong')).toHaveText('@staff');
+  await rows.nth(2).getByRole('button', { name: 'Remove @newbies assignment' }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1).getByRole('button', { name: 'Remove @staff assignment' })).toBeFocused();
+
+  const patch = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().endsWith('/api/admin/config'));
+  await page.getByRole('button', { name: 'Save role assignments' }).click();
+  const body = (await patch).postDataJSON() as {
+    persona: { role_profiles: { role_id: string; profile: string }[]; role_profiles_digest: string };
+  };
+  expect(body).toEqual({
+    persona: {
+      role_profiles: [
+        { role_id: '300003', profile: 'sparkly' },
+        { role_id: '300001', profile: 'kanade' },
+      ],
+      role_profiles_digest: config.persona.role_profiles_digest,
+    },
+  });
+  await expect(page.getByRole('status').filter({ hasText: 'Role assignments saved.' })).toBeVisible();
+  await expect(page.getByRole('searchbox', { name: 'Search current guild roles' })).toBeFocused();
+  expect(body.persona.role_profiles.every((assignment) => !('role_name' in assignment))).toBe(true);
+});
+
+test('role assignment order has keyboard controls and a searchable native role picker', async ({ page }) => {
+  const list = await roleEditor(page);
+  const rows = roleRows(list);
+  const search = page.getByRole('searchbox', { name: 'Search current guild roles' });
+  await search.fill('boss');
+  const picker = page.getByRole('combobox', { name: 'New assignment role' });
+  await expect(picker.locator('option')).toHaveText(['Choose a role…', '@bossers']);
+  await search.fill('');
+
+  const moveDown = rows.nth(0).getByRole('button', { name: 'Move down' });
+  await moveDown.focus();
+  await page.keyboard.press('Enter');
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@newbies');
+  await expect(page.getByRole('status').filter({ hasText: 'Moved @staff to position 2 of 2.' })).toBeVisible();
+  const discard = page.getByRole('button', { name: 'Discard draft' });
+  await discard.focus();
+  await page.keyboard.press('Enter');
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@staff');
+});
+
+test('role profiles: a failed role list is distinct from an empty directory and still permits reorder/remove', async ({ page }) => {
+  await page.route(`${ADMIN}/api/admin/roles`, (route) =>
+    route.fulfill({ status: 503, json: { error: 'unavailable', message: 'The guild role directory is unavailable.' } }),
+  );
+  const list = page.getByRole('list', { name: 'Role assignments in precedence order' });
+  await persona(page);
+  await expect(page.getByRole('alert').filter({ hasText: "Couldn't load current guild roles" })).toContainText('temporarily unknown');
+  const rows = roleRows(list);
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('Role status unknown');
+  await expect(rows.nth(0)).not.toContainText('@staff');
+  await expect(page.getByRole('combobox', { name: 'New assignment role' })).toBeDisabled();
+  await expect(rows.nth(0).getByRole('combobox', { name: 'Reply profile' })).toBeDisabled();
+  await expect(rows.nth(0).getByRole('button', { name: 'Move down' })).toBeEnabled();
+  await expect(rows.nth(0).getByRole('button', { name: /Remove Role status unknown assignment/ })).toBeEnabled();
+
+  await rows.nth(0).getByRole('button', { name: 'Move down' }).click();
+  await page.getByRole('button', { name: 'Save role assignments' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Role assignments saved.' })).toBeVisible();
+});
+
+test('role profiles: an empty current directory shows unavailable roles, not stale names', async ({ page }) => {
+  await page.route(`${ADMIN}/api/admin/roles`, (route) => route.fulfill({ status: 200, json: [] }));
+  const list = page.getByRole('list', { name: 'Role assignments in precedence order' });
+  await persona(page);
+  await expect(page.getByRole('status').filter({ hasText: 'No current guild roles are available.' })).toBeVisible();
+  const rows = roleRows(list);
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('Unavailable role');
+  await expect(rows.nth(0)).not.toContainText('@staff');
+  await expect(page.getByRole('combobox', { name: 'New assignment role' })).toBeDisabled();
+  await expect(rows.nth(0).getByRole('combobox', { name: 'Reply profile' })).toBeDisabled();
+  await expect(rows.nth(0).getByRole('button', { name: 'Move down' })).toBeEnabled();
+  await expect(rows.nth(0).getByRole('button', { name: /Remove Unavailable role assignment/ })).toBeEnabled();
+});
+
+test('role profiles: a second admin conflict preserves the draft until explicit reload', async ({ page }) => {
+  const list = await roleEditor(page);
+  const rows = roleRows(list);
+  const config = (await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as {
+    persona: { role_profiles: { role_id: string; profile: string }[]; role_profiles_digest: string };
+  };
+  const competitor = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
+    data: {
+      persona: {
+        role_profiles: [
+          { role_id: '300002', profile: 'default' },
+          { role_id: '300001', profile: 'sparkly' },
+        ],
+        role_profiles_digest: config.persona.role_profiles_digest,
+      },
+    },
+  });
+  expect(competitor.status()).toBe(200);
+
+  await rows.nth(0).getByRole('combobox', { name: 'Reply profile' }).selectOption('kanade');
+  await page.getByRole('button', { name: 'Save role assignments' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Role assignments changed since they were loaded' })).toContainText('Role assignments changed since they were loaded');
+  await expect(page.getByRole('status').filter({ hasText: 'Your draft is still here.' })).toBeVisible();
+  await expect(rows.nth(0).getByRole('combobox', { name: 'Reply profile' })).toHaveValue('kanade');
+  await expect(page.getByRole('button', { name: 'Save role assignments' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Reload latest assignments' })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Reload latest assignments' }).click();
+  await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@newbies');
+  await expect(rows.nth(1).getByRole('combobox', { name: 'Reply profile' })).toHaveValue('sparkly');
+  await expect(page.getByRole('status').filter({ hasText: 'Latest saved assignments loaded.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save role assignments' })).toHaveCount(0);
+  await expect(page.getByRole('searchbox', { name: 'Search current guild roles' })).toBeFocused();
+});
+
 test('reply profile controls keep the fixed config shell at desktop and phone widths', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await persona(page);
+  await expect(page.getByRole('status').filter({ hasText: 'Current guild roles are loaded.' })).toBeVisible();
   const desktop = await page.evaluate(() => ({
     clientHeight: document.documentElement.clientHeight,
     scrollHeight: document.documentElement.scrollHeight,
   }));
   expect(desktop.scrollHeight).toBeLessThanOrEqual(desktop.clientHeight + 1);
-  await page.locator('.settings__detail').evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await page.locator('.role-profile').evaluate((el) => {
+    const panel = el.closest<HTMLElement>('.settings__detail')!;
+    panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+  });
   await page.screenshot({ path: testInfo.outputPath('profiles-desktop.png') });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('table', { name: 'Reply profiles' })).toBeVisible();
-  await page.locator('.settings__detail').evaluate((el) => (el.scrollTop = Math.min(260, el.scrollHeight - el.clientHeight)));
+  await page.locator('.role-profile__add').evaluate((el) => {
+    const panel = el.closest<HTMLElement>('.settings__detail')!;
+    panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top - 8;
+  });
+  const phoneForm = page.locator('.role-profile__add');
+  const phoneFormControls = await phoneForm.locator('input, select, button').evaluateAll((controls) =>
+    controls.map((control) => ({
+      height: control.getBoundingClientRect().height,
+      visible: control.getBoundingClientRect().bottom <= control.closest('.settings__detail')!.getBoundingClientRect().bottom,
+    })),
+  );
+  expect(phoneFormControls.length).toBe(4);
+  expect(phoneFormControls.every((control) => control.visible)).toBe(true);
+  expect(phoneFormControls[3]!.height).toBeGreaterThanOrEqual(44);
   const phone = await page.evaluate(() => ({
     clientHeight: document.documentElement.clientHeight,
     scrollHeight: document.documentElement.scrollHeight,

@@ -108,12 +108,7 @@ pub async fn channels() -> Response {
 
 /// Guild roles, highest first, `@everyone` left out (the server reads the gateway cache).
 pub async fn roles() -> Response {
-    Json(json!([
-        { "id": "300001", "name": "staff", "color": "#e0a458" },
-        { "id": "300003", "name": "bossers", "color": "#5b8def" },
-        { "id": "300002", "name": "newbies" },
-    ]))
-    .into_response()
+    Json(Store::roles()).into_response()
 }
 
 pub async fn personas() -> Response {

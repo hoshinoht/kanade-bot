@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import '@kanade/ui/styles/settings.scss';
-  import type { ConfigView } from '@kanade/api-types';
+  import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
   import { Icon, ThemePicker, Toaster } from '@kanade/ui';
   import { SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -19,7 +19,7 @@
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
   import PingsSection from './PingsSection.svelte';
-  import type { ConfigPatch } from './save';
+  import type { ConfigPatch, RoleProfileSave } from './save';
   import SelfServiceSection from './SelfServiceSection.svelte';
   import Toggle from './Toggle.svelte';
   import RescanPanel from '../extractions/RescanPanel.svelte';
@@ -49,6 +49,10 @@
 
   const config = new Resource<ConfigView>('/api/admin/config');
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
+  let roleChoices = $state<Role[] | null>(null);
+  let roleDirectoryError = $state('');
+  let roleDirectoryLoading = $state(false);
+  let roleDirectoryRequest = 0;
   $effect(() => {
     void config.load();
   });
@@ -66,11 +70,38 @@
     if (visited.has('rescan') && !targets.data) void targets.load();
   });
 
+  async function refreshRoleDirectory(): Promise<void> {
+    const request = ++roleDirectoryRequest;
+    roleChoices = null;
+    roleDirectoryError = '';
+    roleDirectoryLoading = true;
+    const result = await send((client) => client.get<Role[]>('/api/admin/roles'));
+    if (request !== roleDirectoryRequest) return;
+    if (result.ok) roleChoices = result.value;
+    else roleDirectoryError = result.message;
+    roleDirectoryLoading = false;
+  }
+
+  // Role names are an authorization-sensitive directory, not a display cache:
+  // fetch a fresh guild list every time Persona becomes the active section.
+  $effect(() => {
+    if (selected !== 'persona') return;
+    void refreshRoleDirectory();
+    return () => {
+      roleDirectoryRequest += 1;
+    };
+  });
+
   // A tab that would stop the bot is flagged in the list: the server's own startup check says so.
   const modelsBlocked = $derived(config.data?.models.capacity_check.some((c) => c.level === 'error') ?? false);
   // Role names for the shared lookup (a role mention reads @name, never its id).
   $effect(() => {
-    if (config.data) directory.setRoles(config.data.persona.role_profiles);
+    if (config.data)
+      directory.setRoles(
+        config.data.persona.role_profiles.flatMap(({ role_id, role_name, profile }) =>
+          role_name === null ? [] : [{ role_id, role_name, profile }],
+        ),
+      );
   });
   const missingManage = $derived(config.data?.manage_messages.missing ?? []);
 
@@ -133,6 +164,30 @@
     const notes = result.value.notices ?? [];
     toaster.show({ message: notes.length ? `${done} ${notes.join(' ')}` : done, tone: 'ok' });
     return '';
+  }
+
+  async function saveRoleProfiles(assignments: RoleProfileWrite[], digest: string): Promise<RoleProfileSave> {
+    const result = await send((client) =>
+      client.patch<ConfigView>('/api/admin/config', {
+        persona: { role_profiles: assignments, role_profiles_digest: digest },
+      }),
+    );
+    if (!result.ok) return result;
+    config.data = result.value;
+    const notes = result.value.notices ?? [];
+    toaster.show({ message: notes.length ? `Role assignments saved. ${notes.join(' ')}` : 'Role assignments saved.', tone: 'ok' });
+    return result;
+  }
+
+  async function refreshConfig(): Promise<ConfigView | null> {
+    const result = await send((client) => client.get<ConfigView>('/api/admin/config'));
+    if (!result.ok) {
+      config.error = result.message;
+      return null;
+    }
+    config.data = result.value;
+    config.error = '';
+    return result.value;
   }
 </script>
 
@@ -218,7 +273,17 @@
               {:else if item.key === 'chatbot'}
                 <ChatbotSection chatbot={c.chatbot} {save} />
               {:else if item.key === 'persona'}
-                <PersonaSection persona={c.persona} {save} {toaster} refresh={() => config.load()} />
+                <PersonaSection
+                  persona={c.persona}
+                  {save}
+                  {toaster}
+                  refresh={refreshConfig}
+                  roles={roleChoices}
+                  rolesLoading={roleDirectoryLoading}
+                  rolesError={roleDirectoryError}
+                  refreshRoles={refreshRoleDirectory}
+                  {saveRoleProfiles}
+                />
               {:else if item.key === 'models'}
                 <ModelsSection models={c.models} env={c.env} {save} />
               {:else if item.key === 'self-service'}
