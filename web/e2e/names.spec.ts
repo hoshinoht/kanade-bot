@@ -38,9 +38,18 @@ test('chat log: names, never ids, and a click copies the id', async ({ page }) =
   const ren = table.getByRole('row', { name: /when is carling this week/ }).getByRole('button', { name: 'Ren', exact: true });
   // A clipped cell's tooltip leads with the whole name.
   await expect(ren).toHaveAttribute('title', 'Ren · Member ID 1002 — click to copy');
-  await ren.click();
+  // The expanded edge of the hit area still copies the same ID.
+  await ren.click({ position: { x: 1, y: 1 } });
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
   await expect(page.getByRole('status').filter({ hasText: 'Copied the member ID of Ren.' })).toBeAttached();
+
+  await ren.focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(ren).toBeFocused();
+  await expect(ren).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Space');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
 
   // An unknown one still copies its id.
   await stranger.getByRole('button', { name: 'Unknown member' }).click();

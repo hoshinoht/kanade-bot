@@ -58,13 +58,15 @@
   ><span class="vh" role="status">{status}</span>{/if}
 
 <style>
-  /* Reads as the text it replaces; only the dotted underline says it acts. */
+  /* The text-like cue stays compact while the hit area meets WCAG 2.2's 24px floor. */
   .name--copy {
     font: inherit;
     color: inherit;
     background: none;
     border: 0;
     padding: 0;
+    min-inline-size: 24px;
+    min-block-size: 24px;
     cursor: copy;
     text-decoration: underline dotted;
     text-underline-offset: 0.2em;

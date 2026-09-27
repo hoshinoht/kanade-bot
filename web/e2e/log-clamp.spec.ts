@@ -73,11 +73,39 @@ for (const [label, width, height] of [
     expect(rowHeight).toBeLessThanOrEqual(box.line * 2 + 64);
     expect(rowHeight).toBeLessThan(height * 0.2);
 
-    // As a11y.spec: after the entry fade, nothing serious or critical. The Who
-    // column's copy buttons already fail target-size on this page (pre-existing, not this cell's).
+    // Wait for the shell's entry transform before measuring CSS-pixel targets.
     await page.waitForTimeout(350);
-    const scan = await new AxeBuilder({ page }).exclude('.log__who').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
-    const bad = scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+    // The small copy affordances meet WCAG 2.2 without widening the dense table.
+    const targets = await table.locator('.log__who button.name--copy').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const { x, y, width, height } = button.getBoundingClientRect();
+        return { x, y, right: x + width, bottom: y + height, width, height };
+      }),
+    );
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(target.width).toBeGreaterThanOrEqual(24);
+      expect(target.height).toBeGreaterThanOrEqual(24);
+    }
+    for (let i = 0; i < targets.length; i += 1) {
+      for (let j = i + 1; j < targets.length; j += 1) {
+        const a = targets[i]!;
+        const b = targets[j]!;
+        const overlaps = a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+        expect(overlaps, 'copy targets do not overlap').toBe(false);
+      }
+    }
+
+    const documentSize = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    }));
+    expect(documentSize.width).toBeLessThanOrEqual(width);
+    expect(documentSize.height).toBeLessThanOrEqual(height);
+
+    // Like a11y.spec: no serious or critical findings.
+    const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+    const bad = scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
     expect(bad.map((v) => `${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 
     await link.click();

@@ -560,6 +560,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Chat log Name copy buttons meet minimum pointer target sizes on
+  desktop and phones without widening the dense table; the full-page axe
+  check now includes the Who column.
 - v5 waits for the initial roster reconciliation before its first delivery
   tick, and bounds Discord command-task draining on shutdown so stalled
   interactions cannot hold the store past the grace period.
