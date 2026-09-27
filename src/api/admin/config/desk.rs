@@ -17,7 +17,7 @@ use super::models;
 use crate::{
     api::{
         dto::config::{self as dto, ConfigView, EnvRow, KeyLimits, ManageMessages},
-        state::{ChannelEntry, PersonaOption},
+        state::{ChannelEntry, PersonaOption, RoleEntry},
     },
     chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
     domain::settings::{
@@ -288,19 +288,18 @@ impl ConfigDesk {
         settings: &RuntimeSettings,
         catalog: &CatalogRead,
         channels: &[ChannelEntry],
+        roles: &[RoleEntry],
         notices: Vec<String>,
     ) -> ConfigView {
         let missing_env = self.missing_env(settings);
         let choices = self.profile_choices_for(settings);
-        let persona = match &choices.snapshot {
-            Some(snapshot) => dto::persona(&settings.persona.active, snapshot, &choices.selectable),
-            None => dto::Persona {
-                active: settings.persona.active.clone(),
-                personas: Vec::new(),
-                profiles: Vec::new(),
-                role_profiles: Vec::new(),
-            },
-        };
+        let persona = dto::persona(
+            &settings.persona.active,
+            choices.snapshot.as_deref(),
+            &choices.selectable,
+            &settings.persona.role_profiles,
+            roles,
+        );
         let groups = self.groups(settings);
         let declared = !self.facts.model_groups.is_empty();
         ConfigView {

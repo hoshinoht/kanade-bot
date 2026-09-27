@@ -32,7 +32,7 @@ use crate::{
             Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, Job, Prepared, Setup,
         },
         gate::{ChannelDirectory, PilotSettings},
-        persona::{PersonaStore, ProfileId, ProfileQuery},
+        persona::{PersonaStore, ProfileId, ProfileQuery, RoleAssignment, RoleId},
         pilot::{AllowanceSnapshot, StormAlert},
         tools::propose::Proposer,
     },
@@ -217,7 +217,8 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             );
             return None;
         }
-        let choices = self.config.profile_choices();
+        let settings = self.settings();
+        let choices = self.config.profile_choices_for(&settings);
         let snapshot = choices.snapshot.as_deref()?;
         let active = snapshot.active()?;
         // The member's saved reply style, when it is still readable.
@@ -226,9 +227,26 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             .find(|profile| profile.member.user_id == asked.message.author_id)
             .and_then(|profile| profile.reply_style.as_deref())
             .and_then(|style| ProfileId::parse(style).ok());
+        let member_roles: Vec<_> = asked
+            .gate
+            .author
+            .as_ref()
+            .map(|author| author.roles.iter().cloned().map(RoleId::new).collect())
+            .unwrap_or_default();
+        let role_assignments: Vec<_> = settings
+            .persona
+            .role_profiles
+            .iter()
+            .filter_map(|assignment| {
+                Some(RoleAssignment {
+                    role: RoleId::new(assignment.role_id.clone()),
+                    profile: ProfileId::parse(&assignment.profile).ok()?,
+                })
+            })
+            .collect();
         let query = ProfileQuery {
-            member_roles: &[],
-            role_assignments: &[],
+            member_roles: &member_roles,
+            role_assignments: &role_assignments,
             saved_selection: saved.as_ref(),
             selectable: &choices.selectable,
         };
@@ -239,7 +257,6 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         for profile in &members {
             roster.upsert(profile.member.clone());
         }
-        let settings = self.settings();
         Some(Prepared {
             persona,
             persona_key,

@@ -125,7 +125,7 @@
       "required": ["role_id", "role_name", "profile"],
       "properties": {
         "role_id": { "type": "string" },
-        "role_name": { "type": "string" },
+      "role_name": { "type": ["string", "null"] },
         "profile": { "type": "string" }
       }
     },
@@ -195,7 +195,7 @@
         "persona": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["active", "personas", "profiles", "role_profiles"],
+          "required": ["active", "personas", "profiles", "role_profiles", "role_profiles_digest"],
           "properties": {
             "active": { "type": "string" },
             "personas": {
@@ -212,7 +212,11 @@
               }
             },
             "profiles": { "type": "array", "items": { "$ref": "#/$defs/ReplyProfile" } },
-            "role_profiles": { "type": "array", "items": { "$ref": "#/$defs/RoleProfile" } }
+            "role_profiles": { "type": "array", "items": { "$ref": "#/$defs/RoleProfile" } },
+            "role_profiles_digest": {
+              "type": "string",
+              "description": "Opaque assignment-specific revision for the ordered role_id/profile list; send it as the PATCH precondition."
+            }
           }
         },
         "models": {

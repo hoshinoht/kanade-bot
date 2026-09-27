@@ -133,7 +133,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/summary` | — | `Summary` | Now tiles + nav Inbox pip + model tile. **Implemented**; `inbox` = live proposals + submitted member requests; `model` is `{busy: false, holder: null}` until the governor is composed. |
 | `GET /api/admin/members` | — | `MemberRow[]` | One list for the Members page, filter lists and roster adds (`MemberRow` extends `Member`). **Implemented**: bossing members plus anyone with staff or pilot access, never bots. |
 | `GET /api/admin/channels` | — | `Channel[]` | Filter lists, digest channel picker. **Implemented** over a `ChannelList` port. |
-| `GET /api/admin/roles` | — | `Role[]` | `{id, name, color?}` for id→name display (`color` `#rrggbb`). **Implemented** from the gateway guild cache, highest first, `@everyone` left out; `[]` offline. |
+| `GET /api/admin/roles` | — | `Role[]` | `{id, name, color?}` for id→name display (`color` `#rrggbb`). **Implemented** from the current gateway guild cache, highest first, `@everyone` left out; 503 `unavailable` while the role directory is disconnected. |
 | `GET /api/identity` | — | `Identity` | Masthead, login window. **Implemented** on both origins: `name` is the bot's guild nickname, else global name, else user name once the gateway is `READY` (`Kanade` before that and offline); `cached` reflects `KANADE_IDENTITY_DIR`; `version` (additive) hashes the name and cached art, and `avatar`/`banner` carry it as `?v=` so a refresh is a new URL. `/identity/{avatar,banner}` answer with an ETag (`If-None-Match` → 304) and `Cache-Control: public, max-age=86400, must-revalidate`; with nothing cached they are an SVG monogram of the name's first letter and the accent wash. |
 | `GET /api/admin/session` | — | `Session` | Who is signed in. **Implemented** (see Sign-in and sessions). |
 | `POST /api/admin/runs/{id}/move` | `{day, time, version}` | `MoveResult` (`{run, previous, version}`) | Planner + keyboard moves; undo is a second move. **Implemented**: `day` 0–6 within the run's boss week; `time` null only for own-time runs; a slot outside the run's boss week (day 0 before a non-midnight reset time) and done/cancelled runs are refused (422 `invalid`). |
@@ -184,7 +184,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. **Implemented**. |
 | `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. **Implemented** for this and next boss week. |
 | `GET /api/admin/config` | — | `ConfigView` | **Implemented** (A9): models from the live Kanata catalog (`reachable: false` keeps the last snapshot), env facts incl. `KANADE_PSEUDONYMIZE` (`models.pseudonymize`; `models.pii_pseudonymise` mirrors it, read-only, the env row says why) and `KANADE_ALLOW_EXTERNAL_UNMASKED` (its reason says it is unused while masking is on). `models.groups` lists one `{model, group, permits}` row per alias per group the governor runs; `models.groups_source` is `default` (one `gateway` group of `KANADE_MODEL_PERMITS` over the distinct role aliases) or `config` (`kanade.toml` `[[models.groups]]`, summarised in the env row). `key_limits.max_in_flight` is `null` (Kanata publishes no per-key limit). `capacity_check` checks each group's permits against the least admission of its aliases (`Group <name> …`) and, with declared groups only, warns `The <role> model <alias> is in no capacity group; its calls are refused.` All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |
-| `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | **Implemented** (A9): 422 `unknown_field`/`read_only`/`invalid`/`capacity`/`ungrouped`/`idempotency_mismatch`, 503 `models_unreachable` for the models section only; `models.groups` is `read_only` (set in `kanade.toml` `[[models.groups]]`; restart to apply); `persona.role_profiles` remains read-only until the separate role-assignment step; `persona.visibility` accepts selected-key deltas (see Reply profile visibility below); a no-limit alias only warns. Persona switches and model roles apply live (a saved alias or reasoning level is used by each role's next question, extraction or rewrite; calls already running keep theirs; `RoleModel.running` shows what the next call uses; extraction and heading rewrites that had no model at startup start only after a restart, so a save giving them their first model adds a `notices` line saying so and `running` stays absent for them); pings apply on restart. With declared `[[models.groups]]`, switching a role to an alias no group lists is refused (422 `ungrouped`, naming the role and alias; an alias already saved never blocks another save); without declared groups the alias joins the default `gateway` group. A saved alias starts as leaving the homelab until Kanata's listing shows its zone. Chatbot rates: `count` 1–100 answers per `window_s`; `member_rate.count` may also be `0` (staff only: members without a per-member override are ignored silently, as the role gate does, with no reaction, reply, log row or model call). One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole, while `persona.visibility` is a selected-key delta merged with current visibility. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off`, or to the alias's lowest published level where `off` is not allowed, and reported in `notices`, e.g. `"chat reasoning reset to low: kanata/chat does not publish high."` Reasoning resolution: see "Config semantics"; `""` inherits the extraction role's effort and is legal only while that effort is legal for the alias. |
+| `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | **Implemented** (A9): 422 `unknown_field`/`read_only`/`invalid`/`capacity`/`ungrouped`/`idempotency_mismatch`, 409 `conflict` for stale role-assignment digests, 503 `models_unreachable` for models and `unavailable` while a changed assignment cannot be checked against the current role directory; `models.groups` is `read_only` (set in `kanade.toml` `[[models.groups]]`; restart to apply); `persona.role_profiles` is writable with its required digest precondition (see Role profile assignments below); `persona.visibility` accepts selected-key deltas (see Reply profile visibility below); a no-limit alias only warns. Persona switches, model roles and role-profile assignments apply live (a saved assignment is used by the next chat question; calls already running keep their current state); `RoleModel.running` shows what the next model call uses; extraction and heading rewrites that had no model at startup start only after a restart, so a save giving them their first model adds a `notices` line saying so and `running` stays absent for them; pings apply on restart. With declared `[[models.groups]]`, switching a role to an alias no group lists is refused (422 `ungrouped`, naming the role and alias; an alias already saved never blocks another save); without declared groups the alias joins the default `gateway` group. A saved alias starts as leaving the homelab until Kanata's listing shows its zone. Chatbot rates: `count` 1–100 answers per `window_s`; `member_rate.count` may also be `0` (staff only: members without a per-member override are ignored silently, as the role gate does, with no reaction, reply, log row or model call). One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole, while `persona.visibility` is a selected-key delta merged with current visibility. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off`, or to the alias's lowest published level where `off` is not allowed, and reported in `notices`, e.g. `"chat reasoning reset to low: kanata/chat does not publish high."` Reasoning resolution: see "Config semantics"; `""` inherits the extraction role's effort and is legal only while that effort is legal for the alias. |
 | `POST /api/admin/config/profiles/reload` | `{}` | `{message, reloaded}` | **Implemented** (A9); safe to repeat. Re-reads `config/personas/profiles/` after a file edit. Profile text is files-only by decision (a deliberate v4 drop); the app shows profiles read-only and only publishes them or assigns them to roles. |
 | `POST /api/admin/digest` | `{week, channel_id?}` | `{message}` | v4 `POST /digest` parity, channel override included. |
 | `GET /api/admin/access` | — | `AccessReport` | v4 `GET /access`. **Implemented**: watched text channels plus the digest channel (`posting.channel_id`), in channel order, read live from the gateway cache; unknown permissions count as granted (v4); `connected: false` with no rows until the guild is loaded; `checked_at` is guild-local (`Tue 29 Sep 12:00`). |
@@ -303,9 +303,50 @@ resolution. `PATCH /api/admin/members/{id}` may save a published profile;
 the member row when unpublished, reports `persona_available: false`, and chat
 uses the bundle default until it is published and readable again. Reloading
 persona files updates choices immediately without dropping the saved
-visibility list. Pure role-profile precedence is independent; writable
-`persona.role_profiles` remains a separate step. These settings and prompt
-summaries remain admin-only; admin routes are still 404 on the public listener.
+visibility list. Pure role-profile precedence is independent of publication.
+These settings and prompt summaries remain admin-only; admin routes are still
+404 on the public listener.
+
+### Role profile assignments
+
+`persona.role_profiles` is the ordered, saved list of `{role_id, profile}`
+assignments. A missing `v5.role_profiles` row is empty. `persona.role_profiles`
+in Config includes `role_name` from the current guild cache (nullable when a
+role is unavailable) and `persona.role_profiles_digest`, an opaque,
+order-sensitive `sha256-v1` digest of only the role IDs and profile IDs. Role
+names are display metadata and are never persisted. Clients should treat the
+digest as opaque and send it back as the write precondition.
+
+```json
+{
+  "persona": {
+    "role_profiles": [
+      {"role_id": "700", "profile": "calm"}
+    ],
+    "role_profiles_digest": "sha256-v1:<digest from Config>"
+  }
+}
+```
+
+The assignment PATCH contains only `role_profiles` and its digest. It replaces
+the ordered list; there may be at most 20 unique canonical positive Discord
+role IDs. `@everyone` is excluded from `GET /api/admin/roles`; managed roles
+present in that current guild list are allowed. New or changed assignments
+must name a role in the connected current role directory and a readable Reply
+profile. A readable private profile may be assigned; publication is only for
+member selection. An unchanged assignment for a role no longer in the guild
+may be reordered or removed, but not edited or rebound. When the directory is
+disconnected, `GET /api/admin/roles` returns 503 `unavailable`; Config retains
+saved assignments with null role names, and PATCH refuses new or changed
+assignments with 503.
+
+The digest is checked while holding the Config desk lock, after idempotency
+replay. A stale list or order returns 409 `conflict`; reload Config and retry
+with the new digest. Cookie writes require CSRF, and `Idempotency-Key` follows
+the Config PATCH rules above. Saves apply to the next chat question: the first
+readable matching role assignment wins before the member's saved profile.
+Assignments never grant chatbot access. Role assignments and their display
+metadata are admin-only; admin routes remain 404 on the public listener.
 
 ## Inbox (A6)
 

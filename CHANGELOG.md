@@ -6,6 +6,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 stores ordered Reply-profile assignments by Discord role and applies
+  role-first styling live, with current-role validation and conflict-safe admin
+  updates; the named-role editor follows separately.
 - An opt-in, governed synthetic privacy re-identification probe that keeps
   network calls out of tests and reports only aggregate recovery counts.
 - Source-checked v5 compatibility inventory covering routes, commands, runtime

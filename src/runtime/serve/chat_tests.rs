@@ -2,7 +2,9 @@
 //! model gateway and a temp store. Nothing touches the network.
 
 use std::{
+    fs,
     net::SocketAddr,
+    path::Path,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -30,7 +32,11 @@ use crate::{
         transport::{Call, FakeDiscord, Outcome},
     },
     chat::sanitize::FAILURE_REPLY,
-    domain::model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
+    domain::{
+        members::{Member, MemberProfile, MemberStore},
+        model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
+        settings::{SettingsStore, keys},
+    },
     infrastructure::store::SqliteStore,
     runtime::application::HealthProbe,
 };
@@ -44,6 +50,9 @@ const CATEGORY: u64 = 40;
 const CHANNEL: u64 = 50;
 const THREAD: u64 = 60;
 const BOT_ROLE: u64 = 35;
+const ROLE_PRIORITY_FIRST: u64 = 41;
+const ROLE_PRIORITY_SECOND: u64 = 42;
+const ROLE_NOT_HELD: u64 = 43;
 const ALIAS: &str = "home-chat";
 /// A second homelab alias a saved switch can move chat to.
 const OTHER: &str = "home-chat-b";
@@ -236,7 +245,10 @@ fn guild_create() -> Event {
         "owner_id": OWNER.to_string(), "preferred_locale": "en-US",
         "premium_progress_bar_enabled": false, "premium_tier": 0,
         "public_updates_channel_id": null,
-        "roles": [role_json(GUILD), role_json(10), role_json(PILOT_ROLE), bot_role()],
+        "roles": [
+            role_json(GUILD), role_json(10), role_json(PILOT_ROLE), bot_role(),
+            role_json(ROLE_PRIORITY_FIRST), role_json(ROLE_PRIORITY_SECOND), role_json(ROLE_NOT_HELD),
+        ],
         "rules_channel_id": null, "splash": null, "system_channel_flags": 0,
         "system_channel_id": null, "verification_level": 0, "vanity_url_code": null,
     });
@@ -355,7 +367,31 @@ macro_rules! eventually {
 }
 
 async fn live(stub: &ModelStub, extra: &[(&str, &str)]) -> (Live, Discord) {
+    live_with_role_profiles(stub, extra, &[], None, None).await
+}
+
+async fn live_with_role_profiles(
+    stub: &ModelStub,
+    extra: &[(&str, &str)],
+    profile_ids: &[&str],
+    assignments: Option<Value>,
+    saved_profile: Option<&str>,
+) -> (Live, Discord) {
     let temp = Temp::new();
+    if !profile_ids.is_empty() {
+        let profiles_dir = temp.0.join("Personas/profiles");
+        fs::create_dir_all(&profiles_dir).unwrap();
+        let example = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("config/personas/profiles/example.yaml"),
+        )
+        .unwrap();
+        for id in profile_ids {
+            let profile = example
+                .replacen("id: example", &format!("id: {id}"), 1)
+                .replacen("label: Example", &format!("label: {id}"), 1);
+            fs::write(profiles_dir.join(format!("{id}.yaml")), profile).unwrap();
+        }
+    }
     let url = stub.url();
     let mut values = vec![
         ("KANADE_DISCORD_GATEWAY", "1"),
@@ -369,6 +405,30 @@ async fn live(stub: &ModelStub, extra: &[(&str, &str)]) -> (Live, Discord) {
     values.extend_from_slice(extra);
     let config = temp.config(&values);
     let store = store::open(&config.store).await.unwrap();
+    let mut rows = Vec::new();
+    if let Some(assignments) = assignments {
+        rows.push((keys::ROLE_PROFILES.to_owned(), assignments.to_string()));
+    }
+    if let Some(profile) = saved_profile {
+        rows.push((keys::PROFILE_VISIBILITY.to_owned(), profile.to_owned()));
+    }
+    if !rows.is_empty() {
+        store.put_settings_rows(rows).await.unwrap();
+    }
+    if let Some(profile) = saved_profile {
+        store
+            .put_member(MemberProfile {
+                member: Member {
+                    user_id: ALICE.to_string(),
+                    display_name: Some("Synthetic Alice".into()),
+                    ..Member::default()
+                },
+                reply_style: Some(profile.to_owned()),
+                ..MemberProfile::default()
+            })
+            .await
+            .unwrap();
+    }
     let prepared = discord::prepare(&config, Duration::from_millis(50));
     let health = LiveHealth::new(store.clone())
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
@@ -514,6 +574,48 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
             replies(&live.fake, THREAD).len() == 2
         );
         assert_eq!(replies(&live.fake, THREAD)[1].1, Some(5003));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn chat_resolves_live_discord_roles_before_saved_style_without_granting_access() {
+    let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;
+    let (live, discord) = live_with_role_profiles(
+        &stub,
+        &[],
+        &["role-private", "other", "saved"],
+        Some(json!([
+            {"role_id": ROLE_NOT_HELD.to_string(), "profile": "missing"},
+            {"role_id": ROLE_PRIORITY_SECOND.to_string(), "profile": "role-private"},
+            {"role_id": ROLE_PRIORITY_FIRST.to_string(), "profile": "other"}
+        ])),
+        Some("saved"),
+    )
+    .await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        // Discord order is role 41 then 42; saved assignment priority is 42 then 41.
+        live.events
+            .send(question(
+                5101,
+                &[PILOT_ROLE, ROLE_PRIORITY_FIRST, ROLE_PRIORITY_SECOND],
+            ))
+            .unwrap();
+        eventually!("role-profile reply", replies(&live.fake, THREAD).len() == 1);
+        let row = one_chat(&live.store).await;
+        assert_eq!(row.profile.as_deref(), Some("role-private"));
+        assert_eq!(row.profile_source.as_deref(), Some("role"));
+        assert_eq!(stub.completions(), 1);
+
+        // The role assignment is not an access grant: the pilot role is absent.
+        live.events
+            .send(question(5102, &[ROLE_PRIORITY_SECOND]))
+            .unwrap();
+        sleep(Duration::from_millis(200)).await;
+        assert_eq!(chats(&live.store).await.len(), 1);
+        assert_eq!(stub.completions(), 1);
     })
     .await;
 }

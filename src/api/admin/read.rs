@@ -153,6 +153,9 @@ async fn channels(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 
 async fn roles(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
+    if !state.channels.connected() {
+        return Err(ApiError::UNAVAILABLE);
+    }
     Ok(Json(dto::roles(&state.channels.roles())).into_response())
 }
 

@@ -14,7 +14,8 @@ use crate::{
     api::admin::write::Refusal,
     chat::persona::ProfileId,
     domain::settings::{
-        Chatbot, Notifications, Persona, Pings, Rate, SelfService, SelfServiceMode, Watching,
+        Chatbot, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, Persona, Pings, Rate,
+        RoleProfileAssignment, SelfService, SelfServiceMode, Watching,
     },
 };
 
@@ -68,7 +69,6 @@ pub fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>
 
 const DERIVED: &str = "it is derived by the server.";
 const DEPLOYMENT: &str = "it is set by the deployment.";
-const NOT_STORED: &str = "saving it is not supported yet.";
 const GROUPS: &str = "it is set in kanade.toml ([[models.groups]]); restart to apply.";
 
 /// Read-only keys the view carries; anything else not writable is unknown.
@@ -80,12 +80,9 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
             "models",
             "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
         )
-        | ("persona", "personas" | "profiles") => Some(DERIVED),
+        | ("persona", "personas" | "profiles" | "role_profiles_digest") => Some(DERIVED),
         ("models", "key_limits" | "pii_pseudonymise") => Some(DEPLOYMENT),
-        // Contracted as editable, but neither the settings port nor the
-        // governor can hold them yet.
         ("models", "groups") => Some(GROUPS),
-        ("persona", "role_profiles") => Some(NOT_STORED),
         _ => None,
     }
 }
@@ -125,9 +122,11 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("chatbot", "enabled" | "member_rate" | "guild_rate")
                 | ("notifications", "quiet_mode")
                 | ("self_service", "mode" | "public_portal")
-                | ("persona", "active" | "visibility")
+                | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles")
-        );
+        ) || (name == "persona"
+            && key == "role_profiles_digest"
+            && body.contains_key("role_profiles"));
         if writable {
             continue;
         }
@@ -309,6 +308,81 @@ pub fn persona_active(body: &Map<String, Value>) -> Result<String, PatchError> {
         .filter(|id| !id.is_empty())
         .map(str::to_owned)
         .ok_or_else(|| PatchError::invalid("Pick a persona from the catalog."))
+}
+
+/// Parse the ordered assignments and their Config-view digest precondition.
+pub fn role_profiles(
+    body: &Map<String, Value>,
+) -> Result<(Vec<RoleProfileAssignment>, String), PatchError> {
+    if body.len() != 2 || !body.contains_key("role_profiles") {
+        return Err(PatchError::invalid(
+            "Save role_profiles with its digest, without other persona fields.",
+        ));
+    }
+    let expected_digest = body
+        .get("role_profiles_digest")
+        .and_then(Value::as_str)
+        .filter(|digest| !digest.is_empty())
+        .ok_or_else(|| field_error("persona.role_profiles_digest", "a digest string"))?
+        .to_owned();
+    let items = body["role_profiles"].as_array().ok_or_else(|| {
+        field_error(
+            "persona.role_profiles",
+            "an array of {role_id, profile} assignments",
+        )
+    })?;
+    if items.len() > MAX_ROLE_PROFILE_ASSIGNMENTS {
+        return Err(PatchError::invalid(format!(
+            "Assign at most {MAX_ROLE_PROFILE_ASSIGNMENTS} Discord roles."
+        )));
+    }
+    let mut assignments: Vec<RoleProfileAssignment> = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let path = format!("persona.role_profiles[{index}]");
+        let fields = object(item, &path)?;
+        for field in fields.keys() {
+            if !matches!(field.as_str(), "role_id" | "profile") {
+                return Err(PatchError::unknown(format!("{path}.{field}")));
+            }
+        }
+        let role_id = fields
+            .get("role_id")
+            .and_then(Value::as_str)
+            .filter(|role_id| canonical_role_id(role_id))
+            .ok_or_else(|| {
+                field_error(
+                    &format!("{path}.role_id"),
+                    "a canonical positive Discord id",
+                )
+            })?;
+        if assignments
+            .iter()
+            .any(|assignment| assignment.role_id == role_id)
+        {
+            return Err(PatchError::invalid(
+                "A Discord role may be assigned only once.",
+            ));
+        }
+        let profile = fields
+            .get("profile")
+            .and_then(Value::as_str)
+            .ok_or_else(|| field_error(&format!("{path}.profile"), "a readable profile id"))?;
+        ProfileId::parse(profile)
+            .map_err(|_| PatchError::invalid("Pick a readable reply profile."))?;
+        assignments.push(RoleProfileAssignment {
+            role_id: role_id.to_owned(),
+            profile: profile.to_owned(),
+        });
+    }
+    Ok((assignments, expected_digest))
+}
+
+fn canonical_role_id(role_id: &str) -> bool {
+    role_id
+        .parse::<u64>()
+        .ok()
+        .filter(|id| *id > 0)
+        .is_some_and(|id| id.to_string() == role_id)
 }
 
 /// Merge the selected-key visibility delta onto the settings locked by the

@@ -32,6 +32,16 @@ fn every_section_round_trips_through_its_rows() {
     settings.watching.channel_ids = vec!["11".into(), "12".into()];
     settings.chatbot.enabled = true;
     settings.persona.profile_visibility = vec!["loud".into(), "terse".into()];
+    settings.persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "123".into(),
+            profile: "terse".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "456".into(),
+            profile: "loud".into(),
+        },
+    ];
     settings.models.chat = RoleModel {
         alias: Some("kanata/chat".into()),
         reasoning: Reasoning::High,
@@ -110,6 +120,64 @@ fn profile_visibility_is_private_by_default_and_deduplicates_in_order() {
     )
     .expect("visibility list reads");
     assert_eq!(settings.persona.profile_visibility, ["loud", "terse"]);
+}
+
+#[test]
+fn role_profiles_default_empty_and_preserve_order() {
+    assert!(RuntimeSettings::default().persona.role_profiles.is_empty());
+    let settings = resolve(
+        &rows(&[(
+            keys::ROLE_PROFILES,
+            r#"[{"role_id":"123","profile":"private"},{"role_id":"456","profile":"public"}]"#,
+        )]),
+        &RuntimeSettings::default(),
+    )
+    .expect("ordered assignments read");
+    assert_eq!(
+        settings.persona.role_profiles,
+        [
+            RoleProfileAssignment {
+                role_id: "123".into(),
+                profile: "private".into(),
+            },
+            RoleProfileAssignment {
+                role_id: "456".into(),
+                profile: "public".into(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn role_profiles_reject_noncanonical_duplicate_and_oversized_rows() {
+    for value in [
+        r#"[{"role_id":"0123","profile":"calm"}]"#,
+        r#"[{"role_id":"0","profile":"calm"}]"#,
+        r#"[{"role_id":"123","profile":"../private"}]"#,
+        r#"[{"role_id":"123","profile":"calm","name":"Officer"}]"#,
+        r#"[{"role_id":"123","profile":"calm"},{"role_id":"123","profile":"bold"}]"#,
+    ] {
+        assert!(
+            resolve(
+                &rows(&[(keys::ROLE_PROFILES, value)]),
+                &RuntimeSettings::default()
+            )
+            .is_err(),
+            "{value}"
+        );
+    }
+    let too_many = (1..=MAX_ROLE_PROFILE_ASSIGNMENTS + 1)
+        .map(|id| format!(r#"{{"role_id":"{id}","profile":"calm"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let value = format!("[{too_many}]");
+    assert!(
+        resolve(
+            &rows(&[(keys::ROLE_PROFILES, &value)]),
+            &RuntimeSettings::default()
+        )
+        .is_err()
+    );
 }
 
 #[test]

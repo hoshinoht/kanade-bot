@@ -3,11 +3,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use ring::digest::{SHA256, digest};
 use serde::Serialize;
 
 use crate::{
+    api::state::RoleEntry,
     chat::persona::{PersonaSnapshot, ProfileId},
-    domain::settings::{Rate as StoredRate, RoleModel as StoredRole, RuntimeSettings},
+    domain::settings::{
+        Rate as StoredRate, RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
+        RuntimeSettings,
+    },
     infrastructure::llm::{
         TrustZone,
         governor::Role,
@@ -98,7 +103,7 @@ pub struct ReplyProfile {
 #[derive(Clone, Debug, Serialize)]
 pub struct RoleProfile {
     pub role_id: String,
-    pub role_name: String,
+    pub role_name: Option<String>,
     pub profile: String,
 }
 
@@ -108,6 +113,38 @@ pub struct Persona {
     pub personas: Vec<PersonaEntry>,
     pub profiles: Vec<ReplyProfile>,
     pub role_profiles: Vec<RoleProfile>,
+    pub role_profiles_digest: String,
+}
+
+/// Stable, order-sensitive revision for only the saved role/profile pairs.
+pub fn role_profiles_digest(assignments: &[StoredRoleProfile]) -> String {
+    let mut bytes = b"kanade.role-profiles.v1\0".to_vec();
+    for assignment in assignments {
+        for value in [&assignment.role_id, &assignment.profile] {
+            bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+    }
+    let hex = digest(&SHA256, &bytes)
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("sha256-v1:{hex}")
+}
+
+fn role_profiles(assignments: &[StoredRoleProfile], roles: &[RoleEntry]) -> Vec<RoleProfile> {
+    assignments
+        .iter()
+        .map(|assignment| RoleProfile {
+            role_id: assignment.role_id.clone(),
+            role_name: roles
+                .iter()
+                .find(|role| role.id == assignment.role_id)
+                .map(|role| role.name.clone()),
+            profile: assignment.profile.clone(),
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -323,13 +360,15 @@ pub fn alias_limits(catalog: &CatalogSnapshot) -> Vec<AliasLimit> {
 /// Catalog entries and readable profiles, with publication from saved settings.
 pub fn persona(
     active: &str,
-    snapshot: &PersonaSnapshot,
+    snapshot: Option<&PersonaSnapshot>,
     selectable: &BTreeSet<ProfileId>,
+    assignments: &[StoredRoleProfile],
+    roles: &[RoleEntry],
 ) -> Persona {
     let mut personas = Vec::new();
     let mut profiles = Vec::new();
     let mut active = active.to_owned();
-    if let Some(loaded) = snapshot.active() {
+    if let Some(loaded) = snapshot.and_then(PersonaSnapshot::active) {
         // Unset means the catalog default is in use; report that bundle.
         if active.is_empty() {
             active = loaded.bundle.value.id.to_string();
@@ -366,7 +405,8 @@ pub fn persona(
         active,
         personas,
         profiles,
-        role_profiles: Vec::new(),
+        role_profiles: role_profiles(assignments, roles),
+        role_profiles_digest: role_profiles_digest(assignments),
     }
 }
 

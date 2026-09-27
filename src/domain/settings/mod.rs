@@ -15,8 +15,9 @@ use std::fmt;
 
 pub use codec::Section;
 pub use model::{
-    Chatbot, Models, Notifications, Persona, Pings, Posting, Rate, Reasoning, RoleModel,
-    RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
+    Chatbot, MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, Persona, Pings, Posting, Rate,
+    Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, Schedule, SelfService,
+    SelfServiceMode, Watching,
 };
 
 use crate::domain::scheduler::StoreError;

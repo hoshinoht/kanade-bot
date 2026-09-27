@@ -372,29 +372,45 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None).await
+        Self::build(reset, false, None, true).await
+    }
+
+    pub async fn with_role_directory_connected(connected: bool) -> Self {
+        Self::build(NaiveTime::MIN, false, None, connected).await
     }
 
     /// With the config API over the seeded store.
     pub async fn with_config(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, false, Some(Box::new(make))).await
+        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), true).await
+    }
+
+    pub async fn with_config_role_directory_connected(
+        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
+        connected: bool,
+    ) -> Self {
+        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), connected).await
     }
 
     pub async fn with_config_and_logins(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, true, Some(Box::new(make))).await
+        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true).await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None).await
+        Self::build(NaiveTime::MIN, true, None, true).await
     }
 
-    async fn build(reset: NaiveTime, logins: bool, config: Option<ConfigMaker>) -> Self {
+    async fn build(
+        reset: NaiveTime,
+        logins: bool,
+        config: Option<ConfigMaker>,
+        role_directory_connected: bool,
+    ) -> Self {
         let dir = TempDir::new();
         let store = Arc::new(
             SqliteStore::open(&SqliteStoreConfig {
@@ -465,23 +481,26 @@ impl Reads {
                 reset,
             ),
             catalog: Arc::new(catalog()),
-            channels: Arc::new(ReadyGuild(StaticChannels(vec![
-                ChannelEntry {
-                    id: "kalos-four".into(),
-                    name: "#kalos-four".into(),
-                    watched: true,
-                },
-                ChannelEntry {
-                    id: "star".into(),
-                    name: "#star".into(),
-                    watched: false,
-                },
-                ChannelEntry {
-                    id: "limbo-trio".into(),
-                    name: "#limbo-trio".into(),
-                    watched: true,
-                },
-            ]))),
+            channels: Arc::new(ReadyGuild(
+                StaticChannels(vec![
+                    ChannelEntry {
+                        id: "kalos-four".into(),
+                        name: "#kalos-four".into(),
+                        watched: true,
+                    },
+                    ChannelEntry {
+                        id: "star".into(),
+                        name: "#star".into(),
+                        watched: false,
+                    },
+                    ChannelEntry {
+                        id: "limbo-trio".into(),
+                        name: "#limbo-trio".into(),
+                        watched: true,
+                    },
+                ]),
+                role_directory_connected,
+            )),
             access,
             knowledge_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge")),
             guild_id: Some("900".into()),
@@ -853,6 +872,7 @@ async fn members_channels_personas_and_fixed() {
         serde_json::json!([
             {"id": "700", "name": "Officer", "color": "#0a0bff"},
             {"id": "701", "name": "Bossing"},
+            {"id": "702", "name": "Integration"},
         ])
     );
     let identity = reads
@@ -894,6 +914,15 @@ async fn members_channels_personas_and_fixed() {
         })
         .collect();
     assert_eq!(runs, [("r-kalos", "this"), ("n-kalos", "next")]);
+}
+
+#[tokio::test]
+async fn roles_are_unavailable_when_the_guild_directory_is_disconnected() {
+    let reads = Reads::with_role_directory_connected(false).await;
+    assert_eq!(
+        reads.status("/api/admin/roles", true).await,
+        (503, "unavailable".into())
+    );
 }
 
 #[tokio::test]
@@ -1041,7 +1070,7 @@ async fn staff_sign_in_reads_the_persisted_member_rows() {
 }
 
 /// A gateway-ready guild: the fixed channels plus roles and the bot's id.
-struct ReadyGuild(StaticChannels);
+struct ReadyGuild(StaticChannels, bool);
 
 impl ChannelList for ReadyGuild {
     fn channels(&self) -> Vec<ChannelEntry> {
@@ -1060,6 +1089,12 @@ impl ChannelList for ReadyGuild {
                 name: "Bossing".into(),
                 color: None,
             },
+            // A current managed role stays selectable just like any other role.
+            RoleEntry {
+                id: "702".into(),
+                name: "Integration".into(),
+                color: None,
+            },
         ]
     }
 
@@ -1072,7 +1107,7 @@ impl ChannelList for ReadyGuild {
     }
 
     fn connected(&self) -> bool {
-        true
+        self.1
     }
 
     /// `kalos-four` is not known yet; `limbo-trio` may not post or tidy.

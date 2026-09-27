@@ -9,8 +9,9 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::SettingsError;
 use super::keys;
 use super::model::{
-    Chatbot, Models, Notifications, Persona, Pings, Posting, Reasoning, RoleModel, RuntimeSettings,
-    Schedule, SelfService, SelfServiceMode, Watching,
+    Chatbot, MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, Persona, Pings, Posting,
+    Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, Schedule, SelfService,
+    SelfServiceMode, Watching,
 };
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
@@ -103,11 +104,7 @@ fn ids(key: &'static str, value: &str) -> Result<Vec<String>, SettingsError> {
 fn profile_ids(key: &'static str, value: &str) -> Result<Vec<String>, SettingsError> {
     let mut profiles = Vec::new();
     for profile in parts(value) {
-        let mut chars = profile.bytes();
-        let valid = matches!(chars.next(), Some(b'a'..=b'z' | b'0'..=b'9'))
-            && profile.len() <= 50
-            && chars.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
-        if !valid {
+        if !is_profile_id(profile) {
             return Err(malformed(key, value, "expected profile ids"));
         }
         if !profiles.iter().any(|existing| existing == profile) {
@@ -115,6 +112,59 @@ fn profile_ids(key: &'static str, value: &str) -> Result<Vec<String>, SettingsEr
         }
     }
     Ok(profiles)
+}
+
+fn is_profile_id(profile: &str) -> bool {
+    let mut chars = profile.bytes();
+    matches!(chars.next(), Some(b'a'..=b'z' | b'0'..=b'9'))
+        && profile.len() <= 50
+        && chars.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+fn is_canonical_role_id(role_id: &str) -> bool {
+    role_id
+        .parse::<u64>()
+        .ok()
+        .filter(|id| *id > 0)
+        .is_some_and(|id| id.to_string() == role_id)
+}
+
+fn role_profiles(
+    key: &'static str,
+    value: &str,
+) -> Result<Vec<RoleProfileAssignment>, SettingsError> {
+    let assignments: Vec<RoleProfileAssignment> = serde_json::from_str(value).map_err(|_| {
+        malformed(
+            key,
+            value,
+            "expected an ordered JSON array of role/profile pairs",
+        )
+    })?;
+    if assignments.len() > MAX_ROLE_PROFILE_ASSIGNMENTS {
+        return Err(malformed(
+            key,
+            value,
+            format!("expected at most {MAX_ROLE_PROFILE_ASSIGNMENTS} assignments"),
+        ));
+    }
+    let mut seen: Vec<&str> = Vec::with_capacity(assignments.len());
+    for assignment in &assignments {
+        if !is_canonical_role_id(&assignment.role_id) {
+            return Err(malformed(
+                key,
+                value,
+                "role ids must be canonical positive Discord ids",
+            ));
+        }
+        if !is_profile_id(&assignment.profile) {
+            return Err(malformed(key, value, "expected profile ids"));
+        }
+        if seen.contains(&assignment.role_id.as_str()) {
+            return Err(malformed(key, value, "role ids must be unique"));
+        }
+        seen.push(&assignment.role_id);
+    }
+    Ok(assignments)
 }
 
 fn id(key: &'static str, value: &str) -> Result<Option<String>, SettingsError> {
@@ -217,6 +267,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::PUBLIC_PORTAL => out.self_service.public_portal = flag(key, value)?,
         keys::PERSONA => value.clone_into(&mut out.persona.active),
         keys::PROFILE_VISIBILITY => out.persona.profile_visibility = profile_ids(key, value)?,
+        keys::ROLE_PROFILES => out.persona.role_profiles = role_profiles(key, value)?,
         keys::EXTRACT_MODEL | keys::CHAT_MODEL | keys::REWRITE_MODEL => {
             if let Some(alias) = alias(value) {
                 role(&mut out.models, key).alias = Some(alias);
@@ -307,6 +358,11 @@ pub(super) fn encode(section: &Section) -> Rows {
             (
                 keys::PROFILE_VISIBILITY,
                 persona.profile_visibility.join(","),
+            ),
+            (
+                keys::ROLE_PROFILES,
+                serde_json::to_string(&persona.role_profiles)
+                    .expect("role profile assignments serialize infallibly"),
             ),
         ],
         Section::Models(models) => {

@@ -13,7 +13,10 @@ mod owner;
 mod retry;
 mod support;
 
-use kanade::domain::settings::{RuntimeSettings, SettingsStore, keys, load_settings};
+use kanade::domain::settings::{
+    RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
+    save_section,
+};
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
     cherry_pick_conformance, conformance, draft_conformance, history_conformance,
@@ -90,6 +93,40 @@ async fn sqlite_profile_visibility_defaults_private_and_survives_reopen() {
         .await
         .expect("reopened settings");
     assert_eq!(settings.persona.profile_visibility, ["bold", "calm"]);
+    reopened.close().await.expect("close reopened store");
+}
+
+#[tokio::test]
+async fn sqlite_role_profiles_preserve_order_across_reopen() {
+    let dir = support::TempDir::new();
+    let config = dir.config("role-profiles");
+    let store = SqliteStore::open(&config).await.expect("fresh store opens");
+    let mut persona = RuntimeSettings::default().persona;
+    persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "700".into(),
+            profile: "quiet".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "701".into(),
+            profile: "warm".into(),
+        },
+    ];
+    save_section(&store, &Section::Persona(persona.clone()))
+        .await
+        .expect("save assignments");
+    let rows = store.settings_rows().await.expect("stored rows");
+    assert_eq!(
+        rows.get(keys::ROLE_PROFILES).map(String::as_str),
+        Some(r#"[{"role_id":"700","profile":"quiet"},{"role_id":"701","profile":"warm"}]"#)
+    );
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    let settings = load_settings(&reopened, &RuntimeSettings::default())
+        .await
+        .expect("reopened settings");
+    assert_eq!(settings.persona.role_profiles, persona.role_profiles);
     reopened.close().await.expect("close reopened store");
 }
 

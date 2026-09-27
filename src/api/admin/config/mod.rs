@@ -31,7 +31,7 @@ pub use desk::{
 use super::write::{Refusal, bad_body, origin, state};
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
-    chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ReloadError},
+    chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
     domain::settings::{RuntimeSettings, Section, SettingsError},
 };
 
@@ -57,6 +57,14 @@ fn mismatch() -> Refusal {
         StatusCode::UNPROCESSABLE_ENTITY,
         "idempotency_mismatch",
         "That Idempotency-Key was already used for a different request.",
+    )
+}
+
+fn role_profiles_conflict() -> Refusal {
+    Refusal::new(
+        StatusCode::CONFLICT,
+        "conflict",
+        "Reply profile assignments changed. Reload Config before saving again.",
     )
 }
 
@@ -98,7 +106,18 @@ fn answer(
     catalog: &CatalogRead,
     notices: Vec<String>,
 ) -> Reply {
-    let view = desk.view(settings, catalog, &state.channels.channels(), notices);
+    let roles = if state.channels.connected() {
+        state.channels.roles()
+    } else {
+        Vec::new()
+    };
+    let view = desk.view(
+        settings,
+        catalog,
+        &state.channels.channels(),
+        &roles,
+        notices,
+    );
     Ok(Json(view).into_response())
 }
 
@@ -152,8 +171,54 @@ async fn update(
         "notifications" => Section::Notifications(patch::notifications(fields)?),
         "self_service" => Section::SelfService(patch::self_service(&current.self_service, fields)?),
         "persona" => {
-            let choices = desk.profile_choices_for(&current);
-            Section::Persona(patch::persona(&current.persona, fields, &choices.readable)?)
+            if fields.contains_key("role_profiles") {
+                let (assignments, expected) = patch::role_profiles(fields)?;
+                if expected
+                    != crate::api::dto::config::role_profiles_digest(&current.persona.role_profiles)
+                {
+                    return Err(role_profiles_conflict());
+                }
+                let changed: Vec<_> = assignments
+                    .iter()
+                    .filter(|assignment| {
+                        !current.persona.role_profiles.iter().any(|saved| {
+                            saved.role_id == assignment.role_id
+                                && saved.profile == assignment.profile
+                        })
+                    })
+                    .collect();
+                let choices = desk.profile_choices_for(&current);
+                for assignment in &changed {
+                    let profile = ProfileId::parse(&assignment.profile).map_err(|_| {
+                        patch::PatchError::invalid("Pick a readable reply profile.")
+                    })?;
+                    if !choices.readable.contains(&profile) {
+                        return Err(
+                            patch::PatchError::invalid("Pick a readable reply profile.").into()
+                        );
+                    }
+                }
+                if !changed.is_empty() {
+                    if !state.channels.connected() {
+                        return Err(ApiError::UNAVAILABLE.into());
+                    }
+                    let roles = state.channels.roles();
+                    if changed
+                        .iter()
+                        .any(|assignment| !roles.iter().any(|role| role.id == assignment.role_id))
+                    {
+                        return Err(
+                            patch::PatchError::invalid("Pick a current Discord role.").into()
+                        );
+                    }
+                }
+                let mut persona = current.persona.clone();
+                persona.role_profiles = assignments;
+                Section::Persona(persona)
+            } else {
+                let choices = desk.profile_choices_for(&current);
+                Section::Persona(patch::persona(&current.persona, fields, &choices.readable)?)
+            }
         }
         _ => {
             if desk.models.is_none() {

@@ -15,6 +15,7 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     unset_keys_fall_back_to_seed_then_default(make().await).await;
     sections_round_trip_and_keep_other_rows(make().await).await;
     profile_visibility_is_private_by_default_and_deduplicated(make().await).await;
+    role_profiles_round_trip_in_order(make().await).await;
     v4_rows_read_as_v4_wrote_them(make().await).await;
     malformed_rows_are_errors_naming_the_key(make().await).await;
     refused_writes_store_nothing(make().await).await;
@@ -90,6 +91,35 @@ async fn profile_visibility_is_private_by_default_and_deduplicated<S: SettingsSt
     assert_eq!(loaded.persona.profile_visibility, ["calm", "terse"]);
 }
 
+async fn role_profiles_round_trip_in_order<S: SettingsStore>(store: S) {
+    let defaults = load_settings(&store, &RuntimeSettings::default())
+        .await
+        .expect("load defaults");
+    assert!(defaults.persona.role_profiles.is_empty());
+
+    let value = r#"[{"role_id":"700","profile":"quiet"},{"role_id":"701","profile":"warm"}]"#;
+    store
+        .put_settings_rows(raw(&[(keys::ROLE_PROFILES, value)]))
+        .await
+        .expect("put role profiles");
+    let loaded = load_settings(&store, &RuntimeSettings::default())
+        .await
+        .expect("load role profiles");
+    assert_eq!(
+        loaded.persona.role_profiles,
+        [
+            crate::domain::settings::RoleProfileAssignment {
+                role_id: "700".into(),
+                profile: "quiet".into(),
+            },
+            crate::domain::settings::RoleProfileAssignment {
+                role_id: "701".into(),
+                profile: "warm".into(),
+            },
+        ]
+    );
+}
+
 async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     let mut wanted = seed();
     wanted.notifications.quiet_mode = true;
@@ -106,6 +136,16 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     wanted.self_service.mode = SelfServiceMode::LinkFirst;
     wanted.self_service.public_portal = true;
     wanted.persona.profile_visibility = vec!["terse".into(), "calm".into()];
+    wanted.persona.role_profiles = vec![
+        crate::domain::settings::RoleProfileAssignment {
+            role_id: "700".into(),
+            profile: "terse".into(),
+        },
+        crate::domain::settings::RoleProfileAssignment {
+            role_id: "701".into(),
+            profile: "calm".into(),
+        },
+    ];
     wanted.schedule.reset_time = time(3, 30);
     wanted.schedule.attendance = AttendanceMode::V5;
     wanted.posting.channel_id = Some("77".into());
@@ -136,6 +176,10 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     assert_eq!(
         rows.get(keys::PROFILE_VISIBILITY).map(String::as_str),
         Some("terse,calm")
+    );
+    assert_eq!(
+        rows.get(keys::ROLE_PROFILES).map(String::as_str),
+        Some(r#"[{"role_id":"700","profile":"terse"},{"role_id":"701","profile":"calm"}]"#)
     );
     assert!(
         !rows.contains_key(keys::DAY_OF_PING_TIME),

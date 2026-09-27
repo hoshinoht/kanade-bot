@@ -144,7 +144,18 @@ pub struct Persona {
     pub active: String,
     /// Ordered readable profiles members may choose; missing means private.
     pub profile_visibility: Vec<String>,
+    /// Ordered role-to-profile overrides; role assignments do not grant chat access.
+    pub role_profiles: Vec<RoleProfileAssignment>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleProfileAssignment {
+    pub role_id: String,
+    pub profile: String,
+}
+
+pub const MAX_ROLE_PROFILE_ASSIGNMENTS: usize = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Models {

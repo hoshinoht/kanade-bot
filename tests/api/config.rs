@@ -18,7 +18,10 @@ use kanade::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
     },
-    domain::settings::{Models, Reasoning, RoleModel, RuntimeSettings, load_settings},
+    domain::settings::{
+        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsStore,
+        load_settings,
+    },
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
         governor::Role,
@@ -270,6 +273,16 @@ impl Config {
         settings: RuntimeSettings,
         two_admins: bool,
     ) -> Self {
+        Self::with_role_directory(gateway, groups, settings, two_admins, true).await
+    }
+
+    async fn with_role_directory(
+        gateway: bool,
+        groups: Vec<CapacityGroup>,
+        settings: RuntimeSettings,
+        two_admins: bool,
+        role_directory_connected: bool,
+    ) -> Self {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
@@ -314,8 +327,10 @@ impl Config {
             };
             if two_admins {
                 Reads::with_config_and_logins(make).await
-            } else {
+            } else if role_directory_connected {
                 Reads::with_config(make).await
+            } else {
+                Reads::with_config_role_directory_connected(make, role_directory_connected).await
             }
         };
         Self {
@@ -532,6 +547,328 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     );
     assert_eq!(persona["profiles"][0]["prompt_summary"], "# Reply profile");
     assert_eq!(persona["role_profiles"], json!([]));
+    assert!(
+        persona["role_profiles_digest"]
+            .as_str()
+            .is_some_and(|digest| digest.starts_with("sha256-v1:"))
+    );
+}
+
+#[tokio::test]
+async fn role_profile_assignments_save_in_order_and_replay_before_digest_check() {
+    let config = Config::new().await;
+    let mut changes = config.desk.subscribe();
+    let initial = config.get().await;
+    let digest = initial["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"persona": {
+        "role_profiles": [
+            {"role_id": "700", "profile": "calm"},
+            {"role_id": "702", "profile": "calm"}
+        ],
+        "role_profiles_digest": digest
+    }});
+    let first = config
+        .send("PATCH", PATH, Some("role-profile-save"), &body)
+        .await;
+    let saved = view(&first, "save private role profiles");
+    assert_eq!(
+        saved["persona"]["role_profiles"],
+        json!([
+            {"role_id": "700", "role_name": "Officer", "profile": "calm"},
+            {"role_id": "702", "role_name": "Integration", "profile": "calm"}
+        ])
+    );
+    assert_eq!(saved["persona"]["profiles"][0]["public"], false);
+    assert_eq!(
+        config.desk.settings().await.persona.role_profiles,
+        [
+            RoleProfileAssignment {
+                role_id: "700".into(),
+                profile: "calm".into(),
+            },
+            RoleProfileAssignment {
+                role_id: "702".into(),
+                profile: "calm".into(),
+            },
+        ]
+    );
+    assert_eq!(
+        config.reads.store.settings_rows().await.unwrap()["v5.role_profiles"],
+        r#"[{"role_id":"700","profile":"calm"},{"role_id":"702","profile":"calm"}]"#,
+        "only ids and profile keys are persisted"
+    );
+    let saved_digest = saved["persona"]["role_profiles_digest"].as_str().unwrap();
+    assert_ne!(saved_digest, digest);
+    assert_eq!(
+        config.get().await["persona"]["role_profiles_digest"],
+        saved_digest
+    );
+    changes.changed().await.expect("live settings notification");
+    assert_eq!(
+        changes.borrow().settings.persona.role_profiles,
+        config.desk.settings().await.persona.role_profiles
+    );
+
+    let replay = config
+        .send("PATCH", PATH, Some("role-profile-save"), &body)
+        .await;
+    view(&replay, "idempotent stale-digest replay");
+    let other_body = json!({"persona": {
+        "role_profiles": [],
+        "role_profiles_digest": digest
+    }});
+    let other = config
+        .send("PATCH", PATH, Some("role-profile-save"), &other_body)
+        .await;
+    refused(
+        &other,
+        422,
+        "idempotency_mismatch",
+        "reused role-profile key",
+    );
+}
+
+#[tokio::test]
+async fn stale_role_profile_reorder_conflicts_between_admins() {
+    let mut initial_settings = settings();
+    initial_settings.persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "700".into(),
+            profile: "calm".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "701".into(),
+            profile: "calm".into(),
+        },
+    ];
+    let config = Config::with_role_directory(true, Vec::new(), initial_settings, true, true).await;
+    let (cookie_a, csrf_a) = config.reads.tailscale_session_as("ops@example.com").await;
+    let (cookie_b, csrf_b) = config
+        .reads
+        .tailscale_session_as("second-ops@example.com")
+        .await;
+    let view_a = config.get_as(&cookie_a, "ops@example.com").await;
+    let view_b = config.get_as(&cookie_b, "second-ops@example.com").await;
+    let digest_a = view_a["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let digest_b = view_b["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(digest_a, digest_b);
+    let reordered = json!({"persona": {
+        "role_profiles": [
+            {"role_id": "701", "profile": "calm"},
+            {"role_id": "700", "profile": "calm"}
+        ],
+        "role_profiles_digest": digest_a
+    }});
+    let first = config
+        .send_as(
+            (&cookie_a, &csrf_a, Some("ops@example.com")),
+            "PATCH",
+            PATH,
+            Some("reorder-role-profiles"),
+            &reordered,
+        )
+        .await;
+    view(&first, "first admin reorders roles");
+    let replay = config
+        .send_as(
+            (&cookie_a, &csrf_a, Some("ops@example.com")),
+            "PATCH",
+            PATH,
+            Some("reorder-role-profiles"),
+            &reordered,
+        )
+        .await;
+    view(&replay, "replayed reorder before digest check");
+
+    let stale = json!({"persona": {
+        "role_profiles": [
+            {"role_id": "700", "profile": "calm"},
+            {"role_id": "701", "profile": "calm"}
+        ],
+        "role_profiles_digest": digest_b
+    }});
+    let reply = config
+        .send_as(
+            (&cookie_b, &csrf_b, Some("second-ops@example.com")),
+            "PATCH",
+            PATH,
+            Some("stale-role-profiles"),
+            &stale,
+        )
+        .await;
+    refused(&reply, 409, "conflict", "stale role-profile reorder");
+    assert_eq!(
+        config.desk.settings().await.persona.role_profiles[0].role_id,
+        "701"
+    );
+}
+
+#[tokio::test]
+async fn role_profile_patch_validates_ids_readable_profiles_and_the_limit() {
+    let config = Config::new().await;
+    let digest = config.get().await["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for roles in [
+        json!([{"role_id": "0700", "profile": "calm"}]),
+        json!([{"role_id": "900", "profile": "calm"}]),
+        json!([{"role_id": "999", "profile": "calm"}]),
+        json!([{"role_id": "700", "profile": "ghost"}]),
+        json!([
+            {"role_id": "700", "profile": "calm"},
+            {"role_id": "700", "profile": "calm"}
+        ]),
+    ] {
+        config
+            .refused(
+                json!({"persona": {"role_profiles": roles, "role_profiles_digest": digest}}),
+                422,
+                "invalid",
+            )
+            .await;
+    }
+    let too_many = (1..=21)
+        .map(|id| json!({"role_id": id.to_string(), "profile": "calm"}))
+        .collect::<Vec<_>>();
+    let message = config
+        .refused(
+            json!({"persona": {"role_profiles": too_many, "role_profiles_digest": digest}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert!(message.contains("at most 20"), "{message}");
+}
+
+#[tokio::test]
+async fn a_missing_role_assignment_can_be_reordered_or_removed_but_not_rebound() {
+    let mut initial_settings = settings();
+    initial_settings.persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "998".into(),
+            profile: "calm".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "999".into(),
+            profile: "calm".into(),
+        },
+    ];
+    let config = Config::with_settings(true, Vec::new(), initial_settings).await;
+    config.dir.profile("bold");
+    let reload = config.send("POST", RELOAD, None, &json!({})).await;
+    assert_eq!(reload.status, 200, "{}", reload.text());
+
+    let initial = config.get().await;
+    assert_eq!(
+        initial["persona"]["role_profiles"][0]["role_name"],
+        Value::Null
+    );
+    let reordered = config
+        .patch(json!({"persona": {
+            "role_profiles": [
+                {"role_id": "999", "profile": "calm"},
+                {"role_id": "998", "profile": "calm"}
+            ],
+            "role_profiles_digest": initial["persona"]["role_profiles_digest"]
+        }}))
+        .await;
+    let rebound = json!({"persona": {
+        "role_profiles": [
+            {"role_id": "999", "profile": "bold"},
+            {"role_id": "998", "profile": "calm"}
+        ],
+        "role_profiles_digest": reordered["persona"]["role_profiles_digest"]
+    }});
+    config.refused(rebound, 422, "invalid").await;
+    assert_eq!(
+        config.desk.settings().await.persona.role_profiles[0].profile,
+        "calm"
+    );
+
+    let removed = config
+        .patch(json!({"persona": {
+            "role_profiles": [{"role_id": "998", "profile": "calm"}],
+            "role_profiles_digest": reordered["persona"]["role_profiles_digest"]
+        }}))
+        .await;
+    assert_eq!(
+        removed["persona"]["role_profiles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn unavailable_role_directory_keeps_missing_rows_editable_only_by_reorder_or_remove() {
+    let mut initial_settings = settings();
+    initial_settings.persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "998".into(),
+            profile: "calm".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "999".into(),
+            profile: "calm".into(),
+        },
+    ];
+    let config =
+        Config::with_role_directory(true, Vec::new(), initial_settings, false, false).await;
+    let initial = config.get().await;
+    assert_eq!(
+        initial["persona"]["role_profiles"][0]["role_name"],
+        Value::Null
+    );
+    let reordered = config
+        .patch(json!({"persona": {
+            "role_profiles": [
+                {"role_id": "999", "profile": "calm"},
+                {"role_id": "998", "profile": "calm"}
+            ],
+            "role_profiles_digest": initial["persona"]["role_profiles_digest"]
+        }}))
+        .await;
+    assert_eq!(reordered["persona"]["role_profiles"][0]["role_id"], "999");
+    let digest = reordered["persona"]["role_profiles_digest"].clone();
+    let removed = config
+        .patch(json!({"persona": {
+            "role_profiles": [{"role_id": "998", "profile": "calm"}],
+            "role_profiles_digest": digest
+        }}))
+        .await;
+    assert_eq!(
+        removed["persona"]["role_profiles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let changed = json!({"persona": {
+        "role_profiles": [
+            {"role_id": "998", "profile": "calm"},
+            {"role_id": "700", "profile": "calm"}
+        ],
+        "role_profiles_digest": removed["persona"]["role_profiles_digest"]
+    }});
+    let reply = config.send("PATCH", PATH, None, &changed).await;
+    refused(
+        &reply,
+        503,
+        "unavailable",
+        "new assignment without a role directory",
+    );
 }
 
 #[tokio::test]
@@ -633,7 +970,11 @@ async fn unknown_read_only_and_bad_values_are_422_and_nothing_is_saved() {
             json!({"models": {"groups": [{"model": "kanata/chat", "group": "chat", "permits": 1}]}}),
             "read_only",
         ),
-        (json!({"persona": {"role_profiles": []}}), "read_only"),
+        (json!({"persona": {"role_profiles": []}}), "invalid"),
+        (
+            json!({"persona": {"role_profiles_digest": "sha256-v1:stale"}}),
+            "read_only",
+        ),
         (json!({"persona": {"profiles": []}}), "read_only"),
         (json!({"pings": {"day_of_ping_time": "9:00"}}), "invalid"),
         (json!({"pings": {"countdown_minutes": [4]}}), "invalid"),
@@ -1287,7 +1628,15 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
         refused(&reply, 401, "unauthenticated", path);
     }
-    let body = r#"{"persona":{"visibility":[{"key":"calm","public":true}]}}"#;
+    let digest = config.get().await["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body = json!({"persona": {
+        "role_profiles": [{"role_id": "700", "profile": "calm"}],
+        "role_profiles_digest": digest
+    }})
+    .to_string();
     for (method, path) in [("PATCH", PATH), ("POST", RELOAD)] {
         let reply = send(
             admin,
@@ -1295,7 +1644,7 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
             ADMIN_HOST,
             path,
             &[ORIGIN, ("Cookie", &config.reads.cookie)],
-            Some(body),
+            Some(&body),
         )
         .await;
         refused(&reply, 403, "csrf", path);
@@ -1307,6 +1656,15 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
             .await
             .persona
             .profile_visibility
+            .is_empty()
+    );
+    assert!(
+        config
+            .desk
+            .settings()
+            .await
+            .persona
+            .role_profiles
             .is_empty()
     );
     // Still unmounted: it needs the Discord wiring.
