@@ -165,7 +165,7 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
         .expect("tick");
     let countdown = posts(&world.fake.calls()).pop().expect("countdown");
     assert!(
-        countdown.0 == "⏰ **Kalos** in 1h (21:00) — everyone's confirmed ✅"
+        countdown.0 == "⏰ Onward! · **Kalos** in 1h (21:00) — everyone's confirmed ✅"
             && countdown
                 .2
                 .contains("✅ confirmed · 2/2 (1 assumed), expected"),
@@ -190,7 +190,8 @@ async fn v4_compat_tick_is_unchanged<S: Store>(store: &S) {
     let digest = posts(&world.fake.calls());
     assert_eq!(digest.len(), 1);
     assert!(
-        digest[0].0 == "🗓️ Boss week of Wed 09 Sep" && digest[0].2.contains("`21:00` · 0/2 ✅"),
+        digest[0].0 == "🗓️ Let's go! — Boss week of Wed 09 Sep"
+            && digest[0].2.contains("`21:00` · 0/2 ✅"),
         "v4 digest card: {:?}",
         digest[0]
     );

@@ -83,6 +83,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 17,
         sql: include_str!("migrations/0017_debug_cards.sql"),
     },
+    Migration {
+        version: 18,
+        sql: include_str!("migrations/0018_reminder_voice.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -164,9 +168,20 @@ pub(super) async fn apply(conn: &mut SqliteConnection) -> Result<i64, SqliteStor
 
 #[cfg(test)]
 mod tests {
-    use sqlx::{Connection, Executor, Row, SqliteConnection};
+    use std::path::PathBuf;
 
-    use super::{LEDGER, MIGRATIONS, apply, checksum};
+    use sqlx::sqlite::SqliteConnectOptions;
+    use sqlx::{ConnectOptions, Connection, Executor, Row, SqliteConnection};
+
+    use super::{LEDGER, MIGRATIONS, apply, checksum, verify};
+
+    struct RemoveFile(PathBuf);
+
+    impl Drop for RemoveFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
 
     /// 0015 rebuilds `extractions`/`extraction_members` in place: rows, the
     /// member links and foreign keys survive, and `identity_leak` is allowed.
@@ -198,7 +213,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("0015+"), 17);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 18);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -212,7 +227,7 @@ mod tests {
                 .fetch_one(&mut conn)
                 .await
                 .expect("cards");
-        assert_eq!(cards, 1, "the cards lane's table is untouched");
+        assert_eq!(cards, 1, "the reminder-card rebuild preserves old rows");
         let violations = sqlx::query("PRAGMA foreign_key_check")
             .fetch_all(&mut conn)
             .await
@@ -244,6 +259,108 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn migration_18_allows_countdown_phrases_and_keeps_records_write_once() {
+        let path = std::env::temp_dir().join(format!(
+            "kanade-migrate-v18-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let _cleanup = RemoveFile(path.clone());
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let mut conn = options.connect().await.expect("fresh file");
+        conn.execute("PRAGMA foreign_keys = ON").await.expect("fk");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..17] {
+            conn.execute(migration.sql).await.expect("v17 migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger row");
+        }
+        conn.execute(
+            "INSERT INTO reminder_cards VALUES \
+             ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', \
+              'day_of', 'Today — Tue 29 Sep', 'then'); \
+             INSERT INTO reminder_cards VALUES \
+             ('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', \
+              'countdown_60', NULL, 'then');",
+        )
+        .await
+        .expect("v17 cards");
+
+        assert_eq!(apply(&mut conn).await.expect("v18"), 18);
+        let rows: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
+                .fetch_all(&mut conn)
+                .await
+                .expect("preserved rows");
+        assert_eq!(
+            rows,
+            [
+                ("day_of".into(), Some("Today — Tue 29 Sep".into())),
+                ("countdown_60".into(), None),
+            ]
+        );
+        conn.execute(
+            "INSERT INTO reminder_cards VALUES \
+             ('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', \
+              'countdown_60', 'Onward!', 'then')",
+        )
+        .await
+        .expect("countdown phrase is allowed");
+        sqlx::query(
+            "INSERT INTO digest_card_phrases VALUES \
+             ('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', ?1, 'then')",
+        )
+        .bind("Let's go!")
+        .execute(&mut conn)
+        .await
+        .expect("digest phrase");
+        conn.close().await.expect("close after migration");
+
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&path)
+            .connect()
+            .await
+            .expect("reopen v18 file");
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 18);
+        let rows: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
+                .fetch_all(&mut conn)
+                .await
+                .expect("reopened records");
+        assert_eq!(
+            rows,
+            [
+                ("day_of".into(), Some("Today — Tue 29 Sep".into())),
+                ("countdown_60".into(), None),
+                ("countdown_60".into(), Some("Onward!".into())),
+            ]
+        );
+        let phrase: String = sqlx::query_scalar("SELECT phrase FROM digest_card_phrases")
+            .fetch_one(&mut conn)
+            .await
+            .expect("reopened phrase");
+        assert_eq!(phrase, "Let's go!");
+        assert!(
+            conn.execute("UPDATE reminder_cards SET heading = 'changed'")
+                .await
+                .is_err(),
+            "reminder records remain write-once"
+        );
+        assert!(
+            conn.execute("UPDATE digest_card_phrases SET phrase = 'changed'")
+                .await
+                .is_err(),
+            "digest phrases are write-once"
+        );
+        conn.close().await.expect("close reopened file");
+    }
+
     /// 0016 adds the chat turn facts to existing rows: nullable facts stay
     /// NULL, `clean` defaults to 0, and the insert-only triggers still hold.
     #[tokio::test]
@@ -272,7 +389,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 17);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 18);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",

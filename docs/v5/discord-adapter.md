@@ -359,14 +359,14 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
   Lv265)`), status line (`⚠️ unconfirmed · 1/5 ✅`) and the party; footer
   `React ✅ if you're on, ❌ if not.`; the lead boss's colour (else blurple),
   portrait thumbnail and entry artwork as the image.
-- **Countdown** (`countdown.rs`): `⏰ **<bosses>** in <1h|15m|1h30m> (HH:MM) —
-  <waiting>`, waiting being `everyone's confirmed ✅` or the party still on
+- **Countdown** (`countdown.rs`): `⏰ <phrase> · **<bosses>** in
+  <1h|15m|1h30m> (HH:MM) — <waiting>`, waiting being `everyone's confirmed ✅` or the party still on
   plus `<declined> out` (decliners are named, never pinged); description
   boss detail, status line and `Still to answer: …` while answers are
   pending; the react hint only while pending; yellow while pending or
   someone is out, green when all set (a catalog colour wins, as v4); the
   portrait thumbnail, no image.
-- **Digest** (`digest.rs`): `🗓️ Boss week of <Ddd DD Mon>`, the summary
+- **Digest** (`digest.rs`): `🗓️ <phrase> — Boss week of <Ddd DD Mon>`, the summary
   (`**c/n Cleared** · n run(s) across d day(s)` + unconfirmed/at-risk
   counts), one field per local day of `digest_line`s, v4's footer, no art,
   no mentions.
@@ -385,13 +385,15 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
   oversized (logged `card_art_skipped`) or unreadable art drops the
   picture, never the send. Each picture is resolved and read in one lookup
   on the blocking pool (`fetch_art`); suppressed sends are not rendered.
-- **Records** (migration 0014 `reminder_cards`, `ReminderCardStore`, both
-  stores + journal conformance): before a reminder card is claimed, its kind
-  (`day_of` / `countdown_<M>`) and day-of heading are stored under the
-  send's native dedupe key, first write wins. A retry after `NotSent`, a
-  restart and every edit reuse them. Dedupe and request fingerprints are
-  unchanged: both hash the intent, never the rendered payload, so embeds and
-  attachments cannot affect them.
+- **Records** (migration 0018, both stores + journal conformance): before a
+  reminder claim, its kind and day-of heading/countdown phrase are stored
+  under the native dedupe key, first write wins. Digest phrases use an
+  independent pre-claim table keyed by the native digest target; they do not
+  create a `weekly_digests` row before bind. Retries, restarts and edits reuse
+  the stored text. Legacy headingless rows use the fixed phrase fallback.
+  A countdown/digest phrase read/write failure skips the send before claim;
+  day-of retains its legacy fresh-heading send on record failure. Dedupe and
+  request fingerprints are unchanged: both hash intent, never rendered payload.
 - **Edits** (`refresh.rs`, v4 `card_needs_refresh` / `refresh_run_cards` /
   `refresh_weekly_digest`): the store's run-write observer
   (`observe_run_writes`, called after every committed `commit` /
@@ -411,21 +413,26 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
   answers, attendance default) that change v5 derived states without a run
   write.
 
-**Named difference from v4 — day-of heading (user decision 2026-09-26).**
-The heading is rewritten in the guild default persona's voice (bundle, no
-member profile) by the small `rewrite` model role through the nudge
-rewriter (`heading.rs`): seed `Today — {day}` (v4's text), mood playful,
-`{day}` left to the model and filled afterwards; code keeps the `📅 `
-prefix, the bold and the mentions line. The prompt holds the code-owned
-instruction, the persona and the seed only: no member, boss or schedule
-data. It is tried once per card before the claim, bounded by the 2 s
-`REWRITE_DEADLINE` (`try_acquire`, no queueing, no retries) and checked by
-`accept_rewrite`; failure, timeout, rejection, no `rewrite` role or no
-persona → exactly v4's `Today — <Ddd DD Mon>`. The chosen line is stored in
-the card record; `day_of_heading` logs `source` (`rewrite`/`seed`) and a
-reason (`no_rewriter`, `no_persona`, `timeout`, `unavailable`, `refused`,
-`misconfigured`, `rejected`, `accepted`), never the text. Serve wires it in `runtime::serve::tick::card_kit`
-(identity codec: `Passthrough`; the prompt carries no member data).
+**Named difference from v4 — persona-flavored reminder headers (day-of decision
+2026-09-26; countdown/digest decision 2026-09-27).** Day-of keeps the existing
+rewrite unchanged: seed `Today — {day}`, with `{day}` filled after the rewrite.
+Countdown and digest add `Onward!` and `Let's go!` as their fixed seeds and
+fallbacks; bosses, offset/time, confirmation, week/date and counts remain
+code-rendered. The guild-default persona and code-owned phrase seed are the
+only rewrite inputs. Each new native target is tried once before claim through
+the try-only `rewrite` role, bounded by `REWRITE_DEADLINE` (2 s), with no queue
+or retry. In addition to `accept_rewrite`, a deterministic phrase-only gate
+allows a small interjection vocabulary and rejects facts, catalog names,
+numbers, URLs, mentions and markup; unrecognized prose falls back. Phrase
+ records are first-write-wins under a per-target preparation lock. No new
+ countdown/digest phrase is sent unsaved; day-of keeps its prior fallback on
+ record failure. Phrase logs include no text. Serve supplies the guild
+ default persona through `runtime::serve::tick::card_kit`.
+
+Migration 0018 is applied transactionally and preserves the existing day-of
+records. A v17 image refuses a v18 store: before a separately approved upgrade,
+back up the volume, and pair that **pre-upgrade backup** with the old image for
+rollback. Do not start the old image against an already-upgraded store.
 
 ## Test cards (`/debug ping`, `/debug clear_test`)
 

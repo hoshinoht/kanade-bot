@@ -9,7 +9,9 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::MessageMarker;
 
 use super::{MemoryScheduleStore, Tables};
-use crate::bot::delivery::cards::{CardRecord, DAY_OF_KIND, PostedCard, ReminderCardStore};
+use crate::bot::delivery::cards::{
+    CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore,
+};
 use crate::bot::delivery::debug::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::{CardIndex, LookupError};
 use crate::domain::notify::{
@@ -65,6 +67,12 @@ pub(super) struct JournalTables {
     card_runs: BTreeSet<(String, String)>,
     /// Reminder card records by dedupe key, as SQLite `reminder_cards`.
     reminder_cards: BTreeMap<String, CardRecord>,
+    /// Digest phrases by native target dedupe key, independent of bound digests.
+    digest_phrases: BTreeMap<String, String>,
+    card_record_read_failures: usize,
+    card_record_write_failures: usize,
+    digest_phrase_read_failures: usize,
+    digest_phrase_write_failures: usize,
     /// Test cards by attempt id, as SQLite `debug_cards`.
     pub(super) debug_cards: BTreeMap<String, DebugRow>,
 }
@@ -851,17 +859,46 @@ fn valid_record(dedupe_key: &str, record: &CardRecord) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
     let kind = record.kind == DAY_OF_KIND || record.kind.starts_with("countdown_");
-    key && kind && (record.heading.is_none() || record.kind == DAY_OF_KIND)
+    key && kind
+}
+
+fn valid_phrase(dedupe_key: &str, phrase: &str) -> bool {
+    dedupe_key.len() == 64
+        && dedupe_key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && !phrase.trim_matches(' ').is_empty()
+        && phrase.chars().count() <= 48
+}
+
+impl MemoryScheduleStore {
+    pub fn fail_next_card_record_read(&self) {
+        self.tables().journal.card_record_read_failures += 1;
+    }
+
+    pub fn fail_next_card_record_write(&self) {
+        self.tables().journal.card_record_write_failures += 1;
+    }
+
+    pub fn fail_next_digest_phrase_read(&self) {
+        self.tables().journal.digest_phrase_read_failures += 1;
+    }
+
+    pub fn fail_next_digest_phrase_write(&self) {
+        self.tables().journal.digest_phrase_write_failures += 1;
+    }
 }
 
 impl ReminderCardStore for MemoryScheduleStore {
     async fn card_record(&self, dedupe_key: &str) -> Result<Option<CardRecord>, StoreError> {
-        Ok(self
-            .tables()
-            .journal
-            .reminder_cards
-            .get(dedupe_key)
-            .cloned())
+        let mut tables = self.tables();
+        if tables.journal.card_record_read_failures > 0 {
+            tables.journal.card_record_read_failures -= 1;
+            return Err(StoreError::Backend(
+                "injected reminder card record read failure".into(),
+            ));
+        }
+        Ok(tables.journal.reminder_cards.get(dedupe_key).cloned())
     }
 
     async fn save_card_record(
@@ -870,12 +907,18 @@ impl ReminderCardStore for MemoryScheduleStore {
         record: &CardRecord,
         _at: DateTime<Utc>,
     ) -> Result<CardRecord, StoreError> {
+        let mut tables = self.tables();
+        if tables.journal.card_record_write_failures > 0 {
+            tables.journal.card_record_write_failures -= 1;
+            return Err(StoreError::Backend(
+                "injected reminder card record write failure".into(),
+            ));
+        }
         if !valid_record(dedupe_key, record) {
             return Err(StoreError::Constraint(
                 "reminder card record is invalid".into(),
             ));
         }
-        let mut tables = self.tables();
         Ok(tables
             .journal
             .reminder_cards
@@ -933,6 +976,45 @@ impl ReminderCardStore for MemoryScheduleStore {
         }));
         cards.sort_by(|a, b| a.message_id.cmp(&b.message_id));
         Ok(cards)
+    }
+}
+
+impl DigestPhraseStore for MemoryScheduleStore {
+    async fn digest_phrase(&self, dedupe_key: &str) -> Result<Option<String>, StoreError> {
+        let mut tables = self.tables();
+        if tables.journal.digest_phrase_read_failures > 0 {
+            tables.journal.digest_phrase_read_failures -= 1;
+            return Err(StoreError::Backend(
+                "injected digest phrase read failure".into(),
+            ));
+        }
+        Ok(tables.journal.digest_phrases.get(dedupe_key).cloned())
+    }
+
+    async fn save_digest_phrase(
+        &self,
+        dedupe_key: &str,
+        phrase: &str,
+        _at: DateTime<Utc>,
+    ) -> Result<String, StoreError> {
+        let mut tables = self.tables();
+        if tables.journal.digest_phrase_write_failures > 0 {
+            tables.journal.digest_phrase_write_failures -= 1;
+            return Err(StoreError::Backend(
+                "injected digest phrase write failure".into(),
+            ));
+        }
+        if !valid_phrase(dedupe_key, phrase) {
+            return Err(StoreError::Constraint(
+                "digest card phrase record is invalid".into(),
+            ));
+        }
+        Ok(tables
+            .journal
+            .digest_phrases
+            .entry(dedupe_key.to_owned())
+            .or_insert_with(|| phrase.to_owned())
+            .clone())
     }
 }
 

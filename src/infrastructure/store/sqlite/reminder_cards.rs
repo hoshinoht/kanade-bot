@@ -7,7 +7,7 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::bot::delivery::cards::{CardRecord, PostedCard, ReminderCardStore};
+use crate::bot::delivery::cards::{CardRecord, DigestPhraseStore, PostedCard, ReminderCardStore};
 use crate::domain::scheduler::StoreError;
 
 async fn record_in(
@@ -114,6 +114,45 @@ impl ReminderCardStore for SqliteStore {
             );
             cards.sort_by(|a, b| a.message_id.cmp(&b.message_id));
             Ok(cards)
+        })
+    }
+}
+
+impl DigestPhraseStore for SqliteStore {
+    async fn digest_phrase(&self, dedupe_key: &str) -> Result<Option<String>, StoreError> {
+        read_txn!(self, tx, async {
+            sqlx::query_scalar("SELECT phrase FROM digest_card_phrases WHERE dedupe_key = ?1")
+                .bind(dedupe_key)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(store_error)
+        })
+    }
+
+    async fn save_digest_phrase(
+        &self,
+        dedupe_key: &str,
+        phrase: &str,
+        at: DateTime<Utc>,
+    ) -> Result<String, StoreError> {
+        let at = instant(&at)?;
+        write_txn!(self, tx, async {
+            sqlx::query(
+                "INSERT INTO digest_card_phrases (dedupe_key, phrase, created_at) \
+                 VALUES (?1, ?2, ?3) ON CONFLICT (dedupe_key) DO NOTHING",
+            )
+            .bind(dedupe_key)
+            .bind(phrase)
+            .bind(&at)
+            .execute(&mut *tx)
+            .await
+            .map_err(store_error)?;
+            sqlx::query_scalar("SELECT phrase FROM digest_card_phrases WHERE dedupe_key = ?1")
+                .bind(dedupe_key)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(store_error)?
+                .ok_or_else(|| StoreError::Backend("digest card phrase vanished".into()))
         })
     }
 }

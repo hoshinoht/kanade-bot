@@ -1,6 +1,6 @@
 //! What a reminder card was posted as, stored before its claim (keyed by
 //! the send's native dedupe key) so a retry and every later edit render the
-//! same card: its kind and, for a day-of card, the chosen heading line.
+//! same card: its kind and saved header (day-of heading or short phrase).
 
 use std::future::Future;
 
@@ -16,7 +16,7 @@ pub const DAY_OF_KIND: &str = "day_of";
 pub struct CardRecord {
     /// `day_of` or `countdown_<minutes>`.
     pub kind: String,
-    /// The day-of heading without its `📅 ` and bold (`Today — Fri 25 Sep`).
+    /// Day-of heading without framing, or the short countdown phrase.
     pub heading: Option<String>,
 }
 
@@ -53,4 +53,21 @@ pub trait ReminderCardStore: Send + Sync {
         &self,
         run_id: &str,
     ) -> impl Future<Output = Result<Vec<PostedCard>, StoreError>> + Send;
+}
+
+/// Digest phrases live before `weekly_digests` exists and are keyed by the
+/// native digest target's dedupe hash. Missing rows mean a legacy fallback.
+pub trait DigestPhraseStore: Send + Sync {
+    fn digest_phrase(
+        &self,
+        dedupe_key: &str,
+    ) -> impl Future<Output = Result<Option<String>, StoreError>> + Send;
+
+    /// Insert unless a phrase exists; the first persisted phrase wins.
+    fn save_digest_phrase(
+        &self,
+        dedupe_key: &str,
+        phrase: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<String, StoreError>> + Send;
 }

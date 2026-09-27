@@ -7,6 +7,7 @@ use super::Card;
 use super::common::{
     COLOUR_DIGEST, CardContext, answers_text, format_bosses, local_day, local_time,
 };
+use super::heading::DIGEST_PHRASE_SEED;
 use crate::domain::ids::short_id;
 use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};
@@ -54,8 +55,13 @@ pub fn digest_card(
     ctx: &CardContext<'_>,
     week_start: DateTime<Utc>,
     inclusion: &DigestInclusion,
+    phrase: Option<&str>,
 ) -> Card {
-    let title = format!("🗓️ Boss week of {}", local_day(week_start, ctx.zone));
+    let title = format!(
+        "🗓️ {} — Boss week of {}",
+        phrase.unwrap_or(DIGEST_PHRASE_SEED),
+        local_day(week_start, ctx.zone)
+    );
     let fields: Vec<(String, String)> = inclusion
         .days
         .iter()

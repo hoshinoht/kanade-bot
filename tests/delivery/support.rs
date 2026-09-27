@@ -36,6 +36,7 @@ pub trait Store:
     + kanade::domain::history::Checkpoints
     + kanade::domain::drafts::ProposalStore
     + kanade::bot::delivery::cards::ReminderCardStore
+    + kanade::bot::delivery::cards::DigestPhraseStore
     + Sync
 {
 }
@@ -48,6 +49,7 @@ impl<S> Store for S where
         + kanade::domain::history::Checkpoints
         + kanade::domain::drafts::ProposalStore
         + kanade::bot::delivery::cards::ReminderCardStore
+        + kanade::bot::delivery::cards::DigestPhraseStore
         + Sync
 {
 }

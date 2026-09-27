@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 gives countdown and weekly digest headers a bounded persona-flavored
+  interjection, preserving code-owned schedule facts and stable stored text
+  across retries and edits; schema v18 stores phrases before delivery claims.
+  Rolling back to a v17 image requires the paired pre-upgrade volume backup.
 - v5 stores ordered Reply-profile assignments by Discord role and applies
   role-first styling live, with current-role validation and conflict-safe admin
   updates; the named-role editor follows separately.

@@ -17,8 +17,10 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 use tokio::sync::{Notify, watch};
 
+use super::card_records;
 use super::cards::{
-    self, CardArt, CardContext, CardKit, DAY_OF_KIND, PostedCard, ReminderCardStore, fetch_art,
+    self, CardArt, CardContext, CardKit, DAY_OF_KIND, DigestPhraseStore, PostedCard,
+    ReminderCardStore, fetch_art,
 };
 use super::debug::{TEST_PREFIX, test_mentions};
 use crate::bot::ids::parse_id;
@@ -91,7 +93,7 @@ pub struct CardRefresh<S, T> {
 
 impl<S, T> CardRefresh<S, T>
 where
-    S: ScheduleStore + ReminderCardStore + DeliveryJournal + Sync,
+    S: ScheduleStore + ReminderCardStore + DigestPhraseStore + DeliveryJournal + Sync,
     T: DiscordTransport,
 {
     /// Drain `queue` until `stop` turns true; a batch in flight is abandoned
@@ -180,7 +182,19 @@ where
                 week_start: digest.week_start,
                 inclusion,
             };
-            let Some(card) = cards::build(&content, &self.context(schedule), None, &[]) else {
+            let Some(key) = card_records::digest_phrase_key(digest.week_start) else {
+                continue;
+            };
+            let phrase = match self.store.digest_phrase(&key).await {
+                Ok(phrase) => phrase,
+                Err(_) => {
+                    logging::event("WARN", "digest_phrase_failed", json!({"operation": "read"}));
+                    continue;
+                }
+            };
+            let Some(card) =
+                cards::build(&content, &self.context(schedule), phrase.as_deref(), &[])
+            else {
                 continue;
             };
             let edit = card.edit(&CardArt::default());

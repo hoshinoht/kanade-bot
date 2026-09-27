@@ -23,7 +23,7 @@ type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> 
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
-use super::cards::{CardContext, CardKit, ReminderCardStore};
+use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
@@ -156,6 +156,8 @@ pub enum DigestOutcome {
     ClockRolledBack,
     /// There was nowhere to post; nothing was stamped.
     NoChannel,
+    /// A required digest phrase could not be read or durably prepared.
+    PhraseUnavailable,
     /// The week's old card was not confirmed deleted.
     ReplacementSuppressed(String),
     /// A post was attempted; see the send report.
@@ -189,8 +191,8 @@ pub struct DispatchReport {
     /// Due rows retired without a message.
     pub retired: usize,
     pub sends: Vec<SendReport>,
-    /// Sends not attempted because the per-tick cap was reached. The cap
-    /// counts claimed sends only; suppressed, held and vanished ones are free.
+    /// Sends not attempted because the cap was reached or card preparation
+    /// failed. The cap counts claimed sends only.
     pub deferred: usize,
     /// Rows left queued with nowhere to post.
     pub queued: Vec<Queued>,
@@ -403,7 +405,10 @@ where
     ///
     /// # Errors
     /// The first failing step; the lease is ended regardless.
-    pub async fn tick(&mut self, clock: &impl Clock) -> Result<TickReport, DeliveryError> {
+    pub async fn tick(&mut self, clock: &impl Clock) -> Result<TickReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
         self.tick_at(clock.now()).await
     }
 
@@ -411,7 +416,10 @@ where
     ///
     /// # Errors
     /// The first failing step; the lease is ended regardless.
-    pub async fn tick_at(&mut self, now: DateTime<Utc>) -> Result<TickReport, DeliveryError> {
+    pub async fn tick_at(&mut self, now: DateTime<Utc>) -> Result<TickReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
         self.leased(now, async move |this: &mut Self, lease: &Lease| {
             let current = this.config.reset().current_week(now)?;
             let materialised = if this.materialised_week == Some(current) {
@@ -558,7 +566,10 @@ where
     pub async fn post_week_digest(
         &mut self,
         now: DateTime<Utc>,
-    ) -> Result<DigestReport, DeliveryError> {
+    ) -> Result<DigestReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
         self.leased(now, async move |this: &mut Self, lease: &Lease| {
             this.digest_in(lease, now).await
         })
@@ -584,7 +595,10 @@ where
         &self,
         lease: &Lease,
         now: DateTime<Utc>,
-    ) -> Result<DigestReport, DeliveryError> {
+    ) -> Result<DigestReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
         let reset = self.config.reset();
         let current_week = reset.current_week(now)?;
         let mut report = DigestReport {
@@ -675,6 +689,23 @@ where
             return Ok(report);
         };
         let executor = self.executor(lease);
+        let phrase = if post.send.disposition == SendDisposition::Send {
+            let Some(phrase) = card_records::prepare_digest(
+                self.store,
+                &self.cards,
+                &post.send.intent,
+                post.replaces.is_some(),
+                now,
+            )
+            .await
+            else {
+                report.outcome = DigestOutcome::PhraseUnavailable;
+                return Ok(report);
+            };
+            Some(phrase)
+        } else {
+            None
+        };
         // A suppressed send may already have posted: never delete for it.
         if post.send.disposition == SendDisposition::Send
             && let Some(old) = &post.replaces
@@ -700,7 +731,7 @@ where
                 render(
                     &post.send.intent,
                     &self.card_context(&week),
-                    None,
+                    phrase.as_deref(),
                     self.cards.art.as_ref(),
                 )
                 .await
@@ -780,10 +811,14 @@ where
             let message = match send.disposition {
                 SendDisposition::Send => {
                     let ctx = self.card_context(&schedule);
-                    let record =
+                    let Some(record) =
                         card_records::prepare(self.store, &self.cards, &ctx, &send.intent, now)
-                            .await;
-                    let heading = record.as_ref().and_then(|record| record.heading.as_deref());
+                            .await
+                    else {
+                        report.deferred += 1;
+                        continue;
+                    };
+                    let heading = record.heading.as_deref();
                     render(&send.intent, &ctx, heading, self.cards.art.as_ref()).await
                 }
                 SendDisposition::Suppressed => unrendered(),

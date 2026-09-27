@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::bot::delivery::cards::{CardRecord, PostedCard, ReminderCardStore};
+use crate::bot::delivery::cards::{CardRecord, DigestPhraseStore, PostedCard, ReminderCardStore};
 use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::CardIndex;
 use crate::domain::notify::{
@@ -25,7 +25,12 @@ use crate::domain::time::to_iso;
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<
-    S: ScheduleStore + DeliveryJournal + CardIndex + ReminderCardStore + DebugCardStore,
+    S: ScheduleStore
+        + DeliveryJournal
+        + CardIndex
+        + ReminderCardStore
+        + DigestPhraseStore
+        + DebugCardStore,
 >(
     make: impl AsyncFn() -> S,
 ) {
@@ -46,6 +51,7 @@ pub async fn run_suite<
     digest_week_is_recorded_without_a_post(&make().await).await;
     older_digests_are_retired_and_kept(&make().await).await;
     reminder_card_records_are_written_once_and_found_when_bound(&make().await).await;
+    digest_phrase_records_are_written_once(&make().await).await;
     test_cards_are_per_operation_registered_and_cleared(&make().await).await;
 }
 
@@ -895,19 +901,29 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
             "{bad_key} {bad:?} is refused"
         );
     }
-    assert!(
+    let countdown_key = "b".repeat(64);
+    let countdown = CardRecord {
+        kind: "countdown_60".into(),
+        heading: Some("Onward!".into()),
+    };
+    assert_eq!(
         store
-            .save_card_record(
-                "b".repeat(64).as_str(),
-                &CardRecord {
-                    kind: "countdown_60".into(),
-                    heading: Some("x".into()),
-                },
-                at(9),
-            )
+            .save_card_record(&countdown_key, &countdown, at(9))
             .await
-            .is_err(),
-        "only day-of cards carry a heading"
+            .expect("countdown phrase record"),
+        countdown
+    );
+    let changed_phrase = CardRecord {
+        kind: "countdown_60".into(),
+        heading: Some("Waku waku!".into()),
+    };
+    assert_eq!(
+        store
+            .save_card_record(&countdown_key, &changed_phrase, at(10))
+            .await
+            .expect("save countdown again"),
+        countdown,
+        "countdown's first phrase wins"
     );
     // Claimed but unbound: nothing to refresh yet.
     let lease = lease(store).await;
@@ -936,6 +952,53 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
         .await
         .expect("bind");
     assert_eq!(store.posted_cards("r-1").await.expect("read").len(), 1);
+}
+
+async fn digest_phrase_records_are_written_once<S: DeliveryJournal + DigestPhraseStore>(store: &S) {
+    let key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("native digest key");
+    assert_eq!(store.digest_phrase(key.as_str()).await.expect("read"), None);
+    let first = "Let's go!";
+    assert_eq!(
+        store
+            .save_digest_phrase(key.as_str(), first, at(8))
+            .await
+            .expect("save"),
+        first
+    );
+    assert_eq!(
+        store
+            .save_digest_phrase(key.as_str(), "Waku waku!", at(9))
+            .await
+            .expect("save again"),
+        first,
+        "the first phrase wins"
+    );
+    assert_eq!(
+        store.digest_phrase(key.as_str()).await.expect("read saved"),
+        Some(first.to_owned())
+    );
+    assert!(store.save_digest_phrase("bad", first, at(9)).await.is_err());
+    assert!(
+        store
+            .save_digest_phrase(&"c".repeat(64), " ", at(9))
+            .await
+            .is_err()
+    );
+    assert!(
+        store
+            .save_digest_phrase(&"d".repeat(64), &"x".repeat(49), at(9))
+            .await
+            .is_err()
+    );
+    assert!(
+        store
+            .load_digests()
+            .await
+            .expect("native digest rows")
+            .digests
+            .is_empty(),
+        "phrase storage does not bind or create weekly_digests"
+    );
 }
 
 fn test_card(run_id: &str, kind: &str) -> NotificationIntent {

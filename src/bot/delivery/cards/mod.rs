@@ -32,9 +32,10 @@ pub use countdown::countdown_card;
 pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
-    DAY_OF_HEADING_SEED, HeadingRewrite, HeadingSource, PersonaSource, failure_reason, seed_heading,
+    COUNTDOWN_PHRASE_SEED, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeadingRewrite, HeadingSource,
+    PersonaSource, PhraseKind, PhraseRejection, accept_phrase, failure_reason, seed_heading,
 };
-pub use record::{CardRecord, DAY_OF_KIND, PostedCard, ReminderCardStore};
+pub use record::{CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore};
 
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
@@ -56,7 +57,7 @@ pub struct Card {
 }
 
 /// What cards read besides the schedule: the catalog, the art and the
-/// day-of heading rewrite. The default renders v4's no-table cards.
+/// header rewrite. The default uses fixed phrase fallbacks.
 #[derive(Clone, Default)]
 pub struct CardKit {
     pub catalog: Option<Arc<BossTable>>,
@@ -74,19 +75,19 @@ impl std::fmt::Debug for CardKit {
     }
 }
 
-/// The card for `content`; `None` for kinds rendered elsewhere (notices,
-/// proposal cards, plain posts). `heading` is the day-of heading line
-/// (v4's when `None`); `mentioned` the allow-list, already quiet-gated.
+/// The card for `content`; `None` for kinds rendered elsewhere. `header` is
+/// the stored day-of heading or countdown/digest phrase; `mentioned` is the
+/// allow-list, already quiet-gated.
 pub fn build(
     content: &IntentContent,
     ctx: &CardContext<'_>,
-    heading: Option<&str>,
+    header: Option<&str>,
     mentioned: &[String],
 ) -> Option<Card> {
     match content {
         IntentContent::DayOf { run_ids } => {
             let seed;
-            let heading = match heading {
+            let heading = match header {
                 Some(line) => line,
                 None => {
                     let first = card_runs(ctx, run_ids).first().map(|run| run.datetime)?;
@@ -96,13 +97,17 @@ pub fn build(
             };
             Some(day_of_card(ctx, run_ids, heading, mentioned))
         }
-        IntentContent::Countdown { run_id, minutes } => {
-            Some(countdown_card(ctx, ctx.run(run_id)?, *minutes, mentioned))
-        }
+        IntentContent::Countdown { run_id, minutes } => Some(countdown_card(
+            ctx,
+            ctx.run(run_id)?,
+            *minutes,
+            mentioned,
+            header,
+        )),
         IntentContent::Digest {
             week_start,
             inclusion,
-        } => Some(digest_card(ctx, *week_start, inclusion)),
+        } => Some(digest_card(ctx, *week_start, inclusion, header)),
         IntentContent::Notice(_) | IntentContent::ProposalCard { .. } | IntentContent::Plain => {
             None
         }

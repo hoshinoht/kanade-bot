@@ -8,6 +8,7 @@ use super::common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, CardContext, People, REACT_HINT, boss_detail, declined,
     format_bosses, format_offset, lead_colour, local_time, not_declined, status_line, unanswered,
 };
+use super::heading::COUNTDOWN_PHRASE_SEED;
 use crate::domain::schedule::Run;
 
 pub fn countdown_card(
@@ -15,6 +16,7 @@ pub fn countdown_card(
     run: &Run,
     minutes: i64,
     mentioned: &[String],
+    phrase: Option<&str>,
 ) -> Card {
     let states = ctx.states(run);
     let pending = unanswered(&states);
@@ -38,7 +40,8 @@ pub fn countdown_card(
         }
     };
     let content = format!(
-        "⏰ **{}** in {} ({}) — {waiting}",
+        "⏰ {} · **{}** in {} ({}) — {waiting}",
+        phrase.unwrap_or(COUNTDOWN_PHRASE_SEED),
         format_bosses(&run.bosses),
         format_offset(minutes),
         local_time(run.datetime, ctx.zone)
