@@ -561,7 +561,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(toast(page, /Answer limits saved/)).toBeVisible();
 
-  // Persona catalog, read-only profiles, publish toggle, reload, role order.
+  // Persona catalog, profile visibility, reload, role order.
   await page.getByRole('tab', { name: 'Persona' }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
   await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('plain');
@@ -578,19 +578,27 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(kanade).toContainText('Kanade Teases lightly');
   await expect(kanade).not.toContainText('**');
   await expect(profiles).not.toContainText('config/personas/profiles/kanade');
-  // Publishing and role order are read-only on the server (422 read_only): shown, not offered.
+  // Visibility is editable; profile text stays file-backed and role assignments stay read-only.
   const sparkly = profiles.getByRole('row', { name: /^Sparkly/ });
   await expect(sparkly).toContainText('private');
-  await expect(sparkly.getByRole('button', { name: /Make (public|private)/ })).toHaveCount(0);
-  await expect(panel.getByText('Publishing a profile and assigning profiles to roles are not editable here yet.')).toBeVisible();
+  await expect(sparkly.getByRole('button', { name: 'Publish' })).toBeVisible();
+  await expect(panel.getByText('Role assignments are read-only here.')).toBeVisible();
   // Roles read by name, and copy their id.
   await expect(panel.getByRole('button', { name: '@staff' })).toHaveAttribute('title', 'Role ID 300001 — click to copy');
   await expect(panel.getByRole('button', { name: 'Save role profiles' })).toHaveCount(0);
-  const refused = await page.request.patch(`${ADMIN}/api/admin/config`, {
+  const published = await page.request.patch(`${ADMIN}/api/admin/config`, {
     headers: await csrf(page.request),
     data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },
   });
-  expect([refused.status(), ((await refused.json()) as { error: string }).error]).toEqual([422, 'read_only']);
+  const publishedView = (await published.json()) as { persona: { profiles: { key: string; public: boolean }[] } };
+  const restored = await page.request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(page.request),
+    data: { persona: { visibility: [{ key: 'sparkly', public: false }] } },
+  });
+  const restoredView = (await restored.json()) as typeof publishedView;
+  const publicState = (view: typeof publishedView) => view.persona.profiles.find((profile) => profile.key === 'sparkly')?.public;
+  expect([published.status(), publicState(publishedView)]).toEqual([200, true]);
+  expect([restored.status(), publicState(restoredView)]).toEqual([200, false]);
   // Reload re-reads the files.
   await panel.getByRole('button', { name: 'Reload profiles' }).click();
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();

@@ -563,9 +563,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 masks complete links—including unknown handles in URLs—before model calls
   and refuses any URL left at the provider boundary; member-facing links are
   restored locally without storing the token-to-link mapping.
-- v5 Reply profiles default to private until explicitly published; admins can
-  change selected profiles without stale saves republishing someone else's
-  private choice, and member `/style` choices update without a restart.
+- v5 Reply profiles default to private until explicitly published; admins get
+  per-profile and selected-batch Publish/Make private controls without stale
+  saves republishing someone else's private choice, and member `/style`
+  choices update without a restart.
 - v5 admin Chat log Name copy buttons meet minimum pointer target sizes on
   desktop and phones without widening the dense table; the full-page axe
   check now includes the Who column.

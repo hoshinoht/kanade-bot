@@ -631,6 +631,37 @@ impl Store {
             }
             next.persona = active.into();
         }
+        if let Some(list) = patch
+            .pointer("/persona/visibility")
+            .and_then(Value::as_array)
+        {
+            let mut seen = Vec::with_capacity(list.len());
+            for item in list {
+                let key = item
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .ok_or(bad("Each visibility update needs a profile key."))?;
+                if !PROFILES.iter().any(|(profile, ..)| *profile == key) {
+                    return Err(bad(&format!("No reply profile named {key}.")));
+                }
+                if seen.contains(&key) {
+                    return Err(bad("A visibility update cannot repeat a profile."));
+                }
+                seen.push(key);
+                let public = item
+                    .get("public")
+                    .and_then(Value::as_bool)
+                    .ok_or(bad("Each visibility update needs a public value."))?;
+                if let Some(saved) = next.profile_visibility.iter_mut().find(|v| v.key == key) {
+                    saved.public = public;
+                } else {
+                    next.profile_visibility.push(ProfileVisibility {
+                        key: key.into(),
+                        public,
+                    });
+                }
+            }
+        }
         if let Some(p) = patch.get("models") {
             let roles = p.get("roles");
             for (role, slot) in [
@@ -861,7 +892,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             // As the server: contracted as editable, but it cannot store them yet.
             if matches!(
                 (section.as_str(), key.as_str()),
-                ("models", "groups") | ("persona", "role_profiles" | "visibility")
+                ("models", "groups") | ("persona", "role_profiles")
             ) {
                 return Err(MoveError::Coded(
                     422,
@@ -903,6 +934,8 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                     for item in list {
                         if !item.as_object().is_some_and(|o| {
                             o.keys().all(|k| ["key", "public"].contains(&k.as_str()))
+                                && o.contains_key("key")
+                                && o.contains_key("public")
                         }) {
                             return Err(bad(&format!("{section}.{key}[]")));
                         }
@@ -951,12 +984,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn groups_role_profiles_and_visibility_are_read_only() {
+    fn groups_and_role_profiles_are_read_only() {
         let mut s = store();
         for patch in [
             json!({ "models": { "groups": [] } }),
             json!({ "persona": { "role_profiles": [] } }),
-            json!({ "persona": { "visibility": [{ "key": "sparkly", "public": true }] } }),
         ] {
             match s.patch_config(&patch) {
                 Err(crate::mock::MoveError::Coded(422, "read_only", _)) => {}
@@ -1101,6 +1133,72 @@ mod tests {
                 .as_str()
                 .is_some_and(|m| m.contains("4 reply profiles"))
         );
+    }
+
+    #[test]
+    fn profile_visibility_deltas_merge_and_reload() {
+        let mut s = store();
+        let stale_view = s.config_view();
+        assert_eq!(
+            stale_view["persona"]["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["key"] == "sparkly")
+                .unwrap()["public"],
+            false,
+            "the seeded profile fixture remains mixed"
+        );
+
+        s.patch_config(
+            &json!({ "persona": { "visibility": [{ "key": "sparkly", "public": true }] } }),
+        )
+        .ok()
+        .unwrap();
+        // A second admin submits a selected-key delta from the same old read.
+        // It must not republish that stale full list over the first change.
+        let view = s
+            .patch_config(
+                &json!({ "persona": { "visibility": [{ "key": "terse", "public": false }] } }),
+            )
+            .ok()
+            .unwrap();
+        let profiles = view["persona"]["profiles"].as_array().unwrap();
+        let public = |key: &str| {
+            profiles.iter().find(|p| p["key"] == key).unwrap()["public"]
+                .as_bool()
+                .unwrap()
+        };
+        assert!(public("sparkly"));
+        assert!(!public("terse"));
+        assert!(public("default"));
+        assert!(public("kanade"));
+
+        // An absent saved row is private, not implicitly published.
+        s.config.profile_visibility.retain(|v| v.key != "default");
+        assert_eq!(
+            s.config_view()["persona"]["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["key"] == "default")
+                .unwrap()["public"],
+            false
+        );
+    }
+
+    #[test]
+    fn profile_visibility_rejects_unknown_or_duplicate_delta_keys() {
+        let mut s = store();
+        for patch in [
+            json!({ "persona": { "visibility": [{ "key": "missing", "public": true }] } }),
+            json!({ "persona": { "visibility": [
+                { "key": "sparkly", "public": true },
+                { "key": "sparkly", "public": false }
+            ] } }),
+        ] {
+            assert!(s.patch_config(&patch).is_err(), "accepted {patch}");
+        }
     }
 
     #[test]

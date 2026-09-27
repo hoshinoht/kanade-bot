@@ -10,6 +10,7 @@
     wide = false,
     flush = false,
     lightDismiss = false,
+    dismissible = true,
     children,
     footer,
     onclose,
@@ -22,6 +23,8 @@
     wide?: boolean;
     /** Body without padding, for content that is its own card (the run sheet). */
     flush?: boolean;
+    /** Keep user-initiated dismissal locked while a mutation needs its recovery context. */
+    dismissible?: boolean;
     children: Snippet;
     footer?: Snippet<[() => void]>;
     onclose?: () => void;
@@ -45,7 +48,17 @@
   });
 
   function close() {
+    if (!dismissible) return;
     open = false;
+  }
+
+  function handleCancel(event: Event) {
+    if (!dismissible) event.preventDefault();
+  }
+
+  function handlePointerDown(event: PointerEvent) {
+    downOnBackdrop = event.target === dialog;
+    if (!dismissible && event.target instanceof Element && event.target.closest('.modal__x')) event.preventDefault();
   }
 
   function handleClose() {
@@ -64,10 +77,11 @@
   class:modal--wide={wide}
   aria-labelledby="{uid}-title"
   onclose={handleClose}
-  onpointerdown={(event) => (downOnBackdrop = event.target === dialog)}
+  oncancel={handleCancel}
+  onpointerdown={handlePointerDown}
   onclick={(event) => {
     // The dialog element itself is only hit on its backdrop; the panel covers the rest.
-    const dismiss = lightDismiss && downOnBackdrop && event.target === dialog;
+    const dismiss = dismissible && lightDismiss && downOnBackdrop && event.target === dialog;
     downOnBackdrop = false;
     if (dismiss) close();
   }}
@@ -78,7 +92,7 @@
         {#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
         <h2 class="modal__title" id="{uid}-title">{title}</h2>
       </div>
-      <button type="button" class="modal__x" onclick={close}><Icon name="x" label="Close" /></button>
+      <button type="button" class="modal__x" disabled={!dismissible} onclick={close}><Icon name="x" label="Close" /></button>
     </header>
     <div class="modal__body" class:modal__body--flush={flush}>
       {@render children()}
