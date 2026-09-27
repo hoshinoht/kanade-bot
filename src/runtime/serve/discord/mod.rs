@@ -184,6 +184,7 @@ where
         live,
         probe,
     } = prepared;
+    let connection = live.status.clone();
     let scope = scope(config);
     let access = Arc::clone(&composition.access);
     let auth = Arc::clone(&composition.admin.auth);
@@ -207,6 +208,7 @@ where
         Arc::clone(&cache),
         scope,
         Arc::clone(&roster),
+        connection.clone(),
         stopped.clone(),
     );
 
@@ -309,6 +311,10 @@ where
         seeds: config.seeds.clone(),
         config: delivery_config(&config.instance_id, policy, &composition.settings),
         status: tick_status,
+        claim_gate: {
+            let connection = connection.clone();
+            Arc::new(move || connection.delivery_eligibility())
+        },
         cards,
         quiet,
         post_channel,
@@ -338,6 +344,7 @@ where
         roster,
         roster_jobs,
         reaction_jobs,
+        connection,
         Box::new(move |application| ready_transport.application_ready(application)),
         guild_ready,
     )

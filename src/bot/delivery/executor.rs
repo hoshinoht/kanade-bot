@@ -15,6 +15,7 @@
 use chrono::{DateTime, Utc};
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
+use crate::bot::gateway::DeliveryOperation;
 use crate::bot::ids::parse_id;
 use crate::bot::transport::{
     DiscordTransport, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
@@ -136,6 +137,54 @@ where
         record_week: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> Result<SendOutcome, SendFailure> {
+        self.execute_claim(
+            send,
+            message,
+            effect_ordinal,
+            record_week,
+            now,
+            #[cfg(test)]
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn execute_admitted(
+        &self,
+        mut operation: DeliveryOperation,
+        send: &PlannedSend,
+        message: &OutgoingMessage,
+        effect_ordinal: Option<i64>,
+        record_week: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<SendOutcome>, SendFailure> {
+        if !operation.begin() {
+            return Ok(None);
+        }
+        let result = self
+            .execute_claim(
+                send,
+                message,
+                effect_ordinal,
+                record_week,
+                now,
+                #[cfg(test)]
+                Some(&mut operation),
+            )
+            .await;
+        operation.settle();
+        result.map(Some)
+    }
+
+    async fn execute_claim(
+        &self,
+        send: &PlannedSend,
+        message: &OutgoingMessage,
+        effect_ordinal: Option<i64>,
+        record_week: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+        #[cfg(test)] operation: Option<&mut DeliveryOperation>,
+    ) -> Result<SendOutcome, SendFailure> {
         if send.disposition == SendDisposition::Suppressed {
             return Ok(SendOutcome::Suppressed);
         }
@@ -144,15 +193,36 @@ where
             .journal
             .claim(self.lease, intent, effect_ordinal, now)
             .await;
+        #[cfg(test)]
+        if let Some(operation) = operation {
+            operation.after_claim_result().await;
+        }
         self.claimed(intent, claim, message, record_week, now).await
     }
 
-    /// Execute one outbox notice, claimed by its durable `(source, ordinal)`
-    /// key ([`DeliveryJournal::claim_source`]) so no later lease resends it.
+    /// Execute one admitted outbox notice, claimed by its durable
+    /// `(source, ordinal)` key so no later lease resends it.
     ///
     /// # Errors
     /// As [`Executor::execute`].
-    pub async fn execute_source(
+    pub(crate) async fn execute_source_in_operation(
+        &self,
+        operation: &mut DeliveryOperation,
+        intent: &NotificationIntent,
+        message: &OutgoingMessage,
+        source: &str,
+        ordinal: i64,
+        now: DateTime<Utc>,
+    ) -> Result<Option<SendOutcome>, SendFailure> {
+        if !operation.begin() {
+            return Ok(None);
+        }
+        self.execute_source_claim(intent, message, source, ordinal, now)
+            .await
+            .map(Some)
+    }
+
+    async fn execute_source_claim(
         &self,
         intent: &NotificationIntent,
         message: &OutgoingMessage,
@@ -321,13 +391,26 @@ where
         Ok(SendOutcome::Bound(message_id))
     }
 
-    /// Replace `old` only once Discord confirms it is gone: deleted now,
-    /// already Unknown Message, or absent on a follow-up fetch. Anything
-    /// else suppresses the replacement and alerts.
+    /// Replace `old` only once Discord confirms it is gone. This admission
+    /// token is consumed before the first remote delete attempt.
     ///
     /// # Errors
     /// A lost lease or backend failure while retiring the old claim.
-    pub async fn replace_digest(
+    pub(crate) async fn replace_digest_admitted(
+        &self,
+        mut operation: DeliveryOperation,
+        old: &WeeklyDigest,
+        now: DateTime<Utc>,
+    ) -> Result<Option<Replacement>, JournalError> {
+        if !operation.begin() {
+            return Ok(None);
+        }
+        let result = self.replace_digest_inner(old, now).await;
+        operation.settle();
+        result.map(Some)
+    }
+
+    async fn replace_digest_inner(
         &self,
         old: &WeeklyDigest,
         now: DateTime<Utc>,

@@ -23,6 +23,7 @@ use crate::{
             TickReport,
             cards::{ArtSource, CardKit, HeadingRewrite, PersonaSource},
         },
+        gateway::DeliveryEligibility,
         guild_cache::{GuildCache, WatchList},
         ids::parse_id,
         roster::LiveRoster,
@@ -117,6 +118,7 @@ pub struct TickLoop<T> {
     pub seeds: SettingSeeds,
     pub config: DeliveryConfig,
     pub status: Arc<TickStatus>,
+    pub(super) claim_gate: Arc<dyn Fn() -> Option<DeliveryEligibility> + Send + Sync>,
     pub cards: CardKit,
     /// Shared with the reaction worker's card edits.
     pub quiet: Arc<AtomicBool>,
@@ -252,7 +254,11 @@ impl<T: DiscordTransport> TickLoop<T> {
             &*self.cache,
             self.config.clone(),
         )
-        .with_cards(self.cards.clone());
+        .with_cards(self.cards.clone())
+        .with_admission_gate({
+            let gate = Arc::clone(&self.claim_gate);
+            move || gate()
+        });
         let mut interval = tokio::time::interval(self.period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         self.status.set(RUNNING);

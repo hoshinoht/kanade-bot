@@ -126,9 +126,18 @@ where
         let mut held_back = BTreeSet::new();
         for row in pending.notices {
             if now - row.created_at > self.config.max_notice_age {
-                self.store
+                let Some(mut operation) = self.admit().await else {
+                    break;
+                };
+                if !operation.begin() {
+                    break;
+                }
+                let drained = self
+                    .store
                     .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
-                    .await?;
+                    .await;
+                operation.settle();
+                drained?;
                 report.stale += 1;
                 continue;
             }
@@ -158,27 +167,64 @@ where
                 zone,
                 self.config.quiet_mode,
             ) else {
-                self.store
+                let Some(mut operation) = self.admit().await else {
+                    break;
+                };
+                if !operation.begin() {
+                    break;
+                }
+                let drained = self
+                    .store
                     .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
-                    .await?;
+                    .await;
+                operation.settle();
+                drained?;
                 report.silent += 1;
                 continue;
             };
+            let Some(mut operation) = self.admit().await else {
+                break;
+            };
             let result = executor
-                .execute_source(&intent, &message, &row.source, row.ordinal, now)
+                .execute_source_in_operation(
+                    &mut operation,
+                    &intent,
+                    &message,
+                    &row.source,
+                    row.ordinal,
+                    now,
+                )
                 .await;
+            let result = match result {
+                Ok(Some(outcome)) => Ok(outcome),
+                Ok(None) => break,
+                Err(failure) => Err(failure),
+            };
             if matches!(&result, Err(failure) if failure.attempt.is_some())
                 || result.as_ref().is_ok_and(SendOutcome::claimed)
             {
                 claimed += 1;
             }
-            let outcome = settle(result)?;
-            let drained = drains(&outcome);
-            if drained {
-                self.store
+            let outcome = match settle(result) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    operation.settle();
+                    return Err(error);
+                }
+            };
+            let drained = if drains(&outcome) {
+                let result = self
+                    .store
                     .mark_drained(lease, &row.source, row.ordinal, DrainReason::Journal, now)
-                    .await?;
+                    .await;
+                operation.settle();
+                result?;
+                true
             } else {
+                operation.settle();
+                false
+            };
+            if !drained {
                 held_back.insert(row.source.clone());
             }
             report.sends.push(NoticeSend {

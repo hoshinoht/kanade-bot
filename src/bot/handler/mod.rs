@@ -22,6 +22,7 @@ use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::extract_feed::{FeedItem, MessageFeed};
+use crate::bot::gateway::ConnectionStatus;
 use crate::bot::roster::RosterJob;
 use crate::bot::transport::{DiscordTransport, Outcome};
 use crate::domain::members::Directory;
@@ -69,6 +70,7 @@ pub struct Fanout<T> {
     pub directory: Arc<dyn Directory + Send + Sync>,
     pub roster: mpsc::UnboundedSender<RosterJob>,
     pub reactions: mpsc::UnboundedSender<RsvpReaction>,
+    connection: ConnectionStatus,
     /// Called on every `READY` with the application id (before any
     /// interaction or registration uses the transport).
     pub on_ready: Box<dyn FnMut(Id<ApplicationMarker>) + Send>,
@@ -96,6 +98,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         directory: Arc<dyn Directory + Send + Sync>,
         roster: mpsc::UnboundedSender<RosterJob>,
         reactions: mpsc::UnboundedSender<RsvpReaction>,
+        connection: ConnectionStatus,
         on_ready: Box<dyn FnMut(Id<ApplicationMarker>) + Send>,
         guild_ready: watch::Sender<bool>,
     ) -> Self {
@@ -108,6 +111,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             directory,
             roster,
             reactions,
+            connection,
             on_ready,
             guild_ready,
             messages: MessageCounts::default(),
@@ -259,15 +263,27 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                 owner_id,
                 admin_roles,
             } => {
-                let _ = self.roster.send(RosterJob::GuildAvailable {
-                    owner_id,
-                    admin_roles,
-                });
                 if std::mem::take(&mut self.sync_pending) {
                     self.register_commands();
-                    let _ = self.roster.send(RosterJob::Reconcile);
+                    if let Some(generation) = self.connection.guild_available() {
+                        let _ = self.roster.send(RosterJob::Reconcile {
+                            generation,
+                            owner_id,
+                            admin_roles,
+                        });
+                    } else {
+                        let _ = self.roster.send(RosterJob::GuildAvailable {
+                            owner_id,
+                            admin_roles,
+                        });
+                    }
                     self.guild_ready.send_replace(true);
                     logging::event("INFO", "guild_available", json!({}));
+                } else {
+                    let _ = self.roster.send(RosterJob::GuildAvailable {
+                        owner_id,
+                        admin_roles,
+                    });
                 }
             }
             BotEvent::Roster(update) => {

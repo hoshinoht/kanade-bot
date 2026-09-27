@@ -10,8 +10,16 @@
 //! alerts and posts nothing; v4 compared for equality and re-posted.
 
 use std::fmt;
+use std::sync::Arc;
+#[cfg(any(test, feature = "test-support"))]
+use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, TimeDelta, Utc};
+
+#[cfg(feature = "test-support")]
+type AdmissionHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+#[cfg(test)]
+type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
@@ -20,7 +28,10 @@ use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendRepor
 use super::notices::NoticeReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::{render, unrendered};
-use crate::bot::transport::DiscordTransport;
+use crate::bot::{
+    gateway::{DeliveryEligibility, DeliveryOperation},
+    transport::DiscordTransport,
+};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{
     Actor, CheckpointKind, Checkpoints, NewCheckpoint, Origin, Surface, auto_checkpoint_name,
@@ -138,6 +149,8 @@ pub(super) fn settle(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DigestOutcome {
     UpToDate,
+    /// Delivery is paused until the gateway's current generation is usable.
+    Paused,
     Recorded(RecordReason),
     /// The clock is behind the last posted week (deviation).
     ClockRolledBack,
@@ -215,6 +228,11 @@ pub struct Delivery<'a, S, I, T, A> {
     materialised_week: Option<DateTime<Utc>>,
     /// Rate-limits repeated alerts for this process (one hour per key).
     throttle: AlertThrottle,
+    claim_gate: Arc<dyn Fn() -> Option<DeliveryEligibility> + Send + Sync>,
+    #[cfg(test)]
+    claim_result_hook: Option<ClaimResultHook>,
+    #[cfg(feature = "test-support")]
+    admission_hook: Option<AdmissionHook>,
 }
 
 impl<'a, S, I, T, A> Delivery<'a, S, I, T, A>
@@ -250,6 +268,11 @@ where
             cards: CardKit::default(),
             materialised_week: None,
             throttle: AlertThrottle::new(),
+            claim_gate: Arc::new(|| Some(DeliveryEligibility::unguarded())),
+            #[cfg(test)]
+            claim_result_hook: None,
+            #[cfg(feature = "test-support")]
+            admission_hook: None,
         }
     }
 
@@ -258,6 +281,68 @@ where
     pub fn with_cards(mut self, cards: CardKit) -> Self {
         self.cards = cards;
         self
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_claim_result_hook(
+        mut self,
+        hook: impl Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync + 'static,
+    ) -> Self {
+        self.claim_result_hook = Some(Arc::new(hook));
+        self
+    }
+
+    /// Gate claims while preserving the tick's maintenance work.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_claim_gate(mut self, gate: impl Fn() -> bool + Send + Sync + 'static) -> Self {
+        let gate = Arc::new(gate);
+        self.claim_gate = Arc::new(move || {
+            if !gate() {
+                return None;
+            }
+            let validator = Arc::clone(&gate);
+            Some(DeliveryEligibility::checked(move || validator()))
+        });
+        self
+    }
+
+    /// Pause after ownership is acquired and before its effect begins.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_admission_hook(
+        mut self,
+        hook: impl Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync + 'static,
+    ) -> Self {
+        self.admission_hook = Some(Arc::new(hook));
+        self
+    }
+
+    /// Supply a synchronized admission token at each claim/delete boundary.
+    #[must_use]
+    pub(crate) fn with_admission_gate(
+        mut self,
+        gate: impl Fn() -> Option<DeliveryEligibility> + Send + Sync + 'static,
+    ) -> Self {
+        self.claim_gate = Arc::new(gate);
+        self
+    }
+
+    pub(super) async fn admit(&self) -> Option<DeliveryOperation> {
+        let operation = (self.claim_gate)()?.admit()?;
+        #[cfg(test)]
+        let mut operation = operation;
+        #[cfg(test)]
+        if let Some(hook) = &self.claim_result_hook {
+            let hook = Arc::clone(hook);
+            operation.set_claim_result_hook(move || hook());
+        }
+        #[cfg(feature = "test-support")]
+        if let Some(hook) = &self.admission_hook {
+            hook().await;
+        }
+        Some(operation)
     }
 
     fn card_context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
@@ -502,17 +587,27 @@ where
     ) -> Result<DigestReport, DeliveryError> {
         let reset = self.config.reset();
         let current_week = reset.current_week(now)?;
-        let retired = self
-            .store
-            .retire_digests_before(lease, current_week, now)
-            .await?;
-        let log = self.store.load_digests().await?;
         let mut report = DigestReport {
             current_week,
-            retired,
+            retired: 0,
             outcome: DigestOutcome::UpToDate,
             send: None,
         };
+        let Some(mut operation) = self.admit().await else {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        };
+        if !operation.begin() {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        }
+        let retired = self
+            .store
+            .retire_digests_before(lease, current_week, now)
+            .await;
+        operation.settle();
+        report.retired = retired?;
+        let log = self.store.load_digests().await?;
         let last = log
             .last_digest_week
             .as_deref()
@@ -542,9 +637,20 @@ where
         match plan.action {
             DigestAction::UpToDate => return Ok(report),
             DigestAction::Record(reason) => {
-                self.store
+                let Some(mut operation) = self.admit().await else {
+                    report.outcome = DigestOutcome::Paused;
+                    return Ok(report);
+                };
+                if !operation.begin() {
+                    report.outcome = DigestOutcome::Paused;
+                    return Ok(report);
+                }
+                let recorded = self
+                    .store
                     .record_digest_week(lease, current_week, now)
-                    .await?;
+                    .await;
+                operation.settle();
+                recorded?;
                 report.outcome = DigestOutcome::Recorded(reason);
                 return Ok(report);
             }
@@ -572,10 +678,22 @@ where
         // A suppressed send may already have posted: never delete for it.
         if post.send.disposition == SendDisposition::Send
             && let Some(old) = &post.replaces
-            && let Replacement::Suppressed(reason) = executor.replace_digest(old, now).await?
         {
-            report.outcome = DigestOutcome::ReplacementSuppressed(reason);
-            return Ok(report);
+            let Some(permit) = self.admit().await else {
+                report.outcome = DigestOutcome::Paused;
+                return Ok(report);
+            };
+            match executor.replace_digest_admitted(permit, old, now).await? {
+                Some(Replacement::Suppressed(reason)) => {
+                    report.outcome = DigestOutcome::ReplacementSuppressed(reason);
+                    return Ok(report);
+                }
+                Some(Replacement::Retired) => {}
+                None => {
+                    report.outcome = DigestOutcome::Paused;
+                    return Ok(report);
+                }
+            }
         }
         let message = match post.send.disposition {
             SendDisposition::Send => {
@@ -589,11 +707,22 @@ where
             }
             SendDisposition::Suppressed => unrendered(),
         };
-        let outcome = settle(
-            executor
-                .execute(&post.send, &message, None, post.record_week, now)
-                .await,
-        )?;
+        let Some(permit) = self.admit().await else {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        };
+        let result = match executor
+            .execute_admitted(permit, &post.send, &message, None, post.record_week, now)
+            .await
+        {
+            Ok(Some(outcome)) => Ok(outcome),
+            Ok(None) => {
+                report.outcome = DigestOutcome::Paused;
+                return Ok(report);
+            }
+            Err(failure) => Err(failure),
+        };
+        let outcome = settle(result)?;
         report.outcome = DigestOutcome::Attempted;
         report.send = Some(SendReport {
             intent: post.send.intent,
@@ -619,15 +748,24 @@ where
             settings: self.config.settings(),
         });
         let mut report = DispatchReport {
-            retired: plan.retire.len(),
             queued: plan.queued,
             ..DispatchReport::default()
         };
         for retirement in &plan.retire {
-            self.service(now)
+            let Some(mut operation) = self.admit().await else {
+                return Ok(report);
+            };
+            if !operation.begin() {
+                return Ok(report);
+            }
+            let retired = self
+                .service(now)
                 .as_origin(tick_origin())
                 .mark_reminder_sent(&retirement.reminder_id, None)
-                .await?;
+                .await;
+            operation.settle();
+            retired?;
+            report.retired += 1;
         }
         let limit = self.config.max_sends_per_tick;
         let executor = self.executor(lease);
@@ -650,7 +788,17 @@ where
                 }
                 SendDisposition::Suppressed => unrendered(),
             };
-            let result = executor.execute(&send, &message, None, None, now).await;
+            let Some(permit) = self.admit().await else {
+                break;
+            };
+            let result = executor
+                .execute_admitted(permit, &send, &message, None, None, now)
+                .await;
+            let result = match result {
+                Ok(Some(outcome)) => Ok(outcome),
+                Ok(None) => break,
+                Err(failure) => Err(failure),
+            };
             if matches!(&result, Err(failure) if failure.attempt.is_some())
                 || result.as_ref().is_ok_and(SendOutcome::claimed)
             {

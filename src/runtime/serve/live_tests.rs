@@ -36,7 +36,7 @@ use crate::{
     bot::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
         delivery::{FixedClock, LogAlerts, StoreRef},
-        gateway::{EventSource, GatewayError},
+        gateway::{Connection, ConnectionStatus, DeliveryEligibility, EventSource, GatewayError},
         guild_cache::GuildCache,
         roster::LiveRoster,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
@@ -284,6 +284,7 @@ struct Harness {
 struct Ctx {
     store: Arc<SqliteStore>,
     events: mpsc::UnboundedSender<Event>,
+    connection: ConnectionStatus,
     access: Arc<GuildAccess>,
     health: Arc<dyn HealthProbe>,
     composition: Composition,
@@ -322,6 +323,7 @@ impl Harness {
     async fn start(&self) -> (Discord, Ctx) {
         let store = store::open(&self.config.store).await.unwrap();
         let prepared = discord::prepare(&self.config, TICK);
+        let connection = prepared.probe.connection.clone();
         let health = LiveHealth::new(store.clone())
             .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
             .with_extraction(prepared.extraction.clone());
@@ -349,6 +351,7 @@ impl Harness {
         let ctx = Ctx {
             store,
             events,
+            connection,
             access: Arc::clone(&composition.access),
             health: Arc::clone(&composition.admin.health),
             composition,
@@ -397,11 +400,12 @@ async fn finish(harness: &Harness, ctx: Ctx) {
     let Ctx {
         store,
         events,
+        connection,
         access,
         health,
         composition,
     } = ctx;
-    drop((events, access, health, composition));
+    drop((events, connection, access, health, composition));
     store::close(store, Duration::ZERO).await;
     // Closed, so ownership was released: it opens again.
     let reopened = store::open(&harness.config.store)
@@ -758,6 +762,7 @@ fn controlled_tick(
             &super::settings::seed(&harness.config.seeds),
         ),
         status: Arc::new(super::tick::TickStatus::new(TICK)),
+        claim_gate: Arc::new(|| Some(DeliveryEligibility::unguarded())),
         cards: Default::default(),
         quiet: Arc::new(AtomicBool::new(false)),
         post_channel: Arc::new(RwLock::new(None)),
@@ -1332,3 +1337,4 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
 }
 
 mod extraction;
+mod outage;

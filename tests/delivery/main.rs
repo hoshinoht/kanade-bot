@@ -14,6 +14,7 @@ mod drafts;
 mod failures;
 mod intercept;
 mod notices;
+mod outage;
 mod outbox_policy;
 mod proposals;
 mod scenarios;

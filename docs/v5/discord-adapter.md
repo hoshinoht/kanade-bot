@@ -1,9 +1,8 @@
-# v5 Discord adapter (foundation)
+# v5 Discord adapter
 
-Status: storage-independent groundwork under `src/bot/`. Not wired into
-`serve`; nothing connects to Discord. Tests (`tests/discord/`, target
-`discord`, feature `test-support`) are offline: fakes, Twilight models built
-from JSON, and a loopback HTTP stub.
+Status: storage-independent adapter under `src/bot/`, wired into `serve`.
+Tests (`tests/discord/`, target `discord`, feature `test-support`) are offline:
+fakes, Twilight models built from JSON, and a loopback HTTP stub.
 
 ## Dependencies
 
@@ -135,10 +134,13 @@ interaction create, message create/update/delete/delete-bulk, channel
 create/update/delete, thread create/update/delete/list-sync.
 
 One shard (`ShardId::ONE`). Twilight reconnects with exponential backoff and
-resumes on its own (`RESUMED` is deserialized only so `ConnectionStatus`
-reads `ready` again; a close frame or a failed reconnect reads
-`disconnected`; serve marks a fatal close `closed`); the loop hands payload-free receive errors to a callback
-and continues. When the stream ends after a fatal close it returns
+resumes on its own. `ConnectionStatus` reads `ready` on both `READY` and
+`RESUMED`, `disconnected` on a close frame or failed reconnect, and `closed`
+after a fatal close. Delivery readiness is stricter: every fresh `READY` opens
+a new generation, and notice/reminder/digest work stays paused until that
+generation's `GuildAvailable` and roster reconciliation complete. `RESUMED`
+restores claims without a rescan. The loop hands payload-free receive errors to
+a callback and continues. When the stream ends after a fatal close it returns
 `Closed { reason }`, taken from the close frame just before the end: 4004
 (token), 4010/4011 (sharding), 4012 (API version), 4013 (invalid intents) and
 4014 (privileged intents not enabled; the usual first-deploy error) have
@@ -288,6 +290,25 @@ don't count toward the cap; sends past it wait for the next tick
 (`deferred`). Call
 `Delivery::start` (`recover_on_start`) once after taking ownership of the
 store: in-flight attempts become indeterminate and are never resent.
+
+Outage gate: while disconnected or before the fresh-READY generation is
+reconciled, ticks still materialise weeks, mark completed runs, recount
+attendance and expire drafts/proposals. Notice draining, digest processing
+(including remote deletion before a replacement claim) and reminder dispatch
+pause without claiming or retiring pending rows as stale/silent. Once claims
+resume, the normal age and staleness rules apply. Each claim or pre-claim
+delete consumes a generation/epoch eligibility snapshot only if a final
+admission under the gateway-state mutex assigns it a unique owner. Only one
+delivery owner may be active; close and fresh READY advance the epoch, so stale
+eligibility cannot revive after RESUMED. Digest deletion and the replacement
+create are separately admitted. An owned operation may continue after close,
+without holding the readiness lock over I/O; its journal and notice-outbox
+result is settled normally. Ambiguous outcomes remain indeterminate and are
+never replayed. If cancellation or unwind drops a begun owner, only its
+in-memory slot is released: a committed claim stays held until startup recovery
+marks it indeterminate, and an interrupted digest delete does not retire the
+old claim or authorize its replacement. Cancellation cannot undo a remote
+effect already handed off; the adapter starts no detached transport task.
 
 Digest:
 - Earlier weeks' active cards are retired every time the digest step runs.
@@ -523,8 +544,15 @@ and counts message events. `roster::reconcile` pages `list_members` and diffs it
 against the stored rows (`Seen` for changed members, `Left` for rows still
 holding a role, roles or Administrator); `roster::LiveRoster` is the
 in-memory member snapshot (`Directory`) the tick and cards read. The first
-delivery tick waits for `LiveRoster::reconciled` after the guild becomes
-available; shutdown still releases it if reconciliation never completes.
+delivery tick waits for the initial guild availability and
+`LiveRoster::reconciled`; later fresh READY generations have their own
+`ConnectionStatus` gate, so the sticky initial booleans cannot release claims
+early. Readiness opens only after the guild access/prune writes, every member
+page and diff write, and the live snapshot refresh succeed. A failed generation
+keeps claims paused and schedules one exponential-backoff retry slot (1 s to
+60 s) for that same generation; obsolete retries cannot open a later READY.
+Shutdown still
+releases the initial wait if reconciliation never completes.
 `delivery::LogAlerts` is the beta alert destination (structured log).
 Commands: `runtime::serve::commands` builds a `CommandContext` from the
 API's own store, writer, policy, catalog, personas, access and clock (the

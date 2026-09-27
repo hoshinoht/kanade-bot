@@ -23,7 +23,9 @@ use kanade::bot::commands::{
     Gate, Handled, Invocation, SlashCommand, spawn_interaction,
 };
 use kanade::bot::events::{AdminRoles, BotEvent, EventHandler};
-use kanade::bot::gateway::{EventSource, GatewayError, RunExit, RunnerConfig, run};
+use kanade::bot::gateway::{
+    ConnectionStatus, EventSource, GatewayError, RunExit, RunnerConfig, run,
+};
 use kanade::bot::handler::Fanout;
 use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, InteractionReply, Op, Outcome,
@@ -406,6 +408,7 @@ async fn fanout_bounds_task_drain_and_aborts_hanging_command_tasks() {
         Arc::new(Roster::new()),
         roster,
         reactions,
+        ConnectionStatus::new(),
         Box::new(|_| {}),
         guild_ready,
     );

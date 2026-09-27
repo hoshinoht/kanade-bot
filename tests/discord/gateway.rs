@@ -7,9 +7,10 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use twilight_gateway::{Event, EventTypeFlags, Intents};
 
-use kanade::bot::events::{BotEvent, EventHandler};
+use kanade::bot::events::{BotEvent, EventHandler, Router};
 use kanade::bot::gateway::{
-    CloseReason, EventSource, GatewayError, INTENTS, RunExit, RunnerConfig, WANTED_EVENTS, run,
+    CloseReason, Connection, ConnectionStatus, EventSource, GatewayError, INTENTS, Live, RunExit,
+    RunnerConfig, WANTED_EVENTS, run, run_live,
 };
 use twilight_gateway::CloseFrame;
 
@@ -299,5 +300,47 @@ async fn a_recovered_close_is_not_blamed_for_a_later_end() {
         RunExit::Closed {
             reason: CloseReason::Other(None)
         }
+    );
+}
+
+async fn observe(status: &ConnectionStatus, event: Event) {
+    let mut source = FakeSource::new(vec![Ok(event)]);
+    source.ends = true;
+    run_live(
+        &mut source,
+        &mut Recorder::default(),
+        Live {
+            router: Router::new(scope()),
+            status: status.clone(),
+        },
+        Duration::ZERO,
+        std::future::pending(),
+        |_| {},
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn delivery_readiness_distinguishes_ready_disconnected_and_resumed() {
+    let status = ConnectionStatus::new();
+    observe(&status, ready(SELF_ID)).await;
+    assert_eq!(status.get(), Connection::Ready);
+    assert!(
+        !status.delivery_claims_allowed(),
+        "fresh READY has no guild/reconcile generation yet"
+    );
+
+    observe(&status, Event::GatewayClose(None)).await;
+    assert_eq!(status.get(), Connection::Disconnected);
+    assert!(!status.delivery_claims_allowed());
+
+    observe(&status, Event::Resumed).await;
+    assert_eq!(status.get(), Connection::Ready);
+    assert!(status.delivery_claims_allowed(), "RESUMED restores claims");
+
+    observe(&status, ready(SELF_ID)).await;
+    assert!(
+        !status.delivery_claims_allowed(),
+        "a later fresh READY starts a new generation"
     );
 }

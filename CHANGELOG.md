@@ -562,6 +562,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 pauses new delivery admissions during gateway outages and until a fresh
+  roster reconciliation succeeds, while allowing admitted work to settle.
+  Cancelling an admitted send releases its in-memory owner without retrying a
+  possibly committed journal claim or an ambiguous Discord operation.
 - v5 masks complete links—including unknown handles in URLs—before model calls
   and refuses any URL left at the provider boundary; member-facing links are
   restored locally without storing the token-to-link mapping.
