@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use kanade::chat::answer::{AnswerDeps, Generation, Question, answer, interaction};
 use kanade::chat::prompts::{code_owned_texts, protected};
+use kanade::chat::sanitize::schedule_defaults;
 use kanade::chat::tools::ToolName;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::domain::model_log::ModelLogStore;
@@ -194,7 +195,10 @@ async fn run_chat(
     } else {
         client
     };
-    let ctx_input = json!({"author_id": "11", "channel_id": "900"});
+    let ctx_input = json!({
+        "author_id": "11", "channel_id": "900",
+        "self_schedule_requested": schedule_defaults(question, None, None).self_schedule_requested,
+    });
     let ctx = world.context(&ctx_input);
     let conversation = vec![
         Message::System {
@@ -284,6 +288,62 @@ fn request_estimate(requests: &[ChatRequest]) -> (usize, usize) {
         .map(|request| serde_json::to_vec(request).expect("request JSON").len())
         .sum::<usize>();
     (bytes, bytes.div_ceil(4))
+}
+
+#[tokio::test(start_paused = true)]
+async fn masked_first_person_schedule_recovers_an_unissued_model_mention() {
+    let fixture = fixture();
+    let roster = roster(&fixture);
+    let on = run_chat(
+        &fixture,
+        &roster,
+        &codec(),
+        true,
+        "What's for me today?",
+        vec![
+            FakeAction::Response(CompletionResponse {
+                model: MODEL.into(),
+                content: Some("Looking up the schedule.".into()),
+                tool_calls: vec![ToolCall {
+                    id: "synthetic-schedule".into(),
+                    name: "get_schedule".into(),
+                    arguments: json!({"week": "auto", "day": "today", "participant": "<@123>"})
+                        .to_string(),
+                }],
+                finish_reason: FinishReason::ToolCalls,
+                usage: None,
+            }),
+            answer_action("Here is your schedule."),
+        ],
+    )
+    .await;
+    assert!(on.ctx.self_schedule_requested);
+    assert!(on.generation.failure.is_none());
+    assert_eq!(on.requests.len(), 2);
+    assert_eq!(on.generation.outcomes.len(), 1);
+    assert!(on.generation.outcomes[0].outcome.ok);
+    assert_eq!(
+        on.generation.outcomes[0].outcome.arguments["participant"],
+        "<@123>"
+    );
+    let view = on.generation.model_view.as_ref().expect("masked view");
+    let raw: Value = serde_json::from_str(
+        view.rounds[0].tool_calls[0]["arguments"]
+            .as_str()
+            .expect("raw model arguments"),
+    )
+    .expect("tool JSON");
+    assert_eq!(raw["participant"], "<@123>");
+    assert!(!view.mapping.iter().any(|entry| entry.user_id == "123"));
+    for request in &on.requests {
+        // The full tool surface contains HFA, both a code-owned boss term
+        // and an invented alias in this fixture; it is not a member leak.
+        assert!(
+            find_request_leaks(request, &roster)
+                .iter()
+                .all(|hit| hit.eq_ignore_ascii_case("HFA"))
+        );
+    }
 }
 
 #[tokio::test(start_paused = true)]

@@ -52,11 +52,11 @@ fn schedule_participant(
     args: &Map<String, Value>,
 ) -> ToolResult<Option<String>> {
     let Some(Value::String(value)) = args.get("participant") else {
-        return Ok(None);
+        return Ok(ctx.self_schedule_requested.then(|| ctx.author_id.clone()));
     };
     let raw = strip(value);
     if raw.is_empty() {
-        return Ok(None);
+        return Ok(ctx.self_schedule_requested.then(|| ctx.author_id.clone()));
     }
     if raw.to_lowercase() == "me" {
         return Ok(Some(ctx.author_id.clone()));
@@ -95,6 +95,12 @@ fn schedule_participant(
     }
     match resolution.ids.as_slice() {
         [only] if world.directory.member(only).is_some() => Ok(Some(only.clone())),
+        [only]
+            if ctx.self_schedule_requested
+                && (raw == format!("<@{only}>") || raw == format!("<@!{only}>")) =>
+        {
+            Ok(Some(ctx.author_id.clone()))
+        }
         _ => Err(ToolError::new(
             "That does not identify one person on the roster. Ask who they mean.",
         )),

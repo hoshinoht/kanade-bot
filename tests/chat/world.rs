@@ -417,6 +417,7 @@ impl World {
         ctx.force_all_channels = flag("force_all_channels");
         ctx.force_channel_scope = flag("force_channel_scope");
         ctx.force_group_schedule = flag("force_group_schedule");
+        ctx.self_schedule_requested = flag("self_schedule_requested");
         ctx.upcoming_only = flag("upcoming_only");
         ctx
     }

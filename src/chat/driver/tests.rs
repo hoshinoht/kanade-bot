@@ -744,6 +744,33 @@ async fn the_bots_managed_role_mention_is_answered_and_stripped() {
 }
 
 #[tokio::test]
+async fn a_first_person_schedule_signal_comes_from_the_unmasked_question() {
+    let rig = rig(vec![Step::Reply("Here are your runs.")]).await;
+    let mut asked = asked("1001", "11", CHANNEL, &[ROLE]);
+    asked.message.content = format!("<@{BOT}> what's for me today?");
+    assert!(rig.driver.offer(asked));
+    rig.settle().await;
+    let seen = rig.fake.seen.lock().unwrap();
+    assert!(seen.ctx[0].self_schedule_requested);
+    assert!(!seen.ctx[0].force_group_schedule);
+    assert!(
+        !schedule_defaults("what's for someone else today?", Some(BOT), None)
+            .self_schedule_requested
+    );
+    for mixed in [
+        "what's for me and someone else today?",
+        "my runs with a friend tonight?",
+        "what's for me, a friend, today?",
+        "what's for me and everyone?",
+    ] {
+        assert!(
+            !schedule_defaults(mixed, Some(BOT), None).self_schedule_requested,
+            "{mixed}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_question_deleted_before_its_answer_starts_never_reaches_the_model() {
     let rig = rig(vec![Step::Reply("never")]).await;
     let gate = Arc::new(Notify::new());

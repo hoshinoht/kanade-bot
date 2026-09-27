@@ -13,6 +13,8 @@ pub struct ScheduleDefaults {
     pub force_all_channels: bool,
     pub force_channel_scope: bool,
     pub force_group_schedule: bool,
+    /// The asker's question is unambiguously about their own schedule.
+    pub self_schedule_requested: bool,
     pub upcoming_only: bool,
 }
 
@@ -28,6 +30,8 @@ static CHANNEL_QUALIFIER: LazyLock<Regex> =
 static PERSON_QUALIFIER: LazyLock<Regex> = LazyLock::new(|| {
     pattern_i(r"\b(?:for me|my runs|my schedule|am i|do i|i am|i'm|myself)\b|<@!?\d+>")
 });
+static SELF_REFERENCE: LazyLock<Regex> =
+    LazyLock::new(|| pattern_i(r"\b(?:for me|my (?:boss )?(?:runs?|schedule))\b"));
 /// `for <someone>`; the words that are not a person are rejected by
 /// [`NOT_A_PERSON`] (v4's negative lookahead).
 static FOR: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"\bfor\s+"));
@@ -48,6 +52,78 @@ fn names_a_person(text: &str) -> bool {
         let rest = &text[found.end()..];
         !NOT_A_PERSON.is_match(rest) && PERSON_START.is_match(rest)
     })
+}
+
+const SELF_CONTEXT_WORDS: &[&str] = &[
+    "what",
+    "what's",
+    "whats",
+    "what’s",
+    "is",
+    "are",
+    "on",
+    "show",
+    "list",
+    "tell",
+    "give",
+    "me",
+    "my",
+    "the",
+    "schedule",
+    "run",
+    "runs",
+    "boss",
+    "today",
+    "tonight",
+    "tomorrow",
+    "tmr",
+    "tmrw",
+    "this",
+    "next",
+    "week",
+    "in",
+    "here",
+    "channel",
+    "all",
+    "channels",
+    "please",
+    "when",
+    "do",
+    "i",
+    "have",
+    "about",
+    "mon",
+    "monday",
+    "tue",
+    "tuesday",
+    "wed",
+    "wednesday",
+    "thu",
+    "thursday",
+    "fri",
+    "friday",
+    "sat",
+    "saturday",
+    "sun",
+    "sunday",
+];
+
+/// Recover only a self-only schedule request. Unrecognized words or mixed
+/// punctuation suppress the fallback rather than guessing another person.
+fn self_only_schedule(text: &str) -> bool {
+    if !SELF_REFERENCE.is_match(text) {
+        return false;
+    }
+    let remaining = SELF_REFERENCE.replace_all(text, " ");
+    if !remaining
+        .chars()
+        .all(|ch| ch.is_ascii_alphabetic() || ch.is_ascii_whitespace() || ch == '\'' || ch == '’')
+    {
+        return false;
+    }
+    remaining
+        .split_whitespace()
+        .all(|word| SELF_CONTEXT_WORDS.contains(&word.to_ascii_lowercase().as_str()))
 }
 
 /// Defaults for a complete question, with the bot's own mentions removed.
@@ -76,6 +152,7 @@ pub fn schedule_defaults(
         force_all_channels: all_channels || whole_group || (complete_question && !explicit_channel),
         force_channel_scope: complete_question && explicit_channel,
         force_group_schedule: (complete_question || whole_group) && !explicit_person,
+        self_schedule_requested: self_only_schedule(cleaned) && !whole_group,
         upcoming_only: UPCOMING.is_match(cleaned),
     }
 }

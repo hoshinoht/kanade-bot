@@ -26,6 +26,8 @@ are C3. Serve wiring is `chat::driver` (below).
   whole request (turns, tool calls, the offered tools' JSON) plus
   `COMPLETION_RESERVE_TOKENS` (1024) fits `MODEL_CONTEXT_TOKENS`; the trim
   sticks for later rounds. Nothing left to drop is `ContextBudgetError`.
+- Every round is a separate model request, not a stateful provider session:
+  resend the system/persona prompt along with retained turns and tool results.
 
 ## The question loop (`chat::answer`)
 
@@ -126,6 +128,15 @@ are C3. Serve wiring is `chat::driver` (below).
   round keeps earlier tool calls in its transcript. The runner still rejects
   a reply it cannot read (non-JSON or non-object arguments, empty or
   duplicate call ids, bad names) as `InvalidOutput`.
+- `get_schedule` first-person recovery (masked live L3 finding): trusted
+  `schedule_defaults` reads the original question, excluding the bot mention.
+  Only a conservative self-only form (with no additional person/group intent)
+  may recover an omitted `participant` or one unrecognized Discord mention
+  as the trusted author id. Mixed requests keep their old group/refusal path;
+  a recognized other member remains that member. The dispatcher
+  still decodes issued identity tokens before this rule and refuses unknown
+  token-shaped identities; no model-provided id gains authority. This does not
+  relax masking, member access or write-tool validation.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is

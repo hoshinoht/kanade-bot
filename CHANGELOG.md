@@ -562,6 +562,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 resolves an explicitly first-person schedule question to its asker when
+  a masked model omits the participant or invents an unrecognized mention;
+  third-person and unknown-token refusals remain intact.
 - v5 pauses new delivery admissions during gateway outages and until a fresh
   roster reconciliation succeeds, while allowing admitted work to settle.
   Cancelling an admitted send releases its in-memory owner without retrying a

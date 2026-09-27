@@ -106,6 +106,7 @@ fn tool_context(asked: &Asked, prepared: &Prepared, source_id: &str) -> ToolCont
     ctx.force_all_channels = defaults.force_all_channels;
     ctx.force_channel_scope = defaults.force_channel_scope;
     ctx.force_group_schedule = defaults.force_group_schedule;
+    ctx.self_schedule_requested = defaults.self_schedule_requested;
     ctx.upcoming_only = defaults.upcoming_only;
     ctx
 }

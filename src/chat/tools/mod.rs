@@ -93,6 +93,7 @@ pub struct ToolContext {
     pub force_all_channels: bool,
     pub force_channel_scope: bool,
     pub force_group_schedule: bool,
+    pub self_schedule_requested: bool,
     pub upcoming_only: bool,
     /// The answer's single clock reading.
     pub now: DateTime<Utc>,
@@ -119,6 +120,7 @@ impl ToolContext {
             force_all_channels: false,
             force_channel_scope: false,
             force_group_schedule: false,
+            self_schedule_requested: false,
             upcoming_only: false,
             now,
         }
