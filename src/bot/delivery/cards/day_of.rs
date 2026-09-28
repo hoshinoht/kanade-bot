@@ -6,7 +6,7 @@ use super::Card;
 use super::art::{lead_entry_art, lead_portrait};
 use super::common::{
     COLOUR_DAY_OF, CardContext, People, REACT_HINT, boss_detail, everyone_on, format_bosses,
-    lead_colour, local_time, status_line,
+    lead_colour, local_time, status_line, unanswered,
 };
 use crate::domain::schedule::{Run, RunStatus};
 
@@ -37,12 +37,12 @@ pub fn day_of_card(
             } else {
                 format!("🕘 {}", local_time(run.datetime, ctx.zone))
             };
-            let value = [
-                boss_detail(&run.bosses, ctx.catalog),
-                status_line(ctx, run),
-                who.list(&run.participants),
-            ]
-            .join("\n");
+            let mut lines = vec![boss_detail(&run.bosses, ctx.catalog), status_line(ctx, run)];
+            let waiting = unanswered(&ctx.states(run));
+            if !waiting.is_empty() {
+                lines.push(format!("Still to answer: {}", who.list(&waiting)));
+            }
+            let value = lines.join("\n");
             (format!("{when}  ·  {}", format_bosses(&run.bosses)), value)
         })
         .collect();

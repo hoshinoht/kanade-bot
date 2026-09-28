@@ -570,6 +570,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 day-of reminder fields now label only members still waiting for an answer
+  beneath the unconfirmed tally in either attendance mode; the top line retains
+  the full party. V4_COMPAT scheduling, tallies and pings are unchanged.
 - v5 resolves an explicitly first-person schedule question to its asker when
   a masked model omits the participant or invents an unrecognized mention;
   third-person and unknown-token refusals remain intact.

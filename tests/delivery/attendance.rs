@@ -150,6 +150,10 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
         "{morning:?}"
     );
     assert_eq!(morning.1, ["1002"], "morning mentions unknowns only");
+    assert!(
+        morning.2.contains("Still to answer: <@1002>") && !morning.2.contains("<@1001>"),
+        "assumed answer is not listed as waiting: {morning:?}"
+    );
     // 1002 answers: confirmed, and cards say "expected" (1001 is assumed).
     let mut ids = RandomIds;
     let answered = service(store, &mut ids, start() - TimeDelta::hours(2))

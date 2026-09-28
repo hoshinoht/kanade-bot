@@ -356,7 +356,12 @@ and v5 agree; `render.rs` turns a card into the post. Tests:
 - **Day-of** (`day_of.rs`): content `📅 **<heading>**` plus everyone on the
   runs; one field per run, `🕘 HH:MM  ·  <bosses>` (`🕒 own time` for own-time
   runs), valued boss detail (`**XKalos** · Gatekeeper Kalos (Extreme,
-  Lv265)`), status line (`⚠️ unconfirmed · 1/5 ✅`) and the party; footer
+  Lv265)`), status line (`⚠️ unconfirmed · 1/5 ✅`) and, when needed,
+  `Still to answer: …` with only unknown-answer members. **Named v5 difference
+  from v4, including `V4_COMPAT` attendance mode:** the field no longer repeats
+  the whole party directly beneath an unconfirmed tally; the top ping line
+  still carries the full party. `V4_COMPAT` tallies and mention policy are
+  unchanged. Footer
   `React ✅ if you're on, ❌ if not.`; the lead boss's colour (else blurple),
   portrait thumbnail and entry artwork as the image.
 - **Countdown** (`countdown.rs`): `⏰ <phrase> · **<bosses>** in

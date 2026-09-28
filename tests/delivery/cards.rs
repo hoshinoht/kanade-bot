@@ -249,7 +249,12 @@ pub(crate) async fn seed_day_of<S: Store>(store: &S) -> (String, String) {
 
 const DAY_OF_CONTENT: &str = "📅 **Today — Thu 10 Sep**\n<@1001> Bex";
 
-async fn day_of_card_matches_v4<S: Store>(store: &S) {
+async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
+    assert_eq!(
+        scenarios::config().policy.attendance.mode,
+        kanade::domain::attendance::AttendanceMode::V4Compat,
+        "the named card-text difference applies even in V4_COMPAT"
+    );
     let art = art_dir();
     let world = world();
     seed_day_of(store).await;
@@ -270,12 +275,12 @@ async fn day_of_card_matches_v4<S: Store>(store: &S) {
         [
             (
                 "🕘 21:00  ·  HMaleficStar".to_owned(),
-                "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\n<@1001> Bex"
+                "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex"
                     .to_owned()
             ),
             (
                 "🕒 own time  ·  XKalos".to_owned(),
-                "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n🕒 own time · 0/1 ✅\n<@1001>"
+                "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n🕒 own time · 0/1 ✅\nStill to answer: <@1001>"
                     .to_owned()
             ),
         ]
@@ -306,8 +311,60 @@ async fn day_of_card_matches_v4<S: Store>(store: &S) {
 }
 
 #[tokio::test]
-async fn day_of_card_pins_v4_content_fields_and_art() {
-    on_both_stores!(day_of_card_matches_v4);
+async fn day_of_card_labels_waiting_even_in_v4_compat() {
+    on_both_stores!(day_of_card_labels_waiting_members);
+}
+
+async fn day_of_waiting_matches_answers<S: Store>(store: &S, second_yes: bool, quiet: bool) {
+    let mut world = world();
+    world.roster.upsert(Member {
+        user_id: "1003".into(),
+        display_name: Some("SampleThird".into()),
+        has_role: true,
+        ping_level: PingLevel::Off,
+        ..Member::default()
+    });
+    let id = run(
+        store,
+        &["HMaleficStar"],
+        &["1001", "1002", "1003"],
+        tonight(),
+        RunStatus::Planned,
+    )
+    .await;
+    answer(store, &id, "1001", true, now() - TimeDelta::minutes(5)).await;
+    answer(
+        store,
+        &id,
+        "1002",
+        second_yes,
+        now() - TimeDelta::minutes(5),
+    )
+    .await;
+    due(store, &id, "day_of").await;
+    let mut delivery = scenarios::delivery(store, &world, &world.fake).with_cards(kit(None));
+    delivery.config.quiet_mode = quiet;
+    delivery.dispatch_reminders(now()).await.expect("day-of");
+    let message = created(&world.fake).pop().expect("posted");
+    let top = message.content.as_deref().expect("top ping line");
+    assert!(top.contains("Bex") && top.contains("SampleThird"), "{top}");
+    let field = &message.embeds[0].fields[0].value;
+    assert!(
+        field.contains(if second_yes { "2/3" } else { "1/3" }),
+        "{field}"
+    );
+    assert!(field.ends_with("Still to answer: SampleThird"), "{field}");
+    assert!(!field.contains("Aria") && !field.contains("Bex"), "{field}");
+    if quiet {
+        assert!(!top.contains("<@") && !field.contains("<@"));
+        assert!(allowed(&message).is_empty());
+    }
+}
+
+#[tokio::test]
+async fn day_of_tally_names_only_the_waiting_member() {
+    on_both_stores!(day_of_waiting_matches_answers, true, false);
+    on_both_stores!(day_of_waiting_matches_answers, false, true);
 }
 
 /// A countdown for a fresh Kalos run 14 minutes out with `answers`.
@@ -1411,6 +1468,11 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         "{:?}",
         embed.fields[0]
     );
+    assert!(
+        embed.fields[0].value.ends_with("Still to answer: <@1001>"),
+        "{:?}",
+        embed.fields[0]
+    );
     assert_eq!(
         pictures(embed),
         (
@@ -1425,6 +1487,16 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         "an edit notifies nobody"
     );
     assert_eq!(rewriter.calls(), 1, "the edit reuses the stored heading");
+
+    // When the last answer arrives, the pending-only line disappears.
+    answer(&*store, &star, "1001", true, now() + TimeDelta::minutes(1)).await;
+    assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
+    let latest = edits(&fake).pop().expect("answer refresh");
+    assert!(
+        !latest.embeds.as_ref().expect("embed")[0].fields[0]
+            .value
+            .contains("Still to answer:")
+    );
 
     // A run that has started keeps its card as a record.
     let later = CardRefresh {

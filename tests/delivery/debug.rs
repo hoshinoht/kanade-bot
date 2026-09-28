@@ -136,7 +136,7 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
         fields(embed),
         [(
             "🕘 21:00  ·  HMaleficStar".to_owned(),
-            "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\n<@1001> Bex"
+            "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex"
                 .to_owned()
         )]
     );
