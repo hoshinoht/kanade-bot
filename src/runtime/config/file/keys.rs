@@ -106,12 +106,6 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ("models.key_file", "KANADE_MODEL_KEY_FILE", Text),
     ("models.ca_file", "KANADE_MODEL_CA_FILE", Text),
     ("models.permits", "KANADE_MODEL_PERMITS", Int),
-    (
-        "models.allow_external_unmasked",
-        "KANADE_ALLOW_EXTERNAL_UNMASKED",
-        Flag,
-    ),
-    ("models.pseudonymize", "KANADE_PSEUDONYMIZE", Flag),
     ("models.groups", "KANADE_MODEL_GROUPS", Groups),
     ("models.extraction.model", "KANADE_EXTRACT_MODEL", Text),
     (
@@ -165,6 +159,13 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
 
 pub(super) fn lookup(path: &str) -> Option<(&'static str, &'static str, Kind)> {
     KEYS.iter().find(|(key, _, _)| *key == path).copied()
+}
+
+pub(super) fn is_retired(path: &str) -> bool {
+    matches!(
+        path,
+        "models.allow_external_unmasked" | "models.pseudonymize"
+    )
 }
 
 /// A table on the way to some key, e.g. `models` or `models.chat`.

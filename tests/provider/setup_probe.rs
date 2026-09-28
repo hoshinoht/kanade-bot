@@ -5,7 +5,6 @@ use kanade::{
     infrastructure::llm::{
         Effort,
         governor::Role,
-        identity::Passthrough,
         setup::{ModelRoles, ProbeOutcome, RoleEffort},
     },
     runtime::error::Error,
@@ -29,10 +28,7 @@ async fn a_probe_sends_one_tiny_member_free_completion_per_role() {
     let stack = ready(input);
     stack.check_startup().await;
     for role in ModelRoles::ALL {
-        let result = stack
-            .probe(role, &Passthrough, Duration::from_secs(5))
-            .await
-            .unwrap();
+        let result = stack.probe(role, Duration::from_secs(5)).await.unwrap();
         assert!(
             matches!(&result.outcome, ProbeOutcome::Ok { finish_reason, .. } if finish_reason == "stop"),
             "{result:?}"
@@ -48,24 +44,22 @@ async fn a_probe_sends_one_tiny_member_free_completion_per_role() {
 }
 
 #[tokio::test]
-async fn an_external_route_is_refused_unsent_unless_overridden() {
+async fn an_external_route_probe_sends_its_fixed_ping_without_opt_in() {
     let stub = Stub::start(gateway(kanata_models(), "ok")).await;
-    for allowed in [false, true] {
-        let mut input = setup(Some(stub.url()));
-        input.roles = roles("codex-like");
-        input.allow_external_unmasked = allowed;
-        let stack = ready(input);
-        stack.check_startup().await;
-        let result = stack
-            .probe(Role::Chat, &Passthrough, Duration::from_secs(5))
-            .await
-            .unwrap();
-        assert_eq!(result.outcome.is_ok(), allowed, "{result:?}");
-        if !allowed {
-            assert!(matches!(result.outcome, ProbeOutcome::Refused(_)));
-        }
-    }
+    let mut input = setup(Some(stub.url()));
+    input.roles = roles("codex-like");
+    let stack = ready(input);
+    stack.check_startup().await;
+    let result = stack
+        .probe(Role::Chat, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert!(result.outcome.is_ok(), "{result:?}");
     assert_eq!(stub.chat_requests().len(), 1);
+    assert_eq!(
+        stub.chat_requests()[0].body["messages"][1]["content"],
+        "ping"
+    );
 }
 
 fn env(url: &str, pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -126,49 +120,44 @@ async fn models_check_lists_the_catalog_and_routes_without_printing_the_key() {
     assert!(out.contains(
         "  codex-like zone=external homelab=leaves efforts=low,medium,high (off not allowed) in_flight=8"
     ));
-    assert!(out.contains("  chat codex-like effort=low (configured off) route=external refused"));
+    assert!(out.contains("  chat codex-like effort=low (configured off) route=external_unmasked"));
     assert!(out.contains(
         "warning: chat reasoning off is not allowed: codex-like requires reasoning; sending low"
     ));
-    assert!(out.contains("  rewrite gone (not listed) effort=off route=external refused"));
-    assert!(out.contains("warning: chat model codex-like leaves the homelab"));
+    assert!(out.contains("  rewrite gone (not listed) effort=off route=external_unmasked"));
+    assert!(out.contains("warning: UNMASKED: chat model codex-like leaves the homelab"));
     assert!(!out.contains("probe:"));
     assert!(stub.chat_requests().is_empty());
 }
 
 #[tokio::test]
-async fn models_check_probe_fails_on_a_refused_role_and_passes_with_the_override() {
+async fn models_check_probe_sends_ping_to_external_roles_without_opt_in() {
     let stub = Stub::start(gateway(kanata_models(), "ok")).await;
     let base = [
         ("KANADE_EXTRACT_MODEL", "sumi-structured"),
         ("KANADE_CHAT_MODEL", "codex-like"),
     ];
     let (out, result) = run(Args { probe: true }, &env(&stub.url(), &base)).await;
-    assert!(
-        matches!(&result, Err(Error::Unavailable(message)) if message.contains("chat probe failed")),
-        "{result:?}"
-    );
+    result.unwrap();
     assert!(
         out.contains("  extraction sumi-structured effort=off ok "),
         "{out}"
     );
     assert!(out.contains("finish=stop"));
-    assert!(
-        out.contains("  chat codex-like effort=low refused: role chat routes to external model")
-    );
-
-    let mut overridden = env(&stub.url(), &base);
-    overridden.insert("KANADE_ALLOW_EXTERNAL_UNMASKED".into(), "1".into());
-    let (out, result) = run(Args { probe: true }, &overridden).await;
-    result.unwrap();
-    assert!(out.contains("route=external UNMASKED"));
+    assert!(out.contains("route=external_unmasked"));
     assert!(out.contains("warning: UNMASKED: chat model codex-like"));
     assert!(out.contains("  chat codex-like effort=low ok "));
-    assert_eq!(stub.chat_requests().len(), 3);
+    let requests = stub.chat_requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| { request.body["messages"][1]["content"] == "ping" })
+    );
 }
 
 #[tokio::test]
-async fn models_check_fails_when_the_listing_fails_or_models_are_off() {
+async fn models_check_fails_when_the_listing_fails_or_a_retired_policy_key_is_present() {
     let stub = Stub::start(|_: &super::stub::Recorded| Reply::Json(500, json!({}))).await;
     let (out, result) = run(Args { probe: false }, &env(&stub.url(), &[])).await;
     assert!(out.contains("catalog: unavailable (server-error)"), "{out}");
@@ -178,7 +167,7 @@ async fn models_check_fails_when_the_listing_fails_or_models_are_off() {
     assert!(matches!(result, Err(Error::Configuration(_))));
     let (_, result) = run(
         Args { probe: false },
-        &env(&stub.url(), &[("KANADE_ALLOW_EXTERNAL_UNMASKED", "yes")]),
+        &env(&stub.url(), &[("KANADE_PSEUDONYMIZE", "")]),
     )
     .await;
     assert!(matches!(result, Err(Error::Configuration(_))));
@@ -213,7 +202,7 @@ async fn models_check_uses_the_env_reasoning_seeds() {
         "{out}"
     );
     assert!(
-        out.contains("  rewrite codex-like effort=high route=external refused"),
+        out.contains("  rewrite codex-like effort=high route=external_unmasked"),
         "{out}"
     );
 }

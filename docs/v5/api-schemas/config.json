@@ -241,7 +241,7 @@
             "alias_limits": { "type": "array", "items": { "$ref": "#/$defs/AliasLimit" } },
             "key_limits": { "$ref": "#/$defs/KeyLimits" },
             "capacity_check": { "type": "array", "items": { "$ref": "#/$defs/CapacityCheck" } },
-            "pii_pseudonymise": { "type": "boolean" }
+            "pii_pseudonymise": { "type": "boolean", "const": false, "description": "Read-only compatibility field; new model requests are not pseudonymized. Historical masked chat turns remain readable." }
           }
         },
         "manage_messages": {

@@ -63,9 +63,18 @@ test('model view: a masked turn ends with a collapsed, admin-only Model view tha
   await expect(region).toBeHidden();
 });
 
-test('model view: a passthrough turn shows none; a withheld masked turn says why', async ({ page }) => {
+test('model view: unmasked external and passthrough turns show none; a withheld masked turn says why', async ({ page }) => {
   await go(page, '/chat/c-move');
   await expect(page.getByRole('tabpanel', { name: /Conversation/ }).getByText('Homelab')).toBeVisible();
+  await expect(page.getByText(/Model view/)).toHaveCount(0);
+
+  await patchTurn(page, 'c-blocked', (t) => {
+    t.route = 'external_unmasked';
+    t.masked = false;
+    t.model_view = null;
+  });
+  await go(page, '/chat/c-blocked');
+  await expect(page.getByRole('tabpanel', { name: /Conversation/ }).getByText('External (unmasked)')).toBeVisible();
   await expect(page.getByText(/Model view/)).toHaveCount(0);
 
   await patchTurn(page, 'c-withheld', (t) => {

@@ -85,6 +85,16 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         .await;
     assert!(invented.ok);
     assert_eq!(invented.output, me.output);
+    for bot_name in ["@Kanade", "kanade", "@kAnAdE"] {
+        let copied_bot = world
+            .run_tool(
+                &step(Some(bot_name), "<@999> whats for me today?", false),
+                &mut session,
+            )
+            .await;
+        assert!(copied_bot.ok, "{bot_name}");
+        assert_eq!(copied_bot.output, me.output, "{bot_name}");
+    }
     for self_only in [
         "my schedule this week",
         "what's my schedule today?",
@@ -113,6 +123,22 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         unknown.output,
         "That does not identify one person on the roster. Ask who they mean."
     );
+    for unsafe_name in ["@Kanade", "@Kanade and Kanon", "@NotTheBot"] {
+        let not_self = world
+            .run_tool(
+                &step(Some(unsafe_name), "what's for Kanon today?", false),
+                &mut session,
+            )
+            .await;
+        assert!(!not_self.ok, "{unsafe_name}");
+    }
+    let mixed_participant = world
+        .run_tool(
+            &step(Some("@Kanade and Kanon"), "what's for me today?", false),
+            &mut session,
+        )
+        .await;
+    assert!(!mixed_participant.ok);
     let other = world
         .run_tool(
             &step(Some("kanon"), "what's for me today?", false),
@@ -154,4 +180,15 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         assert!(!unrecognized.ok, "{mixed}");
         assert_eq!(unrecognized.output, unknown.output, "{mixed}");
     }
+    let mut collision_input = fixture["input"].clone();
+    collision_input["bot_user"]["name"] = json!("Kanon");
+    let mut collision_world = World::new(&collision_input).await;
+    let recognized_member = collision_world
+        .run_tool(
+            &step(Some("@Kanon"), "what's for me today?", false),
+            &mut session,
+        )
+        .await;
+    assert!(recognized_member.ok);
+    assert_eq!(recognized_member.output, other.output);
 }

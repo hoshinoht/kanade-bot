@@ -17,8 +17,7 @@ pub struct LiveRoster {
     rows: RwLock<Arc<BTreeMap<String, MemberProfile>>>,
     /// Set after the first startup reconcile (success or not) was applied.
     reconciled: watch::Sender<bool>,
-    /// Told every roster before readers can see it (pseudonymization keeps
-    /// every name a member was known by).
+    /// Told every roster before readers can see it.
     observer: OnceLock<RosterObserver>,
 }
 

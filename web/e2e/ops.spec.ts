@@ -605,7 +605,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('button', { name: 'Reload profiles' }).click();
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
 
-  // Models: the cloud alias's privacy warning follows the PII toggle state.
+  // Models: external and unknown routes state that raw member data leaves.
   await page.getByRole('tab', { name: 'Models' }).click();
   // The server's own startup check is shown; the saved seed passes it.
   await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
@@ -615,12 +615,10 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
   await models.first().selectOption('kanata/chat-cloud');
   await expect(panel.getByText(/go to an external provider/)).toBeVisible();
-  // The override that lets an external route run is named, never the retired pseudonymisation switch.
-  await expect(panel.getByText(/refuses this route unless the operator sets/)).toBeVisible();
-  await expect(panel.locator('.settings__warn code').first()).toHaveText('KANADE_ALLOW_EXTERNAL_UNMASKED');
-  await expect(panel).not.toContainText('KANADE_PII_PSEUDONYMISE');
+  await expect(panel.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
+  await expect(panel).not.toContainText(/pseudonym|provider testing|ALLOW_EXTERNAL_UNMASKED|PSEUDONYMIZE/i);
   await models.first().selectOption('kanata/extract');
-  // An unknown trust zone fails closed with the same warning.
+  // An unknown trust zone is treated as external with the raw-data warning.
   await models.nth(2).selectOption('kanata/legacy');
   await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
   await models.nth(2).selectOption('kanata/rewrite-small');

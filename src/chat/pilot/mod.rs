@@ -168,8 +168,8 @@ impl ChatPilot {
     /// A content-filtered question and the reply to it are withheld from
     /// every later context (the `[message withheld]` placeholder), never
     /// anchored, and never pulled back by a reply chain. A question that
-    /// failed before any model work is refunded; a sent clean retry (or an
-    /// identity-leak refusal) is counted by the storm guard.
+    /// failed before any model work is refunded; a sent clean retry is counted
+    /// by the storm guard.
     pub async fn conclude<R: ReplyPort>(&mut self, done: Finished<'_>, replies: &R) -> Concluded {
         let generation = done.generation;
         let failure = generation.failure.as_ref();
@@ -209,9 +209,7 @@ impl ChatPilot {
         if let (true, Some(stamp)) = (refunded, done.spent_at) {
             self.allowance.refund(&done.ctx.author_id, stamp);
         }
-        // An identity-leak refusal counts like a spent clean retry, so
-        // repeated refusals trip the storm guard too.
-        let spent = generation.clean_retry || generation.leak_blocked().is_some();
+        let spent = generation.clean_retry;
         let alert = done
             .reserved
             .then(|| self.guard.settle(&done.ctx.author_id, spent, done.now));

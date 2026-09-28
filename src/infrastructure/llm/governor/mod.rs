@@ -17,10 +17,7 @@ mod snapshot;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{
-        Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
     time::Duration,
 };
 
@@ -80,7 +77,6 @@ struct Route {
 pub struct Governor {
     groups: RwLock<Vec<Arc<Group>>>,
     routes: RwLock<BTreeMap<Role, Route>>,
-    unmasked_allowed: AtomicBool,
     policy: GovernorPolicy,
     warnings: Vec<ConfigWarning>,
     random: Arc<dyn Random>,
@@ -120,7 +116,6 @@ impl Governor {
         Ok(Self {
             groups: RwLock::new(groups),
             routes: RwLock::new(routes),
-            unmasked_allowed: AtomicBool::new(false),
             policy: config.policy.clone(),
             warnings,
             random,
@@ -158,18 +153,12 @@ impl Governor {
         self.groups.read().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Operator override read by the identity route guard on every session.
-    pub fn allow_external_unmasked(&self, allowed: bool) {
-        self.unmasked_allowed.store(allowed, Ordering::Release);
-    }
-
     /// The role's route as of now (alias, effort and `external` may change
     /// live; a session keeps the alias it opened with).
     pub fn route(&self, role: Role) -> Option<RoleRoute> {
-        self.read_routes().get(&role).map(|entry| RoleRoute {
-            unmasked_allowed: self.unmasked_allowed.load(Ordering::Acquire),
-            ..entry.route.clone()
-        })
+        self.read_routes()
+            .get(&role)
+            .map(|entry| entry.route.clone())
     }
 
     /// Returns false for an unconfigured role.
@@ -247,7 +236,6 @@ impl Governor {
                             alias: target.alias,
                             group: group.as_ref().map(|group| group.name.clone()),
                             external: target.external.unwrap_or(true),
-                            unmasked_allowed: false,
                             effort: target.effort,
                         },
                         group,
@@ -311,11 +299,7 @@ impl Governor {
         let routes = self.read_routes();
         let entry = routes.get(&role).ok_or(Refused::UnknownRole)?;
         let group = entry.group.clone().ok_or(Refused::Ungrouped)?;
-        let route = RoleRoute {
-            unmasked_allowed: self.unmasked_allowed.load(Ordering::Acquire),
-            ..entry.route.clone()
-        };
-        Ok((route, group))
+        Ok((entry.route.clone(), group))
     }
 
     /// Queues for a permit in the role's group for at most `wait`. Refused at
@@ -333,8 +317,8 @@ impl Governor {
         permit::acquire(group, route.alias, ticket, wait).await
     }
 
-    /// As [`Self::acquire`] on a route read earlier (the one the identity
-    /// guard checked): its alias and group, even if the role moved since.
+    /// As [`Self::acquire`] on a route read earlier: its alias and group,
+    /// even if the role moved since.
     pub async fn acquire_route(
         &self,
         route: &RoleRoute,
@@ -344,7 +328,31 @@ impl Governor {
         if !ticket.kind.may_wait() {
             return Err(Refused::MustNotWait);
         }
-        let group = route
+        let group = self.route_group(route)?;
+        permit::acquire(group, route.alias.clone(), ticket, wait).await
+    }
+
+    /// Try-only counterpart to [`Self::acquire_route`], pinned to the checked
+    /// alias for rewrite and probe sessions.
+    pub fn try_acquire_route(
+        &self,
+        route: &RoleRoute,
+        kind: CallKind,
+        who: impl Into<String>,
+    ) -> Result<Permit, Refused> {
+        if kind == CallKind::PreScreen && route.external {
+            return Err(Refused::ExternalForbidden);
+        }
+        permit::try_acquire(
+            self.route_group(route)?,
+            route.alias.clone(),
+            kind,
+            who.into(),
+        )
+    }
+
+    fn route_group(&self, route: &RoleRoute) -> Result<Arc<Group>, Refused> {
+        route
             .group
             .as_ref()
             .and_then(|name| {
@@ -353,8 +361,7 @@ impl Governor {
                     .find(|group| &group.name == name)
                     .cloned()
             })
-            .ok_or(Refused::Ungrouped)?;
-        permit::acquire(group, route.alias.clone(), ticket, wait).await
+            .ok_or(Refused::Ungrouped)
     }
 
     /// Takes a permit only if one is free now, nobody is queued and the breaker

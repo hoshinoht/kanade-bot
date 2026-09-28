@@ -1,6 +1,5 @@
 //! The guarded, non-failing boundary between the model and the tools (v4
-//! `tools/dispatching.py`). Every call is decoded through the conversation's
-//! identity session and every result encoded back through it; read-only
+//! `tools/dispatching.py`). Tool arguments and results cross this boundary raw; read-only
 //! turns refuse writes, unknown and unoffered tools are refused with a note,
 //! and nothing a tool does can take the answer down.
 
@@ -16,34 +15,29 @@ use super::{
 };
 use crate::domain::drafts::ProposalStore;
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore};
-use crate::infrastructure::llm::identity::IdentitySession;
-
-/// Arguments naming an identity this conversation never issued.
-pub const UNKNOWN_IDENTITY: &str = "That call names somebody who is not in this conversation. Use the names exactly as they appear in it, or ask them who they mean.";
+use crate::infrastructure::llm::identity::PassthroughSession;
 
 /// One dispatched call.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dispatched {
     pub outcome: ToolOutcome,
-    /// The tool message content for the transcript, identity-encoded.
+    /// Raw tool message content for the transcript.
     pub model_content: String,
     /// A bundle `request_tools` added; the loop charges it one round.
     pub requested: Option<super::bundles::Bundle>,
 }
 
-/// v4 `_arguments`: an object, a JSON object string, or `{}`; decoded
-/// through the session first. `Err` when it names an unissued identity.
-fn arguments(session: &dyn IdentitySession, raw: &Value) -> Result<Map<String, Value>, ()> {
+/// v4 `_arguments`: an object, a JSON object string, or `{}`.
+fn arguments(raw: &Value) -> Map<String, Value> {
     let text = match raw {
         Value::String(text) => text.clone(),
         Value::Object(_) => raw.to_string(),
-        _ => return Ok(Map::new()),
+        _ => return Map::new(),
     };
-    let decoded = session.decode_json(&text).map_err(|_| ())?;
-    Ok(match serde_json::from_str(&decoded) {
+    match serde_json::from_str(&text) {
         Ok(Value::Object(map)) => map,
         _ => Map::new(),
-    })
+    }
 }
 
 struct Call<'a> {
@@ -77,7 +71,7 @@ pub async fn run<S, I, C>(
     world: &ToolWorld<'_>,
     offer: &mut ToolOffer,
     proposer: &mut Proposer<'_, S, I, C>,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
     name: &str,
     raw_arguments: &Value,
 ) -> Dispatched
@@ -86,17 +80,17 @@ where
     I: IdSource,
     C: Clock,
 {
-    let (outcome, requested) = match arguments(session, raw_arguments) {
-        Ok(arguments) => call(ctx, world, offer, proposer, Call { name, arguments }).await,
-        Err(()) => (
-            Call {
-                name,
-                arguments: Map::new(),
-            }
-            .done(UNKNOWN_IDENTITY.to_owned(), Some(REFUSED), Vec::new()),
-            None,
-        ),
-    };
+    let (outcome, requested) = call(
+        ctx,
+        world,
+        offer,
+        proposer,
+        Call {
+            name,
+            arguments: arguments(raw_arguments),
+        },
+    )
+    .await;
     let model_content = session.tool_result(&outcome.output);
     Dispatched {
         outcome,

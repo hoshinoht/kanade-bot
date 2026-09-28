@@ -12,13 +12,11 @@ use crate::domain::pytext::strip;
 use crate::domain::schedule::{FixedRun, Run, RunStatus};
 use crate::extract::gate::{BossLexicon, find_bosses};
 use crate::extract::text::pattern;
-use crate::infrastructure::llm::identity::{IdentitySession, Member};
+use crate::infrastructure::llm::identity::{Member, PassthroughSession};
 
 static MENTION: LazyLock<Regex> = LazyLock::new(|| pattern(r"<@!?(\d+)>"));
 
 pub(super) const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-/// Fixed words of run and timing lines.
-pub(super) const LINE_WORDS: [&str; 3] = ["own time", "every", "(none)"];
 
 fn weekday_name(weekday: Weekday) -> &'static str {
     WEEKDAY_NAMES[weekday.num_days_from_monday() as usize]
@@ -84,12 +82,11 @@ fn splitlines(text: &str) -> Vec<&str> {
     lines
 }
 
-/// `[123] [2026-08-30 13:07 Sun] [kanon <@114...>] then weds lah` (the id is
-/// the session's message ref: the id itself in passthrough).
+/// `[123] [2026-08-30 13:07 Sun] [kanon <@114...>] then weds lah`.
 pub(super) fn render_message(
     message: &PromptMessage,
     zone: Tz,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
 ) -> String {
     let lines: Vec<&str> = splitlines(&message.content)
         .into_iter()
@@ -99,7 +96,6 @@ pub(super) fn render_message(
     let label = session.author_label(&message.author_id, &message.author_name);
     let mention = session.mention(&message.author_id);
     let content = session.text(&lines.join(" / "));
-    // A per-request ref when masking (so no snowflake reaches the model).
     let id = session.message_ref(&message.id);
     format!(
         "[{id}] [{}] [{label} {mention}] {content}",
@@ -133,7 +129,7 @@ pub(super) fn render_bosses(table: &BossTable, only: &BTreeSet<String>) -> Strin
 fn who(
     participants: &[String],
     names: &HashMap<&str, &str>,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
 ) -> String {
     let parts: Vec<String> = participants
         .iter()
@@ -161,7 +157,7 @@ pub(super) fn render_run(
     run: &Run,
     zone: Tz,
     names: &HashMap<&str, &str>,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
 ) -> String {
     let who = who(&run.participants, names, session);
     let when = if run.status == RunStatus::Otot {
@@ -180,7 +176,7 @@ pub(super) fn render_run(
 pub(super) fn render_fixed(
     fixed: &FixedRun,
     names: &HashMap<&str, &str>,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
 ) -> String {
     let who = who(&fixed.participants, names, session);
     format!(

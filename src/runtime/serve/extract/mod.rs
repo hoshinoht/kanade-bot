@@ -59,7 +59,6 @@ use crate::{
 };
 
 use super::discord::GatewayTransport;
-use super::privacy;
 use super::tick::watch_list;
 use ports::{ExtractorCache, LiveGuild, StoreProposer};
 pub use runner::STARTUP_WINDOW;
@@ -198,13 +197,6 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
         Deps {
             store: Arc::clone(&inputs.store),
             client: Arc::clone(&stack.client),
-            codec: privacy::codec(
-                stack.masking(),
-                || privacy::extraction_exemptions(inputs.zone, &inputs.bosses),
-                &inputs.bosses,
-                &inputs.cache,
-                Vec::new(),
-            ),
             guild: Arc::new(LiveGuild {
                 status: Arc::clone(&inputs.status),
                 cache: Arc::clone(&inputs.cache),

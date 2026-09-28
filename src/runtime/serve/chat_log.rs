@@ -5,7 +5,6 @@ use serde_json::json;
 
 use crate::{
     chat::{driver::ChatEvent, persona::ProfileSource},
-    infrastructure::llm::identity::IdentityLeakBlocked,
     runtime::logging,
 };
 
@@ -60,9 +59,6 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
             reasoning,
         } => {
             let failed = generation.failure.is_some();
-            if let Some(blocked) = generation.leak_blocked() {
-                logging::event("WARN", IdentityLeakBlocked::EVENT, blocked.payload());
-            }
             let (source, saved_unavailable) = profile_source(persona.profile_source);
             logging::event(
                 if failed { "WARN" } else { "INFO" },
@@ -81,7 +77,6 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
                     "model": model,
                     "reasoning": reasoning.map(|effort| effort.as_str()),
                     "route": generation.route(),
-                    "masking": generation.pseudonymized,
                     "rounds": generation.rounds,
                     "tools": generation.tool_calls,
                     "latency_ms": interaction.latency_ms,
@@ -214,24 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn a_masked_refusal_logs_the_payload_route_and_masking_only() {
+    fn an_external_failure_is_labeled_unmasked() {
         use crate::chat::answer::AnswerFailure;
-        use crate::infrastructure::llm::governor::{Charge, Role, SessionError, SessionFailure};
-        use crate::infrastructure::llm::identity::{IdentityLeakBlocked, LeakKind};
         logging::capture();
         let (row, provenance) = (row(), provenance());
-        let blocked = IdentityLeakBlocked {
-            role: Role::Chat,
-            kinds: vec![LeakKind::Name],
-            count: 2,
-        };
         let generation = Generation {
             external: true,
-            pseudonymized: true,
-            failure: Some(AnswerFailure::Session(SessionError {
-                failure: SessionFailure::IdentityLeakBlocked(blocked),
-                charge: Charge::Refunded,
-            })),
+            external_unmasked: true,
+            failure: Some(AnswerFailure::Malformed),
             ..Generation::default()
         };
         observe(
@@ -244,20 +229,13 @@ mod tests {
             },
             unready,
         );
-        let lines = logging::captured();
-        assert_eq!(lines[0]["event"], "identity_leak_blocked");
-        assert_eq!(lines[0]["level"], "WARN");
-        assert_eq!(lines[0]["role"], "chat");
-        assert_eq!(lines[0]["kinds"], json!(["name"]));
-        assert_eq!(lines[0]["count"], 2);
-        assert_eq!(lines[1]["event"], "chat_failed");
-        assert_eq!(lines[1]["route"], "external_masked");
-        assert_eq!(lines[1]["masking"], true);
-        for line in &lines {
-            let text = line.to_string();
-            for private in ["SECRET", "4242", "1001"] {
-                assert!(!text.contains(private), "{private} leaked: {text}");
-            }
+        let line = logging::captured().remove(0);
+        assert_eq!(line["event"], "chat_failed");
+        assert_eq!(line["route"], "external_unmasked");
+        assert!(!line.as_object().unwrap().contains_key("masking"));
+        let text = line.to_string();
+        for private in ["SECRET", "4242", "1001"] {
+            assert!(!text.contains(private), "{private} leaked: {text}");
         }
     }
 

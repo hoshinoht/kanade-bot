@@ -11,7 +11,7 @@ mod parse;
 mod pyvalue;
 mod text;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub use call::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next, retry_instruction};
 pub use coerce::{FieldError, Loc};
@@ -31,13 +31,7 @@ pub fn schema_text() -> &'static str {
     text::SCHEMA_TEXT
 }
 
-/// The strict schema sent as the extractor's structured output. With a
-/// pseudonymizing session, `participants` is closed over the refs it issued.
-pub fn extraction_schema(participant_refs: Option<&[String]>) -> Value {
-    let mut schema: Value = serde_json::from_str(text::SCHEMA_TEXT).expect("schema text is JSON");
-    if let Some(refs) = participant_refs {
-        schema["$defs"]["Amendment"]["properties"]["participants"]["items"] =
-            json!({ "type": "string", "enum": refs });
-    }
-    schema
+/// The strict schema sent as the extractor's structured output.
+pub fn extraction_schema() -> Value {
+    serde_json::from_str(text::SCHEMA_TEXT).expect("schema text is JSON")
 }

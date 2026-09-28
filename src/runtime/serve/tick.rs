@@ -14,7 +14,7 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
-use super::{privacy, settings};
+use super::settings;
 use crate::{
     api::auth::Clock,
     bot::{
@@ -126,31 +126,9 @@ pub struct TickLoop<T> {
     pub post_channel: Arc<RwLock<Option<String>>>,
 }
 
-/// The heading's rewriter over the `rewrite` role. Masking off: passthrough,
-/// exactly as before. Masking on: the role's live pseudonymizing codec
-/// (rewrite's code-owned words exempt) over the live roster, so the persona
-/// text is encoded and the request scanned; an empty roster or a refusal
-/// falls back to v4's heading.
-pub fn heading_rewriter<P: LlmProvider + 'static>(
-    client: Arc<ModelClient<P>>,
-    catalog: &BossTable,
-    cache: &Arc<GuildCache>,
-    roster: &Arc<LiveRoster>,
-    persona_names: Vec<String>,
-) -> SharedRewriter {
-    let masking = client.masking();
-    let codec = privacy::codec(
-        masking,
-        privacy::rewrite_exemptions,
-        catalog,
-        cache,
-        persona_names,
-    );
-    let mut rewriter = GovernedRewriter::new(client, codec);
-    if masking {
-        rewriter = rewriter.with_roster(Arc::new(privacy::LiveRosterSource(Arc::clone(roster))));
-    }
-    SharedRewriter(Arc::new(rewriter))
+/// The heading's rewriter over the governed `rewrite` role.
+pub fn heading_rewriter<P: LlmProvider + 'static>(client: Arc<ModelClient<P>>) -> SharedRewriter {
+    SharedRewriter(Arc::new(GovernedRewriter::new(client)))
 }
 
 /// Card inputs for the tick and card edits: the catalog, the boss art
@@ -162,20 +140,10 @@ pub fn card_kit(
     catalog: Arc<BossTable>,
     models: Option<&Arc<ModelStack>>,
     personas: Arc<PersonaStore>,
-    cache: &Arc<GuildCache>,
-    roster: &Arc<LiveRoster>,
 ) -> CardKit {
     let rewriter = models
         .filter(|stack| stack.has_role(Role::Rewrite))
-        .map(|stack| {
-            heading_rewriter(
-                Arc::clone(&stack.client),
-                &catalog,
-                cache,
-                roster,
-                privacy::persona_names(&personas),
-            )
-        });
+        .map(|stack| heading_rewriter(Arc::clone(&stack.client)));
     let persona: PersonaSource = Arc::new(move || {
         let snapshot = personas.pin();
         let active = snapshot.active()?;
@@ -357,24 +325,19 @@ fn log_report(report: &TickReport) {
 mod tests {
     use std::collections::BTreeMap;
 
-    use twilight_model::id::Id;
-
     use super::*;
-    use crate::bot::delivery::cards::HeadingSource;
-    use crate::chat::persona::{PersonaId, parse_bundle};
-    use crate::domain::catalog::{BossSpec, CatalogSpec, DifficultySpec};
-    use crate::domain::members::{Member, MemberProfile};
+    use crate::chat::nudge::{NudgeRewriter, RewritePrompt};
+    use crate::chat::persona::{NudgeMood, PersonaId, parse_bundle};
     use crate::infrastructure::llm::governor::{
         Governor, GovernorConfig, GovernorPolicy, GroupConfig, RoleConfig, XorShift,
     };
     use crate::infrastructure::llm::{
-        CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, Message,
-        RetryPolicy,
+        CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy,
     };
 
     const ALIAS: &str = "rewriter";
 
-    fn client(masking: bool, reply: &str) -> (Arc<FakeProvider>, Arc<ModelClient<FakeProvider>>) {
+    fn client(reply: &str) -> (Arc<FakeProvider>, Arc<ModelClient<FakeProvider>>) {
         let config = GovernorConfig {
             groups: vec![GroupConfig {
                 name: "local".into(),
@@ -388,7 +351,7 @@ mod tests {
                 Role::Rewrite,
                 RoleConfig {
                     alias: ALIAS.into(),
-                    external: false,
+                    external: true,
                 },
             )]
             .into_iter()
@@ -411,135 +374,43 @@ mod tests {
             ExecutionLimits::default(),
             RetryPolicy::default(),
         )
-        .unwrap()
-        .with_masking(masking);
+        .unwrap();
         (provider, Arc::new(client))
     }
 
-    fn catalog() -> BossTable {
-        BossTable::from_spec(&CatalogSpec {
-            difficulties: vec![DifficultySpec {
-                prefix: "H".into(),
-                label: "Hard".into(),
-            }],
-            bosses: vec![BossSpec {
-                short: "Will".into(),
-                ..BossSpec::default()
-            }],
-        })
-        .unwrap()
-    }
-
-    fn heading(rewriter: SharedRewriter) -> HeadingRewrite {
+    fn persona() -> CompiledPersona {
         let text = include_str!("../../../config/personas/bundles/kanade.yaml");
         let bundle = parse_bundle(text, &PersonaId::parse("kanade").unwrap()).unwrap();
-        let persona = CompiledPersona::compile(&bundle, None);
-        HeadingRewrite {
-            rewriter: Some(rewriter),
-            persona: Some(Arc::new(move || Some(persona.clone()))),
-        }
-    }
-
-    fn roster(cache: &Arc<GuildCache>, names: &[&str]) -> Arc<LiveRoster> {
-        let roster = Arc::new(LiveRoster::new(Arc::clone(cache)));
-        roster.replace(
-            names
-                .iter()
-                .enumerate()
-                .map(|(i, name)| MemberProfile {
-                    member: Member {
-                        user_id: format!("11420000000000009{i}"),
-                        display_name: Some((*name).to_owned()),
-                        has_role: true,
-                        ..Member::default()
-                    },
-                    aliases: Vec::new(),
-                    reply_style: None,
-                    roles: Vec::new(),
-                    is_guild_admin: false,
-                })
-                .collect(),
-        );
-        roster
+        CompiledPersona::compile(&bundle, None)
     }
 
     #[tokio::test]
-    async fn a_masked_heading_rewrite_is_scanned_and_an_empty_roster_falls_back() {
-        let cache = Arc::new(GuildCache::new(Id::new(1)));
-        // Masking on: a persona line naming a member would be encoded; the
-        // request goes through only because the session carries a scanner.
-        let (provider, masked) = client(true, "Bossing day — {day}!");
-        let members = roster(&cache, &["Priya", "Kanon"]);
-        let kit = heading(heading_rewriter(
-            masked,
-            &catalog(),
-            &cache,
-            &members,
-            Vec::new(),
-        ));
-        let (line, source) = kit.choose("Fri 25 Sep").await;
+    async fn external_rewrite_sends_raw_names_ids_and_urls_via_the_governor() {
+        let (provider, client) = client("Bossing day — {day}!");
+        let rewriter = GovernedRewriter::new(client);
+        let prompt = RewritePrompt::build(
+            &persona(),
+            NudgeMood::Playful,
+            "SyntheticMember 999000111222333444 https://synthetic.invalid/roster?q=1 {day}",
+        );
         assert_eq!(
-            (line.as_str(), source),
-            ("Bossing day — Fri 25 Sep!", HeadingSource::Rewrite)
+            rewriter
+                .rewrite(&prompt, Duration::from_secs(2))
+                .await
+                .unwrap(),
+            "Bossing day — {day}!"
         );
         let requests = provider.requests();
         assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].model, ALIAS);
+        assert_eq!(requests[0].messages, prompt.messages());
         let sent = serde_json::to_string(&requests[0].messages).unwrap();
-        for raw in ["Priya", "Kanon", "114200000000000090"] {
-            assert!(!sent.contains(raw), "{raw}");
+        for raw in [
+            "SyntheticMember",
+            "999000111222333444",
+            "https://synthetic.invalid/roster?q=1",
+        ] {
+            assert!(sent.contains(raw), "{raw} missing from {sent}");
         }
-        assert!(
-            matches!(&requests[0].messages[1], Message::User { content } if content == "Today — {day}")
-        );
-
-        // Masking on without a roster: nothing sent, v4's heading.
-        let (provider, masked) = client(true, "never");
-        let empty = roster(&cache, &[]);
-        let kit = heading(heading_rewriter(
-            masked,
-            &catalog(),
-            &cache,
-            &empty,
-            Vec::new(),
-        ));
-        assert_eq!(
-            kit.choose("Fri 25 Sep").await,
-            ("Today — Fri 25 Sep".to_owned(), HeadingSource::Seed)
-        );
-        assert!(provider.requests().is_empty());
-
-        // A refusal (here: the old passthrough wiring under a masking client,
-        // refused as unscannable) also falls back to v4's heading.
-        let (provider, masked) = client(true, "never");
-        let unwired = SharedRewriter(Arc::new(GovernedRewriter::new(
-            masked,
-            Arc::new(crate::infrastructure::llm::identity::Passthrough),
-        )));
-        assert_eq!(
-            heading(unwired).choose("Fri 25 Sep").await,
-            ("Today — Fri 25 Sep".to_owned(), HeadingSource::Seed)
-        );
-        assert!(provider.requests().is_empty());
-    }
-
-    #[tokio::test]
-    async fn masking_off_keeps_the_passthrough_heading_request() {
-        let cache = Arc::new(GuildCache::new(Id::new(1)));
-        let (provider, plain) = client(false, "Bossing day — {day}!");
-        let members = roster(&cache, &["Priya"]);
-        let kit = heading(heading_rewriter(
-            plain,
-            &catalog(),
-            &cache,
-            &members,
-            Vec::new(),
-        ));
-        let prompt = kit.prompt().unwrap();
-        kit.choose("Fri 25 Sep").await;
-        assert_eq!(
-            provider.requests()[0].messages,
-            prompt.messages(),
-            "byte-identical"
-        );
     }
 }

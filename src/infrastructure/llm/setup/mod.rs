@@ -103,11 +103,6 @@ pub struct ModelSetup {
     pub ca_file: Option<PathBuf>,
     pub roles: ModelRoles,
     pub permits: u32,
-    /// Lets external routes run without pseudonymization (provider testing).
-    pub allow_external_unmasked: bool,
-    /// Pseudonymization on: every session must carry an active boundary
-    /// scanner (fail closed), and external routes are masked, not refused.
-    pub pseudonymize: bool,
 }
 
 /// Operator-declared backend group; aliases sharing hardware share its permits.
@@ -126,8 +121,6 @@ impl fmt::Debug for ModelSetup {
             .field("ca_file", &self.ca_file)
             .field("roles", &self.roles)
             .field("permits", &self.permits)
-            .field("allow_external_unmasked", &self.allow_external_unmasked)
-            .field("pseudonymize", &self.pseudonymize)
             .finish()
     }
 }
@@ -174,8 +167,6 @@ pub struct ModelStack {
     /// Roles routed when the stack was built.
     started: BTreeSet<Role>,
     catalog: Arc<CatalogState>,
-    masking: bool,
-    unmasked_override: bool,
 }
 
 /// `https` needs `runtime::tls::install_ring_provider` first. The base URL goes
@@ -215,7 +206,6 @@ pub fn build_with_groups(
     let started = aliases.keys().copied().collect();
     let config = governor_config(&aliases, setup.permits, groups);
     let governor = Arc::new(Governor::new(&config, random).map_err(SetupError::Governor)?);
-    governor.allow_external_unmasked(setup.allow_external_unmasked);
     let open = groups
         .is_empty()
         .then(|| gateway_group(setup.permits, Vec::new()));
@@ -232,8 +222,7 @@ pub fn build_with_groups(
         ExecutionLimits::default(),
         RetryPolicy::default(),
     )
-    .map_err(SetupError::Client)?
-    .with_masking(setup.pseudonymize);
+    .map_err(SetupError::Client)?;
     Ok(Models::Ready(Box::new(ModelStack {
         provider,
         governor,
@@ -242,8 +231,6 @@ pub fn build_with_groups(
         roles,
         started,
         catalog,
-        masking: setup.pseudonymize,
-        unmasked_override: setup.allow_external_unmasked,
     })))
 }
 
@@ -328,23 +315,15 @@ impl ModelStack {
         live::running(&self.governor)
     }
 
-    /// Pseudonymization is on for every role.
-    pub fn masking(&self) -> bool {
-        self.masking
-    }
-
-    /// How a route's member data leaves: `homelab`, `external_masked`,
-    /// `external_unmasked` (operator override) or `external_refused`.
+    /// How a route's member data leaves: local aliases stay in the homelab;
+    /// every other alias receives raw data outside it.
     pub fn route_kind(&self, role: Role) -> Option<&'static str> {
         let route = self.governor.route(role)?;
-        Some(
-            match (route.external, self.masking, route.unmasked_allowed) {
-                (false, _, _) => "homelab",
-                (true, true, _) => "external_masked",
-                (true, false, true) => "external_unmasked",
-                (true, false, false) => "external_refused",
-            },
-        )
+        Some(if route.external {
+            "external_unmasked"
+        } else {
+            "homelab"
+        })
     }
 
     /// The last successful listing; empty and `listed: false` before one.

@@ -24,7 +24,7 @@ pub fn v4_instruction() -> String {
 }
 
 pub fn v5_instruction() -> String {
-    schema_instruction(&extraction_schema(None)).expect("schema serializes")
+    schema_instruction(&extraction_schema()).expect("schema serializes")
 }
 
 /// One v4 wire body as the v5 runner sends it.
@@ -81,7 +81,7 @@ pub fn instruction(value: &mut Value) -> usize {
 pub fn instruction_tokens(value: &mut Value) -> usize {
     assert_eq!(*value, json!(787), "v4 instruction tokens");
     *value = json!(kanade::extract::prompt::schema_instruction_tokens(
-        &extraction_schema(None)
+        &extraction_schema()
     ));
     1
 }

@@ -15,7 +15,7 @@ kanade serve        # live: the "Serve environment" below is required
 KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
 ```
 
-`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases and reasoning seeds, `KANADE_ALLOW_EXTERNAL_UNMASKED`); it cannot read the store while serve owns it, so its roles are what serve runs for a role with no saved alias or level (the `roles` header says so) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free completion per configured role (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
+`kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases and reasoning seeds); it cannot read the store while serve owns it, so its roles are what serve runs for a role with no saved alias or level (the `roles` header says so) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free `ping` through each configured role's governed route (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. A probe sends no member data; it is not a privacy test. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
 
 ```text
 gateway: https://kanata.example/v1 (key: set, roots: webpki)
@@ -25,13 +25,13 @@ catalog: 5 models
   gpt-6-luna zone=external homelab=leaves efforts=low,medium,high (off not allowed) variants: high, low, medium
 roles (env seeds; saved settings are not read):
   extraction sumi-structured effort=off route=homelab
-  chat codex-like effort=low (configured off) route=external refused
+  chat codex-like effort=low (configured off) route=external_unmasked
   rewrite (not configured)
 warning: chat reasoning off is not allowed: codex-like requires reasoning; sending low
-warning: chat model codex-like leaves the homelab; its calls are refused while pseudonymization is off
+warning: UNMASKED: chat model codex-like leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. Kanata ZDR is operator-stated retention only and does not prevent transmission.
 probe:
   extraction sumi-structured effort=off ok 412 ms finish=stop
-  chat codex-like effort=low refused: role chat routes to external model "codex-like" but pseudonymization is off
+  chat codex-like effort=low ok 412 ms finish=stop
 ```
 
 The admin listener binds `127.0.0.1:8080` by default. `GET /healthz` answers
@@ -118,8 +118,6 @@ lists are comma-separated.
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
-| `KANADE_PSEUDONYMIZE` | `0` | `1` (`models.pseudonymize`) replaces member names, aliases, ids, extraction message ids and stray Discord ids in every model request with per-request fictional names and refs (`provider-contract.md`), for every role; roles whose model leaves the homelab then run masked. Every request is scanned before sending and refused (`identity_leak_blocked`) if a raw identity remains; chat and extraction send nothing without a readable, non-empty roster. Read-only in the admin config view. |
-| `KANADE_ALLOW_EXTERNAL_UNMASKED` | `0` | `1` lets roles whose model leaves the homelab (Kanata trust zone `external` or unknown, or a `-cloud` alias) run without pseudonymization; for provider testing only. Startup warns `UNMASKED:` per such role and their model-log rows carry `guardrail.external_unmasked`. Unused (startup warns `override_unused`) while `KANADE_PSEUDONYMIZE=1` or when no model leaves the homelab. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
@@ -135,7 +133,16 @@ the code default (`docs/v5/api-schemas/config.json` sections). A stored row
 that does not decode (or a `persona` that is not a persona id) fails startup
 naming the key, never the value. `KANADE_PILOT_CHANNEL_IDS` is refused with a
 pointer to `KANADE_CHAT_CATEGORY_IDS`. Other unknown `KANADE_*` variables are
-ignored, as for the HTTP settings.
+ignored, as for the HTTP settings. **Exception:** the retired
+`KANADE_PSEUDONYMIZE` and `KANADE_ALLOW_EXTERNAL_UNMASKED` names, and their
+TOML counterparts `models.pseudonymize` and `models.allow_external_unmasked`,
+are rejected on presence, even when empty or false. Remove both from private
+deployment settings before a separately approved rollout; an old config must
+not silently switch formerly masked calls to raw traffic. Configured external
+roles send raw names, IDs, messages and URLs when present, with a warning that
+data leaves the homelab. Unknown or not-yet-listed aliases are treated as
+external until a successful listing establishes their zone. Kanata provider
+ZDR is operator-stated retention, not a limit on transmission.
 
 ### Config file
 
@@ -205,8 +212,6 @@ Each key sets one variable below, whose rules apply unchanged
 | `models.key_file` | `KANADE_MODEL_KEY_FILE` | string |
 | `models.ca_file` | `KANADE_MODEL_CA_FILE` | string |
 | `models.permits` | `KANADE_MODEL_PERMITS` | integer |
-| `models.pseudonymize` | `KANADE_PSEUDONYMIZE` | bool |
-| `models.allow_external_unmasked` | `KANADE_ALLOW_EXTERNAL_UNMASKED` | bool |
 | `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
 | `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
 | `models.extraction.reasoning` | `KANADE_EXTRACT_REASONING` | string |
@@ -242,7 +247,7 @@ never fatal), as JSON lines without the key or the gateway URL:
 {"level":"INFO","event":"model_role","role":"chat","alias":"gpt-6-luna","effort":"low","source":"floor","route":"homelab"}
 {"level":"INFO","event":"model_role","role":"rewrite","alias":"ext","effort":"low","source":"stored","route":"external_unmasked"}
 {"level":"INFO","event":"model_warning","kind":"unpublished_effort","message":"chat reasoning off is not allowed: gpt-6-luna requires reasoning; sending low"}
-{"level":"WARN","event":"model_warning","kind":"external_unmasked","message":"UNMASKED: rewrite model ext leaves the homelab and member data is sent without pseudonymization (KANADE_ALLOW_EXTERNAL_UNMASKED)"}
+{"level":"WARN","event":"model_warning","kind":"external_unmasked","message":"UNMASKED: rewrite model ext leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. Kanata ZDR is operator-stated retention only and does not prevent transmission."}
 ```
 
 `models_degraded` (WARN, `reason`) replaces `models_listed` when the
@@ -251,13 +256,12 @@ listing fails (every route then stays external until one succeeds);
 `fixed` (a `<base>:<level>` variant), `floor` (the configured level is not
 accepted; the lowest accepted one is used), `inherit` (extraction's level),
 else where the role's own level came from: `stored`, `env` or `default`.
-`route` is `homelab`, `external_masked` (pseudonymization on),
-`external_refused` or `external_unmasked`, and `masking` says whether
-pseudonymization is on; warnings `external_unmasked`, `external_refused`
-(both only while masking is off), `override_unused` (the unmasked override is
-set but masking is on or no route leaves the homelab), `capacity` and
-`ungrouped` are WARN, `unpublished_effort` INFO. The catalog refresh task (every 300 s, 30 s until
-a listing succeeds) is aborted at shutdown.
+`route` is currently `homelab` or `external_unmasked`; `external_masked` and
+`external_refused` are historical values only. Every external route, including
+an unknown alias until a listing classifies it, gets an `external_unmasked`
+WARN with the raw-data and ZDR-retention notice. `capacity` and `ungrouped`
+are WARN, `unpublished_effort` INFO. The catalog refresh task (every 300 s,
+30 s until a listing succeeds) is aborted at shutdown.
 
 Model roles saved in the config API switch the running stack at once
 (`ModelStack::apply_roles`): each role's next question, extraction call or
@@ -272,10 +276,12 @@ before/after values) each role whose running alias or effort changed logs
 (`null` for an unrouted side), and `model_roles_not_applied` (WARN) if the
 stack refused them (the save stands and a notice says they apply at
 restart). Chat reads its route once when a question is prepared; the
-system prompt's runtime line, the identity check, the permit, the requests,
-the chat row and `chat_answered`/`chat_failed` (`model`, `reasoning`) all use
-that one route, so a save landing mid-question applies from the next
-question. Each extraction log row carries its `model` and `reasoning`.
+system prompt's runtime line, permit, requests, chat row and
+`chat_answered`/`chat_failed` (`model`, `reasoning`) all use that pinned route,
+so a save landing mid-question applies from the next question. Per-call chat
+and extraction `guardrail.external_unmasked` is set only after a provider
+request is admitted. Each extraction log row carries its `model` and
+`reasoning`.
 Extraction and the heading rewriter are still composed at startup: a role
 with no alias then gets its route live, but extraction and heading rewrites
 for it start only after a restart — the save says so in `notices` ("The
@@ -340,9 +346,11 @@ The Discord side (`serve/discord/`) runs one gateway session for
   that pings nobody. `chatbot.enabled`, the categories and the allowances
   are read live from the config desk's `SettingsChanged`; allowance
   overrides reload on each settings change. The chat route follows the
-  model stack: an external route is refused (the fixed failure line, log
-  outcome `error`) unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` (then answered,
-  guardrail `external_unmasked`). The persona is the live snapshot with the
+  model stack: external and not-yet-classified aliases send raw prompts
+  without an opt-in when the governor admits the request. Startup/model
+  checks warn for external routes; live role changes do not reinstate an
+  opt-in, and a call's `guardrail.external_unmasked` is set only after
+  admission. The persona is the live snapshot with the
   member's saved reply style. Replies are outside the delivery journal (an
   ambiguous reply is logged, never retried); proposal cards go through the
   shared card desk (journalled, ✅/❌ via the reaction worker). Withheld ids are
@@ -356,9 +364,9 @@ The Discord side (`serve/discord/`) runs one gateway session for
   `extraction-orchestration.md`): the handler hands created, edited and
   deleted guild messages to `bot::extract_feed` without awaiting; one feed
   task forwards them in gateway order to the `Pipeline` (debounce, backlog,
-  governed calls on the `ModelStack`'s client under Passthrough, so an
-  `external` route is refused unless `KANADE_ALLOW_EXTERNAL_UNMASKED=1` and
-  the refusal is logged as a `failed` call). Chat sees each created message
+  governed calls on the `ModelStack`'s client under raw Passthrough; external
+  and not-yet-classified routes send names, IDs, message text and URLs when
+  present without an opt-in). Chat sees each created message
   first: one it handles (answered, queued, shed or rate-limited; v4
   `Handling(True)`) is `handled_by_chat`, cached as processed and never
   extracted, and so are its later edits (the live guild's chat and watch
@@ -623,8 +631,8 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | `chat_setup_changed` | INFO; WARN when enabled but not ready | `enabled`, `ready`, `not_ready` (`no_model_route`/`no_persona`) | chat start, then when either flag flips (read on the next message, status read or settings change) |
 | `chat_admitted` | INFO | `interaction_id`, `channel` (`thread`/`channel`), `position` (null when it runs at once) | the gate took a question |
 | `chat_ignored` | INFO | `reason` (`disabled`/`not_ready`/`not_chat_category`/`no_pilot_role`/`staff_only`/`rate_limited`/`shed`/`bot_author`) | a message that summoned the bot was not taken; never for ordinary chatter |
-| `chat_answered` / `chat_failed` | INFO / WARN | `interaction_id`, `outcome`, `persona`, `profile`, `profile_source` (`saved`/`role`/`default`), `saved_style_unavailable`, `model`, `reasoning`, `route` (`homelab`/`external_masked`/`external_unmasked`), `masking`, `rounds`, `tools`, `latency_ms`, `model_ms`, `tools_ms`, `clean_retry`, `withheld` | a question concluded after a model attempt |
-| `identity_leak_blocked` | WARN | `role` (`chat`/`extraction`/`rewrite`), `kinds` (`name`/`id`/`snowflake`/`unscannable`), `count`; never the matched text | the provider-boundary scanner refused a pseudonymized request before sending (chat: the failure line; extraction: outcome `identity_leak`, messages marked read; rewrite: the seed line) |
-| `former_names_evicted` | WARN | `remembered` (4096) | once, when the masked-chat name history first forgets a departed member |
-| `chat_members_unreadable` | WARN | `masking`, `empty` (masking with an empty roster) | the member list could not be read; with masking on the question is not prepared (refunded, nothing sent) |
+| `chat_answered` / `chat_failed` | INFO / WARN | `interaction_id`, `outcome`, `persona`, `profile`, `profile_source` (`saved`/`role`/`default`), `saved_style_unavailable`, `model`, `reasoning`, `route` (`homelab`/`external_unmasked`; `external_masked` is historical), `rounds`, `tools`, `latency_ms`, `model_ms`, `tools_ms`, `clean_retry`, `withheld` | a question concluded after a model attempt |
+| `identity_leak_blocked` | WARN (historical) | `role`, `kinds`, `count` | retired boundary-scanner event; current calls do not emit it |
+| `former_names_evicted` | WARN (historical) | `remembered` | retired masked-chat name-history event; current calls do not emit it |
+| `chat_members_unreadable` | WARN | no additional fields | the roster could not be loaded; chat uses an empty roster and this is not a masking refusal |
 | `chat_cancelled` | INFO | `interaction_id`, `reason` (`deleted`/`shutdown`/`expired`/`not_admitted`/`not_ready`/`aborted`) | an admitted question ended without an answer |

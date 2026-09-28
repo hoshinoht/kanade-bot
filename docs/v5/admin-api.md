@@ -171,7 +171,7 @@ whole; unknown or read-only keys are refused with 422.
 | `GET /api/admin/rescan/{id}` | — | `RescanJob` | Polled per channel. **Implemented (A7)**. |
 | `DELETE /api/admin/rescan/{id}` | — | `RescanJob` | Cancel. v4 `POST …/cancel`. **Implemented (A7)**; safe to repeat. |
 | `GET /api/admin/chat` | — | `Chat` | **Implemented (A7)**. |
-| `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7; transcript fields)**; a withheld question is not shown; masked turns carry `model_view` (admin listener only). |
+| `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7; transcript fields)**; a withheld question is not shown; historical masked turns may carry `model_view` (admin listener only), while new raw turns do not create one. |
 | `GET /api/admin/limits` | — | `Limits` | See `limits-contract.md` (**proposed**). |
 | `DELETE /api/admin/limits/windows/{id}` | — | `{message}` | Clear one member's window. v4 `POST …/reset`. |
 
@@ -183,7 +183,7 @@ whole; unknown or read-only keys are refused with 422.
 | `POST /api/admin/members/{id}/aliases` | `{alias}` | `MemberRow` | v4 `…/nick`. **Implemented**: one word (letters, digits, `-`, `_`, ≤ 32), lowercased; held by someone else is `422 alias_taken`. |
 | `GET /api/admin/personas` | — | `Persona[]` | Reply-style picker. **Implemented**. |
 | `GET /api/admin/reminders` | — | `Reminders` | `?run=` narrows client-side. **Implemented** for this and next boss week. |
-| `GET /api/admin/config` | — | `ConfigView` | **Implemented** (A9): models from the live Kanata catalog (`reachable: false` keeps the last snapshot), env facts incl. `KANADE_PSEUDONYMIZE` (`models.pseudonymize`; `models.pii_pseudonymise` mirrors it, read-only, the env row says why) and `KANADE_ALLOW_EXTERNAL_UNMASKED` (its reason says it is unused while masking is on). `models.groups` lists one `{model, group, permits}` row per alias per group the governor runs; `models.groups_source` is `default` (one `gateway` group of `KANADE_MODEL_PERMITS` over the distinct role aliases) or `config` (`kanade.toml` `[[models.groups]]`, summarised in the env row). `key_limits.max_in_flight` is `null` (Kanata publishes no per-key limit). `capacity_check` checks each group's permits against the least admission of its aliases (`Group <name> …`) and, with declared groups only, warns `The <role> model <alias> is in no capacity group; its calls are refused.` All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |
+| `GET /api/admin/config` | — | `ConfigView` | **Implemented** (A9): models from the live Kanata catalog (`reachable: false` keeps the last snapshot); `catalog[].trust_zone` and `leaves_homelab` identify listed external routes. Requests sent to them carry raw data when present, without an opt-in; model-check/startup logs warn about this routing. Unlisted aliases are treated as external until classified. `models.pii_pseudonymise` is a required, read-only compatibility boolean that is always `false`; the `env` list has no rows for retired privacy variables. `models.groups` lists one `{model, group, permits}` row per alias per group the governor runs; `models.groups_source` is `default` (one `gateway` group of `KANADE_MODEL_PERMITS` over the distinct role aliases) or `config` (`kanade.toml` `[[models.groups]]`, summarised in the env row). `key_limits.max_in_flight` is `null` (Kanata publishes no per-key limit). `capacity_check` checks each group's permits against the least admission of its aliases (`Group <name> …`) and, with declared groups only, warns `The <role> model <alias> is in no capacity group; its calls are refused.` All runtime settings, the Manage-Messages banner list, the env-only table, and `notices` (empty on GET). |
 | `PATCH /api/admin/config` | One section, partial (see `ConfigPatch`) | `ConfigView` + `notices` | **Implemented** (A9): 422 `unknown_field`/`read_only`/`invalid`/`capacity`/`ungrouped`/`idempotency_mismatch`, 409 `conflict` for stale role-assignment digests, 503 `models_unreachable` for models and `unavailable` while a changed assignment cannot be checked against the current role directory; `models.groups` is `read_only` (set in `kanade.toml` `[[models.groups]]`; restart to apply); `persona.role_profiles` is writable with its required digest precondition (see Role profile assignments below); `persona.visibility` accepts selected-key deltas (see Reply profile visibility below); a no-limit alias only warns. Persona switches, model roles and role-profile assignments apply live (a saved assignment is used by the next chat question; calls already running keep their current state); `RoleModel.running` shows what the next model call uses; extraction and heading rewrites that had no model at startup start only after a restart, so a save giving them their first model adds a `notices` line saying so and `running` stays absent for them; pings apply on restart. With declared `[[models.groups]]`, switching a role to an alias no group lists is refused (422 `ungrouped`, naming the role and alias; an alias already saved never blocks another save); without declared groups the alias joins the default `gateway` group. A saved alias starts as leaving the homelab until Kanata's listing shows its zone. Chatbot rates: `count` 1–100 answers per `window_s`; `member_rate.count` may also be `0` (staff only: members without a per-member override are ignored silently, as the role gate does, with no reaction, reply, log row or model call). One section per save; arrays (`countdown_minutes`, `role_profiles`, `groups`) are replaced whole, while `persona.visibility` is a selected-key delta merged with current visibility. Runs the startup capacity check: nothing that would stop the bot is saved. A stranded reasoning level (an alias or extraction change invalidating a role that was not part of the request) is reset to `off`, or to the alias's lowest published level where `off` is not allowed, and reported in `notices`, e.g. `"chat reasoning reset to low: kanata/chat does not publish high."` Reasoning resolution: see "Config semantics"; `""` inherits the extraction role's effort and is legal only while that effort is legal for the alias. |
 | `POST /api/admin/config/profiles/reload` | `{}` | `{message, reloaded}` | **Implemented** (A9); safe to repeat. Re-reads `config/personas/profiles/` after a file edit. Profile text is files-only by decision (a deliberate v4 drop); the app shows profiles read-only and only publishes them or assigns them to roles. |
 | `POST /api/admin/digest` | `{week, channel_id?}` | `{message}` | v4 `POST /digest` parity, channel override included. |
@@ -480,24 +480,25 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   carried after capability shaping; `null` when no `reasoning_effort` went
   out, e.g. no reasoning control, or `off` for a model whose published list
   lacks `none`), `route` (`homelab`,
-  `external_masked`, `external_unmasked`; `null` for rows recorded before
+  `external_unmasked`; `external_masked` is historical; `null` for rows recorded before
   routes were), `latency_ms` (`null` when unknown) and `guardrail`
   `{clean, content_filter}`. The turn adds `persona` (bundle id),
   `profile` (reply profile id, `null` for the bundle default) and
   `profile_source` (`saved`/`role`/`default`), `route` (its last round's),
   `error` and a stable `error_code` (`timeout`, `malformed`,
-  `content_blocked`, `kept_calling_tools`, `context_budget`, `route_refused`,
-  `identity_leak_blocked`, `rate_limited`, a governor refusal such as `busy`
+  `content_blocked`, `kept_calling_tools`, `context_budget`,
+  `route_refused` (historical),
+  `identity_leak_blocked` (historical), `rate_limited`, a governor refusal such as `busy`
   or `queue_timeout`, or a model error such as `upstream_timeout`), the
-  row's `guardrail` object, `masked` (pseudonymized with a stored Model
-  view) and `model_view`: per round the request messages as the wire sent
-  them (masked; an empty tool result shows the transport's `(no output)`
-  placeholder), the raw reply and tool-call arguments before names were
-  restored, the decoded final `reply`, and `mapping`
-  `[{token, name}]` with the member's display name at the time (else their
-  current roster name, else `someone`; never a user id). `model_view` is
-  `null` for passthrough turns and for withheld ones (it quotes the
-  question). `cards` link the proposals the turn created once their card is
+  row's `guardrail` object, where current external calls set
+  `external_unmasked` only after a request is admitted. `masked` and
+  `model_view` describe historical masked rows only: their per-round masked
+  requests, raw replies and tool-call arguments, decoded final `reply`, and
+  `mapping` `[{token, name}]` with display names but no user IDs. Historical
+  Model views remain admin-only; new turns have `masked: false` and
+  `model_view: null`, and create no mapping or masked row. Withheld turns also
+  return `model_view: null`. Historical store data remains under the existing
+  chat-log retention and purge behavior. `cards` link the proposals the turn created once their card is
   posted, `raw` joins the rounds' non-empty responses. **Withheld**
   (`chat-orchestration.md`, pollution containment): the question shows as
   `[message withheld]` in the list and the detail, and so do that turn's
@@ -518,8 +519,9 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   text: the extractor's fixed sentences (`the schedule could not be read`,
   `the channel history could not be read`, `no answer`, …), governor and
   session refusals, redacted provider errors (`LLM completion failed
-  (<code>, digest=…)`), timeouts, schema-validation and identity-decoding
-  errors, the external-route refusal and `date value out of range`. Anything
+  (<code>, digest=…)`), timeouts, schema-validation errors, and historical
+  identity-decoding or external-route privacy-refusal errors, plus
+  `date value out of range`. Anything
   else, including store text in rows logged before this rule and v4 imports,
   reads `The call failed; the server log has the detail.` The extractor logs
   a store failure as a fixed sentence and writes the store's own text only
@@ -573,11 +575,12 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   `clarified`, `error`, `timeout`, `rate_limited`, `turned_away`,
   `content_blocked`, `withheld`, `clean_retry`; Extractions: `proposed`,
   `no_change`, `failed`, `turned_away`, `content_blocked`,
-  `self_service_link`, `identity_leak` (the provider-boundary scanner refused
-  the request; nothing was sent). Guardrail keys include `pseudonymized`
-  (masked request) and `identity_leak_blocked` (`{role, kinds, count}`,
-  never the matched text). A masked chat turn's Model view is on the chat
-  detail (`model_view`, above; admin listener only). An unknown outcome, a malformed date, a `min_ms`
+  `self_service_link`, `identity_leak` (historical scanner refusal; current
+  calls do not produce it). Historical guardrail keys include `pseudonymized`
+  and `identity_leak_blocked`; current external calls record
+  `external_unmasked` after a request is admitted. Historical masked chat
+  turns retain their Model view on the chat detail (`model_view`, above; admin
+  listener only); new turns have none. An unknown outcome, a malformed date, a `min_ms`
   that is not whole non-negative milliseconds (`1e3`, `-5`) or a Chat-only
   filter on Extractions is 422 `invalid_filter`, never a bare 400 (A7 also:
   an unknown, repeated or undecodable key and an inverted range). Cursor paging

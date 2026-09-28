@@ -68,7 +68,7 @@ for (const [colorway, theme] of LOOKS) {
     await serious(page, 'admin config env');
     await page.getByRole('tab', { name: 'Models' }).click();
     await page.getByRole('combobox', { name: /^Model/ }).first().selectOption('kanata/chat-cloud');
-    await expect(page.getByText(/go to an external provider/)).toBeVisible();
+    await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
     await serious(page, 'admin config cloud warning');
     await page.getByRole('link', { name: /^Inbox/ }).click();
     await expect(page.getByRole('listbox', { name: 'Extractor items' })).toBeVisible();

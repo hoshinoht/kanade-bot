@@ -35,7 +35,7 @@ use kanade::extract::rescan::{Backfilled, History};
 use kanade::infrastructure::llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };
-use kanade::infrastructure::llm::identity::{IdentityCodec, Member, Passthrough};
+use kanade::infrastructure::llm::identity::Member;
 use kanade::infrastructure::llm::{
     CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy, Usage,
 };
@@ -446,29 +446,16 @@ pub struct World {
 
 impl World {
     pub async fn new(actions: Vec<FakeAction>) -> Self {
-        Self::with(actions, |_| {}, Arc::new(Passthrough)).await
+        Self::build(actions, |_| {}, true, false).await
     }
 
-    pub async fn with(
-        actions: Vec<FakeAction>,
-        tune: impl FnOnce(&mut PipelineConfig),
-        codec: Arc<dyn IdentityCodec>,
-    ) -> Self {
-        Self::build(actions, tune, codec, true, false, None).await
-    }
-
-    pub async fn with_members(
-        actions: Vec<FakeAction>,
-        tune: impl FnOnce(&mut PipelineConfig),
-        codec: Arc<dyn IdentityCodec>,
-        members: Vec<Member>,
-    ) -> Self {
-        Self::build(actions, tune, codec, true, false, Some(members)).await
+    pub async fn with(actions: Vec<FakeAction>, tune: impl FnOnce(&mut PipelineConfig)) -> Self {
+        Self::build(actions, tune, true, false).await
     }
 
     /// Extraction routed to an ungrouped alias.
     pub async fn ungrouped(actions: Vec<FakeAction>) -> Self {
-        Self::build(actions, |_| {}, Arc::new(Passthrough), false, false, None).await
+        Self::build(actions, |_| {}, false, false).await
     }
 
     /// With self-service links wired: the portal at [`PORTAL`], the tracked
@@ -477,24 +464,18 @@ impl World {
         actions: Vec<FakeAction>,
         tune: impl FnOnce(&mut PipelineConfig),
     ) -> Self {
-        Self::build(actions, tune, Arc::new(Passthrough), true, true, None).await
+        Self::build(actions, tune, true, true).await
     }
 
     async fn build(
         actions: Vec<FakeAction>,
         tune: impl FnOnce(&mut PipelineConfig),
-        codec: Arc<dyn IdentityCodec>,
         grouped: bool,
         self_service: bool,
-        members: Option<Vec<Member>>,
     ) -> Self {
         let store = Arc::new(MemoryScheduleStore::new());
         let clock = TestClock::new(now().fixed_offset());
-        let mut fake_guild = FakeGuild::new();
-        if let Some(members) = members {
-            fake_guild.members = members;
-        }
-        let guild = Arc::new(fake_guild);
+        let guild = Arc::new(FakeGuild::new());
         let scheduler = Arc::new(Scheduler {
             store: store.clone(),
             clock: clock.clone(),
@@ -542,10 +523,7 @@ impl World {
             links: Arc::new(PublicPortalLinks::new(PORTAL).expect("origin")),
             nudger: Arc::new(Nudger::new(
                 Arc::new(Fixed),
-                SharedRewriter(Arc::new(GovernedRewriter::new(
-                    client.clone(),
-                    codec.clone(),
-                ))),
+                SharedRewriter(Arc::new(GovernedRewriter::new(client.clone()))),
             )),
             personas: Arc::new(KanadeForAll(kanade())),
         });
@@ -553,7 +531,6 @@ impl World {
             Deps {
                 store: store.clone(),
                 client,
-                codec,
                 guild: guild.clone(),
                 proposer: scheduler.clone(),
                 outbox: outbox.clone(),
@@ -593,7 +570,6 @@ impl World {
             Deps {
                 store,
                 client,
-                codec: Arc::new(Passthrough),
                 guild: self.guild.clone(),
                 proposer: self.scheduler.clone(),
                 outbox: self.outbox.clone(),

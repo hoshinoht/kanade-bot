@@ -21,7 +21,7 @@ use crate::extract::schema::extraction_schema;
 use crate::extract::window::split_until;
 use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::ModelClient;
-use crate::infrastructure::llm::identity::IdentityCodec;
+use crate::infrastructure::llm::identity::PassthroughSession;
 
 /// Logged (and shown by the admin portal) when the schedule store fails;
 /// store text can carry paths, so it goes only to the server log.
@@ -60,7 +60,6 @@ pub struct Deps<S, P, X, O> {
     /// The schedule (reads only) and the model-log store.
     pub store: Arc<S>,
     pub client: Arc<ModelClient<P>>,
-    pub codec: Arc<dyn IdentityCodec>,
     pub guild: Arc<dyn Guild>,
     pub proposer: Arc<X>,
     pub outbox: Arc<O>,
@@ -95,7 +94,6 @@ pub struct PassReport {
 pub struct Extractor<S, P, X, O> {
     pub(super) store: Arc<S>,
     pub(super) client: Arc<ModelClient<P>>,
-    pub(super) codec: Arc<dyn IdentityCodec>,
     pub(super) guild: Arc<dyn Guild>,
     pub(super) proposer: Arc<X>,
     pub(super) outbox: Arc<O>,
@@ -156,7 +154,6 @@ where
         Self {
             store: deps.store,
             client: deps.client,
-            codec: deps.codec,
             guild: deps.guild,
             proposer: deps.proposer,
             outbox: deps.outbox,
@@ -376,18 +373,12 @@ where
         // Err high: the runner may add its schema instruction for a model
         // without structured output.
         let budget = prompt_budget(self.config.context_tokens)
-            .saturating_sub(schema_instruction_tokens(&extraction_schema(None)));
+            .saturating_sub(schema_instruction_tokens(&extraction_schema()));
         let chunks = split_until(
             &rows,
             |chunk| {
-                // The one allowed use of `codec.open` outside `open_session`:
-                // an estimate, never sent, so there is nothing to guard or
-                // scan. A session of the same codec renders the same shapes
-                // (tokens drawn from the same pool, the same message refs);
-                // only the drawn names' lengths differ, a few characters per
-                // mention, inside CONTEXT_RESERVE.
-                let mut session = self.codec.open(&loaded.members);
-                let prepared = self.prepare(channel_id, &loaded, chunk, session.as_mut());
+                let mut session = PassthroughSession;
+                let prepared = self.prepare(channel_id, &loaded, chunk, &mut session);
                 estimate_messages(&prepared.messages) <= budget
             },
             |row| row.created_at,

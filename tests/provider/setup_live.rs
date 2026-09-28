@@ -8,7 +8,6 @@ use kanade::api::admin::config::ModelCatalog;
 use kanade::infrastructure::llm::{
     ChatRequest, Effort, Message,
     governor::{QuestionLimits, Refused, Role, SessionFailure, XorShift},
-    identity::{Passthrough, open_session},
     setup::{
         CapacityGroup, ModelRoles, ModelStack, Models, RoleEffort, RoleModel, RunningRole,
         build_with_groups,
@@ -36,10 +35,9 @@ fn roles(chat: RoleModel) -> ModelRoles {
     }
 }
 
-async fn stack(stub: &Stub, chat: RoleModel, pseudonymize: bool) -> ModelStack {
+async fn stack(stub: &Stub, chat: RoleModel) -> ModelStack {
     let mut input = setup(Some(stub.url()));
     input.roles = roles(chat);
-    input.pseudonymize = pseudonymize;
     let stack = ready(input);
     stack.provider.list_models().await.unwrap();
     stack
@@ -49,7 +47,7 @@ fn request(alias: &str, effort: Option<Effort>) -> ChatRequest {
     ChatRequest {
         model: alias.into(),
         messages: vec![Message::User {
-            content: "hi".into(),
+            content: "SyntheticMember 999000111222333444 https://synthetic.invalid/member".into(),
         }],
         tools: Vec::new(),
         output_schema: None,
@@ -65,11 +63,11 @@ async fn ask(stack: &ModelStack) -> Result<(), SessionFailure> {
     let limits = QuestionLimits::new(Duration::from_secs(10));
     let mut session = stack
         .client
-        .open_question("member", false, limits)
+        .open_question_on(&route, "member", false, limits)
         .await
         .map_err(|error| error.failure)?;
     session
-        .complete(&request(&route.alias, stack.effort(Role::Chat)))
+        .complete(&request(&route.alias, route.effort))
         .await
         .map(drop)
         .map_err(|error| error.failure)
@@ -93,7 +91,7 @@ fn running(alias: &str, effort: Effort) -> Option<RunningRole> {
 #[tokio::test]
 async fn a_saved_effort_is_sent_by_the_next_question_without_a_restart() {
     let stub = Stub::start(gateway(listing(), "ok")).await;
-    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), false).await;
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low))).await;
     ask(&stack).await.unwrap();
     assert_eq!(last_sent(&stub), ("home-a".into(), Some("low".into())));
 
@@ -120,7 +118,7 @@ async fn a_saved_effort_is_sent_by_the_next_question_without_a_restart() {
 #[tokio::test]
 async fn an_alias_switch_reaches_the_next_session_and_open_ones_keep_theirs() {
     let stub = Stub::start(gateway(listing(), "ok")).await;
-    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), false).await;
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low))).await;
     let limits = QuestionLimits::new(Duration::from_secs(10));
     let mut open = stack
         .client
@@ -154,12 +152,7 @@ async fn an_alias_switch_reaches_the_next_session_and_open_ones_keep_theirs() {
 #[tokio::test]
 async fn a_level_the_new_alias_does_not_publish_falls_to_its_floor() {
     let stub = Stub::start(gateway(listing(), "ok")).await;
-    let stack = stack(
-        &stub,
-        role("home-a", RoleEffort::Level(Effort::High)),
-        false,
-    )
-    .await;
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::High))).await;
     stack
         .apply_roles(roles(role("home-b", RoleEffort::Level(Effort::High))))
         .unwrap();
@@ -171,34 +164,25 @@ async fn a_level_the_new_alias_does_not_publish_falls_to_its_floor() {
 }
 
 #[tokio::test]
-async fn a_cloud_switch_is_masked_with_pseudonymization_and_refused_without() {
+async fn a_cloud_switch_sends_raw_data_without_an_opt_in() {
     let stub = Stub::start(gateway(listing(), "ok")).await;
-    let masked = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), true).await;
-    assert_eq!(masked.route_kind(Role::Chat), Some("homelab"));
-    masked
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low))).await;
+    assert_eq!(stack.route_kind(Role::Chat), Some("homelab"));
+    stack
         .apply_roles(roles(role("cloud-c", RoleEffort::Level(Effort::Low))))
         .unwrap();
-    assert_eq!(masked.route_kind(Role::Chat), Some("external_masked"));
-    // Masking on: a session without the scanner is refused (fail closed).
-    assert!(matches!(
-        ask(&masked).await,
-        Err(SessionFailure::IdentityLeakBlocked(_))
-    ));
-
-    let plain = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), false).await;
-    plain
-        .apply_roles(roles(role("cloud-c", RoleEffort::Level(Effort::Low))))
-        .unwrap();
-    assert_eq!(plain.route_kind(Role::Chat), Some("external_refused"));
-    let route = plain.governor.route(Role::Chat).unwrap();
-    assert!(open_session(&Passthrough, &route, &[]).is_err());
-    let before = stub.chat_requests().len();
-    // Back home: the listing already confirms its zone.
-    plain
-        .apply_roles(roles(role("home-b", RoleEffort::Level(Effort::Low))))
-        .unwrap();
-    assert_eq!(plain.route_kind(Role::Chat), Some("homelab"));
-    assert_eq!(stub.chat_requests().len(), before);
+    assert_eq!(stack.route_kind(Role::Chat), Some("external_unmasked"));
+    ask(&stack).await.unwrap();
+    assert_eq!(last_sent(&stub), ("cloud-c".into(), Some("low".into())));
+    let request = stub.chat_requests().pop().unwrap().body;
+    let serialized = request.to_string();
+    for raw in [
+        "SyntheticMember",
+        "999000111222333444",
+        "https://synthetic.invalid/member",
+    ] {
+        assert!(serialized.contains(raw), "{raw} missing from {serialized}");
+    }
 }
 
 #[tokio::test]
@@ -210,7 +194,7 @@ async fn a_new_alias_stays_external_until_a_listing_confirms_it() {
     stack
         .apply_roles(roles(role("home-b", RoleEffort::Level(Effort::Low))))
         .unwrap();
-    assert_eq!(stack.route_kind(Role::Chat), Some("external_refused"));
+    assert_eq!(stack.route_kind(Role::Chat), Some("external_unmasked"));
     stack.provider.list_models().await.unwrap();
     assert_eq!(stack.route_kind(Role::Chat), Some("homelab"));
 }
@@ -319,7 +303,7 @@ async fn a_role_unrouted_at_startup_gets_the_default_group_live() {
 #[tokio::test]
 async fn an_extraction_that_inherits_is_refused_and_nothing_moves() {
     let stub = Stub::start(gateway(listing(), "ok")).await;
-    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), false).await;
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low))).await;
     let mut next = roles(role("home-b", RoleEffort::Level(Effort::Low)));
     next.extraction.effort = RoleEffort::Inherit;
     assert!(stack.apply_roles(next).is_err());
@@ -334,7 +318,7 @@ async fn a_saved_rewrite_level_reaches_the_next_rewrite() {
     };
 
     let stub = Stub::start(gateway(listing(), "Right here, as always.")).await;
-    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low)), false).await;
+    let stack = stack(&stub, role("home-a", RoleEffort::Level(Effort::Low))).await;
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/config/personas/bundles/kanade.yaml"
@@ -346,7 +330,7 @@ async fn a_saved_rewrite_level_reaches_the_next_rewrite() {
         NudgeMood::Playful,
         "Everything you need is right here.",
     );
-    let rewriter = GovernedRewriter::new(stack.client.clone(), Arc::new(Passthrough));
+    let rewriter = GovernedRewriter::new(stack.client.clone());
     let deadline = Duration::from_secs(10);
     rewriter.rewrite(&prompt, deadline).await.unwrap();
     // Inherits extraction's off, which home-a allows.

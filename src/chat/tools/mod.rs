@@ -131,9 +131,9 @@ impl ToolContext {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolOutcome {
     pub name: String,
-    /// What the model reads (before identity encoding).
+    /// What the model reads.
     pub output: String,
-    /// The decoded arguments the tool ran with (`{}` for malformed ones).
+    /// Parsed arguments the tool ran with (`{}` for malformed ones).
     pub arguments: Map<String, Value>,
     pub ok: bool,
     /// [`REFUSED`], [`UNKNOWN`] or [`FAILED`] when not ok.

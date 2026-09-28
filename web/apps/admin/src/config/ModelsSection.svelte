@@ -11,7 +11,7 @@
   import { groupRows, isReasoningValid, kanataLimits, keyLine, modelOptions, reasoningChoices, resetStrandedInheritors, ROLES } from './capacity';
   import type { Save } from './save';
 
-  let { models, env = [], save }: { models: ConfigView['models']; env?: ConfigView['env']; save: Save } = $props();
+  let { models, save }: { models: ConfigView['models']; save: Save } = $props();
   const uid = $props.id();
 
   // svelte-ignore state_referenced_locally
@@ -30,9 +30,6 @@
   const groups = $derived(groupRows(models));
   const limits = $derived(kanataLimits(models));
   const permitsTotal = $derived(groups[0]?.permits ?? 0);
-  // External routes run only with this operator override (pseudonymisation is not in this build).
-  const unmasked = $derived(env.find((e) => e.key === 'KANADE_ALLOW_EXTERNAL_UNMASKED')?.value === 'on');
-
   function pick(role: ModelRole, alias: string) {
     // A base pick replaces a stored variant, and with it the baked-in level.
     roles[role] = { alias, reasoning: roles[role].reasoning };
@@ -108,9 +105,22 @@
         </label>
       </div>
       {#if chosen}
-        <!-- Fail closed even if the server's flag is missing: any zone but homelab, or the -cloud suffix. -->
+        <!-- Treat unknown trust metadata and the -cloud suffix as external for data-flow warnings. -->
         {@const unzoned = chosen.trust_zone !== 'homelab' && chosen.trust_zone !== 'external'}
         {@const untrusted = chosen.leaves_homelab || chosen.trust_zone !== 'homelab' || chosen.id.endsWith('-cloud')}
+        {#if untrusted}
+          <p class="settings__warn">
+            <Icon name="alert-triangle" />
+            <span>
+              {#if unzoned}
+                <strong>{chosen.id}</strong> publishes no trust zone, so it is treated as an external route.
+              {:else}
+                Requests to <strong>{chosen.id}</strong> go to an external provider.
+              {/if}
+              Raw member names, IDs, messages, and URLs leave the homelab with every request.
+            </span>
+          </p>
+        {/if}
         <ul class="settings__caps" aria-label="What {chosen.id} can do">
           <li class="tone tone--{untrusted ? 'danger' : 'success'}">
             {unzoned ? 'trust zone unknown' : untrusted ? 'leaves the homelab' : 'homelab'}
@@ -127,31 +137,14 @@
             <li class="chip chip--mono">no published limit</li>
           {/if}
         </ul>
-        {#if untrusted}
-          <p class="settings__warn">
-            <Icon name="alert-triangle" />
-            <span>
-              {#if unzoned}
-                <strong>{chosen.id}</strong> publishes no trust zone, so it is treated as leaving the homelab until Kanata says otherwise.
-              {:else}
-                Requests to <strong>{chosen.id}</strong> go to an external provider.
-              {/if}
-              {#if models.pii_pseudonymise}Member names and ids are pseudonymised before they leave.
-              {:else if unmasked}<strong>It runs unmasked:</strong> <code>KANADE_ALLOW_EXTERNAL_UNMASKED</code> (models.allow_external_unmasked in
-                kanade.toml) is on, so member names and chat leave as written. For provider testing only.
-              {:else}Member names would leave as written, so the bot refuses this route unless the operator sets
-                <code>KANADE_ALLOW_EXTERNAL_UNMASKED</code> (models.allow_external_unmasked in kanade.toml).{/if}
-            </span>
-          </p>
-        {/if}
       {:else if unset}
         <p class="note">Not configured: this role has no model, so its work is skipped.</p>
       {:else}
         <p class="settings__warn">
           <Icon name="alert-triangle" />
           <span>
-            <strong>{roles[role.id].alias}</strong> is not in Kanata's list, so requests with it will fail. It is treated as leaving the
-            homelab. Pick a listed alias, or fix the list on Kanata's side.
+            <strong>{roles[role.id].alias}</strong> is not in Kanata's list, so its availability is unknown and it is treated as external. If
+            routed, raw member names, IDs, messages, and URLs are sent outside the homelab; requests may fail if the alias is unavailable.
           </span>
         </p>
       {/if}

@@ -2,7 +2,6 @@
 //! debounce, loop guards, the governed call with its answer retry, outcomes
 //! in the extraction log, proposals through the scheduler, and the backlog.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -13,7 +12,6 @@ use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{
     AuthorKind, MessageEvent, check_reasoning_effort, extraction_outcome,
 };
-use kanade::infrastructure::llm::identity::{TaggingCodec, find_request_leaks};
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{
@@ -321,11 +319,9 @@ async fn a_proposal_about_a_different_run_is_left_alone() {
 
 #[tokio::test(start_paused = true)]
 async fn a_burst_too_big_for_one_prompt_is_read_in_pieces() {
-    let world = World::with(
-        vec![nothing(), nothing(), nothing(), nothing()],
-        |config| config.context_tokens = 2_048,
-        Arc::new(kanade::infrastructure::llm::identity::Passthrough),
-    )
+    let world = World::with(vec![nothing(), nothing(), nothing(), nothing()], |config| {
+        config.context_tokens = 2_048
+    })
     .await;
     let (events, _loop) = world.pipeline();
     for n in 0..4 {
@@ -392,24 +388,6 @@ async fn two_changes_for_one_run_in_one_burst_both_stay_live() {
     assert_eq!(cards.len(), 1, "one card per burst");
     assert_eq!(cards[0].entries.len(), 2);
     assert_eq!(world.logs().await[0].proposal_ids.len(), 2);
-}
-
-#[tokio::test(start_paused = true)]
-async fn pseudonymized_prompts_leak_nobody_and_answers_decode_back() {
-    let tagged = reply(
-        r#"{"amendments": [{"kind": "move", "bosses": ["HMaleficStar", "HFA"],
-            "day_ref": "wed", "time_ref": "9:30pm", "participants": ["ID1"],
-            "confidence": 0.9, "evidence_message_ids": ["101"]}]}"#,
-    );
-    let world = World::with(vec![tagged], |_| {}, Arc::new(TaggingCodec)).await;
-    let (events, _loop) = world.pipeline();
-    events.send(post(MOVE_TEXT)).await.expect("send");
-    after(91).await;
-    let sent = &world.provider.requests()[0];
-    let leaks = find_request_leaks(sent, &world.guild.members);
-    assert!(leaks.is_empty(), "{leaks:?}");
-    let live = world.live_proposals().await;
-    assert!(live[0].draft.subject.as_deref().unwrap().contains(MY));
 }
 
 #[tokio::test(start_paused = true)]
@@ -491,12 +469,7 @@ async fn replayed_history_drains_at_a_fixed_rate_without_duplicates() {
 
 #[tokio::test(start_paused = true)]
 async fn a_full_backlog_drops_its_oldest_messages_and_says_so() {
-    let world = World::with(
-        vec![nothing(); 3],
-        |config| config.backlog_capacity = 3,
-        Arc::new(kanade::infrastructure::llm::identity::Passthrough),
-    )
-    .await;
+    let world = World::with(vec![nothing(); 3], |config| config.backlog_capacity = 3).await;
     let (events, _loop) = world.pipeline();
     for n in 0..5 {
         let at = local(8, 29, 20, n);
@@ -548,8 +521,11 @@ async fn an_edit_during_an_in_flight_read_is_read_again() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_misconfigured_route_fails_without_a_backlog_retry() {
+async fn an_external_ungrouped_route_fails_without_retry_or_disclosure() {
+    use kanade::infrastructure::llm::governor::Role;
+
     let world = World::ungrouped(vec![moved("9:30pm", "101")]).await;
+    assert!(world.client.governor().set_external(Role::Extraction, true));
     let (events, _loop) = world.pipeline();
     events.send(post(MOVE_TEXT)).await.expect("send");
     after(91).await;
@@ -558,6 +534,7 @@ async fn a_misconfigured_route_fails_without_a_backlog_retry() {
     assert_eq!(logs.len(), 1, "never requeued");
     assert_eq!(logs[0].outcome, ExtractionOutcome::Failed);
     assert_eq!(world.requests(), 0);
+    assert!(logs[0].guardrail.get("external_unmasked").is_none());
     assert!(!world.processed("101").await);
 }
 
@@ -572,6 +549,25 @@ async fn a_content_filter_is_logged_as_content_blocked_without_a_retry() {
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].outcome, ExtractionOutcome::ContentBlocked);
     assert_eq!(world.requests(), 1, "no answer retry or requeue");
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_external_timeout_after_admission_marks_disclosure() {
+    use kanade::infrastructure::llm::governor::Role;
+
+    let world = World::new(vec![FakeAction::UpstreamTimeout]).await;
+    assert!(world.client.governor().set_external(Role::Extraction, true));
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+
+    let logs = world.logs().await;
+    assert_eq!(logs.len(), 1);
+    assert!(
+        world.requests() > 0,
+        "the fake provider saw an admitted call"
+    );
+    assert_eq!(logs[0].guardrail["external_unmasked"], true);
 }
 
 #[tokio::test(start_paused = true)]
@@ -642,33 +638,43 @@ fn an_unpublished_extraction_effort_is_caught_at_startup() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_external_route_is_refused_by_default_and_marked_when_allowed() {
+async fn external_extraction_sends_raw_names_ids_urls_and_answer_retry_without_opt_in() {
     use kanade::infrastructure::llm::governor::Role;
-    let refused = World::new(vec![moved("9:30pm", "101")]).await;
-    refused
-        .client
-        .governor()
-        .set_external(Role::Extraction, true);
-    let (events, _loop) = refused.pipeline();
-    events.send(post(MOVE_TEXT)).await.expect("send");
-    after(91).await;
-    let logs = refused.logs().await;
-    assert_eq!(logs[0].outcome, ExtractionOutcome::Failed);
-    assert_eq!(logs[0].guardrail, serde_json::json!({}));
-    assert_eq!(refused.requests(), 0);
-
-    let world = World::new(vec![moved("9:30pm", "101")]).await;
+    let world = World::new(vec![reply("not json"), nothing()]).await;
     let governor = world.client.governor();
     governor.set_external(Role::Extraction, true);
-    governor.allow_external_unmasked(true);
+    let message_id = "999111222333444555";
+    let url = "https://synthetic.invalid/party?member=fixture#week";
+    let content = format!("hfa wed 9pm? SyntheticParticipant 999000111222333444 {url}");
     let (events, _loop) = world.pipeline();
-    events.send(post(MOVE_TEXT)).await.expect("send");
+    events
+        .send(MessageEvent::Posted(message(
+            message_id,
+            MY,
+            local(8, 30, 13, 1),
+            &content,
+        )))
+        .await
+        .expect("send");
     after(91).await;
-    let logs = world.logs().await;
-    assert_eq!(logs[0].outcome, ExtractionOutcome::Proposed);
+    let requests = world.provider.requests();
     assert_eq!(
-        logs[0].guardrail,
-        serde_json::json!({"external_unmasked": true})
+        requests.len(),
+        2,
+        "the invalid answer uses extraction retry"
     );
-    assert_eq!(world.requests(), 1);
+    let serialized = serde_json::to_string(&requests).unwrap();
+    for raw in [
+        "SyntheticParticipant",
+        "999000111222333444",
+        MY,
+        message_id,
+        url,
+    ] {
+        assert!(serialized.contains(raw), "{raw} missing from {serialized}");
+    }
+    let logs = world.logs().await;
+    assert_eq!(logs[0].outcome, ExtractionOutcome::NoChange);
+    assert_eq!(logs[0].guardrail["external_unmasked"], true);
+    assert_eq!(world.requests(), 2);
 }

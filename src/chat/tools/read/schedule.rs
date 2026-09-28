@@ -76,6 +76,19 @@ fn schedule_participant(
     }
     let roster = bossers(world.members);
     let resolution = resolve_participant_text(raw, &roster);
+    // A model may render the addressed bot as @name instead of <@id>.
+    let named_bot = raw.strip_prefix('@').unwrap_or(raw);
+    if ctx.self_schedule_requested
+        && resolution.ids.is_empty()
+        && resolution.ambiguous.is_empty()
+        && resolution.unknown.len() == 1
+        && ctx
+            .bot_names
+            .iter()
+            .any(|name| name.to_lowercase() == named_bot.to_lowercase())
+    {
+        return Ok(Some(ctx.author_id.clone()));
+    }
     if !resolution.unknown.is_empty() {
         return Err(ToolError(format!(
             "Nobody on the roster matches {}. Ask whose schedule they want; if they mean their own, ask them to say so.",

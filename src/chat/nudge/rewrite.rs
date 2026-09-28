@@ -12,14 +12,14 @@ pub const REWRITE_DEADLINE: Duration = Duration::from_secs(2);
 /// Why a rewriter produced no line. Every variant falls back to the seed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RewriteFailure {
-    /// Not attempted or failed: no permit, breaker open, role unset, external
-    /// route without pseudonymisation, transport or model error.
+    /// Not attempted or failed: no permit, breaker open, role unset, transport
+    /// or model error.
     Unavailable,
     /// The provider declined: a content-filter finish, a refusal, or an
     /// empty/incomplete reply. Adapters must map these here, never to text.
     Refused,
-    /// An operator setting prevents it (unknown or ungrouped role, an
-    /// external route without pseudonymisation, a rejected key or request);
+    /// A deployment or request prevents it (unknown or ungrouped role, a
+    /// rejected key or request);
     /// kept apart so logs can flag it.
     Misconfigured,
 }

@@ -16,7 +16,6 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, CompletionResponse, Effort, ErrorCode, LlmError, LlmProvider,
     execution::{Cause, CompletionRunner, Denied, ExecutionLimits, Gate, RetryPolicy, RunError},
-    identity::{IdentityLeakBlocked, LeakFound, LeakScanner},
 };
 use super::{CallKind, Governor, Permit, Priority, Refused, Role, RoleRoute, Ticket, full_jitter};
 
@@ -84,9 +83,6 @@ pub enum SessionFailure {
     CleanRetryUnavailable,
     /// Not an extraction session, no answer to retry yet, or the retry is used.
     AnswerRetryUnavailable,
-    /// The boundary scanner found a raw member identity in the request;
-    /// nothing was sent and it is not retried.
-    IdentityLeakBlocked(IdentityLeakBlocked),
     Model(LlmError),
 }
 
@@ -104,7 +100,6 @@ impl fmt::Display for SessionError {
             SessionFailure::Ended => f.write_str("model session has ended"),
             SessionFailure::CleanRetryUnavailable => f.write_str("clean retry unavailable"),
             SessionFailure::AnswerRetryUnavailable => f.write_str("answer retry unavailable"),
-            SessionFailure::IdentityLeakBlocked(blocked) => blocked.fmt(f),
             SessionFailure::Model(error) => error.fmt(f),
         }
     }
@@ -114,7 +109,7 @@ impl std::error::Error for SessionError {}
 
 impl SessionError {
     /// Fixing it needs an operator or a code change (role unset or ungrouped,
-    /// route guard, key or capability mismatch, invalid request); anything else
+    /// key or capability mismatch, invalid request); anything else
     /// is "unavailable now" and may succeed later.
     pub fn is_misconfiguration(&self) -> bool {
         match &self.failure {
@@ -158,10 +153,6 @@ pub struct ModelClient<P> {
     /// Random per client so ids from different processes rarely collide in gateway logs.
     instance: u32,
     sessions: AtomicU64,
-    /// Pseudonymization is on: a session with no active boundary scanner
-    /// refuses every request (`unscannable`), so a port that forgot
-    /// `Session::with_scanner` fails closed.
-    masking: bool,
 }
 
 impl<P> fmt::Debug for ModelClient<P> {
@@ -189,18 +180,7 @@ impl<P: LlmProvider> ModelClient<P> {
             max_attempts,
             instance,
             sessions: AtomicU64::new(0),
-            masking: false,
         })
-    }
-
-    /// Requires an active scanner on every session (pseudonymization on).
-    pub fn with_masking(mut self, masking: bool) -> Self {
-        self.masking = masking;
-        self
-    }
-
-    pub fn masking(&self) -> bool {
-        self.masking
     }
 
     /// `kanade-{kind}-{instance}-{sequence}`: always a valid `x-request-id` stem.
@@ -228,9 +208,8 @@ impl<P: LlmProvider> ModelClient<P> {
         self.open_question_with(None, who, admin, limits).await
     }
 
-    /// As [`Self::open_question`] on `route`, read earlier (the one the
-    /// identity guard checked), so a live switch in between cannot move the
-    /// question to another model.
+    /// As [`Self::open_question`] on a route read earlier, so a live switch
+    /// in between cannot move the question to another model.
     pub async fn open_question_on(
         &self,
         route: &RoleRoute,
@@ -238,6 +217,9 @@ impl<P: LlmProvider> ModelClient<P> {
         admin: bool,
         limits: QuestionLimits,
     ) -> Result<Session<'_, P>, SessionError> {
+        if route.role != Role::Chat {
+            return Err(invalid("session-role"));
+        }
         self.open_question_with(Some(route), who, admin, limits)
             .await
     }
@@ -290,7 +272,6 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
-            scanner: LeakScanner::off(),
             last_sent: None,
             id: self.next_id(CallKind::Chat),
         })
@@ -306,6 +287,32 @@ impl<P: LlmProvider> ModelClient<P> {
         wait: Duration,
         timeout: Duration,
     ) -> Result<Session<'_, P>, SessionError> {
+        self.open_extraction_with(None, who, wait, timeout).await
+    }
+
+    /// Opens extraction on the route snapshot read by the caller. A role
+    /// switch before admission cannot redirect this session to another alias.
+    pub async fn open_extraction_on(
+        &self,
+        route: &RoleRoute,
+        who: impl Into<String>,
+        wait: Duration,
+        timeout: Duration,
+    ) -> Result<Session<'_, P>, SessionError> {
+        if route.role != Role::Extraction {
+            return Err(invalid("session-role"));
+        }
+        self.open_extraction_with(Some(route), who, wait, timeout)
+            .await
+    }
+
+    async fn open_extraction_with(
+        &self,
+        route: Option<&RoleRoute>,
+        who: impl Into<String>,
+        wait: Duration,
+        timeout: Duration,
+    ) -> Result<Session<'_, P>, SessionError> {
         if !valid_timeout(timeout) {
             return Err(invalid("invalid-extraction-timeout"));
         }
@@ -314,7 +321,14 @@ impl<P: LlmProvider> ModelClient<P> {
             kind: CallKind::Extraction,
             who: who.into(),
         };
-        let permit = self.acquire(Role::Extraction, ticket.clone(), wait).await?;
+        let permit = match route {
+            Some(route) => self
+                .governor
+                .acquire_route(route, ticket.clone(), wait)
+                .await
+                .map_err(|refused| refunded(SessionFailure::Refused(refused)))?,
+            None => self.acquire(Role::Extraction, ticket.clone(), wait).await?,
+        };
         Ok(Session {
             client: self,
             permit: Some(permit),
@@ -330,7 +344,6 @@ impl<P: LlmProvider> ModelClient<P> {
             answered: false,
             answer_retry_used: false,
             ended: false,
-            scanner: LeakScanner::off(),
             last_sent: None,
             id: self.next_id(CallKind::Extraction),
         })
@@ -347,14 +360,41 @@ impl<P: LlmProvider> ModelClient<P> {
         who: impl Into<String>,
         timeout: Duration,
     ) -> Result<Session<'_, P>, SessionError> {
+        self.open_rewrite_with(None, who, timeout)
+    }
+
+    /// Try-only rewrite on the route snapshot read by the caller.
+    pub fn open_rewrite_on(
+        &self,
+        route: &RoleRoute,
+        who: impl Into<String>,
+        timeout: Duration,
+    ) -> Result<Session<'_, P>, SessionError> {
+        if route.role != Role::Rewrite {
+            return Err(invalid("session-role"));
+        }
+        self.open_rewrite_with(Some(route), who, timeout)
+    }
+
+    fn open_rewrite_with(
+        &self,
+        route: Option<&RoleRoute>,
+        who: impl Into<String>,
+        timeout: Duration,
+    ) -> Result<Session<'_, P>, SessionError> {
         if !valid_timeout(timeout) {
             return Err(invalid("invalid-rewrite-timeout"));
         }
         let who = who.into();
-        let permit = self
-            .governor
-            .try_acquire(Role::Rewrite, CallKind::Rewrite, who.clone())
-            .map_err(|refused| refunded(SessionFailure::Refused(refused)))?;
+        let permit = match route {
+            Some(route) => self
+                .governor
+                .try_acquire_route(route, CallKind::Rewrite, who.clone()),
+            None => self
+                .governor
+                .try_acquire(Role::Rewrite, CallKind::Rewrite, who.clone()),
+        }
+        .map_err(|refused| refunded(SessionFailure::Refused(refused)))?;
         Ok(Session {
             client: self,
             permit: Some(permit),
@@ -376,7 +416,6 @@ impl<P: LlmProvider> ModelClient<P> {
             // No answer retry, so no request is held in reserve for one.
             answer_retry_used: true,
             ended: false,
-            scanner: LeakScanner::off(),
             last_sent: None,
             id: self.next_id(CallKind::Rewrite),
         })
@@ -415,8 +454,6 @@ pub struct Session<'c, P> {
     answered: bool,
     answer_retry_used: bool,
     ended: bool,
-    /// Runs on every request before admission; off unless attached.
-    scanner: LeakScanner,
     last_sent: Option<SentRequest>,
     id: String,
 }
@@ -428,18 +465,7 @@ impl<P> fmt::Debug for Session<'_, P> {
             .field("used", &self.used)
             .field("max_requests", &self.max_requests)
             .field("ended", &self.ended)
-            .field("scanner", &self.scanner)
             .finish_non_exhaustive()
-    }
-}
-
-impl<P> Session<'_, P> {
-    /// Attaches the identity grant's boundary scanner: every request this
-    /// session sends from now on (retries, reshapes, requeues, clean and
-    /// answer retries) is scanned first.
-    pub fn with_scanner(mut self, scanner: LeakScanner) -> Self {
-        self.scanner = scanner;
-        self
     }
 }
 
@@ -543,11 +569,6 @@ impl<P: LlmProvider> Session<'_, P> {
         clean: bool,
     ) -> Result<CompletionResponse, SessionError> {
         let mut retry_first = clean;
-        if self.client.masking && !self.scanner.is_active() {
-            return Err(refunded(SessionFailure::IdentityLeakBlocked(
-                IdentityLeakBlocked::new(self.role, LeakFound::unscannable()),
-            )));
-        }
         loop {
             let permit = match (&self.permit, self.ended) {
                 (Some(permit), false) => permit,
@@ -575,8 +596,7 @@ impl<P: LlmProvider> Session<'_, P> {
                 retry_first,
                 random.as_ref(),
             )
-            .tagged(&self.id)
-            .scanned(&self.scanner);
+            .tagged(&self.id);
             let result = self.client.runner.run(request, &mut gate).await;
             if let Some(sent) = gate.take_sent() {
                 self.last_sent = Some(sent);
@@ -589,11 +609,6 @@ impl<P: LlmProvider> Session<'_, P> {
                 }
                 Err(RunError::Denied(Denied::RequestLimit)) => {
                     return Err(refunded(SessionFailure::RequestsExhausted));
-                }
-                Err(RunError::Leak(found)) => {
-                    return Err(refunded(SessionFailure::IdentityLeakBlocked(
-                        IdentityLeakBlocked::new(self.role, found),
-                    )));
                 }
                 Err(RunError::Failed(failure)) => failure,
             };

@@ -29,7 +29,6 @@ use kanade::infrastructure::llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
 };
-use kanade::infrastructure::llm::identity::{Member, find_leaks};
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::time::Instant;
 
@@ -676,14 +675,10 @@ async fn the_rewrite_prompt_carries_no_member_channel_or_run_data() {
     assert_eq!(nudge.line, LineSource::Rewritten);
     let prompts = fake.prompts.lock().unwrap();
     let prompt = &prompts[0];
-    let roster = [Member {
-        user_id: MEMBER.into(),
-        display_name: "Alvin".into(),
-        nickname: Some("Alv".into()),
-        aliases: vec!["alvintan".into()],
-    }];
     for text in [prompt.system(), prompt.seed()] {
-        assert!(find_leaks(text, &roster).is_empty(), "{text}");
+        for identity in ["Alvin", "Alv", "alvintan", MEMBER] {
+            assert!(!text.contains(identity), "{identity} leaked into {text}");
+        }
         for value in [CHANNEL, "Hard Lucid", "Sat", "21:00"] {
             assert!(!text.contains(value), "{value} leaked into {text}");
         }

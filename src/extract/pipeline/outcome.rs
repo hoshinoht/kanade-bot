@@ -15,7 +15,6 @@ pub fn extraction_outcome(
     match failure {
         Some(Failure::TurnedAway { .. }) => ExtractionOutcome::TurnedAway,
         Some(Failure::ContentBlocked) => ExtractionOutcome::ContentBlocked,
-        Some(Failure::IdentityLeak) => ExtractionOutcome::IdentityLeak,
         Some(Failure::Failed) => ExtractionOutcome::Failed,
         None if proposals > 0 => ExtractionOutcome::Proposed,
         None if redirected > 0 => ExtractionOutcome::SelfServiceLink,
@@ -41,10 +40,6 @@ mod tests {
         assert_eq!(
             extraction_outcome(Some(Failure::Failed), 0, 0),
             ExtractionOutcome::Failed
-        );
-        assert_eq!(
-            extraction_outcome(Some(Failure::IdentityLeak), 0, 0),
-            ExtractionOutcome::IdentityLeak
         );
         assert_eq!(extraction_outcome(None, 1, 1), ExtractionOutcome::Proposed);
         assert_eq!(

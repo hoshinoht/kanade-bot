@@ -19,15 +19,13 @@ use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::scheduler::Clock;
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
-use kanade::infrastructure::llm::identity::{
-    IdentityCodec, Passthrough, TaggingCodec, find_request_leaks,
-};
+use kanade::infrastructure::llm::identity::Passthrough;
 use kanade::infrastructure::llm::{
     ChatRequest, CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ToolCall,
 };
 use serde_json::{Value, json};
 
-use crate::looping::{Ports, V4_TOOL_ROUNDS, roster, said, settings};
+use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
 use crate::model::{Scripted, capabilities, client};
 use crate::slow_store::SlowStore;
 use crate::support::load;
@@ -81,19 +79,28 @@ async fn run(
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    codec: &dyn IdentityCodec,
+    passthrough: &Passthrough,
     ports: &impl kanade::chat::answer::ChatPorts,
 ) -> Run {
-    run_routed(actions, offer, tool_rounds, question, codec, ports, |_| {}).await
+    run_routed(
+        actions,
+        offer,
+        tool_rounds,
+        question,
+        passthrough,
+        ports,
+        |_| {},
+    )
+    .await
 }
 
-/// `route` adjusts the governor before the question (trust zone, override).
+/// `route` adjusts the governor before the question.
 async fn run_routed(
     actions: Vec<FakeAction>,
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    codec: &dyn IdentityCodec,
+    _passthrough: &Passthrough,
     ports: &impl kanade::chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
@@ -107,12 +114,8 @@ async fn run_routed(
     route(&governor);
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "900"}));
     let persona = kanade();
-    let roster = roster(&world);
     let deps = AnswerDeps {
         client: &client,
-        codec,
-        roster: &roster,
-        former: &[],
         route: None,
     };
     let conversation = vec![
@@ -573,42 +576,164 @@ async fn a_content_filter_spends_the_clean_retry_then_blocks() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn identities_are_encoded_in_every_request_and_decoded_in_the_reply() {
-    let run = run(
+async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
+    use kanade::infrastructure::llm::governor::Role;
+
+    let raw = "SyntheticMember 999000111222333444 https://synthetic.invalid/member?id=fixture";
+    let question = format!("Check this schedule detail: {raw}");
+    let run = run_routed(
         vec![
             wants(&[("g1", "get_run", json!({"query": "hstar"}))]),
-            words("ID1 and ID2 are on it."),
+            FakeAction::Malformed,
+            words("The synthetic schedule detail is noted."),
         ],
         ToolOffer::full_set(false),
         8,
-        "who is on hstar with kanon?",
-        &TaggingCodec,
+        &question,
+        &Passthrough,
         &Ports::default(),
+        |governor| {
+            governor.set_external(Role::Chat, true);
+        },
     )
     .await;
-    let roster = roster(&run.world);
-    for request in &run.requests {
-        assert_eq!(find_request_leaks(request, &roster), Vec::<String>::new());
+    assert!(run.generation.failure.is_none());
+    assert!(run.generation.clean_retry);
+    assert_eq!(run.requests.len(), 3);
+    assert_eq!(run.generation.route(), "external_unmasked");
+    assert!(run.generation.external_unmasked);
+    for request in [&run.requests[0], run.requests.last().unwrap()] {
+        let serialized = serde_json::to_string(&request.messages).unwrap();
+        assert!(serialized.contains("SyntheticMember"));
+        assert!(serialized.contains("999000111222333444"));
+        assert!(serialized.contains("https://synthetic.invalid/member?id=fixture"));
     }
-    assert_eq!(
-        run.generation.reply,
-        "Alvin tan and kanon [AZUR] are on it."
+    let tool_result = run.requests[1]
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            Message::Tool { content, .. } => Some(content),
+            _ => None,
+        })
+        .expect("tool result is in the next raw round");
+    assert_eq!(tool_result, &run.generation.outcomes[0].outcome.output);
+    let row = interaction(
+        "chat-raw".into(),
+        run.world.clock.now().with_timezone(&Utc),
+        &run.ctx,
+        &question,
+        &run.generation,
+        MODEL,
+        None,
+        1,
     );
+    assert_eq!(row.guardrail, json!({"external_unmasked": true}));
+}
 
-    let unknown = crate::answer::run(
-        vec![words("ID9 is on it."), words("Nobody I know.")],
-        ToolOffer::full_set(false),
+#[tokio::test(start_paused = true)]
+async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
+    use kanade::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
+
+    let input = load("loop.json")["cases"][0]["input"].clone();
+    let mut world = World::new(&input).await;
+    let provider = Arc::new(Scripted {
+        fake: FakeProvider::new([]),
+        caps: capabilities(&input["caps"]),
+    });
+    let (governor, client) = client(Some(MODEL), provider.clone());
+    assert!(governor.set_external(Role::Chat, true));
+    let mut route = governor.route(Role::Chat).expect("chat route");
+    route.group = None;
+    let ctx = world.context(&json!({"author_id": "11", "channel_id": "900"}));
+    let persona = kanade();
+    let deps = AnswerDeps {
+        client: &client,
+        route: Some(&route),
+    };
+    let generation = {
+        let (guild, mut proposer) = world.question_parts();
+        answer(
+            &deps,
+            Question {
+                ctx: &ctx,
+                conversation: vec![
+                    Message::System {
+                        content: "SYSTEM".into(),
+                    },
+                    Message::User {
+                        content: "Alvin tan: synthetic question".into(),
+                    },
+                ],
+                reminder: persona.voice_reminder(),
+                offer: ToolOffer::dynamic([], false),
+                settings: settings(&input, 8),
+            },
+            &guild,
+            &mut proposer,
+            &Ports::default(),
+        )
+        .await
+    };
+
+    assert!(matches!(
+        generation.failure,
+        Some(AnswerFailure::Session(SessionError {
+            failure: SessionFailure::Refused(Refused::Ungrouped),
+            ..
+        }))
+    ));
+    assert_eq!(generation.requests, 0);
+    assert!(generation.external, "the selected route stays external");
+    assert!(!generation.external_unmasked);
+    assert!(provider.fake.requests().is_empty());
+    let row = interaction(
+        "chat-pre-admission".into(),
+        world.clock.now().with_timezone(&Utc),
+        &ctx,
+        "synthetic question",
+        &generation,
+        MODEL,
+        None,
+        0,
+    );
+    assert!(row.guardrail.get("external_unmasked").is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_external_admitted_failure_keeps_the_disclosure_guardrail() {
+    use kanade::infrastructure::llm::governor::Role;
+
+    let run = run_routed(
+        vec![filtered(), filtered()],
+        ToolOffer::dynamic([], false),
         8,
-        "who?",
-        &TaggingCodec,
+        "synthetic external failure",
+        &Passthrough,
         &Ports::default(),
+        |governor| {
+            governor.set_external(Role::Chat, true);
+        },
     )
     .await;
-    assert!(
-        unknown.generation.clean_retry,
-        "an unknown token is a malformed answer"
+    assert_eq!(run.generation.failure, Some(AnswerFailure::ContentBlocked));
+    assert!(run.generation.requests > 0);
+    assert!(!run.requests.is_empty());
+    assert!(run.generation.external_unmasked);
+
+    let row = interaction(
+        "chat-admitted-failure".into(),
+        run.world.clock.now().with_timezone(&Utc),
+        &run.ctx,
+        "synthetic external failure",
+        &run.generation,
+        MODEL,
+        None,
+        1,
     );
-    assert_eq!(unknown.generation.reply, "Nobody I know.");
+    assert_eq!(
+        row.guardrail,
+        json!({"content_filter": true, "external_unmasked": true})
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -788,12 +913,8 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
     });
     let (_governor, client) = client(Some(MODEL), provider.clone());
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "900"}));
-    let roster = roster(&world);
     let deps = AnswerDeps {
         client: &client,
-        codec: &Passthrough,
-        roster: &roster,
-        former: &[],
         route: None,
     };
     let ports = Ports::default();
@@ -873,36 +994,26 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
     );
 }
 
-/// An external chat route runs unmasked only with the operator override, and
-/// the logged row says so.
+/// An external chat route runs without a permission gate and is labeled.
 #[tokio::test(start_paused = true)]
-async fn external_unmasked_chat_is_refused_by_default_and_marked_when_allowed() {
+async fn external_unmasked_chat_runs_without_opt_in_and_marks_the_guardrail() {
     use kanade::infrastructure::llm::governor::Role;
     let ports = Ports::default();
-    let ask = |allowed: bool| {
-        run_routed(
-            vec![words("Nothing on.")],
-            ToolOffer::dynamic([], false),
-            8,
-            "what's on?",
-            &Passthrough,
-            &ports,
-            move |governor: &Governor| {
-                governor.set_external(Role::Chat, true);
-                governor.allow_external_unmasked(allowed);
-            },
-        )
-    };
-    let refused = ask(false).await;
-    assert!(matches!(
-        refused.generation.failure,
-        Some(AnswerFailure::Route(_))
-    ));
-    assert!(refused.requests.is_empty());
-
-    let run = ask(true).await;
+    let run = run_routed(
+        vec![words("Nothing on.")],
+        ToolOffer::dynamic([], false),
+        8,
+        "what's on?",
+        &Passthrough,
+        &ports,
+        move |governor: &Governor| {
+            governor.set_external(Role::Chat, true);
+        },
+    )
+    .await;
     assert_eq!(run.generation.reply, "Nothing on.");
     assert!(run.generation.external_unmasked);
+    assert_eq!(run.generation.route(), "external_unmasked");
     let at = run.world.clock.now().with_timezone(&Utc);
     let row = interaction(
         "chat-x".into(),

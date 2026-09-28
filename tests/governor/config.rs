@@ -41,7 +41,6 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 alias: "local-a".into(),
                 group: Some("gpu".into()),
                 external: false,
-                unmasked_allowed: false,
                 effort: None,
             },
             RoleRoute {
@@ -49,7 +48,6 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 alias: "cloud-a".into(),
                 group: Some("cloud".into()),
                 external: true,
-                unmasked_allowed: false,
                 effort: None,
             },
             RoleRoute {
@@ -57,7 +55,6 @@ fn roles_resolve_to_alias_group_and_trust_zone() {
                 alias: "local-a".into(),
                 group: Some("gpu".into()),
                 external: false,
-                unmasked_allowed: false,
                 effort: None,
             },
         ]

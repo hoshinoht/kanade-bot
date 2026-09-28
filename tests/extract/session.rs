@@ -1,5 +1,5 @@
 //! Extraction through the real runner and a governed session: the reply comes
-//! back unvalidated (`CallerValidates`), extraction's own parse/coerce/decode
+//! back unvalidated (`CallerValidates`), extraction's own parse/coerce logic
 //! judges it, and one answer retry follows a rejected reply.
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -9,9 +9,6 @@ use kanade::extract::prompt::extraction_request;
 use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use kanade::infrastructure::llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
-};
-use kanade::infrastructure::llm::identity::{
-    IdentityCodec, IdentitySession, Member, PassthroughSession, TaggingCodec,
 };
 use kanade::infrastructure::llm::{
     CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, Message,
@@ -93,10 +90,7 @@ fn messages() -> Vec<Message> {
 }
 
 /// What the orchestrator does: `complete`, then `answer_retry` on `Next::Retry`.
-async fn extract(
-    client: &ModelClient<FakeProvider>,
-    identity: &dyn IdentitySession,
-) -> ExtractionCall {
+async fn extract(client: &ModelClient<FakeProvider>) -> ExtractionCall {
     let mut session = client
         .open_extraction("burst", TIMEOUT, TIMEOUT)
         .await
@@ -104,7 +98,7 @@ async fn extract(
     let mut attempts = ExtractionAttempts::new(messages());
     let mut first = true;
     loop {
-        let request = extraction_request(ALIAS, attempts.messages().to_vec(), None, identity);
+        let request = extraction_request(ALIAS, attempts.messages().to_vec(), None);
         let sent = if first {
             session.complete(&request).await
         } else {
@@ -120,7 +114,7 @@ async fn extract(
                 detail: error.to_string(),
             },
         };
-        match attempts.record(outcome, identity) {
+        match attempts.record(outcome) {
             Next::Retry => continue,
             Next::Done(call) => return call,
         }
@@ -132,7 +126,7 @@ async fn a_v4_coercible_reply_is_accepted_through_the_runner() {
     let reply = r#"{"amendments": {"kind": " Move ", "bosses": "HStar", "confidence": 82,
         "is_question": "yes", "participants": ["<@11>"], "day_ref": "wed"}}"#;
     let (_, provider, client) = governed(&[reply]);
-    let call = extract(&client, &PassthroughSession).await;
+    let call = extract(&client).await;
     assert_eq!(call.attempts, 1, "{:?}", call.error);
     let amendment = &call.extraction.expect("accepted").amendments[0];
     assert_eq!(amendment.kind, AmendmentKind::Move);
@@ -151,7 +145,7 @@ async fn a_v4_coercible_reply_is_accepted_through_the_runner() {
 async fn a_malformed_reply_gets_one_answer_retry_in_the_same_session() {
     let good = r#"{"amendments":[{"kind":"move","bosses":["HMaleficStar"],"day_ref":"wed"}],"summary":"move"}"#;
     let (governor, provider, client) = governed(&["not json", good]);
-    let call = extract(&client, &PassthroughSession).await;
+    let call = extract(&client).await;
     assert!(call.ok(), "{:?}", call.error);
     assert_eq!(call.attempts, 2);
 
@@ -176,39 +170,5 @@ async fn a_malformed_reply_gets_one_answer_retry_in_the_same_session() {
         (counters.requests, counters.retries),
         (2, 0),
         "a content retry spends no retry budget"
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn an_unknown_ref_under_pseudonymization_is_retried_then_quarantined() {
-    let roster = [Member {
-        user_id: "114200000000000011".into(),
-        display_name: "Alvin tan".into(),
-        nickname: None,
-        aliases: Vec::new(),
-    }];
-    let mut identity = TaggingCodec.open(&roster);
-    let known = identity.member_ref(&roster[0].user_id);
-    let unknown = r#"{"amendments":[{"kind":"rsvp","rsvp":"yes","participants":["<@ID99>"]}]}"#;
-    let (_, provider, client) = governed(&[unknown, unknown]);
-    let call = extract(&client, identity.as_ref()).await;
-    assert!(!call.ok());
-    assert_eq!(call.attempts, 2);
-    assert_eq!(provider.requests().len(), 2);
-    assert!(
-        call.error
-            .as_deref()
-            .is_some_and(|error| error.starts_with("unknown identity token")),
-        "{:?}",
-        call.error
-    );
-
-    // The same reply naming an issued ref decodes to the member.
-    let issued = unknown.replace("ID99", &known);
-    let (_, _, client) = governed(&[&issued]);
-    let call = extract(&client, identity.as_ref()).await;
-    assert_eq!(
-        call.extraction.expect("accepted").amendments[0].participants,
-        [roster[0].user_id.clone()]
     );
 }

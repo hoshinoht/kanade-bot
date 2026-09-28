@@ -31,68 +31,24 @@ are C3. Serve wiring is `chat::driver` (below).
 
 ## The question loop (`chat::answer`)
 
-- `answer` opens one identity session (`identity::open_session`, so an
-  external route fails closed while pseudonymization is off) and one governed
-  question session (`ModelClient::open_question`: one permit for every
-  round, `tool_rounds` + 1 requests, the timeout bounding the whole
-  question, one requeue). Every conversation message, tool result and the
-  voice reminder is encoded through the identity session; tool arguments are
-  decoded by the dispatcher; the final reply is decoded (an unknown token is
-  a malformed answer). The system prompt and the reminder go through
-  `encode_protected` with `chat::prompts::protected()`: the code-owned pieces
-  (policies, the scope around the assistant name, voice and reminder cues,
-  the focus line's fixed words, and the whole clock-header and runtime lines)
-  stay literal, and only persona text, the focus card and member text are
-  encoded, so a member named like a rules word (`Will`, `May`) never rewrites
-  the rules. History carries no tool calls (`assemble` builds none), so no
-  earlier model-written arguments need encoding.
-- Pseudonymization (`models.pseudonymize`, see `runtime-bootstrap.md`): serve
-  builds the chat codec per question (`runtime::serve::privacy`: a
-  `PseudonymCodec` over the guild cache's bot id and names, the persona name,
-  the boss catalog and chat's code-owned words as scanner exemptions); the
-  roster is the stored member list. Stored history, anchors, focus cards,
-  the bot's own earlier replies and its notices and cards (reached through a
-  reply chain, whose parent text comes from Discord) are text rendered with
-  the names of their time, so serve keeps every name each member has been
-  known by since it started (`runtime::serve::names::NameHistory`: display
-  names, nicknames, aliases). It is fed by every live-roster refresh
-  (`LiveRoster::observe`, before readers see the rows: startup load, roster
-  task, tick) and by each question's roster read, and every question
-  registers all of them (`AnswerDeps::former` → `IdentitySession::former_name`,
-  former names oldest first so a departed member shows the latest): a
-  rename, a removed alias or a member who left is masked and scanned like a
-  current name. Current names never count against the cap of 32 former
-  names per member; beyond 4096 members the least recently seen departed
-  member is forgotten (`former_names_evicted` WARN, once). In memory; `Debug`
-  shows counts. Embeds (reminder cards) never enter the reply chain (only
-  message content does). Words of multi-word names (`jonas` of `Jonas lau`)
-  are masked and scanned on their own (`provider-contract.md`, word needles),
-  including inside party channel names. Residuals: names retired before serve
-  started, name words under three characters or that are stopwords or code
-  terms, nicknames of people not on the roster (e.g. in channel names),
-  known names inside URL paths (persona credit links), and non-roster
-  speakers, which are labelled `user <short id>` (an id tail, not a name). A read failure or an empty roster
-  sends nothing (D4: the question is not prepared, refunded, and
-  `chat_members_unreadable` is logged with `masking`). Every request passes
-  the provider-boundary scanner (`provider-contract.md`); a refusal is
-  `SessionFailure::IdentityLeakBlocked`: the question fails with the fixed
-  failure line (a card posted earlier in the question stays posted), the
-  allowance is refunded, the storm guard counts it like a spent clean
-  retry, and `identity_leak_blocked` is logged with its payload (role, kinds,
-  count) only. The row's `guardrail` gains `pseudonymized: true` and, on a
-  refusal, `identity_leak_blocked: {role, kinds, count}`.
-- Model view (user decision D7, extended): for a masked turn the loop keeps,
-  per request (numbered by logged position, like the transcript's rounds),
-  the masked messages as the wire sends them (empty tool results carry the
-  `(no output)` placeholder) and the
-  model's raw reply and tool-call arguments (before decoding), then the
-  finished reply and the session's issued-name mapping (token → user id and
-  display name at the time, non-roster authors included). Serve stores it
-  with the row in one transaction (`ModelLogStore::record_masked_chat`,
-  `chat_masked`); passthrough turns store nothing extra. Same retention and
-  purge as the chat log, admin-only, never logged; `Debug` shows sizes. The
-  admin chat detail shows it as `model_view` with display names only
-  (`admin-api.md`).
+- `answer` formats prompt content with `PassthroughSession` and opens one
+  governed question session (`ModelClient::open_question_on`): one permit
+  across every round, `tool_rounds` + 1 requests, the timeout bounding the
+  whole question, and one requeue. Prompt messages, persona text, history,
+  member names and IDs, tool results and complete URLs are passed through
+  unchanged when present. Tool arguments are dispatched without identity
+  decoding; the final reply follows normal shaping, also without identity
+  decoding. There is no boundary scanner or external-call opt-in. External
+  and not-yet-classified routes send raw requests under the
+  same governor admission, with route/alias pinned for the question. A roster
+  read failure logs `chat_members_unreadable` and uses an empty roster; it is
+  not a masking refusal. History carries no tool calls (`assemble` builds
+  none), so no earlier model-written arguments need rewriting.
+- Historical Model view only: new turns do not create `chat_masked` rows,
+  mapping snapshots or Model views. Existing masked turns and mappings remain
+  readable in the admin chat detail as `model_view` on the admin listener
+  only, under the existing chat-log retention and purge behavior; no historical
+  row is rewritten (`admin-api.md`).
 - Rounds: `tool_rounds` (D-TOOL-ROUNDS, default 8, admin 1..=12). A bundle
   `request_tools` adds is held until the next round starts, so every call is
   judged against the tools its round was actually sent (a tool requested in
@@ -128,15 +84,16 @@ are C3. Serve wiring is `chat::driver` (below).
   round keeps earlier tool calls in its transcript. The runner still rejects
   a reply it cannot read (non-JSON or non-object arguments, empty or
   duplicate call ids, bad names) as `InvalidOutput`.
-- `get_schedule` first-person recovery (masked live L3 finding): trusted
+- `get_schedule` first-person recovery: trusted
   `schedule_defaults` reads the original question, excluding the bot mention.
   Only a conservative self-only form (with no additional person/group intent)
-  may recover an omitted `participant` or one unrecognized Discord mention
-  as the trusted author id. Mixed requests keep their old group/refusal path;
-  a recognized other member remains that member. The dispatcher
-  still decodes issued identity tokens before this rule and refuses unknown
-  token-shaped identities; no model-provided id gains authority. This does not
-  relax masking, member access or write-tool validation.
+  may recover an omitted `participant`, one unrecognized Discord mention, or
+  one exact `@bot-name`/bot name from the trusted guild self-name cache as the
+  trusted author id. Name recovery applies only when roster resolution found
+  no member and no other tokens; mixed requests keep their old group/refusal
+  path, and a recognized other member remains that member. This fallback is
+  confined to the read tool's trusted self-only path and does not relax member
+  access or write-tool validation.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is
@@ -197,14 +154,13 @@ The round's alias and reasoning are what the governed session actually sent
 (`Session::last_sent`: the request's alias and the effort after capability
 shaping, `None` when no `reasoning_effort` went out), so a later alias or
 effort change never rewrites them; each round also records its `route`
-(`homelab`/`external_masked`/`external_unmasked`) and whether it was the
+(`homelab`/`external_unmasked`; `external_masked` is historical) and whether it was the
 clean retry. The row carries the persona bundle, the reply profile and how it
 was chosen (`with_persona`: `saved`/`role`/`default`) and a stable
 `error_code` (`AnswerFailure::code`; `rate_limited` for a limited question).
 Each round's `tool_calls` entry is `{name, outcome, arguments, created,
 posted, result, took_ms}` (user decision 2026-09-26, for agent debugging):
-`result` is the tool output the model read, before identity encoding (so
-real names, not tokens), capped at 8 KiB on a char boundary with a trailing
+`result` is the tool output the model read, passed through unchanged, capped at 8 KiB on a char boundary with a trailing
 `… [truncated, N bytes]` (N = the full length); `took_ms` is the call's
 monotonic wall time (store load, dispatch, card posting), the same span
 summed into `tools_ms`. The clean retry's round logs no calls. Kept for the

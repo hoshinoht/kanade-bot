@@ -1,5 +1,4 @@
-//! Opening a question: the identity session (guarded route) and the
-//! governed question session, then the loop.
+//! Open a governed question session on the prepared route, then run the loop.
 
 use super::{AnswerFailure, ChatPorts, Generation, GuildView, Question, run_question};
 use crate::chat::tools::propose::Proposer;
@@ -9,26 +8,17 @@ use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::{
     Charge, ModelClient, QuestionLimits, Refused, Role, RoleRoute, SessionError, SessionFailure,
 };
-use crate::infrastructure::llm::identity::{IdentityCodec, Member, open_session, unmasked};
+use crate::infrastructure::llm::identity::PassthroughSession;
 
 /// The model side of a question.
 pub struct AnswerDeps<'a, P> {
     pub client: &'a ModelClient<P>,
-    pub codec: &'a dyn IdentityCodec,
-    /// Roster for the identity session.
-    pub roster: &'a [Member],
-    /// `(user id, name)` every name members were known by this process
-    /// (renamed, removed aliases, left the roster): stored history and the
-    /// bot's earlier replies may carry them, so each is masked and scanned.
-    pub former: &'a [(String, String)],
-    /// The chat route read when the question was prepared; `None` reads it
-    /// now. Identity check, permit and requests all use this one route.
+    /// The chat route read when the question was prepared; `None` reads it now.
     pub route: Option<&'a RoleRoute>,
 }
 
-/// Answer one question: one identity session and one question session
-/// (a permit across every round, `tool_rounds` + 1 requests, the timeout
-/// bounding the whole question). Never fails.
+/// Answer one question over a governed session (a permit across every round,
+/// `tool_rounds` + 1 requests, the timeout bounding the whole question).
 pub async fn answer<P, S, I, C, X>(
     deps: &AnswerDeps<'_, P>,
     question: Question<'_>,
@@ -53,13 +43,6 @@ where
             charge: Charge::Refunded,
         }));
     };
-    let mut identity = match open_session(deps.codec, &route, deps.roster) {
-        Ok(identity) => identity,
-        Err(refused) => return Generation::failed(AnswerFailure::Route(refused.to_string())),
-    };
-    for (user_id, name) in deps.former {
-        identity.former_name(user_id, name);
-    }
     // The route's live level, read with its alias (callers' own otherwise).
     let mut question = question;
     question.settings.reasoning = route.effort.or(question.settings.reasoning);
@@ -73,20 +56,26 @@ where
         .open_question_on(&route, ctx.author_id.clone(), ctx.is_admin, limits)
         .await
     {
-        Ok(session) => session.with_scanner(identity.scanner()),
-        Err(error) => return Generation::failed(AnswerFailure::Session(error)),
+        Ok(session) => session,
+        Err(error) => {
+            let mut generation = Generation::failed(AnswerFailure::Session(error));
+            generation.external_unmasked = route.external && generation.requests > 0;
+            generation.external = route.external;
+            return generation;
+        }
     };
+    let mut identity = PassthroughSession;
     let mut generation = run_question(
         question,
         &route.alias,
         &mut session,
-        identity.as_mut(),
+        &mut identity,
         guild,
         proposer,
         ports,
     )
     .await;
-    generation.external_unmasked = unmasked(&route, deps.codec);
+    generation.external_unmasked = route.external && generation.requests > 0;
     generation.external = route.external;
     generation
 }

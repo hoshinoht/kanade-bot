@@ -13,8 +13,7 @@ use crate::{
 };
 
 const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
-const UNMASKED: &str = "KANADE_ALLOW_EXTERNAL_UNMASKED";
-const PSEUDONYMIZE: &str = "KANADE_PSEUDONYMIZE";
+const RETIRED_PRIVACY_KEYS: [&str; 2] = ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"];
 const ALIASES: [&str; 3] = [
     "KANADE_EXTRACT_MODEL",
     "KANADE_CHAT_MODEL",
@@ -43,16 +42,16 @@ pub struct ModelSettings {
     pub permits: u16,
     /// Non-empty replaces the single gateway group of `permits`.
     pub groups: Vec<CapacityGroup>,
-    /// `KANADE_ALLOW_EXTERNAL_UNMASKED=1`: external routes may run without
-    /// pseudonymization (provider testing only).
-    pub allow_external_unmasked: bool,
-    /// `KANADE_PSEUDONYMIZE=1` (`models.pseudonymize`): member identities
-    /// reach every model role as per-request fictional names. Default off.
-    pub pseudonymize: bool,
 }
 
 impl ModelSettings {
     pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+        if let Some(key) = RETIRED_PRIVACY_KEYS
+            .into_iter()
+            .find(|key| values.contains_key(*key))
+        {
+            return Err(Error::Configuration(format!("{key} is retired; remove it")));
+        }
         if non_empty(values, "KANADE_MODEL_KEY").is_some() {
             return Err(Error::Configuration(format!(
                 "KANADE_MODEL_KEY is not read; use {KEY_FILE}"
@@ -81,8 +80,6 @@ impl ModelSettings {
             rewrite_reasoning: rewrite_reasoning?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
             groups: groups::parse(values)?,
-            allow_external_unmasked: flag(values, UNMASKED)?,
-            pseudonymize: flag(values, PSEUDONYMIZE)?,
             base_url,
         };
         if settings.base_url.is_none() {
@@ -105,14 +102,6 @@ impl ModelSettings {
             .as_deref()
             .map(|path| Redacted::read(path, KEY_FILE))
             .transpose()
-    }
-}
-
-fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<bool, Error> {
-    match non_empty(values, key) {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
     }
 }
 
@@ -191,13 +180,29 @@ mod tests {
     }
 
     #[test]
-    fn pseudonymize_is_an_off_by_default_flag() {
-        assert!(!parse(&[]).unwrap().pseudonymize);
-        assert!(parse(&[("KANADE_PSEUDONYMIZE", "1")]).unwrap().pseudonymize);
-        assert_eq!(
-            parse(&[("KANADE_PSEUDONYMIZE", "yes")]).unwrap_err(),
-            "KANADE_PSEUDONYMIZE must be 0 or 1"
-        );
+    fn retired_privacy_environment_keys_fail_on_presence_without_a_gateway() {
+        for key in RETIRED_PRIVACY_KEYS {
+            for value in ["1", "0", ""] {
+                let values = BTreeMap::from([(key.to_owned(), value.to_owned())]);
+                assert_eq!(
+                    ModelSettings::from_mapping(&values)
+                        .unwrap_err()
+                        .to_string(),
+                    format!("{key} is retired; remove it"),
+                    "{key}={value:?}"
+                );
+            }
+        }
+        let together = BTreeMap::from([
+            (RETIRED_PRIVACY_KEYS[0].to_owned(), "1".to_owned()),
+            (RETIRED_PRIVACY_KEYS[1].to_owned(), "0".to_owned()),
+        ]);
+        let error = ModelSettings::from_mapping(&together)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(RETIRED_PRIVACY_KEYS[0]));
+        assert!(!error.contains("1"));
+        assert!(!error.contains("0"));
     }
 
     #[test]

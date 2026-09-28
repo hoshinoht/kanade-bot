@@ -9,7 +9,6 @@ use tokio::time::Instant;
 use super::super::{
     ChatRequest, Effort, FinishReason, Message,
     governor::{QuestionLimits, Refused, Role, SessionError, SessionFailure},
-    identity::{IdentityCodec, LeakScanner, open_session},
 };
 use super::ModelStack;
 
@@ -31,7 +30,7 @@ pub enum ProbeOutcome {
         latency_ms: u64,
         finish_reason: String,
     },
-    /// Nothing was sent (route guard or governor refusal).
+    /// Nothing was sent (governor refusal).
     Refused(String),
     Failed(String),
 }
@@ -44,12 +43,7 @@ impl ProbeOutcome {
 
 impl ModelStack {
     /// `None` when the role has no alias.
-    pub async fn probe(
-        &self,
-        role: Role,
-        codec: &dyn IdentityCodec,
-        timeout: Duration,
-    ) -> Option<ProbeResult> {
+    pub async fn probe(&self, role: Role, timeout: Duration) -> Option<ProbeResult> {
         let route = self.governor.route(role)?;
         let effort = self.effort(role).unwrap_or(Effort::Off);
         let result = |outcome| ProbeResult {
@@ -57,11 +51,6 @@ impl ModelStack {
             alias: route.alias.clone(),
             effort,
             outcome,
-        };
-        // The fixed prompt carries no member data: an empty-roster grant.
-        let scanner = match open_session(codec, &route, &[]) {
-            Ok(identity) => identity.scanner(),
-            Err(refused) => return Some(result(ProbeOutcome::Refused(refused.to_string()))),
         };
         let request = ChatRequest {
             model: route.alias.clone(),
@@ -79,14 +68,14 @@ impl ModelStack {
             reasoning: Some(effort),
             sampling: None,
         };
-        let mut outcome = self.attempt(role, &request, &scanner, timeout).await;
+        let mut outcome = self.attempt(&route, &request, timeout).await;
         // Rewrites never wait for a rate token; the probes before this one may
         // have just emptied the bucket, so wait out the refill once.
         if let (Role::Rewrite, Err(Refusal::Rate(wait))) = (role, &outcome)
             && *wait < timeout
         {
             tokio::time::sleep(*wait).await;
-            outcome = self.attempt(role, &request, &scanner, timeout).await;
+            outcome = self.attempt(&route, &request, timeout).await;
         }
         Some(result(match outcome {
             Ok(outcome) => outcome,
@@ -102,26 +91,27 @@ impl ModelStack {
 
     async fn attempt(
         &self,
-        role: Role,
+        route: &super::super::governor::RoleRoute,
         request: &ChatRequest,
-        scanner: &LeakScanner,
         timeout: Duration,
     ) -> Result<ProbeOutcome, Refusal> {
         let client = &self.client;
-        let session = match role {
-            Role::Extraction => client.open_extraction(WHO, timeout, timeout).await,
+        let session = match route.role {
+            Role::Extraction => {
+                client
+                    .open_extraction_on(route, WHO, timeout, timeout)
+                    .await
+            }
             Role::Chat => {
                 let limits = QuestionLimits {
                     tool_rounds: 1,
                     timeout,
                 };
-                client.open_question(WHO, true, limits).await
+                client.open_question_on(route, WHO, true, limits).await
             }
-            Role::Rewrite => client.open_rewrite(WHO, timeout),
+            Role::Rewrite => client.open_rewrite_on(route, WHO, timeout),
         };
-        let mut session = session
-            .map_err(Refusal::from)?
-            .with_scanner(scanner.clone());
+        let mut session = session.map_err(Refusal::from)?;
         let started = Instant::now();
         match session.complete(request).await {
             Ok(response) => Ok(ProbeOutcome::Ok {

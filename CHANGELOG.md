@@ -563,6 +563,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Removed**
 
+- Removed model-request pseudonymization and its external-unmasked opt-in for
+  chat, extraction and rewrite. Configured external models receive raw member
+  data with a warning; retired privacy keys now refuse startup. Historical
+  masked chat records remain readable to admins under their existing retention.
 - Removed the v4 personal-memory feature: typed-preference requests and prompt
   injection, `/memory` commands, enrollment notice DMs, proposal cards, the
   cleanup worker, the portal Memory pages, `/api/memory` routes,
@@ -570,12 +574,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 self-schedule lookup now recognizes an exact bot name copied into a
+  model's participant argument without treating other members as self.
 - v5 day-of reminder fields now label only members still waiting for an answer
   beneath the unconfirmed tally in either attendance mode; the top line retains
   the full party. V4_COMPAT scheduling, tallies and pings are unchanged.
 - v5 resolves an explicitly first-person schedule question to its asker when
-  a masked model omits the participant or invents an unrecognized mention;
-  third-person and unknown-token refusals remain intact.
+  a model omits the participant or invents an unrecognized mention;
+  third-person requests remain distinct.
 - v5 pauses new delivery admissions during gateway outages and until a fresh
   roster reconciliation succeeds, while allowing admitted work to settle.
   Cancelling an admitted send releases its in-memory owner without retrying a

@@ -292,7 +292,6 @@ async fn compose_logs_the_model_report_with_effective_efforts_and_routes() {
         ("KANADE_CHAT_REASONING", "off"),
         ("KANADE_REWRITE_MODEL", "ext"),
         ("KANADE_REWRITE_REASONING", "high"),
-        ("KANADE_ALLOW_EXTERNAL_UNMASKED", "1"),
     ]);
     // A saved level beats its env seed.
     with_rows(&config, &[(keys::REWRITE_REASONING, "low")]).await;
@@ -355,7 +354,7 @@ async fn compose_logs_the_model_report_with_effective_efforts_and_routes() {
 }
 
 #[tokio::test]
-async fn masking_routes_external_models_masked_and_flags_an_unused_override() {
+async fn external_models_report_raw_data_even_when_the_alias_is_unknown() {
     let url = model_gateway(serde_json::json!({"object": "list", "data": [
         {"id": "ext", "kanata": {"reasoning_control": false}},
     ]}))
@@ -364,26 +363,35 @@ async fn masking_routes_external_models_masked_and_flags_an_unused_override() {
     let config = temp.config(&[
         ("KANADE_MODEL_BASE_URL", url.as_str()),
         ("KANADE_CHAT_MODEL", "ext"),
-        ("KANADE_PSEUDONYMIZE", "1"),
-        ("KANADE_ALLOW_EXTERNAL_UNMASKED", "1"),
     ]);
     let lines = compose_and_report(&config).await;
     let role = lines
         .iter()
         .find(|line| line["event"] == "model_role")
         .expect("role line");
-    assert_eq!(role["route"], "external_masked");
-    assert_eq!(role["masking"], true);
+    assert_eq!(role["route"], "external_unmasked");
+    assert!(!role.as_object().unwrap().contains_key("masking"));
     let kinds: Vec<&str> = lines
         .iter()
         .filter(|line| line["event"] == "model_warning")
         .map(|line| line["kind"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        kinds,
-        ["override_unused"],
-        "no external_* warning when masked"
-    );
+    assert_eq!(kinds, ["external_unmasked"]);
+    let warning = lines
+        .iter()
+        .find(|line| line["kind"] == "external_unmasked")
+        .unwrap()["message"]
+        .as_str()
+        .unwrap();
+    for detail in [
+        "member names",
+        "IDs",
+        "messages",
+        "complete URLs",
+        "Kanata ZDR",
+    ] {
+        assert!(warning.contains(detail), "missing {detail}: {warning}");
+    }
 }
 
 #[tokio::test]
@@ -400,8 +408,8 @@ async fn compose_logs_a_degraded_listing_and_disabled_models() {
     assert_eq!(lines[1]["event"], "model_role");
     assert_eq!(lines[1]["effort"], "medium");
     assert_eq!(lines[1]["source"], "env");
-    assert_eq!(lines[1]["route"], "external_refused");
-    assert_eq!(lines.last().unwrap()["kind"], "external_refused");
+    assert_eq!(lines[1]["route"], "external_unmasked");
+    assert_eq!(lines.last().unwrap()["kind"], "external_unmasked");
 
     let temp = Temp::new();
     let lines = compose_and_report(&temp.config(&[])).await;

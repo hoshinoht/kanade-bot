@@ -21,15 +21,6 @@ use crate::domain::scheduler::{ProposalRequest, ScheduleStore, Supersede, Supers
 use crate::extract::AmendmentKind;
 use crate::extract::plan::{Payload, consolidate};
 use crate::infrastructure::llm::LlmProvider;
-use crate::infrastructure::llm::identity::IdentityLeakBlocked;
-
-/// The `identity_leak_blocked` log line: the payload only (role, kinds,
-/// count), never message text, ids or the matched name. The extraction log
-/// row (outcome `identity_leak`, its message ids) is the audit entry an
-/// operator rescans from.
-fn leak_blocked(blocked: &IdentityLeakBlocked) {
-    eprintln!("{}", blocked.log_line());
-}
 
 fn change_kind(kind: AmendmentKind) -> ChangeKind {
     ChangeKind::parse(kind.as_str()).expect("amendment and change kinds share names")
@@ -352,9 +343,6 @@ where
         }
 
         for record in records {
-            if let Some(blocked) = &record.leak {
-                leak_blocked(blocked);
-            }
             report.dropped += record.dropped;
             report.stale += record.stale;
             report.redirected += record.redirected;
@@ -391,12 +379,6 @@ where
                     }
                     if record.external_unmasked {
                         guardrail.insert("external_unmasked".into(), json!(true));
-                    }
-                    if record.pseudonymized {
-                        guardrail.insert("pseudonymized".into(), json!(true));
-                    }
-                    if let Some(blocked) = &record.leak {
-                        guardrail.insert(IdentityLeakBlocked::EVENT.into(), blocked.payload());
                     }
                     serde_json::Value::Object(guardrail)
                 },

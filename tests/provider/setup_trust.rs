@@ -96,7 +96,7 @@ async fn routes_follow_each_listing_and_stay_external_until_one_succeeds() {
             (Role::Chat, "home-cloud"),
             (Role::Rewrite, "unlisted")
         ]
-        .map(|(role, alias)| StartupWarning::ExternalRefused {
+        .map(|(role, alias)| StartupWarning::ExternalUnmasked {
             role,
             alias: alias.into()
         })
@@ -124,7 +124,7 @@ async fn routes_follow_each_listing_and_stay_external_until_one_succeeds() {
 }
 
 #[tokio::test]
-async fn startup_reports_stranded_efforts_capacity_and_refused_external_routes() {
+async fn startup_reports_stranded_efforts_capacity_and_unmasked_external_routes() {
     let stub = Stub::start(gateway(kanata_models(), "{}")).await;
     let mut input = setup(Some(stub.url()));
     input.roles = ModelRoles {
@@ -151,11 +151,11 @@ async fn startup_reports_stranded_efforts_capacity_and_refused_external_routes()
                 effort: Effort::Max,
                 sent: Effort::Low,
             },
-            StartupWarning::ExternalRefused {
+            StartupWarning::ExternalUnmasked {
                 role: Role::Extraction,
                 alias: "codex-like".into(),
             },
-            StartupWarning::ExternalRefused {
+            StartupWarning::ExternalUnmasked {
                 role: Role::Rewrite,
                 alias: "glm-cloud".into(),
             },
@@ -206,11 +206,10 @@ async fn an_inherited_level_is_checked_against_the_inheriting_alias() {
 }
 
 #[tokio::test]
-async fn the_override_is_reported_loudly_for_each_external_route() {
+async fn every_external_route_reports_raw_data_and_a_zdr_transmission_warning() {
     let stub = Stub::start(gateway(kanata_models(), "{}")).await;
     let mut input = setup(Some(stub.url()));
     input.roles = roles("codex-like");
-    input.allow_external_unmasked = true;
     let stack = ready(input);
     let report = stack.check_startup().await;
     let unmasked: Vec<_> = report
@@ -224,8 +223,20 @@ async fn the_override_is_reported_loudly_for_each_external_route() {
             .to_string()
             .starts_with("UNMASKED: extraction model codex-like")
     );
+    let warning = unmasked[0].to_string();
+    for detail in [
+        "member names",
+        "IDs",
+        "messages",
+        "complete URLs",
+        "Kanata ZDR",
+        "does not prevent transmission",
+    ] {
+        assert!(warning.contains(detail), "missing {detail}: {warning}");
+    }
     let route = stack.governor.route(Role::Chat).unwrap();
-    assert!(route.external && route.unmasked_allowed);
+    assert!(route.external);
+    assert_eq!(stack.route_kind(Role::Chat), Some("external_unmasked"));
 }
 
 #[tokio::test]

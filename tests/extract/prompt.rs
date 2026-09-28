@@ -9,9 +9,7 @@ use kanade::extract::prompt::{
 use kanade::extract::schema::{
     AttemptOutcome, ExtractionAttempts, Next, extraction_schema, schema_text,
 };
-use kanade::infrastructure::llm::identity::{
-    IdentityCodec, Member, PassthroughSession, TaggingCodec, find_request_leaks,
-};
+use kanade::infrastructure::llm::identity::{Member, PassthroughSession};
 use serde_json::{Value, json};
 
 use crate::shaping;
@@ -122,14 +120,13 @@ fn replay(input: &Value, step: &Value) -> Outcome {
             )
         }),
         "named_bosses" => with_context(&|context| json!(prompt::named_bosses(context))),
-        "json_schema" => json!({ "schema": extraction_schema(None), "text": schema_text() }),
+        "json_schema" => json!({ "schema": extraction_schema(), "text": schema_text() }),
         "json_instruction" => json!(shaping::v5_instruction()),
         "extraction_body" => {
             let request = extraction_request(
                 text(&step["model"]),
                 messages(&step["messages"]),
                 reasoning(&step["reasoning_effort"]),
-                &PassthroughSession,
             );
             body(&request, &capabilities(&step["caps"]))
         }
@@ -141,7 +138,7 @@ fn replay(input: &Value, step: &Value) -> Outcome {
             json!(prompt::prompt_budget(num_ctx))
         }
         "json_instruction_tokens" => {
-            json!(prompt::schema_instruction_tokens(&extraction_schema(None)))
+            json!(prompt::schema_instruction_tokens(&extraction_schema()))
         }
         other => unknown_op("prompt", other),
     };
@@ -195,7 +192,7 @@ fn prompt_vectors_replay_exactly() {
     assert_eq!(replayed, (4, 23));
 }
 
-fn tagged_fixture() -> (Vec<Member>, Owned) {
+fn raw_fixture() -> (Vec<Member>, Owned) {
     let roster = vec![
         Member {
             user_id: "114200000000000011".into(),
@@ -246,7 +243,7 @@ fn tagged_fixture() -> (Vec<Member>, Owned) {
                 MSG_401,
                 &roster[0],
                 "2026-08-30T13:01:00+08:00",
-                "kanon can u do wed? <@114200000000000022>",
+                "kanon can u do wed? <@114200000000000022> https://synthetic.invalid/member?id=fixture",
             ),
             message(
                 MSG_402,
@@ -286,7 +283,6 @@ fn tagged_fixture() -> (Vec<Member>, Owned) {
 const MSG_398: &str = "1419000000000000398";
 const MSG_401: &str = "1419000000000000401";
 const MSG_402: &str = "1419000000000000402";
-const MESSAGE_IDS: [&str; 3] = [MSG_398, MSG_401, MSG_402];
 
 fn fixture_table() -> BossTable {
     let file = crate::support::load("prompt.json");
@@ -294,53 +290,42 @@ fn fixture_table() -> BossTable {
 }
 
 #[test]
-fn tagging_codec_keeps_every_roster_identity_out_of_the_request() {
-    let (roster, owned) = tagged_fixture();
+fn extraction_prompts_send_raw_member_data_and_ids() {
+    let (roster, owned) = raw_fixture();
     let table = fixture_table();
     let zone = chrono_tz::Asia::Kuala_Lumpur;
-
-    let plain = owned.with(zone, &table, |context| {
-        extraction_request(
-            "extractor",
-            build_messages(context, &mut PassthroughSession),
-            None,
-            &PassthroughSession,
-        )
-    });
-    assert!(
-        !find_request_leaks(&plain, &roster).is_empty(),
-        "the fixture must expose identities without a codec"
-    );
-
-    let mut session = TaggingCodec.open(&roster);
+    let mut session = PassthroughSession;
     let request = owned.with(zone, &table, |context| {
-        let messages = build_messages(context, session.as_mut());
-        extraction_request("extractor", messages, None, session.as_ref())
+        let messages = build_messages(context, &mut session);
+        extraction_request("extractor", messages, None)
     });
-    // Message ids are snowflakes too, but name messages, not members; they
-    // stay visible so the model can cite evidence.
-    let mut leaks = find_request_leaks(&request, &roster);
-    leaks.retain(|leak| !MESSAGE_IDS.contains(&leak.as_str()));
-    assert_eq!(leaks, Vec::<String>::new());
+    let sent = serde_json::to_string(&request.messages).unwrap();
+    for raw in [
+        "Alvin tan",
+        "kanon",
+        "114200000000000011",
+        MSG_401,
+        "https://synthetic.invalid/member?id=fixture",
+    ] {
+        assert!(sent.contains(raw), "{raw} missing from {sent}");
+    }
     let schema = &request.output_schema.as_ref().expect("schema").schema;
-    let refs = &schema["$defs"]["Amendment"]["properties"]["participants"]["items"]["enum"];
-    assert_eq!(
-        *refs,
-        json!(session.participant_enum().expect("tagging refs"))
+    assert!(
+        schema["$defs"]["Amendment"]["properties"]["participants"]["items"]
+            .get("enum")
+            .is_none()
     );
 
-    // The model answers in refs (a mention form included); participants decode
-    // to user ids and the member-facing summary to names.
-    let tag = session.member_ref(&roster[1].user_id);
     let reply = format!(
-        r#"{{"amendments":[{{"kind":"rsvp","participants":["<@{tag}>"],"rsvp":"yes","evidence_message_ids":["{MSG_402}"]}}],"summary":"{tag} agrees"}}"#
+        r#"{{"amendments":[{{"kind":"rsvp","participants":["{}"],"rsvp":"yes","evidence_message_ids":["{MSG_402}"]}}],"summary":"SyntheticMember agrees"}}"#,
+        roster[1].user_id
     );
     let mut attempts = ExtractionAttempts::new(request.messages.clone());
     let outcome = AttemptOutcome::Reply {
         content: Some(reply),
         reasoning: None,
     };
-    let Next::Done(call) = attempts.record(outcome, session.as_ref()) else {
+    let Next::Done(call) = attempts.record(outcome) else {
         panic!("a valid answer ends the call");
     };
     let extraction = call.extraction.expect("accepted");
@@ -348,16 +333,5 @@ fn tagging_codec_keeps_every_roster_identity_out_of_the_request() {
         extraction.amendments[0].participants,
         [roster[1].user_id.clone()]
     );
-    assert_eq!(
-        extraction.summary,
-        format!("{} agrees", roster[1].display_name)
-    );
-
-    // A ref the session never issued is a malformed answer: retried, not trusted.
-    let mut attempts = ExtractionAttempts::new(request.messages);
-    let unknown = AttemptOutcome::Reply {
-        content: Some(r#"{"amendments":[{"kind":"rsvp","participants":["ID99"]}]}"#.into()),
-        reasoning: None,
-    };
-    assert_eq!(attempts.record(unknown, session.as_ref()), Next::Retry);
+    assert_eq!(extraction.summary, "SyntheticMember agrees");
 }

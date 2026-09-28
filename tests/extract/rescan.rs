@@ -392,12 +392,7 @@ async fn closing_cancels_queued_jobs_and_refuses_new_ones() {
 
 /// Two long messages in one conversation: each is its own prompt-sized piece.
 async fn split_conversation(actions: Vec<FakeAction>) -> (World, Value) {
-    let world = World::with(
-        actions,
-        |config| config.context_tokens = 2_048,
-        Arc::new(kanade::infrastructure::llm::identity::Passthrough),
-    )
-    .await;
+    let world = World::with(actions, |config| config.context_tokens = 2_048).await;
     let long = |id: &str, minute| {
         let text = format!("hstar wed 9pm? {}", "long planning chatter ".repeat(150));
         message(id, MY, local(8, 30, 12, minute), &text)

@@ -1,21 +1,18 @@
 //! Replays every frozen v4 chat vector family (gate, authority,
 //! participants, tool schemas, read tools, proposals, sanitize, context and
-//! the loop) and covers v5's dynamic tool bundles, identity handling, the
-//! governed question loop and the chat log.
+//! the loop) and covers v5's dynamic tool bundles, the governed question loop
+//! and the chat log.
 
 mod answer;
 mod authority;
 mod bundles;
 mod context;
 mod gate;
-mod identity;
 mod live_switch;
 mod looping;
-mod masking;
 mod model;
 mod pilot;
 mod propose;
-mod pseudonym;
 mod read_tools;
 mod sanitize;
 mod slow_store;

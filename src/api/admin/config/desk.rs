@@ -84,9 +84,6 @@ pub struct ConfigFacts {
     pub model_permits: u32,
     /// `kanade.toml` `[[models.groups]]`; non-empty replaces the default group.
     pub model_groups: Vec<CapacityGroup>,
-    pub allow_external_unmasked: bool,
-    /// `models.pseudonymize` / `KANADE_PSEUDONYMIZE`.
-    pub pseudonymize: bool,
     pub chat_pilot_role_id: Option<String>,
 }
 
@@ -352,7 +349,8 @@ impl ConfigDesk {
                     declared,
                     catalog.reachable.then_some(&catalog.snapshot),
                 ),
-                pii_pseudonymise: self.facts.pseudonymize,
+                // Retained for compatibility with the existing config schema.
+                pii_pseudonymise: false,
             },
             manage_messages: ManageMessages {
                 missing: Vec::new(),
@@ -395,7 +393,6 @@ impl ConfigDesk {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let on = |flag: bool| if flag { "on" } else { "off" }.to_owned();
         let posting: Vec<String> = settings.posting.channel_id.iter().cloned().collect();
         vec![
             EnvRow {
@@ -468,26 +465,6 @@ impl ConfigDesk {
                     value: groups_summary(&facts.model_groups),
                     reason: "Set in kanade.toml ([[models.groups]]); restart to apply.",
                 }
-            },
-            EnvRow {
-                key: "KANADE_PSEUDONYMIZE",
-                label: "PII pseudonymisation",
-                value: on(facts.pseudonymize),
-                reason: if facts.pseudonymize {
-                    "Member names and ids reach every model as per-request fictional names; a request still carrying one is refused. A privacy control only the operator may change (kanade.toml models.pseudonymize)."
-                } else {
-                    "Off: member names reach the model as written, so models that leave the homelab are refused. A privacy control only the operator may change (kanade.toml models.pseudonymize)."
-                },
-            },
-            EnvRow {
-                key: "KANADE_ALLOW_EXTERNAL_UNMASKED",
-                label: "Unmasked external models",
-                value: on(facts.allow_external_unmasked),
-                reason: if facts.pseudonymize {
-                    "Unused while pseudonymisation is on: models that leave the homelab only ever see masked data."
-                } else {
-                    "Lets models that leave the homelab see member data unmasked (provider testing only); a privacy control only the operator may change."
-                },
             },
         ]
     }

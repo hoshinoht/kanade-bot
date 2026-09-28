@@ -5,7 +5,6 @@ use kanade::extract::prompt::extraction_request;
 use kanade::extract::schema::{
     AttemptOutcome, ExtractionAttempts, Loc, Next, ParseError, parse_response,
 };
-use kanade::infrastructure::llm::identity::PassthroughSession;
 use regex::Regex;
 use serde_json::{Value, json};
 
@@ -59,7 +58,6 @@ fn extract_call(step: &Value) -> Value {
                 model,
                 attempts.messages().to_vec(),
                 reasoning(&step["reasoning_effort"]),
-                &PassthroughSession,
             );
             requests.push(body(&request, &caps));
             let reply = replies.next().expect("scripted reply");
@@ -74,7 +72,7 @@ fn extract_call(step: &Value) -> Value {
                 },
             }
         };
-        match attempts.record(outcome, &PassthroughSession) {
+        match attempts.record(outcome) {
             Next::Retry => continue,
             Next::Done(call) => break call,
         }

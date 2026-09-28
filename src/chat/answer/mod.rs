@@ -1,7 +1,6 @@
 //! One chat question end to end (v4 `ChatPilot.generate`/`_loop`): tool
-//! rounds over one governed question session, one identity session for the
-//! whole conversation, cards handed to a caller port, the reserved clean
-//! retry, reply finishing, and the chat-log row. No Discord types: the
+//! rounds over one governed question session, cards handed to a caller port,
+//! the reserved clean retry, reply finishing, and the chat-log row. No Discord types: the
 //! caller supplies the conversation, the channel's pending cards and card
 //! posting through [`ChatPorts`].
 
@@ -28,11 +27,9 @@ use crate::chat::tools::read::{PendingCard, StrategyGuides};
 use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member};
-use crate::domain::model_log::MaskedTurn;
 use crate::infrastructure::llm::governor::{
     Charge, Refused, SentRequest, SessionError, SessionFailure,
 };
-use crate::infrastructure::llm::identity::IdentityLeakBlocked;
 use crate::infrastructure::llm::{Effort, ErrorCode, Message};
 
 /// v4's reply when a posted card could not be delivered.
@@ -80,8 +77,7 @@ pub struct AnswerSettings {
 /// One question as the loop receives it.
 pub struct Question<'a> {
     pub ctx: &'a ToolContext,
-    /// System prompt first, the asker's message last (plain text: the loop
-    /// encodes it through the identity session).
+    /// System prompt first, the asker's message last; all content is sent as supplied.
     pub conversation: Vec<Message>,
     /// The persona's final voice reminder.
     pub reminder: String,
@@ -104,7 +100,7 @@ pub struct RoundOutcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelRound {
     pub round: u32,
-    /// The reply text as the model sent it (identity-decoded).
+    /// The reply text as the model sent it.
     pub content: Option<String>,
     pub requested_tools: Vec<String>,
     pub finish_reason: Option<String>,
@@ -130,11 +126,8 @@ pub enum AnswerFailure {
     },
     /// The provider's content filter blocked the answer, clean retry included.
     ContentBlocked,
-    /// No usable answer (malformed, empty or naming an unknown identity),
-    /// clean retry included.
+    /// No usable answer (malformed or empty), clean retry included.
     Malformed,
-    /// The identity route refused (an external route without pseudonymization).
-    Route(String),
     /// The governed session failed or turned the question away.
     Session(SessionError),
 }
@@ -167,7 +160,6 @@ impl AnswerFailure {
             Self::Timeout { .. } => "timeout",
             Self::ContentBlocked => "content_blocked",
             Self::Malformed => "malformed",
-            Self::Route(_) => "route_refused",
             Self::Session(error) => match &error.failure {
                 SessionFailure::Refused(refused) => match refused {
                     Refused::UnknownRole => "unknown_role",
@@ -184,7 +176,6 @@ impl AnswerFailure {
                 SessionFailure::Ended => "session_ended",
                 SessionFailure::CleanRetryUnavailable => "clean_retry_unavailable",
                 SessionFailure::AnswerRetryUnavailable => "answer_retry_unavailable",
-                SessionFailure::IdentityLeakBlocked(_) => "identity_leak_blocked",
                 SessionFailure::Model(model) => model_code(model.code),
             },
         }
@@ -194,7 +185,7 @@ impl AnswerFailure {
     pub fn charge(&self) -> Charge {
         match self {
             Self::Session(error) => error.charge,
-            Self::ContextBudget(_) | Self::Route(_) => Charge::Refunded,
+            Self::ContextBudget(_) => Charge::Refunded,
             _ => Charge::Charged,
         }
     }
@@ -208,7 +199,6 @@ impl fmt::Display for AnswerFailure {
             Self::Timeout { seconds } => write!(f, "no answer within {seconds}s"),
             Self::ContentBlocked => f.write_str("the provider's content filter blocked the answer"),
             Self::Malformed => f.write_str("the model gave no usable answer"),
-            Self::Route(reason) => f.write_str(reason),
             Self::Session(error) => error.fmt(f),
         }
     }
@@ -242,14 +232,10 @@ pub struct Generation {
     pub requests: u32,
     pub model_ms: u64,
     pub tools_ms: u64,
-    /// Sent to an external route without pseudonymization (operator override).
+    /// The chat route sends raw member data outside the homelab.
     pub external_unmasked: bool,
-    /// Every request of this question went through a masking session.
-    pub pseudonymized: bool,
-    /// The chat route leaves the homelab (masked or by operator override).
+    /// The chat route leaves the homelab.
     pub external: bool,
-    /// Masked turns only: the admin Model view, stored with the chat log.
-    pub model_view: Option<MaskedTurn>,
 }
 
 impl Generation {
@@ -271,23 +257,12 @@ impl Generation {
         *self.completion_tokens.get_or_insert(0) += u64::from(completion);
     }
 
-    /// The boundary scanner refused a request of this question.
-    pub fn leak_blocked(&self) -> Option<&IdentityLeakBlocked> {
-        match &self.failure {
-            Some(AnswerFailure::Session(SessionError {
-                failure: SessionFailure::IdentityLeakBlocked(blocked),
-                ..
-            })) => Some(blocked),
-            _ => None,
-        }
-    }
-
-    /// `homelab`, `external_masked` or `external_unmasked`.
+    /// `homelab` or `external_unmasked`.
     pub fn route(&self) -> &'static str {
-        match (self.external, self.pseudonymized) {
-            (false, _) => "homelab",
-            (true, true) => "external_masked",
-            (true, false) => "external_unmasked",
+        if self.external {
+            "external_unmasked"
+        } else {
+            "homelab"
         }
     }
 

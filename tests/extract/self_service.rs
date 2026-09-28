@@ -26,7 +26,6 @@ use kanade::infrastructure::llm::governor::{
     BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
     Outcome, Random, Role, RoleConfig,
 };
-use kanade::infrastructure::llm::identity::{Member, Passthrough, find_request_leaks};
 use kanade::infrastructure::llm::{
     ExecutionLimits, FakeAction, FakeProvider, Message, RetryPolicy,
 };
@@ -54,7 +53,7 @@ fn rewrite_prompt() -> RewritePrompt {
 }
 
 fn adapter(client: Arc<ModelClient<FakeProvider>>) -> GovernedRewriter<FakeProvider> {
-    GovernedRewriter::new(client, Arc::new(Passthrough))
+    GovernedRewriter::new(client)
 }
 
 /// A client whose rewrite role is `rewrite`: grouped or not, local or external.
@@ -111,7 +110,8 @@ const DEADLINE: Duration = Duration::from_secs(2);
 #[tokio::test(start_paused = true)]
 async fn the_adapter_sends_one_plain_request_and_returns_the_line() {
     let (provider, client) = client(vec![reply("Fine. Fix it yourself.")], true);
-    let rewritten = adapter(client).rewrite(&rewrite_prompt(), DEADLINE).await;
+    let prompt = rewrite_prompt();
+    let rewritten = adapter(client).rewrite(&prompt, DEADLINE).await;
     assert_eq!(rewritten.as_deref(), Ok("Fine. Fix it yourself."));
     let requests = provider.requests();
     assert_eq!(requests.len(), 1);
@@ -123,13 +123,7 @@ async fn the_adapter_sends_one_plain_request_and_returns_the_line() {
         [Message::System { .. }, Message::User { content }]
             if content == "Hmph. Everything you need is right here."
     ));
-    let roster = [Member {
-        user_id: MY.into(),
-        display_name: "MY".into(),
-        nickname: None,
-        aliases: Vec::new(),
-    }];
-    assert!(find_request_leaks(request, &roster).is_empty());
+    assert_eq!(request.messages, prompt.messages());
 }
 
 #[tokio::test(start_paused = true)]
@@ -147,12 +141,9 @@ async fn a_content_filter_or_an_empty_reply_is_a_refusal_and_gives_the_seed() {
     assert_eq!(provider.requests().len(), 2, "one request each, no retry");
 
     let (_, client) = crate::fakes::client(vec![filtered()], true);
-    let nudge = Nudger::new(
-        Arc::new(Fixed),
-        GovernedRewriter::new(client, Arc::new(Passthrough)),
-    )
-    .lead_in(&kanade(), &facts())
-    .await;
+    let nudge = Nudger::new(Arc::new(Fixed), GovernedRewriter::new(client))
+        .lead_in(&kanade(), &facts())
+        .await;
     assert_eq!(nudge.line, LineSource::Seed(SeedReason::Refused));
 }
 
@@ -184,22 +175,19 @@ async fn a_busy_rewrite_group_is_unavailable_at_once_with_nothing_sent() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_misconfigured_or_external_rewrite_route_is_flagged_with_nothing_sent() {
-    for (grouped, external) in [(false, false), (true, true)] {
-        let (provider, client) = rewrite_client(grouped, external, vec![reply("unused")]);
-        assert_eq!(
-            adapter(client.clone())
-                .rewrite(&rewrite_prompt(), DEADLINE)
-                .await,
-            Err(RewriteFailure::Misconfigured),
-            "grouped {grouped}, external {external}"
-        );
-        let nudge = Nudger::new(Arc::new(Fixed), adapter(client))
-            .lead_in(&kanade(), &facts())
-            .await;
-        assert_eq!(nudge.line, LineSource::Seed(SeedReason::Misconfigured));
-        assert!(provider.requests().is_empty());
-    }
+async fn an_ungrouped_rewrite_route_is_flagged_with_nothing_sent() {
+    let (provider, client) = rewrite_client(false, false, vec![reply("unused")]);
+    assert_eq!(
+        adapter(client.clone())
+            .rewrite(&rewrite_prompt(), DEADLINE)
+            .await,
+        Err(RewriteFailure::Misconfigured)
+    );
+    let nudge = Nudger::new(Arc::new(Fixed), adapter(client))
+        .lead_in(&kanade(), &facts())
+        .await;
+    assert_eq!(nudge.line, LineSource::Seed(SeedReason::Misconfigured));
+    assert!(provider.requests().is_empty());
 }
 
 fn moved(evidence: &str) -> FakeAction {
@@ -586,85 +574,28 @@ async fn a_cut_off_half_open_probe_frees_the_probe_slot() {
     assert!(next.try_begin_request().expect("admitted").is_probe());
 }
 
-fn masking_codec() -> kanade::infrastructure::llm::identity::PseudonymCodec {
-    use kanade::infrastructure::llm::governor::XorShift;
-    use kanade::infrastructure::llm::identity::{
-        BotIdentity, CodeLexicon, NamePool, PseudonymCodec, PseudonymConfig,
-    };
-    PseudonymCodec::new(PseudonymConfig {
-        pool: NamePool::curated(),
-        lexicon: CodeLexicon::builtin(),
-        bot: BotIdentity::default(),
-        extra_exclusions: Vec::new(),
-        random: Arc::new(XorShift::new(29)),
-    })
-}
-
-struct PriyaRoster(Option<Vec<Member>>);
-
-impl kanade::infrastructure::llm::identity::RosterSource for PriyaRoster {
-    fn roster(&self) -> Option<Vec<Member>> {
-        self.0.clone()
-    }
-}
-
-fn priya() -> Vec<Member> {
-    vec![Member {
-        user_id: crate::fakes::PRIYA.into(),
-        display_name: "Priya".into(),
-        nickname: None,
-        aliases: Vec::new(),
-    }]
-}
-
 #[tokio::test(start_paused = true)]
-async fn a_masked_rewrite_encodes_member_names_and_decodes_the_reply() {
-    use kanade::infrastructure::llm::identity::IdentityCodec;
-    let url = "https://example.invalid/persona/credit?tag=Priya#public";
-    // Same seed and URL namespace: this is the link token the rewrite issues.
-    let mut probe = masking_codec().open(&priya());
-    let token = probe.member_ref(crate::fakes::PRIYA);
-    let link = probe.text(url);
-    let (provider, client) = client(vec![reply(&format!("{token} says fix it! {link}"))], true);
-    let rewriter = GovernedRewriter::new(client, Arc::new(masking_codec()))
-        .with_roster(Arc::new(PriyaRoster(Some(priya()))));
-    let prompt = RewritePrompt::build(
-        &kanade(),
-        NudgeMood::Playful,
-        &format!("Priya says {{boss}} is right here. See {url}"),
+async fn an_external_rewrite_sends_raw_names_ids_and_urls_without_opt_in() {
+    let url = "https://synthetic.invalid/persona/credit?tag=fixture#public";
+    let seed = format!("SyntheticMember 999000111222333444 says {{boss}} is right here. See {url}");
+    let (provider, client) = rewrite_client(
+        true,
+        true,
+        vec![reply("A small synthetic example — {boss} {day} {time}!")],
     );
+    assert!(client.governor().route(Role::Rewrite).unwrap().external);
+    let rewriter = GovernedRewriter::new(client);
+    let prompt = RewritePrompt::build(&kanade(), NudgeMood::Playful, &seed);
     let rewritten = rewriter.rewrite(&prompt, DEADLINE).await;
-    assert_eq!(rewritten, Ok(format!("Priya says fix it! {url}")));
+    assert_eq!(
+        rewritten,
+        Ok("A small synthetic example — {boss} {day} {time}!".into())
+    );
     let requests = provider.requests();
     assert_eq!(requests.len(), 1);
-    assert!(find_request_leaks(&requests[0], &priya()).is_empty());
-    let Message::User { content } = &requests[0].messages[1] else {
-        panic!("seed");
-    };
-    assert_eq!(
-        content,
-        &format!("{token} says {{boss}} is right here. See {link}")
-    );
-    assert!(!content.contains("https://"));
-    assert!(!content.contains("example.invalid"));
-    let Message::System { content } = &requests[0].messages[0] else {
-        panic!("system");
-    };
-    assert!(content.starts_with(kanade::chat::nudge::NUDGE_REWRITE_INSTRUCTION));
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_masked_rewrite_without_a_roster_sends_nothing() {
-    for roster in [None, Some(Vec::new())] {
-        let (provider, client) = client(vec![reply("x")], true);
-        let mut rewriter = GovernedRewriter::new(client, Arc::new(masking_codec()));
-        if let Some(members) = roster {
-            rewriter = rewriter.with_roster(Arc::new(PriyaRoster(Some(members))));
-        }
-        assert_eq!(
-            rewriter.rewrite(&rewrite_prompt(), DEADLINE).await,
-            Err(RewriteFailure::Misconfigured)
-        );
-        assert!(provider.requests().is_empty());
+    assert_eq!(requests[0].messages, prompt.messages());
+    let serialized = serde_json::to_string(&requests[0].messages).unwrap();
+    for raw in ["SyntheticMember", "999000111222333444", url] {
+        assert!(serialized.contains(raw), "{raw} missing from {serialized}");
     }
 }

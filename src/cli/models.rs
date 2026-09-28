@@ -10,10 +10,6 @@ use crate::{
     infrastructure::llm::{
         TrustZone,
         governor::XorShift,
-        identity::{
-            BotIdentity, CodeLexicon, IdentityCodec, NamePool, Passthrough, PseudonymCodec,
-            PseudonymConfig, SystemRng,
-        },
         setup::{
             CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
             build_with_groups,
@@ -85,8 +81,6 @@ pub async fn check(
         key,
         ca_file: settings.ca_file.clone(),
         permits: u32::from(settings.permits),
-        allow_external_unmasked: settings.allow_external_unmasked,
-        pseudonymize: settings.pseudonymize,
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     let stack = match build_with_groups(setup, &settings.groups, random) {
@@ -166,15 +160,10 @@ pub async fn check(
                 ),
                 None => status.effort.as_str().to_owned(),
             });
-        let trust = match (
-            route.external,
-            settings.pseudonymize,
-            route.unmasked_allowed,
-        ) {
-            (false, _, _) => "homelab",
-            (true, true, _) => "external masked",
-            (true, false, true) => "external UNMASKED",
-            (true, false, false) => "external refused",
+        let trust = if route.external {
+            "external_unmasked"
+        } else {
+            "homelab"
         };
         writeln!(
             out,
@@ -195,21 +184,8 @@ pub async fn check(
 
     if args.probe {
         writeln!(out, "probe:").map_err(io)?;
-        // The probe prompt carries no member data; with masking on it still
-        // goes through a masking (empty-roster) session, as serve would.
-        let codec: Box<dyn IdentityCodec> = if settings.pseudonymize {
-            Box::new(PseudonymCodec::new(PseudonymConfig {
-                pool: NamePool::curated(),
-                lexicon: CodeLexicon::builtin(),
-                bot: BotIdentity::default(),
-                extra_exclusions: Vec::new(),
-                random: Arc::new(SystemRng::new()),
-            }))
-        } else {
-            Box::new(Passthrough)
-        };
         for role in ModelRoles::ALL {
-            let Some(result) = stack.probe(role, codec.as_ref(), PROBE_TIMEOUT).await else {
+            let Some(result) = stack.probe(role, PROBE_TIMEOUT).await else {
                 continue;
             };
             let head = format!(

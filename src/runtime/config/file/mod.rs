@@ -98,6 +98,11 @@ fn flatten(
         } else {
             format!("{prefix}.{name}")
         };
+        if keys::is_retired(&path) {
+            return Err(Error::Configuration(format!(
+                "kanade.toml key `{path}` is retired; remove it"
+            )));
+        }
         if keys::looks_secret(name) {
             return Err(secret(&path));
         }

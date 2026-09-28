@@ -11,7 +11,6 @@ use kanade::chat::context::COMPLETION_RESERVE_TOKENS;
 use kanade::chat::tools::ProposalCard;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::read::PendingCard;
-use kanade::infrastructure::llm::identity::{Member, Passthrough};
 use kanade::infrastructure::llm::{
     CompletionResponse, FakeAction, FakeProvider, FinishReason, wire_body,
 };
@@ -52,19 +51,6 @@ impl ChatPorts for Ports {
         self.posted.lock().expect("posted").push(card.clone());
         Ok(())
     }
-}
-
-pub fn roster(world: &World) -> Vec<Member> {
-    world
-        .members()
-        .iter()
-        .map(|member| Member {
-            user_id: member.user_id.clone(),
-            display_name: member.display_name.clone().unwrap_or_default(),
-            nickname: member.nickname.clone(),
-            aliases: Vec::new(),
-        })
-        .collect()
 }
 
 /// The vectors' chat settings.
@@ -156,7 +142,6 @@ async fn replay(case: Value) -> Vec<Value> {
     let caps = capabilities(&input["caps"]);
     let persona = kanade();
     let model = text(&input["settings"]["chat_pilot_model"]);
-    let roster = roster(&world);
     let mut out = Vec::new();
     for (index, step) in input["steps"].as_array().expect("steps").iter().enumerate() {
         if text(&step["op"]) != "generate" {
@@ -190,9 +175,6 @@ async fn replay(case: Value) -> Vec<Value> {
         let ports = Ports::default();
         let deps = AnswerDeps {
             client: &client,
-            codec: &Passthrough,
-            roster: &roster,
-            former: &[],
             route: None,
         };
         let (guild, mut proposer) = world.question_parts();

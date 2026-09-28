@@ -946,7 +946,7 @@ export interface ConfigView {
     alias_limits: AliasLimit[];
     key_limits: KeyLimits;
     capacity_check: CapacityCheck[];
-    /** Env-only (read-only here): whether names are pseudonymised before leaving the homelab. */
+    /** Required compatibility field; current model requests are not pseudonymised. */
     pii_pseudonymise: boolean;
   };
   /** Channels where the bot lacks Manage Messages; shown above every Config section. */

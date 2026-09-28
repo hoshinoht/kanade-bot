@@ -285,7 +285,7 @@
                   {saveRoleProfiles}
                 />
               {:else if item.key === 'models'}
-                <ModelsSection models={c.models} env={c.env} {save} />
+                <ModelsSection models={c.models} {save} />
               {:else if item.key === 'self-service'}
                 <SelfServiceSection selfService={c.self_service} {save} />
               {:else if item.key === 'notifications'}

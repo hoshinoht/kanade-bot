@@ -1,10 +1,6 @@
 use tokio::time::Instant;
 
-use super::super::{
-    ChatRequest, CompletionResponse,
-    governor::{Attempt, CallKind, Outcome, Permit, Random, Refused, SentRequest},
-    identity::{LeakFound, LeakScanner},
-};
+use super::super::governor::{Attempt, CallKind, Outcome, Permit, Random, Refused, SentRequest};
 
 /// Admission for one runner call: every provider request passes the permit's
 /// rate ceiling, breaker and (for retries) retry budget, and is capped by the
@@ -21,7 +17,6 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     attempt: Option<Attempt>,
     /// Session id; each request is tagged `{tag}-{n}` for gateway log correlation.
     tag: Option<&'a str>,
-    scanner: Option<&'a LeakScanner>,
     /// The last admitted request as it went out.
     sent: Option<SentRequest>,
 }
@@ -53,7 +48,6 @@ impl<'a> Gate<'a> {
             random,
             attempt: None,
             tag: None,
-            scanner: None,
             sent: None,
         }
     }
@@ -63,17 +57,6 @@ impl<'a> Gate<'a> {
         self
     }
 
-    pub(in crate::infrastructure::llm) fn scanned(mut self, scanner: &'a LeakScanner) -> Self {
-        self.scanner = Some(scanner);
-        self
-    }
-
-    /// Boundary scan of the exact request about to be sent; runs before
-    /// admission so a refusal spends no request, rate token or retry.
-    pub(super) fn scan(&self, request: &ChatRequest) -> Result<(), LeakFound> {
-        self.scanner.map_or(Ok(()), |scanner| scanner.scan(request))
-    }
-
     pub(super) fn note_sent(&mut self, sent: SentRequest) {
         self.sent = Some(sent);
     }
@@ -81,13 +64,6 @@ impl<'a> Gate<'a> {
     /// What the last admitted request sent (alias and reasoning effort).
     pub(in crate::infrastructure::llm) fn take_sent(&mut self) -> Option<SentRequest> {
         self.sent.take()
-    }
-
-    /// Remembers a reply so the scanner lets the model's own words back in.
-    pub(super) fn echo(&self, response: &CompletionResponse) {
-        if let Some(scanner) = self.scanner {
-            scanner.echo(response);
-        }
     }
 
     /// Id of the request admitted last (numbered from 1 within the session).
@@ -107,7 +83,6 @@ impl<'a> Gate<'a> {
             random,
             attempt: None,
             tag: None,
-            scanner: None,
             sent: None,
         }
     }

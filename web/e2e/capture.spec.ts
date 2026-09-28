@@ -69,7 +69,7 @@ for (const vp of VIEWPORTS) {
       // Models with the cloud warning showing.
       await page.goto(`${ADMIN}/config?section=models&sw=off`);
       await page.getByRole('combobox', { name: /^Model/ }).first().selectOption('kanata/chat-cloud');
-      await expect(page.getByText(/go to an external provider/)).toBeVisible();
+      await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
       await shot(page, `admin-config-models-cloud-${tag}`);
 
       for (const path of ['fixed', 'bosses', 'members', 'reminders', 'inbox', 'extractions', 'chat', 'limits', 'history', 'config']) {

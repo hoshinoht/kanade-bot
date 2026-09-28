@@ -31,7 +31,6 @@ use crate::{
         gateway::{EventSource, GatewayError},
         transport::{Call, FakeDiscord, Outcome},
     },
-    chat::sanitize::FAILURE_REPLY,
     domain::{
         members::{Member, MemberProfile, MemberStore},
         model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
@@ -674,75 +673,20 @@ async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
 }
 
 #[tokio::test]
-async fn an_external_chat_route_is_refused_with_the_failure_line() {
-    let stub = ModelStub::start("external", "should never be asked").await;
-    let (live, discord) = live(&stub, &[]).await;
-    drive(live, discord, async |live| {
-        connect(live);
-        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
-        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
-        assert_eq!(replies(&live.fake, THREAD)[0].0, FAILURE_REPLY);
-        let row = one_chat(&live.store).await;
-        assert_eq!(row.outcome, ChatOutcome::Error);
-        assert!(
-            row.error
-                .as_deref()
-                .is_some_and(|error| error.contains("pseudonymization")),
-            "{:?}",
-            row.error
-        );
-        assert_eq!(stub.completions(), 0, "nothing left the homelab");
-        let limits = live.composition.admin.state.chat.as_ref().unwrap().limits();
-        assert_eq!(limits.unwrap().allowance.pool.used, 0, "refunded");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn the_unmasked_override_answers_and_marks_the_guardrail() {
-    let stub = ModelStub::start("external", "Lotus is at nine tonight.").await;
-    let (live, discord) = live(&stub, &[("KANADE_ALLOW_EXTERNAL_UNMASKED", "1")]).await;
-    drive(live, discord, async |live| {
-        connect(live);
-        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
-        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
-        assert!(replies(&live.fake, THREAD)[0].0.contains("Lotus"));
-        let row = one_chat(&live.store).await;
-        assert_eq!(row.outcome, ChatOutcome::Answered);
-        assert_eq!(row.guardrail, json!({"external_unmasked": true}));
-        assert_eq!(stub.completions(), 1);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn masking_with_no_roster_sends_nothing() {
-    let stub = ModelStub::start("external", "should never be asked").await;
-    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
-    drive(live, discord, async |live| {
-        connect(live);
-        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
-        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
-        sleep(Duration::from_millis(300)).await;
-        assert_eq!(stub.completions(), 0, "fail closed without a roster");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn a_masked_external_turn_is_answered_and_stores_its_model_view() {
+async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_view() {
     use crate::domain::members::{Member, MemberProfile, MemberStore};
     let stub = ModelStub::start("external", "Lotus is at nine tonight.").await;
-    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    let (live, discord) = live(&stub, &[]).await;
     live.store
         .put_member(MemberProfile {
             member: Member {
                 user_id: ALICE.to_string(),
-                display_name: Some("Alicia Quartz".into()),
+                display_name: Some("Synthetic Alicia Quartz".into()),
+                nickname: Some("SyntheticQuartz".into()),
                 has_role: true,
                 ..Member::default()
             },
-            aliases: vec!["quartzy".into()],
+            aliases: vec!["syntheticalias".into()],
             reply_style: None,
             roles: Vec::new(),
             is_guild_admin: false,
@@ -751,30 +695,42 @@ async fn a_masked_external_turn_is_answered_and_stores_its_model_view() {
         .unwrap();
     drive(live, discord, async |live| {
         connect(live);
-        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
-        live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
+        let mut asked = question_json(5001, &[PILOT_ROLE]);
+        let raw = "Synthetic Alicia Quartz SyntheticQuartz syntheticalias SyntheticMember \
+            999000111222333444 https://synthetic.invalid/member?id=fixture";
+        asked["content"] = json!(format!("<@{SELF}> {raw}"));
+        live.events
+            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
+                asked,
+            ))))
+            .unwrap();
         eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
         assert!(replies(&live.fake, THREAD)[0].0.contains("Lotus"));
         let row = one_chat(&live.store).await;
         assert_eq!(row.outcome, ChatOutcome::Answered);
-        assert_eq!(row.guardrail, json!({"pseudonymized": true}));
+        assert_eq!(row.rounds[0].route.as_deref(), Some("external_unmasked"));
+        assert_eq!(row.guardrail, json!({"external_unmasked": true}));
         let sent = serde_json::to_string(&*stub.completions.lock().unwrap()).unwrap();
-        for raw in ["Alicia", "Quartz", "quartzy", "1001"] {
-            assert!(!sent.contains(raw), "{raw} reached the model");
+        for part in [
+            "Synthetic Alicia Quartz",
+            "SyntheticQuartz",
+            "syntheticalias",
+            "SyntheticMember",
+            "999000111222333444",
+            "https://synthetic.invalid/member?id=fixture",
+        ] {
+            assert!(
+                sent.contains(part),
+                "{part} did not reach the provider: {sent}"
+            );
         }
-        let view = live
-            .store
-            .load_masked_chat(&row.id)
-            .await
-            .unwrap()
-            .expect("the Model view is stored");
-        assert_eq!(view.rounds.len(), 1);
-        assert_eq!(view.reply, replies(&live.fake, THREAD)[0].0);
         assert!(
-            view.mapping
-                .iter()
-                .any(|name| name.user_id == ALICE.to_string()
-                    && name.display_name.as_deref() == Some("Alicia Quartz"))
+            live.store
+                .load_masked_chat(&row.id)
+                .await
+                .unwrap()
+                .is_none(),
+            "new unmasked turns do not create a historical Model view"
         );
     })
     .await;
@@ -797,14 +753,13 @@ fn alice(nickname: &str, aliases: &[&str]) -> crate::domain::members::MemberProf
     }
 }
 
-/// History and anchors keep turns rendered with the names of their time: a
-/// rename (or a removed alias) before the next question must not send the
-/// old name unmasked.
+/// The request is built from locally rendered history, so an external route
+/// receives its original text even after the current member profile changes.
 #[tokio::test]
-async fn a_renamed_members_old_names_in_history_stay_masked() {
+async fn renamed_member_names_in_chat_history_are_sent_unchanged() {
     use crate::domain::members::MemberStore;
     let stub = ModelStub::start("external", "Sure Oldnick, Lotus is at nine.").await;
-    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
+    let (live, discord) = live(&stub, &[]).await;
     live.store
         .put_member(alice("Oldnick", &["zorblax"]))
         .await
@@ -828,52 +783,9 @@ async fn a_renamed_members_old_names_in_history_stay_masked() {
         assert_eq!(bodies.len(), 2);
         let second = bodies[1].to_string();
         assert!(second.contains("lotus"), "history went out: {second}");
-        for old in ["Oldnick", "zorblax", "Alicia", "Newnick"] {
-            assert!(
-                !second.to_lowercase().contains(&old.to_lowercase()),
-                "{old}: {second}"
-            );
+        for raw in ["Oldnick", "zorblax"] {
+            assert!(second.contains(raw), "{raw} was changed: {second}");
         }
-    })
-    .await;
-}
-
-/// A name current only while no masked question ran (a notice naming a
-/// ping-off member) is still masked after a rename: the roster refresh
-/// records it, not only chat.
-#[tokio::test]
-async fn a_notice_name_seen_only_by_the_roster_stays_masked_after_a_rename() {
-    use crate::domain::members::MemberStore;
-    let stub = ModelStub::start("external", "Cleared indeed.").await;
-    let (live, discord) = live(&stub, &[("KANADE_PSEUDONYMIZE", "1")]).await;
-    live.store.put_member(alice("Oldnick", &[])).await.unwrap();
-    drive(live, discord, async |live| {
-        connect(live);
-        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
-        // Several ticks refresh the live roster with Oldnick.
-        sleep(Duration::from_millis(300)).await;
-        live.store.put_member(alice("Newnick", &[])).await.unwrap();
-        sleep(Duration::from_millis(300)).await;
-        // A reply to the bot's notice, which named the member as they were.
-        let mut notice = question_json(4000, &[]);
-        notice["author"] = user_json(SELF, "kanade", true);
-        notice["content"] = json!("🏁 Will cleared — Oldnick Bob");
-        notice["mentions"] = json!([]);
-        let mut asked = question_json(5001, &[PILOT_ROLE]);
-        asked["message_reference"] = json!({
-            "message_id": "4000", "channel_id": THREAD.to_string(), "guild_id": GUILD.to_string(),
-        });
-        asked["referenced_message"] = notice;
-        live.events
-            .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
-                asked,
-            ))))
-            .unwrap();
-        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
-        let bodies = stub.completions.lock().unwrap().clone();
-        let sent = bodies[0].to_string();
-        assert!(sent.contains("cleared"), "the notice went out: {sent}");
-        assert!(!sent.contains("Oldnick"), "{sent}");
     })
     .await;
 }

@@ -3,13 +3,6 @@
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeDelta, TimeZone, Timelike};
 use chrono_tz::Tz;
 
-/// The clock header starts and ends with these (the Model view and the
-/// boundary scanner treat the whole line as code-owned).
-pub const CLOCK_HEADER_START: &str = "Right now it is ";
-pub const CLOCK_HEADER_END: &str = "mean calendar weeks.";
-pub const RUNTIME_LINE_START: &str =
-    "You are a Discord bot for this guild's boss schedule. You run on ";
-pub const RUNTIME_LINE_END: &str = "never claim to be anything other than a bot.";
 pub const FOCUS_PREFIX: &str = "The last card posted in this channel: ";
 pub const FOCUS_SUFFIX: &str = ". If somebody says \"it\" or \"that run\" with nothing else to point at, that is what they mean. It is still only a proposal until somebody reacts ✅ on it.";
 

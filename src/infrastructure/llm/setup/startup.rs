@@ -37,20 +37,11 @@ pub enum StartupWarning {
         effort: Effort,
         sent: Effort,
     },
-    /// Leaves the homelab and pseudonymization is off: the operator override
-    /// lets member data through in plain text.
+    /// Raw member data is sent to a route outside the homelab.
     ExternalUnmasked {
         role: Role,
         alias: String,
     },
-    /// Leaves the homelab and pseudonymization is off: calls are refused.
-    ExternalRefused {
-        role: Role,
-        alias: String,
-    },
-    /// `KANADE_ALLOW_EXTERNAL_UNMASKED` is set but has no effect: masking is
-    /// on, or no route leaves the homelab.
-    OverrideUnused,
 }
 
 impl fmt::Display for StartupWarning {
@@ -93,18 +84,9 @@ impl fmt::Display for StartupWarning {
             ),
             Self::ExternalUnmasked { role, alias } => write!(
                 f,
-                "UNMASKED: {} model {alias} leaves the homelab and member data is sent \
-                 without pseudonymization (KANADE_ALLOW_EXTERNAL_UNMASKED)",
-                role.as_str()
-            ),
-            Self::OverrideUnused => f.write_str(
-                "KANADE_ALLOW_EXTERNAL_UNMASKED is set but unused: pseudonymization is on \
-                 or no model leaves the homelab",
-            ),
-            Self::ExternalRefused { role, alias } => write!(
-                f,
-                "{} model {alias} leaves the homelab; its calls are refused while \
-                 pseudonymization is off",
+                "UNMASKED: {} model {alias} leaves the homelab; raw member names, IDs, \
+                 messages, and complete URLs are sent to the provider. Kanata ZDR is \
+                 operator-stated retention only and does not prevent transmission.",
                 role.as_str()
             ),
         }
@@ -157,7 +139,6 @@ impl ModelStack {
             },
         };
         let efforts = self.efforts();
-        let mut any_external = false;
         for role in super::ModelRoles::ALL {
             let Some(route) = self.governor.route(role) else {
                 continue;
@@ -172,25 +153,19 @@ impl ModelStack {
                     sent: status.effort,
                 });
             }
-            any_external |= route.external;
-            if route.external && !self.masking {
-                let (role, alias) = (role, route.alias);
-                warnings.push(if route.unmasked_allowed {
-                    StartupWarning::ExternalUnmasked { role, alias }
-                } else {
-                    StartupWarning::ExternalRefused { role, alias }
+            if route.external {
+                warnings.push(StartupWarning::ExternalUnmasked {
+                    role,
+                    alias: route.alias,
                 });
             }
-        }
-        if self.unmasked_override && (self.masking || !any_external) {
-            warnings.push(StartupWarning::OverrideUnused);
         }
         StartupReport { listing, warnings }
     }
 
     /// Relists every 300 s (30 s until a listing has succeeded) so trust zones
-    /// and the catalog stay current even while every route is refused and no
-    /// call would trigger a listing. Abort the handle on shutdown.
+    /// and the catalog stay current even when no model call triggers a listing.
+    /// Abort the handle on shutdown.
     pub fn spawn_catalog_refresh(&self) -> JoinHandle<()> {
         let provider = self.provider.clone();
         let catalog = self.catalog.clone();

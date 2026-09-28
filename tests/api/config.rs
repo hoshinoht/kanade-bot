@@ -313,8 +313,6 @@ impl Config {
                         model_gateway: gateway.then(|| "https://kanata.test/v1".into()),
                         model_permits: 2,
                         model_groups: groups.clone(),
-                        allow_external_unmasked: true,
-                        pseudonymize: false,
                         chat_pilot_role_id: Some("30".into()),
                     },
                     personas: Some(PersonaFiles {
@@ -523,9 +521,13 @@ async fn get_shows_settings_models_personas_and_env_facts() {
             .unwrap_or_else(|| panic!("{key}"))["value"]
             .clone()
     };
-    assert_eq!(env("KANADE_ALLOW_EXTERNAL_UNMASKED"), "on");
-    assert_eq!(env("KANADE_PSEUDONYMIZE"), "off");
-    assert_eq!(view["models"]["pii_pseudonymise"], false);
+    let env_rows = view["env"].as_array().unwrap();
+    for retired in ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"] {
+        assert!(
+            !env_rows.iter().any(|row| row["key"] == retired),
+            "retired key exposed in Config: {retired}"
+        );
+    }
     assert_eq!(env("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
     assert_eq!(env("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(env("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "Thu 00:00");

@@ -3,12 +3,10 @@
 //!
 //! The prompt carries the boss table, this channel's runs and timings, the
 //! roster members the burst involves and the messages with `[msg_id]`
-//! prefixes. Every identity-bearing fragment (author labels, mentions, names,
-//! message and channel text) goes through the caller's `IdentitySession`, so
-//! `Passthrough` renders v4's bytes and a pseudonymizing session hides them.
+//! prefixes. Caller-supplied names, identifiers and message text are rendered
+//! unchanged.
 
 mod budget;
-mod owned;
 mod render;
 mod system;
 
@@ -21,7 +19,6 @@ pub use budget::{
     CHARS_PER_TOKEN, CONTEXT_RESERVE, TOKENS_PER_ID, estimate_messages, estimate_tokens,
     prompt_budget, prompt_text, schema_instruction_tokens,
 };
-pub use owned::{code_owned_schema, code_owned_texts};
 pub use render::{member_name, named_bosses, relevant_roster};
 pub use system::SYSTEM_PROMPT;
 
@@ -31,7 +28,7 @@ const CHANNEL_SCOPE: &str = "this channel";
 use crate::domain::catalog::BossTable;
 use crate::domain::schedule::{FixedRun, Run};
 use crate::extract::schema::extraction_schema;
-use crate::infrastructure::llm::identity::{IdentitySession, Member};
+use crate::infrastructure::llm::identity::{Member, PassthroughSession};
 use crate::infrastructure::llm::{
     ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling,
 };
@@ -41,7 +38,7 @@ use crate::infrastructure::llm::{
 pub struct PromptMessage {
     pub id: String,
     pub author_id: String,
-    /// The author's Discord name; the session decides what the model sees.
+    /// The author's Discord name, as sent to the model.
     pub author_name: String,
     pub created_at: DateTime<Utc>,
     pub content: String,
@@ -65,13 +62,8 @@ pub struct PromptContext<'a> {
     pub guild_runs: &'a [&'a Run],
 }
 
-fn build_user_prompt(context: &PromptContext<'_>, session: &mut dyn IdentitySession) -> String {
+fn build_user_prompt(context: &PromptContext<'_>, session: &mut PassthroughSession) -> String {
     let zone = context.zone;
-    // Every author's name is masked from the first line on, so a message
-    // naming a later author (not on the roster) never goes out raw.
-    for message in context.context.iter().chain(context.burst) {
-        session.author_label(&message.author_id, &message.author_name);
-    }
     let roster = relevant_roster(context);
     let names: HashMap<&str, &str> = roster
         .iter()
@@ -176,7 +168,7 @@ fn or_placeholder(lines: Vec<String>, placeholder: &str) -> String {
 /// The system and user messages for one extraction.
 pub fn build_messages(
     context: &PromptContext<'_>,
-    session: &mut dyn IdentitySession,
+    session: &mut PassthroughSession,
 ) -> Vec<Message> {
     vec![
         Message::System {
@@ -188,27 +180,22 @@ pub fn build_messages(
     ]
 }
 
-/// The extraction request: the strict schema (closed over the session's issued
-/// refs when it pseudonymizes), temperature 0 and seed 0, and room for the
-/// answer. The runner shapes it to the model's capabilities, so call this with
-/// the messages already encoded.
+/// The extraction request: the strict schema, temperature 0 and seed 0, and
+/// room for the answer. The runner shapes it to model capabilities.
 pub fn extraction_request(
     model: &str,
     messages: Vec<Message>,
     reasoning: Option<Effort>,
-    session: &dyn IdentitySession,
 ) -> ChatRequest {
-    let refs = session.participant_enum();
     ChatRequest {
         model: model.to_owned(),
         messages,
         tools: Vec::new(),
         output_schema: Some(OutputSchema {
             name: "extraction".to_owned(),
-            schema: extraction_schema(refs.as_deref()),
+            schema: extraction_schema(),
             strict: true,
-            // `parse_response` and the session decode are the validator: they
-            // coerce v4's near-misses and answer a malformed reply with a retry.
+            // `parse_response` is the validator and retries malformed answers.
             validation: OutputValidation::CallerValidates,
         }),
         max_output_tokens: u32::try_from(CONTEXT_RESERVE).expect("small constant"),

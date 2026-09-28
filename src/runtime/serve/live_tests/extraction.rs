@@ -46,6 +46,7 @@ struct Model {
     delay: Arc<Mutex<Duration>>,
     /// Each completion's `reasoning_effort` (`None`: not sent).
     efforts: Arc<Mutex<Vec<Option<String>>>>,
+    requests: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Model {
@@ -71,11 +72,13 @@ impl Model {
         let answer = Arc::new(Mutex::new(nothing()));
         let delay = Arc::new(Mutex::new(Duration::ZERO));
         let efforts = Arc::new(Mutex::new(Vec::new()));
-        let (count, reply, wait, seen) = (
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let (count, reply, wait, seen, recorded) = (
             chats.clone(),
             answer.clone(),
             delay.clone(),
             efforts.clone(),
+            requests.clone(),
         );
         let app = Router::new()
             .route("/v1/models", get(move || async move { Json(listing) }))
@@ -84,6 +87,7 @@ impl Model {
                 post(move |Json(body): Json<Value>| async move {
                     let effort = body["reasoning_effort"].as_str().map(str::to_owned);
                     seen.lock().unwrap().push(effort);
+                    recorded.lock().unwrap().push(body);
                     count.fetch_add(1, Ordering::SeqCst);
                     let pause = *wait.lock().unwrap();
                     sleep(pause).await;
@@ -107,6 +111,7 @@ impl Model {
             answer,
             delay,
             efforts,
+            requests,
         }
     }
 
@@ -116,6 +121,10 @@ impl Model {
 
     fn chats(&self) -> usize {
         self.chats.load(Ordering::SeqCst)
+    }
+
+    fn requests(&self) -> Vec<Value> {
+        self.requests.lock().unwrap().clone()
     }
 
     fn answer(&self, content: String) {
@@ -806,34 +815,40 @@ async fn rescans_page_discord_history_from_startup_the_api_and_the_slash_command
 }
 
 #[tokio::test]
-async fn an_external_extraction_route_is_refused_and_logged_without_a_call() {
+async fn an_external_extraction_route_sends_raw_data_without_opt_in() {
     let model = Model::start("external").await;
     let harness = harness(&model, true);
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
         let now = auth::system_now();
+        let message_id = snowflake(now, 1);
+        let url = "https://synthetic.invalid/party?member=fixture#week";
+        let content = format!("nkalos amend to 10pm SyntheticParticipant 999000111222333444 {url}");
+        let author_id = ALICE.to_string();
+        let message_id_text = message_id.to_string();
         ctx.events
-            .send(posted(
-                snowflake(now, 1),
-                HOME_A,
-                ALICE,
-                "nkalos amend to 10pm",
-                now,
-            ))
+            .send(posted(message_id, HOME_A, ALICE, &content, now))
             .unwrap();
         eventually!("the log", !logs(&ctx).await.is_empty());
         let log = logs(&ctx).await.remove(0);
-        assert_eq!(log.outcome, ExtractionOutcome::Failed);
-        assert!(
-            log.error
-                .as_deref()
-                .is_some_and(|error| error.contains("pseudonymization")),
-            "{log:?}"
-        );
-        assert_eq!(model.chats(), 0, "nothing left the homelab");
+        assert_eq!(log.outcome, ExtractionOutcome::NoChange);
+        assert_eq!(log.guardrail["external_unmasked"], true);
+        assert_eq!(model.chats(), 1);
+        let requests = model.requests();
+        assert_eq!(requests.len(), 1);
+        let sent = serde_json::to_string(&requests).unwrap();
+        for raw in [
+            "SyntheticParticipant",
+            "999000111222333444",
+            author_id.as_str(),
+            message_id_text.as_str(),
+            url,
+        ] {
+            assert!(sent.contains(raw), "{raw} missing from {sent}");
+        }
         let health = ctx.health.health().await;
-        assert_eq!(health.extraction, Some("degraded"));
+        assert_eq!(health.extraction, Some("idle"));
         assert_eq!(health.status, "ok");
     })
     .await;

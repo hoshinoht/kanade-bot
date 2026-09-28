@@ -21,14 +21,13 @@ use kanade::chat::tools::{ToolContext, ToolName};
 use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
-use kanade::infrastructure::llm::identity::Passthrough;
 use kanade::infrastructure::llm::{
     CompletionResponse, FakeAction, FakeProvider, FinishReason, Message,
 };
 use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::json;
 
-use crate::looping::{Ports, roster, settings};
+use crate::looping::{Ports, settings};
 use crate::model::{Scripted, capabilities, client};
 use crate::support::load;
 use crate::wire::kanade;
@@ -653,12 +652,8 @@ async fn filtered_then(
     let reserved = pilot.reserve_clean_retry("11", 1.0);
     settings.clean_retry = reserved;
     let persona = kanade();
-    let roster = roster(&world);
     let deps = AnswerDeps {
         client: &client,
-        codec: &Passthrough,
-        roster: &roster,
-        former: &[],
         route: None,
     };
     let generation = {

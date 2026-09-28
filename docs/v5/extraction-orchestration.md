@@ -87,35 +87,25 @@ No Twilight types cross into `src/extract`:
 
 ## The governed call
 
-Every call opens `ModelClient::open_extraction` (extraction priority,
-`permit_wait` 120 s queueing, `call_timeout` 120 s), an identity session via
-`identity::open_session` (Passthrough by default; an `external` route
-fails closed), and runs the reference loop: `complete`, then on
-`Next::Retry` one `answer_retry` in the same session, each request from
-`extraction_request` over `ExtractionAttempts::messages()`. There is no
-direct provider call. The answer goes through `plan_burst` with the
-injected wall clock as `now`.
+Every call opens `ModelClient::open_extraction_on` on the checked route
+(extraction priority, `permit_wait` 120 s queueing, `call_timeout` 120 s) and
+runs the reference loop: `complete`, then on `Next::Retry` one `answer_retry`
+in the same governed session, each request from `extraction_request` over
+`ExtractionAttempts::messages()`. There is no direct provider call. The
+answer goes through `plan_burst` with the injected wall clock as `now`.
 
-With pseudonymization on (`models.pseudonymize`) serve composes a live
-`PseudonymCodec` (bot identity from the guild cache, the boss catalog's
-lexicon, `<#channel>`/`<@&role>` names from the cache, and extraction's
-code-owned words as scanner exemptions: the system prompt, the user
-prompt's headings, weekday names, the retry instruction, the schema and the
-rendered BOSSES table). Every author is registered before any text is
-encoded; message ids render as per-request refs (`[1]`, `[2]`, …) and
-`evidence_message_ids` decode back through them (an unknown ref is a
-malformed answer, answered with the retry); stray snowflakes become opaque
-`Ref<n>`. Passthrough renders exactly v4's bytes. An empty roster sends
-nothing (the call fails, its messages stay unprocessed). A scanner refusal
-is outcome `identity_leak` (`Failure::IdentityLeak`): nothing was sent, the
-messages are marked processed (retrying the same prompt would be refused
-again), `identity_leak_blocked` is logged with the payload only, and the log
-row (its `message_ids`, `guardrail.identity_leak_blocked`) is the audit
-entry an operator rescans from. Rows built through a masking session carry
-`guardrail.pseudonymized: true`. The prompt-budget estimate opens its own
-session with `codec.open` (the one allowed exception to `open_session`: it
-is never sent), so it renders the same tokens and refs within a few
-characters per mention.
+`PassthroughSession` formats the prompt without rewriting it. Member names,
+member IDs, author labels, message IDs (including `evidence_message_ids`),
+message text and complete URLs are sent as supplied when present in the
+extraction context; model output is parsed/coerced without identity decoding.
+The roster is prompt context, not a privacy gate: an empty or unavailable
+roster does not trigger a masking refusal, and there is no provider-boundary
+identity or URL scanner. External and not-yet-classified aliases can receive
+the raw request without an opt-in; `guardrail.external_unmasked` is recorded
+only when a request was admitted. Prompt-budget estimation uses the same raw
+rendering and does not open a second model session. Historical `identity_leak`
+outcomes and `identity_leak_blocked` guardrails are not produced by current
+calls.
 
 ## Proposals
 
@@ -135,16 +125,15 @@ characters per mention.
   decided, or after the proposal succeeded; cards-only plans never claim
   it. The lead-in is labelled (`LineSource::as_str`) in the call's log
   `guardrail` as `{"nudges": [...]}`; the model's text is never logged.
-- **Rewrite.** `GovernedRewriter` guards the `rewrite` route with the
-  identity codec (an external route under passthrough is refused), opens
-  `ModelClient::open_rewrite` and sends one plain request. While the codec
-  pseudonymizes it needs a roster (`with_roster(RosterSource)`; none or an
-  empty one is `Misconfigured`, nothing sent): the persona text and seed are
-  encoded (instruction, moods, `Voice:` and `{boss}`/`{day}`/`{time}` stay
-  literal), the reply decoded, and a scanner refusal is `Unavailable` (the
-  seed line). Content filter,
+- **Rewrite.** `GovernedRewriter` snapshots the `rewrite` route and opens one
+  `ModelClient::open_rewrite_on` session; external and not-yet-classified
+  routes are allowed under normal governor admission, without an opt-in. The
+  persona prompt and seed are sent unchanged and the reply is consumed as
+  returned. The current rewrite prompt is designed not to carry member,
+  channel, boss or schedule data; if such data or URLs are supplied, they are
+  not pseudonymized or scanned. Content filter,
   cut-off or empty replies are `RewriteFailure::Refused`, misconfiguration
-  (`SessionError::is_misconfiguration`, a missing or refused route) is
+  (`SessionError::is_misconfiguration`, a missing or ungrouped route) is
   `Misconfigured`, anything else `Unavailable`; every case uses the seed.
 - **Supersede (v4 `_record`).** Before anything is proposed, each target
   (a run: `from_channel` = this channel, or a new boss set in this channel)

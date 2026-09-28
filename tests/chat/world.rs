@@ -20,7 +20,7 @@ use kanade::domain::schedule::{
     RunStatus, SchedulePolicy, ScheduleSnapshot,
 };
 use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
-use kanade::infrastructure::llm::identity::IdentitySession;
+use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use kanade::infrastructure::store::conformance::meta;
 use serde_json::Value;
@@ -272,15 +272,11 @@ impl World {
         common::snapshot(&self.service).await
     }
 
-    pub fn members(&self) -> &[Member] {
-        &self.guild.members
-    }
-
     /// Run one tool call through the dispatcher in v4's full-set mode.
     pub async fn run_tool(
         &mut self,
         step: &Value,
-        session: &mut dyn IdentitySession,
+        session: &mut PassthroughSession,
     ) -> ToolOutcome {
         let ctx = self.context(step);
         let mut offer = ToolOffer::full_set(ctx.read_only);
@@ -300,7 +296,7 @@ impl World {
         &mut self,
         ctx: &ToolContext,
         offer: &mut ToolOffer,
-        session: &mut dyn IdentitySession,
+        session: &mut PassthroughSession,
         name: &str,
         arguments: &Value,
     ) -> Dispatched {

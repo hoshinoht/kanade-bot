@@ -78,6 +78,43 @@ fn a_non_empty_environment_variable_overrides_one_key() {
 }
 
 #[test]
+fn retired_privacy_toml_keys_are_rejected_by_presence_before_environment_merge() {
+    for (path, value) in [
+        ("models.pseudonymize", "true"),
+        ("models.pseudonymize", "false"),
+        ("models.allow_external_unmasked", "true"),
+        ("models.allow_external_unmasked", "false"),
+    ] {
+        let key = path.strip_prefix("models.").unwrap();
+        let message = error(&format!("[models]\n{key} = {value}\n"));
+        assert_eq!(
+            message,
+            format!("kanade.toml key `{path}` is retired; remove it")
+        );
+        assert!(!message.contains(value));
+    }
+
+    let together = merge(
+        "[models]\npseudonymize = true\nallow_external_unmasked = false\n",
+        BTreeMap::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(together.contains("kanade.toml key `models."));
+    assert!(together.contains("is retired; remove it"));
+    assert!(!together.contains("true") && !together.contains("false"));
+
+    let mixed_sources = merge(
+        "[models]\npseudonymize = false\n",
+        env(&[("KANADE_ALLOW_EXTERNAL_UNMASKED", "1")]),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(mixed_sources.contains("models.pseudonymize"));
+    assert!(!mixed_sources.contains("false") && !mixed_sources.contains("1"));
+}
+
+#[test]
 fn unknown_keys_and_bad_types_name_the_key_only() {
     assert_eq!(
         error("[discord]\nguild = \"sentinel-value\"\n"),

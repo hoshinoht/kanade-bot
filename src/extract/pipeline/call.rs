@@ -1,6 +1,6 @@
 //! One governed extraction call (the `tests/extract/session.rs` reference
-//! loop): prompt through the identity session, `complete` then at most one
-//! `answer_retry` in the same extraction session, then `plan_burst`.
+//! loop): build a raw prompt, `complete` then at most one `answer_retry` in the
+//! same extraction session, then `plan_burst`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -25,9 +25,7 @@ use crate::extract::prompt::{
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use crate::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::{
-    IdentityLeakBlocked, IdentitySession, Member, open_session, unmasked,
-};
+use crate::infrastructure::llm::identity::{Member, PassthroughSession};
 use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message};
 
 /// Why a call produced no answer.
@@ -39,9 +37,6 @@ pub enum Failure {
     },
     /// The provider's content filter stopped the answer (`ContentFiltered`).
     ContentBlocked,
-    /// The boundary scanner refused the request: nothing was sent. The
-    /// messages are marked processed (a rescan reads them again).
-    IdentityLeak,
     Failed,
 }
 
@@ -138,12 +133,8 @@ pub(crate) struct CallRecord {
     pub redirected: usize,
     /// How each lead-in of this call was made (`LineSource::as_str`), for the log.
     pub nudges: Vec<&'static str>,
-    /// Sent to an external route without pseudonymization (operator override).
+    /// Sent to an external route with raw member data.
     pub external_unmasked: bool,
-    /// Built through a masking identity session.
-    pub pseudonymized: bool,
-    /// The scanner's refusal (kinds and count only).
-    pub leak: Option<IdentityLeakBlocked>,
 }
 
 impl CallRecord {
@@ -156,10 +147,9 @@ impl CallRecord {
         self.failure.is_none()
     }
 
-    /// Its messages count as read: answered, or refused for an identity
-    /// leak (retrying the same prompt would be refused again).
+    /// Its messages count as read after a successful answer.
     pub fn consumed(&self) -> bool {
-        matches!(self.failure, None | Some(Failure::IdentityLeak))
+        self.failure.is_none()
     }
 }
 
@@ -237,13 +227,9 @@ fn classify(error: &SessionError, limit: Duration) -> (AttemptOutcome, Failure) 
             ),
             _ => (failed(), Failure::Failed),
         },
-        SessionFailure::IdentityLeakBlocked(_) => (failed(), Failure::IdentityLeak),
         _ => (failed(), Failure::Failed),
     }
 }
-
-/// The error of a masked call with no roster: nothing is sent.
-pub const ROSTER_UNAVAILABLE: &str = "the member roster is unavailable; masked extraction needs it";
 
 impl<S, P, X, O> Extractor<S, P, X, O>
 where
@@ -290,8 +276,6 @@ where
             redirected: 0,
             nudges: Vec::new(),
             external_unmasked: false,
-            pseudonymized: false,
-            leak: None,
         }
     }
 
@@ -302,7 +286,7 @@ where
         channel_id: &str,
         loaded: &'a Loaded,
         chunk: &[WatchedMessage],
-        session: &mut dyn IdentitySession,
+        session: &mut PassthroughSession,
     ) -> Prepared<'a> {
         let zone = self.config.zone;
         let members = &loaded.members;
@@ -410,25 +394,11 @@ where
             );
             return record;
         };
-        let mut identity = match open_session(self.codec.as_ref(), &route, &loaded.members) {
-            Ok(session) => session,
-            Err(refused) => {
-                record.fail(Failure::Failed, refused.to_string());
-                return record;
-            }
-        };
         // Alias and level are read once here; the session keeps them.
         record.model.clone_from(&route.alias);
         record.reasoning = route.effort.or(self.config.reasoning);
-        record.external_unmasked = unmasked(&route, self.codec.as_ref());
-        record.pseudonymized = identity.masks();
-        // D4: masking without the roster could not hide member names; fail
-        // closed and leave the messages unprocessed for a later read.
-        if record.pseudonymized && loaded.members.is_empty() {
-            record.fail(Failure::Failed, ROSTER_UNAVAILABLE.into());
-            return record;
-        }
-        let prepared = self.prepare(channel_id, loaded, chunk, identity.as_mut());
+        let mut identity = PassthroughSession;
+        let prepared = self.prepare(channel_id, loaded, chunk, &mut identity);
         record.prompt = prompt_text(&prepared.messages);
         record.authors.extend(prepared.author_ids.clone());
 
@@ -444,7 +414,7 @@ where
             cut = self.cut(mark) => Err(cut),
             opened = self
                 .client
-                .open_extraction(channel_id, self.config.permit_wait, timeout) => Ok(opened),
+                .open_extraction_on(&route, channel_id, self.config.permit_wait, timeout) => Ok(opened),
         };
         let opened = match opened {
             Ok(opened) => opened,
@@ -454,28 +424,22 @@ where
             }
         };
         let mut session = match opened {
-            Ok(session) => session.with_scanner(identity.scanner()),
+            Ok(session) => session,
             Err(error) => {
                 let (_, failure) = classify(&error, timeout);
                 record.fail(failure, error.to_string());
                 return record;
             }
         };
-        // The route's alias, not the permit's: a model switched between the
-        // identity check above and the permit fails as `session-alias`
-        // instead of reaching a route the check never saw.
+        // The route's alias and group were pinned when the governed session opened.
         let alias = route.alias.clone();
         let started = Instant::now();
         let mut attempts = ExtractionAttempts::new(prepared.messages.clone());
         let mut failure = None;
         let mut first = true;
         let call: ExtractionCall = loop {
-            let request = extraction_request(
-                &alias,
-                attempts.messages().to_vec(),
-                record.reasoning,
-                identity.as_ref(),
-            );
+            let request =
+                extraction_request(&alias, attempts.messages().to_vec(), record.reasoning);
             let sending = async {
                 if first {
                     session.complete(&request).await
@@ -493,6 +457,7 @@ where
                 Err(cut) => {
                     record.model = alias;
                     record.requests = session.requests_used();
+                    record.external_unmasked = route.external && record.requests > 0;
                     record.latency_ms =
                         Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
                     record.fail(Failure::Failed, cut.into());
@@ -507,20 +472,18 @@ where
                 },
                 Err(error) => {
                     let (outcome, kind) = classify(&error, timeout);
-                    if let SessionFailure::IdentityLeakBlocked(blocked) = &error.failure {
-                        record.leak = Some(blocked.clone());
-                    }
                     failure = Some(kind);
                     outcome
                 }
             };
-            match attempts.record(outcome, identity.as_ref()) {
+            match attempts.record(outcome) {
                 Next::Retry => continue,
                 Next::Done(call) => break call,
             }
         };
         record.model = alias;
         record.requests = session.requests_used();
+        record.external_unmasked = route.external && record.requests > 0;
         record.latency_ms = Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
         record.raw = if call.raw.is_empty() {
             call.error.clone().unwrap_or_default()

@@ -1,7 +1,6 @@
 mod breaker;
 mod budget;
 mod config;
-mod identity_scan;
 mod pool;
 mod rate;
 mod recovery;
