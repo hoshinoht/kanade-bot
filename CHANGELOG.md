@@ -597,6 +597,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
   that panics again while the question is being cleaned up no longer aborts
   the process: cleanup is deferred off the unwinding stack and, if it still
   fails, only settles and refunds.
+- v5 extraction reads each message version once across live bursts, backlog
+  drains and startup/manual rescans (in-memory claims; the other reader
+  defers and gets the row back if the owner fails). Rows are marked read
+  before proposals or cards are posted, so a crash never repeats effects; an
+  edit during a running call drops the stale answer and the edit is proposed
+  instead (v4 proposed the old text). Gateway receipt times use the injected
+  clock.
 - v5 self-schedule lookup now recognizes an exact bot name copied into a
   model's participant argument without treating other members as self.
 - v5 day-of reminder fields now label only members still waiting for an answer

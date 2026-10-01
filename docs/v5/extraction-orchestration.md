@@ -95,6 +95,44 @@ No Twilight types cross into `src/extract`:
 - **Shutdown.** Closing the event channel drops buffered bursts (their
   messages stay unprocessed in the cache) and waits for flushes in flight.
 
+## One reader per message version
+
+Live bursts, backlog drains and rescans share one `Extractor` and its
+`Claims` (`pipeline/claims.rs`): a table of `(message id, content version)`
+(version = content hash and length, so an edit is a new version with its own
+claim) → owner token, bounded at `CLAIM_CAPACITY` (10,000).
+
+- **Claim before any call.** A flush claims its gated, unprocessed rows before
+  `should_extract`; a rescan claims each conversation just before its first
+  call. The owner then re-reads the rows by id (`messages_by_ids`) and keeps
+  only those whose cached content is still the claimed one and, except for a
+  manual rescan (which re-reads processed messages as v4 did), still
+  unprocessed.
+- **Losers never wait.** A row another pass holds is dropped from this pass
+  and its claim marked contended; the flush reports it in `PassReport.deferred`
+  and a rescan counts it in its channel result's `deferred`. A full table
+  defers new rows the same way and offers them to the backlog at once
+  (fail closed).
+- **Holding.** A flush holds until its commit returns; a rescan holds every
+  conversation's claims until the channel's one commit returns. A
+  `ClaimGuard` releases only entries carrying its own token, on return, panic
+  or task abort (poisoned locks are recovered). A released contended row that
+  was not marked processed is re-offered to `Pipeline::run`, which queues it
+  in the backlog (deduplicated; a flush re-filters processed rows).
+- **At-most-once effects.** Commit first marks each answered call's messages
+  processed with `ModelLogStore::mark_read_exact` (one transaction, all or
+  nothing, only if every message still has the content the call read), then
+  supersedes, proposes, posts the card and hands over answers. A call whose
+  messages were edited or deleted meanwhile applies nothing: its log row
+  carries `guardrail.stale_version = true` and all its messages are offered
+  again: unedited siblings read in the same call are re-read, an edited one is
+  left to its pending burst (the new version is read on its own), a deleted
+  one is gone. A stale rescan conversation is re-offered to the live backlog
+  the same way. A mark the store cannot write fails the call (`the messages could
+  not be marked read`), applies nothing and re-offers its messages. A crash
+  or panic after the mark never lets another pass apply the effects again.
+- Reconnect catch-up is unchanged (deferred).
+
 ## The governed call
 
 Every call opens `ModelClient::open_extraction_on` on the checked route
@@ -166,10 +204,12 @@ calls.
   is only for failures. Migration 0011 adds `extractions.refusals`; the
   admin API's `Extraction` schema does not expose it yet (follow-up for the
   API lane).
-- Answered calls mark their messages processed (`ModelLogStore::mark_read`),
-  each only if its content is still what the call read: a message edited
-  while the call was in flight stays unprocessed and its pending burst reads
-  the new text. Failed and turned-away calls leave them for a later read.
+- Answered calls mark their messages processed before any effect (see *One
+  reader per message version*): a message edited while the call was in
+  flight stays unprocessed, the stale answer applies nothing, and the pending
+  burst reads the new text. Failed and turned-away calls leave them for a
+  later read. (A quiet-channel burst with no call is still marked with
+  `mark_read`.)
 
 ## Extraction log
 
@@ -255,7 +295,8 @@ its new burst.
 - **Result** per channel (JSON in `results`): `channel_id`, `name`,
   `window`, `since`, `widened`, `backfilled`, `stored`, `gated`, `bursts`,
   `calls`, `extracted`, `proposals`, `refused`, `dropped`, `stale`,
-  `cancelled`, `unread`, `errors`. `errors` hold failed calls and what
+  `cancelled`, `unread`, `deferred` (rows another pass was reading),
+  `errors`. `errors` hold failed calls and what
   could not be written; turned-away calls are not failures (read again, or
   counted in `unread`). A thread whose history cannot be read is skipped
   (`thread_history_skipped` {thread_id, kind}) and named in `errors`.
@@ -277,5 +318,10 @@ extraction alias or effort change (`TODO(config slice)` in
   backlog at a fixed rate; rescans are paced by the same interval.
 - A turned-away burst is kept for a later read instead of being lost until
   the next rescan.
+- A message edited while its call was in flight: v4 applied the old answer
+  and then read the edit (a second card replacing the first); v5 drops the
+  stale answer (`stale_version`) and cards only the edit (user decision
+  2026-10-01; no frozen vector covers it). A live read and a rescan never
+  both admit the same message version.
 - A rescan dry run (`post=False`, `/debug extract`) is not part of this
   slice.

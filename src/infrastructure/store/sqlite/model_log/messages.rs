@@ -114,6 +114,34 @@ pub(super) async fn mark_read(
     Ok(done)
 }
 
+/// All-or-nothing [`mark_read`]: every distinct message is checked before
+/// any is written, all under the caller's `BEGIN IMMEDIATE`.
+pub(super) async fn mark_read_exact(
+    conn: &mut SqliteConnection,
+    read: &[ReadMessage],
+    at: &DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut distinct = Vec::new();
+    for entry in read {
+        if !seen.insert(entry.id.as_str()) {
+            continue;
+        }
+        let found = sqlx::query("SELECT 1 FROM messages WHERE id = ?1 AND content = ?2")
+            .bind(&entry.id)
+            .bind(&entry.content)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(store_error)?;
+        if found.is_none() {
+            return Ok(false);
+        }
+        distinct.push(entry.clone());
+    }
+    mark_read(&mut *conn, &distinct, at).await?;
+    Ok(true)
+}
+
 pub(super) async fn delete(conn: &mut SqliteConnection, id: &str) -> Result<bool, StoreError> {
     let done = sqlx::query("DELETE FROM messages WHERE id = ?1")
         .bind(id)

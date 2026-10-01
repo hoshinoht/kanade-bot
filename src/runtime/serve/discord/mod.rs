@@ -341,6 +341,7 @@ where
         connection,
         Box::new(move |application| ready_transport.application_ready(application)),
         guild_ready,
+        Arc::clone(&wiring.clock),
     )
     .with_feed(extraction.feed.take());
     let messages = handler.messages.clone();

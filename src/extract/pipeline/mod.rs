@@ -3,9 +3,11 @@
 //! governed model call per prompt-sized piece, planned changes, proposals
 //! through the scheduler and one extraction log row per call. Discord is
 //! reached only through the ports (`bot::cards::CardOutbox` posts the cards).
-//! `self_service` applies the self-service redirect and the weekly nudge.
+//! `self_service` applies the self-service redirect and the weekly nudge;
+//! `claims` gives each message version one reader at a time.
 
 mod call;
+mod claims;
 mod commit;
 mod config;
 mod debounce;
@@ -18,6 +20,7 @@ mod self_service;
 
 pub(crate) use call::CallRecord;
 pub use call::Failure;
+pub use claims::{CLAIM_CAPACITY, ClaimGuard, Claims};
 pub use config::{
     CONTEXT_WINDOW, CallContext, DEFAULT_BACKLOG_CAPACITY, DEFAULT_CALL_TIMEOUT,
     DEFAULT_CONTEXT_MESSAGES, DEFAULT_CONTEXT_TOKENS, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL,
@@ -27,8 +30,8 @@ pub use config::{
 pub use debounce::Bursts;
 pub use driver::Pipeline;
 pub use extractor::{
-    CALL_CANCELLED, CALL_SWITCHED_OFF, Deps, Extractor, HISTORY_UNREADABLE, PassReport,
-    SCHEDULE_UNREADABLE,
+    CALL_CANCELLED, CALL_SWITCHED_OFF, Deps, Extractor, HISTORY_UNREADABLE, MESSAGES_UNWRITABLE,
+    PassReport, SCHEDULE_UNREADABLE,
 };
 pub use outcome::extraction_outcome;
 pub use ports::{

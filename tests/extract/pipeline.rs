@@ -485,39 +485,52 @@ async fn a_full_backlog_drops_its_oldest_messages_and_says_so() {
     assert!(drops.iter().all(|d| d.capacity == 3));
 }
 
+/// v5 difference from v4 (user decision 2026-10-01, no frozen vector covers
+/// it): an answer about a version edited during its call applies nothing;
+/// the edit is its own version, read once, and makes the only card.
 #[tokio::test(start_paused = true)]
-async fn an_edit_during_an_in_flight_read_is_read_again() {
-    let slow = FakeAction::Delayed {
-        delay: Duration::from_secs(10),
-        action: Box::new(moved("9pm", "101")),
-    };
-    let world = World::new(vec![slow, moved("10pm", "101")]).await;
-    let (events, _loop) = world.pipeline();
-    events
-        .send(post("@here hstar wed 9pm"))
-        .await
-        .expect("send");
-    after(5).await;
-    let edit = message("101", MY, local(8, 30, 13, 1), "@here hstar wed 10pm");
-    events.send(MessageEvent::Edited(edit)).await.expect("send");
-    after(10).await;
-    assert_eq!(world.requests(), 1);
-    assert!(
-        !world.processed("101").await,
-        "the first read saw 9pm; the edit must be read again"
-    );
-    let first = world.live_proposals().await[0].draft.id.clone();
-    after(90).await;
-    assert_eq!(world.requests(), 2);
-    let logs = world.logs().await;
-    assert!(logs[1].prompt.contains("@here hstar wed 10pm"));
-    let live = world.live_proposals().await;
-    assert_eq!(live.len(), 1);
-    assert_ne!(live[0].draft.id, first, "the correction replaced 9pm");
-    let cards = world.outbox.cards.lock().unwrap().clone();
-    assert_eq!(cards[1].entries[0].time_ref.as_deref(), Some("10pm"));
-    assert_eq!(cards[1].superseded, [first]);
-    assert!(world.processed("101").await);
+async fn an_edit_during_an_in_flight_read_drops_the_stale_answer() {
+    for _ in 0..10 {
+        let slow = FakeAction::Delayed {
+            delay: Duration::from_secs(10),
+            action: Box::new(moved("9pm", "101")),
+        };
+        let world = World::new(vec![slow, moved("10pm", "101")]).await;
+        let (events, _loop) = world.pipeline();
+        events
+            .send(post("@here hstar wed 9pm"))
+            .await
+            .expect("send");
+        after(5).await;
+        let edit = message("101", MY, local(8, 30, 13, 1), "@here hstar wed 10pm");
+        events.send(MessageEvent::Edited(edit)).await.expect("send");
+        after(10).await;
+        assert_eq!(world.requests(), 1);
+        assert!(!world.processed("101").await, "the edit is still unread");
+        assert!(
+            world.live_proposals().await.is_empty(),
+            "the 9pm answer is about a version nobody sees any more"
+        );
+        assert!(world.outbox.cards.lock().unwrap().is_empty());
+        let logs = world.logs().await;
+        assert_eq!(logs[0].guardrail["stale_version"], true);
+        assert_eq!(logs[0].outcome, ExtractionOutcome::NoChange);
+        assert!(logs[0].proposal_ids.is_empty());
+
+        after(90).await;
+        assert_eq!(world.requests(), 2, "the edit is admitted once");
+        let logs = world.logs().await;
+        assert!(logs[1].prompt.contains("@here hstar wed 10pm"));
+        assert_eq!(logs[1].guardrail.get("stale_version"), None);
+        let live = world.live_proposals().await;
+        assert_eq!(live.len(), 1);
+        let cards = world.outbox.cards.lock().unwrap().clone();
+        assert_eq!(cards.len(), 1, "one card, for the edit");
+        assert_eq!(cards[0].entries[0].time_ref.as_deref(), Some("10pm"));
+        assert!(cards[0].superseded.is_empty());
+        assert!(world.processed("101").await);
+        assert_eq!(world.extractor.claims().held(), 0);
+    }
 }
 
 #[tokio::test(start_paused = true)]

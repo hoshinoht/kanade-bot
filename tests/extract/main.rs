@@ -1,12 +1,14 @@
 //! Replays the frozen v4 extraction vectors: the pure rules (gate, window,
 //! resolve, match, merge) and schema, prompt and burst planning (parse,
 //! prompt, plan), and commit through the v5 proposal path. `pipeline` and
-//! `rescan` drive the orchestration over pipeline-level fakes (`fakes`).
+//! `rescan` drive the orchestration over pipeline-level fakes (`fakes`);
+//! `claims` races them for one admission per message version.
 //! `redirect` and `nudge` cover the v5 self-service redirect and its persona
 //! nudges (no v4 vectors); `self_service` wires them through the governed
 //! rewrite and the pipeline. `cards` replays the proposal card text.
 
 mod cards;
+mod claims;
 mod commit;
 mod fakes;
 mod gate;

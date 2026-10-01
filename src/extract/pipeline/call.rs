@@ -137,6 +137,8 @@ pub(crate) struct CallRecord {
     pub nudges: Vec<&'static str>,
     /// Sent to an external route with raw member data.
     pub external_unmasked: bool,
+    /// Its messages were edited or deleted before the commit: nothing kept.
+    pub stale_version: bool,
     pub context_window: usize,
     pub context_reserve: usize,
     pub context_source: &'static str,
@@ -149,11 +151,6 @@ impl CallRecord {
     }
 
     pub fn ok(&self) -> bool {
-        self.failure.is_none()
-    }
-
-    /// Its messages count as read after a successful answer.
-    pub fn consumed(&self) -> bool {
         self.failure.is_none()
     }
 }
@@ -284,6 +281,7 @@ where
             redirected: 0,
             nudges: Vec::new(),
             external_unmasked: false,
+            stale_version: false,
             context_window: context.window,
             context_reserve: context.reserve,
             context_source: context.source,

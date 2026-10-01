@@ -411,6 +411,7 @@ async fn fanout_bounds_task_drain_and_aborts_hanging_command_tasks() {
         ConnectionStatus::new(),
         Box::new(|_| {}),
         guild_ready,
+        Arc::new(kanade::api::auth::system_now),
     );
 
     fanout
@@ -458,6 +459,78 @@ async fn fanout_bounds_task_drain_and_aborts_hanging_command_tasks() {
         !calls
             .iter()
             .any(|call| matches!(call, Call::CompleteDeferred { .. }))
+    );
+}
+
+/// A fan-out whose feed is returned and whose clock reads `now`.
+fn feeding_fanout(
+    now: Arc<std::sync::Mutex<chrono::DateTime<chrono::Utc>>>,
+) -> (
+    Fanout<FakeDiscord>,
+    mpsc::UnboundedReceiver<kanade::bot::extract_feed::FeedItem>,
+) {
+    let (roster, _roster_jobs) = mpsc::unbounded_channel();
+    let (reactions, _reaction_jobs) = mpsc::unbounded_channel();
+    let (guild_ready, _ready) = watch::channel(false);
+    let dispatcher = drain_dispatcher();
+    let (feed, items) = kanade::bot::extract_feed::MessageFeed::channel();
+    let fanout = Fanout::new(
+        guild(),
+        Arc::new(FakeDiscord::new()),
+        Box::new(move |_| Arc::clone(&dispatcher)),
+        Arc::new(|| None),
+        Arc::new(Roster::new()),
+        roster,
+        reactions,
+        ConnectionStatus::new(),
+        Box::new(|_| {}),
+        guild_ready,
+        Arc::new(move || *now.lock().unwrap()),
+    )
+    .with_feed(Some(feed));
+    (fanout, items)
+}
+
+#[tokio::test]
+async fn fanout_stamps_received_messages_with_the_injected_clock() {
+    use kanade::bot::events::GuildMessage;
+    use kanade::bot::extract_feed::{FeedItem, origin};
+    use kanade::extract::pipeline::MessageOrigin;
+
+    // `message_json` is posted at 2026-09-25 12:00:00 UTC.
+    let at = |seconds| {
+        chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 9, 25, 12, 0, 0).unwrap()
+            + chrono::TimeDelta::seconds(seconds)
+    };
+    let now = Arc::new(std::sync::Mutex::new(at(30)));
+    let (mut fanout, mut items) = feeding_fanout(Arc::clone(&now));
+    let message = || {
+        Box::new(GuildMessage {
+            message: parse_message(message_json(1, CHANNEL, Some(GUILD), "kalos at 9?")),
+            origin_channel_id: Id::new(CHANNEL),
+            thread_id: None,
+        })
+    };
+    let received = |item: Option<FeedItem>| match item {
+        Some(FeedItem::Posted { received_at, .. } | FeedItem::Edited { received_at, .. }) => {
+            received_at
+        }
+        other => panic!("unexpected {other:?}"),
+    };
+
+    fanout.handle(BotEvent::MessageCreated(message())).await;
+    let stamped = received(items.recv().await);
+    assert_eq!(stamped, at(30), "stamped by the injected clock");
+    assert_eq!(origin(&message().message, stamped), MessageOrigin::Live);
+
+    *now.lock().unwrap() = at(61);
+    fanout.handle(BotEvent::MessageUpdated(message())).await;
+    let stamped = received(items.recv().await);
+    assert_eq!(stamped, at(61));
+    assert_eq!(
+        origin(&message().message, stamped),
+        MessageOrigin::Replay,
+        "over 60 s late by the injected clock"
     );
 }
 

@@ -15,7 +15,7 @@ use crate::fakes::{
 
 type Jobs = Rescans<
     kanade::infrastructure::store::MemoryScheduleStore,
-    kanade::infrastructure::llm::FakeProvider,
+    crate::fakes::Model,
     crate::fakes::Scheduler,
     crate::fakes::Recorder,
     FakeHistory,

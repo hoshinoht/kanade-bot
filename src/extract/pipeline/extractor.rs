@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 
 use super::call::{CallRecord, Failure, Loaded};
+use super::claims::{ClaimGuard, Claims};
 use super::config::{CONTEXT_WINDOW, CallContext, LiveContext, PipelineConfig, RECENT_SCHEDULING};
 use super::ports::{Guild, IncomingMessage, Outbox, Proposer, SelfServiceDeps};
 use crate::domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
@@ -27,6 +28,9 @@ use crate::infrastructure::llm::identity::PassthroughSession;
 /// store text can carry paths, so it goes only to the server log.
 pub const SCHEDULE_UNREADABLE: &str = "the schedule could not be read";
 pub const HISTORY_UNREADABLE: &str = "the channel history could not be read";
+/// Logged when a call's messages could not be marked processed: its changes
+/// are not applied and the messages are read again.
+pub const MESSAGES_UNWRITABLE: &str = "the messages could not be marked read";
 /// The error of a call cut by [`Extractor::cancel_calls`] (logged `failed`;
 /// its messages stay unprocessed for a later read).
 pub const CALL_CANCELLED: &str = "cancelled: serve shut down";
@@ -44,7 +48,7 @@ struct Cut {
 
 /// The fixed sentence for a call log; the store's own text goes to stderr
 /// as a structured event.
-fn store_failure(sentence: &'static str, error: &StoreError) -> String {
+pub(super) fn store_failure(sentence: &'static str, error: &StoreError) -> String {
     let event = serde_json::json!({
         "level": "WARN",
         "event": "extraction_store_failed",
@@ -85,6 +89,9 @@ pub struct PassReport {
     pub stale: usize,
     /// Calls that failed, and anything the pass could not write.
     pub errors: Vec<String>,
+    /// Messages another pass was reading (or the claim table was full);
+    /// they are offered again once that pass lets go of them unread.
+    pub deferred: usize,
     /// Messages of calls the governor turned away, to be read again later.
     pub turned_away: Vec<BacklogEntry>,
     /// When the governor said to try again (breaker probe or rate wait).
@@ -103,6 +110,7 @@ pub struct Extractor<S, P, X, O> {
     pub(super) config: PipelineConfig,
     live_context: Option<LiveContext>,
     cancel: tokio::sync::watch::Sender<Cut>,
+    claims: Claims,
 }
 
 impl<S, P, X, O> std::fmt::Debug for Extractor<S, P, X, O> {
@@ -164,6 +172,7 @@ where
             config,
             live_context: None,
             cancel: tokio::sync::watch::Sender::new(Cut::default()),
+            claims: Claims::default(),
         }
     }
 
@@ -217,6 +226,35 @@ where
 
     pub fn config(&self) -> &PipelineConfig {
         &self.config
+    }
+
+    /// Who is reading which message version right now.
+    pub fn claims(&self) -> &Claims {
+        &self.claims
+    }
+
+    /// `won` read again after claiming: only rows whose cached content is
+    /// still the claimed one and, when `unprocessed_only`, still unread.
+    pub(crate) async fn recheck(
+        &self,
+        won: Vec<WatchedMessage>,
+        unprocessed_only: bool,
+    ) -> Result<Vec<WatchedMessage>, StoreError> {
+        if won.is_empty() {
+            return Ok(won);
+        }
+        let ids: Vec<String> = won.iter().map(|row| row.id.clone()).collect();
+        let current = self.store.messages_by_ids(&ids).await?;
+        Ok(won
+            .into_iter()
+            .filter(|row| {
+                current.iter().any(|now| {
+                    now.id == row.id
+                        && now.content == row.content
+                        && (!unprocessed_only || now.processed_at.is_none())
+                })
+            })
+            .collect())
     }
 
     pub(crate) fn new_id(&self) -> String {
@@ -299,9 +337,29 @@ where
         let bosses = self.guild.bosses();
         let lexicon = BossLexicon::new(&bosses);
         let roster = self.roster_ids();
-        let (rows, results): (Vec<WatchedMessage>, Vec<GateResult>) = cached
+        let candidates: Vec<WatchedMessage> = cached
             .into_iter()
             .filter(|row| wanted.contains(row.id.as_str()) && row.processed_at.is_none())
+            .filter(|row| gated(row, self.guild.as_ref(), &lexicon, &roster).is_some())
+            .collect();
+        if candidates.is_empty() {
+            return report;
+        }
+        // Held until this pass's commit returns (or it unwinds).
+        let mut claim = self.claims.hold();
+        let (won, deferred) = claim.claim(candidates);
+        report.deferred = deferred;
+        // Another pass may have read (or an edit replaced) a row between the
+        // read above and the claim.
+        let won = match self.recheck(won, true).await {
+            Ok(rows) => rows,
+            Err(error) => {
+                report.errors.push(error.to_string());
+                return report;
+            }
+        };
+        let (rows, results): (Vec<WatchedMessage>, Vec<GateResult>) = won
+            .into_iter()
             .filter_map(|row| {
                 let result = gated(&row, self.guild.as_ref(), &lexicon, &roster)?;
                 Some((row, result))
@@ -328,14 +386,20 @@ where
             .any(|row| gate::evaluate(&row.content, &lexicon, &roster).strong());
         if !gate::should_extract(&results, scheduling) {
             let read: Vec<ReadMessage> = rows.iter().map(read_of).collect();
-            if let Err(error) = self.store.mark_read(&read, now).await {
-                report.errors.push(error.to_string());
+            match self.store.mark_read(&read, now).await {
+                Ok(marked) if marked == read.len() as u64 => claim.marked(&read),
+                Ok(_) => {}
+                Err(error) => report.errors.push(error.to_string()),
             }
             return report;
         }
         let records = self.call_burst(channel_id, rows).await;
         let consolidate = records.len() > 1;
-        self.commit(channel_id, records, consolidate).await
+        let mut committed = self
+            .commit(channel_id, records, consolidate, &mut claim)
+            .await;
+        committed.deferred = report.deferred;
+        committed
     }
 
     /// Everything the prompts for `rows` are built from.
@@ -464,8 +528,9 @@ where
         &self,
         channel_id: &str,
         records: Vec<CallRecord>,
+        claim: &mut ClaimGuard<'_>,
     ) -> PassReport {
-        self.commit(channel_id, records, true).await
+        self.commit(channel_id, records, true, claim).await
     }
 }
 

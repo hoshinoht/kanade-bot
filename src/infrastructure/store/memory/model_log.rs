@@ -22,6 +22,8 @@ pub(super) struct LogTables {
     rescans: BTreeMap<String, RescanJob>,
     allowances: BTreeMap<String, AllowanceOverride>,
     tips: BTreeSet<(String, DateTime<Utc>)>,
+    /// Test hook: `mark_read_exact` fails as a backend error.
+    fail_exact_marks: bool,
 }
 
 fn optional(at: Option<DateTime<Utc>>) -> Option<DateTime<Utc>> {
@@ -69,6 +71,12 @@ impl MemoryScheduleStore {
         self.logs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Make every later `mark_read_exact` fail (or succeed again), as a
+    /// backend error would.
+    pub fn fail_exact_marks(&self, fail: bool) {
+        self.logs().fail_exact_marks = fail;
     }
 }
 
@@ -124,6 +132,34 @@ impl ModelLogStore for MemoryScheduleStore {
             }
         }
         Ok(done)
+    }
+
+    async fn mark_read_exact(
+        &self,
+        read: &[ReadMessage],
+        at: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let mut logs = self.logs();
+        if logs.fail_exact_marks {
+            return Err(StoreError::Backend("messages are unwritable".into()));
+        }
+        // A repeated id counts once: the first read of it is checked.
+        let mut seen = BTreeSet::new();
+        let read: Vec<&ReadMessage> = read.iter().filter(|entry| seen.insert(&entry.id)).collect();
+        let matches = read.iter().all(|entry| {
+            logs.messages
+                .get(&entry.id)
+                .is_some_and(|message| message.content == entry.content)
+        });
+        if !matches {
+            return Ok(false);
+        }
+        for entry in read {
+            if let Some(message) = logs.messages.get_mut(&entry.id) {
+                message.processed_at = Some(micros(at));
+            }
+        }
+        Ok(true)
     }
 
     async fn delete_message(&self, id: &str) -> Result<bool, StoreError> {

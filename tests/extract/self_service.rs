@@ -52,7 +52,9 @@ fn rewrite_prompt() -> RewritePrompt {
     )
 }
 
-fn adapter(client: Arc<ModelClient<FakeProvider>>) -> GovernedRewriter<FakeProvider> {
+fn adapter<P: kanade::infrastructure::llm::LlmProvider>(
+    client: Arc<ModelClient<P>>,
+) -> GovernedRewriter<P> {
     GovernedRewriter::new(client)
 }
 

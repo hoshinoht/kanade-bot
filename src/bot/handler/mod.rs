@@ -18,6 +18,7 @@ use twilight_model::id::{
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
 
+use crate::api::auth::Clock;
 use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
@@ -82,6 +83,8 @@ pub struct Fanout<T> {
     pub chat: Option<ChatFeed>,
     /// Extraction's message feed; `None` counts messages only.
     feed: Option<MessageFeed>,
+    /// Stamps when a message arrived (its live/replay cut-off).
+    clock: Clock,
     self_id: Option<Id<UserMarker>>,
     /// A `READY` arrived and its guild has not been synced yet.
     sync_pending: bool,
@@ -101,6 +104,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         connection: ConnectionStatus,
         on_ready: Box<dyn FnMut(Id<ApplicationMarker>) + Send>,
         guild_ready: watch::Sender<bool>,
+        clock: Clock,
     ) -> Self {
         Self {
             guild,
@@ -117,6 +121,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             messages: MessageCounts::default(),
             chat: None,
             feed: None,
+            clock,
             self_id: None,
             sync_pending: false,
             tasks: Vec::new(),
@@ -308,7 +313,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                     message,
                     self_id: self.self_id,
                     handled_by_chat,
-                    received_at: crate::api::auth::system_now(),
+                    received_at: (self.clock)(),
                 });
             }
             BotEvent::MessageUpdated(message) => {
@@ -316,7 +321,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                 self.forward(FeedItem::Edited {
                     message,
                     self_id: self.self_id,
-                    received_at: crate::api::auth::system_now(),
+                    received_at: (self.clock)(),
                 });
             }
             BotEvent::MessagesDeleted(deleted) => {

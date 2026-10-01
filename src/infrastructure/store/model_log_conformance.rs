@@ -17,6 +17,7 @@ use crate::domain::scheduler::StoreError;
 pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     messages_cache_edits_and_windows(make().await).await;
     read_marks_skip_messages_edited_since(make().await).await;
+    exact_read_marks_are_all_or_nothing(make().await).await;
     extraction_logs_round_trip_and_refuse_bad_rows(make().await).await;
     extraction_filters_combine_and_page(make().await).await;
     chat_logs_round_trip_with_rounds(make().await).await;
@@ -224,6 +225,76 @@ async fn read_marks_skip_messages_edited_since<S: ModelLogStore>(store: S) {
             .expect("mark"),
         1,
         "read marks: the edited text, once read, is marked"
+    );
+}
+
+async fn exact_read_marks_are_all_or_nothing<S: ModelLogStore>(store: S) {
+    let at = utc(20, 12, 0);
+    for (id, text) in [("m-1", "Lotus 9pm?"), ("m-2", "Lotus ok")] {
+        store
+            .upsert_message(message(id, "900", at, text))
+            .await
+            .expect("insert");
+    }
+    let read = |id: &str, content: &str| ReadMessage {
+        id: id.into(),
+        content: content.into(),
+    };
+    let pending = async || {
+        let rows = store
+            .channel_messages("900", utc(1, 0, 0), true)
+            .await
+            .expect("pending");
+        ids(&rows, |m| &m.id)
+    };
+    store
+        .upsert_message(message("m-1", "900", at, "Lotus 10pm?"))
+        .await
+        .expect("edit");
+    // One stale version: nothing is marked, not even the unchanged row.
+    assert!(
+        !store
+            .mark_read_exact(&[read("m-1", "Lotus 9pm?"), read("m-2", "Lotus ok")], at)
+            .await
+            .expect("mark"),
+        "exact marks: a stale version refuses the whole set"
+    );
+    assert_eq!(
+        pending().await,
+        ["m-1", "m-2"],
+        "exact marks: nothing written"
+    );
+    assert!(
+        !store
+            .mark_read_exact(&[read("m-2", "Lotus ok"), read("absent", "x")], at)
+            .await
+            .expect("mark"),
+        "exact marks: a missing row refuses the whole set"
+    );
+    assert_eq!(pending().await, ["m-1", "m-2"]);
+    // A repeated id counts once, its first read checked.
+    assert!(
+        store
+            .mark_read_exact(
+                &[
+                    read("m-1", "Lotus 10pm?"),
+                    read("m-2", "Lotus ok"),
+                    read("m-2", "Lotus ok"),
+                    read("m-1", "Lotus 9pm?"),
+                ],
+                at,
+            )
+            .await
+            .expect("mark"),
+        "exact marks: every current version marks"
+    );
+    assert!(pending().await.is_empty(), "exact marks: all written");
+    // Marking again (a manual re-read) is allowed.
+    assert!(
+        store
+            .mark_read_exact(&[read("m-2", "Lotus ok")], at)
+            .await
+            .expect("again")
     );
 }
 

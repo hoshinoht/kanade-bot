@@ -39,6 +39,18 @@ pub struct Pipeline<S, P, X, O> {
     tasks: JoinSet<Done>,
     draining: bool,
     next_drain: Instant,
+    /// Rows another pass released unread after this loop wanted them.
+    reoffers: Option<mpsc::UnboundedReceiver<BacklogEntry>>,
+}
+
+async fn reoffered(reoffers: &mut Option<mpsc::UnboundedReceiver<BacklogEntry>>) -> BacklogEntry {
+    match reoffers {
+        Some(receiver) => match receiver.recv().await {
+            Some(entry) => entry,
+            None => pending().await,
+        },
+        None => pending().await,
+    }
 }
 
 async fn at(when: Option<Instant>) {
@@ -65,6 +77,7 @@ where
 {
     pub fn new(extractor: Arc<Extractor<S, P, X, O>>) -> Self {
         let capacity = extractor.config().backlog_capacity;
+        let reoffers = extractor.claims().take_reoffers();
         Self {
             extractor,
             bursts: Bursts::new(),
@@ -72,6 +85,7 @@ where
             tasks: JoinSet::new(),
             draining: false,
             next_drain: Instant::now(),
+            reoffers,
         }
     }
 
@@ -97,6 +111,7 @@ where
                     }
                 }
                 () = at(drain) => self.drain_one(),
+                entry = reoffered(&mut self.reoffers) => self.reoffer(entry).await,
             }
         }
         self.bursts.drain();
@@ -147,6 +162,16 @@ where
         {
             self.spawn(Source::Live, message.channel_id.clone(), burst);
         }
+    }
+
+    /// A deferred row whose reader let go of it unread: the backlog reads it
+    /// (a pending burst already holding it reads it anyway).
+    async fn reoffer(&mut self, entry: BacklogEntry) {
+        if self.bursts.contains(&entry.message_id) {
+            return;
+        }
+        let dropped = self.backlog.push(entry);
+        self.audit(dropped).await;
     }
 
     fn spawn(&mut self, source: Source, channel: String, burst: Vec<BacklogEntry>) {

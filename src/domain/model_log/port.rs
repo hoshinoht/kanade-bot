@@ -71,6 +71,16 @@ pub trait ModelLogStore {
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<u64, StoreError>> + Send;
 
+    /// Mark read messages processed at `at` only if every one is cached with
+    /// the content that was read (a repeated id counts once): all or
+    /// nothing, in one transaction. `false` (nothing written) when any was
+    /// edited or deleted meanwhile.
+    fn mark_read_exact(
+        &self,
+        read: &[ReadMessage],
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send;
+
     /// Forget a deleted message; `true` when it was cached.
     fn delete_message(&self, id: &str) -> impl Future<Output = Result<bool, StoreError>> + Send;
 

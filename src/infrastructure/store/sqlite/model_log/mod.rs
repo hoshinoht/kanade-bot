@@ -106,6 +106,14 @@ impl ModelLogStore for SqliteStore {
         write_txn!(self, tx, messages::mark_read(&mut tx, read, &at))
     }
 
+    async fn mark_read_exact(
+        &self,
+        read: &[ReadMessage],
+        at: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        write_txn!(self, tx, messages::mark_read_exact(&mut tx, read, &at))
+    }
+
     async fn delete_message(&self, id: &str) -> Result<bool, StoreError> {
         write_txn!(self, tx, messages::delete(&mut tx, id))
     }

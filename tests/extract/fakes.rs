@@ -1,6 +1,7 @@
 //! Pipeline-level fakes: a pinned wall clock, counted ids, a guild, the real
 //! scheduler proposal service over the memory store, an outbox recorder, a
-//! history source and a `FakeProvider` behind a real governor.
+//! history source and a `FakeProvider` behind a real governor (wrapped in
+//! [`Model`] for gates and injected panics).
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -37,7 +38,8 @@ use kanade::infrastructure::llm::governor::{
 };
 use kanade::infrastructure::llm::identity::Member;
 use kanade::infrastructure::llm::{
-    CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy, Usage,
+    ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits, FakeAction, FakeProvider,
+    FinishReason, LlmProvider, RetryPolicy, Usage,
 };
 use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
 use tokio::sync::mpsc;
@@ -56,7 +58,7 @@ pub const KANON: &str = "114200000000000044";
 pub const STRANGER: &str = "114200000000000099";
 
 pub type Service<'a> = SchedulerService<StoreRef<'a, MemoryScheduleStore>, Ids, TestClock>;
-pub type Core = Extractor<MemoryScheduleStore, FakeProvider, Scheduler, Recorder>;
+pub type Core = Extractor<MemoryScheduleStore, Model, Scheduler, Recorder>;
 
 pub fn zone() -> Tz {
     chrono_tz::Asia::Kuala_Lumpur
@@ -254,6 +256,8 @@ pub struct Recorder {
     pub fail_posts: AtomicBool,
     /// Report every card and link as saved for a later pass.
     pub pending_posts: AtomicBool,
+    /// Panic in the next `card` (after recording it).
+    pub panic_cards: AtomicBool,
 }
 
 impl Recorder {
@@ -276,6 +280,9 @@ impl Outbox for Recorder {
 
     async fn card(&self, card: Card) -> PostResult {
         self.cards.lock().unwrap().push(card);
+        if self.panic_cards.swap(false, Ordering::SeqCst) {
+            panic!("injected card panic");
+        }
         self.result()
     }
 
@@ -382,12 +389,59 @@ pub fn nothing() -> FakeAction {
     reply(r#"{"amendments": [], "summary": "no schedule change"}"#)
 }
 
+/// How long an injected panic waits inside the model call before it fires.
+pub const PANIC_AFTER: Duration = Duration::from_secs(30);
+
+/// [`FakeProvider`] with test hooks: a gate that holds every call until the
+/// test releases a permit, and chosen calls that panic mid-flight.
+pub struct Model {
+    pub fake: Arc<FakeProvider>,
+    calls: AtomicUsize,
+    /// Zero-based call numbers that panic [`PANIC_AFTER`] into the call.
+    pub panics: Mutex<HashSet<usize>>,
+    /// While set, each call waits for one permit before it answers.
+    pub gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+}
+
+impl Model {
+    /// Hold every later call until the test adds a permit to the gate.
+    pub fn close_gate(&self) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *self.gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+
+    pub fn requests(&self) -> Vec<ChatRequest> {
+        self.fake.requests()
+    }
+
+    pub fn panic_on(&self, call: usize) {
+        self.panics.lock().unwrap().insert(call);
+    }
+}
+
+impl LlmProvider for Model {
+    fn complete(&self, request: &ChatRequest) -> CompletionFuture<'_> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let panics = self.panics.lock().unwrap().contains(&call);
+        let gate = self.gate.lock().unwrap().clone();
+        let answer = self.fake.complete(request);
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                gate.acquire().await.expect("gate open").forget();
+            }
+            if panics {
+                tokio::time::sleep(PANIC_AFTER).await;
+                panic!("injected model panic");
+            }
+            answer.await
+        })
+    }
+}
+
 /// `grouped: false` routes extraction to an alias in no backend group, which
 /// the governor refuses for good.
-pub fn client(
-    actions: Vec<FakeAction>,
-    grouped: bool,
-) -> (Arc<FakeProvider>, Arc<ModelClient<FakeProvider>>) {
+pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<ModelClient<Model>>) {
     let config = GovernorConfig {
         groups: vec![GroupConfig {
             name: "local".into(),
@@ -415,7 +469,12 @@ pub fn client(
         policy: GovernorPolicy::default(),
     };
     let governor = Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("valid config"));
-    let provider = Arc::new(FakeProvider::new(actions));
+    let provider = Arc::new(Model {
+        fake: Arc::new(FakeProvider::new(actions)),
+        calls: AtomicUsize::new(0),
+        panics: Mutex::new(HashSet::new()),
+        gate: Mutex::new(None),
+    });
     let retry = RetryPolicy {
         total_deadline: Duration::from_secs(30),
         max_attempts: 3,
@@ -434,7 +493,9 @@ pub fn client(
 pub struct World {
     pub store: Arc<MemoryScheduleStore>,
     pub provider: Arc<FakeProvider>,
-    pub client: Arc<ModelClient<FakeProvider>>,
+    /// The hooks around `provider`.
+    pub model: Arc<Model>,
+    pub client: Arc<ModelClient<Model>>,
     pub outbox: Arc<Recorder>,
     pub guild: Arc<FakeGuild>,
     pub scheduler: Arc<Scheduler>,
@@ -520,7 +581,8 @@ impl World {
                 .expect("create_run");
             runs.push(id);
         }
-        let (provider, client) = client(actions, grouped);
+        let (model, client) = client(actions, grouped);
+        let provider = model.fake.clone();
         let model_client = client.clone();
         let outbox = Arc::new(Recorder::default());
         let mut config = config();
@@ -553,6 +615,7 @@ impl World {
         Self {
             store,
             provider,
+            model,
             client: model_client,
             outbox,
             guild,
@@ -574,7 +637,7 @@ impl World {
     pub fn over_sqlite(
         &self,
         store: Arc<SqliteStore>,
-    ) -> Arc<Extractor<SqliteStore, FakeProvider, Scheduler, Recorder>> {
+    ) -> Arc<Extractor<SqliteStore, Model, Scheduler, Recorder>> {
         let (_, client) = client(Vec::new(), true);
         Arc::new(Extractor::new(
             Deps {

@@ -8,13 +8,14 @@ use std::collections::{BTreeSet, HashSet};
 use serde_json::json;
 
 use super::call::{CallRecord, Failure, Kept};
-use super::extractor::{Extractor, PassReport, utc};
+use super::claims::ClaimGuard;
+use super::extractor::{Extractor, MESSAGES_UNWRITABLE, PassReport, store_failure, utc};
 use super::outcome::extraction_outcome;
 use super::ports::{Card, CardEntry, ChatAnswer, Outbox, PostResult, Proposer, Redirected};
 use super::refusal::refusal;
 use super::self_service::LinkPlan;
 use crate::domain::drafts::ProposalSource;
-use crate::domain::model_log::{ExtractionLog, ModelLogStore, ReadMessage};
+use crate::domain::model_log::{ExtractionLog, ModelLogStore};
 use crate::domain::proposals::{ChangeKind, Payload as ChangePayload, ProposedChange};
 use crate::domain::schedule::RsvpState;
 use crate::domain::scheduler::{ProposalRequest, ScheduleStore, Supersede, SupersedeScope};
@@ -115,13 +116,16 @@ where
     X: Proposer,
     O: Outbox,
 {
-    /// Propose what the pass kept, hand over chat answers and one card, mark
-    /// the answered calls' messages processed and log every call.
+    /// Mark the answered calls' messages processed first, then propose what
+    /// those calls kept, hand over chat answers and one card, and log every
+    /// call. Marking first makes the effects at-most-once: a crash or panic
+    /// after it never lets another pass apply them again.
     pub(super) async fn commit(
         &self,
         channel_id: &str,
         mut records: Vec<CallRecord>,
         consolidated: bool,
+        claim: &mut ClaimGuard<'_>,
     ) -> PassReport {
         let mut report = PassReport::default();
         // Switched off while the calls ran: log them, propose and post nothing.
@@ -131,8 +135,27 @@ where
                 record.fail(Failure::Failed, super::extractor::CALL_SWITCHED_OFF.into());
             }
         }
-        let entries = collect(&records, consolidated);
         let now = self.clock.now();
+        for record in records.iter_mut().filter(|record| record.ok()) {
+            match self.store.mark_read_exact(&record.read, now).await {
+                Ok(true) => claim.marked(&record.read),
+                // Edited (or gone) since the call read it: the answer is about
+                // a version nobody sees any more. Every row is offered again,
+                // so unedited siblings are re-read (the edit's pending burst
+                // keeps its own row; a deleted one is no longer cached).
+                Ok(false) => {
+                    record.kept.clear();
+                    record.stale_version = true;
+                    claim.retry(&record.read);
+                }
+                Err(error) => {
+                    record.kept.clear();
+                    record.fail(Failure::Failed, store_failure(MESSAGES_UNWRITABLE, &error));
+                    claim.retry(&record.read);
+                }
+            }
+        }
+        let entries = collect(&records, consolidated);
         // Changes read from the same message count as one multi-change message.
         let changes_per_message = |kept: &Kept| {
             entries
@@ -331,17 +354,6 @@ where
             self.outbox.answers(answers).await;
         }
 
-        let consumed: Vec<ReadMessage> = records
-            .iter()
-            .filter(|record| record.consumed())
-            .flat_map(|record| record.read.iter().cloned())
-            .collect();
-        if !consumed.is_empty()
-            && let Err(error) = self.store.mark_read(&consumed, now).await
-        {
-            report.errors.push(error.to_string());
-        }
-
         for record in records {
             report.dropped += record.dropped;
             report.stale += record.stale;
@@ -379,6 +391,9 @@ where
                     }
                     if record.external_unmasked {
                         guardrail.insert("external_unmasked".into(), json!(true));
+                    }
+                    if record.stale_version {
+                        guardrail.insert("stale_version".into(), json!(true));
                     }
                     guardrail.insert(
                         "context".into(),

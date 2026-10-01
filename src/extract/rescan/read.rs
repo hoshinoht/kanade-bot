@@ -166,11 +166,14 @@ where
         let mut records: Vec<CallRecord> = Vec::new();
         let mut cancelled = false;
         let mut unread = 0;
+        let mut deferred = 0;
+        // Every group's claims are held until the channel's one commit.
+        let mut claim = self.extractor.claims().hold();
         'groups: for group in &groups {
             let mut not_before = None;
             // Only the pieces turned away are read again.
             let mut pending = group.clone();
-            for _ in 0..TURNED_AWAY_ATTEMPTS {
+            for attempt in 0..TURNED_AWAY_ATTEMPTS {
                 // Taken before the check so a switch-off between the two
                 // still cuts the wait below.
                 let mark = self.extractor.cut_mark();
@@ -188,6 +191,23 @@ where
                 if self.stopped() {
                     cancelled = true;
                     break 'groups;
+                }
+                if attempt == 0 {
+                    // Never overlap a live read: rows another pass holds are
+                    // left to it. A manual rescan still re-reads processed
+                    // rows (v4), the startup one only unread ones.
+                    let (won, lost) = claim.claim(std::mem::take(&mut pending));
+                    deferred += lost;
+                    pending = match self.extractor.recheck(won, self.unprocessed_only).await {
+                        Ok(rows) => rows,
+                        Err(error) => {
+                            errors.push(error.to_string());
+                            Vec::new()
+                        }
+                    };
+                    if pending.is_empty() {
+                        break;
+                    }
                 }
                 let batch = self.extractor.call_burst(channel_id, pending.clone()).await;
                 let (away, retry_at) = turned_away(&batch);
@@ -208,7 +228,11 @@ where
         }
         let extracted = records.iter().filter(|record| record.ok()).count();
         let calls = records.len();
-        let report = self.extractor.commit_pass(channel_id, records).await;
+        let report = self
+            .extractor
+            .commit_pass(channel_id, records, &mut claim)
+            .await;
+        drop(claim);
         errors.extend(report.errors);
         Ok(json!({
             "channel_id": channel_id,
@@ -228,6 +252,7 @@ where
             "stale": report.stale,
             "cancelled": cancelled,
             "unread": unread,
+            "deferred": deferred,
             "errors": errors,
         }))
     }
