@@ -9,7 +9,7 @@ const LOOKS = (['marigold', 'blossom', 'periwinkle', 'coral', 'twilight'] as con
   (['light', 'dark'] as const).map((t) => [c, t] as const),
 );
 
-/** [foreground, background, minimum ratio]; `--pageline` falls back to the ground when transparent. */
+/** [foreground, background, minimum ratio]; a transparent background falls back to the ground. */
 const PAIRS: [string, string, number][] = [
   ['--select-ink', '--select', 4.5],
   ['--ink', '--select', 4.5],
@@ -18,6 +18,7 @@ const PAIRS: [string, string, number][] = [
   ['--ink', '--chip-fill', 4.5],
   ['--ink', '--seg-fill', 4.5],
   ['--ink', '--board', 4.5],
+  // Page-line text in its title shape (every face, user decision 2026-10-01).
   ['--ink', '--pageline', 4.5],
   ['--select-ring', '--select', 3],
   ['--accent-ink', '--accent-fill', 4.5],

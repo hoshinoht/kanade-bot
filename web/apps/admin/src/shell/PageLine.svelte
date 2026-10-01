@@ -1,9 +1,10 @@
 <!--
   The 36 px page line that replaced the page-head card (M3E spec "Frame",
-  gate G2): the page's title, its heading (the count or state, an h1), the
-  page's own controls, an optional ⓘ for the one-time explanation, then the
-  Live chip and the command palette. On a phone the top bar carries the title
-  and the Live chip, so the line keeps only the page's own part.
+  gate G2): the title shape (the page's title, its heading — the count or
+  state, an h1 — and short context), the page's own controls, an optional ⓘ
+  for the one-time explanation, then the Live chip and the command palette.
+  On a phone the top bar carries the title and the Live chip, so the line
+  keeps only the page's own part.
 -->
 <script lang="ts">
   import { Freshness, Icon } from '@kanade/ui';
@@ -14,6 +15,7 @@
     title = '',
     class: extra = '',
     about,
+    side,
     children,
   }: {
     /** The section's name; omit it when the h1 is the title (detail pages). */
@@ -21,6 +23,9 @@
     class?: string;
     /** One-time explanation, behind an ⓘ disclosure. */
     about?: Snippet;
+    /** The page's own controls, after the title shape (each already its own chip, button or field). */
+    side?: Snippet;
+    /** The title group: breadcrumb, h1 and short context, inside the title shape. */
     children: Snippet;
   } = $props();
 
@@ -28,8 +33,11 @@
 </script>
 
 <div class="page-head pageline {extra}" class:pageline--titled={!!title}>
-  {#if title && !chrome?.phone}<p class="pageline__title">{title}</p>{/if}
-  {@render children()}
+  <div class="pageline__head">
+    {#if title && !chrome?.phone}<p class="pageline__title">{title}</p>{/if}
+    {@render children()}
+  </div>
+  {@render side?.()}
   {#if about}
     <details class="pageline__about">
       <summary class="pageline__about-btn" title="About this page"><Icon name="info" label="About this page" /></summary>

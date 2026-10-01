@@ -77,7 +77,9 @@
 
 <PageLine title={limits ? 'Limits' : ''}>
   <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : 'Every backend has room') : 'Limits'}</h1>
-  <p class="field__error" role="status">{error}</p>
+  {#snippet side()}
+    <p class="field__error" role="status">{error}</p>
+  {/snippet}
   {#snippet about()}
     <p>What each model backend is doing now, what is waiting, and what the gateway turned away.</p>
   {/snippet}

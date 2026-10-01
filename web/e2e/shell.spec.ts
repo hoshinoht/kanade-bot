@@ -29,7 +29,7 @@ test('rail: grouped destinations beside the page, no masthead, no 1180 px cap', 
   await expect(line.locator('.pageline__title')).toHaveText('Week');
   await expect(line.getByRole('group', { name: 'Status' })).toContainText('Live');
   await expect(line.getByRole('button', { name: 'Commands' })).toBeVisible();
-  expect((await line.boundingBox())!.height).toBeLessThanOrEqual(40);
+  expect((await line.boundingBox())!.height).toBeLessThanOrEqual(36.5);
 });
 
 test('rail: expanded from 1440 px, collapsible, and the choice is remembered', async ({ page }) => {
@@ -228,4 +228,124 @@ test('phone: a swipe in from the left edge opens the drawer; a vertical stroke d
   await expect(drawer).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Open the navigation' })).toBeFocused();
+});
+
+test('page line: on the ground, with only the title group in a 12 px outlined surface shape', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'blossom');
+    localStorage.setItem('theme', 'light');
+  });
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 1000, height: 670 },
+  ]) {
+    await page.setViewportSize(size);
+    for (const path of ['/', '/bosses', '/history', '/fixed', '/chat/c-move']) {
+      await page.goto(`${ADMIN}${path}?sw=off`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      const line = page.locator('.pageline');
+      const head = line.locator('.pageline__head');
+      const look = await line.evaluate((el) => {
+        const shape = el.querySelector('.pageline__head')!;
+        const probe = document.createElement('i');
+        probe.style.setProperty('color', 'var(--surface)');
+        document.body.append(probe);
+        const surface = getComputedStyle(probe).color;
+        probe.remove();
+        const line = getComputedStyle(el);
+        const cs = getComputedStyle(shape);
+        return {
+          lineBg: line.backgroundColor,
+          lineBorder: line.borderTopWidth,
+          bg: cs.backgroundColor,
+          surface,
+          border: `${cs.borderTopWidth} ${cs.borderTopStyle}`,
+          radius: cs.borderTopLeftRadius,
+        };
+      });
+      // The line itself is bare; the title group is the one contained shape.
+      expect(look.lineBg, path).toBe('rgba(0, 0, 0, 0)');
+      expect(look.lineBorder, path).toBe('0px');
+      expect(look.bg, path).toBe(look.surface);
+      expect(look.border, path).toBe('2px solid');
+      expect(look.radius, path).toBe('12px');
+      await expect(head.getByRole('heading', { level: 1 })).toBeVisible();
+      // The status, Commands and the page's own controls stay outside it.
+      await expect(head.getByRole('group', { name: 'Status' })).toHaveCount(0);
+      await expect(head.locator('.btn, .mchip, .seg, select')).toHaveCount(0);
+      await expect(line.getByRole('group', { name: 'Status' })).toBeVisible();
+      expect((await head.boundingBox())!.height, `${path} at ${size.width}`).toBeLessThanOrEqual(36.5);
+      expect((await line.boundingBox())!.height, `${path} at ${size.width}`).toBeLessThanOrEqual(36.5);
+    }
+  }
+});
+
+// Live data has more models than the mock: two more in the summary.
+async function fourModels(page: Page) {
+  await page.route(/\/api\/admin\/chat(\?.*)?$/, async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { summary: Record<string, unknown>[] };
+    json.summary.push(
+      { model: 'glm-5.3-flash:cloud', count: 40, answered: 37, refused: 1, errors: 2, p50_ms: 2200, tool_calls: 31 },
+      { model: 'gpt-oss:120b-cloud', count: 2, answered: 2, refused: 0, errors: 0, p50_ms: 10_300, tool_calls: 1 },
+    );
+    await route.fulfill({ response, json });
+  });
+}
+
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 1000, height: 670 },
+]) {
+  test(`chat page line: four models stay one row at ${size.width}×${size.height}; the rest open as a table`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await fourModels(page);
+    await page.goto(`${ADMIN}/chat?sw=off`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+    const line = page.locator('.pageline');
+    const chips = line.getByRole('list', { name: 'Busiest models, for these rows' }).getByRole('listitem');
+    await expect(chips).toHaveCount(2);
+    // Busiest first (by interactions): the stub's 40-interaction model leads.
+    await expect(chips.first()).toContainText('glm-5.3-flash:cloud');
+    await expect(chips.first()).toContainText(/37\s✓\s*(answered)? · p50 2\.2 s/);
+    expect((await line.boundingBox())!.height).toBeLessThanOrEqual(36.5);
+    // Chips that do not fit are clipped, never wrapped onto a second row.
+    const top = (await line.boundingBox())!.y;
+    for (const chip of await chips.all()) {
+      const box = await chip.boundingBox();
+      if (box && (await chip.isVisible())) expect(box.y).toBeLessThan(top + 36);
+    }
+
+    const more = line.getByRole('button', { name: '+2 models · 4 errors' });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    const table = page.getByRole('table', { name: 'Per model, for these rows' });
+    await expect(table.getByRole('rowheader')).toHaveText(['glm-5.3-flash:cloud', 'kanata/chat', 'gpt-oss:120b-cloud', 'kanata/chat-cloud']);
+    await expect(table.getByRole('row', { name: /glm-5\.3-flash:cloud/ })).toContainText('2,200 ms');
+    await page.keyboard.press('Escape');
+    await expect(table).toBeHidden();
+    await expect(more).toBeFocused();
+    // Keyboard opens it too; a click elsewhere closes it.
+    await page.keyboard.press('Enter');
+    await expect(table).toBeVisible();
+    await page.getByRole('heading', { level: 1 }).click();
+    await expect(table).toBeHidden();
+  });
+}
+
+test('chat page line on a phone: the strip under the top bar, the table within the screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fourModels(page);
+  await page.goto(`${ADMIN}/chat?sw=off`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+  const line = page.locator('.pageline');
+  await expect(line.locator('.pageline__head')).toHaveCSS('border-top-width', '2px');
+  await line.getByRole('button', { name: /models · 4 errors$/ }).click();
+  const panel = page.locator('.modelstats__panel');
+  await expect(panel).toBeVisible();
+  const box = (await panel.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
 });

@@ -77,9 +77,9 @@
      selected-item container and its ring and ink, the list pane, the week
      board, contained rows, tonal chips and unselected connected-group
      buttons. `--row-lift` is what a row is lifted toward: white by day, a
-     touch of ink at night (white would glow on a dark surface). The page line
-     sits on the ground; `_contrast.scss` gives it a surface strip where ink on
-     the ground falls short of 4.5:1. */
+     touch of ink at night (white would glow on a dark surface). `--pageline`
+     fills the page line's title shape in every face (user decision
+     2026-10-01: ink on the bare ground read washed out, 4.59:1 on blossom). */
   --select: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --select-ring: color-mix(in srgb, var(--accent) 45%, var(--surface));
   --select-ink: var(--accent-text);
@@ -89,7 +89,7 @@
   --row: color-mix(in srgb, var(--row-lift) 45%, var(--surface));
   --chip-fill: color-mix(in srgb, var(--ink) 8%, var(--surface));
   --seg-fill: color-mix(in srgb, var(--ink) 11%, var(--surface));
-  --pageline: transparent;
+  --pageline: var(--surface);
 
   /* Difficulty pills, keyed to the in-game boss list rather than to this
      page's palette: teal Normal, magenta Hard, black-and-gold Chaos,

@@ -1,24 +1,84 @@
-// The page line (docs/v5/m3e-rail-design-spec.md "Frame", gate G2): 36 px on
-// the ground in place of the page-head card. Title, then the heading (the
-// page's count or state), the page's own controls, the ⓘ, and at the end the
-// Live chip and the command palette. Text on it is ink, never --dim: ink on
-// the ground clears 4.5:1 where `--pageline` is transparent, and the faces
-// where it would not get a surface strip (`_contrast.scss`).
+// The page line (docs/v5/m3e-rail-design-spec.md "Frame", gate G2) in place
+// of the page-head card. It sits on the ground; only the title group is
+// contained (user decision 2026-10-01: "make it over the title only"):
+//
+//   title shape -- page title, the heading (h1: the count or state) and the
+//     short context, or on detail pages the breadcrumb and the h1 -- then the
+//     page's own controls, the ⓘ, and at the end the Live chip and Commands,
+//     each already its own chip, button or field.
+//
+// The title shape (M3 Expressive, docs/v5/m3-expressive-verification.md
+// "Shape" and "tactics"):
+// - Corner: Medium, 12 px (`--r`), from the M3 corner scale. Every control
+//   beside it is Full (pill/circle) and the window below is Large increased
+//   (20 px, `--r-win`): tactic 1, "break from the surrounding shape style to
+//   draw attention" -- the one rectangle in a row of pills reads as the
+//   line's primary element, and 12 inside the window's 20 keeps the nesting
+//   order (inner corner smaller than outer).
+// - Container: a filled `--pageline` (= `--surface`) container with the
+//   chips' 2px `--line` outline. Tactic 4, "contain content for emphasis":
+//   the group is one object; the fill is what gives its small context text
+//   4.5:1 (ink on the bare ground is 2.5-4.6:1 by day). The outline matches
+//   the chips' border language, so the emphasis comes from shape and type
+//   (display 800 title, mono 700 count), not from a new colour (tactic 2
+//   restraint: no accent fill on a label).
+// - Static: the press shape-morph (Exp D) is for buttons only.
+//
+// Height: 36 px including the shape's border; its content gets 32 px.
 
 .pageline {
   flex: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px 12px;
   min-height: 36px;
   margin: 0;
-  padding: 0 4px;
-  background: var(--pageline);
+  padding: 0;
+  background: none;
   border: 0;
-  border-radius: var(--r);
   box-shadow: none;
   color: var(--ink);
+}
+
+// Week's open help and filter panel take a row of their own, as do
+// phones' Week rows: only then does the line wrap.
+.pageline:has(.week-head__helptext:not([hidden]), .filters--popout),
+.frame--phone .pageline {
+  flex-wrap: wrap;
+}
+
+.pageline__head {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 14px 0 12px;
+  overflow: hidden;
+  background: var(--pageline);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+}
+
+.pageline__head > * {
+  flex: none;
+  min-width: 0;
+}
+
+// Controls keep to 32 px, inside the line's 36.
+.pageline .btn {
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+  line-height: 1.3;
+}
+
+.pageline .seg a,
+.pageline .seg button {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  line-height: 1.3;
 }
 
 .pageline > * {
@@ -66,10 +126,10 @@
   text-transform: none;
 }
 
-// The context gives way first: it takes only the room left on the line and
-// ellipsizes, so it never wraps the line by itself.
+// The context gives way first: the title shape shrinks to fit the line and
+// its context ellipsizes before anything else gives.
 .pageline .pageline__context {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -83,9 +143,16 @@
   text-decoration-color: currentcolor;
 }
 
-// A page's own controls sit before the status at the end.
+// A page's own controls sit before the status at the end, at their own
+// width: the title shape gives way first.
 .pageline .page-head__side {
+  flex: none;
+  flex-wrap: nowrap;
   margin-left: auto;
+}
+
+.pageline .filters {
+  flex: none;
 }
 
 .pageline .btn--ghost {
@@ -103,22 +170,33 @@
   display: none;
 }
 
-// History's filters: label beside each select, one row.
+// History's filters: each label and its select in one Full-shape field
+// chip, so the label never sits on the bare ground.
 .pageline .filters {
   flex-wrap: nowrap;
   align-items: center;
   margin: 0 0 0 auto;
-  gap: 0.6rem;
+  gap: 0.4rem;
 }
 
 .pageline .filters .field {
   flex-direction: row;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.2rem;
+  padding: 0 2px 0 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
 }
 
 .pageline .filters .field > span {
   color: var(--ink);
+}
+
+.pageline .filters .field select {
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
 }
 
 .pageline .filters select,
@@ -257,8 +335,11 @@
 /* ── phones: the top bar has the title and the status ───────────────────── */
 
 .frame--phone .pageline {
-  min-height: 32px;
   gap: 4px 8px;
+}
+
+.frame--phone .pageline__head {
+  padding: 0 12px 0 10px;
 }
 
 .frame--phone .pageline h1 {
@@ -274,6 +355,7 @@
 // back on a phone; its h1 stays for screen readers.
 .frame--phone .pageline--echo {
   position: absolute;
+  border: 0;
   width: 1px;
   height: 1px;
   min-height: 0;

@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
+  import ModelStats from './ModelStats.svelte';
   import LogTime from '../logs/LogTime.svelte';
   import { duration, preview } from '../logs/format';
   import { mentionsText } from './transcript';
@@ -68,20 +69,9 @@
 
 <PageLine title={view ? 'Chat' : ''}>
   <h1>{view ? (filtered ? `${rows.length} of ${view.total} interactions` : `${view.total} interactions`) : 'Chat'}</h1>
-  {#if view && view.summary.length}
-    <div class="statline" aria-label="Per model, for these rows">
-      {#each view.summary as m (m.model)}
-        <div class="statline__row">
-          <span class="statline__model mono">{m.model}</span>
-          <span class="statline__pair"><span class="statline__k">answered</span> {m.answered}</span>
-          <span class="statline__pair"><span class="statline__k">refused</span> {m.refused}</span>
-          <span class="statline__pair"><span class="statline__k">errors</span> {m.errors}</span>
-          <span class="statline__pair"><span class="statline__k">p50</span> {m.p50_ms.toLocaleString('en')} ms</span>
-          <span class="statline__pair"><span class="statline__k">tool calls</span> {m.tool_calls}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
+  {#snippet side()}
+    {#if view && view.summary.length}<ModelStats summary={view.summary} />{/if}
+  {/snippet}
 </PageLine>
 
 <PaneWindow title="Interactions" bind:query searchLabel="Search interactions" placeholder="question, answer…">
@@ -134,43 +124,5 @@
 
   .log__who {
     max-width: 14rem;
-  }
-
-  /* The page line's context chips (M3E spec "Frame"): one per model, on a
-     surface so their quiet labels keep contrast on the ground. */
-  .statline {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 0.4rem;
-  }
-
-  .statline__row {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 0.7rem;
-    padding: 0.1rem 0.7rem;
-    border: 2px solid var(--line);
-    border-radius: 999px;
-    background: var(--surface);
-  }
-
-  .statline__model {
-    font-size: var(--fs-small);
-    font-weight: 600;
-  }
-
-  .statline__pair {
-    font-size: var(--fs-mini);
-    font-family: var(--mono);
-  }
-
-  .statline__k {
-    font-size: var(--fs-micro);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--faint);
   }
 </style>

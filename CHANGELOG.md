@@ -565,6 +565,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
   traps focus and returns it to the menu, instead of the pinned links and
   "More". New M3E tokens (`--select*`, `--pane`, `--board`, `--row`,
   `--chip-fill`, `--seg-fill`) with contrast overrides and a per-face check.
+- v5 admin page line: the title group (title, count, context) sits in an
+  outlined surface shape with 12 px corners, in every colourway and face (ink
+  read washed out on the bare ground, e.g. blossom); the controls stay their
+  own chips, History's filters become field chips, and the line stays 36 px.
+  Chat's per-model stats no longer stack one row per model: compact chips for
+  the two busiest models ("model 37 ✓ · p50 2.2 s") and a "+n models · e
+  errors" button opening the full per-model table keep the line one row.
 - v4: Kanata request bodies follow per-alias capability metadata from `/v1/models`
   (cached, minimal when absent): `response_format`, `temperature`/`seed` and
   `reasoning_effort` are sent only to aliases that accept them, so extraction and

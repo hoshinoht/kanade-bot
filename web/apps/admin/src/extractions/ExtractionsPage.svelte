@@ -73,7 +73,9 @@
 <PageLine title={view ? 'Extractions' : ''}>
   <h1>{view ? (filtered ? `${rows.length} of ${view.total} model calls` : `${view.total} model calls`) : 'Extractions'}</h1>
   <p class="pageline__context">for prompt tuning</p>
-  {#if view}<span class="chip chip--mono">{view.model}</span>{/if}
+  {#snippet side()}
+    {#if view}<span class="chip chip--mono">{view.model}</span>{/if}
+  {/snippet}
 </PageLine>
 
 <PaneWindow title="Calls" bind:query searchLabel="Search calls" placeholder="message, id…">

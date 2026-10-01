@@ -126,24 +126,26 @@
 <PageLine title="History">
   <h1>{total.toLocaleString('en')} change{total === 1 ? '' : 's'}</h1>
   {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
-  <div class="filters history__filters" role="search" aria-label="Filter the history">
-    <label class="field">
-      <span>Week</span>
-      <select bind:value={week}>
-        <option value="">every week</option>
-        {#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}
-      </select>
-    </label>
-    <label class="field">
-      <span>Who</span>
-      <select bind:value={actor}>
-        <option value="">everyone</option>
-        {#each admins as a (a.id)}<option value="admin:{a.id}">{a.label}{a.id.startsWith('discord:') && known(a.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}
-        <option value="system:delivery">system (delivery)</option>
-        {#each members as m (m.id)}<option value="member:{m.id}">{names(m.id)}</option>{/each}
-      </select>
-    </label>
-  </div>
+  {#snippet side()}
+    <div class="filters history__filters" role="search" aria-label="Filter the history">
+      <label class="field">
+        <span>Week</span>
+        <select bind:value={week}>
+          <option value="">every week</option>
+          {#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}
+        </select>
+      </label>
+      <label class="field">
+        <span>Who</span>
+        <select bind:value={actor}>
+          <option value="">everyone</option>
+          {#each admins as a (a.id)}<option value="admin:{a.id}">{a.label}{a.id.startsWith('discord:') && known(a.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}
+          <option value="system:delivery">system (delivery)</option>
+          {#each members as m (m.id)}<option value="member:{m.id}">{names(m.id)}</option>{/each}
+        </select>
+      </label>
+    </div>
+  {/snippet}
 </PageLine>
 
 <Tabs items={tabs} bind:selected={tab} label="History">

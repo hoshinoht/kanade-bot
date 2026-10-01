@@ -57,22 +57,11 @@
   --select-ink: color-mix(in srgb, var(--accent) 35%, var(--ink));
 }
 
-// The M3E page line sits on the ground. Ink on the light ground is 3.89
-// (periwinkle), 2.91 (coral) and 2.51 (twilight), so those three days put it
-// on a surface strip (the spec's fallback); marigold (5.38), blossom (4.59)
-// and every dark face (10.8-12.0) keep the bare ground. `night` resets it.
-[data-colorway="periwinkle"],
-[data-colorway="coral"],
-[data-colorway="twilight"] {
-  --pageline: var(--surface);
-}
-
 // Dark faces: --dim on --surface/--raise, pills back to v4 night values.
 @mixin night {
   --dim: #b4ae9a; // #b0ab97 4.48 -> 4.65
   --pill-n-bg: #3aa7c9;
   --pill-h-bg: #e8579a;
-  --pageline: transparent;
 }
 
 @mixin night-blossom {

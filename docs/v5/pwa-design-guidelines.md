@@ -54,8 +54,11 @@ Ported from `legacy/python/bot/api/templates/AGENTS.md`; v5 deviations are marke
   yield when it would make fallback content unreachable. *v5 deviation:* this holds
   at every width (v4 let phones use document flow). *v5 admin, superseded (M3E
   gates G2 and G6, user-approved 2026-10-01):* the page caption is a 36 px page
-  line on the ground (a surface strip in the faces where ink on the ground is
-  under 4.5:1) instead of a page-head card, holding the title, the count, the
+  line on the ground instead of a page-head card. Only its title group (title,
+  count and short context, or breadcrumb and title) is contained, in an
+  outlined surface shape with Medium (12 px) corners among the line's Full
+  chips; every other item is its own chip, so nothing legible sits on the bare
+  ground. It holds the title, the count, the
   page's controls, an ⓘ for one-time help, the Live chip and Commands; the
   page is no longer capped at 1180 px, and panes set their own readable
   measures instead.

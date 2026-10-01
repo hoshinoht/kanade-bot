@@ -15,6 +15,8 @@ const LOOKS = [
   { name: 'marigold-light', colorway: 'marigold', theme: 'light' },
   { name: 'marigold-dark', colorway: 'marigold', theme: 'dark' },
   { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
+  // The face the user reviews the live site in.
+  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
 ];
 
 async function settle(page: Page) {

@@ -55,12 +55,14 @@
 <PageLine title={reminders.data ? 'Reminders' : ''}>
   <h1>{reminders.data ? `${reminders.data.upcoming.length} queued, ${reminders.data.sent.length} sent` : 'Reminders'}</h1>
   <p class="pageline__context">every message the bot will post, or already posted</p>
-  {#if run}
-    <div class="page-head__side">
-      <span class="chip chip--mono">run #{runLabel}</span>
-      <a class="btn" href="/reminders">Show every run</a>
-    </div>
-  {/if}
+  {#snippet side()}
+    {#if run}
+      <div class="page-head__side">
+        <span class="chip chip--mono">run #{runLabel}</span>
+        <a class="btn" href="/reminders">Show every run</a>
+      </div>
+    {/if}
+  {/snippet}
 </PageLine>
 
 {#snippet table(rows: ReminderRow[], fired: boolean, caption: string)}

@@ -73,16 +73,18 @@
   <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member_id || turn.data.member.id} name={turn.data.member.name} />{/if}</p>
   <h1>{#if turn.data}<LogTime at={turn.data.at} {timeZone} />{:else}Interaction{/if}</h1>
   {#if turn.data}<p class="pageline__context">{turn.data.model} · <Name kind="channel" id={turn.data.channel_id} name={turn.data.channel} /> · {turn.data.outcome}</p>{/if}
-  {#if turn.data}
-    <!-- For agent debugging: the whole turn as one paste. -->
-    <div class="page-head__side transcript">
-      <label class="field"
-        ><span class="vh">Transcript format</span>
-        <select bind:value={format}><option value="markdown">Markdown</option><option value="json">JSON</option></select>
-      </label>
-      <button class="btn" type="button" onclick={() => void copyTranscript()}>Copy transcript</button>
-    </div>
-  {/if}
+  {#snippet side()}
+    {#if turn.data}
+      <!-- For agent debugging: the whole turn as one paste. -->
+      <div class="page-head__side transcript">
+        <label class="field"
+          ><span class="vh">Transcript format</span>
+          <select bind:value={format}><option value="markdown">Markdown</option><option value="json">JSON</option></select>
+        </label>
+        <button class="btn" type="button" onclick={() => void copyTranscript()}>Copy transcript</button>
+      </div>
+    {/if}
+  {/snippet}
 </PageLine>
 
 {#if turn.error}
