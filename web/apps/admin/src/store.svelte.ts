@@ -1,19 +1,19 @@
-import type { Channel, ConfigView, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, ConfigView, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
 import type { Slot } from './planner/keyboardMove';
+import { swapSlots } from './planner/dropTime';
 
 const POLL_MS = 15_000;
 
 /** A polled week, its stats, and which week was asked for. */
 type Snapshot = [Week, Stats, WeekKey];
 
-export interface LastMove {
-  runId: string;
-  from: Slot;
-  to: Slot;
-}
+/** The last planner change, for one-step undo: a move goes back; a swap is swapped again. */
+export type LastMove =
+  | { kind: 'move'; revision: number; runId: string; from: Slot; to: Slot }
+  | { kind: 'swap'; revision: number; runId: string; withId: string };
 
 export type MoveOutcome = { ok: true; message: string } | { ok: false; message: string };
 
@@ -55,6 +55,7 @@ export class AdminWeek {
   #client = createClient();
   #poller: Poller;
   #pendingMoves = 0;
+  #nextUndoRevision = 1;
   #holding = false;
   /** Newest snapshot that arrived while a lift or move was open. */
   #buffered: Snapshot | null = null;
@@ -99,6 +100,11 @@ export class AdminWeek {
   set holding(value: boolean) {
     this.#holding = value;
     if (!value) this.#flush();
+  }
+
+  /** Planner writes are serial: a rollback can therefore restore only its own snapshot. */
+  get mutating(): boolean {
+    return this.#pendingMoves > 0;
   }
 
   #receive(snapshot: Snapshot) {
@@ -200,11 +206,17 @@ export class AdminWeek {
   }
 
   #replace(run: Run) {
+    this.#replaceAll([run]);
+  }
+
+  /** Several runs in one assignment, so a swap never shows half-done. */
+  #replaceAll(runs: Run[]) {
     if (!this.week) return;
-    this.week = { ...this.week, runs: this.week.runs.map((r) => (r.id === run.id ? run : r)) };
+    this.week = { ...this.week, runs: this.week.runs.map((r) => runs.find((n) => n.id === r.id) ?? r) };
   }
 
   async move(runId: string, to: Slot, { recordUndo = true } = {}): Promise<MoveOutcome> {
+    if (this.mutating) return { ok: false, message: 'Saving the last change…' };
     const week = this.week;
     const run = this.run(runId);
     if (!week || !run) return { ok: false, message: 'That run is no longer on the board.' };
@@ -220,7 +232,7 @@ export class AdminWeek {
       });
       this.#replace(result.run);
       if (this.week) this.week = { ...this.week, version: result.version };
-      if (recordUndo) this.lastMove = { runId, from, to };
+      if (recordUndo) this.lastMove = { kind: 'move', revision: this.#nextUndoRevision++, runId, from, to };
       const label = `${runTitle(result.run)} to ${whenLabel(week, result.run.day, result.run.time)}`;
       return { ok: true, message: recordUndo ? `Moved ${label}.` : `Move undone: ${label}.` };
     } catch (error) {
@@ -234,11 +246,47 @@ export class AdminWeek {
     }
   }
 
-  async undo(): Promise<MoveOutcome | null> {
+  /**
+   * Exchange two runs' slots in one server change (POST /runs/{id}/swap).
+   * Both cards move together on screen and both go back on a refusal or a
+   * conflict; like a move it is sent against the week on screen.
+   */
+  async swap(runId: string, withId: string, { recordUndo = true } = {}): Promise<MoveOutcome> {
+    if (this.mutating) return { ok: false, message: 'Saving the last change…' };
+    const week = this.week;
+    const a = this.run(runId);
+    const b = this.run(withId);
+    if (!week || !a || !b) return { ok: false, message: 'That run is no longer on the board.' };
+    const to = swapSlots(a, a.status === 'otot', b, b.status === 'otot');
+    this.#replaceAll([
+      { ...a, ...to.a },
+      { ...b, ...to.b },
+    ]);
+    this.#pendingMoves += 1;
+    try {
+      const result = await this.#client.post<SwapResult>(`/api/admin/runs/${encodeURIComponent(runId)}/swap`, { with: withId, version: week.version });
+      this.#replaceAll(result.runs);
+      if (this.week) this.week = { ...this.week, version: result.version };
+      if (recordUndo) this.lastMove = { kind: 'swap', revision: this.#nextUndoRevision++, runId, withId };
+      const [first, second] = result.runs;
+      const label = `${runTitle(first)} to ${whenLabel(week, first.day, first.time)}, ${runTitle(second)} to ${whenLabel(week, second.day, second.time)}`;
+      return { ok: true, message: recordUndo ? `Swapped ${label}.` : `Swap undone: ${label}.` };
+    } catch (error) {
+      this.#replaceAll([a, b]);
+      const reason = error instanceof ApiRequestError ? error.message : 'Something went wrong.';
+      if (error instanceof ApiRequestError && error.status === 409) void this.refresh();
+      return { ok: false, message: `Couldn't swap ${runTitle(a)} with ${runTitle(b)}: ${reason}` };
+    } finally {
+      this.#pendingMoves -= 1;
+      this.#flush();
+    }
+  }
+
+  async undo(revision?: number): Promise<MoveOutcome | null> {
     const last = this.lastMove;
-    if (!last) return null;
+    if (!last || (revision !== undefined && last.revision !== revision)) return null;
     this.lastMove = null;
-    const outcome = await this.move(last.runId, last.from, { recordUndo: false });
+    const outcome = last.kind === 'swap' ? await this.swap(last.runId, last.withId, { recordUndo: false }) : await this.move(last.runId, last.from, { recordUndo: false });
     if (!outcome.ok) this.lastMove = last;
     return outcome;
   }
@@ -304,4 +352,3 @@ export class AdminWeek {
 function same(a: Week | null, b: Week): boolean {
   return a !== null && JSON.stringify({ ...a, generated_at: '' }) === JSON.stringify({ ...b, generated_at: '' });
 }
-

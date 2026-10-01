@@ -7,8 +7,10 @@
   inert, so results and Undo must live inside it. Failed input stays in its field.
 -->
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
-  import { AnswerChip, BossTag, Icon, Modal, StatusMark, dayLabel, runTitle } from '@kanade/ui';
+  import { AnswerChip, BossTag, Icon, Modal, StatusMark, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
   import BlamePanel from './sheet/BlamePanel.svelte';
@@ -22,24 +24,29 @@
     week,
     members,
     onmove,
+    onswap,
     onstatus,
     onrsvp,
     onroster,
     onping,
     onreset,
     onreread,
+    saving = false,
   }: {
     open: boolean;
     run: Run | null;
     week: Week;
     members: Member[];
     onmove: (runId: string, to: Slot) => Promise<MoveOutcome>;
+    /** Exchange this run's slot with another run of the same boss week. */
+    onswap: (runId: string, withId: string) => Promise<MoveOutcome>;
     onstatus: (runId: string, status: RunStatus) => Promise<MoveOutcome>;
     onrsvp: (runId: string, memberId: string, answer: 'yes' | 'no' | 'clear') => Promise<MoveOutcome>;
     onroster: (runId: string, change: { add?: string; remove?: string }) => Promise<MoveOutcome>;
     onping: (runId: string) => Promise<MoveOutcome>;
     onreset: (runId: string) => Promise<MoveOutcome>;
     onreread: (run: Run) => Promise<MoveOutcome>;
+    saving?: boolean;
   } = $props();
 
   const ANSWERS = [
@@ -54,6 +61,26 @@
   let notice = $state<{ ok: boolean; message: string; undo?: () => void } | null>(null);
   let seeded: string | null = null;
 
+  // "Swap timing with…": pick another live run of this boss week, review
+  // where both land, then confirm. Undo comes with the toast like a move.
+  let swapping = $state(false);
+  let swapWith = $state('');
+  let swapSelect: HTMLSelectElement | undefined = $state();
+  let swapButton: HTMLButtonElement | undefined = $state();
+  const swapChoices = $derived(
+    run ? sortRuns(week.runs.filter((r) => r.id !== run.id && r.status !== 'done' && r.status !== 'cancelled')) : [],
+  );
+  const swapOther = $derived(swapChoices.find((r) => r.id === swapWith) ?? null);
+  const swapPreview = $derived.by(() => {
+    if (!run || !swapOther) return null;
+    const to = swapSlots(run, run.status === 'otot', swapOther, swapOther.status === 'otot');
+    return {
+      daysOnly: to.daysOnly,
+      mine: whenLabel(week, to.a.day, to.a.time),
+      theirs: whenLabel(week, to.b.day, to.b.time),
+    };
+  });
+
   // A fresh field per opened run; a failed move keeps what was typed.
   $effect(() => {
     if (open && run && seeded !== run.id) {
@@ -61,6 +88,8 @@
       to = '';
       error = '';
       notice = null;
+      swapping = false;
+      swapWith = '';
     }
     if (!open) seeded = null;
   });
@@ -103,7 +132,7 @@
 
   async function move(event: SubmitEvent) {
     event.preventDefault();
-    if (!run) return;
+    if (!run || saving) return;
     const parsed = parseWhen(to, week.days, { day: run.day, time: run.time });
     if (!parsed.ok) {
       error = parsed.message;
@@ -112,6 +141,27 @@
     const id = run.id;
     busy = true;
     const outcome = await onmove(id, parsed.slot).finally(() => (busy = false));
+    if (outcome.ok) open = false;
+    else error = outcome.message;
+  }
+
+  async function openSwap() {
+    swapping = true;
+    swapWith = swapChoices[0]?.id ?? '';
+    await tick();
+    swapSelect?.focus();
+  }
+
+  async function closeSwap() {
+    swapping = false;
+    await tick();
+    swapButton?.focus();
+  }
+
+  async function confirmSwap() {
+    if (!run || !swapOther || saving) return;
+    busy = true;
+    const outcome = await onswap(run.id, swapOther.id).finally(() => (busy = false));
     if (outcome.ok) open = false;
     else error = outcome.message;
   }
@@ -228,8 +278,19 @@
             aria-invalid={error ? 'true' : undefined}
             aria-describedby="{uid}-error"
           />
-          <button class="btn" type="submit" disabled={busy}>Move</button>
+          <button class="btn" type="submit" disabled={busy || saving}>Move</button>
         </form>
+        {#if !['done', 'cancelled'].includes(run.status)}
+          <button
+            class="btn"
+            type="button"
+            bind:this={swapButton}
+            disabled={busy || saving || swapChoices.length === 0}
+            aria-expanded={swapping}
+            aria-controls="{uid}-swap"
+            onclick={() => (swapping ? void closeSwap() : void openSwap())}>Swap timing with…</button
+          >
+        {/if}
         <button class="btn" type="button" disabled={busy} title="Post this run's morning card now, as a TEST message"
           onclick={() => void act(() => onping(run.id))}>Preview ping</button
         >
@@ -240,6 +301,30 @@
           >
         {/if}
       </div>
+      {#if swapping}
+        <div class="swap" id="{uid}-swap" role="group" aria-labelledby="{uid}-swap-title">
+          <p class="swap__title" id="{uid}-swap-title">Swap {runTitle(run)}'s timing with another run this boss week</p>
+          <label class="field"
+            ><span>Swap with</span>
+            <select bind:this={swapSelect} bind:value={swapWith} disabled={busy || saving}>
+              {#each swapChoices as other (other.id)}
+                <option value={other.id}>{whenLabel(week, other.day, other.time)} · {runTitle(other)}</option>
+              {/each}
+            </select>
+          </label>
+          {#if swapPreview && swapOther}
+            <p class="swap__preview" aria-live="polite">
+              {runTitle(run)} → <strong>{swapPreview.mine}</strong>; {runTitle(swapOther)} → <strong>{swapPreview.theirs}</strong>{swapPreview.daysOnly
+                ? ' (own time: only the days change)'
+                : ''}.
+            </p>
+          {/if}
+          <div class="swap__actions">
+            <button class="btn btn--primary" type="button" disabled={busy || saving || !swapOther} onclick={() => void confirmSwap()}>Swap</button>
+            <button class="btn" type="button" disabled={busy} onclick={() => void closeSwap()}>Cancel</button>
+          </div>
+        </div>
+      {/if}
       <p class="field__error run__error" id="{uid}-error" role="alert">{error}</p>
 
       <div class="statusbar" role="group" aria-labelledby="{uid}-status">
@@ -295,6 +380,33 @@
 </Modal>
 
 <style>
+  .swap {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0.4rem;
+    margin: 0.3rem 0 0;
+    padding: 0.6rem 0.75rem;
+    border: 2px solid var(--line);
+    border-radius: var(--r);
+    background: var(--raise);
+  }
+
+  .swap__title,
+  .swap__preview {
+    margin: 0;
+    font-size: var(--fs-small);
+  }
+
+  .swap__title {
+    font-weight: 700;
+  }
+
+  .swap__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
   .run__error:empty {
     display: none;
   }

@@ -3,8 +3,8 @@
  * picks up (Enter and Space still open it), arrows move (left/right = day,
  * up/down = the configured run length, `run_lengths.default_minutes`),
  * Shift+Up/Down jump to just after the previous run / just before the next
- * one that day, Enter/Space drops, Escape cancels. Pure so the announcements
- * are unit-tested.
+ * one that day, Enter/Space drops, S swaps with the run whose slot it is on,
+ * Escape cancels. Pure so the announcements are unit-tested.
  */
 import { FIRST_MINUTE, LAST_MINUTE, fromMinutes, snapTime, toMinutes, type TimedRun } from './dropTime';
 
@@ -36,6 +36,8 @@ export interface MoveContext {
   step?: number;
   /** The other timed runs of a day, for Shift+Up/Down. */
   others?: (day: number) => TimedRun[];
+  /** Another live run already on this slot (its swap target), if any. */
+  occupant?: (slot: Slot, movingId: string) => { id: string; label: string } | null;
 }
 
 export interface Outcome {
@@ -43,6 +45,15 @@ export interface Outcome {
   handled: boolean;
   announce?: string;
   commit?: { runId: string; from: Slot; to: Slot };
+  swap?: { runId: string; withId: string };
+}
+
+export const SWAP_KEY = 'S';
+
+/** A step's announcement, plus the swap hint when another run is on that slot. */
+function landed(run: MovableRun, at: Slot, ctx: MoveContext): string {
+  const here = ctx.occupant?.(at, run.id);
+  return `${run.label}: ${describeSlot(at, ctx)}.${here ? ` ${here.label} is here: S swaps with it, Enter drops beside it.` : ''}`;
 }
 
 export const IDLE: LiftState = { kind: 'idle' };
@@ -73,7 +84,7 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
         `Picked up ${run.label}, ${describeSlot(origin, ctx)}. ` +
         `Left and right arrows change the day, up and down change the time by ${step} minutes; ` +
         'with Shift, up jumps to just after the run before and down to just before the run after. ' +
-        'Enter or Space drops it, Escape cancels.',
+        'Enter or Space drops it; on another run, S swaps the two. Escape cancels.',
     };
   }
 
@@ -87,7 +98,7 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
         return { state, handled: true, announce: `${ctx.dayLabel(at.day)} is the ${edge} day of the boss week.` };
       }
       const next = { ...at, day };
-      return { state: { ...state, at: next }, handled: true, announce: `${run.label}: ${describeSlot(next, ctx)}.` };
+      return { state: { ...state, at: next }, handled: true, announce: landed(run, next, ctx) };
     }
     case 'ArrowUp':
     case 'ArrowDown': {
@@ -100,14 +111,14 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
           return { state, handled: true, announce: `No run ${direction < 0 ? 'before' : 'after'} ${at.time} on ${ctx.dayLabel(at.day)} to move next to.` };
         }
         const next = { ...at, time };
-        return { state: { ...state, at: next }, handled: true, announce: `${run.label}: ${describeSlot(next, ctx)}.` };
+        return { state: { ...state, at: next }, handled: true, announce: landed(run, next, ctx) };
       }
       const minutes = toMinutes(at.time) + direction * step;
       if (minutes < FIRST_MINUTE || minutes > LAST_MINUTE) {
         return { state, handled: true, announce: `${at.time} is as ${key === 'ArrowUp' ? 'early' : 'late'} as this day goes.` };
       }
       const next = { ...at, time: fromMinutes(minutes) };
-      return { state: { ...state, at: next }, handled: true, announce: `${run.label}: ${describeSlot(next, ctx)}.` };
+      return { state: { ...state, at: next }, handled: true, announce: landed(run, next, ctx) };
     }
     case 'Enter':
     case ' ': {
@@ -119,6 +130,19 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
         handled: true,
         announce: `Dropped ${run.label} on ${describeSlot(at, ctx)}.`,
         commit: { runId: run.id, from: state.origin, to: at },
+      };
+    }
+    case 's':
+    case 'S': {
+      const target = ctx.occupant?.(at, run.id);
+      if (!target) {
+        return { state, handled: true, announce: `Nothing to swap with on ${describeSlot(at, ctx)}: move onto another run's slot first.` };
+      }
+      return {
+        state: IDLE,
+        handled: true,
+        announce: `Swapping ${run.label} with ${target.label}.`,
+        swap: { runId: run.id, withId: target.id },
       };
     }
     case 'Escape':

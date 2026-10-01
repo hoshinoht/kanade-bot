@@ -10,6 +10,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   read-only, silent reply to the card. It verifies the original chat asker,
   uses a per-channel cooldown, spends no chat allowance and retains only the
   visible assistant answer in channel context.
+- v5 admin planner cards can swap directly by dropping on another live card,
+  or with `S` during a keyboard lift; the run sheet also provides an accessible
+  picker with a two-run preview and one-step undo.
 - v5 admin planners can atomically swap two live runs' slots in one boss week,
   with one history record, reversible as one change and per-run move notices.
 - v5 run lengths are a live, saved setting (`v5.run_lengths`, seeded from

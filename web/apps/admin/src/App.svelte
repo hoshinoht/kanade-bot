@@ -261,7 +261,7 @@
   }
 
   function report(outcome: MoveOutcome, undo?: () => void) {
-    toaster.show({
+    return toaster.show({
       message: outcome.message,
       tone: outcome.ok ? 'ok' : 'error',
       // Ten seconds, paused on hover/focus; Ctrl/Cmd+Z and the palette also undo moves.
@@ -270,16 +270,36 @@
     });
   }
 
+  // A toast represents one undo entry, not "whatever changed most recently".
+  // Retire its button when a later planner change earns the single undo slot.
+  let plannerUndoToast: number | null = null;
+  function reportPlanner(outcome: MoveOutcome) {
+    if (!outcome.ok) return report(outcome);
+    const entry = store.lastMove;
+    if (!entry) return report(outcome);
+    if (plannerUndoToast !== null) toaster.dismiss(plannerUndoToast);
+    // The toaster can keep an older item through a route/render boundary; no
+    // actionable toast may outlive the one planner undo entry.
+    toaster.items.filter((toast) => toast.action?.label === 'Undo').forEach((toast) => toaster.dismiss(toast.id));
+    plannerUndoToast = report(outcome, () => void undo(entry.revision));
+  }
+
   async function move(runId: string, to: Slot): Promise<MoveOutcome> {
     const outcome = await store.move(runId, to);
-    report(outcome, () => void undo());
+    reportPlanner(outcome);
     return outcome;
   }
 
-  async function undo() {
+  async function swap(runId: string, withId: string): Promise<MoveOutcome> {
+    const outcome = await store.swap(runId, withId);
+    reportPlanner(outcome);
+    return outcome;
+  }
+
+  async function undo(revision?: number) {
     const runId = store.lastMove?.runId;
     const prior = document.activeElement;
-    const outcome = await store.undo();
+    const outcome = await store.undo(revision);
     if (!outcome) return;
     report(outcome);
     // Undo from a toast removes the button that had focus; land on the moved
@@ -325,7 +345,7 @@
     })),
     { id: 'week-next', label: 'Show next week', group: 'Week', run: () => router.go('/?week=next') },
     { id: 'week-this', label: 'Show this week', group: 'Week', run: () => router.go('/') },
-    ...(store.lastMove ? [{ id: 'undo', label: 'Undo last move', group: 'Edit', keywords: 'revert', run: () => void undo() }] : []),
+    ...(store.lastMove ? [{ id: 'undo', label: store.lastMove.kind === 'swap' ? 'Undo last swap' : 'Undo last move', group: 'Edit', keywords: 'revert', run: () => void undo() }] : []),
     { id: 'refresh', label: 'Refresh now', group: 'Data', keywords: 'reload poll', run: () => void store.refresh() },
     ...(store.week?.runs ?? []).map((run) => ({
       id: `run-${run.id}`,
@@ -428,6 +448,7 @@
           {which}
           bind:tab={weekTab}
           onmove={(runId, to) => void move(runId, to)}
+          onswap={(runId, withId) => void swap(runId, withId)}
           onopen={openSheet}
           onundo={() => void undo()}
           onreread={(run) => void rereadFromBoard(run)}
@@ -452,12 +473,14 @@
         week={store.week}
         members={store.members}
         onmove={(runId, to) => move(runId, to)}
+        onswap={(runId, withId) => swap(runId, withId)}
         onstatus={(runId, status) => store.setStatus(runId, status)}
         onrsvp={(runId, memberId, answer) => store.rsvp(runId, memberId, answer)}
         onroster={(runId, change) => store.roster(runId, change)}
         onreset={(runId) => store.resetToFixed(runId)}
         onping={(runId) => store.ping(runId)}
         onreread={rereadChannel}
+        saving={store.mutating}
       />
     {/if}
     {#if Palette}<Palette bind:open={paletteOpen} {commands} />{/if}

@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
   import { Icon, LiveRegion, WeekRail, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
-  import { clashes, dropTime, timedOthers, type DropTime, type TimedRun } from './dropTime';
+  import { clashes, dropTime, swapSlots, timedOthers, zoneAt, type DropTime, type TimedRun } from './dropTime';
   import { IDLE, cancel, describeSlot, onKey, type LiftState, type MovableRun, type Slot } from './keyboardMove';
   import PlannerCard from './PlannerCard.svelte';
   import PlannerColumn from './PlannerColumn.svelte';
@@ -12,10 +12,12 @@
     week,
     helpId,
     onmove,
+    onswap,
     onopen,
     onhold,
     onreread,
     busyChannels,
+    saving = false,
     step = 30,
     allRuns,
   }: {
@@ -23,10 +25,14 @@
     /** The week header's move instructions: every movable card is described by them. */
     helpId: string;
     onmove: (runId: string, to: Slot) => void;
+    /** Exchange two runs' slots (a drop on a card, or S during a keyboard lift). */
+    onswap: (runId: string, withId: string) => void;
     onopen: (run: Run) => void;
     onhold: (holding: boolean) => void;
     onreread?: (run: Run) => void;
     busyChannels?: Set<string>;
+    /** A planner write is pending; starting another one would make rollback unsafe. */
+    saving?: boolean;
     /** Keyboard Up/Down step: Config → Run lengths default minutes. */
     step?: number;
     /** Every run of the week, filtered out or not: a clash with a hidden run is still a clash. */
@@ -63,11 +69,19 @@
     lastDay: week.days.length - 1,
     step,
     others: (d: number) => timedOthers(active, d, lift.kind === 'lifted' ? lift.runId : ''),
+    occupant: (slot: Slot, movingId: string) => {
+      const here = everyRun.find((r) => ACTIVE(r) && r.id !== movingId && r.day === slot.day && r.time === slot.time);
+      return here ? { id: here.id, label: runTitle(here) } : null;
+    },
   });
 
-  /** "Clash: Asahi in HFA 21:00" for a run at a slot, or null when nobody is double-booked. */
-  function clashText(run: Run, slot?: Slot): string | null {
-    const found = clashes(timed(run, slot), active);
+  /**
+   * "Asahi in HFA 21:00" for a run at a slot, or null when nobody is
+   * double-booked; `moved` places another run elsewhere first (a swap).
+   */
+  function clashText(run: Run, slot?: Slot, moved?: { run: Run; slot: Slot }): string | null {
+    const field = moved ? active.map((r) => (r.id === moved.run.id ? timed(moved.run, moved.slot) : r)) : active;
+    const found = clashes(timed(run, slot), field);
     if (!found.length) return null;
     const names = new Map(everyRun.flatMap((r) => r.participants).map((p) => [p.id, p.name]));
     return found
@@ -78,6 +92,21 @@
       })
       .join('; ');
   }
+  /** The swap's wording: "Swap with HCarling + HStar: 20:00 ⇄ 22:00", or days only when either is own-time. */
+  function swapText(a: Run, b: Run): string {
+    const to = swapSlots(a, a.status === 'otot', b, b.status === 'otot');
+    if (to.daysOnly) return `Swap days with ${runTitle(b)}: ${dayLabel(week, a.day)} ⇄ ${dayLabel(week, b.day)}, times kept`;
+    const at = (r: Run) => (a.day === b.day ? (r.time ?? 'own time') : `${dayLabel(week, r.day)} ${r.time ?? 'own time'}`);
+    return `Swap with ${runTitle(b)}: ${at(a)} ⇄ ${at(b)}`;
+  }
+
+  /** Clashes of both runs once swapped, or null. */
+  function swapClash(a: Run, b: Run): string | null {
+    const to = swapSlots(a, a.status === 'otot', b, b.status === 'otot');
+    const found = [clashText(a, to.a, { run: b, slot: to.b }), clashText(b, to.b, { run: a, slot: to.a })].filter(Boolean);
+    return found.length ? [...new Set(found)].join('; ') : null;
+  }
+
   // Every card that clashes as it stands (overlap alone is allowed).
   const cardClash = $derived(new Map(week.runs.filter(ACTIVE).map((r) => [r.id, clashText(r)] as const)));
   const byDay = $derived(week.days.map((day) => sortRuns(week.runs.filter((r) => r.day === day.index))));
@@ -105,6 +134,11 @@
     void focusHandle(runId);
   }
 
+  function commitSwap(runId: string, withId: string) {
+    onswap(runId, withId);
+    void focusHandle(runId);
+  }
+
   // A keyboard drop (Space fires its click on keyup) or a pointer drop must
   // not also open the sheet on the card it landed on.
   let quietUntil = 0;
@@ -115,6 +149,11 @@
 
   function handleKey(event: KeyboardEvent, run: Run) {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (saving && lift.kind === 'idle' && event.key.toLowerCase() === 'm') {
+      event.preventDefault();
+      say('Saving the last change…', true);
+      return;
+    }
     const outcome = onKey(lift, event.key, movable(run), ctx, event.shiftKey);
     if (!outcome.handled) return;
     event.preventDefault();
@@ -128,6 +167,7 @@
     // change) is not applied first, and the server answers with a conflict
     // instead of the drop overwriting it. Releasing the hold then flushes.
     if (outcome.commit) commit(outcome.commit.runId, outcome.commit.to);
+    if (outcome.swap) commitSwap(outcome.swap.runId, outcome.swap.withId);
     onhold(lift.kind === 'lifted');
   }
 
@@ -143,7 +183,12 @@
     const current = lift;
     if (current.kind === 'lifted' && current.at.day === day) {
       const run = week.runs.find((r) => r.id === current.runId);
-      return run ? { text: `${current.at.time ?? 'own time'} ${runTitle(run)}`, clash: clashText(run, current.at) } : null;
+      if (!run) return null;
+      // On another run's slot the keyboard can swap (S) or drop beside it (Enter).
+      const here = ctx.occupant(current.at, run.id);
+      const other = here ? everyRun.find((r) => r.id === here.id) : undefined;
+      if (other) return { text: `${current.at.time ?? 'own time'} ${runTitle(run)} · S: ${swapText(run, other)}`, clash: swapClash(run, other) };
+      return { text: `${current.at.time ?? 'own time'} ${runTitle(run)}`, clash: clashText(run, current.at) };
     }
     return null;
   }
@@ -209,6 +254,10 @@
   }
 
   function dragStart(id: string) {
+    if (saving) {
+      say('Saving the last change…', true);
+      return;
+    }
     const run = week.runs.find((r) => r.id === id);
     if (!run) return;
     dragging = id;
@@ -216,16 +265,25 @@
     say(`Picked up ${runTitle(run)}, ${whenLabel(week, run.day, run.time)}.`, true);
   }
 
-  // Where a pointer drop would land: the day, the card it would sit before
-  // (or after the last), and the time that gives (dropTime.ts).
-  interface Plan {
+  // Where a pointer drop would land: on a card's middle band it swaps with
+  // that card; elsewhere it moves between cards, at the time that gives
+  // (dropTime.ts). The indicator line or the swap target shows which.
+  interface MovePlan {
+    kind: 'move';
     day: number;
-    index: number;
     /** The card the indicator line sits on, and on which edge. */
     mark: { runId: string; edge: 'before' | 'after' } | null;
     drop: DropTime;
     clash: string | null;
   }
+  interface SwapPlan {
+    kind: 'swap';
+    day: number;
+    withId: string;
+    text: string;
+    clash: string | null;
+  }
+  type Plan = MovePlan | SwapPlan;
   let plan = $state<Plan | null>(null);
   let pointer = { x: 0, y: 0 };
   let board: HTMLDivElement;
@@ -233,35 +291,44 @@
   function planFor(run: Run, day: number): Plan {
     // Cards of that day in board order, without the dragged one, and where the pointer sits among them.
     const cards = [...board.querySelectorAll<HTMLElement>(`[data-day="${day}"] [data-run]`)].filter((card) => card.dataset.run !== run.id);
-    let index = cards.findIndex((card) => {
-      const box = card.getBoundingClientRect();
-      return pointer.y < box.top + box.height / 2;
-    });
-    if (index < 0) index = cards.length;
-    const dayRuns = cards.flatMap((card) => {
-      const other = week.runs.find((r) => r.id === card.dataset.run);
-      return other ? [timed(other)] : [];
-    });
-    const drop = dropTime(timed(run), dayRuns, index);
-    const markCard = cards[index] ?? cards[index - 1];
+    const runs = cards.map((card) => week.runs.find((r) => r.id === card.dataset.run));
+    const zone = zoneAt(
+      pointer.y,
+      cards.map((card, i) => {
+        const box = card.getBoundingClientRect();
+        return { id: card.dataset.run!, top: box.top, height: box.height, swappable: !!runs[i] && ACTIVE(runs[i]) };
+      }),
+    );
+    if (zone.kind === 'swap') {
+      const other = runs.find((r) => r?.id === zone.id)!;
+      return { kind: 'swap', day, withId: other.id, text: swapText(run, other), clash: swapClash(run, other) };
+    }
+    const dayRuns = runs.flatMap((other) => (other ? [timed(other)] : []));
+    const drop = dropTime(timed(run), dayRuns, zone.index);
+    const markCard = cards[zone.index] ?? cards[zone.index - 1];
     return {
+      kind: 'move',
       day,
-      index,
-      mark: markCard ? { runId: markCard.dataset.run!, edge: cards[index] ? 'before' : 'after' } : null,
+      mark: markCard ? { runId: markCard.dataset.run!, edge: cards[zone.index] ? 'before' : 'after' } : null,
       drop,
       clash: clashText(run, { day, time: drop.time }),
     };
   }
 
+  const planKey = (p: Plan | null) => (p ? (p.kind === 'swap' ? `swap ${p.withId}` : `move ${p.day} ${p.drop.time}`) + ` ${p.clash}` : '');
+
   function replan() {
     const run = draggedRun;
     if (!run || overDay === null) return;
     const next = planFor(run, overDay);
-    const changed = !plan || next.day !== plan.day || next.drop.time !== plan.drop.time || next.clash !== plan.clash;
+    const changed = planKey(next) !== planKey(plan);
     plan = next;
-    if (changed) {
+    if (!changed) return;
+    const clash = next.clash ? ` Clash: ${next.clash}.` : '';
+    if (next.kind === 'swap') {
+      say(`${next.text}.${clash}`, true);
+    } else {
       const edge = next.drop.held ? ` (as ${next.drop.held === 'start' ? 'early' : 'late'} as the day goes)` : '';
-      const clash = next.clash ? ` Clash: ${next.clash}.` : '';
       say(`Drop on ${describeSlot({ day: next.day, time: next.drop.time }, ctx)}${edge}.${clash}`, true);
     }
   }
@@ -279,6 +346,7 @@
   }
 
   function dragEnd(id: string, day: number | null, canceled: boolean) {
+    if (dragging !== id) return;
     quietUntil = performance.now() + 400;
     const last = plan;
     dragging = null;
@@ -288,7 +356,13 @@
     const release = () => onhold(false);
     const run = week.runs.find((r) => r.id === id);
     if (!run) return release();
-    const to = day === null ? null : { day, time: last && last.day === day ? last.drop.time : run.time };
+    if (!canceled && day !== null && last?.kind === 'swap' && last.day === day) {
+      const other = week.runs.find((r) => r.id === last.withId);
+      say(`${last.text}.${last.clash ? ` Clash: ${last.clash}; saved anyway.` : ''}`);
+      if (other) commitSwap(run.id, other.id);
+      return release();
+    }
+    const to = day === null ? null : { day, time: last?.kind === 'move' && last.day === day ? last.drop.time : run.time };
     if (canceled || to === null) {
       say(`Move cancelled. ${runTitle(run)} stays on ${whenLabel(week, run.day, run.time)}.`);
     } else if (to.day === run.day && to.time === run.time) {
@@ -330,7 +404,8 @@
               lifted={lift.kind === 'lifted' && lift.runId === run.id}
               dragging={dragging === run.id}
               clash={cardClash.get(run.id) ?? null}
-              dropMark={plan?.mark?.runId === run.id ? plan.mark.edge : null}
+              dropMark={plan?.kind === 'move' && plan.mark?.runId === run.id ? plan.mark.edge : null}
+              swapTarget={plan?.kind === 'swap' && plan.withId === run.id}
               onopen={open}
               onkey={handleKey}
               onblur={handleBlur}
@@ -349,12 +424,16 @@
   a clash when it double-books somebody (announced politely as it changes). -->
 <div class="dnd-ghost runcard" class:dnd-ghost--on={draggedRun !== undefined} bind:this={ghost} aria-hidden="true">
   {#if draggedRun}
-    <span class="runcard__time"
-      >{#if plan && plan.drop.time !== draggedRun.time}<span class="dnd-ghost__from">{draggedRun.time ?? 'own time'}</span> → {plan.drop
-          .time ?? 'own time'}{:else}{draggedRun.time ?? 'own time'}{/if}</span
-    >
-    <span>{runTitle(draggedRun)}</span>
-    {#if plan?.drop.held}<span class="dnd-ghost__note">{plan.drop.held === 'start' ? 'earliest' : 'latest'} the day allows</span>{/if}
+    {#if plan?.kind === 'swap'}
+      <span class="dnd-ghost__swap">{plan.text}</span>
+    {:else}
+      <span class="runcard__time"
+        >{#if plan && plan.drop.time !== draggedRun.time}<span class="dnd-ghost__from">{draggedRun.time ?? 'own time'}</span> → {plan.drop
+            .time ?? 'own time'}{:else}{draggedRun.time ?? 'own time'}{/if}</span
+      >
+      <span>{runTitle(draggedRun)}</span>
+      {#if plan?.drop.held}<span class="dnd-ghost__note">{plan.drop.held === 'start' ? 'earliest' : 'latest'} the day allows</span>{/if}
+    {/if}
     {#if plan?.clash}<span class="plan-clash"><Icon name="alert-triangle" /> Clash: {plan.clash}</span>{/if}
   {/if}
 </div>
@@ -407,6 +486,12 @@
   .dnd-ghost__from {
     color: var(--dim);
     text-decoration: line-through;
+  }
+
+  .dnd-ghost__swap {
+    font-family: var(--mono);
+    font-size: var(--fs-small);
+    font-weight: 700;
   }
 
   .dnd-ghost__note {

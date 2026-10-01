@@ -322,3 +322,39 @@ test('capture planner time drops and run lengths', async ({ page }) => {
     await shot(page, `admin-config-run-lengths-${vp.name}-marigold-light`);
   }
 });
+
+// Planner swap (workplan step planner-swap): the drag indicator over another
+// card, and the run sheet's "Swap timing with…" picker, wide and narrow.
+test('capture planner swap', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'marigold');
+    localStorage.setItem('theme', 'light');
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('.board[data-hydrated]')).toBeVisible();
+  const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
+  const bm = (await page.locator('[data-run="r-bm"]').boundingBox())!;
+  const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
+  const [x1, y1] = [bm.x + bm.width / 2, bm.y + bm.height / 2];
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12);
+  await page.mouse.move(x1 + 1, y1 + 1);
+  await expect(page.locator('.dnd-ghost--on')).toContainText('Swap with XBM');
+  await shot(page, 'admin-planner-swap-wide-marigold-light');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(`${ADMIN}/?sw=off`);
+    await page.locator('[data-run="r-fa"] .plan-card__open').click();
+    const sheet = page.getByRole('dialog', { name: 'HFA' });
+    await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
+    await sheet.getByRole('combobox', { name: 'Swap with' }).selectOption({ label: 'Tue 29 23:30 · XBM' });
+    await expect(sheet.getByText('HFA → Tue 29 23:30')).toBeVisible();
+    await sheet.getByRole('group', { name: /Swap HFA's timing/ }).scrollIntoViewIfNeeded();
+    await shot(page, `admin-sheet-swap-${vp.name}-marigold-light`);
+  }
+});

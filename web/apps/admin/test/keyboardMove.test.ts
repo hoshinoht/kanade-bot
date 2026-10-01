@@ -116,3 +116,40 @@ describe('keyboard move: configured step and Shift jumps', () => {
     expect(out.announce).toBe('No run before 22:00 on Tue 29 to move next to.');
   });
 });
+
+describe('keyboard move: S swaps with the run on the slot', () => {
+  const occupied = {
+    ...ctx,
+    occupant: (slot: { day: number; time: string | null }, movingId: string) =>
+      slot.day === 5 && slot.time === '23:30' && movingId !== 'r-bm' ? { id: 'r-bm', label: 'XBM' } : null,
+  };
+
+  it('says when a step lands on another run, and that S swaps', () => {
+    const up = onKey(IDLE, 'm', run, occupied);
+    expect(up.announce).toContain('on another run, S swaps the two');
+    let state = up.state;
+    for (const key of ['ArrowDown', 'ArrowDown']) state = onKey(state, key, run, occupied).state;
+    const out = onKey(state, 'ArrowDown', run, occupied);
+    expect(out.announce).toBe('HCarling + HStar: Tue 29, 23:30. XBM is here: S swaps with it, Enter drops beside it.');
+  });
+
+  it('S on another run swaps and ends the lift', () => {
+    let state = onKey(IDLE, 'm', run, occupied).state;
+    for (const key of ['ArrowDown', 'ArrowDown', 'ArrowDown']) state = onKey(state, key, run, occupied).state;
+    const out = onKey(state, 's', run, occupied);
+    expect(out).toMatchObject({ state: IDLE, handled: true, announce: 'Swapping HCarling + HStar with XBM.', swap: { runId: 'r-carling', withId: 'r-bm' } });
+    expect(out.commit).toBeUndefined();
+  });
+
+  it('S with nobody on the slot does nothing and says so', () => {
+    const up = onKey(IDLE, 'm', run, occupied);
+    const out = onKey(up.state, 'S', run, occupied);
+    expect(out.state).toEqual(up.state);
+    expect(out.swap).toBeUndefined();
+    expect(out.announce).toBe("Nothing to swap with on Tue 29, 22:00: move onto another run's slot first.");
+  });
+
+  it('S is not a key until the run is picked up', () => {
+    expect(onKey(IDLE, 's', run, occupied)).toEqual({ state: IDLE, handled: false });
+  });
+});

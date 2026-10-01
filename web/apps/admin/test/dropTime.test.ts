@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clashes, dropTime, snapTime, timedOthers, type TimedRun } from '../src/planner/dropTime';
+import { clashes, dropTime, snapTime, swapSlots, timedOthers, zoneAt, type TimedRun } from '../src/planner/dropTime';
 
 const run = (id: string, time: string | null, minutes: number, extra: Partial<TimedRun> = {}): TimedRun => ({ id, day: 4, time, minutes, ...extra });
 
@@ -103,5 +103,51 @@ describe('clashes', () => {
   it('own-time runs and runs on other days never clash', () => {
     expect(clashes(a, [run('own', null, 30, { members: ['asahi'] }), run('b', '21:00', 30, { day: 2, members: ['asahi'] })])).toEqual([]);
     expect(clashes(run('own', null, 30, { members: ['asahi'] }), [a])).toEqual([]);
+  });
+});
+
+describe('swap zones', () => {
+  // Two cards: 100–180 and 190–270 (80 px tall; middle bands 120–160, 210–250).
+  const cards = [
+    { id: 'carling', top: 100, height: 80, swappable: true },
+    { id: 'bm', top: 190, height: 80, swappable: true },
+  ];
+
+  it('a card’s middle half swaps with it', () => {
+    expect(zoneAt(140, cards)).toEqual({ kind: 'swap', id: 'carling' });
+    expect(zoneAt(120, cards)).toEqual({ kind: 'swap', id: 'carling' });
+    expect(zoneAt(250, cards)).toEqual({ kind: 'swap', id: 'bm' });
+  });
+
+  it('its top and bottom quarters, and the gaps, are between cards', () => {
+    expect(zoneAt(90, cards)).toEqual({ kind: 'between', index: 0 });
+    expect(zoneAt(105, cards)).toEqual({ kind: 'between', index: 0 });
+    expect(zoneAt(170, cards)).toEqual({ kind: 'between', index: 1 });
+    expect(zoneAt(185, cards)).toEqual({ kind: 'between', index: 1 });
+    expect(zoneAt(265, cards)).toEqual({ kind: 'between', index: 2 });
+    expect(zoneAt(400, cards)).toEqual({ kind: 'between', index: 2 });
+  });
+
+  it('a finished or cancelled card takes no swap: its middle is between', () => {
+    expect(zoneAt(130, [{ ...cards[0]!, swappable: false }, cards[1]!])).toEqual({ kind: 'between', index: 0 });
+    expect(zoneAt(150, [{ ...cards[0]!, swappable: false }, cards[1]!])).toEqual({ kind: 'between', index: 1 });
+  });
+
+  it('an empty day is between, at the start', () => {
+    expect(zoneAt(140, [])).toEqual({ kind: 'between', index: 0 });
+  });
+});
+
+describe('swap slots', () => {
+  const a = { day: 4, time: '20:00' };
+  const b = { day: 5, time: '23:30' };
+
+  it('exchanges day and time', () => {
+    expect(swapSlots(a, false, b, false)).toEqual({ daysOnly: false, a: { day: 5, time: '23:30' }, b: { day: 4, time: '20:00' } });
+  });
+
+  it('with an own-time run, only the days change and both keep their clocks', () => {
+    expect(swapSlots(a, false, { day: 5, time: null }, true)).toEqual({ daysOnly: true, a: { day: 5, time: '20:00' }, b: { day: 4, time: null } });
+    expect(swapSlots({ day: 4, time: null }, true, b, false)).toEqual({ daysOnly: true, a: { day: 5, time: null }, b: { day: 4, time: '23:30' } });
   });
 });

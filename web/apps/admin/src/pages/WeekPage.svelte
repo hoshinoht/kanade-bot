@@ -18,6 +18,7 @@
     which,
     tab = $bindable(),
     onmove,
+    onswap,
     onopen,
     onundo,
     onreread,
@@ -27,6 +28,8 @@
     which: WeekKey;
     tab: WeekTab;
     onmove: (runId: string, to: Slot) => void;
+    /** Exchange two runs' slots (a drop on a card, or S during a keyboard lift). */
+    onswap: (runId: string, withId: string) => void;
     onopen: (runId: string) => void;
     onundo: () => void;
     onreread: (run: Run) => void;
@@ -135,8 +138,8 @@
     {#if landscape && store.summary}<NowTiles summary={store.summary} {onopen} inline />{/if}
     {#if compact}<Filters bind:filter channels={store.channels} members={store.members} compact />{/if}
     <div class="page-head__side">
-      <button type="button" class="btn" disabled={!store.lastMove} onclick={onundo} aria-keyshortcuts="Control+Z Meta+Z" title="Undo move">
-        <Icon name="rotate-ccw" /> <span class="week-head__label">Undo move</span>
+      <button type="button" class="btn" disabled={!store.lastMove} onclick={onundo} aria-keyshortcuts="Control+Z Meta+Z" title={store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}>
+        <Icon name="rotate-ccw" /> <span class="week-head__label">{store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}</span>
       </button>
       <button type="button" class="btn" onclick={() => store.refresh()} title="Refresh"
         ><Icon name="refresh-cw" /> <span class="week-head__label">Refresh</span></button
@@ -169,8 +172,10 @@
         week={shown}
         {helpId}
         {onmove}
+        {onswap}
         onopen={(run: Run) => onopen(run.id)}
         onhold={(h) => (store.holding = h)}
+        saving={store.mutating}
         {onreread}
         {busyChannels}
         step={store.runStep}

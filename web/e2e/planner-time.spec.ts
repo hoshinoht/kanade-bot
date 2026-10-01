@@ -23,10 +23,10 @@ async function weekRun(page: Page, id: string) {
   return { version: week.version, run: week.runs.find((r) => r.id === id)! };
 }
 
-/** A point on the board just above a card's middle: a drop there lands before that card. */
+/** A point in a card's top edge band (above its middle half, which swaps): a drop there lands before that card. */
 async function above(page: Page, runId: string) {
   const box = (await page.locator(`[data-run="${runId}"]`).boundingBox())!;
-  return { x: box.x + box.width / 2, y: box.y + box.height / 4 };
+  return { x: box.x + box.width / 2, y: box.y + box.height * 0.12 };
 }
 
 async function below(page: Page, runId: string) {

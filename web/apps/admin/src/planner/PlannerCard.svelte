@@ -17,6 +17,7 @@
     rereadBusy,
     clash = null,
     dropMark = null,
+    swapTarget = false,
   }: {
     run: Run;
     week: Week;
@@ -34,6 +35,8 @@
     clash?: string | null;
     /** A pointer drag would land just before or after this card. */
     dropMark?: 'before' | 'after' | null;
+    /** A pointer drop here would swap the two runs' slots. */
+    swapTarget?: boolean;
   } = $props();
 
   const movable = $derived(run.status !== 'done' && run.status !== 'cancelled');
@@ -55,6 +58,7 @@
   class:plan-card--lifted={lifted || dragging}
   class:plan-card--drop-before={dropMark === 'before'}
   class:plan-card--drop-after={dropMark === 'after'}
+  class:plan-card--swap-target={swapTarget}
   data-run={run.id}
   {@attach dragAttach}
 >
@@ -245,5 +249,13 @@
 
   .plan-card--drop-after {
     box-shadow: 0 4px 0 -1px var(--accent);
+  }
+
+  /* The card a drop would swap with: a solid accent ring and the select
+     container (the ghost says "Swap with …" in words). */
+  .plan-card--swap-target {
+    outline: 3px solid var(--accent);
+    outline-offset: 1px;
+    --card-face: var(--select);
   }
 </style>

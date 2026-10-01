@@ -115,3 +115,45 @@ export function clashes(run: TimedRun, runs: TimedRun[]): Clash[] {
   }
   return found;
 }
+
+/**
+ * A slot exchange (POST /runs/{id}/swap): each run takes the other's day and
+ * time; when either is own-time, only the days change and both keep their
+ * clocks (as the server does).
+ */
+export function swapSlots<R extends Pick<TimedRun, 'day' | 'time'>>(a: R, aOwnTime: boolean, b: R, bOwnTime: boolean) {
+  const daysOnly = aOwnTime || bOwnTime;
+  return {
+    daysOnly,
+    a: { day: b.day, time: daysOnly ? a.time : b.time },
+    b: { day: a.day, time: daysOnly ? b.time : a.time },
+  };
+}
+
+/** A card's box on the board, top to bottom, without the dragged one. */
+export interface CardBox {
+  id: string;
+  top: number;
+  height: number;
+  /** Done and cancelled runs take no swaps: their middle is a between zone too. */
+  swappable: boolean;
+}
+
+/**
+ * Where a pointer at height `y` sits among a day's cards: on a card's middle
+ * half (its top and bottom quarters stay "between") means swap with it;
+ * anywhere else is a move to `index` (the cards above the pointer's height).
+ */
+export type Zone = { kind: 'swap'; id: string } | { kind: 'between'; index: number };
+
+export const SWAP_BAND = 0.25;
+
+export function zoneAt(y: number, cards: CardBox[]): Zone {
+  for (const card of cards) {
+    const top = card.top + card.height * SWAP_BAND;
+    const bottom = card.top + card.height * (1 - SWAP_BAND);
+    if (card.swappable && y >= top && y <= bottom) return { kind: 'swap', id: card.id };
+  }
+  const index = cards.findIndex((card) => y < card.top + card.height / 2);
+  return { kind: 'between', index: index < 0 ? cards.length : index };
+}
