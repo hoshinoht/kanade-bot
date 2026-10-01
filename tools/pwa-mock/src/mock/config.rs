@@ -9,6 +9,7 @@
 //! minimum over its aliases, and the groups' summed concurrency within the
 //! key-level max_in_flight while the deployment shares its key.
 
+use super::catalog::valid_run_length_override;
 use super::model_context::{self, Route};
 use super::seed;
 use super::{MoveError, Store};
@@ -43,6 +44,19 @@ pub struct ProfileVisibility {
 }
 
 #[derive(Clone, Serialize)]
+pub struct RunLengthOverride {
+    pub boss: String,
+    pub difficulty: String,
+    pub minutes: u32,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RunLengths {
+    pub default_minutes: u32,
+    pub overrides: Vec<RunLengthOverride>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Config {
     pub day_of_ping_time: String,
     pub countdown_minutes: Vec<u32>,
@@ -67,6 +81,7 @@ pub struct Config {
     pub permits: u32,
     /// `models.context`: defaults, per-role reserve/cap and alias overrides.
     pub context: model_context::Settings,
+    pub run_lengths: RunLengths,
     /// Roles with a model when the bot started: extraction and heading
     /// rewrites run only for those until a restart.
     #[serde(skip)]
@@ -347,6 +362,14 @@ pub fn defaults() -> Config {
         declared_groups: None,
         permits: 1,
         context: model_context::Settings::default(),
+        run_lengths: RunLengths {
+            default_minutes: 30,
+            overrides: vec![RunLengthOverride {
+                boss: "BM".into(),
+                difficulty: "h".into(),
+                minutes: 60,
+            }],
+        },
         started: vec!["extraction", "chat", "rewrite"],
     }
 }
@@ -597,6 +620,7 @@ impl Store {
                 "pii_pseudonymise": PII_PSEUDONYMISE,
                 "context": c.context,
             },
+            "run_lengths": c.run_lengths,
             "manage_messages": { "missing": missing_manage },
             "env": [
                 { "key": "KANADE_TIMEZONE", "label": "Timezone", "value": "Asia/Kuala_Lumpur", "reason": "Every stored time is converted with it; a change needs a restart." },
@@ -941,6 +965,55 @@ impl Store {
                 return Err(MoveError::Invalid(errors.join(" ")));
             }
         }
+        if let Some(p) = patch.get("run_lengths") {
+            if let Some(minutes) = p.get("default_minutes").and_then(Value::as_u64) {
+                if !(5..=240).contains(&minutes) {
+                    return Err(bad("The default run length is 5-240 whole minutes."));
+                }
+                next.run_lengths.default_minutes = minutes as u32;
+            } else if p.get("default_minutes").is_some() {
+                return Err(bad("The default run length is 5-240 whole minutes."));
+            }
+            if let Some(values) = p.get("overrides").and_then(Value::as_array) {
+                let mut overrides = Vec::with_capacity(values.len());
+                let mut seen = Vec::with_capacity(values.len());
+                for value in values {
+                    let boss = value
+                        .get("boss")
+                        .and_then(Value::as_str)
+                        .filter(|boss| !boss.is_empty())
+                        .ok_or(bad("Pick a catalog boss key."))?;
+                    let difficulty = value
+                        .get("difficulty")
+                        .and_then(Value::as_str)
+                        .filter(|difficulty| !difficulty.is_empty())
+                        .ok_or(bad("Pick a difficulty that boss has."))?;
+                    if !valid_run_length_override(boss, difficulty) {
+                        return Err(bad("Pick a catalog boss key and difficulty."));
+                    }
+                    let minutes = value
+                        .get("minutes")
+                        .and_then(Value::as_u64)
+                        .filter(|minutes| (5..=480).contains(minutes))
+                        .ok_or(bad("An override run length is 5-480 whole minutes."))?
+                        as u32;
+                    if seen.contains(&(boss, difficulty)) {
+                        return Err(bad(
+                            "A boss difficulty can have only one run-length override.",
+                        ));
+                    }
+                    seen.push((boss, difficulty));
+                    overrides.push(RunLengthOverride {
+                        boss: boss.into(),
+                        difficulty: difficulty.into(),
+                        minutes,
+                    });
+                }
+                next.run_lengths.overrides = overrides;
+            } else if p.get("overrides").is_some() {
+                return Err(bad("run_lengths.overrides must be an array of overrides."));
+            }
+        }
         for (role, feature, before, after) in [
             (
                 "extraction",
@@ -1017,7 +1090,12 @@ impl Store {
 fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
     let bad = |path: &str| MoveError::invalid(format!("Unknown or read-only setting: {path}."));
     let obj = patch.as_object().ok_or_else(|| bad("(request)"))?;
-    for (section, body) in obj {
+    let (section, body) = match (obj.iter().next(), obj.len()) {
+        (None, _) => return Err(MoveError::invalid("Send one settings section.")),
+        (Some(_), 1) => obj.iter().next().unwrap(),
+        _ => return Err(MoveError::invalid("Save one section at a time.")),
+    };
+    {
         let keys: &[&str] = match section.as_str() {
             "pings" => &["day_of_ping_time", "countdown_minutes"],
             "watching" => &["paused", "extract_enabled"],
@@ -1031,9 +1109,15 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             "models" => &["roles", "groups", "context"],
             "self_service" => &["mode", "public_portal"],
             "notifications" => &["quiet_mode"],
+            "run_lengths" => &["default_minutes", "overrides"],
             _ => return Err(bad(section)),
         };
         let body = body.as_object().ok_or_else(|| bad(section))?;
+        if body.is_empty() {
+            return Err(MoveError::invalid(format!(
+                "Send at least one {section} setting."
+            )));
+        }
         for (key, value) in body {
             if !keys.contains(&key.as_str()) {
                 return Err(bad(&format!("{section}.{key}")));
@@ -1123,6 +1207,22 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                         }
                     }
                 }
+                ("run_lengths", "overrides") => {
+                    let list = value
+                        .as_array()
+                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
+                    for item in list {
+                        if !item.as_object().is_some_and(|o| {
+                            o.keys()
+                                .all(|k| ["boss", "difficulty", "minutes"].contains(&k.as_str()))
+                                && o.contains_key("boss")
+                                && o.contains_key("difficulty")
+                                && o.contains_key("minutes")
+                        }) {
+                            return Err(bad(&format!("{section}.{key}[]")));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1153,6 +1253,69 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn run_lengths_seed_the_week_and_follow_a_config_save() {
+        let mut s = store();
+        let initial = s.week(false);
+        assert_eq!(
+            initial
+                .runs
+                .iter()
+                .find(|run| run.id == "r-kalos")
+                .unwrap()
+                .minutes,
+            30
+        );
+        let multi = initial
+            .runs
+            .iter()
+            .find(|run| run.bosses.len() >= 2)
+            .unwrap();
+        assert_eq!(multi.minutes, multi.bosses.len() as u32 * 30);
+        let saved = s
+            .patch_config(&json!({ "run_lengths": { "default_minutes": 20 } }))
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(saved["run_lengths"]["default_minutes"], 20);
+        assert_eq!(
+            s.week(false)
+                .runs
+                .iter()
+                .find(|run| run.id == "r-kalos")
+                .unwrap()
+                .minutes,
+            20
+        );
+        for patch in [
+            json!({ "run_lengths": { "overrides": [{ "boss": "Ghost", "difficulty": "h", "minutes": 60 }] } }),
+            json!({ "run_lengths": { "overrides": [{ "boss": "BM", "difficulty": "n", "minutes": 60 }] } }),
+            json!({ "run_lengths": { "overrides": [
+                { "boss": "BM", "difficulty": "h", "minutes": 60 },
+                { "boss": "BM", "difficulty": "h", "minutes": 75 }
+            ] } }),
+        ] {
+            assert!(s.patch_config(&patch).is_err(), "{patch}");
+        }
+    }
+
+    #[test]
+    fn config_patch_needs_one_nonempty_section() {
+        let mut s = store();
+        for (patch, message) in [
+            (json!({}), "Send one settings section."),
+            (
+                json!({ "run_lengths": {} }),
+                "Send at least one run_lengths setting.",
+            ),
+            (
+                json!({ "run_lengths": { "default_minutes": 20 }, "notifications": { "quiet_mode": true } }),
+                "Save one section at a time.",
+            ),
+        ] {
+            let error = s.patch_config(&patch).unwrap_err().to_string();
+            assert_eq!(error, message, "{patch}");
+        }
     }
 
     #[test]

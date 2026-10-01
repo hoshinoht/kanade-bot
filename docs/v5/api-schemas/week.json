@@ -58,13 +58,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "day", "time", "status", "bosses", "tally",
+        "id", "day", "time", "minutes", "status", "bosses", "tally",
         "short_id", "participants", "party", "channel_id", "channel", "cards", "fixed_id", "amended", "roster_change"
       ],
       "properties": {
         "id": { "type": "string" },
         "day": { "type": "integer", "minimum": 0, "maximum": 6 },
         "time": { "$ref": "#/$defs/RunTime" },
+        "minutes": { "type": "integer", "minimum": 1, "description": "Configured sum of the run's boss durations, including own-time runs." },
         "status": { "$ref": "common.json#/$defs/RunStatus" },
         "bosses": { "$ref": "common.json#/$defs/Bosses" },
         "tally": { "$ref": "common.json#/$defs/Tally" },

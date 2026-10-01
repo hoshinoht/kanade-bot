@@ -166,6 +166,9 @@ fn convert(value: &Value, kind: Kind, path: &str) -> Result<String, Error> {
         Kind::Context => {
             serde_json::to_string(value).map_err(|_| wrong(path, "a context settings table"))
         }
+        Kind::RunLengths => {
+            serde_json::to_string(value).map_err(|_| wrong(path, "a run lengths settings table"))
+        }
     }
 }
 

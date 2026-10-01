@@ -1,8 +1,13 @@
 //! Live `serve` configuration: everything beyond the HTTP listeners.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use chrono::{NaiveTime, Weekday};
+
+use crate::domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
 
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
@@ -38,6 +43,8 @@ pub struct SettingSeeds {
     pub day_of_ping_time: Option<NaiveTime>,
     /// Largest first, no duplicates.
     pub countdown_minutes: Option<Vec<u32>>,
+    /// `[settings.run_lengths]`, used only while no saved row exists.
+    pub run_lengths: Option<RunLengths>,
 }
 
 impl ServeConfig {
@@ -89,8 +96,47 @@ impl SettingSeeds {
             reset_time: clock(values, "KANADE_BOSS_WEEK_RESET_TIME")?,
             day_of_ping_time: clock(values, "KANADE_DAY_OF_PING_TIME")?,
             countdown_minutes: countdowns(values, "KANADE_COUNTDOWN_MINUTES")?,
+            run_lengths: run_lengths(values)?,
         })
     }
+}
+
+fn run_lengths(values: &BTreeMap<String, String>) -> Result<Option<RunLengths>, Error> {
+    let Some(value) = non_empty(values, "KANADE_RUN_LENGTHS") else {
+        return Ok(None);
+    };
+    let lengths: RunLengths = serde_json::from_str(value)
+        .map_err(|_| Error::Configuration("KANADE_RUN_LENGTHS must be run lengths JSON".into()))?;
+    if !RUN_MINUTES.contains(&lengths.default_minutes) {
+        return Err(Error::Configuration(
+            "KANADE_RUN_LENGTHS.default_minutes must be 5-240 whole minutes".into(),
+        ));
+    }
+    let mut pairs = BTreeSet::new();
+    for (index, override_) in lengths.overrides.iter().enumerate() {
+        let field = format!("KANADE_RUN_LENGTHS.overrides[{index}]");
+        if !OVERRIDE_RUN_MINUTES.contains(&override_.minutes) {
+            return Err(Error::Configuration(format!(
+                "{field}.minutes must be 5-480 whole minutes"
+            )));
+        }
+        if override_.boss.is_empty() {
+            return Err(Error::Configuration(format!(
+                "{field}.boss must not be empty"
+            )));
+        }
+        if override_.difficulty.is_empty() {
+            return Err(Error::Configuration(format!(
+                "{field}.difficulty must not be empty"
+            )));
+        }
+        if !pairs.insert((&override_.boss, &override_.difficulty)) {
+            return Err(Error::Configuration(format!(
+                "{field} duplicates a previous boss and difficulty pair"
+            )));
+        }
+    }
+    Ok(Some(lengths))
 }
 
 fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
@@ -322,6 +368,37 @@ mod tests {
             config(&[("KANADE_PILOT_CHANNEL_IDS", "1")]).unwrap_err(),
             "KANADE_PILOT_CHANNEL_IDS was removed; use KANADE_CHAT_CATEGORY_IDS"
         );
+    }
+
+    #[test]
+    fn run_length_seed_bounds_and_pairs_are_strict() {
+        let valid = config(&[(
+            "KANADE_RUN_LENGTHS",
+            r#"{"default_minutes":20,"overrides":[{"boss":"BM","difficulty":"h","minutes":90}]}"#,
+        )])
+        .unwrap()
+        .seeds
+        .run_lengths
+        .unwrap();
+        assert_eq!(valid.default_minutes, 20);
+        assert_eq!(valid.overrides[0].minutes, 90);
+        for (value, field) in [
+            (
+                r#"{"default_minutes":0,"overrides":[]}"#,
+                "KANADE_RUN_LENGTHS.default_minutes",
+            ),
+            (
+                r#"{"default_minutes":30,"overrides":[{"boss":"BM","difficulty":"h","minutes":481}]}"#,
+                "KANADE_RUN_LENGTHS.overrides[0].minutes",
+            ),
+            (
+                r#"{"default_minutes":30,"overrides":[{"boss":"BM","difficulty":"h","minutes":60},{"boss":"BM","difficulty":"h","minutes":90}]}"#,
+                "KANADE_RUN_LENGTHS.overrides[1]",
+            ),
+        ] {
+            let error = config(&[("KANADE_RUN_LENGTHS", value)]).unwrap_err();
+            assert!(error.contains(field), "{error}");
+        }
     }
 
     #[test]

@@ -57,7 +57,18 @@ async fn week(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
         .map_err(unavailable)?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    Ok(Json(dto::week::week(&ctx, &snapshot, &frame, version)).into_response())
+    let run_lengths = match &state.config {
+        Some(desk) => desk.settings().await.run_lengths,
+        None => Default::default(),
+    };
+    Ok(Json(dto::week::week(
+        &ctx,
+        &snapshot,
+        &frame,
+        version,
+        &run_lengths,
+    ))
+    .into_response())
 }
 
 async fn stats(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {

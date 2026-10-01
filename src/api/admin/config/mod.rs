@@ -94,6 +94,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
         Section::SelfService(value) => settings.self_service = value,
         Section::Persona(value) => settings.persona = value,
         Section::Models(value) => settings.models = value,
+        Section::RunLengths(value) => settings.run_lengths = value,
         Section::Schedule(value) => settings.schedule = value,
         Section::Posting(value) => settings.posting = value,
     }
@@ -221,6 +222,11 @@ async fn update(
                 Section::Persona(patch::persona(&current.persona, fields, &choices.readable)?)
             }
         }
+        "run_lengths" => Section::RunLengths(patch::run_lengths(
+            &current.run_lengths,
+            fields,
+            &state.catalog,
+        )?),
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -355,6 +361,7 @@ fn name_of(section: &str) -> &'static str {
         "notifications" => "notifications",
         "self_service" => "self_service",
         "persona" => "persona",
+        "run_lengths" => "run_lengths",
         _ => "models",
     }
 }

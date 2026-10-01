@@ -1009,6 +1009,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "config.json#/$defs/ConfigView",
     )
     .await;
+    let lengths = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "run_lengths": { "default_minutes": 20 } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(lengths["run_lengths"]["default_minutes"], 20);
     h.expect(
         false,
         "PATCH",

@@ -23,6 +23,9 @@ pub const REWRITE_REASONING: &str = "v5.rewrite_reasoning";
 /// JSON context-window settings. Kept as one allowlisted generic config row;
 /// its nested fields evolve without a SQLite migration.
 pub const MODEL_CONTEXT: &str = "v5.model_context";
+/// JSON run-length settings. Overrides use stable catalog boss keys and
+/// difficulty letters; validation against the live catalog happens at the API.
+pub const RUN_LENGTHS: &str = "v5.run_lengths";
 pub const POST_CHANNEL: &str = "v5.post_channel_id";
 pub const WATCHED_CHANNELS: &str = "v5.watched_channel_ids";
 pub const WATCHED_CATEGORIES: &str = "v5.watched_category_ids";
@@ -37,7 +40,7 @@ pub const ROLE_PROFILES: &str = "v5.role_profiles";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 29] = [
+pub const ALL: [&str; 30] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -56,6 +59,7 @@ pub const ALL: [&str; 29] = [
     REWRITE_MODEL,
     REWRITE_REASONING,
     MODEL_CONTEXT,
+    RUN_LENGTHS,
     POST_CHANNEL,
     WATCHED_CHANNELS,
     WATCHED_CATEGORIES,

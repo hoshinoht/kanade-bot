@@ -119,6 +119,7 @@ lists are comma-separated.
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
 | `KANADE_MODEL_CONTEXT` | unset | JSON seed from `[models.context]`: cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; the Config API is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, or a reserve not smaller than its role's seed window (its cap, else the smaller zone default) refuses startup naming the field. Needs `KANADE_MODEL_BASE_URL`. |
+| `KANADE_RUN_LENGTHS` | unset | JSON seed from `[settings.run_lengths]`: `{default_minutes, overrides}`. It applies only when `v5.run_lengths` is unsaved; Config is the live writer. The default is 5-240 minutes; each `{boss, difficulty, minutes}` override is 5-480 and must name an exact catalog key and valid lowercase difficulty when saved through Config. Every admin run, including own-time runs, reports the sum across its bosses. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
@@ -215,6 +216,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `models.permits` | `KANADE_MODEL_PERMITS` | integer |
 | `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
 | `models.context` | `KANADE_MODEL_CONTEXT` | table |
+| `settings.run_lengths` | `KANADE_RUN_LENGTHS` | table |
 | `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
 | `models.extraction.reasoning` | `KANADE_EXTRACT_REASONING` | string |
 | `models.chat.model` | `KANADE_CHAT_MODEL` | string |

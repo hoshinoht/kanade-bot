@@ -15,9 +15,10 @@ use std::fmt;
 
 pub use codec::Section;
 pub use model::{
-    Chatbot, ContextRole, ContextSettings, LOCAL_CONTEXT_WARNING, LOCAL_CONTEXT_WARNING_TOKENS,
-    MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, Persona, Pings,
-    Posting, Rate, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, Schedule,
+    Chatbot, ContextRole, ContextSettings, DEFAULT_RUN_MINUTES, LOCAL_CONTEXT_WARNING,
+    LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, Models,
+    Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, RUN_MINUTES, Rate, Reasoning,
+    RoleModel, RoleProfileAssignment, RunLengthOverride, RunLengths, RuntimeSettings, Schedule,
     SelfService, SelfServiceMode, Watching,
 };
 

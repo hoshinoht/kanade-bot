@@ -23,6 +23,7 @@ fn rows(settings: &RuntimeSettings) -> BTreeMap<&'static str, String> {
         Section::SelfService(settings.self_service),
         Section::Persona(settings.persona.clone()),
         Section::Models(settings.models.clone()),
+        Section::RunLengths(settings.run_lengths.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ]
@@ -224,5 +225,27 @@ mod tests {
     fn unchanged_settings_have_no_diff() {
         let settings = RuntimeSettings::default();
         assert!(diff(&settings, &settings).is_empty());
+    }
+
+    #[test]
+    fn a_run_length_change_audits_its_row_once_and_a_noop_has_none() {
+        logging::capture();
+        let before = RuntimeSettings::default();
+        let mut after = before.clone();
+        after.run_lengths.default_minutes = 20;
+        settings_changed(8, "run_lengths", "admin", &before, &after);
+        let lines = logging::captured();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["section"], "run_lengths");
+        assert_eq!(lines[0]["keys"], serde_json::json!(["v5.run_lengths"]));
+        let row = &lines[0]["values"]["v5.run_lengths"];
+        let from: Value = serde_json::from_str(row["from"].as_str().unwrap()).unwrap();
+        let to: Value = serde_json::from_str(row["to"].as_str().unwrap()).unwrap();
+        assert_eq!(from["default_minutes"], 30);
+        assert_eq!(to["default_minutes"], 20);
+        assert!(
+            diff(&after, &after).is_empty(),
+            "a no-op emits no audit row"
+        );
     }
 }

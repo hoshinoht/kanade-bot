@@ -17,6 +17,7 @@ use crate::{
             DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot,
             countdown_kind, is_stale,
         },
+        settings::RunLengths,
     },
 };
 
@@ -100,6 +101,8 @@ pub struct RunDto {
     pub id: String,
     pub day: u8,
     pub time: Option<String>,
+    /// Derived from every boss even when an own-time run has no start clock.
+    pub minutes: u32,
     pub status: &'static str,
     pub bosses: Vec<Boss>,
     pub tally: Tally,
@@ -211,6 +214,7 @@ pub fn run_dto(
     snapshot: &ScheduleSnapshot,
     start_date: NaiveDate,
     run: &Run,
+    run_lengths: &RunLengths,
 ) -> RunDto {
     let answers = answers(snapshot, run);
     let participants: Vec<Participant> = run
@@ -252,6 +256,7 @@ pub fn run_dto(
         id: run.id.clone(),
         day: day_index(ctx, start_date, run.datetime),
         time: run_time(ctx, run),
+        minutes: run_lengths.minutes_for(ctx.catalog, &run.bosses),
         status: run.status.as_str(),
         bosses: ctx.bosses(&run.bosses),
         tally: Tally {
@@ -310,6 +315,7 @@ pub fn week(
     snapshot: &ScheduleSnapshot,
     frame: &WeekFrame,
     version: u64,
+    run_lengths: &RunLengths,
 ) -> Week {
     let start_date = ctx.local_date(frame.start);
     Week {
@@ -321,7 +327,7 @@ pub fn week(
             .runs
             .iter()
             .filter(|run| run.week_start == frame.start)
-            .map(|run| run_dto(ctx, snapshot, start_date, run))
+            .map(|run| run_dto(ctx, snapshot, start_date, run, run_lengths))
             .collect(),
         generated_at: iso_instant(ctx.now),
         version,

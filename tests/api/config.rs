@@ -434,6 +434,16 @@ fn roles(view: &Value) -> Value {
     view["models"]["roles"].clone()
 }
 
+async fn admin_week(config: &Config, query: &str) -> Value {
+    let reply = config
+        .send("GET", &format!("/api/admin/week{query}"), None, &json!({}))
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let value = reply.json();
+    assert_valid("week.json#/$defs/Week", "admin week", &value);
+    value
+}
+
 #[tokio::test]
 async fn get_shows_settings_models_personas_and_env_facts() {
     let config = Config::new().await;
@@ -1536,6 +1546,81 @@ async fn a_keyed_patch_replays_and_a_reused_key_is_refused() {
     let unkeyed = config.patch(body.clone()).await;
     assert_eq!(unkeyed["notices"], json!([]));
     assert_eq!(roles(&unkeyed), roles(&first));
+    assert!(!changes.has_changed().unwrap());
+}
+
+#[tokio::test]
+async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() {
+    let config = Config::new().await;
+    let initial = config.get().await;
+    assert_eq!(initial["run_lengths"]["default_minutes"], 30);
+    assert_eq!(
+        initial["run_lengths"]["overrides"],
+        json!([{ "boss": "BM", "difficulty": "h", "minutes": 60 }])
+    );
+    let before = admin_week(&config, "").await;
+    let kalos = before["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "r-kalos")
+        .unwrap();
+    assert_eq!(kalos["minutes"], 30, "one non-overridden boss");
+    let star = before["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "r-star")
+        .unwrap();
+    assert_eq!(star["minutes"], 90, "three default bosses sum");
+    let own_time = admin_week(&config, "?week=next").await["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["time"].is_null())
+        .unwrap()
+        .clone();
+    assert!(own_time["minutes"].as_u64().is_some());
+
+    for body in [
+        json!({"run_lengths": {"default_minutes": 4}}),
+        json!({"run_lengths": {"default_minutes": 241}}),
+        json!({"run_lengths": {"overrides": [{"boss": "BM", "difficulty": "h", "minutes": 4}]}}),
+        json!({"run_lengths": {"overrides": [{"boss": "BM", "difficulty": "h", "minutes": 481}]}}),
+        json!({"run_lengths": {"overrides": [{"boss": "Ghost", "difficulty": "h", "minutes": 60}]}}),
+        json!({"run_lengths": {"overrides": [{"boss": "BM", "difficulty": "n", "minutes": 60}]}}),
+        json!({"run_lengths": {"overrides": [
+            {"boss": "BM", "difficulty": "h", "minutes": 60},
+            {"boss": "BM", "difficulty": "h", "minutes": 75}
+        ]}}),
+    ] {
+        config.refused(body, 422, "invalid").await;
+    }
+
+    let mut changes = config.desk.subscribe();
+    let body = json!({"run_lengths": {"default_minutes": 20}});
+    let saved = view(
+        &config.send("PATCH", PATH, Some("run-lengths"), &body).await,
+        "run lengths save",
+    );
+    assert_eq!(saved["run_lengths"]["default_minutes"], 20);
+    let replay = view(
+        &config.send("PATCH", PATH, Some("run-lengths"), &body).await,
+        "run lengths replay",
+    );
+    assert_eq!(replay, saved);
+    assert_eq!(changes.borrow_and_update().revision, 1);
+    assert!(!changes.has_changed().unwrap());
+    let changed = admin_week(&config, "").await;
+    let kalos = changed["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "r-kalos")
+        .unwrap();
+    assert_eq!(kalos["minutes"], 20, "the next read uses the saved default");
+    let no_op = config.patch(body).await;
+    assert_eq!(no_op["run_lengths"]["default_minutes"], 20);
     assert!(!changes.has_changed().unwrap());
 }
 

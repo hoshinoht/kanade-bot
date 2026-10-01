@@ -18,6 +18,8 @@ pub(super) enum Kind {
     Groups,
     /// `[models.context]`, encoded as JSON for the runtime settings seed.
     Context,
+    /// `[settings.run_lengths]`, encoded as JSON for the runtime settings seed.
+    RunLengths,
 }
 
 use Kind::*;
@@ -158,6 +160,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         "KANADE_COUNTDOWN_MINUTES",
         Ints,
     ),
+    ("settings.run_lengths", "KANADE_RUN_LENGTHS", RunLengths),
 ];
 
 pub(super) fn lookup(path: &str) -> Option<(&'static str, &'static str, Kind)> {

@@ -41,6 +41,9 @@ pub fn seed(seeds: &SettingSeeds) -> RuntimeSettings {
     if let Some(minutes) = &seeds.countdown_minutes {
         settings.pings.countdown_minutes.clone_from(minutes);
     }
+    if let Some(run_lengths) = &seeds.run_lengths {
+        settings.run_lengths.clone_from(run_lengths);
+    }
     settings
 }
 
@@ -66,5 +69,33 @@ pub fn persona(settings: &RuntimeSettings) -> Result<Option<PersonaId>, Error> {
                 keys::PERSONA
             ))
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        domain::settings::{RunLengthOverride, RunLengths},
+        runtime::config::SettingSeeds,
+    };
+
+    use super::seed;
+
+    #[test]
+    fn run_lengths_seed_replaces_the_code_default_before_any_saved_row() {
+        let seeds = SettingSeeds {
+            run_lengths: Some(RunLengths {
+                default_minutes: 20,
+                overrides: vec![RunLengthOverride {
+                    boss: "BM".into(),
+                    difficulty: "h".into(),
+                    minutes: 90,
+                }],
+            }),
+            ..Default::default()
+        };
+        let settings = seed(&seeds);
+        assert_eq!(settings.run_lengths.default_minutes, 20);
+        assert_eq!(settings.run_lengths.overrides[0].minutes, 90);
     }
 }

@@ -13,6 +13,25 @@
         "window_s": { "type": "integer", "minimum": 0 }
       }
     },
+    "RunLengthOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "difficulty", "minutes"],
+      "properties": {
+        "boss": { "type": "string", "description": "Exact stable catalog boss key." },
+        "difficulty": { "type": "string", "description": "Exact lowercase catalog difficulty letter for boss." },
+        "minutes": { "type": "integer", "minimum": 5, "maximum": 480 }
+      }
+    },
+    "RunLengths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_minutes", "overrides"],
+      "properties": {
+        "default_minutes": { "type": "integer", "minimum": 5, "maximum": 240 },
+        "overrides": { "type": "array", "items": { "$ref": "#/$defs/RunLengthOverride" }, "description": "Replaced whole by PATCH; boss+difficulty pairs must be unique and valid in the catalog." }
+      }
+    },
     "ModelInfo": {
       "type": "object",
       "additionalProperties": false,
@@ -183,7 +202,7 @@
     "ConfigView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "manage_messages", "env"],
+      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "run_lengths", "manage_messages", "env"],
       "properties": {
         "pings": {
           "type": "object",
@@ -284,6 +303,7 @@
             "context": { "$ref": "#/$defs/ContextSettings", "description": "Saved context settings; PATCH sends the complete object. The effective per-role result is roles.<role>.context." }
           }
         },
+        "run_lengths": { "$ref": "#/$defs/RunLengths", "description": "Saved planner run durations. PATCH accepts default_minutes and/or a complete overrides array." },
         "manage_messages": {
           "type": "object",
           "additionalProperties": false,

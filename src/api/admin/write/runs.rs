@@ -99,7 +99,11 @@ async fn after(
         .find(|run| run.id == run_id)
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
     let start = ctx.local_date(run.week_start);
-    Ok((run_dto(&ctx, &snapshot, start, run), version))
+    let run_lengths = match &state.config {
+        Some(desk) => desk.settings().await.run_lengths,
+        None => Default::default(),
+    };
+    Ok((run_dto(&ctx, &snapshot, start, run, &run_lengths), version))
 }
 
 /// Run one edit through the writer; a replayed Idempotency-Key answers the

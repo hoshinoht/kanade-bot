@@ -14,8 +14,9 @@ use crate::{
     api::admin::write::Refusal,
     chat::persona::ProfileId,
     domain::settings::{
-        Chatbot, ContextSettings, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, Persona, Pings,
-        Rate, RoleProfileAssignment, SelfService, SelfServiceMode, Watching,
+        Chatbot, ContextSettings, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications,
+        OVERRIDE_RUN_MINUTES, Persona, Pings, RUN_MINUTES, Rate, RoleProfileAssignment,
+        RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
     },
 };
 
@@ -102,7 +103,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
     };
     match name.as_str() {
         "pings" | "watching" | "chatbot" | "notifications" | "self_service" | "persona"
-        | "models" => {}
+        | "models" | "run_lengths" => {}
         "manage_messages" | "env" | "notices" => {
             return Err(PatchError::read_only(name, DEPLOYMENT));
         }
@@ -124,6 +125,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles" | "context")
+                | ("run_lengths", "default_minutes" | "overrides")
         ) || (name == "persona"
             && key == "role_profiles_digest"
             && body.contains_key("role_profiles"));
@@ -144,6 +146,69 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
 pub fn context(value: &Value) -> Result<ContextSettings, PatchError> {
     serde_json::from_value(value.clone())
         .map_err(|_| field_error("models.context", "a complete context settings object"))
+}
+
+/// Overrides are replaced together because their `(boss, difficulty)` pair is
+/// the stored identity, while the default may be patched on its own.
+pub fn run_lengths(
+    current: &RunLengths,
+    body: &Map<String, Value>,
+    catalog: &crate::domain::catalog::BossTable,
+) -> Result<RunLengths, PatchError> {
+    let mut next = current.clone();
+    if let Some(value) = body.get("default_minutes") {
+        next.default_minutes = value
+            .as_u64()
+            .and_then(|minutes| u32::try_from(minutes).ok())
+            .filter(|minutes| RUN_MINUTES.contains(minutes))
+            .ok_or_else(|| PatchError::invalid("The default run length is 5-240 whole minutes."))?;
+    }
+    if let Some(value) = body.get("overrides") {
+        let values = value
+            .as_array()
+            .ok_or_else(|| field_error("run_lengths.overrides", "an array of overrides"))?;
+        let mut overrides = Vec::with_capacity(values.len());
+        let mut seen = BTreeSet::new();
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("run_lengths.overrides[{index}]");
+            let fields = object(value, &path)?;
+            for key in fields.keys() {
+                if !matches!(key.as_str(), "boss" | "difficulty" | "minutes") {
+                    return Err(PatchError::unknown(format!("{path}.{key}")));
+                }
+            }
+            let boss = fields
+                .get("boss")
+                .and_then(Value::as_str)
+                .and_then(|key| catalog.boss(key).map(|boss| (key, boss)))
+                .ok_or_else(|| PatchError::invalid("Pick a catalog boss key."))?;
+            let difficulty = fields
+                .get("difficulty")
+                .and_then(Value::as_str)
+                .filter(|difficulty| boss.1.difficulties().iter().any(|own| own == *difficulty))
+                .ok_or_else(|| PatchError::invalid("Pick a difficulty that boss has."))?;
+            let minutes = fields
+                .get("minutes")
+                .and_then(Value::as_u64)
+                .and_then(|minutes| u32::try_from(minutes).ok())
+                .filter(|minutes| OVERRIDE_RUN_MINUTES.contains(minutes))
+                .ok_or_else(|| {
+                    PatchError::invalid("An override run length is 5-480 whole minutes.")
+                })?;
+            if !seen.insert((boss.0, difficulty)) {
+                return Err(PatchError::invalid(
+                    "A boss difficulty can have only one run-length override.",
+                ));
+            }
+            overrides.push(RunLengthOverride {
+                boss: boss.0.to_owned(),
+                difficulty: difficulty.to_owned(),
+                minutes,
+            });
+        }
+        next.overrides = overrides;
+    }
+    Ok(next)
 }
 
 fn flag(value: &Value, path: &str) -> Result<bool, PatchError> {

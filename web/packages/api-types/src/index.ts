@@ -95,6 +95,8 @@ export interface ReminderCard {
 
 /** Admin run (`GET /api/admin/week`): the public projection plus who and where. */
 export interface Run extends PublicRun {
+  /** Computed from each boss's configured run length, including own-time runs. */
+  minutes: number;
   /** Short id shown as `#630b3544`; secondary identity for audit/troubleshooting. */
   short_id: string;
   participants: Participant[];
@@ -1026,6 +1028,11 @@ export interface ConfigView {
     pii_pseudonymise: boolean;
     /** Saved context settings; each role's result is `roles.<role>.context`. */
     context: ContextSettings;
+  };
+  /** Saved default and per boss+difficulty planner durations. */
+  run_lengths: {
+    default_minutes: number;
+    overrides: { boss: string; difficulty: Difficulty; minutes: number }[];
   };
   /** Channels where the bot lacks Manage Messages; shown above every Config section. */
   manage_messages: { missing: string[] };

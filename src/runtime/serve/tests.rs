@@ -162,6 +162,51 @@ async fn malformed_stored_settings_fail_startup_naming_the_key() {
 }
 
 #[tokio::test]
+async fn run_length_seeds_need_catalog_pairs_only_when_unsaved() {
+    for (seed, field) in [
+        (
+            r#"{"default_minutes":30,"overrides":[{"boss":"Ghost","difficulty":"h","minutes":60}]}"#,
+            "KANADE_RUN_LENGTHS.overrides[0].boss",
+        ),
+        (
+            r#"{"default_minutes":30,"overrides":[{"boss":"BM","difficulty":"H","minutes":60}]}"#,
+            "KANADE_RUN_LENGTHS.overrides[0].difficulty",
+        ),
+    ] {
+        let temp = Temp::new();
+        let config = temp.config(&[("KANADE_RUN_LENGTHS", seed)]);
+        let error = serve_until(config, std::future::pending())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(field), "{error}");
+    }
+
+    let valid =
+        r#"{"default_minutes":20,"overrides":[{"boss":"BM","difficulty":"h","minutes":90}]}"#;
+    let temp = Temp::new();
+    serve_until(
+        temp.config(&[("KANADE_RUN_LENGTHS", valid)]),
+        std::future::ready(()),
+    )
+    .await
+    .unwrap();
+
+    // A saved row wins over an invalid seed, just as Config saves do at runtime.
+    let temp = Temp::new();
+    let config = temp.config(&[(
+        "KANADE_RUN_LENGTHS",
+        r#"{"default_minutes":30,"overrides":[{"boss":"Ghost","difficulty":"h","minutes":60}]}"#,
+    )]);
+    with_rows(
+        &config,
+        &[("v5.run_lengths", r#"{"default_minutes":30,"overrides":[]}"#)],
+    )
+    .await;
+    serve_until(config, std::future::ready(())).await.unwrap();
+}
+
+#[tokio::test]
 async fn store_directories_are_created_private_and_one_owner_is_enforced() {
     let temp = Temp::new();
     let config = temp.config(&[]);

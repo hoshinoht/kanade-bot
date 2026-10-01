@@ -244,12 +244,30 @@ impl Store {
             .collect()
     }
 
+    fn minutes(&self, list: &[BossRef]) -> u32 {
+        list.iter()
+            .map(|boss| {
+                self.config
+                    .run_lengths
+                    .overrides
+                    .iter()
+                    .find(|override_| {
+                        override_.boss == boss.key && override_.difficulty == boss.difficulty
+                    })
+                    .map_or(self.config.run_lengths.default_minutes, |override_| {
+                        override_.minutes
+                    })
+            })
+            .sum()
+    }
+
     fn dto(&self, rec: &Rec) -> Run {
         Run {
             id: rec.id.clone(),
             short_id: rec.short_id.clone(),
             day: rec.day,
             time: rec.time.clone(),
+            minutes: self.minutes(&rec.bosses),
             status: rec.status,
             bosses: self.bosses(&rec.bosses),
             tally: Tally {
@@ -591,6 +609,7 @@ mod tests {
             "short_id",
             "fixed_id",
             "roster",
+            "minutes",
         ] {
             assert!(!json.contains(field), "{field} leaked into the public week");
         }

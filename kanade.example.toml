@@ -154,3 +154,8 @@ chat_category_ids = []
 # day_of_ping_time = "09:00"
 # Countdown reminders in minutes.
 # countdown_minutes = [60, 15]
+# Planner run lengths seed only while `v5.run_lengths` is unsaved. Every run
+# totals one duration per boss; own-time runs have the same duration. The
+# default is 5-240 minutes and overrides are 5-480. Each override must use an
+# exact catalog boss key and that boss's lowercase difficulty letter.
+run_lengths = { default_minutes = 30, overrides = [{ boss = "BM", difficulty = "h", minutes = 60 }] }

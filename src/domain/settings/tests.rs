@@ -46,6 +46,12 @@ fn every_section_round_trips_through_its_rows() {
         alias: Some("kanata/chat".into()),
         reasoning: Reasoning::High,
     };
+    settings.run_lengths.default_minutes = 20;
+    settings.run_lengths.overrides.push(RunLengthOverride {
+        boss: "Kalos".into(),
+        difficulty: "e".into(),
+        minutes: 75,
+    });
     settings.schedule.reset_weekday = Weekday::Wed;
     settings.schedule.attendance = AttendanceMode::V5;
     settings.posting.channel_id = Some("99".into());
@@ -57,6 +63,7 @@ fn every_section_round_trips_through_its_rows() {
         Section::SelfService(settings.self_service),
         Section::Persona(settings.persona.clone()),
         Section::Models(settings.models.clone()),
+        Section::RunLengths(settings.run_lengths.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ];
@@ -74,6 +81,36 @@ fn every_section_round_trips_through_its_rows() {
     assert_eq!(
         resolve(&stored, &RuntimeSettings::default()).expect("reads"),
         settings
+    );
+}
+
+#[test]
+fn run_lengths_default_to_thirty_with_hard_black_mage_overridden() {
+    let lengths = RunLengths::default();
+    assert_eq!(lengths.default_minutes, DEFAULT_RUN_MINUTES);
+    assert_eq!(
+        lengths.overrides,
+        [RunLengthOverride {
+            boss: "BM".into(),
+            difficulty: "h".into(),
+            minutes: 60,
+        }]
+    );
+}
+
+#[test]
+fn saved_run_lengths_row_wins_over_the_seed() {
+    let mut seed = RuntimeSettings::default();
+    seed.run_lengths.default_minutes = 20;
+    let stored = RunLengths {
+        default_minutes: 40,
+        overrides: Vec::new(),
+    };
+    let rows = rows(&[(keys::RUN_LENGTHS, &serde_json::to_string(&stored).unwrap())]);
+    assert_eq!(
+        resolve(&rows, &seed).unwrap().run_lengths,
+        stored,
+        "saved settings override only the startup seed"
     );
 }
 

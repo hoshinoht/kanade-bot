@@ -189,6 +189,15 @@ pub fn parse_bosses(text: &str) -> Result<Vec<BossRef>, String> {
     Ok(out)
 }
 
+/// Whether a saved run-length override names an exact catalog boss key and
+/// one of that boss's supported lowercase difficulty letters.
+pub fn valid_run_length_override(key: &str, difficulty: &str) -> bool {
+    BOSSES
+        .iter()
+        .find(|boss| boss.key == key)
+        .is_some_and(|boss| boss.difficulties.contains(difficulty))
+}
+
 pub fn boss_ref(token: &str) -> Option<BossRef> {
     parse_bosses(token).ok()?.into_iter().next()
 }

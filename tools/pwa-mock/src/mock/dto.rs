@@ -57,6 +57,7 @@ pub struct Run {
     pub short_id: String,
     pub day: u8,
     pub time: Option<String>,
+    pub minutes: u32,
     pub status: &'static str,
     pub bosses: Vec<Boss>,
     pub tally: Tally,

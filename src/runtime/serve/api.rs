@@ -61,6 +61,35 @@ fn file_error(error: LoadError) -> Error {
     Error::Startup(error.to_string())
 }
 
+/// Bounds and duplicate pairs are rejected while parsing the seed. Exact boss
+/// keys and difficulties need the catalog, so reject them after it has loaded
+/// and only when no saved row takes precedence.
+fn validate_run_lengths_seed(
+    seed: Option<&crate::domain::settings::RunLengths>,
+    catalog: &crate::domain::catalog::BossTable,
+) -> Result<(), Error> {
+    let Some(seed) = seed else {
+        return Ok(());
+    };
+    for (index, override_) in seed.overrides.iter().enumerate() {
+        let field = format!("KANADE_RUN_LENGTHS.overrides[{index}]");
+        let boss = catalog.boss(&override_.boss).ok_or_else(|| {
+            Error::Configuration(format!("{field}.boss is not a catalog boss key"))
+        })?;
+        if !boss
+            .difficulties()
+            .iter()
+            .any(|difficulty| difficulty == &override_.difficulty)
+        {
+            return Err(Error::Configuration(format!(
+                "{field}.difficulty is not valid for {}",
+                override_.boss
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn access(guild: &GuildSettings) -> GuildAccess {
     // Snowflakes are validated non-zero by the config parser.
     GuildAccess::new(
@@ -117,6 +146,10 @@ pub async fn compose(
         .settings_rows()
         .await
         .map_err(|_| Error::Startup("runtime settings could not be read".into()))?;
+    // An unsaved seed was applied by `load`; refuse it before anything uses it.
+    if !stored.contains_key(crate::domain::settings::keys::RUN_LENGTHS) {
+        validate_run_lengths_seed(config.seeds.run_lengths.as_ref(), &catalog)?;
+    }
     let sources = model_report::seed_roles(&mut settings, &config.models, &stored);
     let models = model_stack(&config.models, &settings)?;
     let model_tasks =

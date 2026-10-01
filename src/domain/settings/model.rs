@@ -19,8 +19,72 @@ pub struct RuntimeSettings {
     pub self_service: SelfService,
     pub persona: Persona,
     pub models: Models,
+    pub run_lengths: RunLengths,
     pub schedule: Schedule,
     pub posting: Posting,
+}
+
+/// The length a planner uses for a run. Overrides are keyed by the catalog's
+/// stable boss short key and its lowercase difficulty letter.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunLengths {
+    pub default_minutes: u32,
+    #[serde(default)]
+    pub overrides: Vec<RunLengthOverride>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunLengthOverride {
+    pub boss: String,
+    pub difficulty: String,
+    pub minutes: u32,
+}
+
+pub const DEFAULT_RUN_MINUTES: u32 = 30;
+pub const RUN_MINUTES: std::ops::RangeInclusive<u32> = 5..=240;
+pub const OVERRIDE_RUN_MINUTES: std::ops::RangeInclusive<u32> = 5..=480;
+
+impl Default for RunLengths {
+    fn default() -> Self {
+        Self {
+            default_minutes: DEFAULT_RUN_MINUTES,
+            overrides: vec![RunLengthOverride {
+                boss: "BM".into(),
+                difficulty: "h".into(),
+                minutes: 60,
+            }],
+        }
+    }
+}
+
+impl RunLengths {
+    /// Historic unknown tokens still receive the default so a bad row cannot
+    /// erase a planner duration.
+    pub fn minutes_for(
+        &self,
+        catalog: &crate::domain::catalog::BossTable,
+        tokens: &[String],
+    ) -> u32 {
+        tokens
+            .iter()
+            .map(|token| {
+                catalog
+                    .split(token)
+                    .and_then(|(difficulty, boss)| {
+                        self.overrides
+                            .iter()
+                            .find(|override_| {
+                                override_.boss == boss.short()
+                                    && override_.difficulty == difficulty.letter()
+                            })
+                            .map(|override_| override_.minutes)
+                    })
+                    .unwrap_or(self.default_minutes)
+            })
+            .sum()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

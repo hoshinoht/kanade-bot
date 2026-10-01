@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 run lengths are a live, saved setting (`v5.run_lengths`, seeded from
+  `[settings.run_lengths]`/`KANADE_RUN_LENGTHS` until saved): a default per
+  boss (30 minutes) plus per boss/difficulty overrides (Hard Black Mage 60);
+  invalid seeds refuse startup. Admin week runs carry their length in minutes
+  (the sum over their bosses), the groundwork for planner drops that set the
+  time.
 - v5 logs token usage: schema v19 adds nullable provider-reported
   prompt/completion tokens and the local prompt estimate to every extraction
   call (summed over the attempts that reported a pair) and every chat round

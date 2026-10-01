@@ -11,7 +11,8 @@ use crate::{
     chat::persona::{PersonaSnapshot, ProfileId},
     domain::settings::{
         ContextRole as StoredContextRole, Rate as StoredRate, RoleModel as StoredRole,
-        RoleProfileAssignment as StoredRoleProfile, RuntimeSettings,
+        RoleProfileAssignment as StoredRoleProfile, RunLengthOverride as StoredRunLengthOverride,
+        RunLengths as StoredRunLengths, RuntimeSettings,
     },
     infrastructure::llm::{
         TrustZone,
@@ -31,6 +32,7 @@ pub struct ConfigView {
     pub self_service: SelfService,
     pub persona: Persona,
     pub models: Models,
+    pub run_lengths: RunLengths,
     pub manage_messages: ManageMessages,
     pub notices: Vec<String>,
     pub env: Vec<EnvRow>,
@@ -75,6 +77,31 @@ pub struct Chatbot {
 #[derive(Clone, Debug, Serialize)]
 pub struct Notifications {
     pub quiet_mode: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunLengthOverride {
+    pub boss: String,
+    pub difficulty: String,
+    pub minutes: u32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RunLengths {
+    pub default_minutes: u32,
+    pub overrides: Vec<RunLengthOverride>,
+}
+
+pub fn run_lengths(settings: &StoredRunLengths) -> RunLengths {
+    let override_ = |override_: &StoredRunLengthOverride| RunLengthOverride {
+        boss: override_.boss.clone(),
+        difficulty: override_.difficulty.clone(),
+        minutes: override_.minutes,
+    };
+    RunLengths {
+        default_minutes: settings.default_minutes,
+        overrides: settings.overrides.iter().map(override_).collect(),
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
