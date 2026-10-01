@@ -8,6 +8,7 @@
 
 mod delivery;
 mod events;
+mod follow_up;
 mod ports;
 mod run;
 mod view;
@@ -25,6 +26,7 @@ use tokio::time::Instant;
 
 pub use delivery::{INCOMPLETE_MARKER, TYPING_EVERY};
 pub use events::ChatEvent;
+pub use follow_up::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
 pub use ports::{Answerer, Asked, Effect, Job, Post, Prepared, Setup, Surface};
 
 use delivery::Deletion;
@@ -157,6 +159,9 @@ struct State {
     persona_key: Option<String>,
     /// Last `(enabled, ready)` seen, for `SetupChanged`.
     setup_seen: Option<(bool, bool)>,
+    /// Rejection follow-ups are dropped rather than queued behind questions.
+    followed_up_at: HashMap<String, f64>,
+    rejection_followups: std::collections::HashSet<String>,
     closed: bool,
 }
 
@@ -222,6 +227,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     running: HashMap::new(),
                     persona_key: None,
                     setup_seen: None,
+                    followed_up_at: HashMap::new(),
+                    rejection_followups: std::collections::HashSet::new(),
                     closed: false,
                 }),
                 tasks: Mutex::new(Vec::new()),

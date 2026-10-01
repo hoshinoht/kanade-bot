@@ -16,7 +16,7 @@ struct Focus {
 #[derive(Clone, Debug)]
 struct Anchor {
     channel_id: String,
-    question: ChatTurn,
+    question: Option<ChatTurn>,
     answer: ChatTurn,
 }
 
@@ -86,7 +86,10 @@ impl Conversations {
         }
         self.anchors.retain(|(id, anchor)| {
             id != message_id
-                && anchor.question.message_id.as_deref() != Some(message_id)
+                && anchor
+                    .question
+                    .as_ref()
+                    .is_some_and(|question| question.message_id.as_deref() == Some(message_id))
                 && anchor.answer.message_id.as_deref() != Some(message_id)
         });
     }
@@ -186,13 +189,33 @@ impl Conversations {
         }
         let anchor = Anchor {
             channel_id: channel_id.to_owned(),
-            question,
+            question: Some(question),
             answer,
         };
         // A re-anchored key keeps its place, as a Python dict does.
         match self.anchors.iter_mut().find(|(id, _)| id == key) {
             Some(slot) => slot.1 = anchor,
             None => self.anchors.push((key.to_owned(), anchor)),
+        }
+    }
+
+    /// Anchor a visible assistant-only turn. Rejection follow-ups have no
+    /// member message to retain: the synthetic prompt must not enter history.
+    pub fn anchor_assistant(&mut self, message_id: &str, channel_id: &str, answer: ChatTurn) {
+        if message_id.is_empty() || answer.withheld || self.is_withheld(message_id) {
+            return;
+        }
+        if self.anchors.len() >= ANCHOR_CACHE {
+            self.anchors.remove(0);
+        }
+        let anchor = Anchor {
+            channel_id: channel_id.to_owned(),
+            question: None,
+            answer,
+        };
+        match self.anchors.iter_mut().find(|(id, _)| id == message_id) {
+            Some(slot) => slot.1 = anchor,
+            None => self.anchors.push((message_id.to_owned(), anchor)),
         }
     }
 
@@ -211,8 +234,10 @@ impl Conversations {
         if seen_id(&anchor.answer) {
             return Vec::new();
         }
-        [&anchor.question, &anchor.answer]
-            .into_iter()
+        anchor
+            .question
+            .iter()
+            .chain(std::iter::once(&anchor.answer))
             .filter(|turn| !seen_id(turn))
             .cloned()
             .collect()

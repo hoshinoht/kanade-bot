@@ -12,6 +12,7 @@ use crate::bot::delivery::AlertSink;
 use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::ids::id_text;
 use crate::bot::transport::DiscordTransport;
+use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
@@ -31,6 +32,9 @@ pub struct Reactions<S, T, I, A, X, K> {
     /// Shared with extraction's card outbox.
     pub desk: Arc<CardDesk<S, T, I, A>>,
     pub rsvp: ReactionRouter<X, K>,
+    /// Optional while chat is unavailable; rejection follow-ups never delay
+    /// the sequential reaction worker beyond their scope checks.
+    pub follow_up: Option<Arc<dyn RejectionFollowUp>>,
 }
 
 impl<S, T, I, A, X, K> Reactions<S, T, I, A, X, K>
@@ -53,6 +57,30 @@ where
             )
             .await;
         if card != CardReaction::NotACard {
+            if let CardReaction::Rejected { proposal_ids } = &card
+                && let (Some(follow_up), Some(facts)) = (
+                    &self.follow_up,
+                    self.desk.rejection_follow_up(proposal_ids).await,
+                )
+            {
+                follow_up
+                    .rejected(FollowUpRequest {
+                        card_message_id: id_text(reaction.message_id),
+                        channel_id: facts.channel_id,
+                        reactor_id: id_text(reaction.user_id),
+                        source_ids: facts.source_ids,
+                        cards: facts
+                            .cards
+                            .into_iter()
+                            .map(|card| FollowUpCard {
+                                summary: card.summary,
+                                bosses: card.bosses,
+                                participants: card.participants,
+                            })
+                            .collect(),
+                    })
+                    .await;
+            }
             return Reacted::Card(card);
         }
         match self.rsvp.route(reaction).await {

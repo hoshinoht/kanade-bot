@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 chat now follows up a qualifying ❌ on its own proposal card with one
+  read-only, silent reply to the card. It verifies the original chat asker,
+  uses a per-channel cooldown, spends no chat allowance and retains only the
+  visible assistant answer in channel context.
 - v5 admin planners can atomically swap two live runs' slots in one boss week,
   with one history record, reversible as one change and per-run move notices.
 - v5 run lengths are a live, saved setting (`v5.run_lengths`, seeded from

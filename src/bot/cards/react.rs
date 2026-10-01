@@ -7,7 +7,7 @@
 use crate::bot::delivery::{AdminAlert, AlertSink};
 use crate::bot::events::RsvpAnswer;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::ProposalStore;
+use crate::domain::drafts::{ProposalSource, ProposalStore};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::schedule::Notice;
@@ -32,6 +32,22 @@ pub enum CardReaction {
         /// v4's ✅-time refusal texts, posted once as a notice.
         problems: Vec<String>,
     },
+}
+
+/// Server-side facts for a card whose successful ❌ may ask the original chat
+/// author what they want instead. No Discord message text is used.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardFollowUp {
+    pub channel_id: String,
+    pub source_ids: Vec<String>,
+    pub cards: Vec<FollowUpCard>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FollowUpCard {
+    pub summary: Option<String>,
+    pub bosses: Vec<String>,
+    pub participants: Vec<String>,
 }
 
 impl CardReaction {
@@ -100,6 +116,38 @@ where
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
 {
+    /// The source and stored facts for a just-rejected all-chat card. A mixed
+    /// source card is never eligible for a chat clarification.
+    pub async fn rejection_follow_up(&self, proposal_ids: &[String]) -> Option<CardFollowUp> {
+        let cards = self.store.load_cards(proposal_ids).await.ok()?;
+        if cards.len() != proposal_ids.len() {
+            return None;
+        }
+        let channel_id = cards.first()?.channel_id.clone();
+        if cards.iter().any(|card| card.channel_id != channel_id) {
+            return None;
+        }
+        let mut source_ids = Vec::with_capacity(cards.len());
+        let mut facts = Vec::with_capacity(cards.len());
+        for card in cards {
+            let (_, source) = self.store.load_proposal(&card.proposal_id).await.ok()??;
+            if source.source != ProposalSource::Chat {
+                return None;
+            }
+            source_ids.push(source.source_id);
+            facts.push(FollowUpCard {
+                summary: card.details.summary,
+                bosses: card.details.bosses,
+                participants: card.details.participants,
+            });
+        }
+        Some(CardFollowUp {
+            channel_id,
+            source_ids,
+            cards: facts,
+        })
+    }
+
     /// Handle a reaction by `user_id` on `message_id`.
     pub async fn on_reaction(
         &self,

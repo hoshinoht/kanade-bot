@@ -17,7 +17,7 @@ use crate::bot::chat_feed::DiscordSurface;
 use crate::bot::mentions;
 use crate::bot::transport::{Call, FakeDiscord, Op};
 use crate::chat::answer::Generation;
-use crate::chat::context::{Parent, QuestionMessage, Reference, WITHHELD};
+use crate::chat::context::{Parent, QuestionMessage, Reference, TurnRole, WITHHELD};
 use crate::chat::gate::{
     Author, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings, SEEN_REACTION,
 };
@@ -138,6 +138,7 @@ struct Seen {
 
 struct Fake {
     enabled: AtomicBool,
+    owns_rejection: AtomicBool,
     member_rate: (usize, f64),
     channels: Channels,
     steps: Mutex<VecDeque<Step>>,
@@ -156,6 +157,7 @@ impl Fake {
     fn new(steps: Vec<Step>) -> Self {
         Self {
             enabled: AtomicBool::new(true),
+            owns_rejection: AtomicBool::new(true),
             member_rate: (4, 300.0),
             channels: channels(),
             steps: Mutex::new(steps.into()),
@@ -224,6 +226,10 @@ impl Answerer for Arc<Fake> {
             reset: (Weekday::Thu, NaiveTime::MIN),
             bot_names: vec!["Kanade".into()],
         })
+    }
+
+    async fn owns_rejection(&self, _request: &FollowUpRequest) -> bool {
+        self.owns_rejection.load(Ordering::SeqCst)
     }
 
     async fn answer(&self, job: Job<'_>) -> Generation {
@@ -1307,6 +1313,162 @@ async fn an_expired_waiter_moves_the_rest_up() {
         [position_reaction(1)],
         "{events:?}"
     );
+}
+
+fn rejected_card(id: &str, channel: &str) -> FollowUpRequest {
+    FollowUpRequest {
+        card_message_id: id.into(),
+        channel_id: channel.into(),
+        reactor_id: "11".into(),
+        source_ids: vec!["chat-source".into()],
+        cards: vec![FollowUpCard {
+            summary: Some("move Lotus to Friday".into()),
+            bosses: vec!["lotus".into()],
+            participants: vec!["11".into()],
+        }],
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_chat_card_gets_one_read_only_generic_reply_and_remembers_only_its_answer() {
+    let rig = rig(vec![Step::Reply(
+        "The card is off. What time works instead?",
+    )])
+    .await;
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.settle().await;
+    assert_eq!(
+        rig.effects(),
+        [
+            format!(
+                "post silent ^9001 {CHANNEL}: {}",
+                kanade().staging_lines().generic
+            ),
+            "edit 5001: The card is off. What time works instead?".to_owned(),
+        ]
+    );
+    assert!(rig.fake.seen.lock().unwrap().ctx[0].read_only);
+    assert_eq!(rig.pool_used(), 0, "follow-ups spend no allowance");
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].guardrail["kind"], "rejection_followup");
+    let mut state = rig.driver.state();
+    let history = state.pilot.conversations.history(CHANNEL, 10.0);
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].role, TurnRole::Assistant);
+    assert!(!history[0].content.contains("Note from the scheduler"));
+}
+
+#[tokio::test]
+async fn rejected_cards_are_silent_when_the_scope_fails_or_the_channel_is_busy() {
+    let held = Arc::new(Notify::new());
+    let rig = rig(vec![Step::Held(Arc::clone(&held), "normal")]).await;
+    rig.fake.owns_rejection.store(false, Ordering::SeqCst);
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.fake.enabled.store(false, Ordering::SeqCst);
+    rig.driver.rejected(rejected_card("9002", CHANNEL)).await;
+    rig.fake.enabled.store(true, Ordering::SeqCst);
+    rig.driver.rejected(rejected_card("9003", "99")).await;
+    assert!(rig.effects().is_empty());
+
+    rig.fake.owns_rejection.store(true, Ordering::SeqCst);
+    assert!(rig.driver.offer(asked("1001", "12", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    rig.driver.rejected(rejected_card("9004", CHANNEL)).await;
+    rig.settle().await;
+    assert!(!rig.effects().iter().any(|effect| effect.contains("^9004")));
+    held.notify_one();
+}
+
+#[tokio::test]
+async fn rejected_cards_share_a_thirty_second_channel_cooldown_and_shutdown_drains_them() {
+    let held = Arc::new(Notify::new());
+    let rig = rig_with(
+        Fake::new(vec![Step::Held(Arc::clone(&held), "late")]),
+        DriverConfig {
+            stop_grace: Duration::from_millis(50),
+            ..DriverConfig::default()
+        },
+        &MemoryScheduleStore::new(),
+    )
+    .await;
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.driver.rejected(rejected_card("9002", CHANNEL)).await;
+    rig.settle().await;
+    assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
+    rig.driver.stop().await;
+    assert!(rig.driver.shared.tasks.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_panicking_rejection_follow_up_logs_and_releases_its_channel() {
+    let rig = rig(vec![Step::Panic, Step::Reply("after")]).await;
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.settle().await;
+    assert_eq!(
+        rig.effects(),
+        [
+            format!(
+                "post silent ^9001 {CHANNEL}: {}",
+                kanade().staging_lines().generic
+            ),
+            format!("edit 5001: {FAILURE_REPLY}"),
+        ],
+        "an idle staged placeholder becomes the failure line"
+    );
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].guardrail["kind"], "rejection_followup");
+    assert_eq!(rows[0].guardrail["delivery"]["cause"], "aborted");
+    assert_eq!(
+        rows[0].error.as_deref(),
+        Some("failed: the question stopped unexpectedly")
+    );
+    assert!(
+        !rig.driver.state().rejection_followups.contains(CHANNEL),
+        "the aborted task released the channel"
+    );
+
+    rig.advance(31.0);
+    rig.driver.rejected(rejected_card("9002", CHANNEL)).await;
+    rig.settle().await;
+    assert!(
+        rig.effects().iter().any(|effect| effect.contains("^9002")),
+        "the later eligible rejection starts after cooldown"
+    );
+    assert_eq!(rig.rows().len(), 2);
+}
+
+#[tokio::test]
+async fn a_hard_shutdown_abort_of_a_rejection_follow_up_logs_and_joins_it() {
+    let rig = rig_with(
+        Fake::new(vec![Step::Forever]),
+        DriverConfig {
+            stop_grace: Duration::from_millis(50),
+            cut_budget: Duration::from_millis(50),
+            ..DriverConfig::default()
+        },
+        &MemoryScheduleStore::new(),
+    )
+    .await;
+    let _stuck = rig.fake_discord().hold(Op::Edit);
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.settle().await;
+    rig.driver.stop().await;
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].guardrail["kind"], "rejection_followup");
+    assert_eq!(rows[0].guardrail["delivery"]["cause"], "shutdown");
+    assert_eq!(rows[0].guardrail["delivery"]["unknown"], json!([1]));
+    assert_eq!(
+        rows[0].error.as_deref(),
+        Some("cancelled: serve shut down; incomplete: delivered 0 of 1 parts")
+    );
+    assert!(
+        !rig.driver.state().rejection_followups.contains(CHANNEL),
+        "the abort release ran before stop returned"
+    );
+    assert!(rig.driver.shared.tasks.lock().unwrap().is_empty());
 }
 
 mod delivery;

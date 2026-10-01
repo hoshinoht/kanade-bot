@@ -9,6 +9,7 @@ use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use chrono_tz::Tz;
 
 use super::ChatEvent;
+use super::FollowUpRequest;
 use crate::chat::answer::{Generation, Question};
 use crate::chat::context::QuestionMessage;
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
@@ -100,6 +101,10 @@ pub trait Answerer: Send + Sync + 'static {
 
     /// `None` when chat cannot answer now (no persona or model route).
     fn prepare(&self, asked: &Asked) -> impl Future<Output = Option<Prepared>> + Send;
+
+    /// Every proposal source must be a chat interaction authored by the
+    /// reactor before a rejected card can start a clarification turn.
+    fn owns_rejection(&self, request: &FollowUpRequest) -> impl Future<Output = bool> + Send;
 
     /// Never fails: failures come back in the generation.
     fn answer(&self, job: Job<'_>) -> impl Future<Output = Generation> + Send;

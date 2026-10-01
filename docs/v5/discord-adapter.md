@@ -546,8 +546,15 @@ rollback. Do not start the old image against an already-upgraded store.
   still needs changing." Any other failure (store, retries, id reuse) raises
   `AdminAlert::CardAnswerFailed` and posts nothing; on ❌, member-readable
   refusals (e.g. an expired card) stay silent. An approved move's notice
-  (v4 `amend_notice`, the only kind a ✅ announces) is written to the
-  notice outbox with the merge; `CardReaction::notices` only reports it.
+   (v4 `amend_notice`, the only kind a ✅ announces) is written to the
+   notice outbox with the merge; `CardReaction::notices` only reports it.
+  A successful ❌ also hands its stored card facts to chat's rejection
+  follow-up port. That hand-off is eligible only when every rejected proposal
+  was sourced by chat; the driver rechecks live chat/channel readiness and
+  that every source chat row belongs to the reactor. It is otherwise silent,
+  never an RSVP or a new journalled card effect. See `chat-orchestration.md`,
+  *Rejection follow-up (R05)* for cooldown, read-only, delivery and context
+  rules.
 - **Outbox** (`CardOutbox`): cards as above; link-first links as a
   journalled notice `<@author> <lead-in> → edit the run: <url>` (named, not
   pinged); chat answers through the reaction path (`apply_reaction` as the

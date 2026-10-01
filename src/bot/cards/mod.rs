@@ -14,4 +14,4 @@ pub use format::{
     unanswered, when_text,
 };
 pub use outbox::CardOutbox;
-pub use react::CardReaction;
+pub use react::{CardFollowUp, CardReaction, FollowUpCard};

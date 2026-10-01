@@ -381,11 +381,19 @@ where
             return Err(error);
         }
     };
+    let follow_up = chat.rejection_follow_up();
     handler.chat = Some(feed);
 
     let mut workers = vec![
         tokio::spawn(roster_task.run(roster_queue)),
-        tokio::spawn(Reactions { desk, rsvp }.run(reaction_queue)),
+        tokio::spawn(
+            Reactions {
+                desk,
+                rsvp,
+                follow_up: Some(follow_up),
+            }
+            .run(reaction_queue),
+        ),
     ];
     let refresh_stop = stopped.clone();
     workers.push(tokio::spawn(async move {

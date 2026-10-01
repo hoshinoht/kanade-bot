@@ -379,8 +379,45 @@ never issue Discord effects.
   (`rejected|ambiguous|deleted|shutdown|aborted`) appear only when set. An
   incomplete answer appends `incomplete: delivered k of n parts` to the
   row error after any cancel string (`; `-separated). An aborted question
-  with delivered parts never reads `failed: the question stopped
-  unexpectedly`.
+   with delivered parts never reads `failed: the question stopped
+   unexpectedly`.
+
+### Rejection follow-up (R05)
+
+A successful ❌ on a proposal card may start one read-only clarification. It is
+not a normal admission: it spends no allowance, takes no clean-retry
+reservation and is dropped rather than queued. The reaction worker supplies
+only stored card details and proposal source ids; it never reads card text.
+
+- It is silent unless chat is enabled and ready, the card channel passes a
+  fresh `is_chat_channel` check, every successfully rejected proposal has
+  `ProposalSource::Chat`, and every source chat row names the reactor as its
+  author. Removed, repeated, unauthorised, already-closed and
+  extraction-sourced ❌s therefore do nothing.
+- A channel has one in-memory monotonic 30-second cooldown. A follow-up is
+  also dropped when that channel has an answering or waiting question (or an
+  earlier rejection follow-up still runs). It runs as a driver-tracked task,
+  so chat shutdown drains or aborts it with the driver's other tasks. An armed
+  guard spans preparation through row persistence: a model/Discord panic or
+  hard abort releases the channel slot, records `kind: rejection_followup`
+  from the shared `DeliveryRecord` (including incomplete/unknown delivery),
+  and changes an idle staged placeholder into the failure line. During panic
+  unwinding it defers that work to a tracked task and retains a release-only
+  fallback.
+- The prompt is the v4 `followup.prompt` wording, built from stored summaries,
+  card party ids resolved to roster names (never mentions), and the asking
+  member's roster name. The synthetic prompt is sent only to the model;
+  `ToolContext::read_only` both withholds write tools and refuses a remembered
+  write call with `READ_ONLY_TURN`.
+- Delivery reuses `Delivery` with the persona's `generic` staging line: a
+  silent placeholder replies to the card message, is edited into part one,
+  and continuations are silent and unreferenced. Every effect mentions nobody.
+  Its row carries normal `context` and `delivery` guardrails plus
+  `guardrail.kind = "rejection_followup"`.
+- Once a visible reply lands, only that assistant turn is remembered and
+  assistant-anchored. No synthetic scheduler note, personal memory, focus
+  card or ping is added to channel context; replying to that visible answer
+  still re-anchors it.
 
 ### Lifecycle events (`Answerer::observe`)
 

@@ -28,7 +28,8 @@ use crate::{
     chat::{
         answer::{AnswerDeps, Generation, GuildView, answer},
         driver::{
-            Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, Job, Prepared, Setup,
+            Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, FollowUpRequest, Job,
+            Prepared, RejectionFollowUp, Setup,
         },
         gate::{ChannelDirectory, PilotSettings},
         persona::{PersonaStore, ProfileId, ProfileQuery, RoleAssignment, RoleId},
@@ -206,6 +207,18 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         })
     }
 
+    async fn owns_rejection(&self, request: &FollowUpRequest) -> bool {
+        for source_id in &request.source_ids {
+            let Ok(Some(interaction)) = self.store.load_chat(source_id).await else {
+                return false;
+            };
+            if interaction.member_id.as_deref() != Some(request.reactor_id.as_str()) {
+                return false;
+            }
+        }
+        true
+    }
+
     async fn answer(&self, job: Job<'_>) -> Generation {
         let Some(stack) = self.models.as_ref() else {
             return Generation::default();
@@ -295,6 +308,7 @@ type Stop = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>
 pub struct ChatRuntime {
     stop: Option<Stop>,
     overrides: JoinHandle<()>,
+    follow_up: Arc<dyn RejectionFollowUp>,
 }
 
 impl ChatRuntime {
@@ -305,6 +319,10 @@ impl ChatRuntime {
         if let Some(stop) = self.stop.take() {
             stop().await;
         }
+    }
+
+    pub fn rejection_follow_up(&self) -> Arc<dyn RejectionFollowUp> {
+        Arc::clone(&self.follow_up)
     }
 }
 
@@ -359,12 +377,14 @@ pub async fn start<T: GatewayTransport>(
         }
     });
     let feed = ChatFeed::new(Arc::new(driver.clone()), cache, staff(roster, access));
+    let follow_up: Arc<dyn RejectionFollowUp> = Arc::new(driver.clone());
     let stop: Stop = Box::new(move || Box::pin(async move { driver.stop().await }));
     Ok((
         feed,
         ChatRuntime {
             stop: Some(stop),
             overrides,
+            follow_up,
         },
     ))
 }

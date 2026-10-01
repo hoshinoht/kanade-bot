@@ -200,6 +200,10 @@ impl World {
 
     /// A proposed move of the run and its card entry.
     async fn propose(&self, to: DateTime<Utc>) -> CardEntry {
+        self.propose_from(to, ProposalSource::Extraction).await
+    }
+
+    async fn propose_from(&self, to: DateTime<Utc>, source: ProposalSource) -> CardEntry {
         let change = ProposedChange {
             run_id: Some(self.run.clone()),
             channel_id: Some(CHANNEL.into()),
@@ -212,7 +216,7 @@ impl World {
             .propose(
                 ProposalRequest {
                     change: change.clone(),
-                    source: ProposalSource::Extraction,
+                    source,
                     source_id: "x-1".into(),
                     supersede: Supersede::Keep,
                 },
@@ -484,6 +488,49 @@ async fn an_admin_rejects_and_the_card_says_so() {
     );
     assert_eq!(world.status(&id).await, DraftStatus::Rejected);
     assert!(world.last_edit_content().ends_with("\n❌ rejected by Boss"));
+    assert!(
+        world
+            .desk
+            .rejection_follow_up(std::slice::from_ref(&id))
+            .await
+            .is_none(),
+        "extraction cards never start chat follow-ups"
+    );
+    assert_eq!(
+        world
+            .desk
+            .on_reaction(&message, ADMIN, RsvpAnswer::No, true)
+            .await,
+        CardReaction::Ignored,
+        "the closed card cannot follow up twice"
+    );
+}
+
+#[tokio::test]
+async fn a_successfully_rejected_chat_card_hands_only_stored_facts_to_chat() {
+    let world = World::new().await;
+    let entry = world
+        .propose_from(local(9, 2, 21, 30), ProposalSource::Chat)
+        .await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let message = world.message_of(&id).await.expect("posted");
+    assert!(matches!(
+        world
+            .desk
+            .on_reaction(&message, MY, RsvpAnswer::No, true)
+            .await,
+        CardReaction::Rejected { .. }
+    ));
+    let follow_up = world
+        .desk
+        .rejection_follow_up(&[id])
+        .await
+        .expect("chat source");
+    assert_eq!(follow_up.channel_id, CHANNEL);
+    assert_eq!(follow_up.source_ids, ["x-1"]);
+    assert_eq!(follow_up.cards[0].summary.as_deref(), Some("moving to wed"));
+    assert_eq!(follow_up.cards[0].participants, [MY]);
 }
 
 #[tokio::test]
