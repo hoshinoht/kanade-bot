@@ -325,6 +325,24 @@ async fn rescan_requests_are_validated() {
 }
 
 #[tokio::test]
+async fn a_rescan_while_extraction_is_off_says_how_to_switch_it_on() {
+    let logs = Logs::new().await;
+    *logs.reads.rescans.off.lock().unwrap() = true;
+    let reply = start(
+        &logs,
+        None,
+        r#"{"channels":["kalos-four"],"window":"since_reset"}"#,
+    )
+    .await;
+    refused(&reply, 409, "extraction_off");
+    assert!(
+        reply.text().contains("Config → Watching"),
+        "{}",
+        reply.text()
+    );
+}
+
+#[tokio::test]
 async fn every_log_and_rescan_route_needs_a_session_and_writes_need_csrf() {
     let logs = Logs::new().await;
     let admin = logs.reads.admin;

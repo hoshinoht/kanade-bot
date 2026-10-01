@@ -579,7 +579,9 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   (proposals are deduplicated as for any rescan). `DELETE` is also naturally
   repeatable.
 - Every route needs an admin session; `POST`/`DELETE` need CSRF. No rescan
-  runner composed: `503 unavailable`.
+  runner composed, or rescans shutting down: `503 unavailable`. Watching
+  paused or the extractor switched off: `409 extraction_off`, whose message
+  points to Config → Watching (the same switch refuses `/rescan`).
 
 ## Inbox and log filters (built against the mock)
 

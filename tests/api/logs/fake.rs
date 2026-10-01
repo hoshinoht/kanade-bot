@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use kanade::{
     api::rescan::{RescanFuture, RescanRunner, RescanView},
     domain::model_log::{RescanJob, RescanStatus},
-    extract::rescan::RescanRequest,
+    extract::rescan::{RescanError, RescanRequest},
 };
 use serde_json::{Value, json};
 use tokio::sync::{Semaphore, mpsc};
@@ -30,6 +30,8 @@ pub struct FakeRescans {
     pub results: Mutex<BTreeMap<String, Value>>,
     /// Channels whose read fails outright (no result).
     pub failing: Mutex<BTreeSet<String>>,
+    /// Refuse submits as if extraction were switched off.
+    pub off: Mutex<bool>,
     at: DateTime<Utc>,
     me: std::sync::Weak<FakeRescans>,
 }
@@ -41,6 +43,7 @@ impl FakeRescans {
             requests: Mutex::new(Vec::new()),
             results: Mutex::new(BTreeMap::new()),
             failing: Mutex::new(BTreeSet::new()),
+            off: Mutex::new(false),
             at,
             me: me.clone(),
         })
@@ -107,6 +110,9 @@ impl FakeRescans {
 impl RescanRunner for FakeRescans {
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView> {
         Box::pin(async move {
+            if *self.off.lock().unwrap() {
+                return Err(RescanError::Off);
+            }
             self.requests.lock().unwrap().push(request.clone());
             let mut jobs = self.jobs.lock().unwrap();
             let id = format!("job-{}", jobs.len() + 1);

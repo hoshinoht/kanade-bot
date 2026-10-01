@@ -20,6 +20,8 @@ use crate::extract::window::{DEFAULT_WINDOW, WINDOWS};
 
 /// Until the extractor's rescan runner is wired into `serve`.
 pub const RESCAN_UNAVAILABLE: &str = "Rescans aren't available right now.";
+pub const RESCAN_OFF: &str =
+    "Rescans need watching and the extractor switched on (portal Config → Watching).";
 
 /// Jobs remembered for `cancel:True`.
 const REMEMBERED: usize = 16;
@@ -70,6 +72,7 @@ impl RescanCommand {
                 CommandError::User(error.to_string())
             }
             RescanError::Closed => CommandError::User(RESCAN_UNAVAILABLE.into()),
+            RescanError::Off => CommandError::User(RESCAN_OFF.into()),
             RescanError::Store(error) => CommandError::Internal(error.to_string()),
         }
     }

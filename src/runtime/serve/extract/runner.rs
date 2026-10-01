@@ -19,8 +19,8 @@ use crate::{
 /// The startup rescan's window (automated jobs are capped at 48 h anyway).
 pub const STARTUP_WINDOW: &str = "24h";
 
-/// While extraction is off a submit is refused as `Closed` (`/rescan`:
-/// "not available"; API: `503`), so a switched-off bot never calls the
+/// While extraction is off a submit is refused as `Off` (`/rescan` and the
+/// API say to switch it on), so a switched-off bot never calls the
 /// model. Reads and cancels always pass.
 pub struct Gated {
     pub inner: Arc<dyn RescanRunner>,
@@ -30,7 +30,7 @@ pub struct Gated {
 impl RescanRunner for Gated {
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView> {
         if !self.status.enabled() {
-            return Box::pin(async { Err(RescanError::Closed) });
+            return Box::pin(async { Err(RescanError::Off) });
         }
         self.inner.submit(request)
     }
@@ -125,6 +125,7 @@ impl Startup {
                     RescanError::NoChannels => "no_channels",
                     RescanError::Window(_) => "window",
                     RescanError::Closed => "closed",
+                    RescanError::Off => "off",
                     RescanError::Store(_) => "store",
                 }}),
             ),

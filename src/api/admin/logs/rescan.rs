@@ -52,6 +52,11 @@ fn refused(error: RescanError) -> Refusal {
         RescanError::Window(_) => {
             Refusal::invalid("Pick a window: this boss week, since reset or two weeks.")
         }
+        RescanError::Off => Refusal::new(
+            StatusCode::CONFLICT,
+            "extraction_off",
+            "Re-reading needs watching and the extractor switched on (Config → Watching).",
+        ),
         RescanError::Closed | RescanError::Store(_) => ApiError::UNAVAILABLE.into(),
     }
 }

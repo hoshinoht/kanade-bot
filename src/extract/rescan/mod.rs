@@ -94,6 +94,8 @@ pub enum RescanError {
     Window(WindowError),
     /// The worker is shutting down.
     Closed,
+    /// Watching is paused or the extractor is switched off.
+    Off,
     Store(StoreError),
 }
 
@@ -103,6 +105,7 @@ impl fmt::Display for RescanError {
             Self::NoChannels => f.write_str("no channels to rescan"),
             Self::Window(error) => error.fmt(f),
             Self::Closed => f.write_str("rescans are shutting down"),
+            Self::Off => f.write_str("extraction is switched off"),
             Self::Store(error) => error.fmt(f),
         }
     }

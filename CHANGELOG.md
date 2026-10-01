@@ -654,6 +654,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 re-reading party channels while watching is paused or the extractor is
+  off now says so and points to Config → Watching (API `409 extraction_off`,
+  same wording from `/rescan`), instead of "The service is unavailable".
 - v5 admin Week help ("How to move runs") now opens as a contained card and
   mentions swapping; the run sheet keeps its action buttons on their own row so
   a moved run's extra actions no longer squeeze the run details.

@@ -465,7 +465,7 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
                 unprocessed_only: false,
             })
             .await;
-        assert_eq!(refused.unwrap_err(), RescanError::Closed);
+        assert_eq!(refused.unwrap_err(), RescanError::Off);
         ctx.events
             .send(slash(
                 COMMAND,
@@ -481,7 +481,7 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
             "the refusal",
             replies(&harness.fake)
                 .iter()
-                .any(|reply| reply.contains("Rescans aren't available"))
+                .any(|reply| reply.contains("Rescans need watching and the extractor"))
         );
         assert!(jobs(&ctx).await.is_empty());
         assert_eq!(model.chats(), 0);
