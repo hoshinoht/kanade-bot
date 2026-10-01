@@ -177,6 +177,12 @@ test('run sheet: this-week roster line and reset to fixed', async ({ page }) => 
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
   await expect(sheet.getByText('this week: +Ren')).toBeVisible();
+  // An amended run shows every action (Move, Swap, Preview ping, Reset to
+  // fixed); they sit on their own row under the details instead of squeezing them.
+  const details = await sheet.locator('.run__bosses').boundingBox();
+  const actions = await sheet.locator('.run__actions').boundingBox();
+  expect(details!.width).toBeGreaterThan(400);
+  expect(actions!.y).toBeGreaterThan(details!.y);
   await sheet.getByRole('button', { name: 'Reset to fixed' }).click();
   await expect(sheet.locator('.sheet__notice')).toContainText('HCarling + HStar is back on its weekly timing.');
   await expect(sheet.getByText(/this week:/)).toHaveCount(0);

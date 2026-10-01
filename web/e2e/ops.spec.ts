@@ -195,6 +195,8 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   await go(page, '/inbox?tab=self_service');
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   await expect(list).toBeVisible();
+  await expect(list).toHaveAttribute('tabindex', '0');
+  await expect(list.getByRole('option').first()).toHaveAttribute('aria-selected', 'false');
   await expect(page.locator('.inbox__detail')).toBeHidden();
   await list.getByRole('option', { name: /HCarling/ }).click();
   await expect(list).toBeHidden();
@@ -204,7 +206,14 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   await expect(page).not.toHaveURL(/item=/);
   // A deep link opens the detail directly; Back still returns to the list.
   await go(page, '/inbox?tab=self_service&item=p-fa-request');
-  await expect(page.locator('.inbox__detail').getByRole('heading', { level: 2 })).toContainText('First Adversary');
+  const detail = page.locator('.inbox__detail');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('First Adversary');
+  const thread = detail.getByRole('region', { name: 'Proposal thread and changes' });
+  const decision = detail.getByRole('complementary', { name: 'Decide this change' });
+  await expect(decision).toBeInViewport();
+  await thread.evaluate((element) => (element.scrollTop = element.scrollHeight));
+  await expect(decision).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollTop || document.body.scrollTop)).toBe(0);
   await page.getByRole('button', { name: /Back to the list/ }).click();
   await expect(list).toBeVisible();
 });

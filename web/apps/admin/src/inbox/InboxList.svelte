@@ -7,6 +7,7 @@
 <script lang="ts">
   import type { Proposal } from '@kanade/api-types';
   import { tick } from 'svelte';
+  import { ListPane, StatusChip } from '@kanade/ui';
   import { FLAG_LABEL, FLAG_TONE, title, who } from './flags';
 
   let {
@@ -64,13 +65,10 @@
 </script>
 
 {#if items.length}
-  <ul
-    class="inbox__options"
-    role="listbox"
-    aria-label={label}
-    tabindex="0"
-    aria-activedescendant={current ? `${uid}-${current}` : undefined}
-    bind:this={listEl}
+  <ListPane
+    {label}
+    activeDescendant={current ? `${uid}-${current}` : undefined}
+    bind:element={listEl}
     onkeydown={onKeydown}
     onclick={(event) => {
       const option = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-item]') : null;
@@ -92,13 +90,17 @@
         <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
         {#if p.flags.length || p.is_question}
           <span class="inbox__badges">
-            {#each p.flags as flag (flag)}<span class="tone tone--{FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
-            {#if p.is_question}<span class="chip chip--waiting">still a question</span>{/if}
+            {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
+            {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
           </span>
         {/if}
       </li>
     {/each}
-  </ul>
+  </ListPane>
 {:else}
-  <p class="note inbox__none">Nothing waiting here. {empty}</p>
+  <section class="inbox__empty" aria-label="Inbox is empty">
+    <span class="inbox__empty-mark" aria-hidden="true">✓</span>
+    <h2>Nothing waiting</h2>
+    <p>Nothing waiting here. {empty}</p>
+  </section>
 {/if}

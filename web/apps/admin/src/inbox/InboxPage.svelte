@@ -10,6 +10,7 @@
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
+  import '@kanade/ui/styles/m3e-primitives.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
   import { Icon, Modal, PendingLabel, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';

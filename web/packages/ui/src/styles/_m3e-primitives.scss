@@ -1,0 +1,53 @@
+// Shared M3E depth-2 structures. They keep Kanade's window chrome while
+// providing the contained, keyboard-operable panes used by operational views.
+.list-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pane);
+}
+
+.list-pane__options {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0.5rem;
+  list-style: none;
+}
+
+.list-pane__options:focus-visible { outline-offset: -3px; }
+
+.thread-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.8rem;
+  border: 1.5px solid var(--line);
+  border-radius: 20px;
+  background: var(--pane);
+}
+
+.decision-card {
+  align-self: start;
+  padding: 0.85rem;
+  border: 1.5px solid var(--select-ring);
+  border-radius: 20px;
+  background: var(--select);
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--fs-mini);
+  font-weight: 700;
+}
+
+.status-chip--ok { border-color: var(--ok); color: var(--ink); }
+.status-chip--risk { border-color: var(--risk); color: var(--ink); }
+.status-chip--warn { border-color: var(--warn); color: var(--ink); }

@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { ApproveRequest, Proposal } from '@kanade/api-types';
-  import { BossTag, PendingLabel } from '@kanade/ui';
+  import { BossTag, DecisionCard, PendingLabel, StatusChip, ThreadPanel } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -61,13 +61,16 @@
     {#if p.source !== 'self_service'}
       <span class="conf conf--{band(p.confidence)}">{p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`}</span>
     {/if}
-    {#each p.flags as flag (flag)}<span class="tone tone--{FLAG_TONE[flag]}">{FLAG_LABEL[flag]}</span>{/each}
-    {#if p.is_question}<span class="chip chip--waiting">still a question</span>{/if}
+    {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
+    {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
     {#if p.channel}<span class="chip">{p.channel}</span>{/if}
     <span class="id">#{p.short_id} · read {p.read_at}</span>
   </header>
 
   <p class="note"><em>{p.summary}</em></p>
+
+  <div class="proposal__workspace">
+  <ThreadPanel label="Proposal thread and changes">
 
   {#if p.self_service}
     <p class="flash flash--ok">
@@ -135,7 +138,9 @@
       {/each}
     </fieldset>
   {/if}
+  </ThreadPanel>
 
+  <DecisionCard label="Decide this change">
   <div class="proposal__actions">
     <button class="btn btn--primary" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby="{uid}-why" onclick={approve}
       ><PendingLabel pending={busy && via === 'approve'} label="Approving…">Approve</PendingLabel></button
@@ -159,8 +164,10 @@
       </form>
     {/if}
     <button class="btn btn--danger" type="button" disabled={refused} aria-describedby="{uid}-why" onclick={onreject}>Reject…</button>
-    {#if p.card_url}<a class="btn btn--ghost" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
+    {#if p.card_url}<a class="btn" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
   </div>
   <p class="note" id="{uid}-why">{refused ? `${DISCORD_ONLY} Members' requests can still be decided here.` : stop}</p>
   <p class="field__error" id="{uid}-err" role="alert">{error}</p>
+  </DecisionCard>
+  </div>
 </article>

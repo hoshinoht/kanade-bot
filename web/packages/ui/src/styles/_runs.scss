@@ -49,7 +49,7 @@
 
 .run {
   display: grid;
-  grid-template-columns: 5.5rem 1fr auto;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
   gap: 0.4rem 1rem;
   align-items: start;
   background: var(--surface);
@@ -230,11 +230,15 @@
   max-width: 68ch;
 }
 
+// The actions get their own row under the details: as a third column they
+// widened with every button (Move, Swap, Preview ping, Reset to fixed) and
+// squeezed the details into a sliver.
 .run__actions {
+  grid-column: 2 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -541,6 +545,7 @@
   }
 
   .run__actions {
+    grid-column: 1 / -1;
     justify-content: flex-start;
   }
 

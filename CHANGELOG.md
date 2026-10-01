@@ -9,6 +9,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 now writes v4-exact weekly-timing added and removed notices with their
   deciding commits (never during v4 import), and refreshes posted proposal
   cards after committed portal inbox approvals or rejections.
+- v5 admin Inbox now uses the M3E contained list, thread and decision-pane primitives across Extractor and Self-service, including the approved phone detail action bar.
 
 - v5 chat now follows up a qualifying ❌ on its own proposal card with one
   read-only, silent reply to the card. It verifies the original chat asker,
@@ -653,6 +654,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Week help ("How to move runs") now opens as a contained card and
+  mentions swapping; the run sheet keeps its action buttons on their own row so
+  a moved run's extra actions no longer squeeze the run details.
 - v5 long slash-command replies now post their follow-up parts in serve;
   the production transport refused every follow-up (and would have refused
   any other default-bodied transport call) as invalid without sending it.

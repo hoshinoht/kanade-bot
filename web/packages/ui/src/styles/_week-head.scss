@@ -56,11 +56,19 @@
   background: var(--raise);
 }
 
+// Open, the help is its own contained card on the next row: never bare
+// text on the ground (dim ink on a light ground falls below 4.5:1).
 .week-head__helptext {
   flex: 1 0 100%;
-  margin: 0;
+  max-width: 64rem;
+  margin: 0.2rem 0 0;
+  padding: 0.55rem 0.85rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink);
   font-size: var(--fs-small);
-  color: var(--dim);
+  line-height: 1.5;
 }
 
 // Compact filters: the button and chips flow in the header row; the panel,

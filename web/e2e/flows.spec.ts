@@ -387,6 +387,9 @@ test('admin week header: view switch, move help, and compact filters as chips', 
   await expect(page.locator(`#${helpId}`)).toBeHidden();
   await help.click();
   await expect(page.locator(`#${helpId}`)).toContainText('press M');
+  // Open, it is a contained card, never bare text on the ground.
+  await expect(page.locator(`#${helpId}`)).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(page.locator(`#${helpId}`)).toHaveCSS('border-top-style', 'solid');
   // The help belongs to the Planner: it leaves with its toggle and returns with it.
   await views.getByRole('tab', { name: /Runs/ }).click();
   await expect(page.locator(`#${helpId}`)).toBeHidden();

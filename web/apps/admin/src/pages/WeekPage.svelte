@@ -149,8 +149,9 @@
     <!-- Planner-only help: its toggle leaves with the Planner, so the text does too. -->
     <p class="week-head__helptext" id={helpId} hidden={!helpOpen || tab !== 'planner'}>
       Drag a run to another day or between runs (on touch, press and hold first): it starts right after the run above, or ends right before
-      the run below. Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it, <kbd class="kbd">Shift</kbd> with up puts it just
-      after the run before, with down just before the run after, Enter drops it, Escape cancels. Its sheet has a Move field for an exact time.
+      the run below. Drop it on another run to swap their times. Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it,
+      <kbd class="kbd">Shift</kbd> with up puts it just after the run before, with down just before the run after, <kbd class="kbd">S</kbd> on
+      another run's slot swaps, Enter drops it, Escape cancels. Its sheet has a Move field for an exact time and Swap timing with….
     </p>
   {/snippet}
 </PageLine>
