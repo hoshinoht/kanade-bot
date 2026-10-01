@@ -1,0 +1,322 @@
+//! Limits and the delivery-owned manual digest trigger. The API projects live
+//! state and delegates effects; it never talks to Discord itself.
+
+use std::{collections::VecDeque, sync::Arc};
+
+use axum::{
+    Json, Router,
+    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::sync::Mutex;
+
+use super::{
+    context::{frames, state},
+    write::{Refusal, bad_body, origin},
+};
+use crate::{
+    api::{
+        auth::AdminSession,
+        dto::iso_instant,
+        error::ApiError,
+        listeners::Site,
+        state::{DigestPostRequest, DigestPostResult},
+    },
+    chat::pilot::{Allowance, AllowanceSnapshot},
+};
+
+const REMEMBERED_KEYS: usize = 256;
+
+#[derive(Clone)]
+struct Remembered {
+    actor: String,
+    key: String,
+    digest: String,
+    message: String,
+}
+
+/// Small process-local replay memory for effects that are not schedule writes.
+/// The underlying allowance is deliberately in-memory, and delivery owns the
+/// durable no-duplicate guarantee for digest sends.
+#[derive(Default)]
+pub struct LimitsDesk {
+    keys: Mutex<VecDeque<Remembered>>,
+}
+
+impl LimitsDesk {
+    fn recall(keys: &VecDeque<Remembered>, actor: &str, key: &str) -> Option<Remembered> {
+        keys.iter()
+            .find(|entry| entry.actor == actor && entry.key == key)
+            .cloned()
+    }
+
+    fn remember(keys: &mut VecDeque<Remembered>, entry: Remembered) {
+        keys.push_back(entry);
+        while keys.len() > REMEMBERED_KEYS {
+            keys.pop_front();
+        }
+    }
+}
+
+type Reply = Result<axum::response::Response, Refusal>;
+
+pub fn routes() -> Router<Arc<Site>> {
+    Router::new()
+        .route("/api/admin/limits", get(read))
+        .route(
+            "/api/admin/limits/windows/{id}",
+            axum::routing::delete(reset_window),
+        )
+        .route("/api/admin/digest", post(digest))
+}
+
+fn actor(session: &AdminSession) -> String {
+    format!("{}:{}", session.actor.kind(), session.actor.id())
+}
+
+fn mismatch() -> Refusal {
+    Refusal::new(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "idempotency_mismatch",
+        "That Idempotency-Key was already used for a different request.",
+    )
+}
+
+fn message(message: String) -> axum::response::Response {
+    Json(json!({"message": message})).into_response()
+}
+
+fn digest_result(result: DigestPostResult) -> Result<(), Refusal> {
+    match result {
+        DigestPostResult::Completed => Ok(()),
+        DigestPostResult::NewerWeekAlreadyPosted => {
+            Err(Refusal::invalid("A newer week's digest is already posted."))
+        }
+        DigestPostResult::Unavailable => Err(ApiError::UNAVAILABLE.into()),
+    }
+}
+
+fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> (usize, usize, f64, bool) {
+    snapshot
+        .members
+        .iter()
+        .find(|usage| usage.member_id == member_id)
+        .map(|usage| (usage.used, usage.limit, usage.window_s, usage.overridden))
+        .unwrap_or((
+            0,
+            snapshot.member_default.0,
+            snapshot.member_default.1,
+            false,
+        ))
+}
+
+fn group(group: crate::infrastructure::llm::governor::GroupSnapshot) -> Value {
+    json!({
+        "name": group.name,
+        "backend": group.backend,
+        "models": group.models,
+        "permits": {"in_use": group.permits.in_use, "total": group.permits.total},
+        "queue": group.queue.into_iter().map(|entry| json!({
+            "position": entry.position,
+            "kind": entry.kind.as_str(),
+            "who": entry.who,
+            "waiting_s": entry.waiting_s,
+        })).collect::<Vec<_>>(),
+        "rate": {
+            "available": group.rate.available,
+            "capacity": group.rate.capacity,
+            "refill_per_min": group.rate.refill_per_min,
+        },
+        "retry": {"remaining": group.retry.remaining, "capacity": group.retry.capacity},
+        "breaker": {
+            "state": group.breaker.state.as_str(),
+            "failures": group.breaker.failures,
+            "since": iso_instant(group.breaker.since),
+            "retry_at": group.breaker.retry_at.map(iso_instant),
+        },
+    })
+}
+
+async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
+    let state = state(&site)?;
+    let profiles = state
+        .store
+        .members()
+        .await
+        .map_err(super::context::unavailable)?;
+    let snapshot = state.chat.as_ref().map_or_else(
+        || Allowance::default().snapshot(0.0),
+        |chat| chat.allowance(),
+    );
+    let allowances: Vec<Value> = profiles
+        .into_iter()
+        .filter(|profile| !profile.member.is_bot)
+        .filter_map(|profile| {
+            let access = state.access.access(&profile);
+            (access != "none").then(|| {
+                let member = profile.member;
+                let member_id = member.user_id.clone();
+                let member_name = member.name().unwrap_or(&member_id).to_owned();
+                let staff = access == "staff";
+                let (used, count, per_s, overridden) = allowance(&snapshot, &member_id);
+                json!({
+                    "member": {
+                        "id": member_id,
+                        "name": member_name,
+                    },
+                    "staff": staff,
+                    "allowance": (!staff).then(|| json!({"count": count, "per_s": per_s})),
+                    "used": if staff { 0 } else { used },
+                    "override": overridden,
+                })
+            })
+        })
+        .collect();
+    let now = state.now();
+    let groups: Vec<Value> = state
+        .model_limits
+        .as_ref()
+        .map(|limits| limits(now).into_iter().map(group).collect())
+        .unwrap_or_default();
+    Ok(Json(json!({
+        "groups": groups,
+        "admission": {"window": "last hour", "refusals": []},
+        "allowances": allowances,
+    }))
+    .into_response())
+}
+
+async fn reset_window(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(member_id): UrlPath<String>,
+) -> Reply {
+    let state = state(&site)?;
+    let key = origin(&session, &headers)?.request_id;
+    let actor = actor(&session);
+    let digest = format!("limits.reset\u{1f}{member_id}");
+    let profile = state
+        .store
+        .member(member_id.clone())
+        .await
+        .map_err(super::context::unavailable)?
+        .ok_or(ApiError::NOT_FOUND)?;
+    let name = profile.member.name().unwrap_or(&member_id);
+    let applied = format!("{name}'s window is reset.");
+    if let Some(key) = key {
+        let mut keys = state.limits.keys.lock().await;
+        if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
+            return if entry.digest == digest {
+                Ok(message(entry.message))
+            } else {
+                Err(mismatch())
+            };
+        }
+        let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
+        if !chat.reset_allowance(&member_id) {
+            return Err(ApiError::UNAVAILABLE.into());
+        }
+        LimitsDesk::remember(
+            &mut keys,
+            Remembered {
+                actor,
+                key,
+                digest,
+                message: applied.clone(),
+            },
+        );
+    } else {
+        let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
+        if !chat.reset_allowance(&member_id) {
+            return Err(ApiError::UNAVAILABLE.into());
+        }
+    }
+    Ok(message(applied))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DigestBody {
+    week: String,
+    channel_id: Option<String>,
+}
+
+async fn digest(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    body: Result<Json<DigestBody>, JsonRejection>,
+) -> Reply {
+    let state = state(&site)?;
+    let key = origin(&session, &headers)?.request_id;
+    let Json(body) = body.map_err(bad_body)?;
+    let actor = actor(&session);
+    let digest = format!(
+        "digest.post\u{1f}{}\u{1f}{}",
+        body.week,
+        body.channel_id.as_deref().unwrap_or_default()
+    );
+    let now = state.now();
+    let [this, next] = frames(state, now)?;
+    let (week_start, label) = match body.week.as_str() {
+        "this" => (this.start, "this week's"),
+        "next" => (next.start, "next week's"),
+        _ => return Err(Refusal::invalid("Week is this or next.")),
+    };
+    let channel_id = match body.channel_id {
+        Some(channel) => channel,
+        None => state
+            .config
+            .as_ref()
+            .ok_or(ApiError::UNAVAILABLE)?
+            .settings()
+            .await
+            .posting
+            .channel_id
+            .ok_or_else(|| Refusal::invalid("Choose a digest channel."))?,
+    };
+    let channel = state
+        .channels
+        .channels()
+        .into_iter()
+        .find(|channel| channel.id == channel_id)
+        .ok_or_else(|| Refusal::invalid("Choose a current Discord channel."))?;
+    let post = state.digest_post.as_ref().ok_or(ApiError::UNAVAILABLE)?;
+    let request = DigestPostRequest {
+        week_start,
+        channel_id: Some(channel_id),
+        at: now,
+    };
+    let applied = format!(
+        "Posted {label} digest in {}; people are named, not pinged.",
+        channel.name
+    );
+    if let Some(key) = key {
+        let mut keys = state.limits.keys.lock().await;
+        if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
+            return if entry.digest == digest {
+                Ok(message(entry.message))
+            } else {
+                Err(mismatch())
+            };
+        }
+        digest_result(post(request).await)?;
+        LimitsDesk::remember(
+            &mut keys,
+            Remembered {
+                actor,
+                key,
+                digest,
+                message: applied.clone(),
+            },
+        );
+        return Ok(message(applied));
+    }
+    digest_result(post(request).await)?;
+    Ok(message(applied))
+}

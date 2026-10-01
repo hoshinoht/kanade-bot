@@ -445,6 +445,30 @@ async fn digest_is_replaced_only_after_confirmed_deletion() {
     on_both_stores!(replacement_after_confirmed_deletion);
 }
 
+async fn requested_digest_uses_the_journal_and_never_moves_back<S: Store>(store: &S) {
+    let world = world();
+    let mut delivery = delivery(store, &world, &world.fake);
+    let next = week() + chrono::Duration::days(7);
+    let posted = delivery
+        .post_requested_digest(now(), next, Some(HOME))
+        .await
+        .expect("manual digest");
+    assert!(posted.message_id().is_some());
+    assert_eq!(world.fake.count(Op::Create), 1);
+
+    let older = delivery
+        .post_requested_digest(now(), week(), Some(POST))
+        .await
+        .expect("older digest is contained");
+    assert_eq!(older.outcome, DigestOutcome::ClockRolledBack);
+    assert_eq!(world.fake.count(Op::Create), 1, "older week was not posted");
+}
+
+#[tokio::test]
+async fn requested_digest_runs_through_delivery_and_keeps_the_monotone_week() {
+    on_both_stores!(requested_digest_uses_the_journal_and_never_moves_back);
+}
+
 async fn ambiguous_deletion_suppresses<S: Store>(store: &S) {
     let world = world();
     seed_replaceable(store, &world).await;

@@ -50,6 +50,34 @@ pub type DeclineRetraction = Arc<
     dyn Fn(String, String, DateTime<Utc>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync,
 >;
 
+/// A digest post always crosses the delivery boundary; the API only asks for
+/// it and never obtains a Discord transport.
+pub type DigestPost = Arc<
+    dyn Fn(DigestPostRequest) -> Pin<Box<dyn Future<Output = DigestPostResult> + Send>>
+        + Send
+        + Sync,
+>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DigestPostRequest {
+    pub week_start: DateTime<Utc>,
+    pub channel_id: Option<String>,
+    pub at: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DigestPostResult {
+    Completed,
+    NewerWeekAlreadyPosted,
+    Unavailable,
+}
+
+/// Live governor snapshots for the Limits page. `None` means model serving is
+/// not composed; allowance rows still remain useful.
+pub type ModelLimits = Arc<
+    dyn Fn(DateTime<Utc>) -> Vec<crate::infrastructure::llm::governor::GroupSnapshot> + Send + Sync,
+>;
+
 /// Object-safe reads over any store that implements the domain ports.
 pub trait ReadStore: Send + Sync {
     fn snapshot(&self, scope: Scope) -> ReadFuture<'_, ScheduleSnapshot>;
@@ -534,10 +562,16 @@ pub struct ApiState {
     /// The chat pilot's Limits view and status (for A8); empty until serve
     /// starts chat.
     pub chat: Option<Arc<crate::chat::driver::ChatHandle>>,
+    /// Live model-governor groups for the Limits page.
+    pub model_limits: Option<ModelLimits>,
+    /// Bounded idempotency memory for Limits and manual digest operations.
+    pub limits: Arc<super::admin::limits::LimitsDesk>,
     /// The shared CardDesk refresh, attached only after Discord composition.
     pub proposal_refresh: Option<ProposalCardRefresh>,
     /// The shared delivery retraction, attached only after Discord composition.
     pub decline_retraction: Option<DeclineRetraction>,
+    /// The delivery-owned manual digest port, absent while Discord is offline.
+    pub digest_post: Option<DigestPost>,
 }
 
 impl std::fmt::Debug for ApiState {

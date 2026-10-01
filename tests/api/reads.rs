@@ -10,7 +10,7 @@ use std::{
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::{
     api::{
-        admin::config::ConfigDesk,
+        admin::{config::ConfigDesk, limits::LimitsDesk},
         auth::{
             AdminAuth,
             crypto::SealedSecret,
@@ -28,6 +28,10 @@ use kanade::{
         write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
+    chat::{
+        driver::{ChatHandle, ChatView},
+        pilot::{ChatPilot, GuardLimits, LimitsView, TrafficLimits},
+    },
     domain::{
         attendance::AttendanceDefault,
         catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
@@ -169,8 +173,43 @@ pub struct Reads {
     pub proposal_refreshes: Arc<Mutex<Vec<Vec<String>>>>,
     /// The post-commit decline-retraction port's calls.
     pub decline_retractions: Arc<Mutex<Vec<(String, String)>>>,
+    pub chat: Arc<FakeChat>,
+    pub digest_posts: Arc<Mutex<Vec<kanade::api::state::DigestPostRequest>>>,
     _fixture: Fixture,
     _dir: TempDir,
+}
+
+pub struct FakeChat {
+    pilot: Mutex<ChatPilot>,
+    pub resets: Mutex<Vec<String>>,
+}
+
+impl Default for FakeChat {
+    fn default() -> Self {
+        Self {
+            pilot: Mutex::new(ChatPilot::new(
+                60.0,
+                TrafficLimits::default(),
+                GuardLimits::default(),
+            )),
+            resets: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl ChatView for FakeChat {
+    fn limits(&self) -> LimitsView {
+        self.pilot.lock().unwrap().limits(0.0)
+    }
+
+    fn reset_allowance(&self, member_id: &str) {
+        self.pilot.lock().unwrap().allowance.forget(member_id);
+        self.resets.lock().unwrap().push(member_id.to_owned());
+    }
+
+    fn status(&self) -> &'static str {
+        "idle"
+    }
 }
 
 fn write(root: &Path, relative: &str) {
@@ -376,37 +415,41 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None, true).await
+        Self::build(reset, false, None, true, true).await
     }
 
     pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(NaiveTime::MIN, false, None, connected).await
+        Self::build(NaiveTime::MIN, false, None, connected, true).await
     }
 
     /// With the config API over the seeded store.
     pub async fn with_config(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), true).await
+        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), true, true).await
     }
 
     pub async fn with_config_role_directory_connected(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
         connected: bool,
     ) -> Self {
-        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), connected).await
+        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), connected, true).await
     }
 
     pub async fn with_config_and_logins(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true).await
+        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true, true).await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None, true).await
+        Self::build(NaiveTime::MIN, true, None, true, true).await
+    }
+
+    pub async fn without_digest_delivery() -> Self {
+        Self::build(NaiveTime::MIN, false, None, true, false).await
     }
 
     async fn build(
@@ -414,6 +457,7 @@ impl Reads {
         logins: bool,
         config: Option<ConfigMaker>,
         role_directory_connected: bool,
+        digest_delivery: bool,
     ) -> Self {
         let dir = TempDir::new();
         let store = Arc::new(
@@ -492,6 +536,20 @@ impl Reads {
                 })
             })
         };
+        let chat = Arc::new(FakeChat::default());
+        let chat_handle = Arc::new(ChatHandle::default());
+        chat_handle.set(chat.clone());
+        let digest_posts = Arc::new(Mutex::new(Vec::new()));
+        let digest_post: kanade::api::state::DigestPost = {
+            let posts = Arc::clone(&digest_posts);
+            Arc::new(move |request| {
+                let posts = Arc::clone(&posts);
+                Box::pin(async move {
+                    posts.lock().unwrap().push(request);
+                    kanade::api::state::DigestPostResult::Completed
+                })
+            })
+        };
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -531,9 +589,12 @@ impl Reads {
             clock: Arc::new(move || pinned),
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
             config: config.map(|make| make(store.clone())),
-            chat: None,
+            chat: Some(chat_handle),
+            model_limits: None,
+            limits: Arc::new(LimitsDesk::default()),
             proposal_refresh: Some(proposal_refresh),
             decline_retraction: Some(decline_retraction),
+            digest_post: digest_delivery.then_some(digest_post),
         };
         let mut http = fixture.http();
         if logins {
@@ -568,6 +629,8 @@ impl Reads {
             rescans,
             proposal_refreshes,
             decline_retractions,
+            chat,
+            digest_posts,
             _fixture: fixture,
             _dir: dir,
         }

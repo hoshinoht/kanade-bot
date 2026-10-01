@@ -8,6 +8,7 @@ mod config;
 mod headers;
 mod history;
 mod inbox;
+mod limits;
 mod logs;
 mod origins;
 mod outbox;

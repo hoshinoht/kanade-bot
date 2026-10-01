@@ -7,6 +7,7 @@ pub mod config;
 mod context;
 mod history;
 mod inbox;
+pub mod limits;
 mod logs;
 mod read;
 mod write;
@@ -30,6 +31,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(history::routes())
         .merge(inbox::routes())
         .merge(logs::routes())
+        .merge(limits::routes())
         .merge(config::routes())
 }
 

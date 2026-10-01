@@ -647,7 +647,7 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | --- | --- | --- | --- |
 | `persona_selected` | INFO; WARN on a fallback source, any candidate issue, unreadable profiles or `profiles_issue` | `configured`, `effective`, `source` (`configured`/`catalog_default`/`tracked_fallback`), `bundle_file`, `profiles`, `profile_ids`, `unreadable_profiles` [{`file`,`error`}], `profiles_issue`, `issues` [{`candidate`,`error`}] | serve startup, after the persona files load |
 | `persona_unavailable` | ERROR | `configured`, `issues` | serve startup when no persona validates (chat stays off) |
-| `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor_kind`, `surface` (`admin_portal`) | every saved config `PATCH` that changed something |
+| `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor` (`kind:id`), `surface` (`admin_portal`) | every saved config `PATCH` that changed something |
 | `persona_switched` | INFO | `from`, `to`, `profiles` | a persona switch was saved and swapped in |
 | `personas_reloaded` | INFO; WARN with unreadable profiles | `persona`, `profiles`, `issues` [{`file`,`error`}] | profile reload |
 | `chat_setup_changed` | INFO; WARN when enabled but not ready | `enabled`, `ready`, `not_ready` (`no_model_route`/`no_persona`) | chat start, then when either flag flips (read on the next message, status read or settings change) |

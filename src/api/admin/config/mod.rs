@@ -306,13 +306,7 @@ async fn update(
         let before = current.clone();
         *current = next.clone();
         let revision = desk.publish(name_of(name), actor.clone(), &next);
-        changes::settings_changed(
-            revision,
-            name_of(name),
-            session.actor.kind(),
-            &before,
-            &next,
-        );
+        changes::settings_changed(revision, name_of(name), &actor, &before, &next);
         if before.models.context != next.models.context {
             changes::local_context_warnings(&context_warnings);
         }

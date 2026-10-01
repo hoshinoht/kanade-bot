@@ -549,6 +549,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         self.state().pilot.limits(now)
     }
 
+    /// Clears the member's in-memory answer window without touching the
+    /// guild pool, matching v4's per-member reset.
+    pub fn reset_allowance(&self, member_id: &str) {
+        self.state().pilot.allowance.forget(member_id);
+    }
+
     /// `disabled`, `idle`, `busy` or `degraded` (enabled but unable to
     /// answer, or clean retries suspended by the storm guard).
     pub fn status(&self) -> &'static str {
@@ -575,6 +581,10 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
 impl<A: Answerer, S: Surface> ChatView for ChatDriver<A, S> {
     fn limits(&self) -> LimitsView {
         ChatDriver::limits(self)
+    }
+
+    fn reset_allowance(&self, member_id: &str) {
+        ChatDriver::reset_allowance(self, member_id);
     }
 
     fn status(&self) -> &'static str {

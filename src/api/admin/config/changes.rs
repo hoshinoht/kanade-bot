@@ -48,7 +48,7 @@ pub(super) fn diff(before: &RuntimeSettings, after: &RuntimeSettings) -> Map<Str
 pub(super) fn settings_changed(
     revision: u64,
     section: &str,
-    actor_kind: &str,
+    actor: &str,
     before: &RuntimeSettings,
     after: &RuntimeSettings,
 ) {
@@ -62,7 +62,7 @@ pub(super) fn settings_changed(
             "section": section,
             "keys": keys,
             "values": values,
-            "actor_kind": actor_kind,
+            "actor": actor,
             "surface": "admin_portal",
         }),
     );
@@ -173,12 +173,12 @@ mod tests {
         let mut after = before.clone();
         after.persona.active = "aria".into();
         after.chatbot.enabled = !before.chatbot.enabled;
-        settings_changed(7, "persona", "admin", &before, &after);
+        settings_changed(7, "persona", "admin:discord:42", &before, &after);
         let line = logging::captured().remove(0);
         assert_eq!(line["event"], "settings_changed");
         assert_eq!(line["revision"], 7);
         assert_eq!(line["surface"], "admin_portal");
-        assert_eq!(line["actor_kind"], "admin");
+        assert_eq!(line["actor"], "admin:discord:42");
         let keys: Vec<&str> = line["keys"]
             .as_array()
             .unwrap()
@@ -190,6 +190,12 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert_eq!(line["values"]["persona"]["from"], before.persona.active);
         assert_eq!(line["values"]["persona"]["to"], "aria");
+        assert!(
+            !line
+                .to_string()
+                .contains("break-glass-token-with-at-least-32-bytes"),
+            "a settings audit must not contain a secret"
+        );
     }
 
     #[test]
@@ -198,7 +204,7 @@ mod tests {
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.models.context.chat.cap = Some(32_768);
-        settings_changed(3, "models", "admin", &before, &after);
+        settings_changed(3, "models", "admin:token", &before, &after);
         local_context_warnings(&[LocalContextWarning {
             role: "chat",
             alias: "kanata/chat".into(),
@@ -233,7 +239,13 @@ mod tests {
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.run_lengths.default_minutes = 20;
-        settings_changed(8, "run_lengths", "admin", &before, &after);
+        settings_changed(
+            8,
+            "run_lengths",
+            "admin:tailscale:ops@example.com",
+            &before,
+            &after,
+        );
         let lines = logging::captured();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0]["section"], "run_lengths");

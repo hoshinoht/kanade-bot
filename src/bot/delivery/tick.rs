@@ -576,6 +576,169 @@ where
         .await
     }
 
+    /// Posts a portal-requested digest through the same lease, journal,
+    /// replacement and ambiguity path as the tick. The requested week may be
+    /// current or next; a newer recorded or active digest is never displaced
+    /// by an older request.
+    pub async fn post_requested_digest(
+        &mut self,
+        now: DateTime<Utc>,
+        week_start: DateTime<Utc>,
+        explicit_channel: Option<&str>,
+    ) -> Result<DigestReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
+        let lease = self
+            .store
+            .begin_lease(&self.config.instance_id, TICK_OPERATION, now)
+            .await?;
+        let result = self
+            .requested_digest_in(&lease, now, week_start, explicit_channel)
+            .await;
+        let ended = self.store.end_lease(&lease, now).await;
+        let value = result?;
+        ended?;
+        Ok(value)
+    }
+
+    async fn requested_digest_in(
+        &self,
+        lease: &Lease,
+        now: DateTime<Utc>,
+        week_start: DateTime<Utc>,
+        explicit_channel: Option<&str>,
+    ) -> Result<DigestReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
+        let reset = self.config.reset();
+        let current_week = reset.current_week(now)?;
+        let mut report = DigestReport {
+            current_week: week_start,
+            retired: 0,
+            outcome: DigestOutcome::UpToDate,
+            send: None,
+        };
+        let log = self.store.load_digests().await?;
+        let marked_newer = log
+            .last_digest_week
+            .as_deref()
+            .and_then(|text| from_iso(text).ok())
+            .is_some_and(|last| last > week_start);
+        let active_newer = log
+            .digests
+            .iter()
+            .any(|digest| digest.retired_at.is_none() && digest.week_start > week_start);
+        if marked_newer || active_newer {
+            report.outcome = DigestOutcome::ClockRolledBack;
+            return Ok(report);
+        }
+        let Some(mut operation) = self.admit().await else {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        };
+        if !operation.begin() {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        }
+        let retired = self
+            .store
+            .retire_digests_before(lease, week_start, now)
+            .await;
+        operation.settle();
+        report.retired = retired?;
+        let log = self.store.load_digests().await?;
+        let week = self.store.load(&Scope::Weeks(vec![week_start])).await?;
+        let view = self.store.load_view().await?;
+        let post = plan_digest_post(&DigestPostInput {
+            week_start,
+            current_week,
+            zone: reset.zone,
+            runs: &week.runs,
+            digests: &log.digests,
+            explicit_channel,
+            settings: self.config.settings(),
+            channels: self.channels,
+            journal: &view,
+        })?;
+        let Some(post) = post else {
+            report.outcome = DigestOutcome::NoChannel;
+            return Ok(report);
+        };
+        let executor = self.executor(lease);
+        let phrase = if post.send.disposition == SendDisposition::Send {
+            let Some(phrase) = card_records::prepare_digest(
+                self.store,
+                &self.cards,
+                &post.send.intent,
+                post.replaces.is_some(),
+                now,
+            )
+            .await
+            else {
+                report.outcome = DigestOutcome::PhraseUnavailable;
+                return Ok(report);
+            };
+            Some(phrase)
+        } else {
+            None
+        };
+        if post.send.disposition == SendDisposition::Send
+            && let Some(old) = &post.replaces
+        {
+            let Some(permit) = self.admit().await else {
+                report.outcome = DigestOutcome::Paused;
+                return Ok(report);
+            };
+            match executor.replace_digest_admitted(permit, old, now).await? {
+                Some(Replacement::Suppressed(reason)) => {
+                    report.outcome = DigestOutcome::ReplacementSuppressed(reason);
+                    return Ok(report);
+                }
+                Some(Replacement::Retired) => {}
+                None => {
+                    report.outcome = DigestOutcome::Paused;
+                    return Ok(report);
+                }
+            }
+        }
+        let content = match post.send.disposition {
+            SendDisposition::Send => {
+                render(
+                    &post.send.intent,
+                    &self.card_context(&week),
+                    phrase.as_deref(),
+                    self.cards.art.as_ref(),
+                )
+                .await
+            }
+            SendDisposition::Suppressed => unrendered(),
+        };
+        let Some(permit) = self.admit().await else {
+            report.outcome = DigestOutcome::Paused;
+            return Ok(report);
+        };
+        let result = match executor
+            .execute_admitted(permit, &post.send, &content, None, post.record_week, now)
+            .await
+        {
+            Ok(Some(outcome)) => Ok(outcome),
+            Ok(None) => {
+                report.outcome = DigestOutcome::Paused;
+                return Ok(report);
+            }
+            Err(failure) => Err(failure),
+        };
+        let outcome = settle(result)?;
+        report.outcome = DigestOutcome::Attempted;
+        report.send = Some(SendReport {
+            intent: post.send.intent,
+            outcome,
+        });
+        Ok(report)
+    }
+
     /// The dispatch step alone, under its own lease.
     ///
     /// # Errors

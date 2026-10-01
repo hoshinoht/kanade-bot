@@ -39,12 +39,15 @@ use crate::{
         admin::config::SettingsChanged,
         auth::Clock,
         rescan::RescanDesk,
-        state::{DeclineRetraction, GuildAccess, ProposalCardRefresh},
+        state::{
+            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuildAccess,
+            ProposalCardRefresh,
+        },
         write::ApiClock,
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::{CardRefresh, Delivery, LogAlerts, RefreshQueue},
+        delivery::{CardRefresh, Delivery, DigestOutcome, LogAlerts, RefreshQueue},
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -328,6 +331,69 @@ where
         composition.settings.notifications.quiet_mode,
     ));
     let post_channel = Arc::new(RwLock::new(composition.settings.posting.channel_id.clone()));
+    let digest_post: DigestPost = {
+        let store = Arc::clone(&store);
+        let transport = Arc::clone(&wiring.transport);
+        let roster = Arc::clone(&roster);
+        let cache = Arc::clone(&cache);
+        let cards = cards.clone();
+        let post_channel = Arc::clone(&post_channel);
+        let delivery = delivery_config(&config.instance_id, policy.clone(), &composition.settings);
+        let connection = connection.clone();
+        Arc::new(move |request: DigestPostRequest| {
+            let store = Arc::clone(&store);
+            let transport = Arc::clone(&transport);
+            let roster = Arc::clone(&roster);
+            let cache = Arc::clone(&cache);
+            let cards = cards.clone();
+            let post_channel = Arc::clone(&post_channel);
+            let mut delivery_config = delivery.clone();
+            let connection = connection.clone();
+            Box::pin(async move {
+                delivery_config.post_channel_id = post_channel
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                let alerts = LogAlerts;
+                let mut delivery = Delivery::new(
+                    &*store,
+                    RandomIds,
+                    &*transport,
+                    &alerts,
+                    &*roster,
+                    &*cache,
+                    delivery_config,
+                )
+                .with_cards(cards)
+                .with_admission_gate(move || connection.delivery_eligibility());
+                match delivery
+                    .post_requested_digest(
+                        request.at,
+                        request.week_start,
+                        request.channel_id.as_deref(),
+                    )
+                    .await
+                {
+                    Ok(report) if report.outcome == DigestOutcome::ClockRolledBack => {
+                        DigestPostResult::NewerWeekAlreadyPosted
+                    }
+                    Ok(report) if report.outcome == DigestOutcome::Attempted => {
+                        DigestPostResult::Completed
+                    }
+                    Ok(_) | Err(_) => DigestPostResult::Unavailable,
+                }
+            })
+        })
+    };
+    match Arc::get_mut(&mut composition.admin.state) {
+        Some(state) => state.digest_post = Some(digest_post),
+        None => {
+            extraction.stop().await;
+            return Err(Error::Startup(
+                "the manual digest post could not be attached".into(),
+            ));
+        }
+    }
     let debug = commands::DebugParts {
         cards: cards.clone(),
         roster: Arc::clone(&roster),

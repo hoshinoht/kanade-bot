@@ -1,6 +1,7 @@
 # Limits contract (proposal)
 
-Status: proposed; the backend confirms or revises. DTOs:
+Status: implemented for the admin read and member-window clear routes; override
+editing and the member-facing view remain proposed. DTOs:
 `web/packages/api-types` (`BackendGroup`, `Refusal`, `Allowance`, `Limits`,
 `AliasLimit`, `KeyLimits`). UI: `web/apps/admin/src/limits/LimitsPage.svelte`
 (live usage, polled every 5 s) and the Config Models section (declared

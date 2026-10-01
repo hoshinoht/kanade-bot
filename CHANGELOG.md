@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Limits page and "Post digest" now work against the real server:
+  limits are read live, a usage window can be cleared, and a manual digest for
+  this or next week posts through normal delivery to a channel the bot knows
+  (replacing that week's digest, as in v4). Config-change audits now name the
+  acting admin.
 - v5 posts v4-exact decline notices again: a ❌ reaction replies to the card,
   `/rsvp no` and portal declines go to the run's home channel, and extraction
   declines post in the source channel, with v4's cooldown. Changing the answer

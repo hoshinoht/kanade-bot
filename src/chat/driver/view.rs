@@ -8,6 +8,8 @@ use crate::chat::pilot::{Allowance, AllowanceSnapshot, LimitsView};
 /// What readers of the running pilot see.
 pub trait ChatView: Send + Sync {
     fn limits(&self) -> LimitsView;
+    /// Clears the in-memory answer allowance for one member.
+    fn reset_allowance(&self, member_id: &str);
     /// `disabled`, `idle`, `busy` or `degraded`.
     fn status(&self) -> &'static str;
 }
@@ -39,6 +41,16 @@ impl ChatHandle {
     pub fn allowance(&self) -> AllowanceSnapshot {
         self.limits()
             .map_or_else(|| Allowance::default().snapshot(0.0), |view| view.allowance)
+    }
+
+    /// Clears one live member window. There is no driver to change before
+    /// chat starts, so callers can distinguish that unavailable case.
+    pub fn reset_allowance(&self, member_id: &str) -> bool {
+        let Some(view) = self.0.get() else {
+            return false;
+        };
+        view.reset_allowance(member_id);
+        true
     }
 
     pub fn status(&self) -> &'static str {

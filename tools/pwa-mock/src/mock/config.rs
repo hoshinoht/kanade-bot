@@ -1045,18 +1045,24 @@ impl Store {
         json!({ "message": "Reloaded 4 reply profiles from config/personas/profiles/.", "reloaded": 4 })
     }
 
-    pub fn post_digest(&self, week: &str, channel: Option<&str>) -> Result<Value, MoveError> {
-        let label = match week {
-            "this" => "this week's",
-            "next" => "next week's",
+    pub fn post_digest(&mut self, week: &str, channel: Option<&str>) -> Result<Value, MoveError> {
+        let (label, next) = match week {
+            "this" => ("this week's", false),
+            "next" => ("next week's", true),
             _ => return Err(MoveError::invalid("Week is this or next.")),
         };
+        if self.digest_week == Some(true) && !next {
+            return Err(MoveError::invalid(
+                "A newer week's digest is already posted.",
+            ));
+        }
         let name = match channel {
             None => "#boss-schedule",
             Some(id) => seed::channel(id)
                 .map(|c| c.1)
                 .ok_or(MoveError::invalid("No such channel."))?,
         };
+        self.digest_week = Some(next);
         Ok(
             json!({ "message": format!("Posted {label} digest in {name}; people are named, not pinged.") }),
         )

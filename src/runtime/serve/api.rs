@@ -12,7 +12,10 @@ use super::{
 };
 use crate::{
     api::{
-        admin::config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
+        admin::{
+            config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
+            limits::LimitsDesk,
+        },
         auth::{
             self, AdminAuth, Clock,
             staff::{GuildStaffGate, StoreGuildMembers},
@@ -206,8 +209,14 @@ pub async fn compose(
         rescans: None,
         config: Some(Arc::new(desk)),
         chat: Some(health.chat()),
+        model_limits: models.as_ref().map(|stack| {
+            let governor = Arc::clone(&stack.governor);
+            Arc::new(move |at| governor.snapshot(at)) as crate::api::state::ModelLimits
+        }),
+        limits: Arc::new(LimitsDesk::default()),
         proposal_refresh: None,
         decline_retraction: None,
+        digest_post: None,
     };
     Ok(Composition {
         admin: LiveAdmin {

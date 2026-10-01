@@ -1752,11 +1752,12 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
             .role_profiles
             .is_empty()
     );
-    // Still unmounted: it needs the Discord wiring.
+    // The mounted route validates its required body before it reaches the
+    // offline delivery port.
     let reply = config
         .send("POST", "/api/admin/digest", None, &json!({}))
         .await;
-    assert_eq!(reply.status, 404);
+    refused(&reply, 400, "invalid_body", "manual digest body");
 }
 
 const ACCESS: &str = "/api/admin/access";

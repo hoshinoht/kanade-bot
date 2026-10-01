@@ -76,6 +76,8 @@ pub struct Store {
     discord_error: Option<&'static str>,
     jobs: Vec<extractions::Job>,
     limit_resets: Vec<&'static str>,
+    /// The newest manually posted digest week (`false` this, `true` next).
+    digest_week: Option<bool>,
     config: config::Config,
     version: u64,
     next_id: u32,
@@ -96,6 +98,7 @@ impl Store {
             discord_error: None,
             jobs: Vec::new(),
             limit_resets: Vec::new(),
+            digest_week: None,
             config: config::defaults(),
             version: 1,
             next_id: 1,
@@ -126,6 +129,7 @@ impl Store {
         self.discord_error = None;
         self.jobs.clear();
         self.limit_resets.clear();
+        self.digest_week = None;
         self.config = config::defaults();
         self.seed_history();
     }
