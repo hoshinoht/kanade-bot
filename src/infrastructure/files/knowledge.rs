@@ -30,6 +30,26 @@ pub struct KnowledgeDir {
     pub keys: Vec<String>,
 }
 
+impl KnowledgeDir {
+    /// The document for catalog key `key` and `_meta.yaml`'s
+    /// `researched_as_of`, re-read per call; `Ok(None)` when no document was
+    /// validated for that key.
+    pub fn guide_source(&self, key: &str) -> Result<Option<(Value, String)>, LoadError> {
+        if !self.keys.iter().any(|known| known == key) {
+            return Ok(None);
+        }
+        let meta_path = self.path.join(META_FILE);
+        let meta = read_document(&meta_path)?;
+        let researched = meta
+            .get("researched_as_of")
+            .and_then(Value::as_str)
+            .ok_or_else(|| LoadError::new(&meta_path, "missing researched_as_of"))?
+            .to_owned();
+        let path = self.path.join(format!("{}.yaml", key.to_ascii_lowercase()));
+        Ok(Some((read_document(&path)?, researched)))
+    }
+}
+
 pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
     if !fs::metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
         return Err(LoadError::new(dir, "not a directory"));

@@ -305,8 +305,21 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   stripped the same way (`ToolContext::self_role_id`); `bot_names` are its
   user, global and guild names. A persona identity change forgets
   history. Proposals are recorded against the interaction id.
-- Not here: strategy prefetch and source attribution (no boss-knowledge v2
-  renderer outside `api`), and a model pre-screen.
+- Strategy guides: with `KANADE_KNOWLEDGE_DIR` set, `get_boss_strategy`
+  answers from the startup-validated schema v2 directory (shared with the
+  admin API, re-read per call) through `tools::read::render_guide`: v4's
+  `render(include_sources=False)` shape, with per-difficulty facts and
+  letter-keyed `difficulty_notes` under `### <Difficulty>`. A checked-in
+  document that can no longer be read or rendered (edited after startup)
+  answers "could not be read right now" (`GuideError::Unreadable`, distinct
+  from the absent-guide text) and logs `chat_guide_unreadable` with the
+  path and problem. Without the directory, live chat removes the
+  `strategy` bundle (`ToolOffer::disallow`): `get_boss_strategy` is never
+  offered and `request_tools` neither advertises nor accepts `strategy`.
+  Full-set (v4) surfaces and dynamic surfaces with every bundle available
+  keep their exact bytes.
+- Not here: strategy prefetch and source attribution, and a model
+  pre-screen.
 
 ### Delivery (`chat::driver::delivery`, R05)
 

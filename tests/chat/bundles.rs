@@ -118,6 +118,38 @@ fn bundles_come_in_a_stable_order_with_the_hatch_after_read() {
 }
 
 #[test]
+fn unavailable_strategy_is_hidden_from_the_dynamic_surface() {
+    let mut offer = ToolOffer::dynamic([Bundle::Strategy], false);
+    assert_eq!(
+        offer.schema(ToolName::RequestTools),
+        ToolName::RequestTools.schema()
+    );
+    offer.disallow(Bundle::Strategy);
+    assert!(!offer.names().contains(&"get_boss_strategy"));
+    let surface: Value = serde_json::from_str(&offer.surface_text()).expect("JSON");
+    let request = surface
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["function"]["name"] == "request_tools")
+        .unwrap();
+    let bundle = &request["function"]["parameters"]["properties"]["bundle"];
+    assert_eq!(bundle["enum"], json!(["run_changes", "weekly_changes"]));
+    assert_eq!(
+        bundle["description"],
+        "run_changes: move, add, cancel or RSVP one run. weekly_changes: change or remove a weekly, or make a run weekly."
+    );
+    // The per-request definition agrees with the prompt-size surface.
+    assert_eq!(&offer.schema(ToolName::RequestTools), request);
+    assert_eq!(
+        offer.request(Some("strategy")),
+        kanade::chat::tools::bundles::Requested::Refused(
+            "bundle must be one of: run_changes, weekly_changes.".into()
+        )
+    );
+}
+
+#[test]
 fn a_read_question_costs_far_less_prompt_than_v4s_surface() {
     let v4 = ToolOffer::full_set(false).estimated_tokens();
     let v4_read_only = ToolOffer::full_set(true).estimated_tokens();

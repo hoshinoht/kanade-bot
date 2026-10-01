@@ -20,7 +20,6 @@ use crate::chat::tools::bundles::{Mode, ToolOffer};
 use crate::chat::tools::dispatch;
 use crate::chat::tools::propose::{ProposalCard, Proposer};
 use crate::chat::tools::read::ToolWorld;
-use crate::chat::tools::schemas::surface_text;
 use crate::chat::tools::{FAILED, LOOKUP_FAILED, REFUSED, ToolName, ToolOutcome};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::members::member_name;
@@ -53,8 +52,8 @@ fn millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-fn definition(tool: ToolName) -> ToolDefinition {
-    let schema = tool.schema();
+fn definition(offer: &ToolOffer, tool: ToolName) -> ToolDefinition {
+    let schema = offer.schema(tool);
     let function = &schema["function"];
     ToolDefinition {
         name: tool.as_str().to_owned(),
@@ -135,12 +134,22 @@ struct Loop<'q, 'g> {
 }
 
 impl Loop<'_, '_> {
-    fn request(&self, alias: &str, messages: Vec<Message>, offered: &[ToolName]) -> ChatRequest {
+    fn request(
+        &self,
+        alias: &str,
+        messages: Vec<Message>,
+        offer: &ToolOffer,
+        offered: &[ToolName],
+    ) -> ChatRequest {
         let settings = &self.question.settings;
         ChatRequest {
             model: alias.to_owned(),
             messages,
-            tools: offered.iter().copied().map(definition).collect(),
+            tools: offered
+                .iter()
+                .copied()
+                .map(|tool| definition(offer, tool))
+                .collect(),
             output_schema: None,
             max_output_tokens: settings.max_output_tokens,
             reasoning: settings.reasoning,
@@ -291,7 +300,7 @@ where
         };
         let outgoing = match budgeted(
             &mut messages,
-            &surface_text(&offered),
+            &offer.surface_text(),
             &state.reminder,
             context_tokens,
             settings.max_output_tokens as usize,
@@ -310,7 +319,7 @@ where
                 break None;
             }
         };
-        let request = state.request(&alias, outgoing.messages, &offered);
+        let request = state.request(&alias, outgoing.messages, &offer, &offered);
         let started = Instant::now();
         let sent = session.complete(&request).await;
         let latency = millis(started);
@@ -525,7 +534,7 @@ async fn clean_retry<P: LlmProvider>(
             return;
         }
     };
-    let request = state.request(alias, outgoing.messages, &[]);
+    let request = state.request(alias, outgoing.messages, &state.question.offer, &[]);
     let started = Instant::now();
     let before = session.requests_used();
     let sent = session.clean_retry(&request).await;

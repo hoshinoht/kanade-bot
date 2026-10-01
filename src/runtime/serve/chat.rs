@@ -34,10 +34,14 @@ use crate::{
         gate::{ChannelDirectory, PilotSettings},
         persona::{PersonaStore, ProfileId, ProfileQuery, RoleAssignment, RoleId},
         pilot::{AllowanceSnapshot, StormAlert},
-        tools::propose::Proposer,
+        tools::{
+            bundles::Bundle,
+            propose::Proposer,
+            read::{GuideError, StrategyGuides, render_guide},
+        },
     },
     domain::{
-        catalog::BossTable,
+        catalog::{BossReference, BossTable},
         ids::RandomIds,
         members::{MemberStore, Roster},
         model_log::{ChatInteraction, ModelLogStore},
@@ -46,6 +50,7 @@ use crate::{
         settings::RuntimeSettings,
     },
     infrastructure::{
+        files::KnowledgeDir,
         llm::{
             governor::Role,
             setup::{ModelStack, resolve_context},
@@ -58,6 +63,36 @@ use crate::{
 use super::chat_cards::{self as cards, ChatDesk};
 use super::chat_log;
 use super::discord::GatewayTransport;
+
+/// Checked-in strategy guides over the startup-validated knowledge
+/// directory, re-read per call like the admin API.
+pub(super) struct LiveStrategyGuides<'a> {
+    pub(super) knowledge: &'a KnowledgeDir,
+    pub(super) catalog: &'a BossTable,
+}
+
+impl StrategyGuides for LiveStrategyGuides<'_> {
+    fn render(&self, reference: &BossReference) -> Result<String, GuideError> {
+        let unreadable = |error: String| {
+            // The model is told the guide is unreadable; the operator sees why
+            // (a tracked repo path and parse problem, never file content).
+            logging::event(
+                "WARN",
+                "chat_guide_unreadable",
+                json!({"boss": reference.short, "error": error}),
+            );
+            GuideError::Unreadable
+        };
+        let (document, researched) = self
+            .knowledge
+            .guide_source(&reference.short)
+            .map_err(|error| unreadable(error.to_string()))?
+            .ok_or(GuideError::Missing)?;
+        // Validated at startup, so a document edited since may lack a part.
+        render_guide(&document, &researched, self.catalog, reference)
+            .ok_or_else(|| unreadable("document is missing a required guide field".to_owned()))
+    }
+}
 
 impl ChatAllowance for ChatHandle {
     fn snapshot(&self) -> AllowanceSnapshot {
@@ -74,6 +109,7 @@ pub struct ServeAnswerer<T> {
     pub settings: watch::Receiver<SettingsChanged>,
     pub cache: Arc<GuildCache>,
     pub catalog: Arc<BossTable>,
+    pub guides: Option<Arc<KnowledgeDir>>,
     pub policy: SchedulePolicy,
     pub guild_id: String,
     pub pilot_role: Option<String>,
@@ -233,6 +269,14 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             client: &stack.client,
             route: prepared.route.as_ref(),
         };
+        let guides = self.guides.as_deref().map(|knowledge| LiveStrategyGuides {
+            knowledge,
+            catalog: &self.catalog,
+        });
+        let mut question = job.question;
+        if guides.is_none() {
+            question.offer.disallow(Bundle::Strategy);
+        }
         let guild = GuildView {
             members: &members,
             directory: &*prepared.directory,
@@ -242,7 +286,9 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             zone: prepared.zone,
             reset_weekday: prepared.reset.0,
             reset_time: prepared.reset.1,
-            guides: None,
+            guides: guides
+                .as_ref()
+                .map(|guides| guides as &(dyn StrategyGuides + Sync)),
         };
         let mut service =
             SchedulerService::new(Arc::clone(&self.store), RandomIds, FixedClock(prepared.now))
@@ -257,7 +303,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             zone: prepared.zone,
             cancelled: job.cancelled,
         };
-        answer(&deps, job.question, &guild, &mut proposer, &ports).await
+        answer(&deps, question, &guild, &mut proposer, &ports).await
     }
 
     async fn record(&self, row: ChatInteraction) {

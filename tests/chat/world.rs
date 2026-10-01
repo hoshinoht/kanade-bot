@@ -11,7 +11,7 @@ use kanade::chat::gate::{ChannelDirectory, ChannelInfo, PilotSettings};
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::dispatch::{self, Dispatched};
 use kanade::chat::tools::propose::Proposer;
-use kanade::chat::tools::read::{StrategyGuides, ToolWorld};
+use kanade::chat::tools::read::{GuideError, StrategyGuides, ToolWorld};
 use kanade::chat::tools::{ToolContext, ToolOutcome};
 use kanade::domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use kanade::domain::members::{Directory, Member};
@@ -104,14 +104,17 @@ impl Directory for Guild {
 pub struct Guides(Vec<String>);
 
 impl StrategyGuides for Guides {
-    fn render(&self, reference: &BossReference) -> Option<String> {
-        self.0.contains(&reference.short).then(|| {
-            format!(
-                "<guide {} difficulty={}>",
-                reference.short,
-                reference.difficulty.as_deref().unwrap_or("None")
-            )
-        })
+    fn render(&self, reference: &BossReference) -> Result<String, GuideError> {
+        self.0
+            .contains(&reference.short)
+            .then(|| {
+                format!(
+                    "<guide {} difficulty={}>",
+                    reference.short,
+                    reference.difficulty.as_deref().unwrap_or("None")
+                )
+            })
+            .ok_or(GuideError::Missing)
     }
 }
 

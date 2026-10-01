@@ -6,6 +6,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 Discord chat now answers boss strategy questions from the checked-in boss
+  knowledge (`KANADE_KNOWLEDGE_DIR`), without sources, as v4 did; without a
+  knowledge directory the strategy tools are not offered at all.
 - v5 admin Limits page and "Post digest" now work against the real server:
   limits are read live, a usage window can be cleared, and a manual digest for
   this or next week posts through normal delivery to a channel the bot knows

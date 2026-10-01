@@ -73,6 +73,18 @@ impl Bundle {
         }
     }
 
+    /// This bundle's sentence in the `request_tools` description.
+    fn request_description(self) -> Option<&'static str> {
+        match self {
+            Self::Read => None,
+            Self::Strategy => Some("strategy: boss mechanics."),
+            Self::RunWrites => Some("run_changes: move, add, cancel or RSVP one run."),
+            Self::FixedWrites => {
+                Some("weekly_changes: change or remove a weekly, or make a run weekly.")
+            }
+        }
+    }
+
     pub fn from_request(name: &str) -> Option<Self> {
         Self::OPTIONAL
             .into_iter()
@@ -105,6 +117,28 @@ pub enum Requested {
 /// `request_tools` when no tool-offering round is left after this one.
 pub const NO_ROUND_LEFT: &str = "There is no step left to use more tools for this message. Answer with the tools you have, or ask them in words.";
 
+/// The `request_tools` enum JSON and description for `bundles`, in order.
+fn request_fragments(bundles: impl IntoIterator<Item = Bundle>) -> (String, String) {
+    let (names, descriptions): (Vec<_>, Vec<_>) = bundles
+        .into_iter()
+        .filter_map(|bundle| Some((bundle.request_name()?, bundle.request_description()?)))
+        .map(|(name, description)| (format!(r#""{name}""#), description))
+        .unzip();
+    (format!("[{}]", names.join(",")), descriptions.join(" "))
+}
+
+/// Replace the one occurrence of `from`. A canonical schema that no longer
+/// contains it exactly once would advertise bundles `request` refuses, so it
+/// fails loudly (every narrowed surface is covered by tests).
+fn replace_once(text: &str, from: &str, to: &str) -> String {
+    assert_eq!(
+        text.matches(from).count(),
+        1,
+        "request_tools schema fragment drifted: {from}"
+    );
+    text.replacen(from, to, 1)
+}
+
 /// The tools offered to one question, across its rounds. A requested bundle
 /// is held until [`ToolOffer::begin_round`], so a call in the same reply as
 /// `request_tools` is judged by what the model was actually sent.
@@ -113,6 +147,7 @@ pub struct ToolOffer {
     mode: Mode,
     read_only: bool,
     bundles: BTreeSet<Bundle>,
+    available: BTreeSet<Bundle>,
     pending: Option<Bundle>,
     requested: bool,
     closed: bool,
@@ -125,6 +160,7 @@ impl ToolOffer {
             mode: Mode::FullSet,
             read_only,
             bundles: BTreeSet::new(),
+            available: Bundle::OPTIONAL.into_iter().collect(),
             pending: None,
             requested: false,
             closed: false,
@@ -154,6 +190,7 @@ impl ToolOffer {
             mode: Mode::Dynamic,
             read_only,
             bundles,
+            available: Bundle::OPTIONAL.into_iter().collect(),
             pending: None,
             requested: false,
             closed: false,
@@ -166,6 +203,19 @@ impl ToolOffer {
 
     pub fn bundles(&self) -> Vec<Bundle> {
         self.bundles.iter().copied().collect()
+    }
+
+    /// Remove a runtime-unavailable optional bundle before the first round.
+    /// It also disappears from `request_tools`, so the model cannot spend a
+    /// round asking for a capability the live server does not have.
+    pub fn disallow(&mut self, bundle: Bundle) {
+        if self.mode == Mode::Dynamic {
+            self.available.remove(&bundle);
+            self.bundles.remove(&bundle);
+            if self.pending == Some(bundle) {
+                self.pending = None;
+            }
+        }
     }
 
     /// Whether `request_tools` was used this question.
@@ -200,9 +250,47 @@ impl ToolOffer {
         self.tools().contains(&tool)
     }
 
+    /// The `request_tools` schema text narrowed to the available bundles.
+    /// Edited as text, not re-serialised, so the canonical bytes (and key
+    /// order) survive; with every bundle available it is the canonical text.
+    fn request_schema_text(&self) -> String {
+        let canonical = Tool::RequestTools.schema_text();
+        if self.available.len() == Bundle::OPTIONAL.len() {
+            return canonical.to_owned();
+        }
+        let (all_enum, all_description) = request_fragments(Bundle::OPTIONAL);
+        let (names, description) = request_fragments(self.available.iter().copied());
+        let text = replace_once(canonical, &all_enum, &names);
+        replace_once(&text, &all_description, &description)
+    }
+
+    /// The request schema, with runtime-unavailable bundles removed from the
+    /// `request_tools` surface.
+    pub fn schema(&self, tool: ToolName) -> serde_json::Value {
+        if self.mode == Mode::Dynamic && tool == Tool::RequestTools {
+            serde_json::from_str(&self.request_schema_text()).expect("request-tools schema")
+        } else {
+            tool.schema()
+        }
+    }
+
     /// The compact `tools` JSON for the request (v4 bytes in full-set mode).
     pub fn surface_text(&self) -> String {
-        surface_text(&self.tools())
+        if self.mode == Mode::FullSet {
+            return surface_text(&self.tools());
+        }
+        let parts: Vec<String> = self
+            .tools()
+            .into_iter()
+            .map(|tool| {
+                if tool == Tool::RequestTools {
+                    self.request_schema_text()
+                } else {
+                    tool.schema_text().to_owned()
+                }
+            })
+            .collect();
+        format!("[{}]", parts.join(","))
     }
 
     /// What the surface costs the prompt (v4 `estimate_tokens`).
@@ -211,10 +299,10 @@ impl ToolOffer {
     }
 
     /// The first bundle that would offer `tool`, for the steering note.
-    pub fn bundle_for(tool: ToolName) -> Option<Bundle> {
+    fn bundle_for(&self, tool: ToolName) -> Option<Bundle> {
         Bundle::OPTIONAL
             .into_iter()
-            .find(|bundle| bundle.tools().contains(&tool))
+            .find(|bundle| self.available.contains(bundle) && bundle.tools().contains(&tool))
     }
 
     /// Handle one `request_tools(bundle)` call: at most once per question.
@@ -228,11 +316,15 @@ impl ToolOffer {
                     .to_owned(),
             );
         }
-        let names: Vec<&str> = Bundle::OPTIONAL
+        let names: Vec<&str> = self
+            .available
             .iter()
             .filter_map(|bundle| bundle.request_name())
             .collect();
-        let Some(bundle) = bundle.and_then(Bundle::from_request) else {
+        let Some(bundle) = bundle
+            .and_then(Bundle::from_request)
+            .filter(|bundle| self.available.contains(bundle))
+        else {
             return Requested::Refused(format!("bundle must be one of: {}.", names.join(", ")));
         };
         if self.read_only && bundle.writes() {
@@ -257,7 +349,7 @@ impl ToolOffer {
         let arriving = self
             .pending
             .is_some_and(|pending| pending.tools().contains(&tool));
-        let hint = match Self::bundle_for(tool).and_then(Bundle::request_name) {
+        let hint = match self.bundle_for(tool).and_then(Bundle::request_name) {
             _ if arriving => {
                 " It becomes available from your next step; call it again then.".to_owned()
             }

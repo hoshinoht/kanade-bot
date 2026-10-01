@@ -32,7 +32,7 @@ use crate::{
         settings::{RuntimeSettings, SettingsStore},
     },
     infrastructure::{
-        files::{LoadError, load_catalog, load_knowledge_dir, load_personas},
+        files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir, load_personas},
         llm::{
             governor::XorShift,
             setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
@@ -56,6 +56,8 @@ pub struct Composition {
     /// `None` without `KANADE_MODEL_BASE_URL`. Role aliases and reasoning
     /// saved in the config API switch it live (next session per role).
     pub models: Option<Arc<ModelStack>>,
+    /// Validated once at compose time, then shared by the admin API and chat.
+    pub knowledge: Option<Arc<KnowledgeDir>>,
     /// Catalog refresh and the startup report; aborted when dropped.
     pub model_tasks: ModelTasks,
 }
@@ -142,7 +144,8 @@ pub async fn compose(
         .as_deref()
         .map(load_knowledge_dir)
         .transpose()
-        .map_err(file_error)?;
+        .map_err(file_error)?
+        .map(Arc::new);
     let mut settings = settings::load(&store, &config.seeds).await?;
     // Loaded above, so a read failure here is a transient store error.
     let stored = store
@@ -203,7 +206,7 @@ pub async fn compose(
         catalog: Arc::new(catalog),
         channels,
         access: access.clone(),
-        knowledge_dir: knowledge.map(|dir| dir.path),
+        knowledge_dir: knowledge.as_ref().map(|dir| dir.path.clone()),
         guild_id: Some(config.guild.guild_id.to_string()),
         clock,
         rescans: None,
@@ -228,6 +231,7 @@ pub async fn compose(
         settings,
         personas: persona_store,
         models,
+        knowledge,
         model_tasks,
     })
 }

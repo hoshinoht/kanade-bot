@@ -482,6 +482,7 @@ where
             settings: settings_changes(composition),
             cache: Arc::clone(&cache),
             catalog: Arc::clone(&composition.admin.state.catalog),
+            guides: composition.knowledge.clone(),
             policy: composition.admin.state.policy.clone(),
             guild_id: config.guild.guild_id.to_string(),
             pilot_role: access.pilot_role.clone(),

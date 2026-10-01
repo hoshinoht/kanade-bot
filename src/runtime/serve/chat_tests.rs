@@ -2,6 +2,7 @@
 //! model gateway and a temp store. Nothing touches the network.
 
 use std::{
+    collections::VecDeque,
     fs,
     net::SocketAddr,
     path::Path,
@@ -19,6 +20,7 @@ use twilight_model::gateway::payload::incoming::{GuildCreate, MessageCreate, Rea
 
 use super::{
     api::{self, Composition},
+    chat::LiveStrategyGuides,
     discord::{self, Discord, Wiring},
     extract,
     health::LiveHealth,
@@ -31,12 +33,17 @@ use crate::{
         gateway::{EventSource, GatewayError},
         transport::{Call, FakeDiscord, Op, Outcome},
     },
+    chat::tools::read::{GuideError, StrategyGuides},
     domain::{
+        catalog::BossReference,
         members::{Member, MemberProfile, MemberStore},
         model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
         settings::{SettingsStore, keys},
     },
-    infrastructure::store::SqliteStore,
+    infrastructure::{
+        files::{load_catalog, load_knowledge_dir},
+        store::SqliteStore,
+    },
     runtime::application::HealthProbe,
 };
 
@@ -66,13 +73,21 @@ struct ModelStub {
 impl ModelStub {
     /// Lists `ALIAS` in `zone`; every completion answers `reply`.
     async fn start(zone: &'static str, reply: &'static str) -> Self {
+        Self::scripted(zone, reply, Vec::new()).await
+    }
+
+    /// Lists `ALIAS` in `zone`; scripted completions go out before `reply`.
+    async fn scripted(zone: &'static str, reply: &'static str, scripted: Vec<Value>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let completions = Arc::new(Mutex::new(Vec::new()));
+        let scripted: Arc<Mutex<VecDeque<Value>>> = Arc::new(Mutex::new(scripted.into()));
         let seen = Arc::clone(&completions);
+        let queued = Arc::clone(&scripted);
         tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
                 let seen = Arc::clone(&seen);
+                let queued = Arc::clone(&queued);
                 tokio::spawn(async move {
                     let Some((path, body)) = read_request(&mut stream).await else {
                         return;
@@ -82,7 +97,11 @@ impl ModelStub {
                     } else {
                         let model = body["model"].as_str().unwrap_or(ALIAS).to_owned();
                         seen.lock().unwrap().push(body);
-                        completion(&model, reply)
+                        queued
+                            .lock()
+                            .unwrap()
+                            .pop_front()
+                            .unwrap_or_else(|| completion(&model, reply))
                     };
                     let text = answer.to_string();
                     let response = format!(
@@ -103,6 +122,22 @@ impl ModelStub {
 
     fn completions(&self) -> usize {
         self.completions.lock().unwrap().len()
+    }
+
+    /// The first request's tool names and its `request_tools` bundle enum.
+    fn first_surface(&self) -> (Vec<String>, Value) {
+        let bodies = self.completions.lock().unwrap();
+        let tools = bodies[0]["tools"].as_array().unwrap();
+        let names = tools
+            .iter()
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_owned())
+            .collect();
+        let request = tools
+            .iter()
+            .find(|tool| tool["function"]["name"] == "request_tools")
+            .unwrap();
+        let bundles = request["function"]["parameters"]["properties"]["bundle"]["enum"].clone();
+        (names, bundles)
     }
 
     /// `(model, reasoning_effort)` of every completion request so far.
@@ -185,6 +220,23 @@ fn completion(model: &str, content: &str) -> Value {
             "index": 0,
             "message": {"role": "assistant", "content": content},
             "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+    })
+}
+
+fn tool_completion(name: &str, arguments: Value) -> Value {
+    json!({
+        "id": "chatcmpl-synthetic-tools",
+        "object": "chat.completion",
+        "model": ALIAS,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": null, "tool_calls": [{
+                "id": "call_synthetic", "type": "function",
+                "function": {"name": name, "arguments": arguments}
+            }]},
+            "finish_reason": "tool_calls",
         }],
         "usage": {"prompt_tokens": 3, "completion_tokens": 2},
     })
@@ -287,6 +339,12 @@ fn bot_role() -> Value {
 /// Alice asks in the thread, mentioning the bot, holding `roles`.
 fn question(id: u64, roles: &[u64]) -> Event {
     Event::MessageCreate(Box::new(parse::<MessageCreate>(question_json(id, roles))))
+}
+
+fn question_with_text(id: u64, roles: &[u64], text: &str) -> Event {
+    let mut message = question_json(id, roles);
+    message["content"] = json!(format!("<@{SELF}> {text}"));
+    Event::MessageCreate(Box::new(parse::<MessageCreate>(message)))
 }
 
 /// Alice asks through `@Kanade` resolved to the bot's managed role.
@@ -599,6 +657,137 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
             .unwrap();
         eventually!("the role-mention reply", answered(&live.fake, THREAD, 2));
         assert_eq!(replies(&live.fake, THREAD)[1].1, Some(5003));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn live_chat_uses_the_shared_checked_in_strategy_guides() {
+    let stub = ModelStub::scripted(
+        "local",
+        "The checked-in guide is ready.",
+        vec![
+            tool_completion(
+                "get_boss_strategy",
+                json!({"boss": "MaleficStar", "difficulty": "Hard"}),
+            ),
+            completion(ALIAS, "The checked-in guide is ready."),
+            tool_completion("get_boss_strategy", json!({"boss": "NotABoss"})),
+            completion(ALIAS, "That boss is not in the guild catalog."),
+        ],
+    )
+    .await;
+    let knowledge = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("boss/knowledge")
+        .display()
+        .to_string();
+    let (live, discord) = live(&stub, &[("KANADE_KNOWLEDGE_DIR", &knowledge)]).await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events
+            .send(question_with_text(
+                5201,
+                &[PILOT_ROLE],
+                "strategy for Hard MaleficStar?",
+            ))
+            .unwrap();
+        eventually!("the strategy reply", answered(&live.fake, THREAD, 1));
+        let (tools, bundles) = stub.first_surface();
+        assert!(tools.iter().any(|tool| tool == "get_boss_strategy"));
+        assert_eq!(
+            bundles,
+            json!(["strategy", "run_changes", "weekly_changes"])
+        );
+        live.events
+            .send(question_with_text(
+                5202,
+                &[PILOT_ROLE],
+                "what is the strategy for NotABoss?",
+            ))
+            .unwrap();
+        eventually!("the unknown-boss reply", answered(&live.fake, THREAD, 2));
+        eventually!("two chat rows", chats(&live.store).await.len() == 2);
+        let rows = chats(&live.store).await;
+        let known = rows
+            .iter()
+            .find(|row| row.message_id.as_deref() == Some("5201"))
+            .unwrap();
+        assert_eq!(known.rounds[0].tools, ["get_boss_strategy"]);
+        let guide = known.rounds[0].tool_calls[0]["result"].as_str().unwrap();
+        assert!(
+            guide.starts_with("# Radiant Malefic Star (MaleficStar)"),
+            "{guide}"
+        );
+        assert!(guide.contains("### Hard"), "{guide}");
+        assert!(!guide.contains("## Sources"), "{guide}");
+        let unknown = rows
+            .iter()
+            .find(|row| row.message_id.as_deref() == Some("5202"))
+            .unwrap();
+        let error = unknown.rounds[0].tool_calls[0]["result"].as_str().unwrap();
+        assert!(error.contains("NotABoss"), "{error}");
+    })
+    .await;
+}
+
+#[test]
+fn a_guide_edited_after_startup_is_unreadable_not_missing() {
+    let temp = Temp::new();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge");
+    let dir = temp.0.join("knowledge");
+    fs::create_dir(&dir).unwrap();
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap();
+        fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
+    }
+    let catalog =
+        load_catalog(&Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml")).unwrap();
+    let knowledge = load_knowledge_dir(&dir).unwrap();
+    let guides = LiveStrategyGuides {
+        knowledge: &knowledge,
+        catalog: &catalog,
+    };
+    let reference = |short: &str| BossReference {
+        short: short.into(),
+        difficulty: None,
+    };
+    assert!(guides.render(&reference("Seren")).is_ok());
+    // Broken YAML, then valid YAML that lost required parts.
+    fs::write(dir.join("seren.yaml"), "summary: [\n").unwrap();
+    fs::write(dir.join("maleficstar.yaml"), "boss: MaleficStar\n").unwrap();
+    assert_eq!(
+        guides.render(&reference("Seren")),
+        Err(GuideError::Unreadable)
+    );
+    assert_eq!(
+        guides.render(&reference("MaleficStar")),
+        Err(GuideError::Unreadable)
+    );
+    assert_eq!(
+        guides.render(&reference("NotABoss")),
+        Err(GuideError::Missing)
+    );
+}
+
+#[tokio::test]
+async fn without_a_knowledge_dir_live_chat_hides_the_strategy_bundle() {
+    let stub = ModelStub::start("local", "I have no guides here.").await;
+    let (live, discord) = live(&stub, &[]).await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events
+            .send(question_with_text(
+                5301,
+                &[PILOT_ROLE],
+                "strategy for Hard MaleficStar?",
+            ))
+            .unwrap();
+        eventually!("the reply", answered(&live.fake, THREAD, 1));
+        let (tools, bundles) = stub.first_surface();
+        assert!(!tools.iter().any(|tool| tool == "get_boss_strategy"));
+        assert_eq!(bundles, json!(["run_changes", "weekly_changes"]));
     })
     .await;
 }

@@ -192,3 +192,55 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
     assert!(recognized_member.ok);
     assert_eq!(recognized_member.output, other.output);
 }
+
+/// The live guide over tracked schema v2 knowledge: v4's section shape,
+/// letter-keyed `difficulty_notes` under their difficulty, never sources.
+#[test]
+fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
+    use std::path::Path;
+
+    use kanade::chat::tools::read::render_guide;
+    use kanade::domain::catalog::BossReference;
+    use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
+    let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
+    let guide = |short: &str, difficulty: Option<&str>| {
+        let (document, researched) = knowledge
+            .guide_source(short)
+            .expect("readable")
+            .expect("tracked document");
+        let reference = BossReference {
+            short: short.into(),
+            difficulty: difficulty.map(str::to_owned),
+        };
+        render_guide(&document, &researched, &catalog, &reference).expect("guide")
+    };
+
+    let seren = guide("Seren", None);
+    assert!(seren.contains("\n\n## Core\n- "), "{seren}");
+    assert!(
+        seren.contains("\n\n## Difficulty notes\n### Extreme\nExtreme keeps"),
+        "{seren}"
+    );
+    assert!(
+        !seren.contains("## Sources") && !seren.contains("https://"),
+        "{seren}"
+    );
+    assert!(!guide("Seren", Some("h")).contains("## Difficulty notes"));
+
+    let hard = guide("MaleficStar", Some("h"));
+    assert!(hard.contains("### Hard\n- Entry level: 280\n"), "{hard}");
+    assert!(
+        hard.contains("- PDR: 380%\n- Party max: 3\n- Force: sacred 550\n- HP: total 14.74q"),
+        "{hard}"
+    );
+    assert!(!hard.contains("### Normal"), "{hard}");
+    assert!(
+        knowledge
+            .guide_source("NotABoss")
+            .expect("no read")
+            .is_none()
+    );
+}

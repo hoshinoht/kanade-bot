@@ -3,6 +3,7 @@
 //! clock reading.
 
 pub mod format;
+mod guide;
 pub mod participants;
 pub mod resolve;
 pub mod roster;
@@ -12,6 +13,7 @@ use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
+pub use guide::render_guide;
 pub use schedule::get_schedule;
 
 use crate::chat::gate::{ChannelDirectory, PilotSettings};
@@ -23,11 +25,20 @@ use crate::domain::schedule::ScheduleSnapshot;
 use format::{boss_label, boss_labels, fixed_line, run_detail};
 use resolve::resolve_run;
 
-/// Checked-in boss strategy notes (boss knowledge v2 lives elsewhere).
+/// Why [`StrategyGuides::render`] has no guide text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuideError {
+    /// No guide is checked in for the boss.
+    Missing,
+    /// A guide is checked in but could not be read or rendered right now.
+    Unreadable,
+}
+
+/// Checked-in boss strategy guides (serve: the schema v2 knowledge
+/// directory through [`render_guide`]).
 pub trait StrategyGuides {
-    /// The guide text for one boss and optional difficulty, or `None` when
-    /// no guide is checked in for it.
-    fn render(&self, reference: &BossReference) -> Option<String>;
+    /// The guide text for one boss and optional difficulty.
+    fn render(&self, reference: &BossReference) -> Result<String, GuideError>;
 }
 
 /// One proposal card still waiting for ✅, as the inbox names it.
@@ -215,10 +226,14 @@ pub fn get_boss_strategy(world: &ToolWorld<'_>, args: &Map<String, Value>) -> To
             short: reference.short.clone(),
             difficulty: chosen,
         })
-        .ok_or_else(|| {
-            ToolError(format!(
+        .map_err(|error| match error {
+            GuideError::Missing => ToolError(format!(
                 "No checked-in strategy guide is available for {}.",
                 boss.full()
-            ))
+            )),
+            GuideError::Unreadable => ToolError(format!(
+                "The strategy guide for {} could not be read right now.",
+                boss.full()
+            )),
         })
 }
