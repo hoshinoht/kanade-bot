@@ -10,6 +10,7 @@
     wide = false,
     flush = false,
     lightDismiss = false,
+    className = '',
     dismissible = true,
     children,
     footer,
@@ -30,6 +31,8 @@
     onclose?: () => void;
     /** A click on the backdrop closes it (read-only viewers; never forms that hold input). */
     lightDismiss?: boolean;
+    /** Optional page-specific dialog class; keeps shared dialog semantics intact. */
+    className?: string;
   } = $props();
 
   const uid = $props.id();
@@ -72,7 +75,7 @@
 
 <dialog
   bind:this={dialog}
-  class="modal"
+   class={`modal ${className}`}
   class:modal--narrow={narrow}
   class:modal--wide={wide}
   aria-labelledby="{uid}-title"

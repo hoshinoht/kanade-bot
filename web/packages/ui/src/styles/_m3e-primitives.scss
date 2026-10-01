@@ -18,6 +18,18 @@
 
 .list-pane__options:focus-visible { outline-offset: -3px; }
 
+.side-pane {
+  display: flex;
+  flex: 0 0 min(380px, 38vw);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-left: 1.5px solid var(--line);
+  background: var(--surface);
+}
+
 .thread-panel {
   min-width: 0;
   min-height: 0;

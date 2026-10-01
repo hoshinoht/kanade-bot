@@ -81,9 +81,10 @@ test('run sheet, history and member sheet name people without their ids', async 
 
   await page.goto(`${ADMIN}/members?sw=off`);
   await page.getByRole('button', { name: /^Tsubame/ }).first().click();
-  const member = page.getByRole('dialog', { name: 'Tsubame' });
+  // Wide screens show the member in a side pane, not a dialog (M3E G4).
+  const member = page.getByRole('complementary', { name: 'Member details' });
   await expect(member).not.toContainText('1005');
-  await member.getByRole('button', { name: 'Tsubame' }).click();
+  await member.getByRole('button', { name: 'Tsubame' }).first().click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1005');
 });
 

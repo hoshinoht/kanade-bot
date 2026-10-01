@@ -117,7 +117,7 @@ for (const vp of VIEWPORTS) {
 
       await page.goto(`${ADMIN}/members?sw=off`);
       await page.getByRole('button', { name: /^Asahi/ }).click();
-      await expect(page.getByRole('dialog', { name: 'Asahi' })).toBeVisible();
+      await expect(vp.name === 'wide' ? page.getByRole('complementary', { name: 'Member details' }) : page.getByRole('dialog', { name: 'Asahi' })).toBeVisible();
       await shot(page, `admin-member-sheet-${tag}`);
 
       await page.goto(`${ADMIN}/login?sw=off`);

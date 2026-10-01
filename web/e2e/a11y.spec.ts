@@ -117,7 +117,7 @@ for (const [colorway, theme] of LOOKS) {
     await serious(page, 'admin knowledge');
     await page.getByRole('link', { name: 'Members' }).click();
     await page.getByRole('button', { name: /^Asahi/ }).click();
-    await expect(page.getByRole('dialog', { name: 'Asahi' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
     await serious(page, 'admin member sheet');
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Reminders' }).click();
@@ -131,6 +131,17 @@ for (const [colorway, theme] of LOOKS) {
     await serious(page, 'admin login');
   });
 }
+
+test('axe: members list-detail and phone sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/members?sw=off`);
+  await page.getByRole('button', { name: /^Asahi/ }).click();
+  await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+  await serious(page, 'admin members side pane');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('dialog', { name: 'Asahi' })).toBeVisible();
+  await serious(page, 'admin members phone sheet');
+});
 
 test('axe: offline windows', async ({ page }) => {
   await page.goto(`${PUBLIC}/offline.html`);

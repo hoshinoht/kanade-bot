@@ -6,6 +6,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Members now uses the M3E roster list-detail layout: the member
+  editor is a side pane beside the roster on wide screens and a full-screen
+  sheet on phones.
 - v5 now writes v4-exact weekly-timing added and removed notices with their
   deciding commits (never during v4 import), and refreshes posted proposal
   cards after committed portal inbox approvals or rejections.

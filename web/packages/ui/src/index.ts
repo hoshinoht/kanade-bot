@@ -15,6 +15,7 @@ export { default as RunTable } from './components/RunTable.svelte';
 export { default as StatusMark } from './components/StatusMark.svelte';
 export { default as StatusChip } from './components/StatusChip.svelte';
 export { default as ListPane } from './components/ListPane.svelte';
+export { default as SidePane } from './components/SidePane.svelte';
 export { default as ThreadPanel } from './components/ThreadPanel.svelte';
 export { default as DecisionCard } from './components/DecisionCard.svelte';
 export { default as Tabs, type TabItem } from './components/Tabs.svelte';

@@ -1,16 +1,17 @@
 <script lang="ts">
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Modal } from '@kanade/ui';
+  import { Modal, SidePane } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
 
   let {
-    open = $bindable(false),
+    wide,
     member,
     personas,
     onchange,
-  }: { open: boolean; member: MemberRow | null; personas: Persona[]; onchange: (row: MemberRow) => void } = $props();
+    onclose,
+  }: { wide: boolean; member: MemberRow; personas: Persona[]; onchange: (row: MemberRow) => void; onclose: () => void } = $props();
 
   const uid = $props.id();
   const LEVELS: { key: PingLevel; label: string; hint: string }[] = [
@@ -26,12 +27,11 @@
   let seeded: string | null = null;
 
   $effect(() => {
-    if (open && member && seeded !== member.id) {
+    if (member && seeded !== member.id) {
       seeded = member.id;
       alias = '';
       notice = null;
     }
-    if (!open) seeded = null;
   });
 
   async function patch(change: MemberPatch, done: string) {
@@ -61,9 +61,19 @@
   }
 </script>
 
-<!-- v4 partials/member_sheet.html, with v5's editable ping level and reply style. -->
-<Modal bind:open title={member ? directory.label('member', member.id, member.name) : 'Member'} eyebrow={member?.bossing ? 'Member' : 'Chat access only'} narrow>
-  {#if member}
+<svelte:window
+  onkeydown={(event) => {
+    if (wide && event.key === 'Escape') {
+      event.preventDefault();
+      onclose();
+    }
+  }}
+/>
+
+<!-- The same editor is a non-modal side pane on wide screens and a full-screen
+     dialog below the approved 840px breakpoint. -->
+{#snippet content()}
+  <div class="membersheet__content">
     <dl class="membersheet__grid">
       <dt>Discord account</dt>
       <dd><Name kind="member" id={member.id} name={member.name} /> <span class="note">(select to copy the ID)</span></dd>
@@ -129,16 +139,27 @@
       </form>
     </div>
     <p class="membersheet__notice" class:field__error={notice && !notice.ok} role="status">{notice?.message ?? ''}</p>
-  {/if}
-  {#snippet footer(close)}
-    <button class="btn" type="button" onclick={close}>Close</button>
-  {/snippet}
-</Modal>
+  </div>
+{/snippet}
 
-<style>
-  .membersheet__notice {
-    margin: 0.6rem 0 0;
-    font-size: var(--fs-small);
-    color: var(--ok-text);
-  }
-</style>
+{#if wide}
+  <SidePane label="Member details">
+    <header class="membersheet__head">
+      <span class="membersheet__avatar" aria-hidden="true">{member.name.slice(0, 1)}</span>
+      <div>
+        <p class="cap">{member.bossing ? 'Member' : 'Chat access only'}</p>
+        <h2>{directory.label('member', member.id, member.name)}</h2>
+        <Name kind="member" id={member.id} name={member.name} />
+      </div>
+      <button class="btn btn--ghost membersheet__close" type="button" aria-label="Close member details" onclick={onclose}>×</button>
+    </header>
+    {@render content()}
+  </SidePane>
+{:else}
+  <Modal open title={directory.label('member', member.id, member.name)} eyebrow={member.bossing ? 'Member' : 'Chat access only'} narrow className="membersheet" onclose={onclose}>
+    {@render content()}
+    {#snippet footer(close)}
+      <button class="btn" type="button" onclick={close}>Close</button>
+    {/snippet}
+  </Modal>
+{/if}

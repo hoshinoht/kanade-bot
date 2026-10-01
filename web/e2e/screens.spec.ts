@@ -208,7 +208,7 @@ test('bosses: the in-game list, ticked by timings, with knowledge pages', async 
   await expect(page.getByRole('alert')).toContainText('No knowledge for “Nobody”');
 });
 
-test('members: roster rows, sheet edits for pings, reply style and aliases', async ({ page }) => {
+test('members: roster side pane edits for pings, reply style and aliases', async ({ page }) => {
   await go(page, '/members');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
   // Two members share "Ren": told apart by place, never by id.
@@ -219,7 +219,8 @@ test('members: roster rows, sheet edits for pings, reply style and aliases', asy
   await expect(page.getByRole('list', { name: 'Members' }).getByRole('button')).toHaveCount(1);
   await page.getByRole('button', { name: /^Tsubame/ }).click();
 
-  const sheet = page.getByRole('dialog', { name: 'Tsubame' });
+  const sheet = page.getByRole('complementary', { name: 'Member details' });
+  await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
   await sheet.getByRole('button', { name: 'Essential' }).click();
   // The sheet's notice, not the name's copy status.
@@ -237,10 +238,60 @@ test('members: roster rows, sheet edits for pings, reply style and aliases', asy
 
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
+  await expect(page.getByRole('button', { name: /^Tsubame/ })).toBeFocused();
   await page.getByRole('searchbox', { name: 'Search members' }).fill('');
   await expect(page.getByRole('button', { name: /^Rin/ })).toBeVisible();
   await page.getByRole('button', { name: /^Rin/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Rin' }).getByText('is no longer offered')).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Member details' }).getByText('is no longer offered')).toBeVisible();
+});
+
+test('members: phone uses a full-screen sheet and restores the roster row', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/members');
+  const row = page.getByRole('button', { name: /^Asahi/ });
+  await row.click();
+  const sheet = page.getByRole('dialog', { name: 'Asahi' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toHaveCSS('height', '844px');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(row).toBeFocused();
+});
+
+test('members: fixed frame keeps roster and wide detail as the only scroll owners', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/members');
+  await page.getByRole('button', { name: /^Asahi/ }).click();
+  await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+  const frame = await page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>('.memberlist')!;
+    const pane = document.querySelector<HTMLElement>('.side-pane')!;
+    const roster = document.querySelector<HTMLElement>('.members-roster')!;
+    const pager = roster.querySelector<HTMLElement>('.members-roster__pager')!;
+    const listBox = list.getBoundingClientRect();
+    const paneBox = pane.getBoundingClientRect();
+    const rosterBox = roster.getBoundingClientRect();
+    const pagerBox = pager.getBoundingClientRect();
+    return {
+      documentScroll: document.scrollingElement!.scrollHeight > innerHeight,
+      listOverflow: getComputedStyle(list).overflowY,
+      paneOverflow: getComputedStyle(pane).overflowY,
+      windowHeight: document.querySelector<HTMLElement>('.members-window')!.getBoundingClientRect().height,
+      paneLeft: paneBox.left,
+      rosterRight: rosterBox.right,
+      paneTop: paneBox.top,
+      rosterTop: rosterBox.top,
+      pagerTop: pagerBox.top,
+      listBottom: listBox.bottom,
+    };
+  });
+  expect(frame.documentScroll).toBe(false);
+  expect(frame.listOverflow).toBe('auto');
+  expect(frame.paneOverflow).toBe('auto');
+  expect(frame.windowHeight).toBeGreaterThan(400);
+  expect(frame.paneLeft).toBeGreaterThanOrEqual(frame.rosterRight - 2);
+  expect(Math.abs(frame.paneTop - frame.rosterTop)).toBeLessThanOrEqual(3);
+  expect(frame.pagerTop).toBeGreaterThanOrEqual(frame.listBottom - 2);
 });
 
 test('reminders: queued, due, sent and stale, all runs or one', async ({ page }) => {
