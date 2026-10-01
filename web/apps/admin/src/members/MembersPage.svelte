@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona } from '@kanade/api-types';
   import { Icon } from '@kanade/ui';
@@ -39,13 +40,13 @@
   }
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Synced from the bossing role</p>
-    <h1>{members.data ? `${bossers} bosser${bossers === 1 ? '' : 's'}` : 'Members'}</h1>
-    <p class="note">Aliases are what the extractor matches names against in chat.</p>
-  </div>
-</div>
+<PageLine title={members.data ? 'Members' : ''}>
+  <h1>{members.data ? `${bossers} bosser${bossers === 1 ? '' : 's'}` : 'Members'}</h1>
+  <p class="pageline__context">synced from the bossing role</p>
+  {#snippet about()}
+    <p>Aliases are what the extractor matches names against in chat.</p>
+  {/snippet}
+</PageLine>
 <PaneWindow title="Roster" bind:query searchLabel="Search members" placeholder="name, nickname, alias…">
   {#if members.error}
     <p class="flash flash--error" role="alert">{members.error}</p>

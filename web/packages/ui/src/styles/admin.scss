@@ -4,7 +4,6 @@
 // `@kanade/ui/styles/<name>.scss`. Order mirrors v4 portal.scss.
 @use "base";
 @use "shell";
-@use "nav";
 @use "frame";
 @use "page-furniture";
 @use "forms";
@@ -18,6 +17,9 @@
 @use "board";
 @use "week-head";
 @use "week-rail"; // the phone's shape of the week (v4 partials/rail.html)
+@use "nav-rail"; // M3E rail frame (G1, G6)
+@use "topbar"; // M3E phone frame: top bar + drawer (G7)
+@use "page-line"; // M3E page line (G2)
 @use "stats-tables";
 @use "theme-picker";
 @use "modal";

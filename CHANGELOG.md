@@ -549,6 +549,16 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin app shell (M3E slice 1, gates G1, G2, G6, G7): a navigation rail
+  replaces the masthead's grouped nav (96 px, expanded to 240 px from 1440 px
+  wide and collapsible, remembered per browser; Inbox badge; account at the
+  foot), a 36 px page line replaces the page-head cards (title, count, page
+  controls, an ⓘ for one-time help, the Live chip and Commands), windows get
+  a 20 px frame and the 1180 px page cap is gone. Phones and phone landscape
+  get a 48 px top bar (menu, title, Live, Inbox) and a navigation drawer that
+  traps focus and returns it to the menu, instead of the pinned links and
+  "More". New M3E tokens (`--select*`, `--pane`, `--board`, `--row`,
+  `--chip-fill`, `--seg-fill`) with contrast overrides and a per-face check.
 - v4: Kanata request bodies follow per-alias capability metadata from `/v1/models`
   (cached, minimal when absent): `response_format`, `temperature`/`seed` and
   `reasoning_effort` are sent only to aliases that accept them, so extraction and

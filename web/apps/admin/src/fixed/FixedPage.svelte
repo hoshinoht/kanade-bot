@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
   import { BossTag, Modal, Toaster } from '@kanade/ui';
   import PaneWindow from '../pages/PaneWindow.svelte';
@@ -74,16 +75,13 @@
   }
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Baseline</p>
-    <h1>{fixed.rows ? `${fixed.rows.length} weekly timing${fixed.rows.length === 1 ? '' : 's'}` : 'Weekly timings'}</h1>
-    <p class="note">Materialised into runs for this week and next.</p>
-  </div>
+<PageLine title={fixed.rows ? 'Fixed' : ''}>
+  <h1>{fixed.rows ? `${fixed.rows.length} weekly timing${fixed.rows.length === 1 ? '' : 's'}` : 'Weekly timings'}</h1>
+  <p class="pageline__context">the baseline, materialised into runs for this week and next</p>
   <div class="page-head__side">
     <button class="btn btn--primary" type="button" onclick={() => open(null)}>Add a weekly timing</button>
   </div>
-</div>
+</PageLine>
 
 <PaneWindow title="Weekly timings" bind:query searchLabel="Search weekly timings" placeholder="boss, day, party, channel…">
   {#if fixed.error}

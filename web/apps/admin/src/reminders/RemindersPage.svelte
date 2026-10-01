@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import type { ReminderRow, Reminders } from '@kanade/api-types';
   import { BossTag } from '@kanade/ui';
   import Pager from '../pages/Pager.svelte';
@@ -51,19 +52,16 @@
   const STATE_WORDS = { queued: 'queued', due: 'due now', sent: 'sent', stale: 'stale — retired without posting' } as const;
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">The scheduler, as rows</p>
-    <h1>{reminders.data ? `${reminders.data.upcoming.length} queued, ${reminders.data.sent.length} sent` : 'Reminders'}</h1>
-    <p class="note">Every message the bot will post, or already posted.</p>
-  </div>
+<PageLine title={reminders.data ? 'Reminders' : ''}>
+  <h1>{reminders.data ? `${reminders.data.upcoming.length} queued, ${reminders.data.sent.length} sent` : 'Reminders'}</h1>
+  <p class="pageline__context">every message the bot will post, or already posted</p>
   {#if run}
     <div class="page-head__side">
       <span class="chip chip--mono">run #{runLabel}</span>
       <a class="btn" href="/reminders">Show every run</a>
     </div>
   {/if}
-</div>
+</PageLine>
 
 {#snippet table(rows: ReminderRow[], fired: boolean, caption: string)}
   <div class="table-wrap">

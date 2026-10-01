@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, EventBoss } from '@kanade/api-types';
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { Resource } from '../resource.svelte';
@@ -16,16 +17,13 @@
   const inUse = $derived(rows.filter((r) => r.difficulties.some((d) => d.in_use)).length);
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Reference</p>
-    <h1>{bosses.data ? `${rows.length} bosses, ${total} difficulties` : 'Bosses'}</h1>
-    <p class="note">
-      Every boss in <code>boss/bosses.yaml</code>, in level order; <strong>{inUse}</strong> are ticked and have a
-      weekly timing.
-    </p>
-  </div>
-</div>
+<PageLine title={bosses.data ? 'Bosses' : ''}>
+  <h1>{bosses.data ? `${rows.length} bosses, ${total} difficulties` : 'Bosses'}</h1>
+  {#if bosses.data}<p class="pageline__context"><strong>{inUse}</strong> ticked with a weekly timing</p>{/if}
+  {#snippet about()}
+    <p>Every boss in <code>boss/bosses.yaml</code>, in level order; the ticked ones have a weekly timing.</p>
+  {/snippet}
+</PageLine>
 <PaneWindow title="The in-game list">
   {#if bosses.error}
     <p class="flash flash--error" role="alert">{bosses.error}</p>

@@ -5,6 +5,7 @@
   including key-level ones. Allowances keep v4's per-member reset. Polled.
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
@@ -74,14 +75,13 @@
   }
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Capacity</p>
-    <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : 'Every backend has room') : 'Limits'}</h1>
-    <p class="note">What each model backend is doing now, what is waiting, and what the gateway turned away.</p>
-  </div>
+<PageLine title={limits ? 'Limits' : ''}>
+  <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : 'Every backend has room') : 'Limits'}</h1>
   <p class="field__error" role="status">{error}</p>
-</div>
+  {#snippet about()}
+    <p>What each model backend is doing now, what is waiting, and what the gateway turned away.</p>
+  {/snippet}
+</PageLine>
 
 {#if limits}
   {@const data = limits}

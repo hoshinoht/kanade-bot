@@ -4,6 +4,7 @@
   through this page's query string.
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import Name from '../names/Name.svelte';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { activeCount, OUTCOME_LABEL, outcomeTone, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -69,13 +70,11 @@
   const filtered = $derived(activeCount(filter) > 0);
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Prompt tuning</p>
-    <h1>{view ? (filtered ? `${rows.length} of ${view.total} model calls` : `${view.total} model calls`) : 'Extractions'}</h1>
-  </div>
+<PageLine title={view ? 'Extractions' : ''}>
+  <h1>{view ? (filtered ? `${rows.length} of ${view.total} model calls` : `${view.total} model calls`) : 'Extractions'}</h1>
+  <p class="pageline__context">for prompt tuning</p>
   {#if view}<span class="chip chip--mono">{view.model}</span>{/if}
-</div>
+</PageLine>
 
 <PaneWindow title="Calls" bind:query searchLabel="Search calls" placeholder="message, id…">
   <details class="rescan-box">

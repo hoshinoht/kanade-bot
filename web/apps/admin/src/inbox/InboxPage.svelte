@@ -6,6 +6,7 @@
   with a back action — one scrolling panel either way.
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
@@ -177,13 +178,13 @@
   }
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">From the party chat and the members</p>
-    <h1>{inbox.data ? `${inbox.data.length} change${inbox.data.length === 1 ? '' : 's'} waiting` : 'Inbox'}</h1>
-    <p class="note">Approving here is the same as reacting ✅ on the card in Discord: it applies the change and edits the card.</p>
-  </div>
-</div>
+<PageLine title={inbox.data ? 'Inbox' : ''}>
+  <h1>{inbox.data ? `${inbox.data.length} change${inbox.data.length === 1 ? '' : 's'} waiting` : 'Inbox'}</h1>
+  <p class="pageline__context">from the party chat and the members</p>
+  {#snippet about()}
+    <p>Approving here is the same as reacting ✅ on the card in Discord: it applies the change and edits the card.</p>
+  {/snippet}
+</PageLine>
 
 <section class="card tabs inbox window-fill" aria-label="Inbox">
   <div class="card__head tabs__strip">

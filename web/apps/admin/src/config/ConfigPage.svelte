@@ -6,6 +6,7 @@
   survive tab switches (the same visited pattern as the ui Tabs).
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
   import { Icon, ThemePicker, Toaster } from '@kanade/ui';
@@ -193,6 +194,12 @@
 
 <!-- v4 config.html: no page head; the window is the page, titled in its own
   bar with the one line that says what the settings are. -->
+<!-- On a phone the top bar already says "Config": the line stays for screen readers only. -->
+<PageLine class="pageline--echo">
+  <h1 id="{uid}-h">Config</h1>
+  <p class="pageline__context">runtime settings take effect at once and survive a restart</p>
+</PageLine>
+
 {#if config.error}<p class="flash flash--error" role="status">{config.error}</p>{/if}
 
 {#if missingManage.length}
@@ -208,10 +215,10 @@
   </p>
 {/if}
 
-<section class="card settings window-fill" aria-labelledby="{uid}-h">
+<section class="card settings window-fill" aria-labelledby="{uid}-w">
   <div class="card__head">
-    <h1 class="card__title" id="{uid}-h">Config</h1>
-    <span class="id">runtime settings take effect at once and survive a restart; env-only ones are listed last</span>
+    <h2 class="card__title" id="{uid}-w">Settings</h2>
+    <span class="id">env-only settings are listed last</span>
   </div>
   <div class="settings__body">
     <div class="settings__toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>

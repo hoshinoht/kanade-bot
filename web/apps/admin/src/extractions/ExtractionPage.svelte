@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -22,18 +23,16 @@
   ]);
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow"><a href="/extractions">Extractions</a> · #{call.data?.short_id ?? id}</p>
-    <h1>{#if call.data}<LogTime at={call.data.at} {timeZone} />{:else}Extraction{/if}</h1>
-    {#if call.data}
-      <p class="note">
-        {call.data.model} · {#if call.data.channel_id}<Name kind="channel" id={call.data.channel_id} name={call.data.channel} />{:else}no channel{/if} ·
-        {call.data.latency_ms !== null ? `${call.data.latency_ms.toLocaleString('en')} ms` : 'latency not recorded'}
-      </p>
-    {/if}
-  </div>
-</div>
+<PageLine>
+  <p class="eyebrow"><a href="/extractions">Extractions</a> · #{call.data?.short_id ?? id}</p>
+  <h1>{#if call.data}<LogTime at={call.data.at} {timeZone} />{:else}Extraction{/if}</h1>
+  {#if call.data}
+    <p class="pageline__context">
+      {call.data.model} · {#if call.data.channel_id}<Name kind="channel" id={call.data.channel_id} name={call.data.channel} />{:else}no channel{/if} ·
+      {call.data.latency_ms !== null ? `${call.data.latency_ms.toLocaleString('en')} ms` : 'latency not recorded'}
+    </p>
+  {/if}
+</PageLine>
 
 {#if call.error}
   <div class="empty" role="alert"><strong>No call “{id}”.</strong>{call.error}</div>

@@ -73,6 +73,24 @@
   --accent-wash: color-mix(in srgb, var(--accent) 16%, var(--surface));
   --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
 
+  /* M3E depth-2 surfaces (docs/v5/m3e-rail-design-spec.md "Tokens"): the
+     selected-item container and its ring and ink, the list pane, the week
+     board, contained rows, tonal chips and unselected connected-group
+     buttons. `--row-lift` is what a row is lifted toward: white by day, a
+     touch of ink at night (white would glow on a dark surface). The page line
+     sits on the ground; `_contrast.scss` gives it a surface strip where ink on
+     the ground falls short of 4.5:1. */
+  --select: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  --select-ring: color-mix(in srgb, var(--accent) 45%, var(--surface));
+  --select-ink: var(--accent-text);
+  --pane: var(--raise);
+  --board: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  --row-lift: white;
+  --row: color-mix(in srgb, var(--row-lift) 45%, var(--surface));
+  --chip-fill: color-mix(in srgb, var(--ink) 8%, var(--surface));
+  --seg-fill: color-mix(in srgb, var(--ink) 11%, var(--surface));
+  --pageline: transparent;
+
   /* Difficulty pills, keyed to the in-game boss list rather than to this
      page's palette: teal Normal, magenta Hard, black-and-gold Chaos,
      black-and-ember Extreme. They are the one thing on the page a colourway
@@ -148,6 +166,10 @@
   --r: 12px;
   --r-in: 10px; /* inside a 2px border, so a title bar's corners match */
   --r-sm: 8px;
+  /* A page's one window in the rail shell (M3E spec "Frame"), and its title
+     bar inside the 2px border. */
+  --r-win: 20px;
+  --r-win-in: 18px;
   --shadow: 0 2px 0 color-mix(in srgb, var(--win) 20%, transparent),
     0 14px 28px -22px rgb(0 0 0 / 45%);
   --gutter: clamp(0.9rem, 3vw, 2rem);
@@ -272,6 +294,7 @@
     --mono-line-l: 34%;
 
     --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+    --row-lift: color-mix(in srgb, var(--ink) 10%, var(--surface));
   }
 
   :root:not([data-theme="light"])[data-colorway="blossom"] {
@@ -386,6 +409,7 @@
   --mono-line-l: 34%;
 
   --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
+  --row-lift: color-mix(in srgb, var(--ink) 10%, var(--surface));
 }
 
 :root[data-theme="dark"][data-colorway="blossom"] {

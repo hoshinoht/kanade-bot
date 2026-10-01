@@ -48,6 +48,14 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
       await shot(page, `admin-week-${tag}`);
 
+      if (vp.name === 'narrow') {
+        // The phone's navigation drawer (M3E gate G7).
+        await page.getByRole('button', { name: 'Open the navigation' }).click();
+        await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
+        await shot(page, `admin-drawer-${tag}`);
+        await page.keyboard.press('Escape');
+      }
+
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
       await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
       await shot(page, `admin-sheet-${tag}`);

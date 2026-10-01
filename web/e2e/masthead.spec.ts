@@ -1,23 +1,24 @@
 import AxeBuilder from '@axe-core/playwright';
 import { ADMIN, expect, test } from './support';
 
-// The masthead regroup: a status chip, an account chip with its menu, and a
-// compact Commands button. Captures (git-ignored) go to
+// The shell's chrome (was the masthead; now the navigation rail and, on a
+// phone, the top bar): captures (git-ignored) go to
 // e2e/.captures/masthead/<tag>-<viewport>.png; KANADE_CAPTURE_TAG=before
-// records the old masthead for comparison.
+// records the old chrome for comparison. The account chip and its menu sit
+// at the rail's foot.
 const TAG = process.env.KANADE_CAPTURE_TAG ?? 'after';
 
 for (const vp of [
-  { name: 'wide', width: 1280, height: 800 },
-  { name: 'narrow', width: 390, height: 844 },
+  { name: 'wide', width: 1280, height: 800, chrome: '.navrail' },
+  { name: 'narrow', width: 390, height: 844, chrome: '.topbar' },
 ]) {
   test(`capture masthead ${vp.name}`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/?sw=off`);
     await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
-    const masthead = page.locator('.masthead');
-    await masthead.screenshot({ path: `e2e/.captures/masthead/${TAG}-${vp.name}.png`, animations: 'disabled' });
+    const chrome = page.locator(vp.chrome);
+    await chrome.screenshot({ path: `e2e/.captures/masthead/${TAG}-${vp.name}.png`, animations: 'disabled' });
     await page.screenshot({ path: `e2e/.captures/masthead/${TAG}-${vp.name}-page.png`, animations: 'disabled' });
   });
 }
@@ -48,7 +49,7 @@ test('account menu: keyboard, copy the user id, sign out, and axe', async ({ pag
   // Opening from ↑ lands on the last item; the open menu passes axe.
   await page.keyboard.press('ArrowUp');
   await expect(signOut).toBeFocused();
-  const scan = await new AxeBuilder({ page }).include('.masthead').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  const scan = await new AxeBuilder({ page }).include('.navrail').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
   expect(scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([]);
   await page.keyboard.press('Home');
   await page.keyboard.press('Enter');

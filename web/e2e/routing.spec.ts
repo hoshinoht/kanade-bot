@@ -11,7 +11,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
   const nav = page.getByRole('navigation', { name: 'Sections' });
   for (const [group, labels] of Object.entries(SECTIONS)) {
     const links = nav.getByRole('group', { name: group });
-    await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^${l}`)));
+    await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^\\s*${l}`)));
   }
   for (const label of ['Inbox', 'Extractions', 'Chat', 'Limits']) {
     await expect(nav.getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
@@ -61,20 +61,7 @@ test('admin: deep links, detail routes and unknown paths', async ({ page }) => {
   await expect(page).toHaveURL(`${ADMIN}/`);
 });
 
-test('admin: phone nav keeps Week and Inbox pinned and folds the rest into More', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${ADMIN}/?sw=off`);
-  const phone = page.locator('.nav__phone');
-  await expect(phone.getByRole('link', { name: 'Week' })).toBeVisible();
-  await expect(phone.getByRole('link', { name: /^Inbox/ })).toBeVisible();
-  await expect(phone.getByRole('link', { name: 'History' })).toBeHidden();
-  await phone.getByText('More').click();
-  await phone.getByRole('link', { name: 'History' }).click();
-  await expect(page).toHaveURL(`${ADMIN}/history`);
-  await expect(phone.locator('details')).not.toHaveAttribute('open', '');
-  // The frame still never scrolls the document.
-  expect(await page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
-});
+// Phones (top bar + navigation drawer) and the rail's states: e2e/shell.spec.ts.
 
 test('admin: this week / next week toggle, filters and tiles', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);

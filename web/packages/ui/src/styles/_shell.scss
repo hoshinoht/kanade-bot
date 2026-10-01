@@ -201,52 +201,17 @@ button.mchip[aria-expanded="true"] {
   color: var(--accent-text);
 }
 
-.masthead__commands .masthead__commands-label {
-  font-family: var(--mono);
-}
-
-.pip {
-  display: inline-block;
-  min-width: 1.15em;
-  margin-left: 0.35em;
-  padding: 0 0.3em;
-  border-radius: 999px;
-  background: var(--accent-fill);
-  color: var(--accent-ink);
-  font-family: var(--mono);
-  font-size: var(--fs-mini);
-  text-align: center;
-}
-
 @media (max-width: 640px), (max-height: 500px) {
-  // The footnote already names the timezone, the phone "More" sheet carries
-  // the account (sign-out), and a touch screen has no Ctrl-K: one row stays.
-  .masthead__tz,
-  .masthead__meta .kbd,
-  .masthead__meta .brand__by,
-  .masthead__meta .masthead__desk-only,
-  .masthead__meta .account {
+  // The footnote already names the timezone: one masthead row stays.
+  .masthead__tz {
     display: none;
   }
 }
 
 /* ── area budget (docs/v5/pwa-design-guidelines.md "Area follows importance")
- * The masthead is fixed chrome taken straight from the one scrolling area, so
- * it gives height back as the frame gets short: quieter meta first, then the
- * group labels, then (phone landscape) the phone nav on the brand row. */
-
-.masthead__meta .btn {
-  padding: 0.1rem 0.5rem;
-  min-height: 0;
-}
-
-@media (max-width: 1120px) {
-  .masthead__meta .brand__by,
-  .masthead__meta .kbd,
-  .masthead__commands-label {
-    display: none;
-  }
-}
+ * The masthead (public; admin has the rail) is fixed chrome taken straight
+ * from the one scrolling area, so it gives height back as the frame gets
+ * short: quieter meta first, then its padding. */
 
 @media (max-width: 640px) {
   // "Live 12:00:00": the words go, the state and time stay.

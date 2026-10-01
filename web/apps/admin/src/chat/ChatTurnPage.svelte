@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import type { ChatTurn } from '@kanade/api-types';
   import { Icon, Tabs, type TabItem, type Toaster } from '@kanade/ui';
@@ -68,12 +69,10 @@
   }
 </script>
 
-<div class="page-head turn-head">
-  <div class="turn-head__text">
-    <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member_id || turn.data.member.id} name={turn.data.member.name} />{/if}</p>
-    <h1>{#if turn.data}<LogTime at={turn.data.at} {timeZone} />{:else}Interaction{/if}</h1>
-    {#if turn.data}<p class="note">{turn.data.model} · <Name kind="channel" id={turn.data.channel_id} name={turn.data.channel} /> · {turn.data.outcome}</p>{/if}
-  </div>
+<PageLine class="turn-head">
+  <p class="eyebrow"><a href="/chat">Chat</a>{#if turn.data} · <Name kind="member" id={turn.data.member_id || turn.data.member.id} name={turn.data.member.name} />{/if}</p>
+  <h1>{#if turn.data}<LogTime at={turn.data.at} {timeZone} />{:else}Interaction{/if}</h1>
+  {#if turn.data}<p class="pageline__context">{turn.data.model} · <Name kind="channel" id={turn.data.channel_id} name={turn.data.channel} /> · {turn.data.outcome}</p>{/if}
   {#if turn.data}
     <!-- For agent debugging: the whole turn as one paste. -->
     <div class="page-head__side transcript">
@@ -84,7 +83,7 @@
       <button class="btn" type="button" onclick={() => void copyTranscript()}>Copy transcript</button>
     </div>
   {/if}
-</div>
+</PageLine>
 
 {#if turn.error}
   <div class="empty" role="alert"><strong>No interaction “{id}”.</strong>{turn.error}</div>
@@ -242,18 +241,9 @@
     gap: 0.4rem;
   }
 
-  /* Phones: the transcript controls stack beside the heading rather than add a
-     row, so the tab window keeps its minimum height. */
+  /* Phones: the transcript controls stack, so the tab window keeps its
+     minimum height. */
   @media (max-width: 640px) {
-    .turn-head {
-      flex-wrap: nowrap;
-      align-items: flex-start;
-    }
-
-    .turn-head__text {
-      min-width: 0;
-    }
-
     .transcript {
       flex-direction: column;
       align-items: stretch;

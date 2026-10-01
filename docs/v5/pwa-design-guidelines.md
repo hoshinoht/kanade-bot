@@ -52,7 +52,13 @@ Ported from `legacy/python/bot/api/templates/AGENTS.md`; v5 deviations are marke
   stay put; the window, pane, table, board column or sidebar that owns the content
   scrolls. Prefer flex sizing over viewport-height arithmetic, and the frame must
   yield when it would make fallback content unreachable. *v5 deviation:* this holds
-  at every width (v4 let phones use document flow).
+  at every width (v4 let phones use document flow). *v5 admin, superseded (M3E
+  gates G2 and G6, user-approved 2026-10-01):* the page caption is a 36 px page
+  line on the ground (a surface strip in the faces where ink on the ground is
+  under 4.5:1) instead of a page-head card, holding the title, the count, the
+  page's controls, an ⓘ for one-time help, the Live chip and Commands; the
+  page is no longer capped at 1180 px, and panes set their own readable
+  measures instead.
 - **Task-first hierarchy:** keep the current scope and primary state visible, give
   the main working surface the remaining space, and demote one-time explanation
   before shrinking controls or data. Times and key counts are the loudest row-level
@@ -100,7 +106,12 @@ Ported from `legacy/python/bot/api/templates/AGENTS.md`; v5 deviations are marke
   text, weight, borders, shapes, symbols and programmatic state, with visible focus
   and readable contrast in every colourway and mode.
 - **Predictable navigation:** grouped destinations on desktop; Week and Inbox
-  pinned on phones with the rest in a native disclosure. Frequent actions stay
+  pinned on phones with the rest in a native disclosure. *v5 admin, superseded
+  (M3E gates G1 and G7, user-approved 2026-10-01):* the grouped destinations
+  sit in a navigation rail (labels always visible; expanded from 1440 px), and
+  phones (and phone landscape) get a 48 px top bar with the Inbox always in
+  reach plus a navigation drawer; never a bottom nav bar. The public app keeps
+  its masthead until its own phone slice. Frequent actions stay
   visible, labels name outcomes, destructive actions stay visually separated, and
   every control is keyboard- and touch-usable.
 - **Quiet motion:** only a short opacity/transform settle and clear busy feedback

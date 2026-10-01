@@ -4,6 +4,7 @@
   import type { Run, WeekKey } from '@kanade/api-types';
   import { Icon, NapWindow, RunTable } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
+  import PageLine from '../shell/PageLine.svelte';
   import type { Slot } from '../planner/keyboardMove';
   import type { AdminWeek } from '../store.svelte';
   import Filters from '../week/Filters.svelte';
@@ -84,9 +85,9 @@
   }
 </script>
 
-<!-- v4 week.html's header row, carrying v5's view switch and help: the board
-  sits directly under the filters with no window chrome around it. -->
-<div class="page-head week-head">
+<!-- v4 week.html's header row as the page line, carrying v5's view switch and
+  help: the board sits directly under the filters with no window chrome around it. -->
+<PageLine title={shown ? 'Week' : ''} class="week-head">
   <h1>{shown ? `${count} run${count === 1 ? '' : 's'}${filtered ? ', filtered' : ''}` : 'Week'}</h1>
   {#if hidden}
     <p class="note week-head__past">
@@ -99,8 +100,8 @@
     </p>
   {/if}
   <nav class="seg week-head__week" aria-label="Which week">
-    <a href="/" aria-current={which === 'this' ? 'page' : undefined}>This week</a>
-    <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next week</a>
+    <a href="/" aria-current={which === 'this' ? 'page' : undefined}>This <span class="week-head__wk">week</span></a>
+    <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next <span class="week-head__wk">week</span></a>
   </nav>
   <div class="seg week-head__views" role="tablist" aria-label="Week views">
     {#each VIEWS as view, index (view.id)}
@@ -119,8 +120,15 @@
     {/each}
   </div>
   {#if tab === 'planner'}
-    <button type="button" class="btn btn--ghost week-head__help" aria-expanded={helpOpen} aria-controls={helpId} onclick={() => (helpOpen = !helpOpen)}>
-      How to move runs
+    <button
+      type="button"
+      class="btn btn--ghost week-head__help"
+      title="How to move runs"
+      aria-expanded={helpOpen}
+      aria-controls={helpId}
+      onclick={() => (helpOpen = !helpOpen)}
+    >
+      <Icon name="info" /> <span class="week-head__label">How to move runs</span>
     </button>
   {/if}
   {#if landscape && store.summary}<NowTiles summary={store.summary} {onopen} inline />{/if}
@@ -139,7 +147,7 @@
     Drag a run to another day (on touch, press and hold first). Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it, Enter
     drops it, Escape cancels. Its sheet has a Move field too.
   </p>
-</div>
+</PageLine>
 
 {#if store.summary && !landscape}<NowTiles summary={store.summary} {onopen} />{/if}
 {#if !compact}<Filters bind:filter channels={store.channels} members={store.members} />{/if}

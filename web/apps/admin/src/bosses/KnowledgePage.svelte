@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/boss-grid.scss';
   import type { Difficulty, DifficultyFacts, Knowledge } from '@kanade/api-types';
@@ -42,10 +43,9 @@
 </script>
 
 <p class="backlink"><a class="btn" href="/bosses">← Boss catalog</a></p>
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Checked-in boss knowledge</p>
-    <h1 class="knowledge__title">
+<PageLine>
+  <p class="eyebrow"><a href="/bosses">Bosses</a> · knowledge</p>
+  <h1 class="knowledge__title">
       {#if knowledge.data}<Portrait
           boss={{ token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n', level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, hue: knowledge.data.hue }}
           size="md"
@@ -53,13 +53,12 @@
       {knowledge.data?.name ?? key}
       {#if doc?.event}<span class="chip chip--maybe">Event</span>{/if}
     </h1>
-    {#if knowledge.data}
-      <p class="note">
-        {knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'}
-      </p>
-    {/if}
-  </div>
-</div>
+  {#if knowledge.data}
+    <p class="pageline__context">
+      {knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'}
+    </p>
+  {/if}
+</PageLine>
 
 <section class="card pane window-fill" aria-labelledby="{uid}-title">
   <div class="card__head">

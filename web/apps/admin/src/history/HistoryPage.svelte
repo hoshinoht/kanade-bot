@@ -6,6 +6,7 @@
   the hash chain.
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
@@ -122,12 +123,9 @@
   }
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Who changed what</p>
-    <h1>{total.toLocaleString('en')} change{total === 1 ? '' : 's'}</h1>
-    {#if head}<p class="note">Head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
-  </div>
+<PageLine title="History">
+  <h1>{total.toLocaleString('en')} change{total === 1 ? '' : 's'}</h1>
+  {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
   <div class="filters history__filters" role="search" aria-label="Filter the history">
     <label class="field">
       <span>Week</span>
@@ -146,7 +144,7 @@
       </select>
     </label>
   </div>
-</div>
+</PageLine>
 
 <Tabs items={tabs} bind:selected={tab} label="History">
   {#snippet panel(which)}

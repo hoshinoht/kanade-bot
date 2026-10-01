@@ -4,6 +4,7 @@
   deep-linked through this page's query string.
 -->
 <script lang="ts">
+  import PageLine from '../shell/PageLine.svelte';
   import LogTime from '../logs/LogTime.svelte';
   import { duration, preview } from '../logs/format';
   import { mentionsText } from './transcript';
@@ -65,11 +66,8 @@
   const filtered = $derived(activeCount(filter) > 0);
 </script>
 
-<div class="page-head">
-  <div>
-    <p class="eyebrow">The speech pilot</p>
-    <h1>{view ? (filtered ? `${rows.length} of ${view.total} interactions` : `${view.total} interactions`) : 'Chat'}</h1>
-  </div>
+<PageLine title={view ? 'Chat' : ''}>
+  <h1>{view ? (filtered ? `${rows.length} of ${view.total} interactions` : `${view.total} interactions`) : 'Chat'}</h1>
   {#if view && view.summary.length}
     <div class="statline" aria-label="Per model, for these rows">
       {#each view.summary as m (m.model)}
@@ -84,7 +82,7 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLine>
 
 <PaneWindow title="Interactions" bind:query searchLabel="Search interactions" placeholder="question, answer…">
   <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} chat onchange={apply} />
@@ -138,19 +136,25 @@
     max-width: 14rem;
   }
 
+  /* The page line's context chips (M3E spec "Frame"): one per model, on a
+     surface so their quiet labels keep contrast on the ground. */
   .statline {
-    flex: 1 0 100%;
-    display: grid;
-    gap: 0.3rem;
-    padding-top: 0.45rem;
-    border-top: 2px solid var(--line-soft);
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.4rem;
   }
 
   .statline__row {
-    display: flex;
+    display: inline-flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.2rem 1rem;
+    gap: 0 0.7rem;
+    padding: 0.1rem 0.7rem;
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
   }
 
   .statline__model {

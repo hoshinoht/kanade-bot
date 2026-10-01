@@ -1,0 +1,285 @@
+// The page line (docs/v5/m3e-rail-design-spec.md "Frame", gate G2): 36 px on
+// the ground in place of the page-head card. Title, then the heading (the
+// page's count or state), the page's own controls, the ⓘ, and at the end the
+// Live chip and the command palette. Text on it is ink, never --dim: ink on
+// the ground clears 4.5:1 where `--pageline` is transparent, and the faces
+// where it would not get a surface strip (`_contrast.scss`).
+
+.pageline {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 4px;
+  background: var(--pageline);
+  border: 0;
+  border-radius: var(--r);
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.pageline > * {
+  min-width: 0;
+}
+
+.pageline .pageline__title {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+// Without a title (detail pages, Config) the h1 is the title.
+.pageline h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+// With one, the h1 is the page's emphasized count in the mono face.
+.pageline--titled h1 {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+// What used to be the card's eyebrow, now the context after the count (or,
+// on detail pages, the breadcrumb before the title).
+.pageline .eyebrow,
+.pageline .note,
+.pageline .pageline__context {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: var(--fs-small);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// The context gives way first: it takes only the room left on the line and
+// ellipsizes, so it never wraps the line by itself.
+.pageline .pageline__context {
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageline .eyebrow a,
+.pageline .note a,
+.pageline .linklike,
+.pageline .pageline__context a {
+  color: var(--ink);
+  text-decoration-color: currentcolor;
+}
+
+// A page's own controls sit before the status at the end.
+.pageline .page-head__side {
+  margin-left: auto;
+}
+
+.pageline .btn--ghost {
+  background: var(--surface);
+}
+
+.pageline .field__error:not(:empty) {
+  margin: 0;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.pageline .field__error:empty {
+  display: none;
+}
+
+// History's filters: label beside each select, one row.
+.pageline .filters {
+  flex-wrap: nowrap;
+  align-items: center;
+  margin: 0 0 0 auto;
+  gap: 0.6rem;
+}
+
+.pageline .filters .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pageline .filters .field > span {
+  color: var(--ink);
+}
+
+.pageline .filters select,
+.pageline .filters input {
+  max-width: 11rem;
+  height: 2rem;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+}
+
+// Week's move help and open filter panel take a row of their own, below
+// the whole line (status included).
+.pageline .week-head__helptext,
+.pageline .filters--popout {
+  order: 10;
+}
+
+.pageline__end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pageline:has(.page-head__side, .filters) .pageline__end {
+  margin-left: 0;
+}
+
+.pageline__end .mchip {
+  border-radius: 999px;
+}
+
+.pageline__commands {
+  gap: 0.4rem;
+}
+
+/* ── ⓘ: the one-time explanation the head card used to print ────────────── */
+
+.pageline__about {
+  position: relative;
+}
+
+.pageline__about-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+
+.pageline__about-btn::-webkit-details-marker {
+  display: none;
+}
+
+.pageline__about[open] > .pageline__about-btn {
+  border-color: var(--accent);
+}
+
+.pageline__about-body {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: min(26rem, 80vw);
+  padding: 0.6rem 0.8rem;
+  border: 2px solid var(--win);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: var(--fs-small);
+}
+
+.pageline__about-body p {
+  margin: 0;
+}
+
+.pageline__about-body p + p {
+  margin-top: 0.4rem;
+}
+
+/* ── width: the status and the Week controls shrink before the line wraps ─ */
+
+@mixin hide-visually {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+// The Live chip says "Live 12:00:00", as the spec's; "· updated" stays for
+// screen readers. Week's Undo, Refresh and move help keep their glyphs, a
+// tooltip and their accessible names (the spec's title-bar icon buttons).
+.pageline__end .fresh__words,
+.frame--rail:not(.frame--phone) .pageline .week-head__label {
+  @include hide-visually;
+}
+
+// Below the expanded rail's width: the time zone moves into the status
+// chip's tooltip (and the footnote), the palette to its glyph.
+@media (max-width: 1439px) {
+  .pageline__end .masthead__tz,
+  .pageline__commands .kbd {
+    @include hide-visually;
+  }
+}
+
+// Laptop widths: the rail names the page (aria-current), so the title goes;
+// "This | Next" keep "week" for screen readers, and the Live chip its mark.
+@media (max-width: 1199px) {
+  .pageline .pageline__title {
+    display: none;
+  }
+
+  .pageline {
+    column-gap: 8px;
+  }
+
+  .pageline__end .fresh__state,
+  .frame--rail:not(.frame--phone) .week-head__wk {
+    @include hide-visually;
+  }
+}
+
+/* ── phones: the top bar has the title and the status ───────────────────── */
+
+.frame--phone .pageline {
+  min-height: 32px;
+  gap: 4px 8px;
+}
+
+.frame--phone .pageline h1 {
+  font-size: var(--fs-lg);
+}
+
+.frame--phone .pageline .eyebrow:not(:has(a, button)),
+.frame--phone .pageline__context {
+  display: none;
+}
+
+// A line that only repeats the top bar's title (Config) gives its height
+// back on a phone; its h1 stays for screen readers.
+.frame--phone .pageline--echo {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

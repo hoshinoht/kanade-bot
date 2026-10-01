@@ -6,9 +6,6 @@
     applyMode,
     COLORWAYS,
     experiments,
-    Freshness,
-    Icon,
-    Masthead,
     registerServiceWorker,
     runFullTitle,
     setExperiments,
@@ -29,7 +26,11 @@
   import type RunSheetType from './RunSheet.svelte';
   import type { default as PaletteType } from '@kanade/ui/palette';
   import AccountMenu from './shell/AccountMenu.svelte';
-  import Nav from './shell/Nav.svelte';
+  import EdgeSwipe from './shell/EdgeSwipe.svelte';
+  import { PHONE_QUERY, setChrome } from './shell/chrome';
+  import NavDrawer from './shell/NavDrawer.svelte';
+  import Rail from './shell/Rail.svelte';
+  import TopBar from './shell/TopBar.svelte';
   import { directory } from './names/directory.svelte';
   import { artUrl } from './shared/identity';
   import { AdminWeek, type MoveOutcome } from './store.svelte';
@@ -68,12 +69,43 @@
   let sheetOpen = $state(false);
   let sheetRunId = $state<string | null>(null);
 
+  // The phone frame (top bar + drawer) or the rail; exactly one is rendered.
+  const phoneQuery = window.matchMedia(PHONE_QUERY);
+  let phone = $state(phoneQuery.matches);
+  let drawerOpen = $state(false);
+  let menuButton = $state<HTMLButtonElement>();
+  $effect(() => {
+    const update = () => {
+      phone = phoneQuery.matches;
+      if (!phone) drawerOpen = false;
+    };
+    phoneQuery.addEventListener('change', update);
+    return () => phoneQuery.removeEventListener('change', update);
+  });
+
   const route = $derived(match(router.path, ROUTES));
   const detail = $derived(DETAILS.find((d) => d.key === route?.key));
   const section = $derived(SECTIONS.find((s) => s.key === (detail?.section ?? route?.key)));
   const which = $derived(router.query.get('week') === 'next' ? 'next' : 'this');
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
   const title = $derived(route?.key === 'login' ? 'Sign in' : (detail?.title ?? section?.title ?? 'Not found'));
+
+  // What the page line needs from the shell (shell/PageLine.svelte).
+  setChrome({
+    get phone() {
+      return phone;
+    },
+    get fresh() {
+      return store.fresh;
+    },
+    get updated() {
+      return store.updated;
+    },
+    get timezone() {
+      return store.week?.timezone ?? '';
+    },
+    palette: () => void togglePalette(true),
+  });
 
   // The Discord callback reports failures at `/?login_error=<code>`: show them on the sign-in page.
   $effect(() => {
@@ -345,32 +377,45 @@
     <Lazy loader={PAGES.login} props={pageProps('login', {})} />
   </main>
 {:else}
-  <div class="frame">
+  <div class="frame frame--rail" class:frame--phone={phone}>
     <a class="skip" href="#main">Skip to the page</a>
-    <Masthead name={store.identity?.name ?? 'Kanade'} avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null} href="/">
-      {#snippet meta()}
-        <a class="brand__by" href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
-        <!-- Three groups: data status, the signed-in account, the command palette. -->
-        <span class="mchip mchip--status" role="group" aria-label="Status">
-          <Freshness state={store.fresh} updated={store.updated} />
-          {#if store.week}<span class="masthead__tz" title="Guild timezone — every time here is in it">{store.week.timezone}</span>{/if}
-        </span>
-        <AccountMenu session={store.session} userId={accountId} oncopy={copyAccountId} onsignout={signOut} />
-        <button
-          type="button"
-          class="mchip masthead__commands masthead__desk-only"
-          onclick={() => void togglePalette(true)}
-          aria-keyshortcuts="Control+K Meta+K"
-          aria-label="Commands"
-          title="Commands (Ctrl K)"
-        >
-          <Icon name="search" /><span class="masthead__commands-label">Commands</span><kbd class="kbd">Ctrl K</kbd>
-        </button>
-      {/snippet}
-      {#snippet nav()}
-        <Nav active={section?.key ?? ''} inbox={store.summary?.inbox ?? 0} onsignout={signOut} />
-      {/snippet}
-    </Masthead>
+    {#snippet account()}
+      <AccountMenu session={store.session} userId={accountId} oncopy={copyAccountId} onsignout={signOut} />
+    {/snippet}
+    {#if phone}
+      <TopBar
+        title={section?.label ?? title}
+        open={drawerOpen}
+        inbox={store.summary?.inbox ?? 0}
+        onInbox={section?.key === 'inbox'}
+        fresh={store.fresh}
+        updated={store.updated}
+        timezone={store.week?.timezone ?? ''}
+        drawerId="nav-drawer"
+        bind:menu={menuButton}
+        onmenu={() => (drawerOpen = true)}
+      />
+      <NavDrawer
+        bind:open={drawerOpen}
+        id="nav-drawer"
+        name={store.identity?.name ?? 'Kanade'}
+        avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
+        active={section?.key ?? ''}
+        inbox={store.summary?.inbox ?? 0}
+        timezone={store.week?.timezone ?? ''}
+        returnTo={menuButton}
+        {account}
+      />
+      {#if !drawerOpen}<EdgeSwipe onopen={() => (drawerOpen = true)} />{/if}
+    {:else}
+      <Rail
+        name={store.identity?.name ?? 'Kanade'}
+        avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
+        active={section?.key ?? ''}
+        inbox={store.summary?.inbox ?? 0}
+        {account}
+      />
+    {/if}
     <main class="shell" id="main" tabindex="-1">
       {#if route?.key === 'week'}
         <WeekPage
