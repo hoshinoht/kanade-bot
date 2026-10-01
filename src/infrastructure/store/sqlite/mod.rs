@@ -11,6 +11,7 @@ mod txn;
 mod backup;
 mod connect;
 mod debug_cards;
+mod decline_notices;
 mod drafts;
 mod history;
 mod journal;

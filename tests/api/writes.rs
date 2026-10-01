@@ -3,9 +3,10 @@
 //! weekly timing `f-kalos`). Every response is validated against A0.
 
 use kanade::domain::{
-    history::{BlameTarget, ChangeHistory, Surface, changed_fields},
+    history::{BlameTarget, ChangeHistory, ChangeMeta, Origin, Surface, changed_fields},
     members::MemberStore,
-    notify::NoticeOutbox,
+    notify::{DeclineNotice, DeclineNoticeStore, NoticeOutbox},
+    schedule::{Change, ChangeSet, Rsvp, RsvpSource, RsvpState},
 };
 use serde_json::{Value, json};
 
@@ -825,6 +826,205 @@ async fn rsvp_participants_reset_and_ping() {
             .refused("POST", "/api/admin/runs/nope/ping", json!({}))
             .await,
         (404, "not_found".into())
+    );
+}
+
+#[tokio::test]
+async fn rsvp_retracts_only_after_its_committed_write() {
+    let reads = Reads::new().await;
+    let version = reads.version().await;
+    let body = json!({"member_id": "1002", "answer": "yes", "version": version});
+    let first = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            body.clone(),
+            &[("Idempotency-Key", "rsvp-retract")],
+        )
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    assert_eq!(
+        reads.decline_retractions.lock().unwrap().as_slice(),
+        [("r-kalos".into(), "1002".into())]
+    );
+
+    let replay = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            body,
+            &[("Idempotency-Key", "rsvp-retract")],
+        )
+        .await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(reads.decline_retractions.lock().unwrap().len(), 1);
+
+    let refused = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            json!({"member_id": "1006", "answer": "yes", "version": reads.version().await}),
+            &[("Idempotency-Key", "rsvp-refused")],
+        )
+        .await;
+    assert_eq!(refused.status, 422, "{}", refused.text());
+    assert_eq!(reads.decline_retractions.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn decline_rsvp_idempotency_binds_expectations_and_replays_once() {
+    let reads = Reads::new().await;
+    let version = reads.version().await;
+    let body = |seen| {
+        json!({
+            "member_id": "1004",
+            "answer": "no",
+            "version": version,
+            "expect": [{"field": "rsvp:1004", "seen": seen}]
+        })
+    };
+    let key = [("Idempotency-Key", "decline-expectations")];
+
+    let first = reads
+        .call("POST", "/api/admin/runs/r-kalos/rsvp", body(None), &key)
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    assert_eq!(reads.version().await, version + 1);
+    let candidate = reads
+        .store
+        .decline_notice("r-kalos", "1004")
+        .await
+        .expect("decline notice")
+        .expect("first decline candidate");
+
+    let different_expectation = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            body(Some(version)),
+            &key,
+        )
+        .await;
+    assert_eq!(
+        (
+            different_expectation.status,
+            different_expectation.api_error()
+        ),
+        (422, "idempotency_mismatch".into())
+    );
+
+    let replay = reads
+        .call("POST", "/api/admin/runs/r-kalos/rsvp", body(None), &key)
+        .await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(reads.version().await, version + 1, "one history record");
+    assert_eq!(
+        reads
+            .store
+            .decline_notice("r-kalos", "1004")
+            .await
+            .expect("decline notice"),
+        Some(candidate),
+        "replay does not replace the candidate"
+    );
+    assert_eq!(
+        reads
+            .store
+            .pending_decline_notices(10)
+            .await
+            .expect("pending declines")
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_no_op_yes_does_not_retract_a_pending_decline() {
+    let reads = Reads::new().await;
+    let first = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            json!({"member_id": "1001", "answer": "yes", "version": reads.version().await}),
+            &[],
+        )
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    assert!(reads.decline_retractions.lock().unwrap().is_empty());
+
+    let first_version = reads.version().await;
+    let at = reads
+        .store
+        .load_change(first_version)
+        .await
+        .expect("first RSVP history")
+        .expect("first RSVP record")
+        .at;
+    reads
+        .store
+        .commit_with_decline_notices(
+            first_version,
+            ChangeSet {
+                changes: vec![Change::PutRsvp(Rsvp {
+                    run_id: "r-kalos".into(),
+                    user_id: "1004".into(),
+                    state: RsvpState::Maybe,
+                    source: RsvpSource::Reaction,
+                    at,
+                })],
+            },
+            ChangeMeta {
+                origin: Origin::for_tests(),
+                at,
+                notices: Vec::new(),
+                refs: Vec::new(),
+                request_digest: None,
+                expect: Default::default(),
+                outbox: Vec::new(),
+            },
+            vec![DeclineNotice::candidate(
+                "r-kalos",
+                "1001",
+                Some("kalos-four".into()),
+                None,
+                "Alice",
+                at,
+            )],
+            Vec::new(),
+        )
+        .await
+        .expect("seed pending decline");
+    let version = reads.version().await;
+    let candidate = reads
+        .store
+        .decline_notice("r-kalos", "1001")
+        .await
+        .expect("decline notice")
+        .expect("pending decline candidate");
+    assert!(!candidate.retract_pending);
+
+    let repeated = reads
+        .call(
+            "POST",
+            "/api/admin/runs/r-kalos/rsvp",
+            json!({"member_id": "1001", "answer": "yes", "version": version}),
+            &[],
+        )
+        .await;
+    assert_eq!(repeated.status, 200, "{}", repeated.text());
+    assert_eq!(
+        reads.version().await,
+        version,
+        "the repeated answer is a no-op"
+    );
+    assert!(reads.decline_retractions.lock().unwrap().is_empty());
+    assert_eq!(
+        reads
+            .store
+            .decline_notice("r-kalos", "1001")
+            .await
+            .expect("decline notice"),
+        Some(candidate)
     );
 }
 

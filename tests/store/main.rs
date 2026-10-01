@@ -28,9 +28,9 @@ use kanade::domain::{
 };
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
-    cherry_pick_conformance, conformance, draft_conformance, history_conformance,
-    journal_conformance, model_log_conformance, precondition_conformance, proposal_conformance,
-    web_sessions_conformance,
+    cherry_pick_conformance, conformance, decline_conformance, draft_conformance,
+    history_conformance, journal_conformance, model_log_conformance, precondition_conformance,
+    proposal_conformance, web_sessions_conformance,
 };
 
 #[derive(Clone, Copy)]
@@ -232,6 +232,24 @@ async fn sqlite_slot_swap_respects_non_midnight_reset() {
 async fn memory_members_conform() {
     kanade::infrastructure::store::members_conformance::run_suite(async || {
         MemoryScheduleStore::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn memory_decline_notices_conform() {
+    decline_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_decline_notices_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    decline_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("declines-{n}")))
+            .await
+            .expect("fresh store opens")
     })
     .await;
 }

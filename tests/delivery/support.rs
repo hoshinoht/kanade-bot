@@ -33,6 +33,7 @@ pub trait Store:
     + DeliveryJournal
     + CardIndex
     + kanade::domain::notify::NoticeOutbox
+    + kanade::domain::notify::DeclineNoticeStore
     + kanade::domain::history::Checkpoints
     + kanade::domain::drafts::ProposalStore
     + kanade::bot::delivery::cards::ReminderCardStore
@@ -46,6 +47,7 @@ impl<S> Store for S where
         + DeliveryJournal
         + CardIndex
         + kanade::domain::notify::NoticeOutbox
+        + kanade::domain::notify::DeclineNoticeStore
         + kanade::domain::history::Checkpoints
         + kanade::domain::drafts::ProposalStore
         + kanade::bot::delivery::cards::ReminderCardStore

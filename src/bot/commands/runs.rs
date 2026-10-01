@@ -23,7 +23,7 @@ use crate::domain::history::Expect;
 use crate::domain::ids::short_id;
 use crate::domain::members::member_name;
 use crate::domain::schedule::{RsvpState, Run, RunStatus, StatusChange};
-use crate::domain::scheduler::SchedulerError;
+use crate::domain::scheduler::{DeclineNoticeContext, SchedulerError};
 
 const PICK_RUN: &str = "Pick from the dropdown, or paste an id like `a1b2c3d4`";
 
@@ -227,16 +227,60 @@ impl RunCommand {
             Some("no") => ("no", RsvpState::No),
             _ => ("yes", RsvpState::Yes),
         };
-        let updated = self
-            .write(
-                invocation,
+        let origin = self
+            .ctx
+            .origin(&invocation.invoker, invocation.interaction.id);
+        let result = match self
+            .ctx
+            .writer
+            .rsvp(
+                origin,
+                Expect::default(),
                 &id,
-                RunWrite::Rsvp {
-                    user_id: user,
-                    answer: Some(state),
+                &user,
+                Some(state),
+                DeclineNoticeContext {
+                    channel_id: None,
+                    reference_id: None,
+                    display_name: invocation
+                        .invoker_name
+                        .clone()
+                        .unwrap_or_else(|| user.clone()),
                 },
             )
-            .await?;
+            .await
+        {
+            Ok(result) => result,
+            Err(SchedulerError::AlreadyApplied { .. }) => {
+                return self
+                    .write(
+                        invocation,
+                        &id,
+                        RunWrite::Rsvp {
+                            user_id: user,
+                            answer: Some(state),
+                        },
+                    )
+                    .await
+                    .map(|updated| {
+                        InteractionReply::ephemeral(format!(
+                            "Noted: **{answer}** for run `#{}` ({}).",
+                            short_id(&id),
+                            status_label(updated.status)
+                        ))
+                    });
+            }
+            Err(error) => return Err(refused(error)),
+        };
+        if result.retract {
+            self.ctx.retract_decline(id.clone(), user.clone()).await;
+        }
+        let updated = everything(&self.ctx)
+            .await?
+            .runs
+            .into_iter()
+            .find(|run| run.id == id)
+            .ok_or_else(|| CommandError::Internal(format!("run {id} vanished")))?;
         Ok(InteractionReply::ephemeral(format!(
             "Noted: **{answer}** for run `#{}` ({}).",
             short_id(&id),

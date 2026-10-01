@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kanade::domain::model_log::ModelLogStore;
+use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{Change, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreError};
@@ -28,7 +29,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 19);
+    assert_eq!(restored.schema_version().await.expect("version"), 20);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -150,7 +151,7 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (20, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (21, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
@@ -158,18 +159,18 @@ async fn restore_validates_the_copy_before_publishing() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 20,
-                known: 19
+                found: 21,
+                known: 20
             }
         ),
         "{error}"
     );
 }
 
-/// A backup taken before 0019 (no usage columns, ledger at 18) restores and
-/// migrates; its logs read as "not reported".
+/// A backup taken before schema v20 (here version 18, also before 0019)
+/// restores and migrates; its logs read as "not reported".
 #[tokio::test]
-async fn a_pre_usage_backup_restores_and_migrates() {
+async fn a_pre_v20_backup_restores_and_migrates() {
     let dir = TempDir::new();
     let old = dir.config("pre-v19");
     SqliteStore::open(&old)
@@ -195,15 +196,30 @@ async fn a_pre_usage_backup_restores_and_migrates() {
          ALTER TABLE chat_rounds DROP COLUMN prompt_estimate;
          ALTER TABLE chat_rounds DROP COLUMN completion_tokens;
          ALTER TABLE chat_rounds DROP COLUMN prompt_tokens;
-         DELETE FROM schema_migrations WHERE version = 19;
+         DROP INDEX decline_notices_pending;
+         ALTER TABLE decline_notices DROP COLUMN retract_pending;
+         ALTER TABLE decline_notices DROP COLUMN display_name;
+         ALTER TABLE decline_notices DROP COLUMN reference_id;
+         INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at)
+         VALUES ('old-run', 'old-member', 'old-channel', 'old-message',
+                 '2026-09-01T00:00:00.000000+00:00');
+         DELETE FROM schema_migrations WHERE version >= 19;
          UPDATE store_meta SET schema_version = 18;",
     )
     .await;
     let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))
         .await
         .expect("restores");
-    assert_eq!(restored.schema_version().await.expect("version"), 19);
+    assert_eq!(restored.schema_version().await.expect("version"), 20);
     assert_eq!(restored.foreign_key_violations().await.expect("check"), 0);
+    let decline = restored
+        .decline_notice("old-run", "old-member")
+        .await
+        .expect("decline reads")
+        .expect("old decline survives");
+    assert_eq!(decline.reference_id, None);
+    assert_eq!(decline.display_name, None);
+    assert!(!decline.retract_pending);
     let log = restored
         .load_extraction("x-1")
         .await

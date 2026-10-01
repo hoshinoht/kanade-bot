@@ -1077,6 +1077,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
                 directory: Arc::new(roster),
                 authority: Arc::new(AnyAuthority),
                 alerts: Arc::new(LogAlerts),
+                decline_retraction: None,
             },
             CardSettings {
                 zone: policy.zone(),

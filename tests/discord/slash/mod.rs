@@ -394,6 +394,7 @@ impl Slash {
             rescans: ports.rescans,
             allowance: ports.allowance,
             debug_cards: ports.debug_cards,
+            decline_retraction: None,
             bot_name: Some("Kanade".into()),
             clock: Arc::new(move || pinned),
         });

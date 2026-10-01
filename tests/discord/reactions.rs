@@ -10,6 +10,7 @@ use kanade::bot::events::{
 };
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Member, Roster};
+use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
 use kanade::domain::scheduler::{Clock, SchedulerService};
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -190,6 +191,37 @@ async fn card_reaction_reaches_the_scheduler() {
     assert!(results[0].applied);
     assert_eq!(results[0].state, Some(RsvpState::Yes));
     assert_eq!(results[0].new_status, RunStatus::Confirmed);
+}
+
+#[tokio::test]
+async fn a_decline_reaction_commits_its_reply_candidate() {
+    let (service, run_id) = service_with_run(&[ALICE, BOB]).await;
+    let mut cards = Cards::default();
+    cards.runs.insert(Id::new(MESSAGE), vec![run_id.clone()]);
+    let mut router = ReactionRouter::new(cards, service);
+    let decline = rsvp_from(
+        reaction_add(reaction(
+            Some(GUILD),
+            ALICE,
+            unicode(NO),
+            Some(alice_member()),
+        )),
+        &Roster::new(),
+    )
+    .expect("decline RSVP");
+
+    let result = router.route(&decline).await.expect("routed");
+    assert!(result[0].declined());
+    let notice = router
+        .sink
+        .store()
+        .decline_notice(&run_id, &ALICE.to_string())
+        .await
+        .expect("notice read")
+        .expect("candidate");
+    assert_eq!(notice.channel_id, Some(CHANNEL.to_string()));
+    assert_eq!(notice.reference_id, Some(MESSAGE.to_string()));
+    assert_eq!(notice.display_name.as_deref(), Some("alice"));
 }
 
 #[tokio::test]

@@ -8,6 +8,7 @@ mod alerts;
 mod card_records;
 pub mod cards;
 pub mod debug;
+mod declines;
 mod executor;
 mod notice_text;
 mod notices;
@@ -18,6 +19,7 @@ mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle, LogAlerts};
 pub use debug::{DebugCardStore, DebugDesk, PostedDebugCard, TEST_PREFIX};
+pub use declines::DeclineReport;
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};

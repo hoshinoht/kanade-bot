@@ -1,5 +1,6 @@
 //! Embedded migrations: fresh files, idempotent reopen and refusals.
 
+use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{Change, ChangeSet};
 use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
@@ -34,7 +35,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 19);
+    assert_eq!(store.schema_version().await.expect("version"), 20);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
@@ -42,7 +43,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     assert_eq!(
         ledger(&config).await,
         [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
         ]
     );
 }
@@ -57,14 +58,14 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 19);
+        assert_eq!(store.schema_version().await.expect("version"), 20);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
     assert_eq!(
         ledger(&config).await,
         [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
         ]
     );
 }
@@ -99,7 +100,7 @@ async fn future_schema_version_refuses_to_open() {
         .expect("close");
     tamper(
         &config,
-        "INSERT INTO schema_migrations VALUES (20, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (21, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
@@ -107,8 +108,8 @@ async fn future_schema_version_refuses_to_open() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 20,
-                known: 19
+                found: 21,
+                known: 20
             }
         ),
         "{error}"
@@ -116,7 +117,7 @@ async fn future_schema_version_refuses_to_open() {
     assert_eq!(
         ledger(&config).await,
         [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
         ],
         "a refused open writes nothing"
     );
@@ -149,6 +150,60 @@ async fn foreign_keys_are_enforced_after_reopen() {
         "{result:?}"
     );
     assert_eq!(store.load(&Scope::All).await.expect("load"), before);
+    assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
+    store.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
+    let dir = TempDir::new();
+    let config = dir.config("v19-declines");
+    SqliteStore::open(&config)
+        .await
+        .expect("opens")
+        .close()
+        .await
+        .expect("close");
+    tamper(
+        &config,
+        "DROP INDEX decline_notices_pending;
+         ALTER TABLE decline_notices DROP COLUMN retract_pending;
+         ALTER TABLE decline_notices DROP COLUMN display_name;
+         ALTER TABLE decline_notices DROP COLUMN reference_id;
+         INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at)
+         VALUES ('run-19', 'member-19', 'channel-19', 'message-19', '2026-09-01T00:00:00.000000+00:00');
+         DELETE FROM schema_migrations WHERE version >= 20;
+         UPDATE store_meta SET schema_version = 19;",
+    )
+    .await;
+
+    let store = SqliteStore::open(&config).await.expect("v19 migrates");
+    let decline = store
+        .decline_notice("run-19", "member-19")
+        .await
+        .expect("decline reads")
+        .expect("v19 row remains");
+    assert_eq!(decline.channel_id.as_deref(), Some("channel-19"));
+    assert_eq!(decline.message_id.as_deref(), Some("message-19"));
+    assert_eq!(decline.reference_id, None);
+    assert_eq!(decline.display_name, None);
+    assert!(!decline.retract_pending);
+
+    seed(&store).await;
+    let before = store.load(&Scope::All).await.expect("load");
+    let result = store
+        .commit(
+            before.revision,
+            ChangeSet {
+                changes: vec![Change::PutReminder(reminder("m-orphan-v19", "absent"))],
+            },
+            kanade::infrastructure::store::conformance::meta(),
+        )
+        .await;
+    assert!(
+        matches!(result, Err(StoreError::Constraint(_))),
+        "{result:?}"
+    );
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
 }
@@ -188,7 +243,11 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     // Roll the file back to what a version-1 build left behind.
     tamper(
         &config,
-        "DROP TABLE debug_cards;
+        "DROP INDEX decline_notices_pending;
+         ALTER TABLE decline_notices DROP COLUMN retract_pending;
+         ALTER TABLE decline_notices DROP COLUMN display_name;
+         ALTER TABLE decline_notices DROP COLUMN reference_id;
+         DROP TABLE debug_cards;
          DROP TABLE digest_card_phrases;
          DROP TABLE reminder_cards;
          DROP INDEX delivery_card_runs_run;
@@ -231,13 +290,13 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 19);
+    assert_eq!(store.schema_version().await.expect("version"), 20);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
     assert_eq!(
         ledger(&config).await,
         [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
         ]
     );
     let mut conn = SqliteConnectOptions::new()

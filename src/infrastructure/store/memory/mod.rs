@@ -28,6 +28,7 @@ use crate::domain::scheduler::{
 use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
+mod decline_notices;
 mod journal;
 mod members;
 mod model_log;
@@ -37,6 +38,7 @@ mod proposals;
 mod settings;
 mod web_sessions;
 
+use decline_notices::DeclineNotices;
 use journal::JournalTables;
 
 #[derive(Clone, Debug, Default)]
@@ -63,6 +65,7 @@ struct Tables {
     history: History,
     drafts: DraftTables,
     outbox: outbox::OutboxTable,
+    declines: DeclineNotices,
 }
 
 /// The change records (from genesis), the request digests stored beside
@@ -149,6 +152,100 @@ impl MemoryScheduleStore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+
+    fn commit_with_declines(
+        &self,
+        expected_revision: u64,
+        changes: ChangeSet,
+        meta: ChangeMeta,
+        candidates: Vec<crate::domain::notify::DeclineNotice>,
+        retractions: Vec<(String, String)>,
+    ) -> Result<Option<Committed>, StoreError> {
+        let runs = super::observer::touched_runs(&changes);
+        let result: Result<Option<Committed>, StoreError> = (|| {
+            let mut tables = self.tables();
+            if let Some(request_id) = &meta.origin.request_id
+                && let Some(earlier) = tables.history.request(&meta.origin.actor, request_id)
+            {
+                if earlier.digest != meta.request_digest {
+                    return Err(StoreError::IdempotencyMismatch {
+                        seq: earlier.committed.seq,
+                    });
+                }
+                return Ok(Some(earlier.committed));
+            }
+            check_expect(&tables, &meta)?;
+            if tables.revision != expected_revision {
+                return Err(StoreError::Conflict {
+                    expected: expected_revision,
+                    found: tables.revision,
+                });
+            }
+            if changes.is_empty() {
+                return Ok(None);
+            }
+            let keys = touched_keys(&changes);
+            let mut next = tables.clone();
+            for change in changes.changes {
+                apply(&mut next, change)?;
+            }
+            validate(&next)?;
+            for candidate in candidates {
+                next.declines.upsert(candidate)?;
+            }
+            for (run_id, user_id) in retractions {
+                if let Some(notice) = next.declines.rows.get_mut(&(run_id, user_id)) {
+                    notice.retract_pending = true;
+                }
+            }
+            next.revision += 1;
+            let rows = changed_rows(&keys, |key| tables.value(key), |key| next.value(key));
+            let weeks = touched_weeks(&rows, |run_id| {
+                next.runs
+                    .get(run_id)
+                    .or_else(|| tables.runs.get(run_id))
+                    .map(|run| run.week_start)
+            });
+            let request_digest = meta.request_digest.clone();
+            let record = ChangeRecord::seal(
+                next.history
+                    .records
+                    .last()
+                    .map(|last| (last.seq, last.hash.as_str())),
+                uuid::Uuid::new_v4().to_string(),
+                next.revision,
+                meta.clone(),
+                weeks,
+                rows,
+            )
+            .map_err(|error| StoreError::Constraint(error.to_string()))?;
+            meta.expect
+                .check_overrides_changed(&changed_fields(&record))
+                .map_err(StoreError::Precondition)?;
+            let committed = Committed {
+                seq: record.seq,
+                revision: record.revision,
+                replayed: false,
+            };
+            if let Some(digest) = request_digest {
+                next.history.digests.insert(record.seq, digest);
+            }
+            for key in changed_fields(&record) {
+                next.history.fields.insert(key, record.seq);
+            }
+            next.outbox
+                .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
+            next.history.records.push(record);
+            *tables = next;
+            Ok(Some(committed))
+        })();
+        if let Ok(Some(committed)) = &result
+            && !committed.replayed
+        {
+            self.runs_written.notify(&runs);
+        }
+        result
+    }
 }
 
 impl AttendanceHistory for MemoryScheduleStore {
@@ -209,82 +306,7 @@ impl ScheduleStore for MemoryScheduleStore {
         changes: ChangeSet,
         meta: ChangeMeta,
     ) -> Result<Option<Committed>, StoreError> {
-        let runs = super::observer::touched_runs(&changes);
-        let result: Result<Option<Committed>, StoreError> = (|| {
-            let mut tables = self.tables();
-            if let Some(request_id) = &meta.origin.request_id
-                && let Some(earlier) = tables.history.request(&meta.origin.actor, request_id)
-            {
-                if earlier.digest != meta.request_digest {
-                    return Err(StoreError::IdempotencyMismatch {
-                        seq: earlier.committed.seq,
-                    });
-                }
-                return Ok(Some(earlier.committed));
-            }
-            check_expect(&tables, &meta)?;
-            if tables.revision != expected_revision {
-                return Err(StoreError::Conflict {
-                    expected: expected_revision,
-                    found: tables.revision,
-                });
-            }
-            if changes.is_empty() {
-                return Ok(None);
-            }
-            let keys = touched_keys(&changes);
-            let mut next = tables.clone();
-            for change in changes.changes {
-                apply(&mut next, change)?;
-            }
-            validate(&next)?;
-            next.revision += 1;
-            let rows = changed_rows(&keys, |key| tables.value(key), |key| next.value(key));
-            let weeks = touched_weeks(&rows, |run_id| {
-                next.runs
-                    .get(run_id)
-                    .or_else(|| tables.runs.get(run_id))
-                    .map(|run| run.week_start)
-            });
-            let request_digest = meta.request_digest.clone();
-            let record = ChangeRecord::seal(
-                next.history
-                    .records
-                    .last()
-                    .map(|last| (last.seq, last.hash.as_str())),
-                uuid::Uuid::new_v4().to_string(),
-                next.revision,
-                meta.clone(),
-                weeks,
-                rows,
-            )
-            .map_err(|error| StoreError::Constraint(error.to_string()))?;
-            meta.expect
-                .check_overrides_changed(&changed_fields(&record))
-                .map_err(StoreError::Precondition)?;
-            let committed = Committed {
-                seq: record.seq,
-                revision: record.revision,
-                replayed: false,
-            };
-            if let Some(digest) = request_digest {
-                next.history.digests.insert(record.seq, digest);
-            }
-            for key in changed_fields(&record) {
-                next.history.fields.insert(key, record.seq);
-            }
-            next.outbox
-                .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
-            next.history.records.push(record);
-            *tables = next;
-            Ok(Some(committed))
-        })();
-        if let Ok(Some(committed)) = &result
-            && !committed.replayed
-        {
-            self.runs_written.notify(&runs);
-        }
-        result
+        self.commit_with_declines(expected_revision, changes, meta, Vec::new(), Vec::new())
     }
 }
 

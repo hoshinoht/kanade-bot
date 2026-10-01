@@ -15,7 +15,7 @@ use super::access::Invoker;
 use super::dispatch::CommandError;
 use crate::api::admin::config::ConfigDesk;
 use crate::api::rescan::RescanRunner;
-use crate::api::state::{GuildAccess, ReadStore};
+use crate::api::state::{DeclineRetraction, GuildAccess, ReadStore};
 use crate::api::write::{WriteContext, Writer};
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::{id_text, parse_id};
@@ -184,6 +184,8 @@ pub struct CommandContext {
     pub allowance: Option<Arc<dyn ChatAllowance>>,
     /// `None` until test cards have a delivery path.
     pub debug_cards: Option<Arc<dyn DebugCards>>,
+    /// Live best-effort decline retraction; absent in offline composition.
+    pub decline_retraction: Option<DeclineRetraction>,
     /// The bot's own name for access problems (v4 falls back to "the bot").
     pub bot_name: Option<String>,
     pub clock: Clock,
@@ -208,6 +210,12 @@ pub fn store_failed(error: StoreError) -> CommandError {
 impl CommandContext {
     pub fn now(&self) -> DateTime<Utc> {
         (self.clock)()
+    }
+
+    pub async fn retract_decline(&self, run_id: String, user_id: String) {
+        if let Some(retract) = &self.decline_retraction {
+            retract(run_id, user_id, self.now()).await;
+        }
     }
 
     /// v4 `is_admin`: the admin role only.

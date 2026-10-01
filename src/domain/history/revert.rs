@@ -59,6 +59,7 @@ impl<J: DeliveryJournal + Sync> HeldReminders for JournalHeld<'_, J> {
                 DeliveryTarget::Reminder(id) => Some(id.clone()),
                 DeliveryTarget::Digest(_)
                 | DeliveryTarget::Card(_)
+                | DeliveryTarget::Decline { .. }
                 | DeliveryTarget::DebugCard { .. } => None,
             })
             .collect())

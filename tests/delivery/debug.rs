@@ -268,6 +268,7 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
             user_id: Id::new(1002),
             answer: RsvpAnswer::Yes,
             added: true,
+            display_name: "1002".into(),
         })
         .await
         .expect("route");
@@ -283,6 +284,7 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
             user_id: Id::new(1009),
             answer: RsvpAnswer::No,
             added: true,
+            display_name: "1009".into(),
         })
         .await
         .expect("route");

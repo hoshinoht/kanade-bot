@@ -30,15 +30,16 @@ async fn held(
         return Ok(true);
     }
     for target in targets.iter().filter(|target| target.is_native()) {
-        let (kind, primary) = encode(target)?;
+        let (kind, primary, secondary) = encode(target)?;
         let claimed: Option<i64> = sqlx::query_scalar(
             "SELECT 1 FROM delivery_attempt_targets t JOIN delivery_attempts a USING (attempt_id)
              WHERE t.binding_type = ?1 AND t.key_primary = ?2
-               AND COALESCE(t.key_secondary, '') = '' AND t.released_at IS NULL
+                AND COALESCE(t.key_secondary, '') = ?3 AND t.released_at IS NULL
                AND a.dedupe_active = 1",
         )
         .bind(kind)
         .bind(&primary)
+        .bind(&secondary)
         .fetch_optional(&mut *tx)
         .await
         .map_err(backend)?;
@@ -135,6 +136,43 @@ async fn check_targets(
                         )));
                     }
                     Some((false, true, false)) => {}
+                }
+            }
+            DeliveryTarget::Decline { run_id, user_id } => {
+                let row: Option<(Option<String>, bool)> = sqlx::query_as(
+                    "SELECT d.message_id,
+                            EXISTS (
+                                SELECT 1 FROM delivery_attempt_targets t
+                                JOIN delivery_attempts a USING (attempt_id)
+                                WHERE t.binding_type = 'decline' AND t.key_primary = d.run_id
+                                  AND t.key_secondary = d.user_id
+                                  AND a.resolved_by = 'service:decline-retraction'
+                                  AND a.intended_at >= d.notified_at
+                            )
+                     FROM decline_notices d WHERE d.run_id = ?1 AND d.user_id = ?2",
+                )
+                .bind(run_id)
+                .bind(user_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(backend)?;
+                match row {
+                    None => {
+                        return Err(unavailable(format!(
+                            "decline notice for run {run_id} and member {user_id} does not exist"
+                        )));
+                    }
+                    Some((Some(_), _)) => {
+                        return Err(unavailable(format!(
+                            "decline notice for run {run_id} and member {user_id} is already bound"
+                        )));
+                    }
+                    Some((None, true)) => {
+                        return Err(unavailable(format!(
+                            "decline notice for run {run_id} and member {user_id} was retracted"
+                        )));
+                    }
+                    Some((None, false)) => {}
                 }
             }
             DeliveryTarget::DebugCard { run_id, .. } => {
@@ -278,16 +316,17 @@ async fn insert_attempt(
         .collect::<Result<Vec<_>, _>>()?;
     keys.sort();
     keys.dedup();
-    for (ordinal, (kind, primary, _)) in keys.iter().enumerate() {
+    for (ordinal, (kind, primary, secondary)) in keys.iter().enumerate() {
         sqlx::query(
             "INSERT INTO delivery_attempt_targets
              (attempt_id, target_ordinal, binding_type, key_primary, key_secondary)
-             VALUES (?1, ?2, ?3, ?4, NULL)",
+              VALUES (?1, ?2, ?3, ?4, ?5)",
         )
         .bind(&attempt.0)
         .bind(i64::try_from(ordinal).unwrap_or(i64::MAX))
         .bind(kind)
         .bind(primary)
+        .bind(secondary)
         .execute(&mut *tx)
         .await
         .map_err(backend)?;

@@ -17,6 +17,8 @@ pub mod cherry_pick_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod decline_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod draft_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod history_conformance;

@@ -18,6 +18,8 @@ pub enum DeliveryTarget {
     Digest(DateTime<Utc>),
     /// A proposal's card, by proposal (draft) id (v4 `DeliveryTarget.card`).
     Card(String),
+    /// A member's decline notice for one run.
+    Decline { run_id: String, user_id: String },
     /// A `/debug ping` test card for a run (v4 `DeliveryTarget.debug_card`).
     /// Not a native row: it holds nothing, is claimed per operation and is
     /// registered for the run only once bound.
@@ -31,6 +33,7 @@ impl DeliveryTarget {
             Self::Reminder(_) => "reminder",
             Self::Digest(_) => "digest",
             Self::Card(_) => "card",
+            Self::Decline { .. } => "decline",
             Self::DebugCard { .. } => "debug_card",
         }
     }
@@ -47,6 +50,7 @@ impl DeliveryTarget {
     pub fn key_primary(&self) -> Result<String, DateOutOfRange> {
         match self {
             Self::Reminder(id) | Self::Card(id) => Ok(id.clone()),
+            Self::Decline { run_id, .. } => Ok(run_id.clone()),
             Self::DebugCard { run_id, .. } => Ok(run_id.clone()),
             Self::Digest(week) => to_iso(week),
         }

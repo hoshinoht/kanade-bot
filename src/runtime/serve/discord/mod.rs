@@ -39,12 +39,12 @@ use crate::{
         admin::config::SettingsChanged,
         auth::Clock,
         rescan::RescanDesk,
-        state::{GuildAccess, ProposalCardRefresh},
+        state::{DeclineRetraction, GuildAccess, ProposalCardRefresh},
         write::ApiClock,
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::{CardRefresh, LogAlerts, RefreshQueue},
+        delivery::{CardRefresh, Delivery, LogAlerts, RefreshQueue},
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -132,6 +132,7 @@ pub struct Discord {
 }
 
 /// One card desk (journalled posts, ✅/❌ answers) over the shared store.
+#[allow(clippy::too_many_arguments)]
 fn card_desk<T: GatewayTransport>(
     config: &ServeConfig,
     store: &Arc<SqliteStore>,
@@ -140,6 +141,7 @@ fn card_desk<T: GatewayTransport>(
     roster: &Arc<LiveRoster>,
     access: &Arc<GuildAccess>,
     policy: &SchedulePolicy,
+    decline_retraction: Option<DeclineRetraction>,
 ) -> ChatDesk<T> {
     CardDesk::new(
         DeskDeps {
@@ -153,6 +155,7 @@ fn card_desk<T: GatewayTransport>(
                 access: Arc::clone(access),
             }),
             alerts: Arc::new(LogAlerts),
+            decline_retraction,
         },
         CardSettings {
             zone: config.runtime.timezone,
@@ -210,6 +213,35 @@ where
         stopped.clone(),
     );
 
+    let decline_retraction: DeclineRetraction = {
+        let store = Arc::clone(&store);
+        let transport = Arc::clone(&wiring.transport);
+        let roster = Arc::clone(&roster);
+        let cache = Arc::clone(&cache);
+        let config = delivery_config(&config.instance_id, policy.clone(), &composition.settings);
+        Arc::new(move |run_id, user_id, now| {
+            let store = Arc::clone(&store);
+            let transport = Arc::clone(&transport);
+            let roster = Arc::clone(&roster);
+            let cache = Arc::clone(&cache);
+            let config = config.clone();
+            Box::pin(async move {
+                let alerts = LogAlerts;
+                let mut delivery = Delivery::new(
+                    &*store,
+                    RandomIds,
+                    &*transport,
+                    &alerts,
+                    &*roster,
+                    &*cache,
+                    config,
+                );
+                let _ = delivery
+                    .retract_decline_notice(&run_id, &user_id, now)
+                    .await;
+            })
+        })
+    };
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
     let desk = Arc::new(card_desk(
@@ -220,6 +252,7 @@ where
         &roster,
         &access,
         &policy,
+        Some(Arc::clone(&decline_retraction)),
     ));
     let proposal_refresh: ProposalCardRefresh = {
         let desk = Arc::clone(&desk);
@@ -229,7 +262,10 @@ where
         })
     };
     match Arc::get_mut(&mut composition.admin.state) {
-        Some(state) => state.proposal_refresh = Some(proposal_refresh),
+        Some(state) => {
+            state.proposal_refresh = Some(proposal_refresh);
+            state.decline_retraction = Some(decline_retraction);
+        }
         None => {
             return Err(Error::Startup(
                 "the proposal-card refresh could not be attached".into(),
@@ -409,6 +445,8 @@ where
                 desk,
                 rsvp,
                 follow_up: Some(follow_up),
+                decline_retraction: composition.admin.state.decline_retraction.clone(),
+                clock: Arc::clone(&wiring.clock),
             }
             .run(reaction_queue),
         ),

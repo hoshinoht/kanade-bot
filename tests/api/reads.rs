@@ -22,8 +22,8 @@ use kanade::{
         listeners::Site,
         rescan::RescanDesk,
         state::{
-            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, ProposalCardRefresh,
-            RoleEntry, StaticChannels,
+            ApiState, ChannelEntry, ChannelGrants, ChannelList, DeclineRetraction, GuildAccess,
+            ProposalCardRefresh, RoleEntry, StaticChannels,
         },
         write::{ApiClock, SchedulerWriter},
     },
@@ -167,6 +167,8 @@ pub struct Reads {
     pub rescans: Arc<FakeRescans>,
     /// The post-commit proposal-card refresh port's calls.
     pub proposal_refreshes: Arc<Mutex<Vec<Vec<String>>>>,
+    /// The post-commit decline-retraction port's calls.
+    pub decline_retractions: Arc<Mutex<Vec<(String, String)>>>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -480,6 +482,16 @@ impl Reads {
                 })
             })
         };
+        let decline_retractions = Arc::new(Mutex::new(Vec::new()));
+        let decline_retraction: DeclineRetraction = {
+            let calls = Arc::clone(&decline_retractions);
+            Arc::new(move |run_id, user_id, _| {
+                let calls = Arc::clone(&calls);
+                Box::pin(async move {
+                    calls.lock().unwrap().push((run_id, user_id));
+                })
+            })
+        };
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -521,6 +533,7 @@ impl Reads {
             config: config.map(|make| make(store.clone())),
             chat: None,
             proposal_refresh: Some(proposal_refresh),
+            decline_retraction: Some(decline_retraction),
         };
         let mut http = fixture.http();
         if logins {
@@ -554,6 +567,7 @@ impl Reads {
             discord,
             rescans,
             proposal_refreshes,
+            decline_retractions,
             _fixture: fixture,
             _dir: dir,
         }

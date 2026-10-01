@@ -106,6 +106,25 @@ pub(super) async fn bind(
                     )));
                 }
             }
+            DeliveryTarget::Decline { run_id, user_id } => {
+                let changed = sqlx::query(
+                    "UPDATE decline_notices SET channel_id = ?1, message_id = ?2
+                     WHERE run_id = ?3 AND user_id = ?4 AND message_id IS NULL",
+                )
+                .bind(&receipt.channel_id)
+                .bind(&receipt.message_id)
+                .bind(&run_id)
+                .bind(&user_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(backend)?
+                .rows_affected();
+                if changed != 1 {
+                    return Err(state_changed(format!(
+                        "decline notice for run {run_id} and member {user_id} is gone or bound"
+                    )));
+                }
+            }
             // Test cards have no target rows (bound below).
             DeliveryTarget::DebugCard { .. } => {}
         }

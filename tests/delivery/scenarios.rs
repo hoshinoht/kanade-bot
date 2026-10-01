@@ -346,6 +346,7 @@ async fn fallback_binds_and_maps_reactions<S: Store>(store: &S) {
             user_id: Id::new(1001),
             answer: RsvpAnswer::Yes,
             added: true,
+            display_name: "1001".into(),
         })
         .await
         .expect("route");

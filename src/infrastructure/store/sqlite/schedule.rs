@@ -346,11 +346,13 @@ enum Outcome {
 /// One commit on the writer. The flag is false when the connection's
 /// transaction state is unknown (a failed COMMIT or ROLLBACK, e.g. after
 /// SQLite rolled back on its own), so the caller must replace it.
-async fn commit_on(
+pub(super) async fn commit_on(
     conn: &mut SqliteConnection,
     expected_revision: u64,
     changes: ChangeSet,
     meta: ChangeMeta,
+    candidates: &[crate::domain::notify::DeclineNotice],
+    retractions: &[(String, String)],
 ) -> (Result<Option<Committed>, StoreError>, bool) {
     // A failed BEGIN (busy, or a worker that ran it but never answered)
     // leaves the connection's transaction depth unknown.
@@ -376,6 +378,8 @@ async fn commit_on(
         let keys = touched_keys(&changes);
         let before = history::row_values(&mut tx, &keys).await?;
         write(&mut tx, Collapsed::new(changes)).await?;
+        super::decline_notices::upsert(&mut tx, candidates).await?;
+        super::decline_notices::mark_retractions(&mut tx, retractions).await?;
         let after = history::row_values(&mut tx, &keys).await?;
         let committed = history::append(&mut tx, found + 1, meta, &before, &after).await?;
         Ok(Outcome::Written(committed))
@@ -445,7 +449,8 @@ impl ScheduleStore for SqliteStore {
             .await
             .map_err(|error| StoreError::Backend(error.to_string()))?;
         let runs = crate::infrastructure::store::observer::touched_runs(&changes);
-        let (result, healthy) = commit_on(lease.conn(), expected_revision, changes, meta).await;
+        let (result, healthy) =
+            commit_on(lease.conn(), expected_revision, changes, meta, &[], &[]).await;
         lease.finish(healthy);
         if let Ok(Some(committed)) = &result
             && !committed.replayed

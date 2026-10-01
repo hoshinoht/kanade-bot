@@ -62,6 +62,7 @@ impl<T: GatewayTransport> Commands<T> {
                 .clone()
                 .map(|chat| chat as Arc<dyn ChatAllowance>),
             debug_cards: Some(Arc::clone(&self.debug)),
+            decline_retraction: state.decline_retraction.clone(),
             bot_name,
             clock: Arc::clone(&state.clock),
         });

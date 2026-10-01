@@ -19,6 +19,7 @@ use crate::domain::history::{
     changes_for_week, sha256_hex,
 };
 use crate::domain::members::Directory;
+use crate::domain::notify::{DeclineNotice, DeclineNoticeStore};
 use crate::domain::schedule::{
     self, AmendedRun, Draft, FixedEdit, FixedEditRequest, FixedField, FixedRun, FixedRunPatch,
     NewFixedRun, NewRun, Notice, NoticeChange, Op, OpResult, Outcome, ReactionResult, Reminder,
@@ -121,6 +122,25 @@ pub struct Attributed<'a, S, I, C> {
     service: &'a mut SchedulerService<S, I, C>,
     origin: Origin,
     expect: Expect,
+}
+
+/// Delivery facts captured when a member declines.  The deciding RSVP commit
+/// stores them with the durable candidate, rather than relying on a later
+/// roster lookup for the member's name or source-message context.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeclineNoticeContext {
+    pub channel_id: Option<String>,
+    pub reference_id: Option<String>,
+    pub display_name: String,
+}
+
+/// An RSVP write's observable decline side effects.  Callers invoke delivery
+/// retraction only after this committed result is returned.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeclineRsvpResult<T> {
+    pub value: T,
+    pub declined: bool,
+    pub retract: bool,
 }
 
 impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
@@ -980,6 +1000,171 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             }),
             other => unreachable!("change_fixed_party returned {other:?}"),
         }
+    }
+}
+
+impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
+    async fn commit_rsvp_with_decline<T>(
+        self,
+        run_id: &str,
+        user_id: &str,
+        context: DeclineNoticeContext,
+        request: String,
+        mut plan: impl FnMut(
+            &mut Draft,
+            DateTime<Utc>,
+        ) -> Result<(T, bool, bool, Option<String>), ScheduleError>,
+    ) -> SchedulerResult<DeclineRsvpResult<T>> {
+        self.expect
+            .validate(&self.origin.actor)
+            .map_err(SchedulerError::Precondition)?;
+        let now = self.service.clock.now();
+        let request = if self.expect.is_empty() {
+            request
+        } else {
+            digest("expect", &(request, &self.expect.canonical()))
+        };
+        let meta = ChangeMeta {
+            origin: self.origin.clone(),
+            at: now,
+            notices: Vec::new(),
+            refs: self.expect.overrides.clone(),
+            request_digest: self.origin.request_id.as_ref().map(|_| request),
+            expect: self.expect,
+            outbox: Vec::new(),
+        };
+        check_request(&self.service.store, &meta).await?;
+        let mut attempt = 1;
+        loop {
+            let snapshot = self
+                .service
+                .store
+                .load(&Scope::Run(run_id.to_owned()))
+                .await?;
+            let revision = snapshot.revision;
+            let mut draft = Draft::new(snapshot).with_attendance(self.service.attendance);
+            let (value, declined, retract, home_channel) = match plan(&mut draft, now) {
+                Ok(value) => value,
+                Err(error) => {
+                    return Err(self.service.explain_refusal(revision, &meta, error).await);
+                }
+            };
+            let changes = draft.into_changes();
+            if changes.is_empty() {
+                self.service.check_no_op(revision, &meta).await?;
+                return Ok(DeclineRsvpResult {
+                    value,
+                    declined: false,
+                    retract: false,
+                });
+            }
+            let candidates = if declined
+                && self.origin.surface != Surface::Import
+                && !self
+                    .service
+                    .store
+                    .decline_notice_on_cooldown(run_id, user_id, now)
+                    .await?
+            {
+                vec![DeclineNotice::candidate(
+                    run_id,
+                    user_id,
+                    context.channel_id.clone().or(home_channel),
+                    context.reference_id.clone(),
+                    context.display_name.clone(),
+                    now,
+                )]
+            } else {
+                Vec::new()
+            };
+            match self
+                .service
+                .store
+                .commit_with_decline_notices(
+                    revision,
+                    changes,
+                    meta.clone(),
+                    candidates,
+                    retract
+                        .then(|| (run_id.to_owned(), user_id.to_owned()))
+                        .into_iter()
+                        .collect(),
+                )
+                .await
+            {
+                Ok(Some(committed)) if committed.replayed => {
+                    return Err(already_applied(committed));
+                }
+                Ok(_) => {
+                    return Ok(DeclineRsvpResult {
+                        value,
+                        declined,
+                        retract,
+                    });
+                }
+                Err(StoreError::Conflict { .. }) if attempt < COMMIT_ATTEMPTS => attempt += 1,
+                Err(error) => return Err(store_failure(error)),
+            }
+        }
+    }
+
+    /// Apply a card RSVP while atomically recording a new decline candidate.
+    pub async fn apply_reaction_with_decline(
+        self,
+        run_id: &str,
+        user_id: &str,
+        emoji: &str,
+        added: bool,
+        context: DeclineNoticeContext,
+    ) -> SchedulerResult<DeclineRsvpResult<ReactionResult>> {
+        let request = digest("apply_reaction", &(run_id, user_id, emoji, added));
+        self.commit_rsvp_with_decline(run_id, user_id, context, request, |draft, now| {
+            let was_no = draft.rsvps(run_id).get(user_id) == Some(&RsvpState::No);
+            let result = schedule::apply_reaction(draft, run_id, user_id, emoji, added, now)?;
+            let home = draft.require_run(run_id)?.channel_id.clone();
+            Ok((
+                result.clone(),
+                result.applied && result.state == Some(RsvpState::No),
+                result.applied && was_no && result.state != Some(RsvpState::No),
+                home,
+            ))
+        })
+        .await
+    }
+
+    /// Set or clear a portal-style RSVP with v4's decline/retraction effects.
+    pub async fn portal_answer_with_decline(
+        self,
+        run_id: &str,
+        user_id: &str,
+        answer: Option<RsvpState>,
+        context: DeclineNoticeContext,
+    ) -> SchedulerResult<DeclineRsvpResult<bool>> {
+        let request = digest("portal_answer", &(run_id, user_id, answer));
+        self.commit_rsvp_with_decline(run_id, user_id, context, request, |draft, now| {
+            let before = draft.require_run(run_id)?;
+            if !before.participants.iter().any(|user| user == user_id) {
+                return Err(ScheduleError::NotOnRun(vec![user_id.to_owned()]));
+            }
+            let was_no = draft.rsvps(run_id).get(user_id) == Some(&RsvpState::No);
+            match answer {
+                Some(state) => draft.set_rsvp(run_id, user_id, state, RsvpSource::Chat, now),
+                None => draft.clear_rsvp(run_id, user_id),
+            }
+            let after = draft.require_run(run_id)?;
+            let status = schedule::derive_run_status(draft, &after, after.status, now).status;
+            let changed = status != after.status;
+            if changed {
+                draft.set_run_status(run_id, status);
+            }
+            Ok((
+                changed,
+                answer == Some(RsvpState::No),
+                was_no && answer != Some(RsvpState::No),
+                after.channel_id,
+            ))
+        })
+        .await
     }
 }
 

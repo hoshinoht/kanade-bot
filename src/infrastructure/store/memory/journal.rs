@@ -54,6 +54,7 @@ struct AttemptRow {
     message_id: Option<String>,
     resolved_by: Option<String>,
     reason: String,
+    intended_at: DateTime<Utc>,
     targets: Vec<TargetRow>,
 }
 
@@ -186,7 +187,7 @@ fn suppress_natives(
             }
             DeliveryTarget::Digest(week) => tables.journal.raise_marker(*week, at)?,
             // A refused card stays unposted and may be claimed again.
-            DeliveryTarget::Card(_) => {}
+            DeliveryTarget::Card(_) | DeliveryTarget::Decline { .. } => {}
             DeliveryTarget::DebugCard { .. } => {}
         }
     }
@@ -222,6 +223,7 @@ fn claim_in(
     lease: &Lease,
     intent: &NotificationIntent,
     requested: Option<i64>,
+    at: DateTime<Utc>,
 ) -> Result<Claim, JournalError> {
     tables.journal.check_live(lease)?;
     let next = tables
@@ -302,6 +304,32 @@ fn claim_in(
                     ));
                 }
             }
+            DeliveryTarget::Decline { run_id, user_id } => {
+                tables
+                    .declines
+                    .claimable(run_id, user_id)
+                    .map_err(JournalError::TargetUnavailable)?;
+                let notified_at = tables
+                    .declines
+                    .notified_at(run_id, user_id)
+                    .expect("claimable decline notice exists");
+                if journal.attempts.values().any(|row| {
+                    row.resolved_by.as_deref()
+                        == Some(crate::domain::notify::DECLINE_RETRACTION_ACTOR)
+                        && row.intended_at >= notified_at
+                        && row.targets.iter().any(|held| {
+                            held.target
+                                == DeliveryTarget::Decline {
+                                    run_id: run_id.clone(),
+                                    user_id: user_id.clone(),
+                                }
+                        })
+                }) {
+                    return Err(JournalError::TargetUnavailable(format!(
+                        "decline notice for run {run_id} and member {user_id} was retracted"
+                    )));
+                }
+            }
             DeliveryTarget::DebugCard { run_id, .. } => {
                 if !tables.runs.contains_key(run_id) {
                     return Err(JournalError::TargetUnavailable(format!(
@@ -334,6 +362,7 @@ fn claim_in(
             message_id: None,
             resolved_by: None,
             reason: String::new(),
+            intended_at: at,
             targets: targets
                 .into_iter()
                 .map(|target| TargetRow {
@@ -366,6 +395,7 @@ fn claim_source_in(
     intent: &NotificationIntent,
     source: &str,
     source_ordinal: i64,
+    at: DateTime<Utc>,
 ) -> Result<Claim, JournalError> {
     tables.journal.check_live(lease)?;
     if !intent.targets.is_empty() {
@@ -402,6 +432,7 @@ fn claim_source_in(
             message_id: None,
             resolved_by: None,
             reason: String::new(),
+            intended_at: at,
             targets: Vec::new(),
         },
     );
@@ -484,6 +515,10 @@ fn bind_in(
                 card.message_id = Some(receipt.message_id.clone());
                 card.posted_at = Some(super::micros(at));
             }
+            DeliveryTarget::Decline { run_id, user_id } => tables
+                .declines
+                .bind(run_id, user_id, &receipt.channel_id, &receipt.message_id)
+                .map_err(state_changed)?,
             DeliveryTarget::DebugCard { .. } => {}
         }
     }
@@ -630,9 +665,9 @@ impl DeliveryJournal for MemoryScheduleStore {
         lease: &Lease,
         intent: &NotificationIntent,
         effect_ordinal: Option<i64>,
-        _at: DateTime<Utc>,
+        at: DateTime<Utc>,
     ) -> Result<Claim, JournalError> {
-        self.journal_write(|tables| claim_in(tables, lease, intent, effect_ordinal))
+        self.journal_write(|tables| claim_in(tables, lease, intent, effect_ordinal, at))
     }
 
     async fn claim_source(
@@ -641,9 +676,9 @@ impl DeliveryJournal for MemoryScheduleStore {
         intent: &NotificationIntent,
         source: &str,
         ordinal: i64,
-        _at: DateTime<Utc>,
+        at: DateTime<Utc>,
     ) -> Result<Claim, JournalError> {
-        self.journal_write(|tables| claim_source_in(tables, lease, intent, source, ordinal))
+        self.journal_write(|tables| claim_source_in(tables, lease, intent, source, ordinal, at))
     }
 
     async fn bind(
@@ -708,6 +743,87 @@ impl DeliveryJournal for MemoryScheduleStore {
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
         self.journal_write(|tables| replace_in(tables, lease, digest, at))
+    }
+
+    async fn retire_decline_retraction(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        _at: DateTime<Utc>,
+    ) -> Result<(), JournalError> {
+        self.journal_write(|tables| {
+            tables.journal.check_live(lease)?;
+            let target = DeliveryTarget::Decline {
+                run_id: run_id.into(),
+                user_id: user_id.into(),
+            };
+            let attempt = tables.journal.attempts.iter().find_map(|(id, row)| {
+                (row.state == AttemptState::Bound
+                    && row.dedupe_active
+                    && row.channel_id == channel_id
+                    && row.message_id.as_deref() == Some(message_id)
+                    && row
+                        .targets
+                        .iter()
+                        .any(|held| !held.released && held.target == target))
+                .then_some(id.clone())
+            });
+            let Some(attempt) = attempt else {
+                return Err(state_changed("no bound claim matches the decline notice"));
+            };
+            tables
+                .declines
+                .retract(run_id, user_id, channel_id, message_id)
+                .map_err(state_changed)?;
+            let attempt = tables.journal.attempt(&AttemptId(attempt))?;
+            retire(
+                attempt,
+                crate::domain::notify::DECLINE_RETRACTION_ACTOR,
+                crate::domain::notify::DECLINE_RETRACTION_REASON,
+            );
+            tables.revision += 1;
+            Ok(())
+        })
+    }
+
+    async fn resolve_decline_retract_pending(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        _at: DateTime<Utc>,
+    ) -> Result<bool, JournalError> {
+        self.journal_write(|tables| {
+            tables.journal.check_live(lease)?;
+            let Some(notice) = tables
+                .declines
+                .rows
+                .get_mut(&(run_id.into(), user_id.into()))
+            else {
+                return Ok(false);
+            };
+            if !notice.retract_pending || notice.message_id.is_some() {
+                return Ok(false);
+            }
+            let target = DeliveryTarget::Decline {
+                run_id: run_id.into(),
+                user_id: user_id.into(),
+            };
+            let Some(attempt) = tables.journal.attempts.values_mut().find(|row| {
+                row.state == AttemptState::Retired
+                    && row.resolved_by.as_deref() == Some(NOT_SENT_ACTOR)
+                    && row.targets.iter().any(|held| held.target == target)
+            }) else {
+                return Ok(false);
+            };
+            attempt.resolved_by = Some(crate::domain::notify::DECLINE_RETRACTION_ACTOR.into());
+            attempt.reason = crate::domain::notify::DECLINE_RETRACTION_REASON.into();
+            notice.retract_pending = false;
+            Ok(true)
+        })
     }
 
     async fn retire_unproven(

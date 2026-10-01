@@ -15,14 +15,16 @@ use crate::domain::{
     },
     ids::RandomIds,
     members::Roster,
+    notify::DeclineNoticeStore,
     proposals::Approver,
     requests::NoFreezes,
     schedule::{
         FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange,
     },
     scheduler::{
-        Approved, Clock, IdSource, ProposalApproved, ProposalError, ProposalPreview, Rejected,
-        RequestError, RequestPreview, ScheduleStore, SchedulerResult, SchedulerService, StoreError,
+        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, IdSource, ProposalApproved,
+        ProposalError, ProposalPreview, Rejected, RequestError, RequestPreview, ScheduleStore,
+        SchedulerResult, SchedulerService, StoreError,
     },
 };
 
@@ -73,6 +75,18 @@ pub trait Writer: Send + Sync {
         write: RunWrite,
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, ()>;
+
+    /// An RSVP with its durable decline candidate. The caller owns the
+    /// best-effort post-commit S2 retraction.
+    fn rsvp<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        run_id: &'a str,
+        user_id: &'a str,
+        answer: Option<RsvpState>,
+        decline: DeclineNoticeContext,
+    ) -> WriteFuture<'a, DeclineRsvpResult<bool>>;
 
     fn add_fixed<'a>(
         &'a self,
@@ -239,7 +253,7 @@ impl<S: ScheduleStore + Clone, I: IdSource, C: Clock> SchedulerWriter<S, I, C> {
 
 impl<S, I, C> Writer for SchedulerWriter<S, I, C>
 where
-    S: ScheduleStore + ChangeHistory + ProposalStore + Clone + Send + Sync,
+    S: ScheduleStore + DeclineNoticeStore + ChangeHistory + ProposalStore + Clone + Send + Sync,
     // Rollbacks borrow the whole service across awaits.
     I: IdSource + Send + Sync,
     C: Clock + Send + Sync,
@@ -278,6 +292,25 @@ where
                     .map(drop),
                 RunWrite::Reset => handle.reset_to_fixed(run_id, &ctx.policy).await.map(drop),
             }
+        })
+    }
+
+    fn rsvp<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        run_id: &'a str,
+        user_id: &'a str,
+        answer: Option<RsvpState>,
+        decline: DeclineNoticeContext,
+    ) -> WriteFuture<'a, DeclineRsvpResult<bool>> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .expecting(expect)
+                .portal_answer_with_decline(run_id, user_id, answer, decline)
+                .await
         })
     }
 

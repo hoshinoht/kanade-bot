@@ -25,7 +25,7 @@ use kanade::domain::history::Origin;
 use kanade::domain::history::{Actor, Surface};
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::DeliveryJournal;
+use kanade::domain::notify::{DeclineNoticeStore, DeliveryJournal};
 use kanade::domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
 use kanade::domain::schedule::RsvpSource;
 use kanade::domain::schedule::{
@@ -159,6 +159,7 @@ fn desk_at(
             directory: Arc::new(Roster),
             authority: Arc::new(Staff),
             alerts: alerts.clone(),
+            decline_retraction: None,
         },
         CardSettings {
             zone: zone(),
@@ -674,6 +675,117 @@ async fn chat_answers_count_for_participants_only() {
 }
 
 #[tokio::test]
+async fn proposal_decline_is_not_a_candidate_but_extraction_decline_is() {
+    let proposal_world = World::new().await;
+    let change = ProposedChange {
+        run_id: Some(proposal_world.run.clone()),
+        channel_id: Some(CHANNEL.into()),
+        participants: vec![MY.into()],
+        rsvp: Some(RsvpState::No),
+        ..ProposedChange::new(ChangeKind::Rsvp)
+    };
+    let proposed = service(&proposal_world.store, &proposal_world.ids)
+        .propose(
+            ProposalRequest {
+                change: change.clone(),
+                source: ProposalSource::Chat,
+                source_id: "chat-no-1".into(),
+                supersede: Supersede::Keep,
+            },
+            &policy(),
+            &Roster,
+        )
+        .await
+        .expect("proposal");
+    let proposal_id = proposed.proposal.id;
+    let entry = CardEntry {
+        proposal_id: proposal_id.clone(),
+        change,
+        kind: AmendmentKind::Rsvp,
+        run_id: Some(proposal_world.run.clone()),
+        summary: "I can't make it".into(),
+        is_question: false,
+        needs_answer: false,
+        confidence: 0.9,
+        also_mentioned: Vec::new(),
+        day_ref: None,
+        time_ref: None,
+        evidence_message_ids: vec!["101".into()],
+        self_service: None,
+    };
+    proposal_world
+        .desk
+        .post_card(&card(vec![entry], Vec::new()))
+        .await;
+    let message = proposal_world
+        .message_of(&proposal_id)
+        .await
+        .expect("posted proposal");
+    assert!(matches!(
+        proposal_world
+            .desk
+            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
+            .await,
+        CardReaction::Approved { .. }
+    ));
+    assert!(
+        proposal_world
+            .store
+            .decline_notice(&proposal_world.run, MY)
+            .await
+            .expect("decline notice")
+            .is_none()
+    );
+    assert!(
+        proposal_world
+            .store
+            .pending_decline_notices(10)
+            .await
+            .expect("pending declines")
+            .is_empty()
+    );
+    assert_eq!(
+        proposal_world.discord.count(Op::Create),
+        1,
+        "only the proposal card was posted"
+    );
+
+    let extraction_world = World::new().await;
+    let outbox = CardOutbox(Arc::new(desk(
+        &extraction_world.store,
+        &extraction_world.discord,
+        &extraction_world.alerts,
+        &extraction_world.ids,
+    )));
+    Outbox::answers(
+        &outbox,
+        vec![ChatAnswer {
+            channel_id: "301".into(),
+            run_id: extraction_world.run.clone(),
+            user_ids: vec![ALVIN.into()],
+            state: RsvpState::No,
+        }],
+    )
+    .await;
+    let candidate = extraction_world
+        .store
+        .decline_notice(&extraction_world.run, ALVIN)
+        .await
+        .expect("decline notice")
+        .expect("extraction decline candidate");
+    assert_eq!(candidate.channel_id.as_deref(), Some("301"));
+    assert_eq!(
+        extraction_world
+            .store
+            .pending_decline_notices(10)
+            .await
+            .expect("pending declines")
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
     let world = World::new().await;
     let desk = Arc::new(desk(
@@ -1078,6 +1190,7 @@ async fn a_send_whose_journal_write_failed_still_counts_as_posted() {
                 directory: Arc::new(Roster),
                 authority: Arc::new(Staff),
                 alerts: world.alerts.clone(),
+                decline_retraction: None,
             },
             CardSettings {
                 zone: zone(),

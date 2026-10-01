@@ -33,8 +33,9 @@ use crate::{
     },
     domain::{
         history::{BlameTarget, rsvp_field},
-        members::MemberProfile,
+        members::{Directory, MemberProfile},
         schedule::{RsvpState, RunStatus, ScheduleSnapshot, StatusChange},
+        scheduler::DeclineNoticeContext,
         scheduler::{SchedulerError, Scope},
     },
 };
@@ -381,21 +382,46 @@ pub async fn rsvp(
         "clear" => None,
         _ => return Err(Refusal::invalid("An answer is yes, no or clear.")),
     };
+    let state = state(&site)?;
+    let origin = origin(&session, &headers)?;
     // Membership is checked by the scheduler, after the preconditions: a
     // member removed since the client's version (with their answer) is 409.
-    let (run, version) = edit(
-        &site,
-        &session,
-        &headers,
-        &run_id,
+    load_run(state, &run_id).await?;
+    let (_, explicit) = declared(request.version, request.expect, request.overrides);
+    let expect = expectations(
+        state.store.as_ref(),
+        BlameTarget::Run(run_id.clone()),
         &[rsvp_field(&request.member_id)],
-        declared(request.version, request.expect, request.overrides),
-        RunWrite::Rsvp {
-            user_id: request.member_id,
-            answer,
-        },
+        Some(request.version),
+        &explicit,
+        origin.request_id.is_some(),
     )
     .await?;
+    let (ctx, profiles) = write_context(state).await?;
+    let decline = DeclineNoticeContext {
+        channel_id: None,
+        reference_id: None,
+        display_name: ctx
+            .directory
+            .display_name(&request.member_id)
+            .unwrap_or_else(|| request.member_id.clone()),
+    };
+    match state
+        .writer
+        .rsvp(origin, expect, &run_id, &request.member_id, answer, decline)
+        .await
+    {
+        Ok(result) => {
+            if result.retract {
+                state
+                    .retract_decline(run_id.clone(), request.member_id.clone())
+                    .await;
+            }
+        }
+        Err(SchedulerError::AlreadyApplied { .. }) => {}
+        Err(error) => return Err(scheduler(error)),
+    }
+    let (run, version) = after(&site, state, &run_id, &profiles).await?;
     Ok(Json(RunResult { run, version }).into_response())
 }
 

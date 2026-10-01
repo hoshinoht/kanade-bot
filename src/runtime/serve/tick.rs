@@ -250,7 +250,11 @@ impl<T: DiscordTransport> TickLoop<T> {
                 _ = interval.tick() => {}
             }
             self.refresh(&mut delivery.config).await;
-            match delivery.tick_at((self.clock)()).await {
+            let now = (self.clock)();
+            if let Err(error) = delivery.drain_decline_notices(now).await {
+                tick_failed("decline", &error);
+            }
+            match delivery.tick_at(now).await {
                 Ok(report) => {
                     self.status.ticked();
                     log_report(&report);

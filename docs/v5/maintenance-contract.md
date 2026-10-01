@@ -171,6 +171,40 @@ requests use operation ID/effect ordinal: a new request may repeat intentionally
 An internal retry never receives a fresh operation/key; notifying retries are
 removed rather than falsely promising exactly-once transport.
 
+### Decline-notice native row (schema v20)
+
+`decline_notices` is the pre-existing v1 table keyed by `(run_id, user_id)`.
+Schema v20 is additive: it adds `reference_id`, `display_name` and
+`retract_pending`; it does not change the existing columns or add a foreign
+key. The row is the native identity for a later `decline` delivery target.
+
+| Column | Meaning and NULL semantics |
+| --- | --- |
+| `run_id`, `user_id` | Composite primary key. |
+| `channel_id` | Destination/source channel when known; NULL on retained legacy rows. |
+| `reference_id` | Source message to reply to; NULL when there is no source message or on a pre-v20 row. |
+| `display_name` | Decliner name captured with the candidate; NULL only on retained pre-v20 rows. |
+| `message_id` | NULL before Discord confirms the post and after its exact message is confirmed deleted; non-NULL is the current bound message. |
+| `notified_at` | Required UTC ISO timestamp of the candidate; retained after deletion for the six-hour cooldown. |
+| `retract_pending` | Required `0`/`1`, default `0`; a retraction during an in-flight send sets `1`. |
+
+The DDL checks `display_name IS NULL OR length(display_name) <= 128` and
+`retract_pending IN (0, 1)`. Candidate writes nevertheless require a non-NULL
+display name; NULL is accepted only to retain pre-v20 rows. The bounded recovery
+scan reads at most 100 rows in `(notified_at, run_id, user_id)` order and
+includes an unbound row or a bound row with `retract_pending=1`; its matching
+partial index has the same predicate and order. A candidate upsert is part of the deciding
+schedule transaction (`commit_with_decline_notices`): refused, conflicted and
+replayed commits leave it unchanged. A bound row is never overwritten by a
+candidate. Binding accepts only an unbound exact key; confirmed deletion clears
+only the same message id and clears `retract_pending`, retaining `notified_at`.
+
+The executor must delete a late-bound message when `retract_pending` is set.
+An ambiguous deletion leaves its message binding in place and therefore
+suppresses replacement; only a confirmed deletion may clear it. Schema v20 is a
+future version to an older image, so rollback is the old image plus a pre-v20
+whole-store backup, never an in-place downgrade.
+
 ## Fingerprints and finalization
 
 Canonicalize in memory; persist only versioned SHA-256 values, no plaintext

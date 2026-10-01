@@ -23,6 +23,7 @@ use crate::domain::schedule::{
 use crate::domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerResult, SchedulerService,
 };
+use crate::domain::scheduler::{DeclineNoticeContext, DeclineRsvpResult};
 
 /// The two answers a card reaction can give.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +49,9 @@ pub struct RsvpReaction {
     pub user_id: Id<UserMarker>,
     pub answer: RsvpAnswer,
     pub added: bool,
+    /// Captured from the gateway event while it is available; removals fall
+    /// back to the synced roster for the mandatory candidate display name.
+    pub display_name: String,
 }
 
 /// Keep reactions that answer an RSVP. The bot itself, any bot account
@@ -82,12 +86,26 @@ pub fn rsvp_reaction(
         RsvpState::No => RsvpAnswer::No,
         RsvpState::Maybe => return None,
     };
+    let user_id = id_text(reaction.user_id);
+    let display_name = reaction
+        .member
+        .as_ref()
+        .and_then(|member| {
+            member
+                .nick
+                .clone()
+                .or_else(|| member.user.global_name.clone())
+                .or_else(|| Some(member.user.name.clone()))
+        })
+        .or_else(|| directory.display_name(&user_id))
+        .unwrap_or_else(|| user_id.clone());
     Some(RsvpReaction {
         channel_id: reaction.channel_id,
         message_id: reaction.message_id,
         user_id: reaction.user_id,
         answer,
         added,
+        display_name,
     })
 }
 
@@ -112,12 +130,13 @@ pub trait ReactionSink: Send {
         user_id: &str,
         emoji: &str,
         added: bool,
-    ) -> impl Future<Output = SchedulerResult<ReactionResult>> + Send;
+        decline: DeclineNoticeContext,
+    ) -> impl Future<Output = SchedulerResult<DeclineRsvpResult<ReactionResult>>> + Send;
 }
 
 impl<S, I, C> ReactionSink for SchedulerService<S, I, C>
 where
-    S: ScheduleStore + Send + Sync,
+    S: ScheduleStore + crate::domain::notify::DeclineNoticeStore + Send + Sync,
     I: IdSource + Send,
     C: Clock + Send + Sync,
 {
@@ -127,10 +146,11 @@ where
         user_id: &str,
         emoji: &str,
         added: bool,
-    ) -> impl Future<Output = SchedulerResult<ReactionResult>> + Send {
+        decline: DeclineNoticeContext,
+    ) -> impl Future<Output = SchedulerResult<DeclineRsvpResult<ReactionResult>>> + Send {
         // Each reaction is its member's own change, made in Discord.
         self.as_origin(Origin::new(Actor::member(user_id), Surface::Discord))
-            .apply_reaction(run_id, user_id, emoji, added)
+            .apply_reaction_with_decline(run_id, user_id, emoji, added, decline)
     }
 }
 
@@ -157,6 +177,13 @@ pub struct ReactionRouter<I, S> {
     pub sink: S,
 }
 
+/// One committed card RSVP plus whether the caller should invoke S2 now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutedReaction {
+    pub result: ReactionResult,
+    pub retract: bool,
+}
+
 impl<I: CardIndex, S: ReactionSink> ReactionRouter<I, S> {
     pub fn new(index: I, sink: S) -> Self {
         Self { index, sink }
@@ -171,6 +198,20 @@ impl<I: CardIndex, S: ReactionSink> ReactionRouter<I, S> {
         &mut self,
         reaction: &RsvpReaction,
     ) -> Result<Vec<ReactionResult>, RouteError> {
+        Ok(self
+            .route_declines(reaction)
+            .await?
+            .into_iter()
+            .map(|routed| routed.result)
+            .collect())
+    }
+
+    /// Route the reaction and retain its committed retraction decision for
+    /// the post-commit delivery adapter.
+    pub async fn route_declines(
+        &mut self,
+        reaction: &RsvpReaction,
+    ) -> Result<Vec<RoutedReaction>, RouteError> {
         let runs = self
             .index
             .runs_for_message(reaction.message_id)
@@ -181,10 +222,23 @@ impl<I: CardIndex, S: ReactionSink> ReactionRouter<I, S> {
         for run_id in runs {
             match self
                 .sink
-                .apply_reaction(&run_id, &user_id, reaction.answer.emoji(), reaction.added)
+                .apply_reaction(
+                    &run_id,
+                    &user_id,
+                    reaction.answer.emoji(),
+                    reaction.added,
+                    DeclineNoticeContext {
+                        channel_id: Some(id_text(reaction.channel_id)),
+                        reference_id: Some(id_text(reaction.message_id)),
+                        display_name: reaction.display_name.clone(),
+                    },
+                )
                 .await
             {
-                Ok(result) => results.push(result),
+                Ok(result) => results.push(RoutedReaction {
+                    retract: result.retract,
+                    result: result.value,
+                }),
                 Err(SchedulerError::Schedule(ScheduleError::UnknownRun(_))) => {}
                 Err(error) => return Err(RouteError::Scheduler(error)),
             }

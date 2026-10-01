@@ -150,6 +150,13 @@ re-derived afterwards (parent decision 2026-09-25):
 - A replayed request (`AlreadyApplied`), a refused, stale, conflicting or
   empty write writes nothing, so a retry finds exactly the rows the first
   attempt wrote: none are lost and none repeat.
+- A decline candidate is an operational companion to its deciding RSVP commit:
+  `DeclineNoticeStore::commit_with_decline_notices` writes it in that same
+  transaction, but it is not a schedule row and therefore not a field in the
+  canonical change record. Replayed, refused and rolled-back commits do not
+  write or update the candidate. Delivery binding, pending retraction and
+  confirmed deletion are operational state, not additional history records;
+  `maintenance-contract.md` defines their exact retention and rollback rules.
 - The payload is the domain `Notice`, not text: existing kinds retain their
   byte-identical version-1 JSON, while `FixedAdded`/`FixedRemoved` use version
   2 to retain a timing's facts after removal. Both versions decode. On rollback

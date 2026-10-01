@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 posts v4-exact decline notices again: a ❌ reaction replies to the card,
+  `/rsvp no` and portal declines go to the run's home channel, and extraction
+  declines post in the source channel, with v4's cooldown. Changing the answer
+  back deletes the notice, even if it was still being sent. Chat proposal cards
+  and v4 import post none. Store schema v20: rollback needs the previous image
+  plus a pre-v20 backup.
 - v5 admin Members now uses the M3E roster list-detail layout: the member
   editor is a side pane beside the roster on wide screens and a full-screen
   sheet on phones.

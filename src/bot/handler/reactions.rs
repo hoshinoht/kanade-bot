@@ -7,6 +7,8 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::mpsc;
 
+use crate::api::auth::Clock;
+use crate::api::state::DeclineRetraction;
 use crate::bot::cards::{CardDesk, CardReaction};
 use crate::bot::delivery::AlertSink;
 use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
@@ -35,11 +37,20 @@ pub struct Reactions<S, T, I, A, X, K> {
     /// Optional while chat is unavailable; rejection follow-ups never delay
     /// the sequential reaction worker beyond their scope checks.
     pub follow_up: Option<Arc<dyn RejectionFollowUp>>,
+    /// Best-effort S2 deletion after a committed RSVP answer replaces a no.
+    pub decline_retraction: Option<DeclineRetraction>,
+    pub clock: Clock,
 }
 
 impl<S, T, I, A, X, K> Reactions<S, T, I, A, X, K>
 where
-    S: ScheduleStore + ProposalStore + ProposalCardStore + DeliveryJournal + Send + Sync,
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
@@ -83,8 +94,22 @@ where
             }
             return Reacted::Card(card);
         }
-        match self.rsvp.route(reaction).await {
-            Ok(results) => Reacted::Rsvp(results.len()),
+        match self.rsvp.route_declines(reaction).await {
+            Ok(results) => {
+                for routed in &results {
+                    if routed.retract
+                        && let Some(retract) = &self.decline_retraction
+                    {
+                        retract(
+                            routed.result.run_id.clone(),
+                            id_text(reaction.user_id),
+                            (self.clock)(),
+                        )
+                        .await;
+                    }
+                }
+                Reacted::Rsvp(results.len())
+            }
             Err(error) => {
                 // Scheduler/lookup text can quote store errors; log the kind only.
                 let kind = match error {

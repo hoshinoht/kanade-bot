@@ -16,6 +16,7 @@ use super::format::{
     Audience, CardView, SUPERSEDED_NOTICE, applied_notice, proposal_card, rejected_notice,
     unanswered,
 };
+use crate::api::state::DeclineRetraction;
 use crate::bot::delivery::{
     AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
 };
@@ -62,6 +63,7 @@ pub struct DeskDeps<S, T, I, A> {
     pub directory: Arc<dyn Directory + Send + Sync>,
     pub authority: Arc<dyn Authority>,
     pub alerts: Arc<A>,
+    pub decline_retraction: Option<DeclineRetraction>,
 }
 
 /// Posts, refreshes and answers proposal cards.
@@ -73,6 +75,7 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) directory: Arc<dyn Directory + Send + Sync>,
     pub(super) authority: Arc<dyn Authority>,
     pub(super) alerts: Arc<A>,
+    pub(super) decline_retraction: Option<DeclineRetraction>,
     throttle: AlertThrottle,
     pub(super) settings: CardSettings,
 }
@@ -149,7 +152,13 @@ fn with_notices(content: &str, notices: &[String]) -> String {
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
-    S: ScheduleStore + ProposalStore + ProposalCardStore + DeliveryJournal + Send + Sync,
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
@@ -163,6 +172,7 @@ where
             directory: deps.directory,
             authority: deps.authority,
             alerts: deps.alerts,
+            decline_retraction: deps.decline_retraction,
             throttle: AlertThrottle::new(),
             settings,
         }

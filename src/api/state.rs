@@ -43,6 +43,13 @@ pub type ReadFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> 
 pub type ProposalCardRefresh =
     Arc<dyn Fn(Vec<String>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+/// The live delivery side's best-effort, post-commit decline deletion. It is
+/// absent in offline API composition; durable pending state is recovered by
+/// the delivery tick in that case.
+pub type DeclineRetraction = Arc<
+    dyn Fn(String, String, DateTime<Utc>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync,
+>;
+
 /// Object-safe reads over any store that implements the domain ports.
 pub trait ReadStore: Send + Sync {
     fn snapshot(&self, scope: Scope) -> ReadFuture<'_, ScheduleSnapshot>;
@@ -529,6 +536,8 @@ pub struct ApiState {
     pub chat: Option<Arc<crate::chat::driver::ChatHandle>>,
     /// The shared CardDesk refresh, attached only after Discord composition.
     pub proposal_refresh: Option<ProposalCardRefresh>,
+    /// The shared delivery retraction, attached only after Discord composition.
+    pub decline_retraction: Option<DeclineRetraction>,
 }
 
 impl std::fmt::Debug for ApiState {
@@ -561,6 +570,15 @@ impl ApiState {
             && let Some(refresh) = &self.proposal_refresh
         {
             refresh(proposal_ids).await;
+        }
+    }
+
+    /// Delete a bound decline notice after its RSVP commit. Delivery failures
+    /// are intentionally contained: S2 keeps the durable pending retraction
+    /// for the next recovery tick.
+    pub async fn retract_decline(&self, run_id: String, user_id: String) {
+        if let Some(retract) = &self.decline_retraction {
+            retract(run_id, user_id, self.now()).await;
         }
     }
 }

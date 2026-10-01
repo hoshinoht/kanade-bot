@@ -111,7 +111,13 @@ fn failure(error: &ProposalError) -> Failure {
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
-    S: ScheduleStore + ProposalStore + ProposalCardStore + DeliveryJournal + Send + Sync,
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,

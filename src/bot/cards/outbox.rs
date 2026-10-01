@@ -11,21 +11,28 @@ use crate::domain::history::{Actor, Origin, Surface};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, RsvpSource, RsvpState};
-use crate::domain::scheduler::{IdSource, ScheduleStore};
+use crate::domain::scheduler::{DeclineNoticeContext, IdSource, ScheduleStore};
 use crate::extract::pipeline::{BacklogDrop, Card, ChatAnswer, Outbox, PostResult, Redirected};
 
 use super::desk::CardDesk;
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
-    S: ScheduleStore + ProposalStore + ProposalCardStore + DeliveryJournal + Send + Sync,
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
 {
-    /// v4 `_apply_rsvp`: the member's ✅/❌ as if reacted (participants
-    /// only; status re-derived), then the answer recorded as from chat.
-    /// Returns how many answers applied. Decline notices are not sent yet.
+    /// v4 extraction `_apply_rsvp`: this is fed only by
+    /// [`crate::extract::pipeline::Outbox::answers`], never proposal-card
+    /// approval. The member's ✅/❌ is applied first, then recorded as chat;
+    /// an extraction decline enters the durable delivery drain.
     pub async fn apply_answers(&self, answers: &[ChatAnswer]) -> usize {
         let now = self.now();
         let mut applied = 0;
@@ -40,15 +47,33 @@ where
                 let mut service = self.service(now);
                 let Ok(result) = service
                     .as_origin(origin.clone())
-                    .apply_reaction(&answer.run_id, user_id, emoji, true)
+                    .apply_reaction_with_decline(
+                        &answer.run_id,
+                        user_id,
+                        emoji,
+                        true,
+                        DeclineNoticeContext {
+                            channel_id: Some(answer.channel_id.clone()),
+                            reference_id: None,
+                            display_name: self
+                                .directory
+                                .display_name(user_id)
+                                .unwrap_or_else(|| user_id.clone()),
+                        },
+                    )
                     .await
                 else {
                     continue;
                 };
-                if !result.applied {
+                if !result.value.applied {
                     continue;
                 }
                 applied += 1;
+                if result.retract
+                    && let Some(retract) = &self.decline_retraction
+                {
+                    retract(answer.run_id.clone(), user_id.clone(), now).await;
+                }
                 let _ = service
                     .as_origin(origin)
                     .set_rsvp(&answer.run_id, user_id, answer.state, RsvpSource::Chat)
@@ -64,7 +89,13 @@ pub struct CardOutbox<S, T, I, A>(pub Arc<CardDesk<S, T, I, A>>);
 
 impl<S, T, I, A> Outbox for CardOutbox<S, T, I, A>
 where
-    S: ScheduleStore + ProposalStore + ProposalCardStore + DeliveryJournal + Send + Sync,
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,

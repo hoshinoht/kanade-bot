@@ -42,17 +42,25 @@ fn corrupt(detail: impl std::fmt::Display) -> JournalError {
     JournalError::Backend(format!("stored journal row is unreadable: {detail}"))
 }
 
-/// `(binding_type, key_primary)`; reminders and digests have no secondary key.
-fn encode(target: &DeliveryTarget) -> Result<(&'static str, String), JournalError> {
-    Ok((target.binding_type(), target.key_primary()?))
+/// `(binding_type, key_primary, key_secondary)` for a native target.
+fn encode(target: &DeliveryTarget) -> Result<(String, String, String), JournalError> {
+    crate::domain::notify::claim_key(target).map_err(Into::into)
 }
 
-/// Target families this journal plans; others (decline, debug) are ignored.
-fn decode(binding_type: &str, key: &str) -> Result<Option<DeliveryTarget>, JournalError> {
+/// Target families this journal plans; debug cards are operation-scoped.
+fn decode(
+    binding_type: &str,
+    key: &str,
+    secondary: Option<&str>,
+) -> Result<Option<DeliveryTarget>, JournalError> {
     Ok(match binding_type {
         "reminder" => Some(DeliveryTarget::Reminder(key.to_owned())),
         "digest" => Some(DeliveryTarget::Digest(from_iso(key).map_err(corrupt)?)),
         "card" => Some(DeliveryTarget::Card(key.to_owned())),
+        "decline" => Some(DeliveryTarget::Decline {
+            run_id: key.to_owned(),
+            user_id: secondary.unwrap_or_default().to_owned(),
+        }),
         _ => None,
     })
 }
@@ -145,7 +153,7 @@ async fn attempt_targets(
     attempt: &AttemptId,
 ) -> Result<Vec<(DeliveryTarget, bool)>, JournalError> {
     let rows = sqlx::query(
-        "SELECT binding_type, key_primary, released_at IS NOT NULL AS released
+        "SELECT binding_type, key_primary, key_secondary, released_at IS NOT NULL AS released
          FROM delivery_attempt_targets WHERE attempt_id = ?1 ORDER BY target_ordinal",
     )
     .bind(&attempt.0)
@@ -156,8 +164,9 @@ async fn attempt_targets(
     for row in rows {
         let kind: String = row.try_get("binding_type").map_err(corrupt)?;
         let key: String = row.try_get("key_primary").map_err(corrupt)?;
+        let secondary: Option<String> = row.try_get("key_secondary").map_err(corrupt)?;
         let released: bool = row.try_get("released").map_err(corrupt)?;
-        if let Some(target) = decode(&kind, &key)? {
+        if let Some(target) = decode(&kind, &key, secondary.as_deref())? {
             targets.push((target, released));
         }
     }
@@ -229,7 +238,7 @@ async fn suppress_natives(
             DeliveryTarget::Digest(week) => raise_marker(tx, *week, at).await?,
             // A refused card stays unposted; the next pass in its channel
             // may claim it again.
-            DeliveryTarget::Card(_) => {}
+            DeliveryTarget::Card(_) | DeliveryTarget::Decline { .. } => {}
             // Never a target row: nothing to suppress.
             DeliveryTarget::DebugCard { .. } => {}
         }
@@ -280,7 +289,7 @@ async fn release_and_retire(
 impl DeliveryJournal for SqliteStore {
     async fn load_view(&self) -> Result<ActiveClaims, JournalError> {
         let rows = sqlx::query(
-            "SELECT t.binding_type, t.key_primary FROM delivery_attempt_targets t
+            "SELECT t.binding_type, t.key_primary, t.key_secondary FROM delivery_attempt_targets t
              JOIN delivery_attempts a USING (attempt_id)
              WHERE t.released_at IS NULL AND a.dedupe_active = 1
                AND a.state IN ('intent', 'indeterminate')",
@@ -292,7 +301,8 @@ impl DeliveryJournal for SqliteStore {
         for row in rows {
             let kind: String = row.try_get("binding_type").map_err(corrupt)?;
             let key: String = row.try_get("key_primary").map_err(corrupt)?;
-            held.extend(decode(&kind, &key)?);
+            let secondary: Option<String> = row.try_get("key_secondary").map_err(corrupt)?;
+            held.extend(decode(&kind, &key, secondary.as_deref())?);
         }
         Ok(ActiveClaims::new(held))
     }
@@ -438,6 +448,30 @@ impl DeliveryJournal for SqliteStore {
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
         write_tx!(self, tx => retire::for_replacement(&mut tx, lease, digest, at))
+    }
+
+    async fn retire_decline_retraction(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        at: DateTime<Utc>,
+    ) -> Result<(), JournalError> {
+        write_tx!(self, tx => retire::decline_retraction(
+            &mut tx, lease, run_id, user_id, channel_id, message_id, at
+        ))
+    }
+
+    async fn resolve_decline_retract_pending(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        at: DateTime<Utc>,
+    ) -> Result<bool, JournalError> {
+        write_tx!(self, tx => retire::resolve_decline_pending(&mut tx, lease, run_id, user_id, at))
     }
 
     async fn retire_unproven(

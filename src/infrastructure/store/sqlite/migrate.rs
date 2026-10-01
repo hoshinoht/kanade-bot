@@ -91,6 +91,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 19,
         sql: include_str!("migrations/0019_model_log_usage.sql"),
     },
+    Migration {
+        version: 20,
+        sql: include_str!("migrations/0020_decline_notices.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -217,7 +221,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 19);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 20);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -296,7 +300,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 19);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 20);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -331,7 +335,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v18 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 19);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 20);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -412,7 +416,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 19);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 20);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -495,7 +499,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v19 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 19);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 20);
         let rows: Vec<UsageRow<String>> = sqlx::query_as(
             "SELECT id, prompt_tokens, completion_tokens, prompt_estimate, \
              typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
@@ -577,7 +581,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 19);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 20);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",

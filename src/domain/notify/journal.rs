@@ -29,6 +29,10 @@ pub const NOT_SENT_ACTOR: &str = "service:delivery-not-sent";
 /// v4 `_DIGEST_REPLACEMENT_ACTOR` / `_REASON`.
 pub const DIGEST_REPLACEMENT_ACTOR: &str = "service:digest-replacement";
 pub const DIGEST_REPLACEMENT_REASON: &str = "confirmed Discord deletion for digest replacement";
+/// v4's resolved-by metadata for a confirmed decline-notice deletion.
+pub const DECLINE_RETRACTION_ACTOR: &str = "service:decline-retraction";
+/// v4's resolved-by reason for a confirmed decline-notice deletion.
+pub const DECLINE_RETRACTION_REASON: &str = "confirmed Discord deletion for decline retraction";
 /// The config key holding the last posted digest week.
 pub const DIGEST_MARKER_KEY: &str = "last_digest_week";
 
@@ -144,6 +148,7 @@ impl DedupeKey {
 pub fn claim_key(target: &DeliveryTarget) -> Result<(String, String, String), DateOutOfRange> {
     let secondary = match target {
         DeliveryTarget::DebugCard { kind, .. } => kind.clone(),
+        DeliveryTarget::Decline { user_id, .. } => user_id.clone(),
         _ => String::new(),
     };
     Ok((
@@ -463,6 +468,28 @@ pub trait DeliveryJournal {
         digest: &WeeklyDigest,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), JournalError>> + Send;
+
+    /// After Discord confirmed a decline notice is gone, atomically clear its
+    /// exact binding, release the target and retire its bound attempt.
+    fn retire_decline_retraction(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<(), JournalError>> + Send;
+
+    /// Resolve a pending retraction after the create was proven unsent. The
+    /// retired attempt becomes the durable no-replay marker for that candidate.
+    fn resolve_decline_retract_pending(
+        &self,
+        lease: &Lease,
+        run_id: &str,
+        user_id: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, JournalError>> + Send;
 
     /// Operator recovery: retire an unresolved attempt whose own lease is no
     /// longer live, without proof of delivery. Its reminders are never

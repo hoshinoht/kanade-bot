@@ -9,8 +9,9 @@ use super::{
     require_intent, state_changed, suppress_natives,
 };
 use crate::domain::notify::{
-    AttemptId, DIGEST_REPLACEMENT_ACTOR, DIGEST_REPLACEMENT_REASON, EffectKind, JournalError,
-    Lease, NOT_SENT_ACTOR, REJECTED_ACTOR, WeeklyDigest, check_resolution,
+    AttemptId, DECLINE_RETRACTION_ACTOR, DECLINE_RETRACTION_REASON, DIGEST_REPLACEMENT_ACTOR,
+    DIGEST_REPLACEMENT_REASON, EffectKind, JournalError, Lease, NOT_SENT_ACTOR, REJECTED_ACTOR,
+    WeeklyDigest, check_resolution,
 };
 
 pub(super) async fn rejected(
@@ -82,6 +83,115 @@ pub(super) async fn for_replacement(
     )
     .await?;
     bump_revision(tx).await
+}
+
+/// v4 `_retire_decline_retraction`: after Discord confirms deletion, clear
+/// exactly the bound row and release/retire its matching attempt together.
+pub(super) async fn decline_retraction(
+    tx: &mut SqliteConnection,
+    lease: &Lease,
+    run_id: &str,
+    user_id: &str,
+    channel_id: &str,
+    message_id: &str,
+    at: DateTime<Utc>,
+) -> Result<(), JournalError> {
+    check_live(tx, lease).await?;
+    let attempt: Option<String> = sqlx::query_scalar(
+        "SELECT a.attempt_id FROM decline_notices d
+         JOIN delivery_attempt_targets t ON t.binding_type = 'decline'
+          AND t.key_primary = d.run_id AND t.key_secondary = d.user_id
+         JOIN delivery_attempts a USING (attempt_id)
+         WHERE d.run_id = ?1 AND d.user_id = ?2 AND d.channel_id = ?3 AND d.message_id = ?4
+           AND t.released_at IS NULL AND a.state = 'bound' AND a.dedupe_active = 1
+           AND a.channel_id = d.channel_id AND a.message_id = d.message_id
+           AND a.effect_kind = 'decline.notice'",
+    )
+    .bind(run_id)
+    .bind(user_id)
+    .bind(channel_id)
+    .bind(message_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(backend)?;
+    let Some(attempt) = attempt.map(AttemptId) else {
+        return Err(state_changed("no bound claim matches the decline notice"));
+    };
+    let cleared = sqlx::query(
+        "UPDATE decline_notices SET message_id = NULL, retract_pending = 0
+         WHERE run_id = ?1 AND user_id = ?2 AND channel_id = ?3 AND message_id = ?4",
+    )
+    .bind(run_id)
+    .bind(user_id)
+    .bind(channel_id)
+    .bind(message_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(backend)?
+    .rows_affected();
+    if cleared != 1 {
+        return Err(state_changed("decline retraction lost its native row"));
+    }
+    release_and_retire(
+        tx,
+        &attempt,
+        DECLINE_RETRACTION_ACTOR,
+        DECLINE_RETRACTION_REASON,
+        at,
+    )
+    .await?;
+    bump_revision(tx).await
+}
+
+/// Convert a proven-unsent decline attempt into the durable retraction marker.
+pub(super) async fn resolve_decline_pending(
+    tx: &mut SqliteConnection,
+    lease: &Lease,
+    run_id: &str,
+    user_id: &str,
+    _at: DateTime<Utc>,
+) -> Result<bool, JournalError> {
+    check_live(tx, lease).await?;
+    let attempt: Option<String> = sqlx::query_scalar(
+        "SELECT a.attempt_id FROM decline_notices d
+         JOIN delivery_attempt_targets t ON t.binding_type = 'decline'
+          AND t.key_primary = d.run_id AND t.key_secondary = d.user_id
+         JOIN delivery_attempts a USING (attempt_id)
+         WHERE d.run_id = ?1 AND d.user_id = ?2 AND d.message_id IS NULL
+           AND d.retract_pending = 1 AND a.state = 'retired'
+           AND a.resolved_by = 'service:delivery-not-sent' LIMIT 1",
+    )
+    .bind(run_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(backend)?;
+    let Some(attempt) = attempt else {
+        return Ok(false);
+    };
+    let changed = sqlx::query(
+        "UPDATE delivery_attempts SET resolved_by = ?1, resolution_reason = ?2 WHERE attempt_id = ?3",
+    )
+    .bind(DECLINE_RETRACTION_ACTOR)
+    .bind(DECLINE_RETRACTION_REASON)
+    .bind(&attempt)
+    .execute(&mut *tx)
+    .await
+    .map_err(backend)?
+    .rows_affected();
+    if changed != 1 {
+        return Err(state_changed("decline retraction attempt changed"));
+    }
+    sqlx::query(
+        "UPDATE decline_notices SET retract_pending = 0 WHERE run_id = ?1 AND user_id = ?2
+         AND message_id IS NULL AND retract_pending = 1",
+    )
+    .bind(run_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(backend)?;
+    Ok(true)
 }
 
 pub(super) async fn unproven(

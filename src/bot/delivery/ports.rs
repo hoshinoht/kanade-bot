@@ -13,6 +13,7 @@ use crate::domain::drafts::{
     NewProposal, ProposalCreated, ProposalInfo, ProposalStore, StoredDraft, StoredProposal,
 };
 use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
+use crate::domain::notify::{DeclineNotice, DeclineNoticeStore};
 use crate::domain::schedule::{ChangeSet, ScheduleSnapshot};
 use crate::domain::scheduler::{
     Clock, Committed, IdSource, RecordedRequest, ScheduleStore, Scope, StoreError,
@@ -46,6 +47,78 @@ impl<S: ScheduleStore + Sync> ScheduleStore for StoreRef<'_, S> {
         meta: ChangeMeta,
     ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
         self.0.commit(expected_revision, changes, meta)
+    }
+}
+
+impl<S: DeclineNoticeStore + Sync> DeclineNoticeStore for StoreRef<'_, S> {
+    fn commit_with_decline_notices(
+        &self,
+        expected_revision: u64,
+        changes: ChangeSet,
+        meta: ChangeMeta,
+        candidates: Vec<DeclineNotice>,
+        retractions: Vec<(String, String)>,
+    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
+        self.0.commit_with_decline_notices(
+            expected_revision,
+            changes,
+            meta,
+            candidates,
+            retractions,
+        )
+    }
+
+    fn decline_notice(
+        &self,
+        run_id: &str,
+        user_id: &str,
+    ) -> impl Future<Output = Result<Option<DeclineNotice>, StoreError>> + Send {
+        self.0.decline_notice(run_id, user_id)
+    }
+
+    fn pending_decline_notices(
+        &self,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<DeclineNotice>, StoreError>> + Send {
+        self.0.pending_decline_notices(limit)
+    }
+
+    fn bind_decline_notice(
+        &self,
+        run_id: &str,
+        user_id: &str,
+        channel_id: &str,
+        message_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        self.0
+            .bind_decline_notice(run_id, user_id, channel_id, message_id)
+    }
+
+    fn mark_decline_retract_pending(
+        &self,
+        run_id: &str,
+        user_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        self.0.mark_decline_retract_pending(run_id, user_id)
+    }
+
+    fn clear_decline_notice_message(
+        &self,
+        run_id: &str,
+        user_id: &str,
+        message_id: &str,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        self.0
+            .clear_decline_notice_message(run_id, user_id, message_id)
+    }
+
+    fn decline_notice_on_cooldown(
+        &self,
+        run_id: &str,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
+        self.0.decline_notice_on_cooldown(run_id, user_id, now)
     }
 }
 

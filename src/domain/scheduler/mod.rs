@@ -20,4 +20,7 @@ pub use proposals::{
     Supersede, SupersedeScope,
 };
 pub use requests::{Approved, Rejected, RequestError, RequestPreview, RequestResult};
-pub use service::{Attributed, COMMIT_ATTEMPTS, SchedulerError, SchedulerResult, SchedulerService};
+pub use service::{
+    Attributed, COMMIT_ATTEMPTS, DeclineNoticeContext, DeclineRsvpResult, SchedulerError,
+    SchedulerResult, SchedulerService,
+};
