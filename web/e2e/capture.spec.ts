@@ -108,11 +108,12 @@ for (const vp of VIEWPORTS) {
 
       await page.goto(`${ADMIN}/fixed?sw=off`);
       await page.getByRole('button', { name: 'Edit Friday 21:30 — XKalos' }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      const fixedEditor = vp.name === 'wide' ? page.getByRole('complementary', { name: 'Weekly timing details' }) : page.getByRole('dialog');
+      await expect(fixedEditor).toBeVisible();
       await shot(page, `admin-fixed-editor-${tag}`);
-      await page.getByRole('dialog').getByLabel('Time').fill('21:00');
-      await page.getByRole('button', { name: 'Save…' }).click();
-      await expect(page.getByRole('radio', { name: 'Update to the new timing' })).toBeVisible();
+      await fixedEditor.getByLabel('Time').fill('21:00');
+      await fixedEditor.getByRole('button', { name: 'Save…' }).click();
+      await expect(fixedEditor.getByRole('radio', { name: 'Update to the new timing' })).toBeVisible();
       await shot(page, `admin-fixed-choice-${tag}`);
 
       await page.goto(`${ADMIN}/members?sw=off`);

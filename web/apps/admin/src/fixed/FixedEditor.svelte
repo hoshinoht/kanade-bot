@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, Modal, dayLabel } from '@kanade/ui';
+  import { BossTag, Modal, SidePane, dayLabel } from '@kanade/ui';
+  import '@kanade/ui/styles/fixed.scss';
   import BossGrid from '../bosses/BossGrid.svelte';
   import { send } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
@@ -13,6 +14,8 @@
 
   let {
     open = $bindable(false),
+    wide,
+    modalOpen,
     row,
     bosses,
     channels,
@@ -21,8 +24,12 @@
     version,
     onsaved,
     onstale,
+    onclose,
+    onretire,
   }: {
     open: boolean;
+    wide: boolean;
+    modalOpen: boolean;
     /** null = add a new timing. */
     row: FixedRow | null;
     bosses: BossRow[];
@@ -34,6 +41,8 @@
     onsaved: (row: FixedRow, message: string) => void;
     /** The timing changed underneath (409): the page re-reads it. */
     onstale: () => void;
+    onclose: () => void;
+    onretire: (row: FixedRow) => void;
   } = $props();
 
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -141,24 +150,28 @@
   }
 </script>
 
-<Modal
-  bind:open
-  title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'}
-  eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'}
->
-  <form id="{uid}-form" onsubmit={submit} novalidate>
+<svelte:window onkeydown={(event) => {
+  if (wide && !modalOpen && event.key === 'Escape') {
+    event.preventDefault();
+    onclose();
+  }
+}} />
+
+{#snippet formBody()}
+  <form id="{uid}-form" class="fixedsheet__form" onsubmit={submit} novalidate>
+    <div class="fixedsheet__content">
     {#if step === 'edit'}
       <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
-      <div class="modal__well"><BossGrid rows={bosses} bind:selected /></div>
-      <div class="filters">
-        <label class="field field--grow">
+      <div class="fixedsheet__bosses"><BossGrid rows={bosses} bind:selected /></div>
+      <label class="field fixedsheet__typed">
           <span>…or type them</span>
           <input bind:value={typed} placeholder="hstar, hfa" aria-describedby="{uid}-check" />
-        </label>
-        <span class="boss-check" id="{uid}-check" role="status">
-          {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
-          {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
-        </span>
+      </label>
+      <span class="boss-check" id="{uid}-check" role="status">
+        {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
+        {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
+      </span>
+      <div class="fixedsheet__fields">
         <label class="field">
           <span>Day</span>
           <select bind:value={weekday}>
@@ -166,14 +179,14 @@
           </select>
         </label>
         <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
-        <label class="field field--grow">
+        <label class="field">
           <span>Home channel</span>
           <select bind:value={channel}>
             {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
           </select>
         </label>
-        <label class="field field--grow"><span>Note</span><input bind:value={note} /></label>
       </div>
+      <label class="field fixedsheet__note"><span>Note</span><input bind:value={note} /></label>
       <fieldset class="field">
         <legend class="label">Party</legend>
         <div class="run__people">
@@ -205,8 +218,38 @@
       {/each}
     {/if}
     <p class="field__error" role="alert">{error}</p>
+    </div>
+    {#if wide}
+      <footer class="fixedsheet__foot">
+        {#if row && step === 'edit'}<button class="btn btn--danger" type="button" onclick={() => onretire(row)}>Retire…</button>{/if}
+        {#if step === 'choose'}
+          <button class="btn" type="button" onclick={() => (step = 'edit')}>Back</button>
+        {:else}
+          <button class="btn" type="button" onclick={onclose}>Cancel</button>
+        {/if}
+        <button class="btn btn--primary" type="submit" form="{uid}-form" disabled={busy}>
+          {row ? (step === 'edit' && amended.length ? 'Save…' : 'Save changes') : 'Add timing'}
+        </button>
+      </footer>
+    {/if}
   </form>
-  {#snippet footer(close)}
+{/snippet}
+
+{#if wide}
+  <SidePane label="Weekly timing details" className="side-pane--fixed">
+    <header class="fixedsheet__head">
+      <div>
+        <p class="cap">{row ? `#${row.short_id} · edit` : 'Baseline · new'}</p>
+        <h2>{row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'New weekly timing'}</h2>
+      </div>
+      <button class="btn btn--ghost fixedsheet__close" type="button" aria-label="Close weekly timing details" onclick={onclose}>×</button>
+    </header>
+    {@render formBody()}
+  </SidePane>
+{:else}
+  <Modal bind:open title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'} eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'} narrow className="fixedsheet" onclose={onclose}>
+    {@render formBody()}
+    {#snippet footer(close)}
     {#if step === 'choose'}
       <button class="btn" type="button" onclick={() => (step = 'edit')}>Back</button>
     {:else}
@@ -216,42 +259,5 @@
       {row ? (step === 'edit' && amended.length ? 'Save…' : 'Save changes') : 'Add timing'}
     </button>
   {/snippet}
-</Modal>
-
-<style>
-  .boss-check {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3rem;
-    min-height: 2.5rem;
-  }
-
-  .choice {
-    margin: 0.6rem 0;
-    padding: 0.5rem 0.7rem;
-    border: 2px solid var(--line-soft);
-    border-radius: var(--r-sm);
-  }
-
-  .choice__opt {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2rem;
-  }
-
-  .field--grow {
-    flex: 1 1 10rem;
-  }
-
-  .modal__well {
-    max-height: 40dvh;
-    overflow-y: auto;
-    margin-top: 0.35rem;
-    padding: 0.5rem;
-    background: var(--raise);
-    border: 2px solid var(--line-soft);
-    border-radius: var(--r-sm);
-  }
-</style>
+  </Modal>
+{/if}

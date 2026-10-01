@@ -29,6 +29,7 @@
   border-left: 1.5px solid var(--line);
   background: var(--surface);
 }
+.side-pane--fixed { flex-basis: min(420px, 42vw); }
 
 .thread-panel {
   min-width: 0;

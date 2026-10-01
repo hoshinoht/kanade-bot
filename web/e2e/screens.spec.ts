@@ -18,7 +18,7 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   await expect(page.getByRole('row', { name: /Gatekeeper Kalos/ }).getByText('1 run amended')).toBeVisible();
 
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
-  const editor = page.getByRole('dialog', { name: 'Add a weekly timing' });
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByRole('textbox', { name: '…or type them' }).fill('hstar, cfoo');
   await expect(editor.getByRole('status').filter({ hasText: 'is not a boss' })).toBeVisible();
   await editor.getByRole('textbox', { name: '…or type them' }).fill('');
@@ -43,7 +43,7 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
 test('fixed: editing a timing with an amended run asks update or keep', async ({ page }) => {
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Edit Friday 21:30 — XKalos' }).click();
-  const editor = page.getByRole('dialog', { name: 'Friday 21:30 — XKalos' });
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await expect(editor.getByRole('checkbox', { name: 'Extreme Gatekeeper Kalos' })).toBeChecked();
   await editor.getByLabel('Time').fill('21:00');
   await editor.getByRole('button', { name: 'Save…' }).click();
@@ -84,7 +84,7 @@ async function editXbmBehind(page: Page, change: Partial<{ note: string; time: s
 test('fixed: an edit sends the version it was loaded at; conflicts are per field, as on the server', async ({ page }) => {
   await go(page, '/fixed');
   const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
-  const editor = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editButton.click();
   await editor.getByLabel('Note').fill('Bring potions');
   // A change to another run moves the week version but touches none of this timing's fields.
@@ -128,7 +128,7 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
 test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date advice', async ({ page }) => {
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
-  const editor = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByLabel('Note').fill('Bring potions');
   await page.route('**/api/admin/fixed/*', (route) =>
     route.request().method() === 'PATCH'
@@ -152,7 +152,8 @@ test('admin writes: a refused CSRF token is refreshed once and the same action r
     const request = response.request();
     if (request.method() === 'DELETE') writes.push({ status: response.status(), key: (await request.allHeaders())['idempotency-key'] });
   });
-  await page.getByRole('button', { name: 'Retire Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('complementary', { name: 'Weekly timing details' }).getByRole('button', { name: 'Retire…' }).click();
   await page.getByRole('button', { name: 'Retire timing' }).click();
   await expect(toast(page, 'Retired Tuesday 23:30 — XBM; 1 upcoming run cancelled.')).toBeVisible();
   expect(writes.map((w) => w.status)).toEqual([403, 200]);
@@ -161,15 +162,90 @@ test('admin writes: a refused CSRF token is refreshed once and the same action r
 
 test('fixed: retiring names its consequence and cancels upcoming runs', async ({ page }) => {
   await go(page, '/fixed');
-  await page.getByRole('button', { name: 'Retire Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('complementary', { name: 'Weekly timing details' }).getByRole('button', { name: 'Retire…' }).click();
   const confirm = page.getByRole('dialog', { name: 'Retire Tuesday 23:30 — XBM?' });
   await expect(confirm).toContainText('1 upcoming run is cancelled');
   await confirm.getByRole('button', { name: 'Keep it' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
-  await page.getByRole('button', { name: 'Retire Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('complementary', { name: 'Weekly timing details' }).getByRole('button', { name: 'Retire…' }).click();
   await page.getByRole('button', { name: 'Retire timing' }).click();
   await expect(toast(page, 'Retired Tuesday 23:30 — XBM; 1 upcoming run cancelled.')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('7 weekly timings');
+});
+
+test('fixed: wide editor is aligned beside the list, returns focus, and becomes a phone sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/fixed');
+  const row = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
+  await row.click();
+  const pane = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await expect(pane).toBeVisible();
+  const geometry = await page.locator('.fixed-list').evaluate((list) => {
+    const pane = document.querySelector<HTMLElement>('.side-pane')!;
+    const left = list.getBoundingClientRect();
+    const right = pane.getBoundingClientRect();
+    return { listRight: left.right, paneLeft: right.left, listTop: left.top, paneTop: right.top };
+  });
+  expect(geometry.paneLeft).toBeGreaterThanOrEqual(geometry.listRight);
+  expect(Math.abs(geometry.paneTop - geometry.listTop)).toBeLessThanOrEqual(1);
+  await pane.getByRole('button', { name: 'Close weekly timing details' }).click();
+  await expect(row).toBeFocused();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await row.click();
+  const sheet = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toHaveCSS('height', '844px');
+});
+
+test('fixed: direct wide load gives the editor pane its own width and scroll owner', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/fixed?sw=off`);
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const pane = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await expect(pane).toBeVisible();
+  const paneMetrics = await pane.evaluate((element) => {
+    const filler = document.createElement('div');
+    filler.style.height = '2000px';
+    element.append(filler);
+    element.scrollTop = 1;
+    const style = getComputedStyle(element);
+    const result = { width: element.getBoundingClientRect().width, overflowY: style.overflowY, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop };
+    filler.remove();
+    return result;
+  });
+  expect(paneMetrics.width).toBeGreaterThanOrEqual(419);
+  expect(paneMetrics.width).toBeLessThanOrEqual(421);
+  expect(paneMetrics.overflowY).toBe('auto');
+  expect(paneMetrics.scrollHeight).toBeGreaterThan(paneMetrics.clientHeight);
+  expect(paneMetrics.scrollTop).toBe(1);
+});
+
+test('fixed: Add and Retire restore focus, while Escape leaves the editor behind its confirmation', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/fixed');
+  const add = page.getByRole('button', { name: 'Add a weekly timing' });
+  await add.click();
+  await page.getByRole('complementary', { name: 'Weekly timing details' }).getByRole('button', { name: 'Close weekly timing details' }).click();
+  await expect(add).toBeFocused();
+  await add.click();
+  await page.keyboard.press('Escape');
+  await expect(add).toBeFocused();
+
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const pane = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await pane.getByRole('button', { name: 'Retire…' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Retire Tuesday 23:30 — XBM?' });
+  await page.keyboard.press('Escape');
+  await expect(confirm).toBeHidden();
+  await expect(pane).toBeVisible();
+
+  await pane.getByRole('button', { name: 'Retire…' }).click();
+  await confirm.getByRole('button', { name: 'Retire timing' }).click();
+  await expect(pane).toBeHidden();
+  await expect(add).toBeFocused();
 });
 
 test('run sheet: this-week roster line and reset to fixed', async ({ page }) => {

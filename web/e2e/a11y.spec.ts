@@ -35,7 +35,7 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
     await serious(page, 'admin planner');
     await page.locator('[data-run="r-carling"] .plan-card__open').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
     await serious(page, 'admin modal');
     await page.keyboard.press('Escape');
     await page.keyboard.press('ControlOrMeta+k');
@@ -106,7 +106,7 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.getByRole('row').nth(1)).toBeVisible();
     await serious(page, 'admin fixed');
     await page.getByRole('button', { name: /^Edit Tuesday 22:00/ }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Weekly timing details' })).toBeVisible();
     await serious(page, 'admin fixed editor');
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Bosses' }).click();

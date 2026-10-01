@@ -15,6 +15,7 @@
     children,
     footer,
     onclose,
+    returnFocus,
   }: {
     open: boolean;
     title: string;
@@ -29,6 +30,8 @@
     children: Snippet;
     footer?: Snippet<[() => void]>;
     onclose?: () => void;
+    /** Optional caller-owned destination when the opener will be removed. */
+    returnFocus?: () => HTMLElement | null;
     /** A click on the backdrop closes it (read-only viewers; never forms that hold input). */
     lightDismiss?: boolean;
     /** Optional page-specific dialog class; keeps shared dialog semantics intact. */
@@ -67,8 +70,10 @@
   function handleClose() {
     open = false;
     onclose?.();
-    // Native restoration is not guaranteed everywhere; put focus back where the reader was.
-    if (returnTo?.isConnected) returnTo.focus();
+    // Native restoration is not guaranteed everywhere. A caller may replace it
+    // when its action removes the element that opened this dialog.
+    const destination = returnFocus?.() ?? returnTo;
+    if (destination?.isConnected) requestAnimationFrame(() => destination.isConnected && destination.focus());
     returnTo = null;
   }
 </script>

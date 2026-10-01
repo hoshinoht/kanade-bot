@@ -1,0 +1,54 @@
+// M3E weekly timings: the tabular list and editor are sibling scroll owners.
+.fixed-window { display: flex; flex-direction: column; overflow: hidden; }
+.fixed-window__head { gap: 0.55rem; }
+.fixed-window__dots { display: inline-flex; gap: 0.25rem; }
+.fixed-window__dots i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.55; }
+.fixed-window__search { margin-left: auto; }
+.fixed-window__search input { width: min(15rem, 27vw); }
+
+.fixed-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.fixed-window__body > .flash, .fixed-window__body > .empty { margin: 1rem; }
+.fixed-list { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
+.fixed-list__table { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0.5rem; }
+.fixed-list table { width: 100%; min-width: 42rem; border-spacing: 0 0.18rem; }
+.fixed-list th, .fixed-list td { padding: 0.4rem 0.7rem; vertical-align: middle; }
+.fixed-list thead th { position: sticky; top: -0.5rem; z-index: 1; height: 2rem; background: var(--pane); color: var(--dim); font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.1em; text-transform: uppercase; }
+.fixed-list tbody tr { background: var(--row); }
+.fixed-list tbody td:first-child, .fixed-list tbody th:first-child { border-radius: 6px 0 0 6px; }
+.fixed-list tbody td:last-child { border-radius: 0 6px 6px 0; }
+.fixed-list__open { display: flex; width: 100%; min-height: 3.25rem; align-items: center; padding: 0.35rem 0.7rem; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.fixed-list__open:hover { background: var(--raise); }
+.fixed-list__open--active { border-radius: 16px; box-shadow: inset 0 0 0 1.5px var(--select-ring); background: var(--select); }
+.fixed-list__when { display: grid; gap: 0.1rem; }
+.fixed-list__bosses, .fixed-list__party { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fixed-list__bosses { font-weight: 700; }
+.fixed-list__party { color: var(--dim); font-size: var(--fs-small); }
+.fixed-list__open .cap { color: var(--select-ink); }
+
+.fixedsheet__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.65rem; align-items: center; min-height: 4rem; padding: 0.7rem 0.85rem; border-bottom: 1.5px solid var(--line); }
+.fixedsheet__head .cap, .fixedsheet__head h2 { margin: 0; }
+.fixedsheet__head h2 { font-family: var(--display); font-size: var(--fs-brand); }
+.fixedsheet__close { min-width: 2rem; min-height: 2rem; font-size: var(--fs-lg); }
+.fixedsheet__form { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.fixedsheet__content { min-height: 0; padding: 0.9rem 1rem 1.2rem; }
+.fixedsheet__bosses { max-height: 18rem; overflow: auto; margin-top: 0.35rem; padding: 0.5rem; border: 1.5px solid var(--line-soft); border-radius: var(--r-sm); background: var(--pane); }
+.fixedsheet__fields { display: grid; grid-template-columns: 1fr 7rem minmax(9rem, 1.2fr); gap: 0.5rem; margin-top: 0.7rem; }
+.fixedsheet__typed, .fixedsheet__note { display: block; margin-top: 0.7rem; }
+.fixedsheet__foot { display: flex; gap: 0.5rem; align-items: center; padding: 0.65rem 1rem; border-top: 1.5px solid var(--line); }
+.fixedsheet__foot .btn--danger { margin-right: auto; }
+.boss-check { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; min-height: 2.5rem; }
+.choice { margin: 0.6rem 0; padding: 0.5rem 0.7rem; border: 2px solid var(--line-soft); border-radius: var(--r-sm); }
+.choice__opt { display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; }
+.field--grow { flex: 1 1 10rem; }
+
+@media (max-width: 839px) {
+  dialog.modal--narrow.fixedsheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  dialog.fixedsheet .modal__panel { min-height: 100dvh; }
+  .fixed-window__search { flex: 1 1 auto; margin-left: 0; }
+  .fixed-window__search input { width: 100%; }
+  .fixed-window__head { flex-wrap: wrap; }
+  .fixed-window__body { overflow: auto; }
+  .fixed-list { min-height: auto; }
+  .fixed-list__table { overflow: visible; }
+  .fixedsheet__fields { grid-template-columns: 1fr; }
+}
