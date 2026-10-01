@@ -30,6 +30,7 @@
   background: var(--surface);
 }
 .side-pane--fixed { flex-basis: min(420px, 42vw); }
+.side-pane--history { flex-basis: min(400px, 40vw); }
 
 .thread-panel {
   min-width: 0;

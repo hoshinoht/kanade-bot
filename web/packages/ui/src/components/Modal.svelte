@@ -59,7 +59,10 @@
   }
 
   function handleCancel(event: Event) {
-    if (!dismissible) event.preventDefault();
+    // Drive dismissal through state so Escape always closes only this (the
+    // topmost native dialog) and reconciliation cannot reopen it.
+    event.preventDefault();
+    if (dismissible) close();
   }
 
   function handlePointerDown(event: PointerEvent) {

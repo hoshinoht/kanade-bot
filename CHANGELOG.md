@@ -11,6 +11,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   this or next week posts through normal delivery to a channel the bot knows
   (replacing that week's digest, as in v4). Config-change audits now name the
   acting admin.
+- v5 admin History now uses the M3E audit timeline list-detail layout, with a
+  side-pane change review on wide screens and a full-screen detail sheet on phones.
 - v5 posts v4-exact decline notices again: a ❌ reaction replies to the card,
   `/rsvp no` and portal declines go to the run's home channel, and extraction
   declines post in the source channel, with v4's cooldown. Changing the answer

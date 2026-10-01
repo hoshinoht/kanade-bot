@@ -19,6 +19,7 @@
     names,
     timezone,
     ondone,
+    returnFocus,
   }: {
     open: boolean;
     title: string;
@@ -28,6 +29,7 @@
     names: Names;
     timezone: string;
     ondone: (plan: RevertPlan) => void;
+    returnFocus?: () => HTMLElement | null;
   } = $props();
 
   let plan = $state<RevertPlan | null>(null);
@@ -105,7 +107,7 @@
   }
 </script>
 
-<Modal bind:open {title} eyebrow="History" narrow>
+  <Modal bind:open {title} eyebrow="History" narrow {returnFocus}>
   {#if error}<p class="flash flash--error" role="alert">{error}</p>{/if}
   {#if !plan}
     <p class="note" aria-busy="true">Working out what would change…</p>

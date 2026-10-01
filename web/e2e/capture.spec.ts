@@ -102,7 +102,8 @@ for (const vp of VIEWPORTS) {
       }
 
       await page.goto(`${ADMIN}/history?sw=off`);
-      await page.getByRole('button', { name: 'Revert #2' }).click();
+       await page.locator('[data-history="2"]').click();
+       await page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: vp.name === 'wide' ? 'Change details' : 'Change #2' }).getByRole('button', { name: 'Revert…' }).click();
       await expect(page.getByRole('dialog', { name: 'Revert #2?' }).getByRole('alert')).toBeVisible();
       await shot(page, `admin-history-revert-${tag}`);
 

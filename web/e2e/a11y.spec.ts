@@ -93,9 +93,9 @@ for (const [colorway, theme] of LOOKS) {
     await serious(page, 'admin limits admission');
     await page.goto(`${ADMIN}/history?sw=off`);
     await expect(page.getByText('reverts #8')).toBeVisible();
-    await page.getByText('Rows (1)').first().click();
+    await page.locator('[data-history="8"]').click();
     await serious(page, 'admin history');
-    await page.getByRole('button', { name: 'Revert #8' }).click();
+    await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
     await expect(page.getByRole('dialog', { name: 'Revert #8?' })).toBeVisible();
     await serious(page, 'admin revert dialog');
     await page.keyboard.press('Escape');

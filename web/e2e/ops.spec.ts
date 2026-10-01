@@ -472,7 +472,8 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
 
   // Tsubame's answer (#2) was followed by an admin moving that run (#3): conflict.
-  await page.getByRole('button', { name: 'Revert #2' }).click();
+  await page.locator('[data-history="2"]').click();
+  await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Revert #2?' });
   await expect(dialog.getByRole('alert')).toContainText('Changed again since');
   await expect(dialog.getByRole('alert')).toContainText('#2: XKalos');
@@ -487,7 +488,8 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('10 changes');
 
   // #7 (Seren cancelled) has no later change: a strict revert applies.
-  await page.getByRole('button', { name: 'Revert #7' }).click();
+  await page.locator('[data-history="7"]').click();
+  await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
   const strict = page.getByRole('dialog', { name: 'Revert #7?' });
   await expect(strict.getByText('HSeren: cancelled → unconfirmed')).toBeVisible();
   await strict.getByRole('button', { name: 'Revert', exact: true }).click();
@@ -500,10 +502,12 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
 
 test('history: restore a week to a point, revert a member, and blame in the run sheet', async ({ page }) => {
   await go(page, '/history');
-  await page.getByRole('button', { name: /^Restore week .* to just after #3$/ }).click();
+  await page.locator('[data-history="3"]').click();
+  await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Restore week to here…' }).click();
   const restore = page.getByRole('dialog', { name: /^Restore the week of/ });
   await expect(restore.getByText(/HCarling \+ HStar roster: −Ren \(2\)/)).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(restore).toBeHidden();
 
   await page.getByText("Revert a member's changes…").click();
   await page.getByLabel('Member').selectOption({ label: 'Rin' });

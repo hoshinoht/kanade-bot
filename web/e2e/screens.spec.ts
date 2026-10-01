@@ -223,6 +223,111 @@ test('fixed: direct wide load gives the editor pane its own width and scroll own
   expect(paneMetrics.scrollTop).toBe(1);
 });
 
+test('history: direct wide load keeps its timeline and change pane as aligned scroll-owning siblings', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/history?sw=off`);
+  const pane = page.getByRole('complementary', { name: 'Change details' });
+  await expect(pane).toBeVisible();
+  const frame = await page.evaluate(() => {
+    const body = document.querySelector<HTMLElement>('.history-window__body')!;
+    const list = body.querySelector<HTMLElement>(':scope > .history-list-region')!;
+    const pane = body.querySelector<HTMLElement>(':scope > .side-pane')!;
+    const fill = (element: HTMLElement) => {
+      const filler = document.createElement('div');
+      filler.style.height = '2000px';
+      element.append(filler);
+      element.scrollTop = 1;
+      const result = { overflow: getComputedStyle(element).overflowY, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+      filler.remove();
+      return result;
+    };
+    const left = list.getBoundingClientRect();
+    const right = pane.getBoundingClientRect();
+    return {
+      direct: body.children.length === 2 && body.children[0] === list && body.children[1] === pane,
+      listRight: left.right,
+      paneLeft: right.left,
+      listTop: left.top,
+      paneTop: right.top,
+      paneWidth: right.width,
+      list: fill(list.querySelector<HTMLElement>('.history-list-region__scroll')!),
+      pane: fill(pane),
+      documentScroll: document.scrollingElement!.scrollHeight > innerHeight,
+    };
+  });
+  expect(frame.direct).toBe(true);
+  expect(frame.paneLeft).toBeGreaterThanOrEqual(frame.listRight - 2);
+  expect(Math.abs(frame.paneTop - frame.listTop)).toBeLessThanOrEqual(3);
+  expect(frame.paneWidth).toBeGreaterThanOrEqual(399);
+  expect(frame.paneWidth).toBeLessThanOrEqual(401);
+  expect(frame.list.overflow).toBe('auto');
+  expect(frame.pane.overflow).toBe('auto');
+  expect(frame.list.scrollHeight).toBeGreaterThan(frame.list.clientHeight);
+  expect(frame.pane.scrollHeight).toBeGreaterThan(frame.pane.clientHeight);
+  expect(frame.list.scrollTop).toBe(1);
+  expect(frame.pane.scrollTop).toBe(1);
+  expect(frame.documentScroll).toBe(false);
+});
+
+test('history: wide Close and Escape leave the detail closed and return to its row', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/history');
+  const pane = page.getByRole('complementary', { name: 'Change details' });
+  const newest = page.locator('[data-history="9"]');
+  await pane.getByRole('button', { name: 'Close change details' }).click();
+  await expect(pane).toBeHidden();
+  await expect(newest).toBeFocused();
+  await page.waitForTimeout(100);
+  await expect(pane).toBeHidden();
+
+  const row = page.locator('[data-history="2"]');
+  await row.click();
+  await expect(pane).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(pane).toBeHidden();
+  await expect(row).toBeFocused();
+  await page.waitForTimeout(100);
+  await expect(pane).toBeHidden();
+});
+
+test('history: restoring a multi-week record uses the week group it was opened from', async ({ page }) => {
+  const secondWeek = '2026-10-07T16:00:00+00:00';
+  await page.route('**/api/admin/history?*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const record = body.records.find((item: { seq: number }) => item.seq === 3);
+    record.weeks = [...record.weeks, secondWeek];
+    await route.fulfill({ response, json: body });
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/history');
+  const row = page.locator(`[data-history="3"][data-history-week="${secondWeek}"]`);
+  await row.click();
+  const request = page.waitForRequest((candidate) => candidate.method() === 'POST' && candidate.url().endsWith('/api/admin/history/restore-week'));
+  await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Restore week to here…' }).click();
+  expect((await request).postDataJSON()).toMatchObject({ week: secondWeek });
+});
+
+test('history: phone detail is a sheet, Escape closes the topmost dialog and restores focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/history');
+  const row = page.locator('[data-history="2"]');
+  await row.click();
+  const detail = page.getByRole('dialog', { name: 'Change #2' });
+  await expect(detail).toBeVisible();
+  await expect(detail).toHaveCSS('height', '844px');
+  await detail.getByRole('button', { name: 'Revert…' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Revert #2?' });
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(confirm).toBeHidden();
+  await expect(detail).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Revert…' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeHidden();
+  await expect(row).toBeFocused();
+});
+
 test('fixed: Add and Retire restore focus, while Escape leaves the editor behind its confirmation', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/fixed');
