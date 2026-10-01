@@ -1,7 +1,7 @@
 //! One channel's worker: answer the question, then hand over to the next
-//! waiting one until the channel's queue is empty. A question that holds
-//! the clean-retry reservation always concludes, even when its future is
-//! dropped (a panic or a shutdown abort): see [`Held`].
+//! waiting one until the channel's queue is empty. A prepared question
+//! always concludes, even when its future is dropped (a panic or a shutdown
+//! abort), settling any clean-retry reservation: see [`Held`].
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -111,9 +111,10 @@ fn tool_context(asked: &Asked, prepared: &Prepared, source_id: &str) -> ToolCont
     ctx
 }
 
-/// A question holding its clean-retry reservation. Concluding it disarms
+/// A prepared question, armed before its context is built and holding its
+/// clean-retry reservation once taken (`reserved`). Concluding it disarms
 /// it; dropped armed (panic, abort) it concludes as a refunded failure, so
-/// the reservation is settled and nothing is posted.
+/// any reservation is settled and nothing is posted.
 struct Held<A: Answerer, S: Surface> {
     driver: ChatDriver<A, S>,
     asked: Asked,
@@ -124,6 +125,8 @@ struct Held<A: Answerer, S: Surface> {
     reserved: bool,
     started: Instant,
     armed: bool,
+    /// Already handed off from an unwinding drop: never defer again.
+    deferred: bool,
 }
 
 impl<A: Answerer, S: Surface> Held<A, S> {
@@ -135,7 +138,6 @@ impl<A: Answerer, S: Surface> Held<A, S> {
         posted: Result<String, String>,
         deleted: bool,
     ) -> Option<Concluded> {
-        self.armed = false;
         let latency_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let now = self.driver.now();
         let mut guard = self.driver.state();
@@ -169,6 +171,9 @@ impl<A: Answerer, S: Surface> Held<A, S> {
             now,
         };
         let concluded = at_once(pilot.conclude(done, &Posted(posted)));
+        // Disarmed only once `conclude` returned: a panic inside it leaves
+        // the guard armed, so its drop still settles and refunds.
+        self.armed = false;
         if concluded.is_none() {
             // What `conclude` would have settled, so nothing leaks.
             let member = &asked.message.author_id;
@@ -183,11 +188,25 @@ impl<A: Answerer, S: Surface> Held<A, S> {
     }
 }
 
-impl<A: Answerer, S: Surface> Drop for Held<A, S> {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
+impl<A: Answerer, S: Surface> Held<A, S> {
+    /// Settles what `conclude` would have, touching nothing that could
+    /// panic (no directory lookups): the last resort for an unwinding drop.
+    fn settle_only(&mut self) {
+        self.armed = false;
+        let now = self.driver.now();
+        let member = &self.asked.message.author_id;
+        let mut state = self.driver.state();
+        if self.reserved {
+            state.pilot.guard.settle(member, false, now);
         }
+        if let Some(stamp) = self.spent_at {
+            state.pilot.allowance.refund(member, stamp);
+        }
+    }
+
+    /// Concludes an armed question as a refunded failure, logs it and takes
+    /// the 👀 off.
+    fn abort(&mut self) {
         let concluded = self.conclude(&ended(), Err("not posted".into()), false);
         self.driver.shared.answerer.observe(&ChatEvent::Cancelled {
             interaction_id: &self.row_id,
@@ -207,6 +226,48 @@ impl<A: Answerer, S: Surface> Drop for Held<A, S> {
                 .unreact(&channel, &message, SEEN_REACTION)
                 .await;
         });
+    }
+}
+
+impl<A: Answerer, S: Surface> Drop for Held<A, S> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        if !std::thread::panicking() {
+            self.abort();
+            return;
+        }
+        // Unwinding: a second panic here (the lookup that just failed, run
+        // again by `conclude`) would abort the process. Settle what cannot
+        // panic now; conclude and log later, off the unwinding stack.
+        if self.deferred {
+            self.settle_only();
+            let driver = self.driver.clone();
+            let (channel, message) = (self.asked.channel_id.clone(), self.asked.message.id.clone());
+            self.driver.spawn(async move {
+                driver
+                    .shared
+                    .surface
+                    .unreact(&channel, &message, SEEN_REACTION)
+                    .await;
+            });
+            return;
+        }
+        self.armed = false;
+        let mut later = Held {
+            driver: self.driver.clone(),
+            asked: self.asked.clone(),
+            prepared: Arc::clone(&self.prepared),
+            ctx: self.ctx.clone(),
+            row_id: self.row_id.clone(),
+            spent_at: self.spent_at,
+            reserved: self.reserved,
+            started: self.started,
+            armed: true,
+            deferred: true,
+        };
+        self.driver.spawn(async move { later.abort() });
     }
 }
 
@@ -249,9 +310,47 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             .await;
     }
 
+    /// Move every waiter's keycap to its current FIFO position once others
+    /// left the queue. Each move waits for the keycap it replaces to land,
+    /// and removal of the new one ([`Self::keycap_off`]) waits for its add.
+    pub(super) fn renumber(&self, state: &mut State) {
+        let State { pilot, waiting, .. } = state;
+        for (id, queued) in waiting.iter_mut() {
+            let (Some(old), Some(new)) = (queued.position, pilot.traffic.position(id)) else {
+                continue;
+            };
+            queued.position = Some(new);
+            let (from, to) = (position_reaction(old), position_reaction(new));
+            if from == to {
+                continue;
+            }
+            let (reacted, done) = watch::channel(false);
+            let previous = queued.reacted.replace(done);
+            let (channel, message) = (queued.asked.channel_id.clone(), id.clone());
+            let driver = self.clone();
+            self.spawn(async move {
+                if let Some(mut previous) = previous {
+                    // Err: the add's task is gone; nothing more to wait for.
+                    let _ = previous.wait_for(|done| *done).await.map(drop);
+                }
+                let surface = &driver.shared.surface;
+                surface.unreact(&channel, &message, from).await;
+                surface.react(&channel, &message, to).await;
+                reacted.send_replace(true);
+            });
+        }
+    }
+
     /// Finish the channel's answer: give up stale waiters (refund, busy
-    /// reaction) and take the next waiting question, if any.
+    /// reaction), take the next waiting question, if any, and move the
+    /// remaining waiters up.
     fn hand_off(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<AtomicBool>)> {
+        let next = self.take_next(state, origin);
+        self.renumber(state);
+        next
+    }
+
+    fn take_next(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<AtomicBool>)> {
         let now = self.now();
         loop {
             let handoff = state.pilot.traffic.finish(origin, now);
@@ -307,18 +406,19 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
     }
 
     /// Chat is still on and this channel still in a chat category (both may
-    /// have changed while the question waited).
+    /// have changed while the question waited). The channel is read afresh:
+    /// the admission snapshot misses an ordinary channel's category move. A
+    /// channel the directory no longer knows keeps its snapshot.
     fn still_admitted(&self, asked: &Asked) -> bool {
         let answerer = &self.shared.answerer;
         let setup = answerer.setup();
+        let channels = answerer.channels();
+        let snapshot = asked.gate.channel.as_ref();
+        let fresh = snapshot.and_then(|channel| channels.channel(&channel.id));
         setup.enabled
             && setup.ready
             && setup.pilot.configured()
-            && is_chat_channel(
-                asked.gate.channel.as_ref(),
-                answerer.channels(),
-                &setup.pilot,
-            )
+            && is_chat_channel(fresh.as_ref().or(snapshot), channels, &setup.pilot)
     }
 
     async fn run_one(&self, job: &Queued, cancelled: &Arc<AtomicBool>) {
@@ -349,6 +449,24 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         };
         let prepared = Arc::new(prepared);
 
+        let row_id = job.row_id.clone();
+        let ctx = tool_context(asked, &prepared, &row_id);
+        // From here every path, a panic or an abort included, concludes
+        // (refunding the allowance). The reservation is taken last in the
+        // same locked block, recorded on `held` at once, so nothing can
+        // unwind between reserving and `held` knowing to settle it.
+        let mut held = Held {
+            driver: self.clone(),
+            asked: asked.clone(),
+            ctx,
+            prepared: Arc::clone(&prepared),
+            row_id,
+            spent_at: job.spent_at,
+            reserved: false,
+            started,
+            armed: true,
+            deferred: false,
+        };
         let (reserved, turns, focus) = {
             let mut state = self.state();
             let now = self.now();
@@ -359,7 +477,6 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 state.persona_key = Some(prepared.persona_key.clone());
             }
             let pilot = &mut state.pilot;
-            let reserved = pilot.reserve_clean_retry(&asked.message.author_id, now);
             let focus = pilot.conversations.focus(&asked.origin_id, now);
             let turns = build_turns(
                 &mut pilot.conversations,
@@ -369,20 +486,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 asked.bot_user_id.as_deref().unwrap_or_default(),
                 &*prepared.directory,
             );
-            (reserved, turns, focus)
-        };
-        let row_id = job.row_id.clone();
-        // From here every path, a panic or an abort included, concludes.
-        let mut held = Held {
-            driver: self.clone(),
-            asked: asked.clone(),
-            ctx: tool_context(asked, &prepared, &row_id),
-            prepared: Arc::clone(&prepared),
-            row_id,
-            spent_at: job.spent_at,
-            reserved,
-            started,
-            armed: true,
+            held.reserved = pilot.reserve_clean_retry(&asked.message.author_id, now);
+            (held.reserved, turns, focus)
         };
         let config = &shared.config;
         let system = system_prompt(

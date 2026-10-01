@@ -450,6 +450,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 cancelled.store(true, Ordering::SeqCst);
             }
         }
+        self.renumber(state);
     }
 
     /// Stop admitting, refund every waiting question, give running answers

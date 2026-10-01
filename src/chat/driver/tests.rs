@@ -19,7 +19,7 @@ use crate::chat::gate::{
 use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use crate::chat::sanitize::schedule_defaults;
 use crate::chat::tools::ToolContext;
-use crate::domain::members::Roster;
+use crate::domain::members::{Directory, Member, Roster};
 use crate::domain::model_log::{ChatInteraction, ChatOutcome};
 use crate::infrastructure::llm::Message;
 use crate::infrastructure::store::MemoryScheduleStore;
@@ -39,11 +39,51 @@ fn kanade() -> CompiledPersona {
     CompiledPersona::compile(&root.load_bundle(&id).expect("bundle").value, None)
 }
 
-struct Channels(HashMap<&'static str, ChannelInfo>);
+/// Live like the guild cache: a channel may move category meanwhile.
+struct Channels(Mutex<HashMap<&'static str, ChannelInfo>>);
 
 impl ChannelDirectory for Channels {
     fn channel(&self, id: &str) -> Option<ChannelInfo> {
-        self.0.get(id).cloned()
+        self.0.lock().unwrap().get(id).cloned()
+    }
+}
+
+impl Channels {
+    fn move_to(&self, id: &str, category: &str) {
+        let mut channels = self.0.lock().unwrap();
+        let channel = channels.get_mut(id).expect("known channel");
+        channel.category_id = Some(category.into());
+    }
+}
+
+/// A member directory whose first lookup panics (panic injection while
+/// the question's context is built under the state lock).
+struct PanicOnce(AtomicBool, Roster);
+
+impl Directory for PanicOnce {
+    fn member(&self, user_id: &str) -> Option<Member> {
+        assert!(
+            !self.0.swap(false, Ordering::SeqCst),
+            "injected directory panic"
+        );
+        self.1.member(user_id)
+    }
+
+    fn is_watched(&self, channel_id: &str) -> bool {
+        self.1.is_watched(channel_id)
+    }
+}
+
+/// A directory whose every lookup panics, so concluding panics too.
+struct PanicAlways;
+
+impl Directory for PanicAlways {
+    fn member(&self, _user_id: &str) -> Option<Member> {
+        panic!("injected permanent directory panic")
+    }
+
+    fn is_watched(&self, _channel_id: &str) -> bool {
+        true
     }
 }
 
@@ -54,11 +94,11 @@ fn channels() -> Channels {
         category_id: category.map(Into::into),
         parent_id: parent.map(Into::into),
     };
-    Channels(HashMap::from([
+    Channels(Mutex::new(HashMap::from([
         (CHANNEL, info(CHANNEL, Some(CATEGORY), None)),
         (THREAD, info(THREAD, None, Some(CHANNEL))),
         (OTHER, info(OTHER, Some(CATEGORY), None)),
-    ]))
+    ])))
 }
 
 /// What one `answer` call does.
@@ -89,6 +129,9 @@ struct Fake {
     prepare_gate: Mutex<Option<Arc<Notify>>>,
     /// Observed lifecycle events, one short line each.
     observed: Mutex<Vec<String>>,
+    /// The next prepared directory panics on its first lookup.
+    panic_directory: AtomicBool,
+    panic_directory_always: AtomicBool,
 }
 
 impl Fake {
@@ -102,6 +145,8 @@ impl Fake {
             rows: Mutex::default(),
             prepare_gate: Mutex::default(),
             observed: Mutex::default(),
+            panic_directory: AtomicBool::new(false),
+            panic_directory_always: AtomicBool::new(false),
         }
     }
 }
@@ -140,7 +185,13 @@ impl Answerer for Arc<Fake> {
         Some(Prepared {
             persona: kanade(),
             persona_key: "kanade".into(),
-            directory: Arc::new(Roster::new()),
+            directory: if self.panic_directory_always.swap(false, Ordering::SeqCst) {
+                Arc::new(PanicAlways)
+            } else if self.panic_directory.swap(false, Ordering::SeqCst) {
+                Arc::new(PanicOnce(AtomicBool::new(true), Roster::new()))
+            } else {
+                Arc::new(Roster::new())
+            },
             members: Vec::new(),
             pilot: self.setup().pilot,
             model: "chat-model".into(),
@@ -925,4 +976,200 @@ async fn a_disabled_chat_logs_ignored_only_for_summons() {
     rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE]));
     let observed = rig.fake.observed.lock().unwrap().clone();
     assert_eq!(observed, ["setup false true", "ignored disabled"]);
+}
+
+#[tokio::test]
+async fn a_panic_while_context_is_built_refunds_and_logs() {
+    let rig = rig(vec![Step::Reply("after")]).await;
+    rig.fake.panic_directory.store(true, Ordering::SeqCst);
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    let limits = rig.driver.limits();
+    assert_eq!(limits.clean_retry.pending, 0, "the reservation settled");
+    assert_eq!(limits.allowance.pool.used, 0, "refunded");
+    assert!(limits.queue.answering.is_empty(), "the channel is free");
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1, "concluded and logged");
+    assert_eq!(
+        rows[0].error.as_deref(),
+        Some("failed: the question stopped unexpectedly")
+    );
+    assert!(rig.fake.seen.lock().unwrap().conversations.is_empty());
+    assert!(
+        rig.surface
+            .events()
+            .contains(&format!("-{SEEN_REACTION} {CHANNEL}/1001"))
+    );
+
+    assert!(rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert_eq!(
+        rig.fake.seen.lock().unwrap().clean_retry,
+        [true],
+        "the member's clean retry was not leaked"
+    );
+}
+
+/// Concluding runs the lookup that panicked again; during unwinding that
+/// second panic would abort the process, so it is deferred and, failing
+/// again, the question is only settled and refunded.
+#[tokio::test]
+async fn a_lookup_that_always_panics_settles_without_aborting() {
+    let rig = rig(vec![Step::Reply("after")]).await;
+    rig.fake
+        .panic_directory_always
+        .store(true, Ordering::SeqCst);
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    let limits = rig.driver.limits();
+    assert_eq!(limits.clean_retry.pending, 0, "the reservation settled");
+    assert_eq!(limits.allowance.pool.used, 0, "refunded");
+    assert!(limits.queue.answering.is_empty(), "the channel is free");
+    assert!(rig.rows().is_empty(), "concluding could not run");
+    assert!(
+        rig.surface
+            .events()
+            .contains(&format!("-{SEEN_REACTION} {CHANNEL}/1001"))
+    );
+
+    assert!(rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert_eq!(rig.rows().len(), 1, "the next question is answered");
+    assert_eq!(rig.fake.seen.lock().unwrap().clean_retry, [true]);
+}
+
+#[tokio::test]
+async fn a_waiter_whose_channel_left_the_chat_category_is_not_answered() {
+    let held = Arc::new(Notify::new());
+    let rig = rig(vec![
+        Step::Held(Arc::clone(&held), "first"),
+        Step::Reply("x"),
+    ])
+    .await;
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    assert_eq!(rig.pool_used(), 2);
+    // Moved out of the chat category while 1002 waited; its admission
+    // snapshot still says otherwise.
+    rig.fake.channels.move_to(CHANNEL, "41");
+    held.notify_one();
+    rig.settle().await;
+    assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
+    assert_eq!(rig.pool_used(), 1, "the waiter is refunded");
+    assert!(
+        rig.fake
+            .observed
+            .lock()
+            .unwrap()
+            .contains(&"cancelled not_admitted".to_owned())
+    );
+    let events = rig.surface.events();
+    assert!(!events.contains(&format!("+{SEEN_REACTION} {CHANNEL}/1002")));
+    assert!(events.contains(&format!("-{} {CHANNEL}/1002", position_reaction(1))));
+}
+
+/// Keycaps a message still shows, from the surface's add/remove log.
+fn keycaps(events: &[String], message: &str) -> Vec<String> {
+    let suffix = format!(" {CHANNEL}/{message}");
+    let mut shown: Vec<String> = Vec::new();
+    for event in events {
+        let Some(head) = event.strip_suffix(&suffix) else {
+            continue;
+        };
+        if !head.contains('\u{20e3}') && !head.contains('🔟') {
+            continue;
+        }
+        if let Some(emoji) = head.strip_prefix('+') {
+            shown.push(emoji.to_owned());
+        } else if let Some(emoji) = head.strip_prefix('-') {
+            shown.retain(|seen| seen != emoji);
+        }
+    }
+    shown
+}
+
+#[tokio::test]
+async fn queue_positions_are_renumbered_when_a_waiter_leaves() {
+    let first = Arc::new(Notify::new());
+    let second = Arc::new(Notify::new());
+    let rig = rig(vec![
+        Step::Held(Arc::clone(&first), "a"),
+        Step::Held(Arc::clone(&second), "c"),
+        Step::Reply("d"),
+    ])
+    .await;
+    for (id, member) in [
+        ("1001", "11"),
+        ("1002", "12"),
+        ("1003", "13"),
+        ("1004", "14"),
+    ] {
+        assert!(rig.driver.offer(asked(id, member, CHANNEL, &[ROLE])));
+    }
+    rig.settle().await;
+    let events = rig.surface.events();
+    assert_eq!(keycaps(&events, "1003"), [position_reaction(2)]);
+    assert_eq!(keycaps(&events, "1004"), [position_reaction(3)]);
+
+    // A deleted waiter: everyone behind it moves up.
+    rig.driver.deleted(&["1002".into()]);
+    rig.settle().await;
+    let events = rig.surface.events();
+    assert_eq!(
+        keycaps(&events, "1003"),
+        [position_reaction(1)],
+        "{events:?}"
+    );
+    assert_eq!(
+        keycaps(&events, "1004"),
+        [position_reaction(2)],
+        "{events:?}"
+    );
+
+    // The head is dequeued: the rest move up again.
+    first.notify_one();
+    rig.settle().await;
+    let events = rig.surface.events();
+    assert!(keycaps(&events, "1003").is_empty(), "{events:?}");
+    assert_eq!(
+        keycaps(&events, "1004"),
+        [position_reaction(1)],
+        "{events:?}"
+    );
+
+    second.notify_one();
+    rig.settle().await;
+    let events = rig.surface.events();
+    // 1002's message is gone, so its keycap is never touched again.
+    for id in ["1003", "1004"] {
+        assert!(keycaps(&events, id).is_empty(), "{id}: {events:?}");
+    }
+    assert_eq!(rig.rows().len(), 3);
+}
+
+#[tokio::test]
+async fn an_expired_waiter_moves_the_rest_up() {
+    let held = Arc::new(Notify::new());
+    let rig = rig(vec![Step::Held(Arc::clone(&held), "a"), Step::Forever]).await;
+    assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
+    assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    rig.advance(100.0);
+    assert!(rig.driver.offer(asked("1003", "13", CHANNEL, &[ROLE])));
+    assert!(rig.driver.offer(asked("1004", "14", CHANNEL, &[ROLE])));
+    rig.settle().await;
+    // 1002 outwaits its bound; 1003 runs, 1004 is first in line.
+    rig.advance(30.0);
+    held.notify_one();
+    rig.settle().await;
+    let events = rig.surface.events();
+    assert!(events.contains(&format!("+{CHANNEL_BUSY_REACTION} {CHANNEL}/1002")));
+    assert!(keycaps(&events, "1002").is_empty(), "{events:?}");
+    assert!(keycaps(&events, "1003").is_empty(), "{events:?}");
+    assert_eq!(
+        keycaps(&events, "1004"),
+        [position_reaction(1)],
+        "{events:?}"
+    );
 }

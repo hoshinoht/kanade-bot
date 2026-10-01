@@ -574,6 +574,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 chat queue fixes: waiting questions' keycap positions are renumbered
+  when a question leaves the queue; a queued question whose channel left the
+  chat category is refunded instead of answered; a panic while a question's
+  context is built refunds its allowance and logs a failed row. A lookup
+  that panics again while the question is being cleaned up no longer aborts
+  the process: cleanup is deferred off the unwinding stack and, if it still
+  fails, only settles and refunds.
 - v5 self-schedule lookup now recognizes an exact bot name copied into a
   model's participant argument without treating other members as self.
 - v5 day-of reminder fields now label only members still waiting for an answer

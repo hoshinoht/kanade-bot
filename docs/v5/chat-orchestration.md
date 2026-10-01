@@ -244,12 +244,20 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   mentions) and then `conclude`s with that reservation under the state
   lock (`conclude` sees the already-posted result), then records the row.
   Before `prepare` a dequeued question is re-gated (chat still on, channel
-  still in a chat category) and after it re-checked for deletion; either
-  drops it with a refund and no model call. Deleting a waiting question
+  still in a chat category, re-read from the live channel directory so a
+  channel moved out of a chat category meanwhile is caught; an unknown
+  channel keeps its admission snapshot) and after it re-checked for
+  deletion; either drops it with a refund and no model call. Whenever a
+  waiter leaves the queue (dequeued, deleted or expired) the others' keycaps
+  move to their current FIFO positions, each move waiting for the keycap it
+  replaces to land. Deleting a waiting question
   refunds it; deleting a running one lets it finish (a dispatch is never
   cut) but posts nothing more and withholds both the question and its
-  unposted answer from later context. From the reservation on, a `Held`
-  guard concludes the question even if its future is dropped (a panic,
+  unposted answer from later context. Once a question is prepared, an armed
+  `Held` guard exists before the state lock is taken; the reservation is
+  taken last under that lock and recorded on the guard at once, so the
+  guard concludes the question (refund, reservation settled) even if its
+  future is dropped (a panic, including one while context is built,
   caught per question so the channel is handed over, or a shutdown abort).
   Shutdown refunds waiters, lets running answers finish within a grace,
   then cuts the rest (refunded, concluded, row `cancelled: serve shut
