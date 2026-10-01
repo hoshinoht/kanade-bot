@@ -21,6 +21,8 @@ export interface ConfigPatch {
   models?: { roles?: Partial<Record<ModelRole, { alias?: string; reasoning?: string }>>; groups?: CapacityGroup[]; context?: ContextSettings };
   self_service?: { mode?: SelfServiceMode; public_portal?: boolean };
   notifications?: { quiet_mode?: boolean };
+  /** Both keys optional; `overrides` replaces the list whole. */
+  run_lengths?: Partial<ConfigView['run_lengths']>;
 }
 
 export type Save = (patch: ConfigPatch, done: string) => Promise<string>;

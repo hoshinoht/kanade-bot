@@ -86,3 +86,33 @@ describe('keyboard move reducer', () => {
     expect(fromMinutes(0)).toBe('00:00');
   });
 });
+
+describe('keyboard move: configured step and Shift jumps', () => {
+  const others = [
+    { id: 'hfa', day: 5, time: '20:00', minutes: 30 },
+    { id: 'xbm', day: 5, time: '23:30', minutes: 60 },
+  ];
+  const stepped = { ...ctx, step: 20, others: (d: number) => (d === 5 ? others : []) };
+  const carling: MovableRun = { ...run, minutes: 60 };
+
+  it('steps by the configured default and says so when picking up', () => {
+    const up = onKey(IDLE, 'm', carling, stepped);
+    expect(up.announce).toContain('change the time by 20 minutes');
+    expect(onKey(up.state, 'ArrowDown', carling, stepped).announce).toBe('HCarling + HStar: Tue 29, 22:20.');
+    expect(onKey(up.state, 'ArrowUp', carling, stepped).announce).toBe('HCarling + HStar: Tue 29, 21:40.');
+  });
+
+  it('Shift+Up jumps to just after the run before; Shift+Down to just before the next', () => {
+    const up = onKey(IDLE, 'm', carling, stepped);
+    expect(onKey(up.state, 'ArrowUp', carling, stepped, true).announce).toBe('HCarling + HStar: Tue 29, 20:30.');
+    expect(onKey(up.state, 'ArrowDown', carling, stepped, true).announce).toBe('HCarling + HStar: Tue 29, 22:30.');
+  });
+
+  it('Shift says when there is nothing to move next to', () => {
+    const lone = { ...stepped, others: () => [] };
+    const up = onKey(IDLE, 'm', carling, lone);
+    const out = onKey(up.state, 'ArrowUp', carling, lone, true);
+    expect(out.state).toEqual(up.state);
+    expect(out.announce).toBe('No run before 22:00 on Tue 29 to move next to.');
+  });
+});

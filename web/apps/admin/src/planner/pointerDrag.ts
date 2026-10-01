@@ -19,6 +19,8 @@ import { DOMRectangle } from '@dnd-kit/dom/utilities';
 export interface PointerDragEvents {
   start: (runId: string) => void;
   over: (day: number | null) => void;
+  /** The pointer's viewport position while dragging (the drop time follows it). */
+  move: (x: number, y: number) => void;
   end: (runId: string, day: number | null, canceled: boolean) => void;
 }
 
@@ -55,7 +57,11 @@ export function createPointerDrag(ghost: HTMLElement, on: PointerDragEvents): Po
       on.start(String(source?.id ?? ''));
       placeGhost();
     }),
-    manager.monitor.addEventListener('dragmove', () => placeGhost()),
+    manager.monitor.addEventListener('dragmove', () => {
+      placeGhost();
+      const { x, y } = manager.dragOperation.position.current;
+      on.move(x, y);
+    }),
     manager.monitor.addEventListener('dragover', (event) => on.over(dayOf(event.operation.target?.id))),
     manager.monitor.addEventListener('dragend', (event) =>
       on.end(String(event.operation.source?.id ?? ''), dayOf(event.operation.target?.id), event.canceled),

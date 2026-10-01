@@ -555,6 +555,18 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin planner drops set the time as well as the day: a run dropped
+  between runs starts right after the one above (its start + run length), at
+  the top of a day it ends right before the run below, an empty day keeps its
+  time and own-time runs stay untimed, held within 00:00–23:59. The drag shows
+  and announces the resulting time ("→ 23:00"); an overlap that double-books
+  a member shows a clash warning (icon and words) on the indicator and both
+  cards but still saves. Keyboard moves step by the default run length;
+  Shift+Up jumps to just after the previous run, Shift+Down to just before the
+  next. A drop made while someone else changed the week is refused as a
+  conflict rather than overwriting it. Config gains a Run lengths section
+  (default minutes with a slider, boss + difficulty overrides checked against
+  the boss list).
 - v5 admin app shell (M3E slice 1, gates G1, G2, G6, G7): a navigation rail
   replaces the masthead's grouped nav (96 px, expanded to 240 px from 1440 px
   wide and collapsible, remembered per browser; Inbox badge; account at the

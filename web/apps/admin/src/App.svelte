@@ -197,6 +197,11 @@
           toaster,
           section: router.query.get('section') ?? '',
           onsection: (key: string) => router.go(`/config?section=${key}`, { replace: true }),
+          // New lengths change every run's minutes and the keyboard step at once.
+          onrunlengths: (minutes: number) => {
+            store.runStep = minutes;
+            void store.refresh();
+          },
         };
       case 'boss-knowledge':
         return { key: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };

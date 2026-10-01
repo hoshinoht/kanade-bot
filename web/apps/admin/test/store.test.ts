@@ -82,3 +82,37 @@ describe('AdminWeek snapshots', () => {
     expect(store.updated).not.toBe(shownAt);
   });
 });
+
+describe('AdminWeek: a drop during a held drag', () => {
+  it('is sent against the week the drag began on, not a newer poll buffered meanwhile', async () => {
+    const weeks = [week(1), week(5, 4)];
+    const sent: { version: number }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST' && path.endsWith('/move')) {
+          sent.push(JSON.parse(String(init.body)) as { version: number });
+          return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
+        }
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? week(5, 4)) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    await store.refresh();
+    store.holding = true;
+    await store.refresh(); // another admin's change arrives mid-drag: buffered
+    expect(store.week?.version).toBe(1);
+    // The planner starts the move first, then releases the hold.
+    const moving = store.move('r1', { day: 3, time: '21:00' });
+    store.holding = false;
+    expect(store.week?.version).toBe(1);
+    const outcome = await moving;
+    expect(sent).toEqual([expect.objectContaining({ version: 1 })]);
+    expect(outcome).toEqual({ ok: false, message: "Couldn't move HFA: The week changed since it was loaded." });
+    // The buffered week then applies (the conflict also re-reads it).
+    await store.refresh();
+    expect(store.week?.version).toBe(5);
+  });
+});

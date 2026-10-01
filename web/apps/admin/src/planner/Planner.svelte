@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { LiveRegion, WeekRail, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { Icon, LiveRegion, WeekRail, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { clashes, dropTime, timedOthers, type DropTime, type TimedRun } from './dropTime';
   import { IDLE, cancel, describeSlot, onKey, type LiftState, type MovableRun, type Slot } from './keyboardMove';
   import PlannerCard from './PlannerCard.svelte';
   import PlannerColumn from './PlannerColumn.svelte';
@@ -15,6 +16,8 @@
     onhold,
     onreread,
     busyChannels,
+    step = 30,
+    allRuns,
   }: {
     week: Week;
     /** The week header's move instructions: every movable card is described by them. */
@@ -24,6 +27,10 @@
     onhold: (holding: boolean) => void;
     onreread?: (run: Run) => void;
     busyChannels?: Set<string>;
+    /** Keyboard Up/Down step: Config → Run lengths default minutes. */
+    step?: number;
+    /** Every run of the week, filtered out or not: a clash with a hidden run is still a clash. */
+    allRuns?: Run[];
   } = $props();
 
   let lift = $state<LiftState>(IDLE);
@@ -37,7 +44,42 @@
   let flip = false;
   let ghost: HTMLDivElement;
 
-  const ctx = $derived({ dayLabel: (d: number) => dayLabel(week, d), lastDay: week.days.length - 1 });
+  // Runs that can still clash: finished and cancelled ones are left out.
+  const ACTIVE = (run: Run) => run.status !== 'done' && run.status !== 'cancelled';
+  // A member who answered no is not playing, so they cannot clash.
+  function timed(run: Run, slot?: Slot): TimedRun {
+    return {
+      id: run.id,
+      day: slot?.day ?? run.day,
+      time: run.status === 'otot' ? null : slot ? slot.time : run.time,
+      minutes: run.minutes ?? 0,
+      members: run.participants.filter((p) => p.answer !== 'no').map((p) => p.id),
+    };
+  }
+  const everyRun = $derived(allRuns ?? week.runs);
+  const active = $derived(everyRun.filter(ACTIVE).map((r) => timed(r)));
+  const ctx = $derived({
+    dayLabel: (d: number) => dayLabel(week, d),
+    lastDay: week.days.length - 1,
+    step,
+    others: (d: number) => timedOthers(active, d, lift.kind === 'lifted' ? lift.runId : ''),
+  });
+
+  /** "Clash: Asahi in HFA 21:00" for a run at a slot, or null when nobody is double-booked. */
+  function clashText(run: Run, slot?: Slot): string | null {
+    const found = clashes(timed(run, slot), active);
+    if (!found.length) return null;
+    const names = new Map(everyRun.flatMap((r) => r.participants).map((p) => [p.id, p.name]));
+    return found
+      .map((c) => {
+        const other = everyRun.find((r) => r.id === c.with.id);
+        const who = c.members.map((id) => names.get(id) ?? id).join(', ');
+        return `${who} in ${other ? runTitle(other) : 'another run'} ${c.with.time}`;
+      })
+      .join('; ');
+  }
+  // Every card that clashes as it stands (overlap alone is allowed).
+  const cardClash = $derived(new Map(week.runs.filter(ACTIVE).map((r) => [r.id, clashText(r)] as const)));
   const byDay = $derived(week.days.map((day) => sortRuns(week.runs.filter((r) => r.day === day.index))));
   const draggedRun = $derived(dragging ? week.runs.find((r) => r.id === dragging) : undefined);
 
@@ -50,7 +92,7 @@
   }
 
   function movable(run: Run): MovableRun {
-    return { id: run.id, day: run.day, time: run.time, label: runTitle(run) };
+    return { id: run.id, day: run.day, time: run.time, label: runTitle(run), minutes: run.minutes };
   }
 
   async function focusHandle(runId: string) {
@@ -73,14 +115,20 @@
 
   function handleKey(event: KeyboardEvent, run: Run) {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    const outcome = onKey(lift, event.key, movable(run), ctx);
+    const outcome = onKey(lift, event.key, movable(run), ctx, event.shiftKey);
     if (!outcome.handled) return;
     event.preventDefault();
     quietUntil = performance.now() + 400;
     lift = outcome.state;
-    onhold(lift.kind === 'lifted');
-    if (outcome.announce) say(outcome.announce);
+    // A step that lands on a clash says so with the step.
+    const clash = lift.kind === 'lifted' && !outcome.commit ? clashText(run, lift.at) : null;
+    if (outcome.announce) say(clash ? `${outcome.announce} Clash: ${clash}.` : outcome.announce);
+    // The move starts while the hold is still on, so it is sent against the
+    // week the lift began on: a poll buffered meanwhile (another admin's
+    // change) is not applied first, and the server answers with a conflict
+    // instead of the drop overwriting it. Releasing the hold then flushes.
     if (outcome.commit) commit(outcome.commit.runId, outcome.commit.to);
+    onhold(lift.kind === 'lifted');
   }
 
   function handleBlur(run: Run) {
@@ -91,11 +139,11 @@
     if (outcome.announce) say(outcome.announce);
   }
 
-  function previewFor(day: number): string | null {
+  function previewFor(day: number): { text: string; clash: string | null } | null {
     const current = lift;
     if (current.kind === 'lifted' && current.at.day === day) {
       const run = week.runs.find((r) => r.id === current.runId);
-      return run ? `${current.at.time ?? 'own time'} ${runTitle(run)}` : null;
+      return run ? { text: `${current.at.time ?? 'own time'} ${runTitle(run)}`, clash: clashText(run, current.at) } : null;
     }
     return null;
   }
@@ -123,7 +171,7 @@
       async ({ createPointerDrag }) => {
         // A pending import resolving after unmount must not bind a dead board.
         if (destroyed) return;
-        engine = createPointerDrag(ghost, { start: dragStart, over: dragOver, end: dragEnd });
+        engine = createPointerDrag(ghost, { start: dragStart, over: dragOver, move: dragMove, end: dragEnd });
         await tick();
         const press = pending;
         pending = null;
@@ -168,29 +216,89 @@
     say(`Picked up ${runTitle(run)}, ${whenLabel(week, run.day, run.time)}.`, true);
   }
 
+  // Where a pointer drop would land: the day, the card it would sit before
+  // (or after the last), and the time that gives (dropTime.ts).
+  interface Plan {
+    day: number;
+    index: number;
+    /** The card the indicator line sits on, and on which edge. */
+    mark: { runId: string; edge: 'before' | 'after' } | null;
+    drop: DropTime;
+    clash: string | null;
+  }
+  let plan = $state<Plan | null>(null);
+  let pointer = { x: 0, y: 0 };
+  let board: HTMLDivElement;
+
+  function planFor(run: Run, day: number): Plan {
+    // Cards of that day in board order, without the dragged one, and where the pointer sits among them.
+    const cards = [...board.querySelectorAll<HTMLElement>(`[data-day="${day}"] [data-run]`)].filter((card) => card.dataset.run !== run.id);
+    let index = cards.findIndex((card) => {
+      const box = card.getBoundingClientRect();
+      return pointer.y < box.top + box.height / 2;
+    });
+    if (index < 0) index = cards.length;
+    const dayRuns = cards.flatMap((card) => {
+      const other = week.runs.find((r) => r.id === card.dataset.run);
+      return other ? [timed(other)] : [];
+    });
+    const drop = dropTime(timed(run), dayRuns, index);
+    const markCard = cards[index] ?? cards[index - 1];
+    return {
+      day,
+      index,
+      mark: markCard ? { runId: markCard.dataset.run!, edge: cards[index] ? 'before' : 'after' } : null,
+      drop,
+      clash: clashText(run, { day, time: drop.time }),
+    };
+  }
+
+  function replan() {
+    const run = draggedRun;
+    if (!run || overDay === null) return;
+    const next = planFor(run, overDay);
+    const changed = !plan || next.day !== plan.day || next.drop.time !== plan.drop.time || next.clash !== plan.clash;
+    plan = next;
+    if (changed) {
+      const edge = next.drop.held ? ` (as ${next.drop.held === 'start' ? 'early' : 'late'} as the day goes)` : '';
+      const clash = next.clash ? ` Clash: ${next.clash}.` : '';
+      say(`Drop on ${describeSlot({ day: next.day, time: next.drop.time }, ctx)}${edge}.${clash}`, true);
+    }
+  }
+
   function dragOver(day: number | null) {
     if (day !== null && day !== overDay) {
       overDay = day;
-      say(`Over ${dayLabel(week, day)}.`, true);
+      replan();
     }
+  }
+
+  function dragMove(x: number, y: number) {
+    pointer = { x, y };
+    replan();
   }
 
   function dragEnd(id: string, day: number | null, canceled: boolean) {
     quietUntil = performance.now() + 400;
+    const last = plan;
     dragging = null;
     overDay = null;
-    onhold(false);
+    plan = null;
+    // Release the hold only after the move has started (see handleKey).
+    const release = () => onhold(false);
     const run = week.runs.find((r) => r.id === id);
-    if (!run) return;
-    if (canceled || day === null) {
+    if (!run) return release();
+    const to = day === null ? null : { day, time: last && last.day === day ? last.drop.time : run.time };
+    if (canceled || to === null) {
       say(`Move cancelled. ${runTitle(run)} stays on ${whenLabel(week, run.day, run.time)}.`);
-    } else if (day === run.day) {
+    } else if (to.day === run.day && to.time === run.time) {
       say(`Dropped ${runTitle(run)} where it was. Nothing changed.`);
     } else {
-      const to = { day, time: run.time };
-      say(`Dropped ${runTitle(run)} on ${describeSlot(to, ctx)}.`);
+      const clash = clashText(run, to);
+      say(`Dropped ${runTitle(run)} on ${describeSlot(to, ctx)}.${clash ? ` Clash: ${clash}; saved anyway.` : ''}`);
       commit(run.id, to);
     }
+    release();
   }
 
   const drag = $derived(engine?.card ?? null);
@@ -200,7 +308,7 @@
 
 <WeekRail days={week.days} runs={week.runs} />
 
-<div class="board planner" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} {@attach warmUp}>
+<div class="board planner" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} bind:this={board} {@attach warmUp}>
   {#each week.days as day (day.index)}
     {@const runs = byDay[day.index] ?? []}
     <PlannerColumn
@@ -221,6 +329,8 @@
               {helpId}
               lifted={lift.kind === 'lifted' && lift.runId === run.id}
               dragging={dragging === run.id}
+              clash={cardClash.get(run.id) ?? null}
+              dropMark={plan?.mark?.runId === run.id ? plan.mark.edge : null}
               onopen={open}
               onkey={handleKey}
               onblur={handleBlur}
@@ -235,10 +345,17 @@
   {/each}
 </div>
 
+<!-- The drop indicator rides with the pointer: the time the drop gives, and
+  a clash when it double-books somebody (announced politely as it changes). -->
 <div class="dnd-ghost runcard" class:dnd-ghost--on={draggedRun !== undefined} bind:this={ghost} aria-hidden="true">
   {#if draggedRun}
-    <span class="runcard__time">{draggedRun.time ?? 'own time'}</span>
+    <span class="runcard__time"
+      >{#if plan && plan.drop.time !== draggedRun.time}<span class="dnd-ghost__from">{draggedRun.time ?? 'own time'}</span> → {plan.drop
+          .time ?? 'own time'}{:else}{draggedRun.time ?? 'own time'}{/if}</span
+    >
     <span>{runTitle(draggedRun)}</span>
+    {#if plan?.drop.held}<span class="dnd-ghost__note">{plan.drop.held === 'start' ? 'earliest' : 'latest'} the day allows</span>{/if}
+    {#if plan?.clash}<span class="plan-clash"><Icon name="alert-triangle" /> Clash: {plan.clash}</span>{/if}
   {/if}
 </div>
 
@@ -246,6 +363,24 @@
 <LiveRegion message={passing} />
 
 <style>
+  /* A clash: two overlapping runs that share a member. Icon and words in the
+     risk text colour, on the card's own face (it still saves). */
+  :global(.plan-clash) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: fit-content;
+    padding: 0 0.4rem;
+    border: 1.5px solid var(--risk);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--risk-text);
+    font-family: var(--body);
+    font-size: var(--fs-mini);
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
   .planner--dragging {
     cursor: grabbing;
     user-select: none;
@@ -266,5 +401,16 @@
 
   .dnd-ghost--on {
     display: grid;
+    max-width: 18rem;
+  }
+
+  .dnd-ghost__from {
+    color: var(--dim);
+    text-decoration: line-through;
+  }
+
+  .dnd-ghost__note {
+    font-size: var(--fs-mini);
+    color: var(--dim);
   }
 </style>

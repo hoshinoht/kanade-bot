@@ -15,6 +15,8 @@
     drag,
     onreread,
     rereadBusy,
+    clash = null,
+    dropMark = null,
   }: {
     run: Run;
     week: Week;
@@ -28,6 +30,10 @@
     drag?: ((card: HTMLElement, handle: HTMLElement | null, runId: string, movable: boolean) => () => void) | null;
     onreread?: (run: Run) => void;
     rereadBusy?: boolean;
+    /** Who it double-books, and where ("Asahi in HFA 21:00"); overlap alone is not a clash. */
+    clash?: string | null;
+    /** A pointer drag would land just before or after this card. */
+    dropMark?: 'before' | 'after' | null;
   } = $props();
 
   const movable = $derived(run.status !== 'done' && run.status !== 'cancelled');
@@ -47,6 +53,8 @@
   class:plan-card--movable={movable}
   class:plan-card--reread={onreread !== undefined}
   class:plan-card--lifted={lifted || dragging}
+  class:plan-card--drop-before={dropMark === 'before'}
+  class:plan-card--drop-after={dropMark === 'after'}
   data-run={run.id}
   {@attach dragAttach}
 >
@@ -54,7 +62,7 @@
     type="button"
     class="plan-card__open"
     data-handle={run.id}
-    aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}. Open details"
+    aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}.{clash ? ` Clash: ${clash}.` : ''} Open details"
     aria-describedby={movable ? helpId : undefined}
     aria-keyshortcuts={movable ? PICK_KEY : undefined}
     onclick={() => onopen(run)}
@@ -62,6 +70,10 @@
     onblur={() => onblur(run)}
   >
     <span class="runcard__visual" aria-hidden="true"><RunCardBody {run} /></span>
+    {#if clash}
+      <!-- Icon and words, never colour alone; the full text is in the accessible name and the tooltip. -->
+      <span class="plan-clash plan-card__clash" aria-hidden="true" title="Clash: {clash}"><Icon name="alert-triangle" /> Clash</span>
+    {/if}
     {#if movable}
       <svg class="plan-card__grip" viewBox="0 0 6 10" aria-hidden="true" focusable="false">
         <circle cx="1" cy="1" r="1" /><circle cx="5" cy="1" r="1" />
@@ -218,5 +230,20 @@
   .plan-card--lifted {
     outline: 2px dashed var(--accent);
     outline-offset: 2px;
+  }
+
+  .plan-card__clash {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  /* Where a pointer drop lands: a bar on the card's top or bottom edge
+     (box-shadow, so nothing on the board moves while dragging). */
+  .plan-card--drop-before {
+    box-shadow: 0 -4px 0 -1px var(--accent);
+  }
+
+  .plan-card--drop-after {
+    box-shadow: 0 4px 0 -1px var(--accent);
   }
 </style>

@@ -288,3 +288,37 @@ test('capture batch 6 layout set', async ({ page }) => {
     await shot(page, `b6/extractions-filtered-${name}`);
   }
 });
+
+// Planner time drops (workplan step planner-time-drops): mid-drag with the
+// drop indicator and a clash, the clash on the cards after the drop, and the
+// Config → Run lengths section.
+test('capture planner time drops and run lengths', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'marigold');
+    localStorage.setItem('theme', 'light');
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('.board[data-hydrated]')).toBeVisible();
+  const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
+  const bm = (await page.locator('[data-run="r-bm"]').boundingBox())!;
+  const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
+  const [x1, y1] = [bm.x + bm.width / 2, bm.y + bm.height + 12];
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12);
+  await page.mouse.move(x1 + 1, y1 + 1);
+  await expect(page.locator('.dnd-ghost--on .plan-clash')).toBeVisible();
+  await shot(page, 'admin-planner-drop-wide-marigold-light');
+  await page.mouse.up();
+  await expect(page.getByText(/Moved HFA/)).toBeVisible();
+  await shot(page, 'admin-planner-clash-wide-marigold-light');
+
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
+    await expect(page.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Boss' })).toHaveValue('BM');
+    await shot(page, `admin-config-run-lengths-${vp.name}-marigold-light`);
+  }
+});

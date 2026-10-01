@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import type { WeekDay } from '@kanade/api-types';
-  import { DayColumn } from '@kanade/ui';
+  import { DayColumn, Icon } from '@kanade/ui';
 
   let {
     day,
@@ -14,7 +14,8 @@
     day: WeekDay;
     count: number;
     targeted: boolean;
-    preview: string | null;
+    /** The keyboard lift's drop indicator: where it would land, and any clash. */
+    preview: { text: string; clash: string | null } | null;
     drop?: ((column: HTMLElement, day: number) => (() => void) | void) | null;
     children: Snippet;
   } = $props();
@@ -26,7 +27,10 @@
 
 <DayColumn {day} {count} extraClass={targeted ? 'board__col--target' : ''} attach={dropAttach}>
   {#if preview}
-    <p class="plan-preview" aria-hidden="true">Drop here · {preview}</p>
+    <p class="plan-preview" aria-hidden="true">
+      Drop here · {preview.text}
+      {#if preview.clash}<span class="plan-clash"><Icon name="alert-triangle" /> Clash: {preview.clash}</span>{/if}
+    </p>
   {/if}
   {@render children()}
 </DayColumn>
@@ -45,6 +49,8 @@
   }
 
   .plan-preview {
+    display: grid;
+    gap: 0.15rem;
     margin: 0.4rem 0.4rem 0;
     padding: 0.35rem 0.5rem;
     border: 2px dashed var(--accent);

@@ -1,9 +1,14 @@
 /**
  * Keyboard alternative to dragging a run (WCAG 2.5.7): M on the focused card
  * picks up (Enter and Space still open it), arrows move (left/right = day,
- * up/down = 30 minutes), Enter/Space drops, Escape cancels. Pure so the
- * announcements are unit-tested.
+ * up/down = the configured run length, `run_lengths.default_minutes`),
+ * Shift+Up/Down jump to just after the previous run / just before the next
+ * one that day, Enter/Space drops, Escape cancels. Pure so the announcements
+ * are unit-tested.
  */
+import { FIRST_MINUTE, LAST_MINUTE, fromMinutes, snapTime, toMinutes, type TimedRun } from './dropTime';
+
+export { fromMinutes, toMinutes };
 
 /** The pick-up shortcut; also exposed as `aria-keyshortcuts` on each card. */
 export const PICK_KEY = 'M';
@@ -20,11 +25,17 @@ export interface MovableRun {
   day: number;
   time: string | null;
   label: string;
+  /** Its length (bosses' run lengths); used by the Shift jumps. */
+  minutes?: number;
 }
 
 export interface MoveContext {
   dayLabel: (day: number) => string;
   lastDay: number;
+  /** Up/Down step in minutes (Config → Run lengths default); 30 when absent. */
+  step?: number;
+  /** The other timed runs of a day, for Shift+Up/Down. */
+  others?: (day: number) => TimedRun[];
 }
 
 export interface Outcome {
@@ -36,16 +47,6 @@ export interface Outcome {
 
 export const IDLE: LiftState = { kind: 'idle' };
 export const STEP_MINUTES = 30;
-const LAST_MINUTE = 23 * 60 + 59;
-
-export function toMinutes(time: string): number {
-  const [h = '0', m = '0'] = time.split(':');
-  return Number(h) * 60 + Number(m);
-}
-
-export function fromMinutes(minutes: number): string {
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-}
 
 export function describeSlot(slot: Slot, ctx: MoveContext): string {
   return `${ctx.dayLabel(slot.day)}, ${slot.time ?? 'own time'}`;
@@ -60,7 +61,8 @@ export function cancel(state: LiftState, run: MovableRun, ctx: MoveContext): Out
   return { state: IDLE, handled: true, announce: `Move cancelled. ${run.label} stays on ${describeSlot(state.origin, ctx)}.` };
 }
 
-export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveContext): Outcome {
+export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveContext, shift = false): Outcome {
+  const step = ctx.step ?? STEP_MINUTES;
   if (state.kind === 'idle' || state.runId !== run.id) {
     if (key.toUpperCase() !== PICK_KEY) return { state, handled: false };
     const origin = { day: run.day, time: run.time };
@@ -69,7 +71,8 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
       handled: true,
       announce:
         `Picked up ${run.label}, ${describeSlot(origin, ctx)}. ` +
-        'Left and right arrows change the day, up and down change the time by 30 minutes. ' +
+        `Left and right arrows change the day, up and down change the time by ${step} minutes; ` +
+        'with Shift, up jumps to just after the run before and down to just before the run after. ' +
         'Enter or Space drops it, Escape cancels.',
     };
   }
@@ -89,8 +92,18 @@ export function onKey(state: LiftState, key: string, run: MovableRun, ctx: MoveC
     case 'ArrowUp':
     case 'ArrowDown': {
       if (at.time === null) return { state, handled: true, announce: 'Own-time runs have no time to change.' };
-      const minutes = toMinutes(at.time) + (key === 'ArrowUp' ? -STEP_MINUTES : STEP_MINUTES);
-      if (minutes < 0 || minutes > LAST_MINUTE) {
+      const direction = key === 'ArrowUp' ? -1 : 1;
+      if (shift) {
+        const self: TimedRun = { id: run.id, day: at.day, time: at.time, minutes: run.minutes ?? step };
+        const time = snapTime(self, at.time, ctx.others?.(at.day) ?? [], direction);
+        if (time === null) {
+          return { state, handled: true, announce: `No run ${direction < 0 ? 'before' : 'after'} ${at.time} on ${ctx.dayLabel(at.day)} to move next to.` };
+        }
+        const next = { ...at, time };
+        return { state: { ...state, at: next }, handled: true, announce: `${run.label}: ${describeSlot(next, ctx)}.` };
+      }
+      const minutes = toMinutes(at.time) + direction * step;
+      if (minutes < FIRST_MINUTE || minutes > LAST_MINUTE) {
         return { state, handled: true, announce: `${at.time} is as ${key === 'ArrowUp' ? 'early' : 'late'} as this day goes.` };
       }
       const next = { ...at, time: fromMinutes(minutes) };

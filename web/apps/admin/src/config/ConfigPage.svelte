@@ -20,6 +20,7 @@
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
   import PingsSection from './PingsSection.svelte';
+  import RunLengthsSection from './RunLengthsSection.svelte';
   import type { ConfigPatch, RoleProfileSave } from './save';
   import SelfServiceSection from './SelfServiceSection.svelte';
   import Toggle from './Toggle.svelte';
@@ -30,10 +31,18 @@
     toaster,
     section = '',
     onsection,
-  }: { toaster: Toaster; section?: string; onsection?: (key: string) => void } = $props();
+    onrunlengths,
+  }: {
+    toaster: Toaster;
+    section?: string;
+    onsection?: (key: string) => void;
+    /** Run lengths saved: the planner's keyboard step follows the new default. */
+    onrunlengths?: (defaultMinutes: number) => void;
+  } = $props();
 
   const SECTIONS = [
     { key: 'pings', label: 'Pings' },
+    { key: 'run-lengths', label: 'Run lengths' },
     { key: 'watching', label: 'Chat watching' },
     { key: 'chatbot', label: 'Chatbot' },
     { key: 'persona', label: 'Persona' },
@@ -267,6 +276,8 @@
               {@const c = config.data}
               {#if item.key === 'pings'}
                 <PingsSection pings={c.pings} {save} />
+              {:else if item.key === 'run-lengths'}
+                <RunLengthsSection runLengths={c.run_lengths} {save} onsaved={onrunlengths} />
               {:else if item.key === 'watching'}
                 <h3 class="settings__title">Chat watching</h3>
                 <div class="settings__actions">

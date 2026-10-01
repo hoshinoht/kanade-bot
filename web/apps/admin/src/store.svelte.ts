@@ -1,4 +1,4 @@
-import type { Channel, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, ConfigView, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
@@ -38,6 +38,8 @@ export class AdminWeek {
   channels = $state<Channel[]>([]);
   identity = $state<Identity | null>(null);
   session = $state<Session | null>(null);
+  /** The planner's keyboard time step: Config → Run lengths default minutes (30 until it loads). */
+  runStep = $state(30);
   /** A 403 `discord_session_required` arrived anyway (e.g. a session read before sign-in changed). */
   #refusedProposals = $state(false);
 
@@ -146,13 +148,15 @@ export class AdminWeek {
   /** Reference data that changes rarely: loaded once per page. */
   async #loadReference(): Promise<void> {
     const get = <T>(path: string) => this.#client.get<T>(path).catch(() => null);
-    const [members, channels, identity, session, roles] = await Promise.all([
+    const [members, channels, identity, session, roles, config] = await Promise.all([
       get<MemberRow[]>('/api/admin/members'),
       get<Channel[]>('/api/admin/channels'),
       get<Identity>('/api/identity'),
       get<Session>('/api/admin/session'),
       get<Role[]>('/api/admin/roles'),
+      get<ConfigView>('/api/admin/config'),
     ]);
+    if (config?.run_lengths) this.runStep = config.run_lengths.default_minutes;
     this.members = members ?? [];
     this.channels = channels ?? [];
     this.identity = identity;
