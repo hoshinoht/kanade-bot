@@ -1,5 +1,5 @@
-//! `notice_outbox.payload`: a [`Notice`] as versioned JSON (`"v": 1`). Any
-//! change to this shape is a new version; old rows must keep decoding.
+//! `notice_outbox.payload`: a [`Notice`] as versioned JSON. Existing kinds
+//! retain their v1 bytes; only fixed-timing add/remove use v2.
 
 use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use serde_json::{Value, json};
@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use crate::domain::schedule::{FixedField, Notice, NoticeChange, RequestDecision, RunStatus};
 use crate::domain::time::{from_iso, to_iso};
 
-const VERSION: i64 = 1;
+const V1: i64 = 1;
+const V2: i64 = 2;
 
 const FIELDS: &[FixedField] = &[
     FixedField::OwnerId,
@@ -42,6 +43,10 @@ fn instant(at: &DateTime<Utc>) -> Result<String, String> {
 /// # Errors
 /// An instant outside v4's representable years.
 pub(super) fn encode(notice: &Notice) -> Result<String, String> {
+    let version = match &notice.change {
+        NoticeChange::FixedAdded { .. } | NoticeChange::FixedRemoved { .. } => V2,
+        _ => V1,
+    };
     let change = match &notice.change {
         NoticeChange::RunStatus { run_id, from, to } => json!({
             "type": "run_status", "run_id": run_id, "from": from.as_str(), "to": to.as_str(),
@@ -102,9 +107,35 @@ pub(super) fn encode(notice: &Notice) -> Result<String, String> {
             "nanos": time.nanosecond(),
             "participants": participants,
         }),
+        NoticeChange::FixedAdded {
+            fixed_id,
+            bosses,
+            weekday,
+            time,
+            participants,
+        } => json!({
+            "type": "fixed_added", "fixed_id": fixed_id, "bosses": bosses,
+            "weekday": weekday.num_days_from_monday(),
+            "seconds": time.num_seconds_from_midnight(),
+            "nanos": time.nanosecond(), "participants": participants,
+        }),
+        NoticeChange::FixedRemoved {
+            fixed_id,
+            bosses,
+            weekday,
+            time,
+            participants,
+            cancelled_runs,
+        } => json!({
+            "type": "fixed_removed", "fixed_id": fixed_id, "bosses": bosses,
+            "weekday": weekday.num_days_from_monday(),
+            "seconds": time.num_seconds_from_midnight(),
+            "nanos": time.nanosecond(), "participants": participants,
+            "cancelled_runs": cancelled_runs,
+        }),
     };
     Ok(json!({
-        "v": VERSION,
+        "v": version,
         "change": change,
         "channel_id": notice.channel_id,
         "listed": notice.listed,
@@ -232,15 +263,46 @@ fn decode_change(change: &Value) -> Result<NoticeChange, String> {
                 .ok_or("time is out of range")?,
             participants: texts(change, "participants")?,
         },
+        "fixed_added" => NoticeChange::FixedAdded {
+            fixed_id: text(change, "fixed_id")?,
+            bosses: texts(change, "bosses")?,
+            weekday: weekday(change)?,
+            time: time(change)?,
+            participants: texts(change, "participants")?,
+        },
+        "fixed_removed" => NoticeChange::FixedRemoved {
+            fixed_id: text(change, "fixed_id")?,
+            bosses: texts(change, "bosses")?,
+            weekday: weekday(change)?,
+            time: time(change)?,
+            participants: texts(change, "participants")?,
+            cancelled_runs: usize::try_from(number(change, "cancelled_runs")?)
+                .map_err(|_| "cancelled_runs is out of range".to_owned())?,
+        },
         other => return Err(format!("unknown notice type {other}")),
     })
 }
 
+fn weekday(change: &Value) -> Result<Weekday, String> {
+    usize::try_from(number(change, "weekday")?)
+        .ok()
+        .and_then(|day| WEEKDAYS.get(day).copied())
+        .ok_or("weekday is out of range".into())
+}
+
+fn time(change: &Value) -> Result<NaiveTime, String> {
+    u32::try_from(number(change, "seconds")?)
+        .ok()
+        .zip(u32::try_from(number(change, "nanos")?).ok())
+        .and_then(|(secs, nanos)| NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos))
+        .ok_or("time is out of range".into())
+}
+
 /// # Errors
-/// Text that is not a version-1 notice.
+/// Text that is not a known notice version.
 pub(super) fn decode(payload: &str) -> Result<Notice, String> {
     let value: Value = serde_json::from_str(payload).map_err(|error| error.to_string())?;
-    if value["v"].as_i64() != Some(VERSION) {
+    if !matches!(value["v"].as_i64(), Some(V1 | V2)) {
         return Err(format!("unknown payload version {}", value["v"]));
     }
     Ok(Notice {
@@ -330,11 +392,33 @@ mod tests {
                 time: NaiveTime::from_hms_opt(21, 5, 0).unwrap(),
                 participants: vec!["3".into()],
             },
+            NoticeChange::FixedAdded {
+                fixed_id: "f".into(),
+                bosses: vec!["HFA".into()],
+                weekday: Weekday::Mon,
+                time: NaiveTime::from_hms_opt(20, 30, 0).unwrap(),
+                participants: vec!["1".into()],
+            },
+            NoticeChange::FixedRemoved {
+                fixed_id: "f".into(),
+                bosses: vec!["HFA".into()],
+                weekday: Weekday::Tue,
+                time: NaiveTime::from_hms_opt(20, 30, 0).unwrap(),
+                participants: vec!["2".into()],
+                cancelled_runs: 3,
+            },
         ];
         for change in changes {
             let mut original = notice(change);
-            let decoded = decode(&encode(&original).unwrap()).unwrap();
+            let payload = encode(&original).unwrap();
+            let decoded = decode(&payload).unwrap();
             assert_eq!(decoded, original);
+            if !matches!(
+                &original.change,
+                NoticeChange::FixedAdded { .. } | NoticeChange::FixedRemoved { .. }
+            ) {
+                assert_eq!(decode_v1_only(&payload).unwrap(), original);
+            }
             original.channel_id = None;
             original.via_portal = false;
             assert_eq!(decode(&encode(&original).unwrap()).unwrap(), original);
@@ -343,9 +427,64 @@ mod tests {
 
     #[test]
     fn unknown_versions_and_kinds_are_refused() {
-        assert!(decode(r#"{"v":2}"#).is_err());
+        assert!(decode(r#"{"v":3}"#).is_err());
         assert!(
-            decode(r#"{"v":1,"change":{"type":"other"},"listed":[],"via_portal":false}"#).is_err()
+            decode(r#"{"v":2,"change":{"type":"other"},"listed":[],"via_portal":false}"#).is_err()
         );
+    }
+
+    #[test]
+    fn existing_kinds_keep_v1_bytes_and_a_v1_reader_accepts_them() {
+        let notice = notice(NoticeChange::RunStatus {
+            run_id: "r".into(),
+            from: RunStatus::Planned,
+            to: RunStatus::Cancelled,
+        });
+        let payload = encode(&notice).unwrap();
+        assert_eq!(
+            payload,
+            r#"{"change":{"from":"planned","run_id":"r","to":"cancelled","type":"run_status"},"channel_id":"900","listed":["1","2"],"v":1,"via_portal":true}"#
+        );
+        assert_eq!(decode_v1_only(&payload).unwrap(), notice);
+    }
+
+    #[test]
+    fn timing_add_and_remove_write_v2() {
+        for change in [
+            NoticeChange::FixedAdded {
+                fixed_id: "f".into(),
+                bosses: vec!["HFA".into()],
+                weekday: Weekday::Mon,
+                time: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
+                participants: vec!["1".into()],
+            },
+            NoticeChange::FixedRemoved {
+                fixed_id: "f".into(),
+                bosses: vec!["HFA".into()],
+                weekday: Weekday::Mon,
+                time: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
+                participants: vec!["1".into()],
+                cancelled_runs: 1,
+            },
+        ] {
+            let value: Value = serde_json::from_str(&encode(&notice(change)).unwrap()).unwrap();
+            assert_eq!(value["v"], V2);
+        }
+    }
+
+    /// The pre-v2 reader's version gate over the unchanged v1 shape.
+    fn decode_v1_only(payload: &str) -> Result<Notice, String> {
+        let value: Value = serde_json::from_str(payload).map_err(|error| error.to_string())?;
+        if value["v"].as_i64() != Some(V1) {
+            return Err("unknown payload version".into());
+        }
+        Ok(Notice {
+            change: decode_change(&value["change"])?,
+            channel_id: optional_text(&value, "channel_id")?,
+            listed: texts(&value, "listed")?,
+            via_portal: value["via_portal"]
+                .as_bool()
+                .ok_or("via_portal is not a flag")?,
+        })
     }
 }

@@ -245,6 +245,8 @@ pub enum SkipReason {
 pub(super) struct MergeInput<'a> {
     pub actor: Actor,
     pub surface: Surface,
+    /// Whether v4's fixed-timing notice carries the portal marker.
+    pub via_portal: bool,
     pub request_id: String,
     pub request_digest: String,
     pub draft: &'a StoredDraft,
@@ -841,6 +843,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             MergeInput {
                 actor,
                 surface: Surface::DraftMerge,
+                via_portal: true,
                 request_id,
                 request_digest,
                 draft: &loaded.draft,
@@ -875,6 +878,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         let MergeInput {
             actor,
             surface,
+            via_portal,
             request_id,
             request_digest,
             draft,
@@ -942,6 +946,20 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     ord: rejected.ord,
                     error: rejected.error,
                 })?;
+            let mut timing_notices: Vec<Notice> = real
+                .notices
+                .iter()
+                .filter(|notice| {
+                    matches!(
+                        &notice.change,
+                        NoticeChange::FixedAdded { .. } | NoticeChange::FixedRemoved { .. }
+                    )
+                })
+                .cloned()
+                .collect();
+            for notice in &mut timing_notices {
+                notice.via_portal = via_portal;
+            }
             let warnings = skipped_runs(&real.results);
             let mismatch = replay_equivalent(&preview, &real);
             if !mismatch.is_empty() {
@@ -954,7 +972,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             // the same way.
             let mut routine = Draft::new(flow.current.clone()).with_attendance(policy.attendance);
             materialise_weeks(&mut routine, &mut PreviewIds::default(), policy, now)?;
-            let notices = match &replaced {
+            let mut notices = match &replaced {
                 Some(notices) => notices.clone(),
                 None => merge_notices(
                     &flow.current,
@@ -965,6 +983,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     &summary,
                 ),
             };
+            notices.append(&mut timing_notices);
             let weeks = analysis.weeks.clone();
             let changes = merged.into_changes();
             if changes.is_empty() {

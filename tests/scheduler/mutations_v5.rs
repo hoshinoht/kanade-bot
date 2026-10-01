@@ -8,6 +8,7 @@ use chrono_tz::Asia::Kuala_Lumpur;
 use kanade::domain::{
     ids::IdGenerator,
     members::{Directory, Member},
+    notify::NoticeOutbox,
     schedule::{
         AmendedRunChoice, EMOJI_NO, EMOJI_YES, FixedEdit, FixedEditChoices, FixedEditRequest,
         NewFixedRun, NewRun, NoticeChange, ReminderPolicy, RunSource, RunStatus, ScheduleError,
@@ -143,6 +144,61 @@ async fn fixture() -> Fixture {
         fixed,
         runs,
     }
+}
+
+#[tokio::test]
+async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
+    let clock = TestClock::new(kl(27, 1, 0));
+    let mut service = SchedulerService::new(
+        MemoryScheduleStore::new(),
+        CountingIds::default(),
+        clock.clone(),
+    );
+    let added = service
+        .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"))
+        .add_fixed_run(NewFixedRun {
+            owner_id: "1001".into(),
+            channel_id: Some("222".into()),
+            bosses: vec!["HFA".into()],
+            weekday: Weekday::Mon,
+            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+            participants: vec!["1001".into()],
+            note: None,
+        })
+        .await
+        .unwrap();
+    let notices = service.store().outbox_notices().await.unwrap();
+    assert!(matches!(
+        &notices[..],
+        [row] if matches!(&row.notice.change, NoticeChange::FixedAdded { fixed_id, .. } if fixed_id == &added)
+    ));
+    assert!(matches!(
+        service
+            .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"),)
+            .add_fixed_run(NewFixedRun {
+                owner_id: "1001".into(),
+                channel_id: Some("222".into()),
+                bosses: vec!["HFA".into()],
+                weekday: Weekday::Mon,
+                time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+                participants: vec!["1001".into()],
+                note: None,
+            })
+            .await,
+        Err(SchedulerError::AlreadyApplied { .. })
+    ));
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 1);
+
+    service
+        .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-remove"))
+        .retire_fixed_run(&added, &[kl(27, 0, 0)], &policy().reminders)
+        .await
+        .unwrap();
+    let notices = service.store().outbox_notices().await.unwrap();
+    assert!(matches!(
+        notices.last().map(|row| &row.notice.change),
+        Some(NoticeChange::FixedRemoved { fixed_id, .. }) if fixed_id == &added
+    ));
 }
 
 async fn snapshot(service: &Service) -> ScheduleSnapshot {

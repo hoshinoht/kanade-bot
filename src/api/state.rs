@@ -38,6 +38,11 @@ use crate::{
 
 pub type ReadFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
 
+/// The live Discord card desk's post-commit proposal-card refresh. It is
+/// absent in offline API composition, where a decision still commits normally.
+pub type ProposalCardRefresh =
+    Arc<dyn Fn(Vec<String>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
 /// Object-safe reads over any store that implements the domain ports.
 pub trait ReadStore: Send + Sync {
     fn snapshot(&self, scope: Scope) -> ReadFuture<'_, ScheduleSnapshot>;
@@ -522,6 +527,8 @@ pub struct ApiState {
     /// The chat pilot's Limits view and status (for A8); empty until serve
     /// starts chat.
     pub chat: Option<Arc<crate::chat::driver::ChatHandle>>,
+    /// The shared CardDesk refresh, attached only after Discord composition.
+    pub proposal_refresh: Option<ProposalCardRefresh>,
 }
 
 impl std::fmt::Debug for ApiState {
@@ -546,5 +553,14 @@ impl ApiState {
 
     pub fn now(&self) -> DateTime<Utc> {
         (self.clock)()
+    }
+
+    /// Refresh the proposal cards touched by a committed inbox decision.
+    pub async fn refresh_proposals(&self, proposal_ids: Vec<String>) {
+        if !proposal_ids.is_empty()
+            && let Some(refresh) = &self.proposal_refresh
+        {
+            refresh(proposal_ids).await;
+        }
     }
 }

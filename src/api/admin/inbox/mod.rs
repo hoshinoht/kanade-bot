@@ -1,7 +1,8 @@
 //! The Inbox (A6): extractor/chat proposals and member requests, listed with
 //! the domain's merge previews, approved or rejected per source. Merge and
 //! requester notices are written to the notice outbox by the store with the
-//! decision; the card refresh is still dropped until serve composition.
+//! decision; live serve attaches the shared proposal-card refresh after the
+//! Discord desk is composed.
 
 mod decide;
 mod list;

@@ -4,7 +4,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
@@ -22,8 +22,8 @@ use kanade::{
         listeners::Site,
         rescan::RescanDesk,
         state::{
-            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, RoleEntry,
-            StaticChannels,
+            ApiState, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, ProposalCardRefresh,
+            RoleEntry, StaticChannels,
         },
         write::{ApiClock, SchedulerWriter},
     },
@@ -165,6 +165,8 @@ pub struct Reads {
     /// Discord and Tailscale sign-in, when built `with_logins`.
     pub discord: Arc<FakeDiscord>,
     pub rescans: Arc<FakeRescans>,
+    /// The post-commit proposal-card refresh port's calls.
+    pub proposal_refreshes: Arc<Mutex<Vec<Vec<String>>>>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -468,6 +470,16 @@ impl Reads {
             ApiClock(Arc::new(move || pinned)),
         )));
         let rescans = FakeRescans::new(pinned);
+        let proposal_refreshes = Arc::new(Mutex::new(Vec::new()));
+        let proposal_refresh: ProposalCardRefresh = {
+            let refreshes = Arc::clone(&proposal_refreshes);
+            Arc::new(move |proposal_ids| {
+                let refreshes = Arc::clone(&refreshes);
+                Box::pin(async move {
+                    refreshes.lock().unwrap().push(proposal_ids);
+                })
+            })
+        };
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -508,6 +520,7 @@ impl Reads {
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
             config: config.map(|make| make(store.clone())),
             chat: None,
+            proposal_refresh: Some(proposal_refresh),
         };
         let mut http = fixture.http();
         if logins {
@@ -540,6 +553,7 @@ impl Reads {
             store,
             discord,
             rescans,
+            proposal_refreshes,
             _fixture: fixture,
             _dir: dir,
         }

@@ -1025,6 +1025,7 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
         let loaded = inbox.reads.store.load_draft(id).await.unwrap().unwrap();
         assert_eq!(loaded.draft.status, DraftStatus::Expired);
     }
+    assert!(inbox.reads.proposal_refreshes.lock().unwrap().is_empty());
 
     let key = [("Idempotency-Key", "approve-moved-1")];
     let first = ok(&inbox.discord(&approve, json!({"version": v}), &key).await);
@@ -1041,11 +1042,16 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
         record.origin.request_id.as_deref(),
         Some(format!("approve:{}", ids.moved).as_str())
     );
+    let refreshes = inbox.reads.proposal_refreshes.lock().unwrap().clone();
+    assert_eq!(refreshes.len(), 1, "only the committed approval refreshes");
+    assert!(refreshes[0].contains(&ids.moved));
+    assert!(refreshes[0].contains(&ids.to_edit));
     assert_eq!(
         ok(&inbox.discord(&approve, json!({"version": v}), &key).await),
         first
     );
     assert_eq!(inbox.head().await, head + 1);
+    assert_eq!(inbox.reads.proposal_refreshes.lock().unwrap().len(), 1);
     // The approval retired the other live proposal about r-kalos.
     assert_eq!(
         refused(
@@ -1063,7 +1069,13 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
     );
     let key = [("Idempotency-Key", "reject-chat-1")];
     let first = ok(&inbox.discord(&reject, json!({"reason": ""}), &key).await);
+    assert_eq!(
+        inbox.reads.proposal_refreshes.lock().unwrap().as_slice(),
+        [refreshes[0].clone(), vec![ids.cancel_chat.clone()]],
+        "only committed rejection adds one refresh"
+    );
     assert_eq!(ok(&inbox.discord(&reject, json!({}), &key).await), first);
+    assert_eq!(inbox.reads.proposal_refreshes.lock().unwrap().len(), 2);
     let loaded = inbox
         .reads
         .store

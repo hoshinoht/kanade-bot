@@ -232,11 +232,20 @@ pub async fn approve(
         .approve_proposal(&id, &approver, edit, &ctx)
         .await
     {
-        Ok(done) if !done.follow_up_errors.is_empty() => Ok(message(format!(
-            "{} A follow-up did not finish; approve again to retry it.",
-            decided("Approved", &loaded)
-        ))),
-        Ok(_) | Err(ProposalError::Draft(DraftError::AlreadyApplied { .. })) => {
+        Ok(done) => {
+            let mut cards = done.superseded;
+            cards.push(id.clone());
+            state.refresh_proposals(cards).await;
+            if !done.follow_up_errors.is_empty() {
+                Ok(message(format!(
+                    "{} A follow-up did not finish; approve again to retry it.",
+                    decided("Approved", &loaded)
+                )))
+            } else {
+                Ok(message(decided("Approved", &loaded)))
+            }
+        }
+        Err(ProposalError::Draft(DraftError::AlreadyApplied { .. })) => {
             Ok(message(decided("Approved", &loaded)))
         }
         Err(error) => Err(refusal::proposal(error)),
@@ -298,7 +307,10 @@ pub async fn reject(
         return Ok(message(decided("Rejected", &loaded)));
     }
     match state.writer.reject_proposal(&id, &approver).await {
-        Ok(_) => Ok(message(decided("Rejected", &loaded))),
+        Ok(_) => {
+            state.refresh_proposals(vec![id]).await;
+            Ok(message(decided("Rejected", &loaded)))
+        }
         // Past its TTL: it is closed now, which is what rejecting wanted.
         Err(ProposalError::Expired) => Ok(message(format!(
             "That proposal had expired; it is closed (#{}).",

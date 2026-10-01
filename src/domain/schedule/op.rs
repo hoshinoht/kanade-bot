@@ -13,7 +13,7 @@ use super::materialise::{materialise_week, materialise_weeks};
 use super::mutate::{
     StatusChange, amend_run, reset_to_fixed, set_status, swap_participants, swap_run_slots,
 };
-use super::notice::Outcome;
+use super::notice::{Notice, NoticeChange, Outcome};
 use super::policy::SchedulePolicy;
 use super::policy::utc_instant;
 use super::reminders::{ReminderPolicy, ensure_reminders, reconcile_day_of, refresh_run_reminders};
@@ -263,7 +263,28 @@ pub fn apply_op(
     now: DateTime<Utc>,
 ) -> Result<Outcome<OpResult>, ScheduleError> {
     Ok(match op {
-        Op::AddFixedRun(new) => quiet(OpResult::Created(draft.add_fixed_run(ids, new.clone()))),
+        Op::AddFixedRun(new) => {
+            let fixed_id = draft.add_fixed_run(ids, new.clone());
+            let fixed = draft
+                .fixed_run(&fixed_id)
+                .cloned()
+                .expect("added fixed run is present");
+            Outcome {
+                value: OpResult::Created(fixed_id.clone()),
+                notices: vec![Notice {
+                    change: NoticeChange::FixedAdded {
+                        fixed_id,
+                        bosses: fixed.bosses,
+                        weekday: fixed.weekday,
+                        time: fixed.time,
+                        participants: fixed.participants.clone(),
+                    },
+                    channel_id: fixed.channel_id,
+                    listed: fixed.participants,
+                    via_portal: true,
+                }],
+            }
+        }
         Op::CreateRun(new) => quiet(OpResult::Created(draft.create_run(ids, new.clone())?)),
         Op::MaterialiseWeek { week_start, policy } => quiet(OpResult::Ids(materialise_week(
             draft,
@@ -322,14 +343,29 @@ pub fn apply_op(
             fixed_id,
             week_starts,
             policy,
-        } => quiet(OpResult::Count(retire_fixed_run(
-            draft,
-            ids,
-            fixed_id,
-            week_starts,
-            policy,
-            now,
-        )?)),
+        } => {
+            let fixed = draft
+                .fixed_run(fixed_id)
+                .cloned()
+                .ok_or_else(|| ScheduleError::UnknownFixedRun(fixed_id.clone()))?;
+            let cancelled_runs = retire_fixed_run(draft, ids, fixed_id, week_starts, policy, now)?;
+            Outcome {
+                value: OpResult::Count(cancelled_runs),
+                notices: vec![Notice {
+                    change: NoticeChange::FixedRemoved {
+                        fixed_id: fixed_id.clone(),
+                        bosses: fixed.bosses,
+                        weekday: fixed.weekday,
+                        time: fixed.time,
+                        participants: fixed.participants.clone(),
+                        cancelled_runs,
+                    },
+                    channel_id: fixed.channel_id,
+                    listed: fixed.participants,
+                    via_portal: true,
+                }],
+            }
+        }
         Op::EnsureReminders {
             run_id,
             rebuild,

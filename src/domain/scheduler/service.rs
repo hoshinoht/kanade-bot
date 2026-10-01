@@ -364,13 +364,19 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
 /// edit` announces nothing (v4's slash edit posted nothing). Every other
 /// surface keeps the mark and the announcement.
 fn on_surface(op: &Op<'_>, surface: Surface, mut outcome: Outcome<OpResult>) -> Outcome<OpResult> {
+    if surface == Surface::Import {
+        outcome.notices.clear();
+        return outcome;
+    }
     let discord = surface == Surface::Discord;
     match op {
         Op::ApplyFixedEdit { .. } if discord => outcome.notices.clear(),
         Op::AmendRun { .. }
         | Op::SwapRunSlots { .. }
         | Op::ApplyFixedEdit { .. }
-        | Op::FixedParticipants { .. } => {
+        | Op::FixedParticipants { .. }
+        | Op::AddFixedRun(_)
+        | Op::RetireFixedRun { .. } => {
             for notice in &mut outcome.notices {
                 notice.via_portal = !discord;
             }

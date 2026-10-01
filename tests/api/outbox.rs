@@ -108,3 +108,43 @@ async fn a4_writes_and_rollbacks_enqueue_their_notices_once() {
             .all(|row| row.drained_at.is_none())
     );
 }
+
+#[tokio::test]
+async fn weekly_timing_add_and_remove_write_v4_notices_once() {
+    let reads = Reads::new().await;
+    let create = json!({
+        "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001"],
+        "channel_id": "kalos-four", "note": null,
+    });
+    let key = [("Idempotency-Key", "outbox-fixed-add")];
+    let before = reads.version().await;
+    let created = reads
+        .call("POST", "/api/admin/fixed", create.clone(), &key)
+        .await;
+    assert_eq!(created.status, 201, "{}", created.text());
+    let id = created.json()["id"].as_str().unwrap().to_owned();
+    let added = kinds_match_the_record(&reads.store, before + 1).await;
+    assert!(
+        matches!(&added[..], [Notice { change: NoticeChange::FixedAdded { fixed_id, .. }, via_portal: true, .. }] if fixed_id == &id),
+        "{added:?}"
+    );
+    let total = reads.store.outbox_notices().await.unwrap().len();
+    let replay = reads.call("POST", "/api/admin/fixed", create, &key).await;
+    assert_eq!(replay.status, 201, "{}", replay.text());
+    assert_eq!(reads.store.outbox_notices().await.unwrap().len(), total);
+
+    let removed = reads
+        .call(
+            "DELETE",
+            &format!("/api/admin/fixed/{id}"),
+            json!({}),
+            &[("Idempotency-Key", "outbox-fixed-remove")],
+        )
+        .await;
+    assert_eq!(removed.status, 200, "{}", removed.text());
+    let removed = kinds_match_the_record(&reads.store, reads.version().await).await;
+    assert!(
+        matches!(&removed[..], [Notice { change: NoticeChange::FixedRemoved { fixed_id, .. }, via_portal: true, .. }] if fixed_id == &id),
+        "{removed:?}"
+    );
+}

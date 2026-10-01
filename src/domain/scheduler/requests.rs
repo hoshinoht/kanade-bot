@@ -527,6 +527,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 MergeInput {
                     actor: actor.clone(),
                     surface: Surface::RequestMerge,
+                    via_portal: true,
                     request_id,
                     request_digest,
                     draft: &loaded.draft,

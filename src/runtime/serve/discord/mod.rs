@@ -36,7 +36,10 @@ use super::{
 };
 use crate::{
     api::{
-        admin::config::SettingsChanged, auth::Clock, rescan::RescanDesk, state::GuildAccess,
+        admin::config::SettingsChanged,
+        auth::Clock,
+        rescan::RescanDesk,
+        state::{GuildAccess, ProposalCardRefresh},
         write::ApiClock,
     },
     bot::{
@@ -218,6 +221,21 @@ where
         &access,
         &policy,
     ));
+    let proposal_refresh: ProposalCardRefresh = {
+        let desk = Arc::clone(&desk);
+        Arc::new(move |proposal_ids| {
+            let desk = Arc::clone(&desk);
+            Box::pin(async move { desk.refresh_proposals(&proposal_ids).await })
+        })
+    };
+    match Arc::get_mut(&mut composition.admin.state) {
+        Some(state) => state.proposal_refresh = Some(proposal_refresh),
+        None => {
+            return Err(Error::Startup(
+                "the proposal-card refresh could not be attached".into(),
+            ));
+        }
+    }
     let rsvp = ReactionRouter::new(
         StoreIndex(Arc::clone(&store)),
         SchedulerService::new(

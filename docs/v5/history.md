@@ -150,17 +150,21 @@ re-derived afterwards (parent decision 2026-09-25):
 - A replayed request (`AlreadyApplied`), a refused, stale, conflicting or
   empty write writes nothing, so a retry finds exactly the rows the first
   attempt wrote: none are lost and none repeat.
-- The payload is the domain `Notice` (versioned JSON, `"v": 1`), not text:
-  channel choice (home channel, else the post channel), mentions, quiet mode
-  and rendering happen when the delivery tick drains it
-  (`maintenance-contract.md`, *Notice outbox*). A row goes `pending` →
-  `drained` once; a trigger refuses anything else.
+- The payload is the domain `Notice`, not text: existing kinds retain their
+  byte-identical version-1 JSON, while `FixedAdded`/`FixedRemoved` use version
+  2 to retain a timing's facts after removal. Both versions decode. On rollback
+  to a pre-v2 image, only pending v2 timing notices are undecodable; they stay
+  pending and raise an alert rather than posting, which is safe because that
+  image has no such notice kinds. Channel choice (home channel, else the post
+  channel), mentions, quiet mode and rendering happen when the delivery tick
+  drains it (`maintenance-contract.md`, *Notice outbox*). A row goes `pending`
+  → `drained` once; a trigger refuses anything else.
 
 Which paths write what:
 
 | Path | Source | Notices |
 | --- | --- | --- |
-| mutations (`set_status` with `announce`, `amend_run`, slot swaps, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices`; a slot swap records both run rows in one record and writes one normal `RunMoved` notice per run. By surface (v4 parity, parent decision 2026-09-25): a move, fixed edit or party change made in Discord has no `(via portal)` mark, other surfaces keep it, and a Discord fixed edit (`/fixed edit`) writes none |
+| mutations (`add_fixed_run`, `retire_fixed_run`, `set_status` with `announce`, `amend_run`, slot swaps, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices`; `add_fixed_run` emits `FixedAdded` and retirement emits `FixedRemoved` outside import. A slot swap records both run rows in one record and writes one normal `RunMoved` notice per run. By surface (v4 parity, parent decision 2026-09-25): a move, fixed edit or party change made in Discord has no `(via portal)` mark, other surfaces keep it, and a Discord fixed edit (`/fixed edit`) writes none |
 | rollbacks (revert, week restore, actor revert, checkpoint restore) | `change:<seq>` | one `Rollback` per channel |
 | cherry-picks | `change:<seq>` | `Picked.notices` |
 | draft merges | `change:<seq>` | the `Merged` summaries |
@@ -172,10 +176,9 @@ Which paths write what:
 Services still return the notices (`Outcome`, `MergeOutcome`, `Approved`,
 `Rejected`, `DraftExpiry`, `Picked`, `RevertOutcome`) for reports; callers
 must not enqueue them again. Nothing about the actor suppresses a notice
-(only the Discord surface, for fixed edits, above):
-a write that must stay quiet (the v4 import, routine materialisation) uses
-an operation that emits none (`add_fixed_run`, `materialise_weeks`,
-`StatusChange { announce: false, .. }`) or commits with an empty
+(only the Discord surface, for fixed edits, above): `Surface::Import` clears
+scheduler notices, so v4 import stays quiet. Routine materialisation and
+`StatusChange { announce: false, .. }` emit none or commit with an empty
 `ChangeMeta.outbox`. The tick's expiry plans each due request's
 notice before it expires them; submitting or editing an expired request is
 refused, so the set closed is the set planned.

@@ -206,6 +206,7 @@ pub async fn compose(
         rescans: None,
         config: Some(Arc::new(desk)),
         chat: Some(health.chat()),
+        proposal_refresh: None,
     };
     Ok(Composition {
         admin: LiveAdmin {

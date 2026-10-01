@@ -74,6 +74,25 @@ pub enum NoticeChange {
         time: NaiveTime,
         participants: Vec<String>,
     },
+    /// A weekly timing was added. Its facts are retained because the outbox
+    /// may drain after later edits to that timing.
+    FixedAdded {
+        fixed_id: String,
+        bosses: Vec<String>,
+        weekday: Weekday,
+        time: NaiveTime,
+        participants: Vec<String>,
+    },
+    /// A weekly timing was removed. Its facts cannot be read from the
+    /// schedule when the outbox later drains.
+    FixedRemoved {
+        fixed_id: String,
+        bosses: Vec<String>,
+        weekday: Weekday,
+        time: NaiveTime,
+        participants: Vec<String>,
+        cancelled_runs: usize,
+    },
 }
 
 /// What became of a member request.
@@ -115,6 +134,8 @@ impl NoticeChange {
             | Self::RunSwapped { run_id, .. }
             | Self::RunReset { run_id, .. } => Some(run_id),
             Self::FixedChanged { .. }
+            | Self::FixedAdded { .. }
+            | Self::FixedRemoved { .. }
             | Self::Rollback { .. }
             | Self::Merged { .. }
             | Self::RequestDecided { .. } => None,
@@ -132,7 +153,9 @@ impl Notice {
             | NoticeChange::RequestDecided { .. } => "status",
             NoticeChange::RunMoved { .. } | NoticeChange::RunReset { .. } => "amend",
             NoticeChange::RunSwapped { .. } => "swap",
-            NoticeChange::FixedChanged { .. } => "fixed",
+            NoticeChange::FixedChanged { .. }
+            | NoticeChange::FixedAdded { .. }
+            | NoticeChange::FixedRemoved { .. } => "fixed",
         }
     }
 
@@ -144,6 +167,8 @@ impl Notice {
             NoticeChange::RunSwapped { .. } => "notice.run.swap.updated".into(),
             NoticeChange::RunReset { .. } => "notice.run.reset.restored".into(),
             NoticeChange::FixedChanged { .. } => "notice.fixed.edit.changed".into(),
+            NoticeChange::FixedAdded { .. } => "notice.fixed.add.created".into(),
+            NoticeChange::FixedRemoved { .. } => "notice.fixed.remove.removed".into(),
             NoticeChange::Rollback {
                 checkpoint: None, ..
             } => "notice.rollback.reverted".into(),
@@ -227,6 +252,25 @@ impl Notice {
                 .chain(participants.iter().cloned())
                 .collect()
             }
+            NoticeChange::FixedAdded {
+                fixed_id,
+                weekday,
+                time,
+                participants,
+                ..
+            } => [
+                fixed_id.clone(),
+                weekday.num_days_from_monday().to_string(),
+                format!("{:02}:{:02}", time.hour(), time.minute()),
+            ]
+            .into_iter()
+            .chain(participants.iter().cloned())
+            .collect(),
+            NoticeChange::FixedRemoved {
+                fixed_id,
+                cancelled_runs,
+                ..
+            } => vec![fixed_id.clone(), cancelled_runs.to_string()],
         }
     }
 }

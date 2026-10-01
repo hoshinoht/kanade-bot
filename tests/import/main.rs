@@ -8,6 +8,7 @@ use kanade::domain::history::{Actor, ChangeFilter, ChangeHistory, ChangeQuery, S
 use kanade::domain::model_log::{
     ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, ModelLogStore,
 };
+use kanade::domain::notify::NoticeOutbox;
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::import::v4::{Options, Report, run};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
@@ -409,6 +410,10 @@ async fn apply_imports_fixed_runs_logs_and_messages_and_a_second_apply_adds_noth
         records
             .iter()
             .all(|r| r.origin.actor == import && r.origin.surface == Surface::Import)
+    );
+    assert!(
+        store.outbox_notices().await.unwrap().is_empty(),
+        "imported history must not enqueue Discord notices"
     );
     assert_eq!(
         records[0].origin.request_id.as_deref(),

@@ -15,7 +15,9 @@ use kanade::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, Ch
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
-use kanade::domain::schedule::{ChangeSet, ReminderPolicy, SchedulePolicy, ScheduleSnapshot};
+use kanade::domain::schedule::{
+    ChangeSet, Notice, NoticeChange, ReminderPolicy, SchedulePolicy, ScheduleSnapshot,
+};
 use kanade::domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError, Supersede,
@@ -258,6 +260,14 @@ async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
         .approve_proposal(&ids[0], &approver, &policy, &Guild)
         .await
         .unwrap();
+    assert!(matches!(
+        approved.merge.notices.as_slice(),
+        [Notice {
+            change: NoticeChange::FixedAdded { .. },
+            via_portal: false,
+            ..
+        }]
+    ));
     assert_eq!(approved.follow_up_errors.len(), 2, "{approved:?}");
     let timing = approved.fixed_run_id.clone().expect("new timing");
     let runs_of = async |store: &Flaky| {

@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 now writes v4-exact weekly-timing added and removed notices with their
+  deciding commits (never during v4 import), and refreshes posted proposal
+  cards after committed portal inbox approvals or rejections.
+
 - v5 chat now follows up a qualifying ❌ on its own proposal card with one
   read-only, silent reply to the card. It verifies the original chat asker,
   uses a per-channel cooldown, spends no chat allowance and retains only the

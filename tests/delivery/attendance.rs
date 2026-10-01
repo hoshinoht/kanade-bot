@@ -65,7 +65,8 @@ async fn run_status<S: Store>(store: &S, run: &str) -> RunStatus {
 /// previous week's digest is recorded so this week's posts.
 async fn seed<S: Store>(store: &S, attendance: AttendancePolicy) -> String {
     let mut ids = RandomIds;
-    let admin = Origin::new(Actor::admin("root"), Surface::AdminPortal);
+    // Seed data is historical, not an admin action the tick should announce.
+    let admin = Origin::new(Actor::system("seed"), Surface::Import);
     let mut service = service(store, &mut ids, now()).with_attendance(attendance);
     let fixed = service
         .as_origin(admin)

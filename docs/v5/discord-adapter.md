@@ -293,6 +293,12 @@ reactions as a best effort, as in v4. A notice sent inside its own operation
 passes that operation's effect ordinal; tick sends pass none. Outbox notices
 are claimed by `(source, ordinal)` (`Executor::execute_source`).
 
+Weekly-timing add and remove notices use v4's exact `fixed_notice` text and
+are written with the deciding commit. A removed timing carries its former
+facts in the outbox payload because it no longer exists when the tick renders
+the notice. `Surface::Import` writes no such notices, so importing v4 history
+never posts into Discord.
+
 Tick (v4 order, one clock reading, one `scheduler_tick` lease, ended even on
 error): materialise the current and next two boss weeks when the week differs
 from the one this process last materialised (v4 kept `last_materialised_week`
@@ -526,7 +532,9 @@ rollback. Do not start the old image against an already-upgraded store.
   on the card, from the proposals' states: merged → `✅ applied by <name>`,
   rejected → `❌ rejected by <name>`, superseded → `↪ superseded by a newer
   card`. The edit mentions nobody. A card's retired siblings are refreshed
-  after every pass and every approval. A ✅ refused because the run changed
+  after every pass and every approval. The portal/API inbox awaits the shared
+  `CardDesk` refresh only after its approval or rejection commits; replays,
+  refusals and no-ops do not invoke it. A ✅ refused because the run changed
   after the card went up adds `⚠️ out of date` at that refresh (not
   persisted: a later refresh shows only the decisions).
 - **Reactions** (`CardDesk::on_reaction`): only added ✅/❌ on a message

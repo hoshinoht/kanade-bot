@@ -176,6 +176,34 @@ fn body(notice: &Notice, schedule: &ScheduleSnapshot, who: &Audience, zone: Tz) 
                 people(participants)
             )
         }
+        NoticeChange::FixedAdded {
+            bosses,
+            weekday,
+            time,
+            participants,
+            ..
+        } => format!(
+            "📌 Weekly timing added: **{}** · {} {:02}:{:02} · {}",
+            format_bosses(bosses),
+            weekday_name(*weekday),
+            time.hour(),
+            time.minute(),
+            people(participants)
+        ),
+        NoticeChange::FixedRemoved {
+            bosses,
+            weekday,
+            time,
+            participants,
+            ..
+        } => format!(
+            "🗑️ Weekly timing removed: **{}** · {} {:02}:{:02} · {}",
+            format_bosses(bosses),
+            weekday_name(*weekday),
+            time.hour(),
+            time.minute(),
+            people(participants)
+        ),
         // v5 only from here on.
         NoticeChange::RunReset { run_id, from, to } => {
             let run = run(run_id)?;
@@ -409,6 +437,29 @@ mod tests {
         assert_eq!(
             text(fixed, &["1001", "1002"], false, false),
             "📌 Weekly timing changed: **HFA** · Wed 21:30 · Alvin <@1002>"
+        );
+        let added = NoticeChange::FixedAdded {
+            fixed_id: "f".into(),
+            bosses: vec!["HFA".into()],
+            weekday: Weekday::Wed,
+            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+            participants: vec!["1001".into(), "1002".into()],
+        };
+        assert_eq!(
+            text(added, &["1001", "1002"], false, false),
+            "📌 Weekly timing added: **HFA** · Wed 21:30 · Alvin <@1002>"
+        );
+        let removed = NoticeChange::FixedRemoved {
+            fixed_id: "f".into(),
+            bosses: vec!["HFA".into()],
+            weekday: Weekday::Wed,
+            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+            participants: vec!["1001".into(), "1002".into()],
+            cancelled_runs: 2,
+        };
+        assert_eq!(
+            text(removed, &["1001", "1002"], false, false),
+            "🗑️ Weekly timing removed: **HFA** · Wed 21:30 · Alvin <@1002>"
         );
     }
 

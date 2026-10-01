@@ -738,6 +738,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                 MergeInput {
                     actor: actor.clone(),
                     surface,
+                    via_portal: approver.via_portal,
                     request_id: request_id.clone(),
                     request_digest,
                     draft: &loaded.draft,

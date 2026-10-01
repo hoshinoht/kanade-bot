@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use kanade::api::state::ProposalCardRefresh;
 use kanade::bot::cards::CardOutbox;
 use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDeps};
 use kanade::bot::delivery::AdminAlert;
@@ -903,6 +904,34 @@ async fn a_members_check_after_their_own_portal_edit_stays_silent() {
         .find(|run| run.id == world.run)
         .expect("run");
     assert_eq!(run.datetime, edited);
+}
+
+#[tokio::test]
+async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
+    let world = World::new().await;
+    let desk = Arc::new(desk(
+        &world.store,
+        &world.discord,
+        &world.alerts,
+        &world.ids,
+    ));
+    let entry = world.propose(local(9, 2, 21, 30)).await;
+    let id = entry.proposal_id.clone();
+    desk.post_card(&card(vec![entry], Vec::new())).await;
+    let admin = Staff.approver(ADMIN);
+    service(&world.store, &world.ids)
+        .approve_proposal(&id, &admin, &policy(), &Roster)
+        .await
+        .expect("portal approval");
+    let refresh: ProposalCardRefresh = {
+        let desk = Arc::clone(&desk);
+        Arc::new(move |proposal_ids| {
+            let desk = Arc::clone(&desk);
+            Box::pin(async move { desk.refresh_proposals(&proposal_ids).await })
+        })
+    };
+    refresh(vec![id]).await;
+    assert!(world.last_edit_content().ends_with("\n✅ applied by Boss"));
 }
 
 /// `FakeDiscord` whose creates orphan every live lease first (a restart
