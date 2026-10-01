@@ -167,9 +167,9 @@ async fn replay(case: Value) -> Vec<Value> {
                     context_tokens,
                     kanade::chat::context::COMPLETION_RESERVE_TOKENS,
                 ) {
-                    Ok(outgoing) => value(json!({
-                        "messages": messages_json(&outgoing),
-                        "dropped": before + 1 - outgoing.len(),
+                    Ok(fits) => value(json!({
+                        "messages": messages_json(&fits.messages),
+                        "dropped": before + 1 - fits.messages.len(),
                     })),
                     Err(budget) => error("ContextBudgetError", budget.to_string()),
                 }

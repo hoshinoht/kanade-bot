@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::schedule::{Change, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreError};
@@ -27,7 +28,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 18);
+    assert_eq!(restored.schema_version().await.expect("version"), 19);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -149,7 +150,7 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (19, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (20, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
@@ -157,12 +158,80 @@ async fn restore_validates_the_copy_before_publishing() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 19,
-                known: 18
+                found: 20,
+                known: 19
             }
         ),
         "{error}"
     );
+}
+
+/// A backup taken before 0019 (no usage columns, ledger at 18) restores and
+/// migrates; its logs read as "not reported".
+#[tokio::test]
+async fn a_pre_usage_backup_restores_and_migrates() {
+    let dir = TempDir::new();
+    let old = dir.config("pre-v19");
+    SqliteStore::open(&old)
+        .await
+        .expect("opens")
+        .close()
+        .await
+        .expect("close");
+    tamper(
+        &old,
+        "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, \
+         request_count, outcome, guardrail, message_ids, proposal_ids) VALUES ('x-1', \
+         '2026-09-01T00:00:00.000000+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', '{}', \
+         '[]', '[]');
+         INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, \
+         withheld, guardrail, request_count) VALUES ('c-1', \
+         '2026-09-01T00:00:00.000000+00:00', 'q', 'r', 'answered', 0, 0, '{}', 1);
+         INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, \
+         tool_calls) VALUES ('c-1', 0, 'kanata/chat', '[]', '[]', '[]');
+         ALTER TABLE extractions DROP COLUMN prompt_estimate;
+         ALTER TABLE extractions DROP COLUMN completion_tokens;
+         ALTER TABLE extractions DROP COLUMN prompt_tokens;
+         ALTER TABLE chat_rounds DROP COLUMN prompt_estimate;
+         ALTER TABLE chat_rounds DROP COLUMN completion_tokens;
+         ALTER TABLE chat_rounds DROP COLUMN prompt_tokens;
+         DELETE FROM schema_migrations WHERE version = 19;
+         UPDATE store_meta SET schema_version = 18;",
+    )
+    .await;
+    let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))
+        .await
+        .expect("restores");
+    assert_eq!(restored.schema_version().await.expect("version"), 19);
+    assert_eq!(restored.foreign_key_violations().await.expect("check"), 0);
+    let log = restored
+        .load_extraction("x-1")
+        .await
+        .expect("load")
+        .expect("kept");
+    assert_eq!(
+        (
+            log.prompt_tokens,
+            log.completion_tokens,
+            log.prompt_estimate
+        ),
+        (None, None, None)
+    );
+    let chat = restored
+        .load_chat("c-1")
+        .await
+        .expect("load")
+        .expect("kept");
+    let round = &chat.rounds[0];
+    assert_eq!(
+        (
+            round.prompt_tokens,
+            round.completion_tokens,
+            round.prompt_estimate
+        ),
+        (None, None, None)
+    );
+    restored.close().await.expect("close");
 }
 
 const COMMITS: usize = 200;

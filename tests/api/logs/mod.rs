@@ -78,6 +78,9 @@ fn round(model: &str, tools: &[&str], calls: Value, response: Option<&str>) -> C
         response: response.map(str::to_owned),
         route: None,
         clean: false,
+        prompt_tokens: None,
+        completion_tokens: None,
+        prompt_estimate: None,
     }
 }
 
@@ -143,6 +146,9 @@ pub fn extraction(
         message_ids: Vec::new(),
         proposal_ids: Vec::new(),
         refusals: Vec::new(),
+        prompt_tokens: None,
+        completion_tokens: None,
+        prompt_estimate: None,
     }
 }
 
@@ -181,6 +187,12 @@ async fn seed_chats(reads: &Reads) {
     answered.rounds[1].route = Some("external_masked".into());
     answered.rounds[1].latency_ms = None;
     answered.rounds[1].clean = true;
+    // Usage: the first round reported, the clean retry only has its estimate.
+    (answered.prompt_tokens, answered.completion_tokens) = (Some(1200), Some(30));
+    answered.rounds[0].prompt_tokens = Some(1200);
+    answered.rounds[0].completion_tokens = Some(30);
+    answered.rounds[0].prompt_estimate = Some(1000);
+    answered.rounds[1].prompt_estimate = Some(1100);
     let mut withheld = chat(
         "c-withheld",
         utc(9, 27, 12, 0),
@@ -200,8 +212,12 @@ async fn seed_chats(reads: &Reads) {
         )],
     );
     withheld.withheld = true;
+    (withheld.prompt_tokens, withheld.completion_tokens) = (Some(500), Some(20));
+    withheld.rounds[0].prompt_tokens = Some(500);
+    withheld.rounds[0].completion_tokens = Some(20);
+    withheld.rounds[0].prompt_estimate = Some(400);
     withheld.guardrail = json!({"content_filter": true});
-    let limited = chat(
+    let mut limited = chat(
         "c-limited",
         utc(9, 20, 12, 0),
         "1004",
@@ -212,6 +228,8 @@ async fn seed_chats(reads: &Reads) {
         None,
         Vec::new(),
     );
+    // Turn totals are not a pair (v4 imports may carry half of one).
+    limited.prompt_tokens = Some(10);
     let mut timeout = chat(
         "c-timeout",
         utc(9, 29, 1, 0),
@@ -224,6 +242,10 @@ async fn seed_chats(reads: &Reads) {
         vec![round("kanata/chat", &[], json!([]), None)],
     );
     timeout.clean_retry = true;
+    (timeout.prompt_tokens, timeout.completion_tokens) = (Some(900), Some(10));
+    timeout.rounds[0].prompt_tokens = Some(900);
+    timeout.rounds[0].completion_tokens = Some(10);
+    timeout.rounds[0].prompt_estimate = Some(1000);
     for row in [answered, withheld, limited, timeout] {
         store.record_chat(row).await.unwrap();
     }
@@ -311,6 +333,11 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     newest.prompt = "Messages:\n[Alice] kalos wed 9pm instead?".into();
     newest.raw_response = r#"{"amendments": []}"#.into();
     newest.latency_ms = Some(12_000);
+    newest.prompt_tokens = Some(1500);
+    newest.completion_tokens = Some(60);
+    newest.prompt_estimate = Some(1200);
+    newest.guardrail =
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}});
     newest.message_ids = vec!["m-said".into(), "m-pruned".into()];
     newest.proposal_ids = vec![proposal.to_owned(), "p-missing".into()];
     newest.refusals = vec![ExtractionRefusal {
@@ -329,6 +356,8 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     failed.prompt = "Messages:\n[Bob] carling tonight".into();
     failed.latency_ms = None;
     failed.error = Some("no answer".into());
+    // Sent, no usage reported: the estimate alone.
+    failed.prompt_estimate = Some(800);
     let mut old = extraction(
         "x-old",
         utc(9, 19, 2, 0),

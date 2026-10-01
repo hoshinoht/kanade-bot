@@ -93,6 +93,9 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
             response: None,
             route: None,
             clean: false,
+            prompt_tokens: None,
+            completion_tokens: None,
+            prompt_estimate: None,
         }];
     }
     recorded
@@ -126,6 +129,9 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
                     .map(str::to_owned),
                 route: None,
                 clean: false,
+                prompt_tokens: None,
+                completion_tokens: None,
+                prompt_estimate: None,
             }
         })
         .collect()
@@ -227,6 +233,10 @@ pub fn extraction(
         message_ids,
         proposal_ids: proposal_ids.unwrap_or_default(),
         refusals: Vec::new(),
+        // v4 recorded no per-pass usage.
+        prompt_tokens: None,
+        completion_tokens: None,
+        prompt_estimate: None,
     }
 }
 

@@ -137,6 +137,9 @@ pub fn interaction(
             response: round.content.clone(),
             route: Some(generation.route().to_owned()),
             clean: round.clean,
+            prompt_tokens: round.prompt_tokens,
+            completion_tokens: round.completion_tokens,
+            prompt_estimate: round.prompt_estimate,
         })
         .collect();
     ChatInteraction {

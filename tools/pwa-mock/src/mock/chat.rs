@@ -19,6 +19,30 @@ struct Turn {
     asked: &'static str,
     said: &'static str,
     tools: Vec<(&'static str, &'static str, &'static str, u32, &'static str)>,
+    /// The provider reported token usage for its rounds.
+    usage: bool,
+}
+
+/// Round `i`'s `(prompt, completion, estimate)` tokens: none when turned
+/// away (nothing ran), the estimate alone when the provider reported none.
+fn round_usage(t: &Turn, i: usize) -> (Option<u32>, Option<u32>, Option<u32>) {
+    let i = u32::try_from(i).unwrap_or(0);
+    let estimate = 850 + 140 * i;
+    match t.outcome {
+        "turned_away" => (None, None, None),
+        _ if !t.usage => (None, None, Some(estimate)),
+        _ => (Some(900 + 150 * i), Some(40 + 5 * i), Some(estimate)),
+    }
+}
+
+/// The turn totals: sums of the rounds' reported pairs.
+fn turn_usage(t: &Turn) -> (Option<u32>, Option<u32>) {
+    (0..t.models.len())
+        .map(|i| round_usage(t, i))
+        .fold((None, None), |(p, c), (rp, rc, _)| match (rp, rc) {
+            (Some(rp), Some(rc)) => (Some(p.unwrap_or(0) + rp), Some(c.unwrap_or(0) + rc)),
+            _ => (p, c),
+        })
 }
 
 const CHAT: &str = "kanata/chat";
@@ -46,6 +70,7 @@ fn turn(
         asked: "",
         said: "",
         tools: vec![],
+        usage: true,
     }
 }
 
@@ -85,6 +110,7 @@ fn turns() -> Vec<Turn> {
             latency_ms: 5_902,
             asked: "any tips for hard limbo",
             said: "Three quick ones from the checked-in notes: …",
+            usage: false,
             tools: vec![(
                 "knowledge.read",
                 r#"{"boss":"Limbo","difficulty":"h","sections":["tips","sources"],"limit":3}"#,
@@ -165,6 +191,7 @@ fn turns() -> Vec<Turn> {
             latency_ms: 4_120,
             asked: "write a rude poem about hotaru",
             said: "",
+            usage: false,
             ..turn("c-blocked", 42, "1006", "fa-night", "content_blocked")
         },
         Turn {
@@ -180,6 +207,7 @@ fn turns() -> Vec<Turn> {
             latency_ms: 12_300,
             asked: "summarise this week for me",
             said: "",
+            usage: false,
             ..turn("c-fail", 20, "1008", "hstar-party", "error")
         },
     ]
@@ -299,6 +327,7 @@ impl Store {
             // As the server: a withheld question is never shown, only the placeholder.
             "latency_ms": t.latency_ms, "outcome": t.outcome, "asked": if t.outcome == "withheld" { WITHHELD } else { t.asked },
             "tools_used": t.tools.iter().map(|x| x.0).collect::<Vec<_>>(),
+            "prompt_tokens": turn_usage(t).0, "completion_tokens": turn_usage(t).1,
         })
     }
 
@@ -333,14 +362,24 @@ impl Store {
                 }
                 let mut latencies: Vec<u32> = mine.iter().filter(|t| t.outcome == "answered").map(|t| t.latency_ms).collect();
                 latencies.sort_unstable();
-                Some(json!({
+                // Usage from this model's rounds only, never the turn totals.
+                let usage = super::extractions::usage_summary(mine.iter().flat_map(|t| {
+                    t.models
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, model)| *model == m)
+                        .map(|(i, _)| round_usage(t, i))
+                }));
+                let mut summary = json!({
                     "model": m, "count": mine.len(),
                     "answered": mine.iter().filter(|t| t.outcome == "answered").count(),
                     "refused": mine.iter().filter(|t| t.outcome == "refused").count(),
                     "errors": mine.iter().filter(|t| matches!(t.outcome, "error" | "timeout")).count(),
                     "p50_ms": latencies.get(latencies.len() / 2).copied().unwrap_or(0),
                     "tool_calls": mine.iter().map(|t| t.tools.len()).sum::<usize>(),
-                }))
+                });
+                summary.as_object_mut().unwrap().extend(usage);
+                Some(summary)
             })
             .collect();
         let mut tools: Vec<&str> = all
@@ -396,6 +435,9 @@ impl Store {
                     "effort": if *model == CLOUD { Value::Null } else { json!("low") },
                     "route": route(&t),
                     "latency_ms": if t.outcome == "timeout" { Value::Null } else { json!(t.latency_ms / t.models.len().max(1) as u32) },
+                    "prompt_tokens": round_usage(&t, i).0,
+                    "completion_tokens": round_usage(&t, i).1,
+                    "prompt_estimate": round_usage(&t, i).2,
                     "guardrail": {
                         "clean": t.outcome == "clean_retry" && i + 1 == t.models.len(),
                         "content_filter": t.outcome == "content_blocked",
@@ -493,5 +535,37 @@ mod tests {
         let limited = s.chat_turn("c-limit").ok().unwrap();
         assert!(limited["persona"].is_null());
         assert_eq!(limited["error_code"], "rate_limited");
+    }
+
+    #[test]
+    fn rounds_carry_usage_and_unreported_is_null() {
+        let s = store();
+        let retry = s.chat_turn("c-retry").ok().unwrap();
+        assert_eq!(retry["rounds"][1]["prompt_tokens"], 1_050);
+        assert_eq!(retry["rounds"][1]["prompt_estimate"], 990);
+        assert_eq!(retry["prompt_tokens"], 900 + 1_050 + 1_200);
+        let guide = s.chat_turn("c-guide").ok().unwrap();
+        assert!(guide["prompt_tokens"].is_null());
+        assert!(guide["rounds"][0]["completion_tokens"].is_null());
+        assert_eq!(guide["rounds"][0]["prompt_estimate"], 850);
+        let busy = s.chat_turn("c-busy").ok().unwrap();
+        assert!(busy["rounds"][0]["prompt_estimate"].is_null());
+        let cloud = s
+            .chat(&LogQuery {
+                model: Some("kanata/chat-cloud".into()),
+                ..Default::default()
+            })
+            .ok()
+            .unwrap();
+        let summary = cloud["summary"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["model"] == "kanata/chat-cloud")
+            .unwrap()
+            .clone();
+        assert!(summary["prompt_tokens"].is_null());
+        assert_eq!(summary["reported"], 0);
+        assert!(summary["est_ratio"].is_null());
     }
 }

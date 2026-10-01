@@ -155,7 +155,13 @@ impl Loop<'_, '_> {
         &mut self,
         round: u32,
         response: &CompletionResponse,
-        (bundles, latency_ms, clean, sent): (Vec<String>, u64, bool, Option<SentRequest>),
+        (bundles, latency_ms, clean, sent, estimate): (
+            Vec<String>,
+            u64,
+            bool,
+            Option<SentRequest>,
+            usize,
+        ),
     ) {
         if let Some(usage) = &response.usage {
             self.generation
@@ -170,6 +176,15 @@ impl Loop<'_, '_> {
             latency_ms,
             clean,
             sent,
+            prompt_tokens: response
+                .usage
+                .as_ref()
+                .map(|usage| u64::from(usage.prompt_tokens)),
+            completion_tokens: response
+                .usage
+                .as_ref()
+                .map(|usage| u64::from(usage.completion_tokens)),
+            prompt_estimate: u64::try_from(estimate).ok(),
         });
     }
 
@@ -281,7 +296,7 @@ where
             context_tokens,
             settings.max_output_tokens as usize,
         ) {
-            Ok(outgoing) => outgoing,
+            Ok(fits) => fits,
             Err(error) => {
                 state.generation.failure = Some(AnswerFailure::ContextBudget(error));
                 // "Shorten it and try again" would invite a duplicate of a
@@ -295,7 +310,7 @@ where
                 break None;
             }
         };
-        let request = state.request(&alias, outgoing, &offered);
+        let request = state.request(&alias, outgoing.messages, &offered);
         let started = Instant::now();
         let sent = session.complete(&request).await;
         let latency = millis(started);
@@ -312,7 +327,11 @@ where
         };
         let bundles = bundle_names(&offer, with_tools);
         let sent = session.last_sent().cloned();
-        state.record(round, &response, (bundles, latency, false, sent));
+        state.record(
+            round,
+            &response,
+            (bundles, latency, false, sent, outgoing.estimate),
+        );
         if response.tool_calls.is_empty() {
             let content = strip(response.content.as_deref().unwrap_or_default());
             if !content.is_empty() {
@@ -500,13 +519,13 @@ async fn clean_retry<P: LlmProvider>(
     (alias, seconds, context_tokens, reserve, round): (&str, u64, usize, usize, u32),
 ) {
     let outgoing = match budgeted(&mut base, "[]", &state.reminder, context_tokens, reserve) {
-        Ok(outgoing) => outgoing,
+        Ok(fits) => fits,
         Err(_) => {
             state.generation.failure = Some(retry.failure());
             return;
         }
     };
-    let request = state.request(alias, outgoing, &[]);
+    let request = state.request(alias, outgoing.messages, &[]);
     let started = Instant::now();
     let before = session.requests_used();
     let sent = session.clean_retry(&request).await;
@@ -532,7 +551,11 @@ async fn clean_retry<P: LlmProvider>(
     };
     state.generation.clean_retry = true;
     let sent = session.last_sent().cloned();
-    state.record(round, &response, (Vec::new(), latency, true, sent));
+    state.record(
+        round,
+        &response,
+        (Vec::new(), latency, true, sent, outgoing.estimate),
+    );
     let content = strip(response.content.as_deref().unwrap_or_default());
     if response.tool_calls.is_empty() && !content.is_empty() {
         state.generation.reply = content.to_owned();

@@ -79,6 +79,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Provider-reported prompt tokens summed over the turn's rounds that reported a pair; null when none did (never 0 for unknown). Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
         }
       }
     },
@@ -121,6 +129,22 @@
         "tool_calls": {
           "type": "integer",
           "minimum": 0
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Sum over this model's round rows that reported a pair (never the turn totals); null when none did. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens."
+        },
+        "reported": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "This model's round rows that reported a usage pair."
+        },
+        "est_ratio": {
+          "$ref": "#/$defs/EstimateRatio"
         }
       }
     },
@@ -231,6 +255,14 @@
             "type": "string"
           }
         },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Provider-reported prompt tokens summed over the turn's rounds that reported a pair; null when none did (never 0 for unknown). Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+        },
         "said": {
           "type": "string"
         },
@@ -325,6 +357,18 @@
                 ],
                 "minimum": 0,
                 "description": "null when unknown."
+              },
+              "prompt_tokens": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "Provider-reported prompt tokens of this request; null when not reported. The pair is all-or-nothing. Always sent by the server; optional so earlier fixtures stay valid."
+              },
+              "completion_tokens": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "Provider-reported completion tokens; null when not reported."
+              },
+              "prompt_estimate": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "The local prompt-size estimate the context budget used for this request (completion reserve excluded); null for rows logged before it was."
               },
               "guardrail": {
                 "type": "object",
@@ -522,6 +566,22 @@
           }
         }
       }
+    },
+    "TokenCount": {
+      "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "EstimateRatio": {
+      "description": "Median of reported prompt tokens / local prompt estimate over the requests that have both (estimate > 0), rounded to two decimals; the mean of the two middle values for an even count; null when none.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
     }
   }
 }

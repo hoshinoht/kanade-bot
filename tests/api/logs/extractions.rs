@@ -53,9 +53,33 @@ async fn extractions_list_every_call_with_total_facets_and_the_current_model() {
     assert_eq!(failed["latency_ms"], serde_json::Value::Null);
     assert_eq!(failed["error"], "no answer");
     assert_eq!(failed["outcome"], "failed");
+    assert_eq!(
+        (&newest["prompt_tokens"], &newest["completion_tokens"]),
+        (&json!(1500), &json!(60))
+    );
+    assert_eq!(
+        (&failed["prompt_tokens"], &failed["completion_tokens"]),
+        (&json!(null), &json!(null)),
+        "unreported is null, never 0"
+    );
+    assert_eq!(
+        all["summary"],
+        json!([
+            {"model": "kanata/extract", "count": 2, "prompt_tokens": 1500,
+             "completion_tokens": 60, "reported": 1, "est_ratio": 1.25},
+            {"model": "kanata/legacy", "count": 1, "prompt_tokens": null,
+             "completion_tokens": null, "reported": 0, "est_ratio": null},
+        ])
+    );
 
     let filtered = list(&logs, "?model=kanata/legacy").await;
     assert_eq!(filtered["total"], 3, "unfiltered");
+    assert_eq!(
+        filtered["summary"],
+        json!([{"model": "kanata/legacy", "count": 1, "prompt_tokens": null,
+                "completion_tokens": null, "reported": 0, "est_ratio": null}]),
+        "the summary follows the filter"
+    );
 }
 
 #[tokio::test]
@@ -107,6 +131,18 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     assert_eq!(detail["raw_response"], r#"{"amendments": []}"#);
     assert_eq!(detail["latency_ms"], 12_000);
     assert_eq!(
+        (
+            &detail["prompt_tokens"],
+            &detail["completion_tokens"],
+            &detail["prompt_estimate"]
+        ),
+        (&json!(1500), &json!(60), &json!(1200))
+    );
+    assert_eq!(
+        detail["context"],
+        json!({"window": 8192, "reserve": 2500, "source": "local_default"})
+    );
+    assert_eq!(
         detail["refusals"],
         json!([{"change": "move", "code": "past", "message": "That time has already passed."}])
     );
@@ -130,6 +166,16 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     assert_valid(EXTRACTION, "failed", &failed);
     assert_eq!(failed["refusals"], json!([]));
     assert_eq!(failed["messages"], json!([]));
+    assert_eq!(
+        (
+            &failed["prompt_tokens"],
+            &failed["completion_tokens"],
+            &failed["prompt_estimate"],
+            &failed["context"]
+        ),
+        (&json!(null), &json!(null), &json!(800), &json!(null)),
+        "an estimate alone, and no logged context"
+    );
 
     for id in ["nope", "c-answer"] {
         let reply = logs.get(&format!("/api/admin/extractions/{id}")).await;

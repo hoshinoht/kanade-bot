@@ -233,6 +233,17 @@ own text (it can carry paths) goes only to the server log as
 | `self_service_link` | none created, but a link-first redirect took at least one change |
 | `no_change` | answered with nothing to propose (dropped, refused, or chat answers only) |
 
+Token usage (schema v19, user decision 2026-10-01): `prompt_tokens` and
+`completion_tokens` sum the provider-reported pairs of the call's attempts
+(`complete` and at most one `answer_retry`) whose reply carried usage, and
+`prompt_estimate` sums `estimate_messages` over those same attempts. When no
+attempt reported usage the pair stays unset and the estimate covers every
+attempt that was sent (the session's request count moved during it, so a
+call cut in flight keeps it); a call refused or cut before any request went
+out logs none of the three. "Sent" is counted at gateway admission, so an
+attempt the gateway then turns away (`turned_away`, nothing ran upstream)
+still logs its estimate with no pair. Pinned in `tests/extract/usage.rs`.
+
 ## Backlog
 
 Late messages (`MessageOrigin::Replay`) and the messages of turned-away

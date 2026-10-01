@@ -22,7 +22,9 @@
         "channel": { "$ref": "common.json#/$defs/NullableString" },
         "channel_id": { "type": "string" },
         "error": { "$ref": "common.json#/$defs/NullableString" },
-        "outcome": { "$ref": "#/$defs/ExtractionOutcome" }
+        "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." }
       }
     },
     "Extractions": {
@@ -31,6 +33,11 @@
       "required": ["model", "rows", "total", "facets"],
       "properties": {
         "model": { "type": "string" },
+        "summary": {
+          "description": "Per model over the listed (filtered) calls. Always sent by the server; optional so earlier fixtures stay valid.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtractionSummary" }
+        },
         "rows": { "type": "array", "items": { "$ref": "#/$defs/ExtractionRow" } },
         "total": { "type": "integer", "minimum": 0 },
         "facets": { "$ref": "common.json#/$defs/LogFacets" }
@@ -54,6 +61,25 @@
         "channel_id": { "type": "string" },
         "error": { "$ref": "common.json#/$defs/NullableString" },
         "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." },
+        "prompt_estimate": { "$ref": "#/$defs/TokenCount", "description": "The local prompt estimate over the attempts that reported usage, else over every sent attempt; null when nothing was sent. Always sent by the server; optional so earlier fixtures stay valid." },
+        "context": {
+          "description": "The context the call was budgeted for (logged `guardrail.context`); null for calls logged without one. Always sent by the server; optional so earlier fixtures stay valid.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["window", "reserve", "source"],
+              "properties": {
+                "window": { "type": "integer", "minimum": 0 },
+                "reserve": { "type": "integer", "minimum": 0 },
+                "source": { "type": "string" }
+              }
+            }
+          ]
+        },
         "prompt": { "type": "string" },
         "raw_response": { "type": "string" },
         "amendments": {
@@ -99,6 +125,28 @@
               "message": { "type": "string" }
             }
           }
+        }
+      }
+    },
+    "TokenCount": {
+      "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "ExtractionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "count", "prompt_tokens", "completion_tokens", "reported", "est_ratio"],
+      "properties": {
+        "model": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over this model's calls that reported a pair; null when none did." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount" },
+        "reported": { "type": "integer", "minimum": 0, "description": "Calls that reported a usage pair." },
+        "est_ratio": {
+          "description": "Median of reported prompt tokens / prompt estimate over the calls with both (estimate > 0), rounded to two decimals (mean of the two middle values for an even count); null when none.",
+          "type": ["number", "null"],
+          "minimum": 0
         }
       }
     },

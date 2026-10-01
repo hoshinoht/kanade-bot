@@ -192,6 +192,14 @@ gateway admission, backend down), else `error`. `clean_retry` is a flag;
 `rate_limited` rows come from `ChatPilot::limited` and the `withheld` flag
 from `ChatPilot::conclude` (below).
 
+Token usage (schema v19, user decision 2026-10-01): each round row records
+the provider-reported `prompt_tokens`/`completion_tokens` of its response
+(both or neither; unset when the response carried none) and
+`prompt_estimate`, the request estimate `context::budgeted` fitted (messages,
+tool calls and offered schemas, without the completion reserve), the clean
+retry included. The interaction totals stay the sum of the rounds' reported
+pairs (`D-USAGE-PAIRS`). Pinned in `tests/chat/answer.rs`.
+
 ## Pilot: traffic and safety (C3)
 
 `chat::pilot` wraps one question; it holds no Discord types (replies go

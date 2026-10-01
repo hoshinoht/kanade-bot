@@ -23,7 +23,7 @@ const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.qu
     c.profile, c.profile_source, c.error_code";
 
 const ROUND_COLUMNS: &str = "model, reasoning, finish_reason, latency_ms, tool_bundles, tools, \
-    tool_calls, response, route, clean";
+    tool_calls, response, route, clean, prompt_tokens, completion_tokens, prompt_estimate";
 
 impl Keyed for ChatInteraction {
     fn cursor(&self) -> LogCursor {
@@ -85,6 +85,9 @@ fn round_of(row: &SqliteRow) -> Result<ChatRound, StoreError> {
         clean: row
             .try_get("clean")
             .map_err(|error| StoreError::Backend(format!("chat_rounds.clean: {error}")))?,
+        prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
+        completion_tokens: read_optional_u64(row, "completion_tokens")?,
+        prompt_estimate: read_optional_u64(row, "prompt_estimate")?,
     })
 }
 
@@ -145,8 +148,9 @@ pub(super) async fn insert(
     for (ord, round) in chat.rounds.iter().enumerate() {
         sqlx::query(
             "INSERT INTO chat_rounds (interaction_id, ord, model, reasoning, finish_reason, \
-             latency_ms, tool_bundles, tools, tool_calls, response, route, clean) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             latency_ms, tool_bundles, tools, tool_calls, response, route, clean, \
+             prompt_tokens, completion_tokens, prompt_estimate) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         )
         .bind(&chat.id)
         .bind(i64::try_from(ord).map_err(|_| StoreError::Constraint("too many rounds".into()))?)
@@ -160,6 +164,12 @@ pub(super) async fn insert(
         .bind(&round.response)
         .bind(&round.route)
         .bind(round.clean)
+        .bind(optional_signed(round.prompt_tokens, "prompt_tokens")?)
+        .bind(optional_signed(
+            round.completion_tokens,
+            "completion_tokens",
+        )?)
+        .bind(optional_signed(round.prompt_estimate, "prompt_estimate")?)
         .execute(&mut *conn)
         .await
         .map_err(store_error)?;

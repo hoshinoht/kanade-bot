@@ -507,6 +507,23 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   cannot be found by search either. Withholding is a chat-surface rule
   (parent decision): the admin-only extraction log shows what the extractor
   read, including text that chat later withheld.
+- **Token usage** (additive, schema v19; every field is sent, `null` =
+  not reported — older rows, v4 imports, failed or cut calls — never 0):
+  chat rows and turns carry the turn totals `prompt_tokens`/
+  `completion_tokens` as logged (v4 imports may carry one of the two;
+  counts only, so withheld turns show them too); each turn round carries
+  its reported pair and `prompt_estimate` (the context budget's estimate,
+  completion reserve excluded). Chat `summary` adds per model
+  `prompt_tokens`/`completion_tokens` (sums over that model's round rows
+  with a pair, never the turn totals), `reported` (those rows) and
+  `est_ratio`: the median of reported prompt tokens / estimate over the
+  rows with both (estimate > 0; the mean of the two middle values for an
+  even count), rounded to two decimals, `null` when none. Extraction rows
+  and details carry the call's summed `prompt_tokens`/`completion_tokens`;
+  the detail adds `prompt_estimate` and `context` `{window, reserve,
+  source}` from the logged guardrail (`null` when absent). Extractions add
+  `summary` `[{model, count, prompt_tokens, completion_tokens, reported,
+  est_ratio}]` per model over the filtered calls, with the same rules.
 - **Extraction detail**: `messages` are the read messages still in the
   watched-message cache, looked up by id (pruned ones are left out; authors
   by roster name);

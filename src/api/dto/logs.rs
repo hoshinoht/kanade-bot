@@ -113,6 +113,9 @@ pub fn chat_row(names: &Names<'_>, chat: &ChatInteraction) -> Value {
         "outcome": chat.outcome.as_str(),
         "asked": asked(chat),
         "tools_used": tools_used(chat),
+        // Turn totals as logged; counts only, so shown for withheld turns too.
+        "prompt_tokens": chat.prompt_tokens,
+        "completion_tokens": chat.completion_tokens,
     })
 }
 
@@ -242,6 +245,9 @@ pub fn chat_turn(
                 "effort": round.reasoning,
                 "route": round.route,
                 "latency_ms": round.latency_ms,
+                "prompt_tokens": round.prompt_tokens,
+                "completion_tokens": round.completion_tokens,
+                "prompt_estimate": round.prompt_estimate,
                 "guardrail": {
                     "clean": round.clean,
                     "content_filter": round.finish_reason.as_deref() == Some("content_filter"),
@@ -302,8 +308,57 @@ pub fn chat_turn(
     turn
 }
 
+/// Reported token usage over a set of logged requests: sums over the ones
+/// that reported a pair (`null` when none did, never 0), how many did, and
+/// the median of reported prompt tokens over the local estimate among those
+/// that also have a non-zero estimate, rounded to two decimals.
+#[derive(Default)]
+struct UsageTally {
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    reported: usize,
+    ratios: Vec<f64>,
+}
+
+impl UsageTally {
+    fn add(&mut self, prompt: Option<u64>, completion: Option<u64>, estimate: Option<u64>) {
+        let (Some(prompt), Some(completion)) = (prompt, completion) else {
+            return;
+        };
+        let sum = |total: &mut Option<u64>, value: u64| {
+            *total = Some(total.unwrap_or_default().saturating_add(value));
+        };
+        sum(&mut self.prompt_tokens, prompt);
+        sum(&mut self.completion_tokens, completion);
+        self.reported += 1;
+        if let Some(estimate) = estimate.filter(|estimate| *estimate > 0) {
+            self.ratios.push(prompt as f64 / estimate as f64);
+        }
+    }
+
+    fn est_ratio(&self) -> Option<f64> {
+        let mut ratios = self.ratios.clone();
+        ratios.sort_by(f64::total_cmp);
+        let middle = ratios.len() / 2;
+        let median = match ratios.len() {
+            0 => return None,
+            n if n % 2 == 1 => ratios[middle],
+            _ => f64::midpoint(ratios[middle - 1], ratios[middle]),
+        };
+        Some((median * 100.0).round() / 100.0)
+    }
+
+    fn insert_into(&self, object: &mut serde_json::Map<String, Value>) {
+        object.insert("prompt_tokens".into(), json!(self.prompt_tokens));
+        object.insert("completion_tokens".into(), json!(self.completion_tokens));
+        object.insert("reported".into(), json!(self.reported));
+        object.insert("est_ratio".into(), json!(self.est_ratio()));
+    }
+}
+
 /// Per model over the listed rows (as the mock): `errors` are `error` and
-/// `timeout`, `p50_ms` the median latency of answered questions.
+/// `timeout`, `p50_ms` the median latency of answered questions. Token usage
+/// comes from the model's own round rows, never the turn totals.
 pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<Value> {
     let listed: BTreeSet<&str> = rows.iter().flat_map(models).collect();
     listed
@@ -324,7 +379,19 @@ pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<Value> {
                 .map(|chat| chat.latency_ms.unwrap_or_default())
                 .collect();
             latencies.sort_unstable();
-            json!({
+            let mut usage = UsageTally::default();
+            for round in mine
+                .iter()
+                .flat_map(|chat| &chat.rounds)
+                .filter(|round| round.model == model)
+            {
+                usage.add(
+                    round.prompt_tokens,
+                    round.completion_tokens,
+                    round.prompt_estimate,
+                );
+            }
+            let mut summary = json!({
                 "model": model,
                 "count": mine.len(),
                 "answered": count(&[ChatOutcome::Answered]),
@@ -332,7 +399,32 @@ pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<Value> {
                 "errors": count(&[ChatOutcome::Error, ChatOutcome::Timeout]),
                 "p50_ms": latencies.get(latencies.len() / 2).copied().unwrap_or_default(),
                 "tool_calls": mine.iter().map(|chat| tool_calls(chat)).sum::<usize>(),
-            })
+            });
+            usage.insert_into(summary.as_object_mut().expect("summary object"));
+            summary
+        })
+        .collect()
+}
+
+/// Per model over the listed calls: how many, and their reported usage
+/// (each call's pair is summed over its reporting attempts).
+pub fn extraction_summary(rows: &[ExtractionLog]) -> Vec<Value> {
+    let listed: BTreeSet<&str> = rows.iter().map(|log| log.model.as_str()).collect();
+    listed
+        .into_iter()
+        .map(|model| {
+            let mine: Vec<&ExtractionLog> = rows.iter().filter(|log| log.model == model).collect();
+            let mut usage = UsageTally::default();
+            for log in &mine {
+                usage.add(
+                    log.prompt_tokens,
+                    log.completion_tokens,
+                    log.prompt_estimate,
+                );
+            }
+            let mut summary = json!({"model": model, "count": mine.len()});
+            usage.insert_into(summary.as_object_mut().expect("summary object"));
+            summary
         })
         .collect()
 }
@@ -425,7 +517,26 @@ fn extraction_common(names: &Names<'_>, log: &ExtractionLog) -> Value {
         "channel_id": log.channel_id.as_deref().unwrap_or_default(),
         "error": call_error(log.error.as_deref()),
         "outcome": log.outcome.as_str(),
+        "prompt_tokens": log.prompt_tokens,
+        "completion_tokens": log.completion_tokens,
     })
+}
+
+/// The call's resolved context (`guardrail.context`) when it was logged
+/// whole, else `null`.
+fn call_context(log: &ExtractionLog) -> Value {
+    let context = log.guardrail.get("context");
+    let field = |name: &str| context.and_then(|context| context.get(name));
+    match (
+        field("window").and_then(Value::as_u64),
+        field("reserve").and_then(Value::as_u64),
+        field("source").and_then(Value::as_str),
+    ) {
+        (Some(window), Some(reserve), Some(source)) => {
+            json!({"window": window, "reserve": reserve, "source": source})
+        }
+        _ => Value::Null,
+    }
 }
 
 pub fn extraction_row(names: &Names<'_>, log: &ExtractionLog) -> Value {
@@ -520,6 +631,8 @@ pub fn extraction(
     let object = detail.as_object_mut().expect("detail object");
     object.insert("prompt".into(), json!(log.prompt));
     object.insert("raw_response".into(), json!(log.raw_response));
+    object.insert("prompt_estimate".into(), json!(log.prompt_estimate));
+    object.insert("context".into(), call_context(log));
     object.insert(
         "amendments".into(),
         json!(

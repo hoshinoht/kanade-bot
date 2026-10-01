@@ -773,6 +773,140 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
     assert_eq!(store.load_chat("chat-1").await.expect("load"), Some(row));
 }
 
+/// `action`'s response with a reported usage pair.
+fn reported(action: FakeAction, prompt_tokens: u32, completion_tokens: u32) -> FakeAction {
+    let FakeAction::Response(mut response) = action else {
+        panic!("a response");
+    };
+    response.usage = Some(kanade::infrastructure::llm::Usage {
+        prompt_tokens,
+        completion_tokens,
+    });
+    FakeAction::Response(response)
+}
+
+/// The budget's estimate for a request as sent: its messages without the
+/// trailing voice reminder, re-budgeted untrimmed with its tool schemas.
+fn estimate_of(request: &ChatRequest) -> Option<u64> {
+    use kanade::chat::context::budgeted;
+    use kanade::chat::tools::ToolName;
+    use kanade::chat::tools::schemas::surface_text;
+    let mut messages = request.messages.clone();
+    let Some(Message::User { content: reminder }) = messages.pop() else {
+        panic!("the reminder is last");
+    };
+    let tools: Vec<ToolName> = request
+        .tools
+        .iter()
+        .map(|tool| ToolName::parse(&tool.name).expect("known tool"))
+        .collect();
+    let fits = budgeted(
+        &mut messages,
+        &surface_text(&tools),
+        &reminder,
+        usize::MAX,
+        0,
+    )
+    .expect("fits untrimmed");
+    Some(u64::try_from(fits.estimate).expect("fits"))
+}
+
+/// Per-round usage (D-USAGE-PAIRS keeps the turn totals): each answered
+/// request logs its own reported pair and its budget estimate without the
+/// completion reserve; a round that reported nothing keeps an unset pair.
+#[tokio::test(start_paused = true)]
+async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
+    let run = run(
+        vec![
+            reported(wants(&[("l1", "list_fixed", json!({}))]), 900, 20),
+            words("Three weeklies."),
+        ],
+        ToolOffer::dynamic([Bundle::Strategy], false),
+        8,
+        "which weeklies?",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let row = interaction(
+        "chat-usage".into(),
+        run.world.clock.now().with_timezone(&Utc),
+        &run.ctx,
+        "which weeklies?",
+        &run.generation,
+        MODEL,
+        settings(&run.input, 8).reasoning,
+        1,
+    );
+    assert_eq!(run.requests.len(), 2);
+    let usage: Vec<_> = row
+        .rounds
+        .iter()
+        .map(|round| {
+            (
+                round.prompt_tokens,
+                round.completion_tokens,
+                round.prompt_estimate,
+            )
+        })
+        .collect();
+    assert_eq!(
+        usage,
+        [
+            (Some(900), Some(20), estimate_of(&run.requests[0])),
+            (None, None, estimate_of(&run.requests[1])),
+        ]
+    );
+    let settings = settings(&run.input, 8);
+    assert!(
+        row.rounds[0].prompt_estimate.expect("estimated") + u64::from(settings.max_output_tokens)
+            <= settings.model_context_tokens as u64,
+        "the estimate leaves the completion reserve out"
+    );
+    assert_eq!(
+        (row.prompt_tokens, row.completion_tokens),
+        (Some(900), Some(20)),
+        "turn totals sum the rounds that reported"
+    );
+    let store = run.world.service.store();
+    store.record_chat(row.clone()).await.expect("recorded");
+    assert_eq!(
+        store.load_chat("chat-usage").await.expect("load"),
+        Some(row)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_clean_retry_is_a_round_with_its_own_usage() {
+    let run = run(
+        vec![filtered(), reported(words("Here you go."), 300, 12)],
+        ToolOffer::full_set(false),
+        8,
+        "what's on?",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let rounds = &run.generation.model_rounds;
+    assert_eq!(rounds.len(), 1, "the filtered request was never answered");
+    assert!(rounds[0].clean);
+    assert_eq!(
+        (
+            rounds[0].prompt_tokens,
+            rounds[0].completion_tokens,
+            rounds[0].prompt_estimate
+        ),
+        (Some(300), Some(12), estimate_of(&run.requests[1]))
+    );
+    assert_eq!(
+        (
+            run.generation.prompt_tokens,
+            run.generation.completion_tokens
+        ),
+        (Some(300), Some(12))
+    );
+}
+
 /// Ports whose pending-card read takes a fixed time, so a call's wall time
 /// is known under the paused clock.
 #[derive(Default)]

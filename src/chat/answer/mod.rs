@@ -116,6 +116,12 @@ pub struct ModelRound {
     pub clean: bool,
     /// What the governed session actually sent (alias, reasoning effort).
     pub sent: Option<SentRequest>,
+    /// Provider-reported usage for this request; both or neither.
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    /// The budget's prompt estimate for this request, completion reserve
+    /// excluded.
+    pub prompt_estimate: Option<u64>,
 }
 
 /// Why a question produced no answer. C3 turns these into member-facing

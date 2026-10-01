@@ -517,6 +517,27 @@ export interface ExtractionRow {
   channel_id: string;
   error: string | null;
   outcome: ExtractionOutcome;
+  /** Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0). */
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+}
+
+/**
+ * Reported token usage over a set of logged requests: sums over those that
+ * reported a pair (null when none did), how many did, and the median of
+ * reported prompt tokens / local estimate (two decimals; null when none).
+ */
+export interface UsageSummary {
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  reported: number;
+  est_ratio: number | null;
+}
+
+/** Per model over the listed (filtered) extraction calls. */
+export interface ExtractionSummary extends UsageSummary {
+  model: string;
+  count: number;
 }
 
 /** What the log filters can offer (all values seen, not only the filtered rows'). */
@@ -535,6 +556,8 @@ export interface LogFacets {
  */
 export interface Extractions {
   model: string;
+  /** Per model over the filtered calls (always sent by the server). */
+  summary?: ExtractionSummary[];
   rows: ExtractionRow[];
   /** Rows before filtering. */
   total: number;
@@ -546,6 +569,10 @@ export interface Extraction extends Omit<ExtractionRow, 'messages' | 'changes'> 
   raw_response: string;
   amendments: { kind: string; bosses: string; when: string; confidence: number; status: string }[];
   messages: { id: string; author: string; author_id?: string; at: string; content: string }[];
+  /** Local prompt estimate over the attempts that reported usage, else every sent attempt. */
+  prompt_estimate?: number | null;
+  /** The context the call was budgeted for; null when not logged. */
+  context?: { window: number; reserve: number; source: string } | null;
 }
 
 export interface RescanJob {
@@ -586,9 +613,13 @@ export interface ChatRow {
   outcome: ChatOutcome;
   asked: string;
   tools_used: string[];
+  /** Turn totals as logged (v4 imports may carry one); null = not reported. */
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
 }
 
-export interface ChatSummary {
+/** Usage fields come from this model's round rows, never the turn totals. */
+export interface ChatSummary extends Partial<UsageSummary> {
   model: string;
   count: number;
   answered: number;
@@ -631,6 +662,11 @@ export interface ChatRoundFacts {
   route: ChatRoute | null;
   /** null when unknown. */
   latency_ms: number | null;
+  /** Provider-reported usage for this request (both or neither); null = not reported. */
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  /** The context budget's estimate, completion reserve excluded. */
+  prompt_estimate?: number | null;
   guardrail: { clean: boolean; content_filter: boolean };
 }
 

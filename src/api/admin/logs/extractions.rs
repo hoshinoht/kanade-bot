@@ -15,7 +15,7 @@ use crate::api::admin::write::Refusal;
 use crate::{
     api::{
         auth::AdminSession,
-        dto::logs::{Proposed, extraction, extraction_row},
+        dto::logs::{Proposed, extraction, extraction_row, extraction_summary},
         error::ApiError,
         listeners::Site,
         state::ApiState,
@@ -74,6 +74,7 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
     let names = directory.names();
     Ok(Json(json!({
         "model": model,
+        "summary": extraction_summary(&rows),
         "rows": rows.iter().map(|log| extraction_row(&names, log)).collect::<Vec<_>>(),
         "total": facets.total,
         "facets": names.facets(&facets),

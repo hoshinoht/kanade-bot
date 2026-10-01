@@ -20,6 +20,43 @@ struct Call {
     /// proposed, no_change, failed, turned_away, content_blocked,
     /// self_service_link, identity_leak.
     outcome: &'static str,
+    /// Reported (prompt, completion) tokens; `None` when not reported.
+    usage: Option<(u32, u32)>,
+    /// Local prompt estimate; `None` when nothing was sent.
+    estimate: Option<u32>,
+}
+
+/// Reported usage over logged requests `(prompt, completion, estimate)`, as
+/// the server sums it: totals over those with a pair (`null` when none),
+/// how many, and the median reported/estimate ratio to two decimals.
+pub(super) fn usage_summary(
+    items: impl IntoIterator<Item = (Option<u32>, Option<u32>, Option<u32>)>,
+) -> serde_json::Map<String, Value> {
+    let (mut prompt, mut completion, mut reported) = (None::<u64>, None::<u64>, 0usize);
+    let mut ratios: Vec<f64> = Vec::new();
+    for (p, c, e) in items {
+        let (Some(p), Some(c)) = (p, c) else { continue };
+        prompt = Some(prompt.unwrap_or(0) + u64::from(p));
+        completion = Some(completion.unwrap_or(0) + u64::from(c));
+        reported += 1;
+        if let Some(e) = e.filter(|e| *e > 0) {
+            ratios.push(f64::from(p) / f64::from(e));
+        }
+    }
+    ratios.sort_by(f64::total_cmp);
+    let mid = ratios.len() / 2;
+    let ratio = match ratios.len() {
+        0 => None,
+        n if n % 2 == 1 => Some(ratios[mid]),
+        _ => Some(f64::midpoint(ratios[mid - 1], ratios[mid])),
+    }
+    .map(|r| (r * 100.0).round() / 100.0);
+    let mut out = serde_json::Map::new();
+    out.insert("prompt_tokens".into(), json!(prompt));
+    out.insert("completion_tokens".into(), json!(completion));
+    out.insert("reported".into(), json!(reported));
+    out.insert("est_ratio".into(), json!(ratio));
+    out
 }
 
 fn calls() -> Vec<Call> {
@@ -38,6 +75,8 @@ fn calls() -> Vec<Call> {
             error: None,
             model: MODEL,
             outcome: "proposed",
+            usage: Some((1_820, 64)),
+            estimate: Some(1_700),
         },
         Call {
             id: "x-kalos".into(),
@@ -54,6 +93,8 @@ fn calls() -> Vec<Call> {
             error: None,
             model: MODEL,
             outcome: "proposed",
+            usage: Some((2_010, 72)),
+            estimate: Some(1_880),
         },
         Call {
             id: "x-limbo".into(),
@@ -66,6 +107,9 @@ fn calls() -> Vec<Call> {
             error: None,
             model: MODEL,
             outcome: "proposed",
+            // The gateway reported no usage: the estimate alone.
+            usage: None,
+            estimate: Some(1_500),
         },
         Call {
             id: "x-timeout".into(),
@@ -78,6 +122,8 @@ fn calls() -> Vec<Call> {
             error: Some("Gateway timed out after 60 s; the burst was retried later."),
             model: MODEL,
             outcome: "failed",
+            usage: None,
+            estimate: Some(1_600),
         },
     ];
     // Older quiet calls, so the list pages.
@@ -102,6 +148,11 @@ fn calls() -> Vec<Call> {
             error: None,
             model: if i % 4 == 0 { "kanata/legacy" } else { MODEL },
             outcome,
+            // Nothing sent when turned away; every third older call reported.
+            usage: (!matches!(outcome, "turned_away" | "identity_leak") && i % 3 == 0)
+                .then_some((1_400 + i * 10, 30)),
+            estimate: (!matches!(outcome, "turned_away" | "identity_leak"))
+                .then_some(1_300 + i * 10),
         });
     }
     out
@@ -141,7 +192,7 @@ impl Store {
         query.validate(&EXTRACTION_OUTCOMES, false)?;
         let mut all = calls();
         all.sort_by_key(|c| std::cmp::Reverse(c.hour));
-        let rows: Vec<Value> = all
+        let listed: Vec<&Call> = all
             .iter()
             .filter(|c| {
                 let members: Vec<&str> = c.messages.iter().map(|m| m.0).collect();
@@ -162,13 +213,33 @@ impl Store {
                     latency_ms: c.latency_ms.unwrap_or(0),
                 })
             })
+            .collect();
+        let rows: Vec<Value> = listed
+            .iter()
             .map(|c| {
                 json!({
                     "id": c.id, "short_id": c.short_id, "at": super::clock::iso_z(Self::hour_minute(c.hour)),
                     "model": c.model, "latency_ms": c.latency_ms, "messages": c.messages.len(),
                     "changes": c.amendments.len(), "channel": seed::channel(c.channel).map(|x| x.1),
                     "channel_id": c.channel, "error": c.error, "outcome": c.outcome,
+                    "prompt_tokens": c.usage.map(|u| u.0), "completion_tokens": c.usage.map(|u| u.1),
                 })
+            })
+            .collect();
+        let mut listed_models: Vec<&str> = listed.iter().map(|c| c.model).collect();
+        listed_models.sort_unstable();
+        listed_models.dedup();
+        let summary: Vec<Value> = listed_models
+            .iter()
+            .map(|m| {
+                let mine: Vec<&&Call> = listed.iter().filter(|c| c.model == *m).collect();
+                let mut row = usage_summary(
+                    mine.iter()
+                        .map(|c| (c.usage.map(|u| u.0), c.usage.map(|u| u.1), c.estimate)),
+                );
+                row.insert("model".into(), json!(m));
+                row.insert("count".into(), json!(mine.len()));
+                Value::Object(row)
             })
             .collect();
         let mut models: Vec<&str> = all.iter().map(|c| c.model).collect();
@@ -176,6 +247,7 @@ impl Store {
         models.dedup();
         Ok(json!({
             "model": MODEL,
+            "summary": summary,
             "rows": rows,
             "total": all.len(),
             "facets": {
@@ -218,6 +290,10 @@ impl Store {
             "id": c.id, "short_id": c.short_id, "at": super::clock::iso_z(Self::hour_minute(c.hour)), "model": c.model, "outcome": c.outcome,
             "latency_ms": c.latency_ms, "channel": seed::channel(c.channel).map(|x| x.1), "channel_id": c.channel, "error": c.error,
             "prompt": prompt, "raw_response": raw.to_string(), "amendments": amendments, "messages": chat,
+            "prompt_tokens": c.usage.map(|u| u.0), "completion_tokens": c.usage.map(|u| u.1),
+            "prompt_estimate": c.estimate,
+            // Older legacy calls were logged before the context was.
+            "context": if c.model == MODEL { json!({"window": 8_192, "reserve": 2_500, "source": "local_default"}) } else { Value::Null },
         }))
     }
 
@@ -360,5 +436,27 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn usage_is_null_when_unreported_and_summed_per_model() {
+        let s = store();
+        let proposed = s
+            .extractions(&LogQuery {
+                outcome: Some("proposed".into()),
+                ..Default::default()
+            })
+            .ok()
+            .unwrap();
+        // x-bm and x-kalos reported (1820/1700, 2010/1880); x-limbo did not.
+        assert_eq!(
+            proposed["summary"],
+            serde_json::json!([{"model": "kanata/extract", "count": 3, "prompt_tokens": 3830,
+                "completion_tokens": 136, "reported": 2, "est_ratio": 1.07}])
+        );
+        let limbo = s.extraction("x-limbo").ok().unwrap();
+        assert!(limbo["prompt_tokens"].is_null() && limbo["completion_tokens"].is_null());
+        assert_eq!(limbo["prompt_estimate"], 1_500);
+        assert_eq!(limbo["context"]["reserve"], 2_500);
     }
 }

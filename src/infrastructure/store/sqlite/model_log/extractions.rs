@@ -17,12 +17,14 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 
 const COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, e.prompt, \
     e.raw_response, e.latency_ms, e.request_count, e.outcome, e.error, e.guardrail, \
-    e.message_ids, e.proposal_ids, e.refusals";
+    e.message_ids, e.proposal_ids, e.refusals, e.prompt_tokens, e.completion_tokens, \
+    e.prompt_estimate";
 
 /// [`COLUMNS`] without the prompt and response bodies (list pages).
 const LIST_COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, \
     '' AS prompt, '' AS raw_response, e.latency_ms, e.request_count, e.outcome, e.error, \
-    e.guardrail, e.message_ids, e.proposal_ids, e.refusals";
+    e.guardrail, e.message_ids, e.proposal_ids, e.refusals, e.prompt_tokens, \
+    e.completion_tokens, e.prompt_estimate";
 
 fn refusals_of(row: &SqliteRow) -> Result<Vec<ExtractionRefusal>, StoreError> {
     let value = read_json(row, "refusals")?;
@@ -58,6 +60,9 @@ fn log_of(row: &SqliteRow) -> Result<ExtractionLog, StoreError> {
         message_ids: read_list(row, "message_ids")?,
         proposal_ids: read_list(row, "proposal_ids")?,
         refusals: refusals_of(row)?,
+        prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
+        completion_tokens: read_optional_u64(row, "completion_tokens")?,
+        prompt_estimate: read_optional_u64(row, "prompt_estimate")?,
     })
 }
 
@@ -68,8 +73,9 @@ pub(super) async fn insert(
     sqlx::query(
         "INSERT INTO extractions (id, at, channel_id, member_ids, model, reasoning, prompt, \
          raw_response, latency_ms, request_count, outcome, error, guardrail, message_ids, \
-         proposal_ids, refusals) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+         proposal_ids, refusals, prompt_tokens, completion_tokens, prompt_estimate) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
+         ?18, ?19)",
     )
     .bind(&log.id)
     .bind(instant(&log.at)?)
@@ -92,6 +98,9 @@ pub(super) async fn insert(
             .map(ExtractionRefusal::to_json)
             .collect(),
     )))
+    .bind(optional_signed(log.prompt_tokens, "prompt_tokens")?)
+    .bind(optional_signed(log.completion_tokens, "completion_tokens")?)
+    .bind(optional_signed(log.prompt_estimate, "prompt_estimate")?)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;

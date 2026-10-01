@@ -254,7 +254,7 @@ impl Fixture {
         ] {
             sqlx::query(
                 "INSERT INTO chat_interactions (id, at, channel_id, message_id, author_id, model, question, reply, outcome, error, rounds, latency_ms, model_ms, tools_ms, prompt_tokens, completion_tokens, tool_calls, model_rounds) \
-                 VALUES (?1, ?2, '900000000000000001', ?3, '111111111111111111', 'chat-model', ?4, ?5, ?6, ?7, 2, 1500, 1200, 3, 900, 40, ?8, ?9)",
+                 VALUES (?1, ?2, '900000000000000001', ?3, '111111111111111111', 'chat-model', ?4, ?5, ?6, ?7, 2, 1500, 1200, 3, 900, ?10, ?8, ?9)",
             )
             .bind(id)
             .bind(at)
@@ -265,6 +265,8 @@ impl Fixture {
             .bind(error)
             .bind(if id == "c1" { calls } else { "[]" })
             .bind(if id == "c1" { rounds } else { "[]" })
+            // v4 totals may be half a pair; c3 keeps only the prompt side.
+            .bind(if id == "c3" { None } else { Some(40) })
             .execute(&mut conn)
             .await
             .unwrap();
@@ -425,6 +427,21 @@ async fn apply_imports_fixed_runs_logs_and_messages_and_a_second_apply_adds_noth
     assert_eq!(chat.rounds[0].tool_calls.as_array().unwrap().len(), 1);
     assert!(chat.rounds[1].tool_calls.as_array().unwrap().is_empty());
     assert_eq!(chat.rounds[0].model, "chat-model");
+    assert_eq!(chat.completion_tokens, Some(40));
+    assert!(
+        chat.rounds.iter().all(|round| (
+            round.prompt_tokens,
+            round.completion_tokens,
+            round.prompt_estimate
+        ) == (None, None, None)),
+        "v4 rounds carry no usage"
+    );
+    let half = store.load_chat("v4-c3").await.unwrap().unwrap();
+    assert_eq!(
+        (half.prompt_tokens, half.completion_tokens),
+        (Some(900), None),
+        "v4 interaction totals are kept as recorded, half pairs included"
+    );
     let failed = store.load_chat("v4-c2").await.unwrap().unwrap();
     assert_eq!(failed.outcome, ChatOutcome::Error);
     assert_eq!(failed.error.as_deref(), Some("provider down"));
@@ -444,6 +461,15 @@ async fn apply_imports_fixed_runs_logs_and_messages_and_a_second_apply_adds_noth
     assert_eq!(
         (proposed.latency_ms, proposed.proposal_ids.len()),
         (Some(700), 1)
+    );
+    assert_eq!(
+        (
+            proposed.prompt_tokens,
+            proposed.completion_tokens,
+            proposed.prompt_estimate
+        ),
+        (None, None, None),
+        "v4 extractions carry no usage"
     );
     assert_eq!(
         store
@@ -692,6 +718,9 @@ async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
             response: None,
             route: None,
             clean: false,
+            prompt_tokens: None,
+            completion_tokens: None,
+            prompt_estimate: None,
         }],
         persona: None,
         profile: None,
@@ -787,6 +816,26 @@ async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
     );
     assert_eq!(store.load(&Scope::All).await.unwrap(), fixed);
     let extraction = store.load_extraction("v4-e1").await.unwrap().unwrap();
+    assert_eq!(
+        (
+            extraction.prompt_tokens,
+            extraction.completion_tokens,
+            extraction.prompt_estimate
+        ),
+        (None, None, None)
+    );
+    let half = store.load_chat("v4-c3").await.unwrap().unwrap();
+    assert_eq!(
+        (half.prompt_tokens, half.completion_tokens),
+        (Some(900), None),
+        "a refresh keeps half-pair interaction totals"
+    );
+    assert!(
+        half.rounds
+            .iter()
+            .chain(&repaired.rounds)
+            .all(|round| round.prompt_tokens.is_none() && round.prompt_estimate.is_none())
+    );
     store.close().await.unwrap();
 
     let again = run(&refresh, &fixture.config(), now()).await.unwrap();

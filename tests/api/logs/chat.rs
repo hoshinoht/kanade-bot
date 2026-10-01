@@ -53,7 +53,24 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
             "outcome": "answered",
             "asked": "When is Kalos?",
             "tools_used": ["schedule_read"],
+            "prompt_tokens": 1200,
+            "completion_tokens": 30,
         })
+    );
+    // Counts only: a withheld turn shows them; turn totals pass through as logged.
+    assert_eq!(
+        (
+            &all["rows"][2]["prompt_tokens"],
+            &all["rows"][2]["completion_tokens"]
+        ),
+        (&json!(500), &json!(20))
+    );
+    assert_eq!(
+        (
+            &all["rows"][3]["prompt_tokens"],
+            &all["rows"][3]["completion_tokens"]
+        ),
+        (&json!(10), &json!(null))
     );
     // A rate-limited question ran no model.
     assert_eq!(all["rows"][3]["model"], "—");
@@ -61,10 +78,14 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
     assert_eq!(
         all["summary"],
         json!([
+            // Round rows with a pair: c-answer round 1 (1200/1000) and
+            // c-timeout (900/1000); median of 1.2 and 0.9.
             {"model": "kanata/chat", "count": 2, "answered": 1, "refused": 0, "errors": 1,
-             "p50_ms": 4000, "tool_calls": 1},
+             "p50_ms": 4000, "tool_calls": 1, "prompt_tokens": 2100, "completion_tokens": 40,
+             "reported": 2, "est_ratio": 1.05},
             {"model": "kanata/chat-cloud", "count": 1, "answered": 0, "refused": 0, "errors": 0,
-             "p50_ms": 0, "tool_calls": 1},
+             "p50_ms": 0, "tool_calls": 1, "prompt_tokens": 500, "completion_tokens": 20,
+             "reported": 1, "est_ratio": 1.25},
         ])
     );
 
@@ -73,6 +94,64 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
     assert_eq!(ids(&filtered), ["c-withheld"]);
     assert_eq!(filtered["total"], 4);
     assert_eq!(filtered["summary"].as_array().unwrap().len(), 1);
+    let only = list(&logs, "?member=1004").await;
+    assert_eq!(only["summary"], json!([]), "no model ran");
+}
+
+/// Summary usage comes from each model's own round rows: unreported rounds
+/// leave null sums (never 0), turn totals are never used, and the ratio is
+/// the median over rounds with both a pair and a non-zero estimate.
+#[test]
+fn chat_summary_usage_sums_round_rows_per_model() {
+    use kanade::api::dto::logs::chat_summary;
+    use kanade::domain::model_log::ChatOutcome;
+
+    let round = |model: &str, pair: Option<(u64, u64)>, estimate: Option<u64>| {
+        let mut round = super::round(model, &[], json!([]), None);
+        round.prompt_tokens = pair.map(|pair| pair.0);
+        round.completion_tokens = pair.map(|pair| pair.1);
+        round.prompt_estimate = estimate;
+        round
+    };
+    let mut mixed = super::chat(
+        "c-1",
+        super::utc(9, 28, 12, 0),
+        "1001",
+        "star",
+        "q",
+        "r",
+        ChatOutcome::Answered,
+        Some(10),
+        vec![
+            round("a", Some((100, 1)), Some(100)),
+            round("a", Some((300, 3)), Some(100)),
+            round("a", Some((200, 2)), Some(100)),
+            round("a", Some((50, 5)), None),
+            round("b", None, Some(70)),
+        ],
+    );
+    // Turn totals that disagree with the rounds are ignored by the summary.
+    (mixed.prompt_tokens, mixed.completion_tokens) = (Some(1), Some(1));
+    let summary = chat_summary(&[mixed]);
+    let usage: Vec<_> = summary
+        .iter()
+        .map(|model| {
+            (
+                model["model"].clone(),
+                model["prompt_tokens"].clone(),
+                model["completion_tokens"].clone(),
+                model["reported"].clone(),
+                model["est_ratio"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        usage,
+        [
+            (json!("a"), json!(650), json!(11), json!(4), json!(2.0)),
+            (json!("b"), json!(null), json!(null), json!(0), json!(null)),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -181,9 +260,11 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
         json!([
             {"round": 1, "requested_tools": ["schedule_read"], "finish": "tool_calls",
              "model": "kanata/chat", "effort": "low", "route": "homelab", "latency_ms": 1000,
+             "prompt_tokens": 1200, "completion_tokens": 30, "prompt_estimate": 1000,
              "guardrail": clean},
             {"round": 2, "requested_tools": [], "finish": "stop", "model": "kanata/chat",
              "effort": null, "route": "external_masked", "latency_ms": null,
+             "prompt_tokens": null, "completion_tokens": null, "prompt_estimate": 1100,
              "guardrail": {"clean": true, "content_filter": false}},
         ])
     );

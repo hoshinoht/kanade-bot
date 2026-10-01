@@ -87,6 +87,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 18,
         sql: include_str!("migrations/0018_reminder_voice.sql"),
     },
+    Migration {
+        version: 19,
+        sql: include_str!("migrations/0019_model_log_usage.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -213,7 +217,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 18);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 19);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -292,7 +296,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 18);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 19);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -327,7 +331,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v18 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 18);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 19);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -361,6 +365,190 @@ mod tests {
         conn.close().await.expect("close reopened file");
     }
 
+    /// 0019 adds nullable usage columns: old rows (native and imported) read
+    /// NULL, a pair is all-or-nothing, negatives are refused and the logs
+    /// stay insert-only, across a reopen of the file.
+    #[tokio::test]
+    async fn migration_19_adds_usage_columns_to_existing_logs() {
+        /// Key, prompt, completion, estimate and their SQLite storage types.
+        type UsageRow<K> = (K, Option<i64>, Option<i64>, Option<i64>, String);
+        const EXTRACTION: &str = "INSERT INTO extractions (id, at, member_ids, model, prompt, \
+            raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
+        const ROUND: &str =
+            "INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls";
+        let path = std::env::temp_dir().join(format!(
+            "kanade-migrate-v19-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let _cleanup = RemoveFile(path.clone());
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let mut conn = options.connect().await.expect("fresh file");
+        conn.execute("PRAGMA foreign_keys = ON").await.expect("fk");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..18] {
+            conn.execute(migration.sql).await.expect("v18 migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger row");
+        }
+        conn.execute(
+            format!(
+                "{EXTRACTION}) VALUES ('x-1', '2026-09-01T00:00:00.000000+00:00', '[]', 'm', \
+                 'p', 'r', 1, 'no_change', '{{}}', '[]', '[]');
+                 {EXTRACTION}) VALUES ('v4-7', '2026-08-01T00:00:00.000000+00:00', '[]', 'm', \
+                 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]');
+                 INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, \
+                 withheld, guardrail, request_count, prompt_tokens) VALUES ('c-1', \
+                 '2026-09-01T00:00:00.000000+00:00', 'q', 'r', 'answered', 0, 0, '{{}}', 1, 9);
+                 {ROUND}) VALUES ('c-1', 0, 'kanata/chat', '[]', '[]', '[]');"
+            )
+            .as_str(),
+        )
+        .await
+        .expect("v18 rows");
+
+        assert_eq!(apply(&mut conn).await.expect("v19"), 19);
+        let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
+            AND prompt_estimate IS NULL";
+        let unreported: i64 = sqlx::query_scalar(&format!(
+            "SELECT (SELECT COUNT(*) FROM extractions WHERE {usage}) \
+             + (SELECT COUNT(*) FROM chat_rounds WHERE {usage})"
+        ))
+        .fetch_one(&mut conn)
+        .await
+        .expect("old rows");
+        assert_eq!(unreported, 3, "old rows report no usage");
+        let totals: (Option<i64>, Option<i64>) = sqlx::query_as(
+            "SELECT prompt_tokens, completion_tokens FROM chat_interactions WHERE id = 'c-1'",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .expect("interaction totals");
+        assert_eq!(totals, (Some(9), None), "interaction half pairs stay valid");
+
+        let usage_columns = ", prompt_tokens, completion_tokens, prompt_estimate)";
+        let extraction = |id: &str, values: &str| {
+            format!(
+                "{EXTRACTION}{usage_columns} VALUES ('{id}', '2026-09-02T00:00:00.000000+00:00', \
+                 '[]', 'm', 'p', 'r', 1, 'no_change', '{{}}', '[]', '[]', {values})"
+            )
+        };
+        let round = |ord: u32, values: &str| {
+            format!("{ROUND}{usage_columns} VALUES ('c-1', {ord}, 'm', '[]', '[]', '[]', {values})")
+        };
+        conn.execute(extraction("x-2", "1200, 80, 1100").as_str())
+            .await
+            .expect("full pair and estimate");
+        conn.execute(round(1, "900, 40, 950").as_str())
+            .await
+            .expect("full round pair and estimate");
+        conn.execute(extraction("x-3", "NULL, NULL, 700").as_str())
+            .await
+            .expect("an estimate without reported usage");
+        for (n, values) in [
+            "5, NULL, NULL",
+            "NULL, 5, NULL",
+            "-1, 5, NULL",
+            "5, -1, NULL",
+            "NULL, NULL, -1",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let refused = conn
+                .execute(extraction(&format!("bad-{n}"), values).as_str())
+                .await
+                .expect_err("extraction usage is checked");
+            assert!(refused.to_string().contains("CHECK"), "{values}: {refused}");
+            let refused = conn
+                .execute(round(10 + u32::try_from(n).expect("small"), values).as_str())
+                .await
+                .expect_err("round usage is checked");
+            assert!(refused.to_string().contains("CHECK"), "{values}: {refused}");
+        }
+        assert!(
+            conn.execute("UPDATE extractions SET prompt_tokens = 1, completion_tokens = 1")
+                .await
+                .is_err(),
+            "extractions stay insert-only"
+        );
+        assert!(
+            conn.execute("UPDATE chat_rounds SET prompt_tokens = 1, completion_tokens = 1")
+                .await
+                .is_err(),
+            "chat rounds stay insert-only"
+        );
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&mut conn)
+            .await
+            .expect("fk check");
+        assert!(violations.is_empty());
+        conn.close().await.expect("close after migration");
+
+        let mut conn = SqliteConnectOptions::new()
+            .filename(&path)
+            .connect()
+            .await
+            .expect("reopen v19 file");
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 19);
+        let rows: Vec<UsageRow<String>> = sqlx::query_as(
+            "SELECT id, prompt_tokens, completion_tokens, prompt_estimate, \
+             typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
+             || typeof(prompt_estimate) FROM extractions ORDER BY id",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("reopened extractions");
+        assert_eq!(
+            rows,
+            [
+                ("v4-7".into(), None, None, None, "null,null,null".into()),
+                ("x-1".into(), None, None, None, "null,null,null".into()),
+                (
+                    "x-2".into(),
+                    Some(1200),
+                    Some(80),
+                    Some(1100),
+                    "integer,integer,integer".into()
+                ),
+                (
+                    "x-3".into(),
+                    None,
+                    None,
+                    Some(700),
+                    "null,null,integer".into()
+                ),
+            ]
+        );
+        let rounds: Vec<UsageRow<i64>> = sqlx::query_as(
+            "SELECT ord, prompt_tokens, completion_tokens, prompt_estimate, \
+             typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
+             || typeof(prompt_estimate) FROM chat_rounds ORDER BY ord",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("reopened rounds");
+        assert_eq!(
+            rounds,
+            [
+                (0, None, None, None, "null,null,null".into()),
+                (
+                    1,
+                    Some(900),
+                    Some(40),
+                    Some(950),
+                    "integer,integer,integer".into()
+                ),
+            ]
+        );
+        conn.close().await.expect("close reopened file");
+    }
+
     /// 0016 adds the chat turn facts to existing rows: nullable facts stay
     /// NULL, `clean` defaults to 0, and the insert-only triggers still hold.
     #[tokio::test]
@@ -389,7 +577,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 18);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 19);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",

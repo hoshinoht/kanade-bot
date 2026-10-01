@@ -21,14 +21,14 @@ use crate::extract::Amendment;
 use crate::extract::AmendmentKind;
 use crate::extract::plan::{BurstInputs, BurstMessage, Payload, Planned, plan_burst};
 use crate::extract::prompt::{
-    PromptContext, PromptMessage, build_messages, extraction_request_with_reserve, member_name,
-    prompt_text,
+    PromptContext, PromptMessage, build_messages, estimate_messages,
+    extraction_request_with_reserve, member_name, prompt_text,
 };
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use crate::infrastructure::llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::{Member, PassthroughSession};
-use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message};
+use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message, Usage};
 
 /// Why a call produced no answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +40,46 @@ pub enum Failure {
     /// The provider's content filter stopped the answer (`ContentFiltered`).
     ContentBlocked,
     Failed,
+}
+
+/// Token usage over one call's attempts (`complete` and at most one
+/// `answer_retry`). The reported pair sums the attempts whose reply carried
+/// usage, and the estimate covers those same attempts; when none reported,
+/// the estimate covers every attempt that was sent and the pair stays unset.
+/// An attempt is sent when the session's request count moved during it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CallUsage {
+    /// Prompt, completion and estimate over the attempts that reported usage.
+    reported: Option<(u64, u64, u64)>,
+    /// Estimate over every attempt that was sent.
+    sent: Option<u64>,
+}
+
+impl CallUsage {
+    fn attempt(&mut self, sent: bool, estimate: u64, usage: Option<&Usage>) {
+        if let Some(usage) = usage {
+            let (prompt, completion, reported) = self.reported.get_or_insert((0, 0, 0));
+            *prompt = prompt.saturating_add(u64::from(usage.prompt_tokens));
+            *completion = completion.saturating_add(u64::from(usage.completion_tokens));
+            *reported = reported.saturating_add(estimate);
+        }
+        if sent || usage.is_some() {
+            let total = self.sent.get_or_insert(0);
+            *total = total.saturating_add(estimate);
+        }
+    }
+
+    pub fn prompt_tokens(&self) -> Option<u64> {
+        self.reported.map(|(prompt, _, _)| prompt)
+    }
+
+    pub fn completion_tokens(&self) -> Option<u64> {
+        self.reported.map(|(_, completion, _)| completion)
+    }
+
+    pub fn prompt_estimate(&self) -> Option<u64> {
+        self.reported.map(|(_, _, estimate)| estimate).or(self.sent)
+    }
 }
 
 /// What prompts are built from, loaded once per burst.
@@ -142,6 +182,7 @@ pub(crate) struct CallRecord {
     pub context_window: usize,
     pub context_reserve: usize,
     pub context_source: &'static str,
+    pub usage: CallUsage,
 }
 
 impl CallRecord {
@@ -285,6 +326,7 @@ where
             context_window: context.window,
             context_reserve: context.reserve,
             context_source: context.source,
+            usage: CallUsage::default(),
         }
     }
 
@@ -457,6 +499,8 @@ where
                 record.reasoning,
                 u32::try_from(context.reserve).unwrap_or(u32::MAX),
             );
+            let estimate = u64::try_from(estimate_messages(&request.messages)).unwrap_or(u64::MAX);
+            let before = session.requests_used();
             let sending = async {
                 if first {
                     session.complete(&request).await
@@ -472,6 +516,9 @@ where
             let sent = match sent {
                 Ok(sent) => sent,
                 Err(cut) => {
+                    record
+                        .usage
+                        .attempt(session.requests_used() > before, estimate, None);
                     record.model = alias;
                     record.requests = session.requests_used();
                     record.external_unmasked = route.external && record.requests > 0;
@@ -482,6 +529,13 @@ where
                 }
             };
             first = false;
+            record.usage.attempt(
+                session.requests_used() > before,
+                estimate,
+                sent.as_ref()
+                    .ok()
+                    .and_then(|response| response.usage.as_ref()),
+            );
             let outcome = match sent {
                 Ok(response) => AttemptOutcome::Reply {
                     content: response.content,

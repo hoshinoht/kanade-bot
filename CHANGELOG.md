@@ -6,6 +6,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 logs token usage: schema v19 adds nullable provider-reported
+  prompt/completion tokens and the local prompt estimate to every extraction
+  call (summed over the attempts that reported a pair) and every chat round
+  (`null` = not reported; older rows and v4 imports stay `null`). The admin
+  API shows them on chat rows, turn rounds and extraction rows/details (with
+  the call's context window), and per-model chat and extraction summaries add
+  reported sums and the median reported/estimate ratio. Rolling back to a
+  v18 image requires the paired pre-upgrade volume backup.
 - v5 chat shows the persona's staging line as a silent reply with typing
   while it answers, then edits that message into the answer; longer answers
   continue as silent follow-ups. A deleted question's placeholder is

@@ -21,6 +21,7 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     extraction_logs_round_trip_and_refuse_bad_rows(make().await).await;
     extraction_filters_combine_and_page(make().await).await;
     chat_logs_round_trip_with_rounds(make().await).await;
+    token_usage_round_trips_and_pairs_are_whole(make().await).await;
     masked_chat_views_round_trip_and_prune(make().await).await;
     identity_leak_is_an_extraction_outcome(make().await).await;
     chat_filters_match_rounds_flags_and_latency(make().await).await;
@@ -133,6 +134,9 @@ fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
         message_ids: vec!["m-1".into()],
         proposal_ids: Vec::new(),
         refusals: Vec::new(),
+        prompt_tokens: None,
+        completion_tokens: None,
+        prompt_estimate: None,
     }
 }
 
@@ -148,6 +152,9 @@ fn round(model: &str, tools: &[&str]) -> ChatRound {
         response: None,
         route: None,
         clean: false,
+        prompt_tokens: None,
+        completion_tokens: None,
+        prompt_estimate: None,
     }
 }
 
@@ -652,6 +659,137 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
     assert!(
         matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
         "chat: a round's route is a known route"
+    );
+}
+
+async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S) {
+    let mut reported = extraction("x-usage", utc(20, 12, 0));
+    reported.prompt_tokens = Some(1200);
+    reported.completion_tokens = Some(80);
+    reported.prompt_estimate = Some(1100);
+    let unreported = extraction("x-none", utc(20, 11, 0));
+    let mut estimated = extraction("x-estimate", utc(20, 10, 0));
+    estimated.prompt_estimate = Some(700);
+    for log in [&reported, &unreported, &estimated] {
+        store.record_extraction(log.clone()).await.expect("record");
+        assert_eq!(
+            store.load_extraction(&log.id).await.expect("load"),
+            Some(log.clone()),
+            "usage: extraction load round trip"
+        );
+    }
+    let usage = |log: &ExtractionLog| {
+        (
+            log.prompt_tokens,
+            log.completion_tokens,
+            log.prompt_estimate,
+        )
+    };
+    for omit_bodies in [false, true] {
+        let page = store
+            .list_extractions(&ExtractionFilter {
+                omit_bodies,
+                limit: 10,
+                ..ExtractionFilter::default()
+            })
+            .await
+            .expect("list");
+        assert_eq!(
+            page.items.iter().map(usage).collect::<Vec<_>>(),
+            [
+                (Some(1200), Some(80), Some(1100)),
+                (None, None, None),
+                (None, None, Some(700)),
+            ],
+            "usage: extraction list keeps usage (omit_bodies {omit_bodies})"
+        );
+    }
+    for (n, (prompt, completion)) in [(Some(5), None), (None, Some(5))].into_iter().enumerate() {
+        let mut half = extraction(&format!("x-half-{n}"), utc(20, 13, 0));
+        half.prompt_tokens = prompt;
+        half.completion_tokens = completion;
+        assert!(
+            matches!(
+                store.record_extraction(half.clone()).await,
+                Err(StoreError::Constraint(_))
+            ),
+            "usage: a half extraction pair is refused"
+        );
+        assert_eq!(store.load_extraction(&half.id).await.expect("load"), None);
+    }
+    assert_eq!(
+        store.extraction_facets().await.expect("facets").total,
+        3,
+        "usage: a refused extraction writes nothing"
+    );
+
+    let mut interaction = chat("c-usage", utc(20, 12, 0));
+    interaction.rounds = vec![
+        ChatRound {
+            prompt_tokens: Some(900),
+            completion_tokens: Some(40),
+            prompt_estimate: Some(950),
+            ..round("kanata/chat", &[])
+        },
+        round("kanata/chat", &[]),
+        ChatRound {
+            prompt_estimate: Some(300),
+            ..round("kanata/chat", &[])
+        },
+    ];
+    store
+        .record_chat(interaction.clone())
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_chat("c-usage").await.expect("load"),
+        Some(interaction.clone()),
+        "usage: chat round load round trip"
+    );
+    let page = store
+        .list_chats(&ChatFilter {
+            limit: 10,
+            ..ChatFilter::default()
+        })
+        .await
+        .expect("list");
+    assert_eq!(
+        page.items,
+        [interaction],
+        "usage: chat round list round trip"
+    );
+    for (n, (prompt, completion)) in [(Some(5), None), (None, Some(5))].into_iter().enumerate() {
+        let mut half = chat(&format!("c-half-{n}"), utc(20, 13, 0));
+        half.rounds.push(ChatRound {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            ..round("kanata/chat", &[])
+        });
+        assert!(
+            matches!(
+                store.record_chat(half.clone()).await,
+                Err(StoreError::Constraint(_))
+            ),
+            "usage: a half round pair is refused"
+        );
+        assert_eq!(store.load_chat(&half.id).await.expect("load"), None);
+    }
+    assert_eq!(
+        store.chat_facets().await.expect("facets").total,
+        1,
+        "usage: a refused chat writes nothing"
+    );
+    // Interaction totals are not a pair: v4 imports carry half of one.
+    let mut totals = chat("c-totals", utc(20, 14, 0));
+    totals.prompt_tokens = Some(1000);
+    totals.completion_tokens = None;
+    store
+        .record_chat(totals.clone())
+        .await
+        .expect("half interaction totals are accepted");
+    assert_eq!(
+        store.load_chat("c-totals").await.expect("load"),
+        Some(totals)
     );
 }
 

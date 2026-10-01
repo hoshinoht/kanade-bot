@@ -59,6 +59,12 @@ pub struct ExtractionLog {
     /// Changes refused up front (`D-PROPOSE-REFUSES`); `error` is only for
     /// failures.
     pub refusals: Vec<ExtractionRefusal>,
+    /// Provider-reported usage summed over the attempts that reported a
+    /// pair; both or neither (`None` when not reported).
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    /// The local prompt-size estimate, independent of the reported pair.
+    pub prompt_estimate: Option<u64>,
 }
 
 /// One change the scheduler refused to stage: the change kind, a stable
@@ -112,6 +118,11 @@ pub struct ChatRound {
     pub route: Option<String>,
     /// The reserved clean-context retry.
     pub clean: bool,
+    /// Provider-reported usage for the round; both or neither.
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    /// The local prompt-size estimate, independent of the reported pair.
+    pub prompt_estimate: Option<u64>,
 }
 
 /// One chat question (v4 `chat_interactions`, plus the v5 filter fields).
@@ -189,10 +200,20 @@ fn shape(ok: bool, what: &str) -> Result<(), StoreError> {
     }
 }
 
+/// A reported usage pair is all or nothing. Interaction totals are not
+/// checked: v4 imports carry half pairs there.
+fn usage_pair(prompt: Option<u64>, completion: Option<u64>) -> bool {
+    prompt.is_some() == completion.is_some()
+}
+
 impl ExtractionLog {
     /// The shape every store refuses to write otherwise.
     pub fn check_shape(&self) -> Result<(), StoreError> {
-        shape(self.guardrail.is_object(), "extraction guardrail")
+        shape(self.guardrail.is_object(), "extraction guardrail")?;
+        shape(
+            usage_pair(self.prompt_tokens, self.completion_tokens),
+            "extraction token usage",
+        )
     }
 }
 
@@ -214,6 +235,10 @@ impl ChatInteraction {
                     .as_deref()
                     .is_none_or(|route| ROUTES.contains(&route)),
                 "chat round route",
+            )?;
+            shape(
+                usage_pair(round.prompt_tokens, round.completion_tokens),
+                "chat round token usage",
             )?;
         }
         Ok(())
@@ -261,6 +286,9 @@ impl fmt::Debug for ExtractionLog {
             .field("outcome", &self.outcome)
             .field("request_count", &self.request_count)
             .field("latency_ms", &self.latency_ms)
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
+            .field("prompt_estimate", &self.prompt_estimate)
             .field("prompt_len", &self.prompt.len())
             .field("raw_response_len", &self.raw_response.len())
             .field("messages", &self.message_ids.len())
@@ -276,6 +304,9 @@ impl fmt::Debug for ChatRound {
             .field("finish_reason", &self.finish_reason)
             .field("latency_ms", &self.latency_ms)
             .field("tools", &self.tools)
+            .field("prompt_tokens", &self.prompt_tokens)
+            .field("completion_tokens", &self.completion_tokens)
+            .field("prompt_estimate", &self.prompt_estimate)
             .field("response_len", &self.response.as_ref().map(String::len))
             .finish_non_exhaustive()
     }

@@ -26,6 +26,7 @@ mod self_service;
 mod session;
 mod shaping;
 mod support;
+mod usage;
 mod window;
 
 // Pinned clock/ids and v4-shaped snapshots shared with the scheduler target.

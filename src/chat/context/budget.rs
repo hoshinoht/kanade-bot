@@ -91,6 +91,15 @@ fn elide_oldest_tool_result(messages: &mut [Message], current_user: usize) -> bo
         .is_some()
 }
 
+/// A request that fits: the messages to send and their estimate.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Budgeted {
+    pub messages: Vec<Message>,
+    /// Estimated prompt tokens (messages, tool calls and tool schemas),
+    /// without the completion reserve.
+    pub estimate: usize,
+}
+
 /// The request to send: `messages` plus the voice `reminder`, after dropping
 /// prior history and then eliding older tool results from `messages` itself
 /// (the trim sticks for later rounds).
@@ -105,7 +114,7 @@ pub fn budgeted(
     reminder: &str,
     model_context_tokens: usize,
     completion_reserve: usize,
-) -> Result<Vec<Message>, ContextBudgetError> {
+) -> Result<Budgeted, ContextBudgetError> {
     let mut current_user = messages
         .iter()
         .rposition(|message| matches!(message, Message::User { .. }))
@@ -123,9 +132,13 @@ pub fn budgeted(
             material.join("\n\n"),
             tool_suffix(messages)
         ));
-        let total = request + schema_tokens + completion_reserve;
+        let estimate = request + schema_tokens;
+        let total = estimate + completion_reserve;
         if total <= model_context_tokens {
-            return Ok(outgoing);
+            return Ok(Budgeted {
+                messages: outgoing,
+                estimate,
+            });
         }
         if current_user > 1 {
             messages.remove(1);
@@ -241,7 +254,9 @@ mod tests {
     #[test]
     fn prior_history_goes_before_any_tool_result() {
         let mut messages = conversation();
-        let outgoing = budgeted(&mut messages, "[]", "voice", 2900, 100).expect("fits");
+        let outgoing = budgeted(&mut messages, "[]", "voice", 2900, 100)
+            .expect("fits")
+            .messages;
         assert_eq!(messages.len(), 6, "both history turns dropped");
         assert!(is_question(&messages[1]));
         assert_eq!(tool_result(&messages, "a1"), bulk('a'));
@@ -252,7 +267,9 @@ mod tests {
     #[test]
     fn older_tool_results_are_elided_but_the_latest_round_stays() {
         let mut messages = conversation();
-        let outgoing = budgeted(&mut messages, "[]", "voice", 2000, 100).expect("fits");
+        let outgoing = budgeted(&mut messages, "[]", "voice", 2000, 100)
+            .expect("fits")
+            .messages;
         assert!(is_question(&messages[1]));
         assert_eq!(tool_result(&messages, "a1"), ELIDED_TOOL_RESULT);
         assert_eq!(tool_result(&messages, "b1"), bulk('b'));
@@ -276,7 +293,8 @@ mod tests {
         // Well under the old 1024 constant, then well over it.
         for reserve in [10, 3000] {
             let window = bare + reserve;
-            assert!(budgeted(&mut lone(), "[]", "voice", window, reserve).is_ok());
+            let fits = budgeted(&mut lone(), "[]", "voice", window, reserve).expect("fits");
+            assert_eq!(fits.estimate, bare, "the estimate leaves out the reserve");
             let error = budgeted(&mut lone(), "[]", "voice", window - 1, reserve).unwrap_err();
             assert_eq!(
                 error,
