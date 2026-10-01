@@ -481,6 +481,54 @@ impl Store {
         })
     }
 
+    /// Planner slot exchange: both rows change under one version bump, or neither.
+    pub fn swap_runs(&mut self, id: &str, req: SwapRequest) -> Result<SwapResult, MoveError> {
+        if id == req.with {
+            return Err(MoveError::invalid("A run cannot be swapped with itself."));
+        }
+        if req.version != self.version {
+            return Err(MoveError::Stale);
+        }
+        let first = self
+            .runs
+            .iter()
+            .position(|run| run.id == id)
+            .ok_or(MoveError::NotFound)?;
+        let second = self
+            .runs
+            .iter()
+            .position(|run| run.id == req.with)
+            .ok_or(MoveError::NotFound)?;
+        let (left, right) = (&self.runs[first], &self.runs[second]);
+        if left.next_week != right.next_week {
+            return Err(MoveError::invalid(
+                "Runs can only swap within the same boss week.",
+            ));
+        }
+        if matches!(left.status, "done" | "cancelled")
+            || matches!(right.status, "done" | "cancelled")
+        {
+            return Err(MoveError::invalid(
+                "Finished and cancelled runs stay where they were.",
+            ));
+        }
+        let (left_day, left_time) = (left.day, left.time.clone());
+        let (right_day, right_time) = (right.day, right.time.clone());
+        self.runs[first].day = right_day;
+        self.runs[second].day = left_day;
+        if self.runs[first].status != "otot" && self.runs[second].status != "otot" {
+            self.runs[first].time = right_time;
+        }
+        if self.runs[first].status != "otot" && self.runs[second].status != "otot" {
+            self.runs[second].time = left_time;
+        }
+        self.version += 1;
+        Ok(SwapResult {
+            runs: [self.dto(&self.runs[first]), self.dto(&self.runs[second])],
+            version: self.version,
+        })
+    }
+
     pub fn set_status(&mut self, id: &str, req: StatusRequest) -> Result<RunResult, MoveError> {
         let status = match req.status.as_str() {
             "planned" => "planned",

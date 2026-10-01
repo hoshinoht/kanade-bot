@@ -160,6 +160,13 @@ pub struct MoveRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwapRequest {
+    pub with: String,
+    pub version: u64,
+}
+
+#[derive(Deserialize)]
 pub struct StatusRequest {
     pub status: String,
     pub version: u64,
@@ -189,6 +196,12 @@ pub struct Previous {
 pub struct MoveResult {
     pub run: Run,
     pub previous: Previous,
+    pub version: u64,
+}
+
+#[derive(Serialize)]
+pub struct SwapResult {
+    pub runs: [Run; 2],
     pub version: u64,
 }
 

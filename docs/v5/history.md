@@ -160,7 +160,7 @@ Which paths write what:
 
 | Path | Source | Notices |
 | --- | --- | --- |
-| mutations (`set_status` with `announce`, `amend_run`, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices`; by surface (v4 parity, parent decision 2026-09-25): a move, fixed edit or party change made in Discord has no `(via portal)` mark, other surfaces keep it, and a Discord fixed edit (`/fixed edit`) writes none |
+| mutations (`set_status` with `announce`, `amend_run`, slot swaps, `swap_participants`, `reset_to_fixed`, fixed edits, party changes) | `change:<seq>` | the `Outcome.notices`; a slot swap records both run rows in one record and writes one normal `RunMoved` notice per run. By surface (v4 parity, parent decision 2026-09-25): a move, fixed edit or party change made in Discord has no `(via portal)` mark, other surfaces keep it, and a Discord fixed edit (`/fixed edit`) writes none |
 | rollbacks (revert, week restore, actor revert, checkpoint restore) | `change:<seq>` | one `Rollback` per channel |
 | cherry-picks | `change:<seq>` | `Picked.notices` |
 | draft merges | `change:<seq>` | the `Merged` summaries |

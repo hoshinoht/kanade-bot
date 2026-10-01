@@ -387,6 +387,18 @@ export interface MoveResult {
   version: number;
 }
 
+/** `POST /api/admin/runs/{id}/swap`: exchange this run's slot with `with`. */
+export interface SwapRequest {
+  with: string;
+  version: number;
+}
+
+export interface SwapResult {
+  /** Primary run first, then the `with` run. */
+  runs: [Run, Run];
+  version: number;
+}
+
 export interface DayStat {
   day: number;
   answered: number;

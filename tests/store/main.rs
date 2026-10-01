@@ -13,9 +13,18 @@ mod owner;
 mod retry;
 mod support;
 
+use chrono::{NaiveTime, TimeZone, Utc, Weekday};
+use chrono_tz::Asia::Kuala_Lumpur;
 use kanade::domain::settings::{
     RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
     save_section,
+};
+use kanade::domain::{
+    history::{ChangeHistory, Origin, changed_fields},
+    ids::RandomIds,
+    notify::NoticeOutbox,
+    schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
+    scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
 };
 use kanade::infrastructure::store::{
     MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
@@ -23,6 +32,201 @@ use kanade::infrastructure::store::{
     journal_conformance, model_log_conformance, precondition_conformance, proposal_conformance,
     web_sessions_conformance,
 };
+
+#[derive(Clone, Copy)]
+struct FixedClock(chrono::DateTime<Utc>);
+
+impl Clock for FixedClock {
+    fn now(&self) -> chrono::DateTime<Utc> {
+        self.0
+    }
+}
+
+fn swap_policy() -> SchedulePolicy {
+    SchedulePolicy::new(
+        ReminderPolicy {
+            zone: Kuala_Lumpur,
+            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            countdowns: vec![60, 15],
+        },
+        Weekday::Thu,
+        NaiveTime::MIN,
+    )
+}
+
+async fn swap_conforms<S>(store: S) -> S
+where
+    S: ScheduleStore + ChangeHistory + NoticeOutbox,
+{
+    let at = |day, hour| {
+        Kuala_Lumpur
+            .with_ymd_and_hms(2026, 9, day, hour, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let policy = swap_policy();
+    let first_at = at(29, 20);
+    let second_at = at(30, 22);
+    let week_start = at(24, 0);
+    let mut service = SchedulerService::new(store, RandomIds, FixedClock(at(28, 12)));
+    let add = |datetime| NewRun {
+        fixed_run_id: None,
+        channel_id: Some("900".into()),
+        week_start,
+        datetime,
+        bosses: vec!["HFA".into()],
+        participants: vec!["1".into()],
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+    };
+    let first = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(first_at))
+        .await
+        .unwrap();
+    let second = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(second_at))
+        .await
+        .unwrap();
+    let head = service.store().history_head().await.unwrap().seq;
+    let origin = Origin::for_tests().with_request_id("swap-conformance");
+    let outcome = service
+        .as_origin(origin.clone())
+        .swap_run_slots(&first, &second, &policy)
+        .await
+        .unwrap();
+    assert_eq!(outcome.notices.len(), 2, "one move notice per run");
+    assert_eq!(outcome.value[0].run.datetime, second_at);
+    assert_eq!(outcome.value[1].run.datetime, first_at);
+    assert_eq!(service.store().history_head().await.unwrap().seq, head + 1);
+    let record = service
+        .store()
+        .load_change(head + 1)
+        .await
+        .unwrap()
+        .unwrap();
+    let fields = changed_fields(&record);
+    assert!(fields.contains(&(
+        kanade::domain::history::BlameTarget::Run(first.clone()),
+        "slot".into()
+    )));
+    assert!(fields.contains(&(
+        kanade::domain::history::BlameTarget::Run(second.clone()),
+        "slot".into()
+    )));
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 2);
+    assert!(matches!(
+        service
+            .as_origin(origin)
+            .swap_run_slots(&first, &second, &policy)
+            .await,
+        Err(SchedulerError::AlreadyApplied { .. })
+    ));
+    assert_eq!(service.store().history_head().await.unwrap().seq, head + 1);
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 2);
+    service.into_store()
+}
+
+async fn swap_respects_non_midnight_reset<S>(store: S) -> S
+where
+    S: ScheduleStore + ChangeHistory + NoticeOutbox,
+{
+    let at = |day, hour| {
+        Kuala_Lumpur
+            .with_ymd_and_hms(2026, 9, day, hour, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let mut policy = swap_policy();
+    policy.reset_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+    let week_start = at(24, 12);
+    let mut service = SchedulerService::new(store, RandomIds, FixedClock(at(24, 13)));
+    let add = |datetime, status| NewRun {
+        fixed_run_id: None,
+        channel_id: Some("900".into()),
+        week_start,
+        datetime,
+        bosses: vec!["HFA".into()],
+        participants: vec!["1".into()],
+        status,
+        source: RunSource::Amend,
+    };
+    let friday_morning = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(25, 10), RunStatus::Otot))
+        .await
+        .unwrap();
+    let thursday_evening = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(24, 20), RunStatus::Planned))
+        .await
+        .unwrap();
+    let head = service.store().history_head().await.unwrap().seq;
+    assert_eq!(
+        service
+            .as_origin(Origin::for_tests())
+            .swap_run_slots(&friday_morning, &thursday_evening, &policy)
+            .await
+            .unwrap_err(),
+        SchedulerError::Schedule(ScheduleError::SwapLeavesWeek)
+    );
+    assert_eq!(service.store().history_head().await.unwrap().seq, head);
+    assert!(service.store().outbox_notices().await.unwrap().is_empty());
+
+    let friday_afternoon = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(25, 13), RunStatus::Planned))
+        .await
+        .unwrap();
+    let thursday_evening_safe = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(24, 20), RunStatus::Planned))
+        .await
+        .unwrap();
+    let outcome = service
+        .as_origin(Origin::for_tests())
+        .swap_run_slots(&friday_afternoon, &thursday_evening_safe, &policy)
+        .await
+        .unwrap();
+    assert_eq!(outcome.value[0].run.datetime, at(24, 20));
+    assert_eq!(outcome.value[1].run.datetime, at(25, 13));
+    service.into_store()
+}
+
+#[tokio::test]
+async fn memory_slot_swap_conforms() {
+    let _ = swap_conforms(MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_slot_swap_conforms() {
+    let dir = support::TempDir::new();
+    let store = swap_conforms(
+        SqliteStore::open(&dir.config("slot-swap"))
+            .await
+            .expect("fresh store opens"),
+    )
+    .await;
+    store.close().await.expect("store closes");
+}
+
+#[tokio::test]
+async fn memory_slot_swap_respects_non_midnight_reset() {
+    let _ = swap_respects_non_midnight_reset(MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_slot_swap_respects_non_midnight_reset() {
+    let dir = support::TempDir::new();
+    let store = swap_respects_non_midnight_reset(
+        SqliteStore::open(&dir.config("slot-swap-non-midnight"))
+            .await
+            .expect("fresh store opens"),
+    )
+    .await;
+    store.close().await.expect("store closes");
+}
 
 #[tokio::test]
 async fn memory_members_conform() {

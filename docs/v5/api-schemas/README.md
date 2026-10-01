@@ -29,6 +29,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/stats?week=` | `week.json#/$defs/Stats` |
 | `GET /api/admin/summary` | `week.json#/$defs/Summary` |
 | `POST /api/admin/runs/{id}/move` | `week.json#/$defs/MoveResult` |
+| `POST /api/admin/runs/{id}/swap` | `week.json#/$defs/SwapResult` |
 | `PATCH /api/admin/runs/{id}/status` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/rsvp` | `week.json#/$defs/RunResult` |
 | `PATCH /api/admin/runs/{id}/participants` | `week.json#/$defs/RunResult` |

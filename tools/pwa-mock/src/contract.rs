@@ -667,6 +667,47 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
+    // A planner swap changes both next-week rows under one version.
+    let swap_week = h
+        .ok(
+            "GET",
+            "/api/admin/week?week=next",
+            None,
+            "week.json#/$defs/Week",
+        )
+        .await;
+    let swap_runs: Vec<&Value> = swap_week["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|run| !matches!(s(&run["status"]), "done" | "cancelled"))
+        .take(2)
+        .collect();
+    let swap_path = format!("/api/admin/runs/{}/swap", s(&swap_runs[0]["id"]));
+    h.ok(
+        "POST",
+        &swap_path,
+        Some(json!({
+            "with": s(&swap_runs[1]["id"]),
+            "version": swap_week["version"],
+        })),
+        "week.json#/$defs/SwapResult",
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    h.refused(
+        "POST",
+        &swap_path,
+        json!({
+            "with": s(&swap_runs[1]["id"]),
+            "version": swap_week["version"],
+            "unexpected": true,
+        }),
+        &[("x-kanade-csrf", &csrf)],
+        (StatusCode::BAD_REQUEST, "invalid_body"),
+    )
+    .await;
+
     // Members.
     let m = s(&members[0]["id"]).to_owned();
     h.ok(

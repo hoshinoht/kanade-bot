@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     bad_body, origin,
-    precondition::{Explicit, OverrideRef, SeenField, expectations},
+    precondition::{Explicit, OverrideRef, SeenField, expectations, version_expectations},
     refusal::{Refusal, scheduler},
     state, write_context,
 };
@@ -57,6 +57,12 @@ struct Previous {
 struct MoveResult {
     run: RunDto,
     previous: Previous,
+    version: u64,
+}
+
+#[derive(Serialize)]
+struct SwapResult {
+    runs: [RunDto; 2],
     version: u64,
 }
 
@@ -136,6 +142,18 @@ async fn edit(
         Err(error) => return Err(scheduler(error)),
     }
     after(site, state, run_id, &profiles).await
+}
+
+async fn after_pair(
+    site: &Site,
+    state: &ApiState,
+    run_id: &str,
+    with_id: &str,
+    profiles: &[MemberProfile],
+) -> Result<([RunDto; 2], u64), Refusal> {
+    let (run, version) = after(site, state, run_id, profiles).await?;
+    let (with, _) = after(site, state, with_id, profiles).await?;
+    Ok(([run, with], version))
 }
 
 fn declared(
@@ -238,6 +256,64 @@ pub async fn move_run(
         version,
     })
     .into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwapRequest {
+    with: String,
+    version: u64,
+}
+
+/// Exchange two live runs' slots as one writer operation. Validation of their
+/// state is in the domain so an idempotent replay wins before it is re-planned.
+pub async fn swap(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<SwapRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    if run_id == request.with {
+        return Err(Refusal::invalid("A run cannot be swapped with itself."));
+    }
+    let state = state(&site)?;
+    load_run(state, &run_id).await?;
+    load_run(state, &request.with).await?;
+    let origin = origin(&session, &headers)?;
+    let fields = ["slot".to_owned()];
+    let expect = version_expectations(
+        state.store.as_ref(),
+        &[
+            BlameTarget::Run(run_id.clone()),
+            BlameTarget::Run(request.with.clone()),
+        ],
+        &fields,
+        request.version,
+        origin.request_id.is_some(),
+    )
+    .await?;
+    let (ctx, profiles) = write_context(state).await?;
+    match state
+        .writer
+        .run(
+            origin,
+            expect,
+            &run_id,
+            RunWrite::Swap {
+                with_id: request.with.clone(),
+                version: request.version,
+            },
+            &ctx,
+        )
+        .await
+    {
+        Ok(_) | Err(SchedulerError::AlreadyApplied { .. }) => {}
+        Err(error) => return Err(scheduler(error)),
+    }
+    let (runs, version) = after_pair(&site, state, &run_id, &request.with, &profiles).await?;
+    Ok(Json(SwapResult { runs, version }).into_response())
 }
 
 #[derive(Deserialize)]

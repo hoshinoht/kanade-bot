@@ -10,7 +10,9 @@ use super::error::ScheduleError;
 use super::fixed_edit::{FixedEditRequest, apply_fixed_edit, apply_party_delta};
 use super::lifecycle::{apply_fixed_to_runs, mark_done, retire_fixed_run};
 use super::materialise::{materialise_week, materialise_weeks};
-use super::mutate::{StatusChange, amend_run, reset_to_fixed, set_status, swap_participants};
+use super::mutate::{
+    StatusChange, amend_run, reset_to_fixed, set_status, swap_participants, swap_run_slots,
+};
 use super::notice::Outcome;
 use super::policy::SchedulePolicy;
 use super::policy::utc_instant;
@@ -129,6 +131,13 @@ pub enum Op<'a> {
         to: DateTime<Utc>,
         policy: &'a SchedulePolicy,
     },
+    SwapRunSlots {
+        run_id: String,
+        with_id: String,
+        /// The portal's raw week version is part of idempotency identity.
+        request_version: Option<u64>,
+        policy: &'a SchedulePolicy,
+    },
     SwapParticipants {
         run_id: String,
         remove: Vec<String>,
@@ -202,6 +211,7 @@ impl Op<'_> {
         match self {
             Self::MaterialiseWeeks { policy }
             | Self::AmendRun { policy, .. }
+            | Self::SwapRunSlots { policy, .. }
             | Self::ApplyFixedEdit { policy, .. }
             | Self::ResetToFixed { policy, .. }
             | Self::FixedParticipants { policy, .. } => Some(policy),
@@ -224,6 +234,7 @@ pub enum OpResult {
     Reminder(Option<String>),
     Changed(bool),
     Run(RunState),
+    Runs(Vec<RunState>),
     Fixed(FixedRun),
     /// A party delta, and the runs it left alone rather than empty.
     PartyDelta(super::fixed_edit::PartyDelta),
@@ -363,6 +374,18 @@ pub fn apply_op(
         } => run(set_status(draft, ids, run_id, *change, policy, now)?),
         Op::AmendRun { run_id, to, policy } => {
             run(amend_run(draft, ids, run_id, *to, policy, now)?)
+        }
+        Op::SwapRunSlots {
+            run_id,
+            with_id,
+            policy,
+            ..
+        } => {
+            let outcome = swap_run_slots(draft, ids, run_id, with_id, policy, now)?;
+            Outcome {
+                value: OpResult::Runs(outcome.value),
+                notices: outcome.notices,
+            }
         }
         Op::SwapParticipants {
             run_id,

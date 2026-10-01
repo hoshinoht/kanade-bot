@@ -215,6 +215,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/auth/tailscale", post(auth::tailscale_login))
         .route("/api/admin/auth/logout", post(auth::logout))
         .route("/api/admin/runs/{id}/move", post(api::move_run))
+        .route("/api/admin/runs/{id}/swap", post(api::swap_runs))
         .route("/api/admin/runs/{id}/status", patch(api::status))
         .route("/api/admin/runs/{id}/rsvp", post(api::rsvp))
         .route(

@@ -367,7 +367,10 @@ fn on_surface(op: &Op<'_>, surface: Surface, mut outcome: Outcome<OpResult>) -> 
     let discord = surface == Surface::Discord;
     match op {
         Op::ApplyFixedEdit { .. } if discord => outcome.notices.clear(),
-        Op::AmendRun { .. } | Op::ApplyFixedEdit { .. } | Op::FixedParticipants { .. } => {
+        Op::AmendRun { .. }
+        | Op::SwapRunSlots { .. }
+        | Op::ApplyFixedEdit { .. }
+        | Op::FixedParticipants { .. } => {
             for notice in &mut outcome.notices {
                 notice.via_portal = !discord;
             }
@@ -727,6 +730,44 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         Ok(run_state(self.apply(Scope::All, op).await?))
     }
 
+    /// Exchange two runs' slots as one history-recorded transaction.
+    pub async fn swap_run_slots(
+        self,
+        run_id: &str,
+        with_id: &str,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<Outcome<Vec<RunState>>> {
+        self.swap_run_slots_at_version(run_id, with_id, None, policy)
+            .await
+    }
+
+    /// Portal swaps include the raw version in their request digest, so a
+    /// reused idempotency key cannot replay a request from another screen read.
+    pub async fn swap_run_slots_at_version(
+        self,
+        run_id: &str,
+        with_id: &str,
+        request_version: Option<u64>,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<Outcome<Vec<RunState>>> {
+        let op = Op::SwapRunSlots {
+            run_id: run_id.to_owned(),
+            with_id: with_id.to_owned(),
+            request_version,
+            policy,
+        };
+        match self.apply(Scope::All, op).await? {
+            Outcome {
+                value: OpResult::Runs(runs),
+                notices,
+            } => Ok(Outcome {
+                value: runs,
+                notices,
+            }),
+            Outcome { value, .. } => unreachable!("swap_run_slots returned {value:?}"),
+        }
+    }
+
     /// Change this week's line-up of one run (v4 `swap_participants`).
     pub async fn swap_participants(
         self,
@@ -1053,6 +1094,12 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
         Op::MaterialiseWeeks { .. } => digest("materialise_weeks", &()),
         Op::SetStatus { run_id, change, .. } => digest("set_status", &(run_id, change)),
         Op::AmendRun { run_id, to, .. } => digest("amend_run", &(run_id, to)),
+        Op::SwapRunSlots {
+            run_id,
+            with_id,
+            request_version,
+            ..
+        } => digest("swap_run_slots", &(run_id, with_id, request_version)),
         Op::SwapParticipants {
             run_id,
             remove,

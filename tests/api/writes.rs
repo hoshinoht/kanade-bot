@@ -5,6 +5,7 @@
 use kanade::domain::{
     history::{BlameTarget, ChangeHistory, Surface, changed_fields},
     members::MemberStore,
+    notify::NoticeOutbox,
 };
 use serde_json::{Value, json};
 
@@ -128,6 +129,208 @@ async fn moves_are_attributed_to_the_session_and_csrf_is_required() {
     assert_eq!(reply.status, 200, "{}", reply.text());
     let record = reads.store.load_change(v + 2).await.unwrap().unwrap();
     assert_eq!(record.origin.surface, Surface::Cli);
+}
+
+#[tokio::test]
+async fn planner_swap_is_atomic_replayable_and_revertible() {
+    let reads = Reads::new().await;
+    let v = reads.version().await;
+    let before = reads
+        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+        .await;
+    let run = |id: &str| {
+        before["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| run["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let kalos = run("n-kalos");
+    let own_time = run("n-star");
+    let body = json!({"with": "n-star", "version": v});
+    let key = [("Idempotency-Key", "planner-swap-1")];
+    let swapped = reads
+        .call("POST", "/api/admin/runs/n-kalos/swap", body.clone(), &key)
+        .await;
+    assert_eq!(swapped.status, 200, "{}", swapped.text());
+    let swapped = swapped.json();
+    assert_valid("week.json#/$defs/SwapResult", "swap", &swapped);
+    assert_eq!(swapped["version"], v + 1);
+    assert_eq!(swapped["runs"][0]["id"], "n-kalos");
+    assert_eq!(swapped["runs"][1]["id"], "n-star");
+    assert_eq!(swapped["runs"][0]["day"], own_time["day"]);
+    assert_eq!(swapped["runs"][0]["time"], kalos["time"]);
+    assert_eq!(swapped["runs"][1]["day"], kalos["day"]);
+    assert_eq!(
+        swapped["runs"][1]["time"], own_time["time"],
+        "own-time runs keep their clock"
+    );
+    let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
+    let changed = changed_fields(&record);
+    assert!(changed.contains(&(BlameTarget::Run("n-kalos".into()), "slot".into())));
+    assert!(changed.contains(&(BlameTarget::Run("n-star".into()), "slot".into())));
+    assert_eq!(
+        reads.store.outbox_notices().await.unwrap().len(),
+        2,
+        "one move notice per run"
+    );
+
+    let replay = reads
+        .call("POST", "/api/admin/runs/n-kalos/swap", body, &key)
+        .await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(replay.json(), swapped, "same response on replay");
+    assert_eq!(reads.version().await, v + 1, "one record only");
+    assert_eq!(reads.store.outbox_notices().await.unwrap().len(), 2);
+    let changed_version = reads
+        .call(
+            "POST",
+            "/api/admin/runs/n-kalos/swap",
+            json!({"with": "n-star", "version": v + 1}),
+            &key,
+        )
+        .await;
+    assert_eq!(
+        (changed_version.status, changed_version.api_error()),
+        (422, "idempotency_mismatch".into())
+    );
+    assert_eq!(
+        reads.version().await,
+        v + 1,
+        "changed-version reuse writes nothing"
+    );
+
+    reads
+        .ok(
+            "POST",
+            "/api/admin/history/revert",
+            json!({"seqs": [v + 1]}),
+            "history.json#/$defs/RevertPlan",
+        )
+        .await;
+    let restored = reads
+        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+        .await;
+    for original in [kalos, own_time] {
+        let current = restored["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| run["id"] == original["id"])
+            .unwrap();
+        assert_eq!(
+            (current["day"].clone(), current["time"].clone()),
+            (original["day"].clone(), original["time"].clone())
+        );
+    }
+}
+
+#[tokio::test]
+async fn planner_swap_refusals_leave_both_runs_unchanged() {
+    let reads = Reads::new().await;
+    let v = reads.version().await;
+    for (path, body) in [
+        (
+            "/api/admin/runs/n-kalos/swap",
+            json!({"with": "n-kalos", "version": v}),
+        ),
+        (
+            "/api/admin/runs/n-kalos/swap",
+            json!({"with": "r-kalos", "version": v}),
+        ),
+        (
+            "/api/admin/runs/n-kalos/swap",
+            json!({"with": "r-star", "version": v}),
+        ),
+    ] {
+        assert_eq!(
+            reads.refused("POST", path, body).await,
+            (422, "invalid".into())
+        );
+    }
+    assert_eq!(reads.version().await, v);
+    assert!(reads.store.outbox_notices().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn stale_planner_swap_changes_neither_run() {
+    let reads = Reads::new().await;
+    let v = reads.version().await;
+    reads
+        .ok(
+            "POST",
+            "/api/admin/runs/n-kalos/move",
+            json!({"day": 6, "time": "20:00", "version": v}),
+            "week.json#/$defs/MoveResult",
+        )
+        .await;
+    let before = reads
+        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+        .await;
+    assert_eq!(
+        reads
+            .refused(
+                "POST",
+                "/api/admin/runs/n-kalos/swap",
+                json!({"with": "n-star", "version": v}),
+            )
+            .await,
+        (409, "stale".into())
+    );
+    assert_eq!(
+        reads
+            .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+            .await,
+        before
+    );
+    assert!(reads.store.outbox_notices().await.unwrap().len() == 1);
+}
+
+#[tokio::test]
+async fn planner_swap_refuses_a_non_midnight_reset_week_escape() {
+    let reset = chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+    let reads = Reads::with_reset(reset).await;
+    let mut version = reads.version().await;
+    let moved = reads
+        .ok(
+            "POST",
+            "/api/admin/runs/n-kalos/move",
+            json!({"day": 1, "time": "10:00", "version": version}),
+            "week.json#/$defs/MoveResult",
+        )
+        .await;
+    version = moved["version"].as_u64().unwrap();
+    let moved = reads
+        .ok(
+            "POST",
+            "/api/admin/runs/n-star/move",
+            json!({"day": 0, "time": null, "version": version}),
+            "week.json#/$defs/MoveResult",
+        )
+        .await;
+    version = moved["version"].as_u64().unwrap();
+    let before = reads
+        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+        .await;
+    assert_eq!(
+        reads
+            .refused(
+                "POST",
+                "/api/admin/runs/n-kalos/swap",
+                json!({"with": "n-star", "version": version}),
+            )
+            .await,
+        (422, "invalid".into())
+    );
+    assert_eq!(
+        reads
+            .read("/api/admin/week?week=next", "week.json#/$defs/Week")
+            .await,
+        before
+    );
+    assert_eq!(reads.version().await, version);
 }
 
 /// One edit of the merge property: `fields` are what it declares on

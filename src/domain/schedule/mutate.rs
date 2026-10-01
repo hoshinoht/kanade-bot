@@ -1,6 +1,6 @@
 //! Run mutations behind every surface: status, move, swap and reset.
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 
 use super::draft::Draft;
@@ -193,6 +193,103 @@ pub fn amend_run(
     Ok(Outcome {
         value: state,
         notices: vec![intent],
+    })
+}
+
+/// Exchange two runs' local day and clock in one draft. Own-time runs retain
+/// their clock, so they exchange only the day. Both runs must remain in their
+/// existing boss week; this is a planner operation, not two independent moves.
+pub fn swap_run_slots(
+    draft: &mut Draft,
+    ids: &mut impl IdGenerator,
+    run_id: &str,
+    with_id: &str,
+    policy: &SchedulePolicy,
+    now: DateTime<Utc>,
+) -> Result<Outcome<Vec<RunState>>, ScheduleError> {
+    if run_id == with_id {
+        return Err(ScheduleError::SameRunSwap);
+    }
+    let first = draft.require_run(run_id)?;
+    let second = draft.require_run(with_id)?;
+    if first.week_start != second.week_start {
+        return Err(ScheduleError::DifferentSwapWeek);
+    }
+    if first.status.is_terminal() {
+        return Err(ScheduleError::RunNotLive {
+            run_id: first.id.clone(),
+            status: first.status.as_str().to_owned(),
+        });
+    }
+    if second.status.is_terminal() {
+        return Err(ScheduleError::RunNotLive {
+            run_id: second.id.clone(),
+            status: second.status.as_str().to_owned(),
+        });
+    }
+
+    let zone = policy.zone();
+    let first_local = zone.from_utc_datetime(&first.datetime.naive_utc());
+    let second_local = zone.from_utc_datetime(&second.datetime.naive_utc());
+    let first_time = if first.status == RunStatus::Otot || second.status == RunStatus::Otot {
+        first_local.time()
+    } else {
+        second_local.time()
+    };
+    let second_time = if first.status == RunStatus::Otot || second.status == RunStatus::Otot {
+        second_local.time()
+    } else {
+        first_local.time()
+    };
+    let first_to = zone
+        .from_local_datetime(&second_local.date_naive().and_time(first_time))
+        .earliest()
+        .ok_or(DateOutOfRange)?
+        .with_timezone(&Utc);
+    let second_to = zone
+        .from_local_datetime(&first_local.date_naive().and_time(second_time))
+        .earliest()
+        .ok_or(DateOutOfRange)?
+        .with_timezone(&Utc);
+    let week = first.week_start;
+    // Day zero begins at the configured reset time, so swapping an earlier
+    // clock onto it can otherwise silently assign the previous boss week.
+    if policy.week_of(&first_to)?.to_fixed() != week
+        || policy.week_of(&second_to)?.to_fixed() != week
+    {
+        return Err(ScheduleError::SwapLeavesWeek);
+    }
+    draft.set_run_datetime(run_id, first_to, week)?;
+    draft.set_run_datetime(with_id, second_to, week)?;
+    settle_after_move(draft, ids, run_id, &policy.reminders, now)?;
+    settle_after_move(draft, ids, with_id, &policy.reminders, now)?;
+    let first_state = run_state(draft, run_id)?;
+    let second_state = run_state(draft, with_id)?;
+    let notices = vec![
+        notice(
+            &first_state.run,
+            NoticeChange::RunMoved {
+                run_id: run_id.to_owned(),
+                from: first.datetime,
+                to: first_state.run.datetime,
+            },
+            first_state.run.participants.clone(),
+            true,
+        ),
+        notice(
+            &second_state.run,
+            NoticeChange::RunMoved {
+                run_id: with_id.to_owned(),
+                from: second.datetime,
+                to: second_state.run.datetime,
+            },
+            second_state.run.participants.clone(),
+            true,
+        ),
+    ];
+    Ok(Outcome {
+        value: vec![first_state, second_state],
+        notices,
     })
 }
 

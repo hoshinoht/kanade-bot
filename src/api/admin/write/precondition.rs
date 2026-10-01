@@ -89,3 +89,30 @@ pub async fn expectations(
     }
     Ok(Expect::fields(declared).overriding(overrides))
 }
+
+/// Version-derived expectations for one mutation that changes the same fields
+/// on several rows. The store checks the resulting set atomically.
+pub async fn version_expectations(
+    store: &dyn ReadStore,
+    targets: &[BlameTarget],
+    fields: &[String],
+    version: u64,
+    keyed: bool,
+) -> Result<Expect, Refusal> {
+    let mut all = Vec::new();
+    for target in targets {
+        all.extend(
+            expectations(
+                store,
+                target.clone(),
+                fields,
+                Some(version),
+                &Explicit::default(),
+                keyed,
+            )
+            .await?
+            .fields,
+        );
+    }
+    Ok(Expect::fields(all))
+}

@@ -36,6 +36,7 @@ pub use lifecycle::{
 pub use materialise::{adoptable_run, materialise_week, materialise_weeks};
 pub use mutate::{
     StatusChange, amend_run, reset_to_fixed, set_status, settable_status, swap_participants,
+    swap_run_slots,
 };
 pub use notice::{DRAFT_MERGED, Notice, NoticeChange, Outcome, ROLLBACK_RESTORED, RequestDecision};
 pub use op::{Op, OpResult, WeekStart, apply_op};

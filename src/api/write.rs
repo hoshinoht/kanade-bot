@@ -46,6 +46,10 @@ pub enum RunWrite {
     Move {
         to: DateTime<Utc>,
     },
+    Swap {
+        with_id: String,
+        version: u64,
+    },
     Status(StatusChange),
     /// A portal answer (source `chat`, status re-derived, a status pin kept);
     /// `None` clears whatever the member answered.
@@ -256,6 +260,10 @@ where
             // Notices are already in the store's outbox, written with the change.
             match write {
                 RunWrite::Move { to } => handle.amend_run(run_id, to, &ctx.policy).await.map(drop),
+                RunWrite::Swap { with_id, version } => handle
+                    .swap_run_slots_at_version(run_id, &with_id, Some(version), &ctx.policy)
+                    .await
+                    .map(drop),
                 RunWrite::Status(change) => handle
                     .set_status(run_id, change, &ctx.policy.reminders)
                     .await

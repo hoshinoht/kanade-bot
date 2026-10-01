@@ -13,7 +13,7 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -226,6 +226,24 @@ pub async fn move_run(
     Json(req): Json<MoveRequest>,
 ) -> Response {
     outcome(app.store.lock().await.portal(|s| s.move_run(&id, req)))
+}
+
+pub async fn swap_runs(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Result<Json<SwapRequest>, JsonRejection>,
+) -> Response {
+    let Json(req) = match body {
+        Ok(body) => body,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "invalid_body",
+                "Invalid JSON body.",
+            );
+        }
+    };
+    outcome(app.store.lock().await.portal(|s| s.swap_runs(&id, req)))
 }
 
 pub async fn status(

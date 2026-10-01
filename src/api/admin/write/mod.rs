@@ -31,6 +31,7 @@ pub use runs::strict_time;
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/api/admin/runs/{id}/move", post(runs::move_run))
+        .route("/api/admin/runs/{id}/swap", post(runs::swap))
         .route("/api/admin/runs/{id}/status", patch(runs::status))
         .route("/api/admin/runs/{id}/rsvp", post(runs::rsvp))
         .route(

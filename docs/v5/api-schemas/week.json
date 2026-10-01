@@ -134,6 +134,20 @@
         "version": { "type": "integer", "minimum": 0 }
       }
     },
+    "SwapResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "version"],
+      "properties": {
+        "runs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/Run" }
+        },
+        "version": { "type": "integer", "minimum": 0 }
+      }
+    },
     "Stats": {
       "type": "object",
       "additionalProperties": false,

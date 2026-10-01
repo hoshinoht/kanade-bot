@@ -48,6 +48,12 @@ pub enum ScheduleError {
         run_id: String,
         status: String,
     },
+    /// A slot exchange needs two distinct run rows.
+    SameRunSwap,
+    /// A slot exchange never moves either run into another boss week.
+    DifferentSwapWeek,
+    /// A non-midnight reset can put a swapped local date/time in the prior week.
+    SwapLeavesWeek,
     /// v5: `reset_to_fixed` would put a live run on a slot at or before now;
     /// the slot is rendered in the guild zone (`Mon 07 Sep`, `21:30`).
     ResetSlotPassed {
@@ -141,6 +147,11 @@ impl fmt::Display for ScheduleError {
             ),
             Self::RunNotLive { run_id, status } => {
                 write!(f, "run {run_id} is {status} - it is left as the record")
+            }
+            Self::SameRunSwap => f.write_str("a run cannot be swapped with itself"),
+            Self::DifferentSwapWeek => f.write_str("runs can only swap within the same boss week"),
+            Self::SwapLeavesWeek => {
+                f.write_str("that slot swap would move a run outside its boss week")
             }
             Self::ResetSlotPassed {
                 run_id,
