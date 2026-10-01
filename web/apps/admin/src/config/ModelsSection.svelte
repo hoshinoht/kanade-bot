@@ -9,6 +9,7 @@
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
   import { CHECK_TONE, Icon } from '@kanade/ui';
   import { groupRows, isReasoningValid, kanataLimits, keyLine, modelOptions, reasoningChoices, resetStrandedInheritors, ROLES } from './capacity';
+  import ContextWindows from './ContextWindows.svelte';
   import type { Save } from './save';
 
   let { models, save }: { models: ConfigView['models']; save: Save } = $props();
@@ -156,6 +157,8 @@
   </div>
 </form>
 <p class="field__error" role="alert">{rolesError}</p>
+
+<ContextWindows {models} {save} />
 
 <h4 class="settings__subtitle">Capacity groups</h4>
 <p class="note">Each group shares its permits among its models, held to the least Kanata admits for any of them.</p>

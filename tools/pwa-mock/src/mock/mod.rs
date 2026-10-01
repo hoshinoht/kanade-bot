@@ -12,6 +12,7 @@ pub mod inbox;
 pub mod knowledge;
 mod limits;
 pub mod logfilter;
+mod model_context;
 mod people;
 mod reminders;
 mod seed;

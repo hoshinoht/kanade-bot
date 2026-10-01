@@ -841,6 +841,44 @@ export interface ModelInfo {
   fixed_effort?: string;
   /** Admission Kanata publishes for the alias, or null when the operator declares it. */
   admission: { max_in_flight: number; adapter_max_in_flight?: number } | null;
+  /** Published context window; absent when Kanata lists none. An override may not exceed it. */
+  context_tokens?: number;
+  /** Published completion maximum; a role's reserve is held to it. */
+  max_output_tokens?: number;
+}
+
+/** Where a role's context window came from, before clamps. */
+export type ContextSource = 'override' | 'catalog' | 'cloud_default' | 'local_default';
+
+/** A routed role's effective context, resolved by the server (read-only). */
+export interface EffectiveContext {
+  window: number;
+  /** The saved reserve held to the route's published `max_output_tokens`. */
+  reserve: number;
+  prompt_budget: number;
+  source: ContextSource;
+  clamped_by_published: boolean;
+  clamped_by_hard_cap: boolean;
+  clamped_by_role_cap: boolean;
+  /** A local route whose window is above 16384. */
+  local_warning: boolean;
+}
+
+export interface ContextRole {
+  reserve: number;
+  /** null: no role cap. */
+  cap: number | null;
+}
+
+/** `models.context`: saved whole (a PATCH sends the complete object). Every value is 1..=131072. */
+export interface ContextSettings {
+  cloud_default: number;
+  local_default: number;
+  chat: ContextRole;
+  extraction: ContextRole;
+  rewrite: ContextRole;
+  /** Window per exact route alias; a base alias's override does not reach its variants. */
+  overrides: Record<string, number>;
 }
 
 export interface RoleModel {
@@ -854,6 +892,8 @@ export interface RoleModel {
   fixed_effort?: string;
   /** What the role's next session opens with (saved roles apply live); absent while unrouted. */
   running?: { alias: string; reasoning: string | null };
+  /** The effective context the role's next call uses; absent while unrouted. */
+  context?: EffectiveContext;
 }
 
 export interface CapacityGroup {
@@ -948,6 +988,8 @@ export interface ConfigView {
     capacity_check: CapacityCheck[];
     /** Required compatibility field; current model requests are not pseudonymised. */
     pii_pseudonymise: boolean;
+    /** Saved context settings; each role's result is `roles.<role>.context`. */
+    context: ContextSettings;
   };
   /** Channels where the bot lacks Manage Messages; shown above every Config section. */
   manage_messages: { missing: string[] };

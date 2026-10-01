@@ -15,7 +15,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   logs and model-log rows show the effective window and its source, and warn
   when a local model's window exceeds 16,384 or a reserve fills its window.
   Changes apply to the next chat question, extraction pass or rewrite without
-  a restart; the fixed 65,536 serve window is gone.
+  a restart; the fixed 65,536 serve window is gone. Config → Models has a
+  Context windows panel with paired sliders and number fields, per-model
+  override rows showing published maxima, and the local 16k warning.
 - v5 chat trims oldest history, then older tool results, before failing a
   too-long question with a typed context-budget error and a member reply;
   a Kanata size 400 above the published output maximum no longer downgrades

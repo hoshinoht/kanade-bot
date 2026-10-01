@@ -9,6 +9,7 @@
 //! minimum over its aliases, and the groups' summed concurrency within the
 //! key-level max_in_flight while the deployment shares its key.
 
+use super::model_context::{self, Route};
 use super::seed;
 use super::{MoveError, Store};
 use serde::Serialize;
@@ -64,6 +65,8 @@ pub struct Config {
     pub declared_groups: Option<Vec<Group>>,
     /// `models.permits`: the default group's permits.
     pub permits: u32,
+    /// `models.context`: defaults, per-role reserve/cap and alias overrides.
+    pub context: model_context::Settings,
     /// Roles with a model when the bot started: extraction and heading
     /// rewrites run only for those until a restart.
     #[serde(skip)]
@@ -85,6 +88,9 @@ struct ModelInfo {
     adapter_max: Option<u32>,
     /// Operator-declared limit, used when Kanata publishes nothing.
     declared_max: Option<u32>,
+    /// Published context window and completion maximum, when listed.
+    context_tokens: Option<u32>,
+    max_output_tokens: Option<u32>,
 }
 
 impl ModelInfo {
@@ -118,6 +124,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: Some(1),
         adapter_max: Some(2),
         declared_max: None,
+        context_tokens: Some(16_384),
+        max_output_tokens: Some(4_096),
     },
     ModelInfo {
         id: "kanata/chat",
@@ -129,6 +137,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: Some(4),
         adapter_max: Some(8),
         declared_max: None,
+        context_tokens: None,
+        max_output_tokens: Some(8_192),
     },
     ModelInfo {
         id: "kanata/rewrite-small",
@@ -140,6 +150,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: None,
         adapter_max: None,
         declared_max: Some(1),
+        context_tokens: Some(8_192),
+        max_output_tokens: Some(512),
     },
     ModelInfo {
         id: "kanata/chat-cloud",
@@ -151,6 +163,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: Some(4),
         adapter_max: Some(8),
         declared_max: None,
+        context_tokens: Some(200_000),
+        max_output_tokens: Some(16_384),
     },
     ModelInfo {
         id: "kanata/legacy",
@@ -162,6 +176,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: None,
         adapter_max: None,
         declared_max: Some(2),
+        context_tokens: None,
+        max_output_tokens: None,
     },
     // Requires reasoning: its published list has no `none`, so `off` is hidden.
     ModelInfo {
@@ -174,6 +190,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: Some(1),
         adapter_max: None,
         declared_max: None,
+        context_tokens: Some(65_536),
+        max_output_tokens: Some(8_192),
     },
     ModelInfo {
         id: "kanata/rewrite-cloud",
@@ -185,6 +203,8 @@ const MODELS: [ModelInfo; 7] = [
         route_max: Some(2),
         adapter_max: Some(4),
         declared_max: None,
+        context_tokens: Some(32_768),
+        max_output_tokens: Some(1_024),
     },
 ];
 
@@ -326,6 +346,7 @@ pub fn defaults() -> Config {
         // The default: one gateway group over the role aliases.
         declared_groups: None,
         permits: 1,
+        context: model_context::Settings::default(),
         started: vec!["extraction", "chat", "rewrite"],
     }
 }
@@ -334,6 +355,15 @@ pub fn defaults() -> Config {
 fn model(id: &str) -> Option<&'static ModelInfo> {
     let id = variant(id).map_or(id, |(base, _)| base);
     MODELS.iter().find(|m| m.id == id)
+}
+
+/// What context resolution sees for an alias: unlisted routes are not local.
+fn route(id: &str) -> Option<Route> {
+    model(id).map(|m| Route {
+        local: !leaves_homelab(id, m.trust),
+        context_tokens: m.context_tokens,
+        max_output_tokens: m.max_output_tokens,
+    })
 }
 
 fn profile_visible(c: &Config, key: &str) -> bool {
@@ -474,14 +504,22 @@ impl Store {
     pub fn config_view(&self) -> Value {
         let c = &self.config;
         let entry = |id: &str, m: &ModelInfo| {
-            json!({
+            let mut entry = json!({
                 "id": id, "trust_zone": m.trust, "leaves_homelab": leaves_homelab(id, m.trust),
                 "function_tools": m.tools, "structured_output": m.json, "sampling_controls": m.sampling,
                 "reasoning_control": m.efforts.is_none_or(|e| !e.is_empty()),
                 "reasoning_efforts": m.efforts,
                 "off_allowed": !OFF_REQUIRED.contains(&m.id),
                 "admission": m.cap().map(|max| admission(max, m.adapter_max)),
-            })
+            });
+            // Optional in the DTO: absent when Kanata publishes nothing.
+            if let Some(tokens) = m.context_tokens {
+                entry["context_tokens"] = json!(tokens);
+            }
+            if let Some(tokens) = m.max_output_tokens {
+                entry["max_output_tokens"] = json!(tokens);
+            }
+            entry
         };
         let mut models: Vec<Value> = MODELS.iter().map(|m| entry(m.id, m)).collect();
         for (id, base, effort) in VARIANTS {
@@ -504,6 +542,9 @@ impl Store {
             }
             if !r.alias.is_empty() && !awaiting_restart(c, name) {
                 v["running"] = json!({ "alias": r.alias, "reasoning": running });
+            }
+            if !r.alias.is_empty() {
+                v["context"] = c.context.resolve(name, &r.alias, route(&r.alias));
             }
             v
         };
@@ -554,6 +595,7 @@ impl Store {
                 "key_limits": { "max_in_flight": null, "shared": KEY_SHARED },
                 "capacity_check": capacity_check(c),
                 "pii_pseudonymise": PII_PSEUDONYMISE,
+                "context": c.context,
             },
             "manage_messages": { "missing": missing_manage },
             "env": [
@@ -871,6 +913,24 @@ impl Store {
                     "{role} reasoning reset to off: {alias} does not publish {from}."
                 ));
             }
+            if let Some(context) = p.get("context") {
+                next.context = model_context::parse(context).map_err(MoveError::Invalid)?;
+            }
+            // Every models save re-checks the context against the final roles.
+            let local_warning = next
+                .context
+                .validate(
+                    [
+                        ("extraction", next.extraction.alias.as_str()),
+                        ("chat", next.chat.alias.as_str()),
+                        ("rewrite", next.rewrite.alias.as_str()),
+                    ],
+                    route,
+                )
+                .map_err(MoveError::Invalid)?;
+            if local_warning {
+                notices.push(model_context::LOCAL_WARNING.into());
+            }
             // The startup check is also the save check: nothing that would stop the bot is saved.
             let errors: Vec<String> = capacity_check(&next)
                 .into_iter()
@@ -968,7 +1028,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                 "role_profiles_digest",
                 "visibility",
             ],
-            "models" => &["roles", "groups"],
+            "models" => &["roles", "groups", "context"],
             "self_service" => &["mode", "public_portal"],
             "notifications" => &["quiet_mode"],
             _ => return Err(bad(section)),
@@ -1101,7 +1161,10 @@ mod tests {
         assert_eq!(view["models"]["pii_pseudonymise"], false);
         let env = view["env"].as_array().unwrap();
         for key in ["KANADE_PSEUDONYMIZE", "KANADE_ALLOW_EXTERNAL_UNMASKED"] {
-            assert!(!env.iter().any(|row| row["key"] == key), "retired env row {key} remains");
+            assert!(
+                !env.iter().any(|row| row["key"] == key),
+                "retired env row {key} remains"
+            );
         }
     }
 
@@ -1480,6 +1543,71 @@ mod tests {
         );
         let think = catalog.iter().find(|m| m["id"] == "kanata/think").unwrap();
         assert_eq!(think["off_allowed"], false);
+    }
+
+    #[test]
+    fn context_saves_whole_resolves_per_role_and_warns_for_local_routes() {
+        let mut s = store();
+        let view = s.config_view();
+        assert_eq!(view["models"]["context"]["local_default"], 8_192);
+        assert!(view["models"]["context"]["chat"]["cap"].is_null());
+        assert_eq!(
+            view["models"]["roles"]["chat"]["context"]["source"],
+            "local_default"
+        );
+        assert_eq!(
+            view["models"]["roles"]["extraction"]["context"]["source"],
+            "catalog"
+        );
+        let context = |local: u32, overrides: serde_json::Value| {
+            json!({ "models": { "context": {
+                "cloud_default": 65_536, "local_default": local,
+                "chat": { "reserve": 1_024, "cap": null },
+                "extraction": { "reserve": 2_500, "cap": null },
+                "rewrite": { "reserve": 96, "cap": null },
+                "overrides": overrides,
+            } } })
+        };
+        // A local role past 16k saves, with the server's notice.
+        let saved = s.patch_config(&context(24_576, json!({}))).ok().unwrap();
+        assert_eq!(
+            saved["models"]["roles"]["chat"]["context"]["window"],
+            24_576
+        );
+        assert_eq!(
+            saved["models"]["roles"]["chat"]["context"]["local_warning"],
+            true
+        );
+        assert_eq!(saved["notices"], json!([model_context_warning()]));
+        // Above the alias's published window is refused, naming it.
+        let err = s
+            .patch_config(&context(8_192, json!({ "kanata/extract": 20_000 })))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("published context window (16384)"), "{err}");
+        // A partial object is refused whole.
+        let err = s
+            .patch_config(&json!({ "models": { "context": { "cloud_default": 1 } } }))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "models.context must be a complete context settings object."
+        );
+        // Cloud routes never warn.
+        let saved = s
+            .patch_config(&context(8_192, json!({ "kanata/chat-cloud": 100_000 })))
+            .ok()
+            .unwrap();
+        assert_eq!(saved["notices"], json!([]));
+        assert_eq!(
+            s.config_view()["models"]["context"]["overrides"]["kanata/chat-cloud"],
+            100_000
+        );
+    }
+
+    fn model_context_warning() -> &'static str {
+        super::model_context::LOCAL_WARNING
     }
 
     #[test]

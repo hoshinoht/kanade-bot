@@ -1,4 +1,4 @@
-import type { CapacityGroup, ConfigView, ModelRole, RoleProfileWrite, SelfServiceMode } from '@kanade/api-types';
+import type { CapacityGroup, ConfigView, ContextSettings, ModelRole, RoleProfileWrite, SelfServiceMode } from '@kanade/api-types';
 
 type Rate = { count?: number; window_s?: number };
 
@@ -17,7 +17,8 @@ export interface ConfigPatch {
     role_profiles_digest?: string;
     visibility?: { key: string; public: boolean }[];
   };
-  models?: { roles?: Partial<Record<ModelRole, { alias?: string; reasoning?: string }>>; groups?: CapacityGroup[] };
+  /** `context` is always the complete object; a partial one is refused. */
+  models?: { roles?: Partial<Record<ModelRole, { alias?: string; reasoning?: string }>>; groups?: CapacityGroup[]; context?: ContextSettings };
   self_service?: { mode?: SelfServiceMode; public_portal?: boolean };
   notifications?: { quiet_mode?: boolean };
 }
