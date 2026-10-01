@@ -13,6 +13,7 @@
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
+  import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
 
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
@@ -84,7 +85,20 @@
 
   const checkpoints = new Resource<Checkpoints>('/api/admin/history/checkpoints');
   type Tab = 'timeline' | 'checkpoints';
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'checkpoints', label: 'Checkpoints' },
+  ];
   let tab = $state<Tab>('timeline');
+  function tabKey(event: KeyboardEvent, index: number) {
+    const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };
+    const target = moves[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    const next = TABS[(target + TABS.length) % TABS.length]!;
+    tab = next.id;
+    document.getElementById(`history-tab-${next.id}`)?.focus({ preventScroll: true });
+  }
   $effect(() => {
     if (tab === 'checkpoints') void checkpoints.load();
   });
@@ -98,6 +112,9 @@
   const seenAdmins = new SvelteSet<string>();
   const admins = $derived([...seenAdmins].map((id) => ({ id, label: actorName({ kind: 'admin', id }, names, known) })).sort((a, b) => a.label.localeCompare(b.label)));
   const selected = $derived(records.find((record) => record.seq === selectedSeq) ?? null);
+  // A change spanning several boss weeks is listed once per week: only the row
+  // that was opened is active.
+  const active = (record: ChangeRecord, group: string) => record.seq === selectedSeq && group === selectedWeek;
 
   let dialogOpen = $state(false);
   let dialog = $state<{ title: string; path: string; body: Record<string, unknown> }>({ title: '', path: '', body: {} });
@@ -128,14 +145,18 @@
     selectedSeq = record.seq;
     selectedWeek = openedWeek;
     selectOnDesktop = false;
-    (event.currentTarget as HTMLButtonElement).focus();
+    (event.currentTarget as HTMLButtonElement).focus({ preventScroll: true });
   }
   function closeDetail() {
     selectedSeq = null;
     selectedWeek = '';
     selectOnDesktop = false;
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-history="${restore}"][data-history-week="${restoreGroup}"]`)?.focus());
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-history="${restore}"][data-history-week="${restoreGroup}"]`)?.focus({ preventScroll: true }));
   }
+  // The raw record opens in the shared long-text viewer (as on the Chat turn
+  // page), outside the list/pane row so the two stay the body's only children.
+  let raw = $state({ open: false, title: '', text: '' });
+  const showRaw = (record: ChangeRecord) => (raw = { open: true, title: `Change #${record.seq} raw JSON`, text: JSON.stringify(record, null, 2) });
   async function done(plan: RevertPlan) {
     toaster.show({ message: plan.record ? `Reverted as #${plan.record.seq}.` : 'Nothing changed.', tone: 'ok' });
     await load();
@@ -149,21 +170,21 @@
 </PageLine>
 
 <section class="card history-window window-fill" aria-labelledby="history-title">
-  <header class="card__head history-window__head">
-    <span class="history-window__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <header class="card__head tabs__strip history-window__head">
     <h2 class="vh" id="history-title">History</h2>
-    <div class="history-window__tabs" role="tablist" aria-label="History">
-      <button class="history-window__tab" role="tab" type="button" aria-selected={tab === 'timeline'} aria-controls="history-timeline" onclick={() => (tab = 'timeline')}>Timeline <span class="tabs__count">{total}</span></button>
-      <button class="history-window__tab" role="tab" type="button" aria-selected={tab === 'checkpoints'} aria-controls="history-checkpoints" onclick={() => (tab = 'checkpoints')}>Checkpoints</button>
+    <div class="tabs__tabs" role="tablist" aria-label="History">
+      {#each TABS as t, index (t.id)}
+        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total}</span>{/if}</button>
+      {/each}
     </div>
     <div class="history-window__filters" role="search" aria-label="Filter the history">
-      <label class="field"><span>Week</span><select bind:value={week}><option value="">every week</option>{#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}</select></label>
-      <label class="field"><span>Who</span><select bind:value={actor}><option value="">everyone</option>{#each admins as admin (admin.id)}<option value="admin:{admin.id}">{admin.label}{admin.id.startsWith('discord:') && known(admin.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}<option value="system:delivery">system (delivery)</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+      <label class="btn history-filter"><span class="history-filter__label">Week</span><select bind:value={week}><option value="">every week</option>{#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}</select></label>
+      <label class="btn history-filter"><span class="history-filter__label">Who</span><select bind:value={actor}><option value="">everyone</option>{#each admins as admin (admin.id)}<option value="admin:{admin.id}">{admin.label}{admin.id.startsWith('discord:') && known(admin.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}<option value="system:delivery">system (delivery)</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
     </div>
   </header>
 
   {#if tab === 'timeline'}
-    <div class="history-window__body" id="history-timeline" role="tabpanel">
+    <div class="history-window__body" id="history-timeline" role="tabpanel" aria-labelledby="history-tab-timeline">
       <div class="history-list-region">
         <div class="history-list-region__scroll">
           <details class="history__member">
@@ -182,8 +203,8 @@
                 <ol class="history-timeline">
                   {#each group.records as record (record.seq)}
                     <li>
-                      <button class="history-row" class:history-row--active={record.seq === selectedSeq} type="button" aria-current={record.seq === selectedSeq ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
-                        <span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span>{#if record.seq === selectedSeq}<span class="history-row__open cap">open</span>{/if}</span>
+                      <button class="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
+                        <span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span>{#if active(record, group.week)}<span class="history-row__open cap">open</span>{/if}</span>
                         <span class="history-row__summary">{#each describe(record, names, tz) as line, index (index)}<span>{line}</span>{:else}<span>{record.rows.length} row{record.rows.length === 1 ? '' : 's'} changed</span>{/each}</span>
                       </button>
                     </li>
@@ -192,15 +213,15 @@
               </section>
             {/if}
           {/each}
-          {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row" class:history-row--active={record.seq === selectedSeq} type="button" aria-current={record.seq === selectedSeq ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}><span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span><span class="history-row__time mono">{localAt(record.at, tz)}</span></span><span class="history-row__summary">{describe(record, names, tz)[0] ?? `${record.rows.length} rows changed`}</span></button></li>{/each}</ol></section>{/if}
+          {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}><span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span><span class="history-row__time mono">{localAt(record.at, tz)}</span></span><span class="history-row__summary">{describe(record, names, tz)[0] ?? `${record.rows.length} rows changed`}</span></button></li>{/each}</ol></section>{/if}
           {#if !loading && records.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
-      {#if selected}<HistoryDetail wide={wide} record={selected} week={selectedWeek} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} />{/if}
+      {#if selected}<HistoryDetail wide={wide} record={selected} week={selectedWeek} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} />{/if}
     </div>
   {:else}
-    <div class="history-window__body" id="history-checkpoints" role="tabpanel">
+    <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">
       <div class="history-list-region"><div class="history-list-region__scroll">
         {#if checkpoints.data}
           <p class="flash {checkpoints.data.verified.ok ? 'flash--ok' : 'flash--error'}" role="status">{checkpoints.data.verified.ok ? 'Chain verified' : 'Chain broken'}: {checkpoints.data.verified.checked} records, head #{checkpoints.data.verified.head.seq}.</p>
@@ -212,3 +233,4 @@
 </section>
 
 <RevertDialog bind:open={dialogOpen} title={dialog.title} path={dialog.path} body={dialog.body} {names} timezone={tz} ondone={done} returnFocus={() => document.querySelector<HTMLElement>(`[data-history-revert="${selectedSeq ?? restore}"]`) ?? document.querySelector<HTMLElement>(`[data-history="${selectedSeq ?? restore}"]`)} />
+<TextModal bind:open={raw.open} title={raw.title} eyebrow="History" text={raw.text} {toaster} />

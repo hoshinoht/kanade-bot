@@ -308,6 +308,72 @@ test('history: restoring a multi-week record uses the week group it was opened f
   expect((await request).postDataJSON()).toMatchObject({ week: secondWeek });
 });
 
+test('history: a change listed under two weeks marks only the opened row active', async ({ page }) => {
+  const secondWeek = '2026-10-07T16:00:00+00:00';
+  await page.route('**/api/admin/history?*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const record = body.records.find((item: { seq: number }) => item.seq === 3);
+    record.weeks = [...record.weeks, secondWeek];
+    await route.fulfill({ response, json: body });
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/history');
+  await page.locator(`[data-history="3"][data-history-week="${secondWeek}"]`).click();
+  await expect(page.locator('[data-history="3"]')).toHaveCount(2);
+  await expect(page.locator('.history-row[aria-current="true"]')).toHaveCount(1);
+  await expect(page.locator('.history-row--active')).toHaveCount(1);
+  await expect(page.locator(`[data-history="3"][data-history-week="${secondWeek}"]`)).toHaveAttribute('aria-current', 'true');
+});
+
+for (const [width, height] of [
+  [1280, 800],
+  [390, 844],
+] as const) {
+  test(`history: opening a lower row never scrolls the fixed shell (${width}x${height})`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await go(page, '/history');
+    const rows = page.locator('.history-row');
+    await expect(rows.first()).toBeVisible();
+    // Grow the timeline so the last row sits below the fold, then open it.
+    await page.evaluate(() => {
+      const list = document.querySelector<HTMLElement>('.history-list-region__scroll')!;
+      const pad = document.createElement('div');
+      pad.className = 'e2e-pad';
+      pad.setAttribute('aria-hidden', 'true');
+      pad.style.height = '1500px';
+      list.querySelector('.history__week')!.before(pad);
+    });
+    await rows.last().click();
+    await page.waitForTimeout(150);
+    const scrolls = await page.evaluate(() =>
+      ['html', 'body', '.frame', '.shell', '.window-fill', '.history-window__body'].map((selector) => {
+        const element = selector === 'html' ? document.scrollingElement! : document.querySelector<HTMLElement>(selector)!;
+        return [selector, element.scrollTop];
+      }),
+    );
+    expect(Object.fromEntries(scrolls)).toEqual({ html: 0, body: 0, '.frame': 0, '.shell': 0, '.window-fill': 0, '.history-window__body': 0 });
+    await expect(page.locator('.pageline, .page-head').first()).toBeInViewport();
+  });
+}
+
+test('history: rows read as field diffs and the raw JSON opens in a viewer', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/history');
+  await page.locator('[data-history="2"]').first().click();
+  const pane = page.getByRole('complementary', { name: 'Change details' });
+  await expect(pane.locator('.history-diff__field').first()).toBeVisible();
+  await expect(pane.locator('pre')).toHaveCount(0);
+  const trigger = pane.getByRole('button', { name: 'Show raw JSON' });
+  await trigger.click();
+  const viewer = page.getByRole('dialog', { name: 'Change #2 raw JSON' });
+  await expect(viewer).toContainText('"before"');
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  await expect(pane).toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
 test('history: phone detail is a sheet, Escape closes the topmost dialog and restores focus', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/history');

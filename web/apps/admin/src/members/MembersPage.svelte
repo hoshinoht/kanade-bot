@@ -65,7 +65,6 @@
 </PageLine>
 <section class="card members-window window-fill" aria-labelledby="members-roster-title">
   <div class="card__head members-window__head">
-    <span class="members-window__dots" aria-hidden="true"><i></i><i></i><i></i></span>
     <h2 class="card__title" id="members-roster-title">Roster</h2>
     <div class="members-window__search" role="search">
       <label class="vh" for="members-search">Search members</label>

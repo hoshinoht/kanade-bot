@@ -6,8 +6,6 @@
 }
 
 .members-window__head { gap: 0.55rem; }
-.members-window__dots { display: inline-flex; gap: 0.25rem; }
-.members-window__dots i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.55; }
 .members-window__search { margin-left: auto; }
 .members-window__search input { width: min(15rem, 27vw); }
 .members-window__sort { white-space: nowrap; }

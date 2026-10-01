@@ -106,6 +106,10 @@ for (const vp of VIEWPORTS) {
        await page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: vp.name === 'wide' ? 'Change details' : 'Change #2' }).getByRole('button', { name: 'Revert…' }).click();
       await expect(page.getByRole('dialog', { name: 'Revert #2?' }).getByRole('alert')).toBeVisible();
       await shot(page, `admin-history-revert-${tag}`);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Show raw JSON' }).click();
+      await expect(page.getByRole('dialog', { name: 'Change #2 raw JSON' })).toBeVisible();
+      await shot(page, `admin-history-raw-${tag}`);
 
       await page.goto(`${ADMIN}/fixed?sw=off`);
       await page.getByRole('button', { name: 'Edit Friday 21:30 — XKalos' }).click();

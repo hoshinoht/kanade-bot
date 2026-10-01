@@ -111,7 +111,6 @@
 
 <section class="card fixed-window window-fill" aria-labelledby="fixed-title">
   <div class="card__head fixed-window__head">
-    <span class="fixed-window__dots" aria-hidden="true"><i></i><i></i><i></i></span>
     <h2 class="card__title" id="fixed-title">Weekly timings</h2>
     <div class="fixed-window__search" role="search">
       <label class="vh" for="fixed-search">Search weekly timings</label>

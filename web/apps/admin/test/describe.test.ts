@@ -48,6 +48,13 @@ function record(rows: ChangeRecord['rows']): ChangeRecord {
 }
 
 suite('history describe', () => {
+  it('collapses identical lines (one roster edit across several weeks) into one with a count', () => {
+    const edit = (id: string) => ({ key: { table: 'runs' as const, id }, before: run({ id }), after: run({ id, participants: ['1001', '1013'] }) });
+    const lines = describe(record([edit('a'), edit('b'), edit('c')]), names, TZ);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/ ×3$/);
+  });
+
   it('says moves, status and roster changes in words, folding the reminders a move re-placed', () => {
     const lines = describe(
       record([

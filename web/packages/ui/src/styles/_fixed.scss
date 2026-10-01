@@ -1,8 +1,6 @@
 // M3E weekly timings: the tabular list and editor are sibling scroll owners.
 .fixed-window { display: flex; flex-direction: column; overflow: hidden; }
 .fixed-window__head { gap: 0.55rem; }
-.fixed-window__dots { display: inline-flex; gap: 0.25rem; }
-.fixed-window__dots i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.55; }
 .fixed-window__search { margin-left: auto; }
 .fixed-window__search input { width: min(15rem, 27vw); }
 

@@ -679,6 +679,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin History: the window no longer scrolls away when a row opens, only
+  the clicked row of a multi-week change is marked open, tabs and Week/Who
+  filters match the other M3E title bars, a change shows compact field diffs
+  with the raw JSON in a viewer, and repeated summary lines collapse into one
+  with a count. History, Fixed and Members no longer draw two sets of window dots.
 - v5 re-reading party channels while watching is paused or the extractor is
   off now says so and points to Config → Watching (API `409 extraction_off`,
   same wording from `/rescan`), instead of "The service is unavailable".

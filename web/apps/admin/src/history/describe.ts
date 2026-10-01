@@ -172,7 +172,7 @@ export function describe(record: ChangeRecord, names: Names, timeZone: string): 
       followers.set(run, (followers.get(run) ?? 0) + 1);
     }
   }
-  return record.rows.flatMap((row) => {
+  return collapse(record.rows.flatMap((row) => {
     switch (row.key.table) {
       case 'runs':
         return runLines(row, ctx, followers.get(row.key.id) ?? 0);
@@ -186,7 +186,14 @@ export function describe(record: ChangeRecord, names: Names, timeZone: string): 
       default:
         return fixedLines(row);
     }
-  });
+  }));
+}
+
+/** Identical lines (one per week a weekly timing touched) read once, with a count. */
+function collapse(lines: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
+  return [...counts].map(([line, n]) => (n > 1 ? `${line} ×${n}` : line));
 }
 
 export const SURFACE_LABELS: Record<string, string> = {
