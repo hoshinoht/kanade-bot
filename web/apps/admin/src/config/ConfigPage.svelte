@@ -9,7 +9,8 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { Icon, ThemePicker, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, ThemePicker, Toaster } from '@kanade/ui';
+  import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
   import { Resource, send } from '../resource.svelte';
@@ -41,19 +42,19 @@
   } = $props();
 
   const SECTIONS = [
-    { key: 'pings', label: 'Pings' },
-    { key: 'run-lengths', label: 'Run lengths' },
-    { key: 'watching', label: 'Chat watching' },
-    { key: 'chatbot', label: 'Chatbot' },
-    { key: 'persona', label: 'Persona' },
-    { key: 'models', label: 'Models' },
-    { key: 'self-service', label: 'Self-service' },
-    { key: 'notifications', label: 'Notifications' },
-    { key: 'theme', label: 'Theme' },
-    { key: 'digest', label: 'Weekly digest' },
-    { key: 'rescan', label: 'Re-read' },
-    { key: 'access', label: 'Channel access' },
-    { key: 'env', label: 'Set in the environment' },
+    { key: 'pings', label: 'Pings', group: 'Bot', terms: 'morning countdown reminder' },
+    { key: 'run-lengths', label: 'Run lengths', group: 'Bot', terms: 'duration boss default' },
+    { key: 'watching', label: 'Chat watching', group: 'Bot', terms: 'extractor messages pause' },
+    { key: 'chatbot', label: 'Chatbot', group: 'Bot', terms: 'answer rate cap limits' },
+    { key: 'persona', label: 'Persona', group: 'Bot', terms: 'profiles roles reply visibility' },
+    { key: 'models', label: 'Models', group: 'Bot', terms: 'reasoning context capacity kanata extraction rewrite' },
+    { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links' },
+    { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings' },
+    { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
+    { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
+    { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
+    { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway mode light dark' },
+    { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone categories' },
   ] as const;
   type Key = (typeof SECTIONS)[number]['key'];
 
@@ -69,6 +70,21 @@
 
   const uid = $props.id();
   const selected = $derived<Key>(SECTIONS.some((s) => s.key === section) ? (section as Key) : 'pings');
+  const GROUPS = ['Bot', 'Members', 'Server', 'Read-only'] as const;
+  let query = $state('');
+  const search = $derived(query.trim().toLowerCase());
+  const shown = $derived(SECTIONS.filter((item) => !search || `${item.label} ${item.terms}`.toLowerCase().includes(search)));
+  // Filtered-out tabs stay in the DOM (hidden) so the open panel keeps its
+  // label; the roving tab stop moves to the first match when the open one is hidden.
+  const stop = $derived<Key | undefined>(shown.some((item) => item.key === selected) ? selected : shown[0]?.key);
+  let colorway = $state('');
+  $effect(() => {
+    const read = () => (colorway = COLORWAYS.find((way) => way.key === currentColorway())?.name ?? '');
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributeFilter: ['data-colorway'] });
+    return () => observer.disconnect();
+  });
   const tabs: Record<string, HTMLButtonElement> = {};
   // Unsaved edits live in the section components; keeping visited sections
   // mounted keeps those edits across tab switches.
@@ -147,7 +163,8 @@
   });
 
   function select(index: number) {
-    const item = SECTIONS[(index + SECTIONS.length) % SECTIONS.length]!;
+    const item = shown[(index + shown.length) % shown.length];
+    if (!item) return;
     onsection?.(item.key);
     tabs[item.key]?.focus();
   }
@@ -159,12 +176,35 @@
       ArrowUp: index - 1,
       ArrowLeft: index - 1,
       Home: 0,
-      End: SECTIONS.length - 1,
+      End: shown.length - 1,
     };
     const target = moves[event.key];
     if (target === undefined) return;
     event.preventDefault();
     select(target);
+  }
+
+  function searchKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' || !shown.length) return;
+    event.preventDefault();
+    onsection?.(shown[0]!.key);
+    tabs[shown[0]!.key]?.focus();
+  }
+
+  function hint(item: Key): string {
+    const c = config.data;
+    if (!c) return '';
+    switch (item) {
+      case 'pings': return c.pings.day_of_ping_time;
+      case 'watching': return c.watching.paused ? 'paused' : 'on';
+      case 'chatbot': return c.chatbot.enabled ? 'on' : 'off';
+      case 'persona': return c.persona.active;
+      case 'models': return `${c.models.catalog.length}`;
+      case 'self-service': return c.self_service.public_portal ? 'open' : 'closed';
+      case 'theme': return colorway;
+      case 'env': return `${c.env.length}`;
+      default: return '';
+    }
   }
 
   async function save(patch: ConfigPatch, done: string): Promise<string> {
@@ -203,53 +243,86 @@
 
 <!-- v4 config.html: no page head; the window is the page, titled in its own
   bar with the one line that says what the settings are. -->
-<!-- On a phone the top bar already says "Config": the line stays for screen readers only. -->
-<PageLine class="pageline--echo">
+<!-- On a phone the top bar already says "Config": the line stays for screen
+  readers only, unless it carries the problem alert. -->
+<PageLine class={missingManage.length ? '' : 'pageline--echo'}>
   <h1 id="{uid}-h">Config</h1>
   <p class="pageline__context">runtime settings take effect at once and survive a restart</p>
+  {#snippet side()}
+    {#if missingManage.length}
+      <!-- Replaces the old flash banner; the full explanation lives in Channel access. -->
+      <a
+        class="mchip settings__problem"
+        href="/config?section=access"
+        onclick={async (event) => {
+          event.preventDefault();
+          query = '';
+          onsection?.('access');
+          // A search may have hidden the tab; focus once it is shown again.
+          await tick();
+          tabs.access?.focus();
+        }}
+        ><span aria-hidden="true">⚠</span><span class="settings__problem-text"
+          >Manage Messages missing in {missingManage.length} channel{missingManage.length === 1 ? '' : 's'}<span class="settings__problem-fix">&nbsp;· fix in Channel access</span></span
+        ></a
+      >
+    {/if}
+  {/snippet}
 </PageLine>
 
-{#if config.error}<p class="flash flash--error" role="status">{config.error}</p>{/if}
-
-{#if missingManage.length}
-  <!-- v4 used the empty-state box; a compact flash keeps the settings window
-    the tallest thing on the page (task-first hierarchy). -->
-  <p class="flash flash--error settings__banner" role="status">
-    <strong>Missing “Manage Messages” in {missingManage.join(', ')}.</strong>
-    <span class="settings__banner-why"
-      >The bot needs it to take somebody's old reaction off, so ✅ and ❌ stay one-or-the-other. Until it is granted, a person who switches
-      answer is counted as both there.</span
-    >
-    Fix it in <strong>Edit Channel → Permissions</strong>, or re-invite the bot with the permissions in the README.
-  </p>
-{/if}
-
 <section class="card settings window-fill" aria-labelledby="{uid}-w">
-  <div class="card__head">
+  <div class="card__head settings__head">
     <h2 class="card__title" id="{uid}-w">Settings</h2>
-    <span class="id">env-only settings are listed last</span>
+    <div class="settings__search" role="search">
+      <label class="vh" for="{uid}-search">Find a setting</label>
+      <input
+        id="{uid}-search"
+        type="search"
+        bind:value={query}
+        onkeydown={searchKeydown}
+        placeholder="find a setting…"
+        autocomplete="off"
+        spellcheck="false"
+        aria-controls="{uid}-toc"
+        aria-describedby="{uid}-matches"
+      />
+      <span class="vh" id="{uid}-matches" role="status">{search ? `${shown.length} section${shown.length === 1 ? '' : 's'} match; Enter opens the first` : ''}</span>
+    </div>
   </div>
   <div class="settings__body">
-    <div class="settings__toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>
-      {#each SECTIONS as item, index (item.key)}
-        <button
-          type="button"
-          role="tab"
-          class="settings__tab"
-          id="{uid}-tab-{item.key}"
-          aria-selected={selected === item.key}
-          aria-controls="{uid}-panel-{item.key}"
-          tabindex={selected === item.key ? 0 : -1}
-          bind:this={tabs[item.key]}
-          onclick={() => onsection?.(item.key)}
-          onkeydown={(event) => onKeydown(event, index)}
-        >
-          {item.label}
-          {#if item.key === 'models' && modelsBlocked}<span class="settings__flag"><Icon name="alert-triangle" label="needs attention" /></span>{/if}
-        </button>
+    <div class="settings__toc" id="{uid}-toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>
+      {#each GROUPS as group (group)}
+        <div class="settings__group" role="presentation" hidden={!shown.some((item) => item.group === group)}>
+          <p class="cap" aria-hidden="true">{group}</p>
+          {#each SECTIONS.filter((item) => item.group === group) as item (item.key)}
+            {@const index = shown.indexOf(item)}
+            <button
+              type="button"
+              role="tab"
+              class="settings__tab"
+              id="{uid}-tab-{item.key}"
+              aria-selected={selected === item.key}
+              aria-controls="{uid}-panel-{item.key}"
+              tabindex={stop === item.key ? 0 : -1}
+              hidden={index < 0}
+              bind:this={tabs[item.key]}
+              onclick={() => onsection?.(item.key)}
+              onkeydown={(event) => onKeydown(event, index)}
+            >
+              <span class="settings__label">{item.label}</span>
+              {#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}
+              {#if item.key === 'access' && missingManage.length}<span class="settings__flag"
+                  ><span aria-hidden="true">⚠ {missingManage.length}</span><span class="vh">, {missingManage.length} need attention</span></span
+                >
+              {:else if item.key === 'models' && modelsBlocked}<span class="settings__flag"><Icon name="alert-triangle" label="needs attention" /></span>{/if}
+            </button>
+          {/each}
+        </div>
       {/each}
+      {#if !shown.length}<p class="settings__none" aria-hidden="true">No settings match “{query}”.</p>{/if}
     </div>
     <div class="settings__detail">
+      {#if config.error}<p class="flash flash--error" role="status">{config.error}</p>{/if}
       {#each SECTIONS as item (item.key)}
         {#if visited.has(item.key)}
           <div

@@ -16,21 +16,68 @@
   margin: 0;
 }
 
+.settings__head {
+  min-height: 48px;
+  flex-wrap: nowrap;
+  padding: 0 0.75rem 0 1rem;
+}
+
+.settings__search {
+  width: min(15rem, 42vw);
+  margin-left: auto;
+}
+
+.settings__search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
 .settings__body {
   flex: 1 1 auto;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  display: flex;
+  overflow: hidden;
 }
 
 .settings__toc {
+  flex: 0 0 14.375rem;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.6rem 0.5rem;
-  border-right: 2px solid var(--line);
-  background: var(--raise);
+  gap: 0.65rem;
+  padding: 0.65rem 0.5rem;
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.settings__group {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.settings__group .cap {
+  margin: 0.35rem 0.65rem 0.15rem;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings__none {
+  margin: 0.5rem;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
 }
 
 .settings__tab {
@@ -38,14 +85,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.4rem;
-  padding: 0.38rem 0.6rem;
+  min-height: 2.375rem;
+  padding: 0.3rem 0.65rem;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: 6px;
   background: transparent;
   font: inherit;
   font-size: var(--fs-body-sm);
   font-weight: 600;
-  color: var(--dim-text);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
@@ -56,34 +104,76 @@
 }
 
 .settings__tab[aria-selected="true"] {
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--select-ink);
+  background: var(--select);
+  border-radius: 19px;
+  box-shadow: inset 0 0 0 1.5px var(--select-ring);
+}
+
+.settings__hint {
+  margin-left: auto;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.settings__label {
+  min-width: 0;
 }
 
 .settings__flag {
   flex: none;
-  color: var(--risk-text);
+  color: var(--ink);
+  font-size: var(--fs-mini);
+  font-weight: 700;
+}
+
+// The risk chip: words plus the risk ring, never colour alone.
+.settings__flag:has(> [aria-hidden]) {
+  padding: 0 0.4rem;
+  border: 1.5px solid var(--risk);
+  border-radius: 999px;
 }
 
 .settings__detail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.9rem 1.05rem 1.1rem;
+  overscroll-behavior: contain;
+  padding: 1rem 1.25rem 1.25rem;
+  background: var(--surface);
+}
+
+.settings__panel {
+  width: min(100%, 68rem);
 }
 
 .settings__title {
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.45rem;
   font-family: var(--display);
   font-size: var(--fs-lg);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .settings__subtitle {
   margin: 1.1rem 0 0.3rem;
   font-size: var(--fs-body);
   font-weight: 700;
+}
+
+// Settings cards (spec "Panel"): a section's forms, fieldsets and tables sit
+// on --row cards, styled here so the sections themselves stay unchanged.
+.settings__detail .settings__panel > :is(form, fieldset, .table-wrap) {
+  margin: 0 0 0.75rem;
+  padding: 1rem 1.125rem;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
 }
 
 .settings__actions {
@@ -202,6 +292,7 @@
 
 @media (max-width: 899px) {
   .settings__body {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
   }
@@ -209,6 +300,8 @@
   // The strip scrolls inside itself (the _tabs pattern); the frame's shell
   // never scrolls, and only the selected section's panel scrolls below it.
   .settings__toc {
+    display: flex;
+    flex-basis: auto;
     flex-direction: row;
     gap: 0.35rem;
     padding: 0.5rem;
@@ -217,6 +310,14 @@
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
+  }
+
+  .settings__group {
+    display: contents;
+  }
+
+  .settings__group .cap {
+    display: none;
   }
 
   .settings__tab {
@@ -238,19 +339,57 @@
   }
 
   .settings__detail {
-    padding: 0.8rem 0.8rem 1rem;
+    padding: 0.8rem;
+  }
+
+  .settings__panel {
+    width: 100%;
   }
 }
 
-// Above the window on every section (v4 config.html); the one line and the fix
-// stay on phones, the why is left to wider screens so the window keeps the page.
-.settings__banner {
-  flex: none;
-  margin: 0 0 0.6rem;
+.settings__problem {
+  min-width: 0;
+  max-width: min(30rem, 46vw);
+  overflow: hidden;
+  border-color: var(--risk);
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+  text-overflow: ellipsis;
 }
 
-@media (max-width: 599px) {
-  .settings__banner-why {
+.settings__problem:hover {
+  text-decoration: underline;
+}
+
+.settings__problem-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// On a phone the top bar already names the page: the line keeps only the alert.
+.frame--phone .pageline:has(.settings__problem) .pageline__head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 599px), (max-height: 500px) {
+  .settings__head {
+    min-height: 44px;
+  }
+  .settings__search {
+    width: min(11rem, 54vw);
+  }
+  .settings__problem {
+    max-width: 100%;
+  }
+  .settings__problem-fix {
     display: none;
   }
 }
