@@ -17,7 +17,7 @@ use chrono_tz::Tz;
 
 pub use budget::{
     CHARS_PER_TOKEN, CONTEXT_RESERVE, TOKENS_PER_ID, estimate_messages, estimate_tokens,
-    prompt_budget, prompt_text, schema_instruction_tokens,
+    prompt_budget, prompt_budget_with_reserve, prompt_text, schema_instruction_tokens,
 };
 pub use render::{member_name, named_bosses, relevant_roster};
 pub use system::SYSTEM_PROMPT;
@@ -206,4 +206,17 @@ pub fn extraction_request(
             top_p: None,
         }),
     }
+}
+
+/// The live path supplies its resolved completion reserve; the original
+/// constructor remains for frozen prompt vectors.
+pub fn extraction_request_with_reserve(
+    model: &str,
+    messages: Vec<Message>,
+    reasoning: Option<Effort>,
+    reserve: u32,
+) -> ChatRequest {
+    let mut request = extraction_request(model, messages, reasoning);
+    request.max_output_tokens = reserve;
+    request
 }

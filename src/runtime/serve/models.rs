@@ -7,10 +7,15 @@ use serde_json::json;
 use tokio::task::JoinHandle;
 
 use crate::{
-    domain::settings::{RuntimeSettings, keys},
+    domain::settings::{
+        ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
+    },
     infrastructure::llm::{
         governor::{ConfigWarning, Role},
-        setup::{Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning},
+        setup::{
+            Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning,
+            resolve_context,
+        },
     },
     runtime::{config::ModelSettings, logging},
 };
@@ -79,6 +84,24 @@ pub fn seed_roles(
         };
         sources.insert(role, source);
     }
+    if !stored.contains_key(keys::MODEL_CONTEXT)
+        && let Some(context) = &models.context
+    {
+        settings.models.context = context.clone();
+        if !models.context_clamped.is_empty() {
+            logging::event(
+                "WARN",
+                "model_context_clamped",
+                json!({
+                    "fields": models.context_clamped
+                        .iter()
+                        .map(|path| format!("models.context.{path}"))
+                        .collect::<Vec<_>>(),
+                    "max": MAX_CONTEXT_TOKENS,
+                }),
+            );
+        }
+    }
     sources
 }
 
@@ -104,7 +127,11 @@ impl Drop for ModelTasks {
 }
 
 /// The catalog refresh plus one startup report; neither blocks HTTP readiness.
-pub fn start(stack: Option<&Arc<ModelStack>>, sources: Sources) -> ModelTasks {
+pub fn start(
+    stack: Option<&Arc<ModelStack>>,
+    sources: Sources,
+    context: ContextSettings,
+) -> ModelTasks {
     let Some(stack) = stack else {
         logging::event("INFO", "models_disabled", json!({}));
         return ModelTasks::default();
@@ -113,7 +140,7 @@ pub fn start(stack: Option<&Arc<ModelStack>>, sources: Sources) -> ModelTasks {
     let stack = stack.clone();
     let report = tokio::spawn(async move {
         let report = stack.check_startup().await;
-        for (level, event, fields) in lines(&stack, &report, &sources) {
+        for (level, event, fields) in lines(&stack, &report, &sources, &context) {
             logging::event(level, event, fields);
         }
     });
@@ -123,7 +150,12 @@ pub fn start(stack: Option<&Arc<ModelStack>>, sources: Sources) -> ModelTasks {
 type Line = (&'static str, &'static str, serde_json::Value);
 
 /// Never includes the key or the gateway URL.
-fn lines(stack: &ModelStack, report: &StartupReport, sources: &Sources) -> Vec<Line> {
+fn lines(
+    stack: &ModelStack,
+    report: &StartupReport,
+    sources: &Sources,
+    context: &ContextSettings,
+) -> Vec<Line> {
     let mut out = vec![match &report.listing {
         Listing::Listed { models } => ("INFO", "models_listed", json!({"models": models})),
         Listing::Degraded { reason_code } => (
@@ -179,6 +211,42 @@ fn lines(stack: &ModelStack, report: &StartupReport, sources: &Sources) -> Vec<L
             "model_warning",
             json!({"kind": kind, "message": warning.to_string()}),
         ));
+    }
+    // Once per role whose reserve leaves no prompt room, and once per role
+    // whose local route runs past the warning threshold (saved, never
+    // blocked, so this is the operator's only signal).
+    for role in ModelRoles::ALL {
+        let Some(route) = stack.governor.route(role) else {
+            continue;
+        };
+        let resolved = resolve_context(context, &catalog, role, &route.alias);
+        if resolved.reserve_fills_window() {
+            out.push((
+                "WARN",
+                "model_warning",
+                json!({
+                    "kind": "context_reserve",
+                    "role": role.as_str(),
+                    "alias": route.alias,
+                    "window": resolved.window,
+                    "reserve": resolved.reserve,
+                    "message": resolved.reserve_warning(role, &route.alias),
+                }),
+            ));
+        }
+        if resolved.local_warning {
+            out.push((
+                "WARN",
+                "model_warning",
+                json!({
+                    "kind": "local_context",
+                    "role": role.as_str(),
+                    "alias": route.alias,
+                    "window": resolved.window,
+                    "message": LOCAL_CONTEXT_WARNING,
+                }),
+            ));
+        }
     }
     out
 }

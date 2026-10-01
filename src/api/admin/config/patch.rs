@@ -14,8 +14,8 @@ use crate::{
     api::admin::write::Refusal,
     chat::persona::ProfileId,
     domain::settings::{
-        Chatbot, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, Persona, Pings, Rate,
-        RoleProfileAssignment, SelfService, SelfServiceMode, Watching,
+        Chatbot, ContextSettings, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, Persona, Pings,
+        Rate, RoleProfileAssignment, SelfService, SelfServiceMode, Watching,
     },
 };
 
@@ -123,7 +123,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("notifications", "quiet_mode")
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
-                | ("models", "roles")
+                | ("models", "roles" | "context")
         ) || (name == "persona"
             && key == "role_profiles_digest"
             && body.contains_key("role_profiles"));
@@ -137,6 +137,13 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
         });
     }
     Ok((name, body))
+}
+
+/// Context controls are saved as one complete JSON object, avoiding partial
+/// values which could transiently pair a reserve with the wrong window.
+pub fn context(value: &Value) -> Result<ContextSettings, PatchError> {
+    serde_json::from_value(value.clone())
+        .map_err(|_| field_error("models.context", "a complete context settings object"))
 }
 
 fn flag(value: &Value, path: &str) -> Result<bool, PatchError> {

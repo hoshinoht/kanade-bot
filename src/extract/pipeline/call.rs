@@ -9,6 +9,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tokio::time::Instant;
 
+use super::config::CallContext;
 use super::extractor::{CALL_SWITCHED_OFF, Extractor, utc};
 use super::ports::{Outbox, Proposer};
 use crate::domain::catalog::BossTable;
@@ -20,11 +21,12 @@ use crate::extract::Amendment;
 use crate::extract::AmendmentKind;
 use crate::extract::plan::{BurstInputs, BurstMessage, Payload, Planned, plan_burst};
 use crate::extract::prompt::{
-    PromptContext, PromptMessage, build_messages, extraction_request, member_name, prompt_text,
+    PromptContext, PromptMessage, build_messages, extraction_request_with_reserve, member_name,
+    prompt_text,
 };
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
-use crate::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
+use crate::infrastructure::llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::{Member, PassthroughSession};
 use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message};
 
@@ -135,6 +137,9 @@ pub(crate) struct CallRecord {
     pub nudges: Vec<&'static str>,
     /// Sent to an external route with raw member data.
     pub external_unmasked: bool,
+    pub context_window: usize,
+    pub context_reserve: usize,
+    pub context_source: &'static str,
 }
 
 impl CallRecord {
@@ -239,21 +244,24 @@ where
     O: Outbox,
 {
     /// An empty record for `rows`, before any call.
-    pub(super) fn record(&self, rows: &[WatchedMessage]) -> CallRecord {
+    pub(super) fn record(
+        &self,
+        rows: &[WatchedMessage],
+        route: Option<&RoleRoute>,
+        context: CallContext,
+    ) -> CallRecord {
         let mut members: Vec<String> = rows.iter().map(|row| row.author_id.clone()).collect();
         members.sort();
         members.dedup();
         let mut message_ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
         message_ids.sort();
-        let route = self.client.governor().route(Role::Extraction);
         CallRecord {
             log_id: self.new_id(),
             at: self.clock.now(),
             reasoning: route
-                .as_ref()
                 .and_then(|route| route.effort)
                 .or(self.config.reasoning),
-            model: route.map(|route| route.alias).unwrap_or_default(),
+            model: route.map(|route| route.alias.clone()).unwrap_or_default(),
             prompt: String::new(),
             raw: String::new(),
             latency_ms: None,
@@ -276,6 +284,9 @@ where
             redirected: 0,
             nudges: Vec::new(),
             external_unmasked: false,
+            context_window: context.window,
+            context_reserve: context.reserve,
+            context_source: context.source,
         }
     }
 
@@ -385,16 +396,20 @@ where
         channel_id: &str,
         loaded: &Loaded,
         chunk: &[WatchedMessage],
+        route: Option<&RoleRoute>,
+        context: CallContext,
     ) -> CallRecord {
-        let mut record = self.record(chunk);
-        let Some(route) = self.client.governor().route(Role::Extraction) else {
+        let mut record = self.record(chunk, route, context);
+        // The pass's route: the alias its context was resolved for, so a
+        // mid-pass model switch never pairs one model with another's window.
+        let Some(route) = route else {
             record.fail(
                 Failure::Failed,
                 "the extraction model is not configured".into(),
             );
             return record;
         };
-        // Alias and level are read once here; the session keeps them.
+        // Alias and level are pinned for the pass; the session keeps them.
         record.model.clone_from(&route.alias);
         record.reasoning = route.effort.or(self.config.reasoning);
         let mut identity = PassthroughSession;
@@ -414,7 +429,7 @@ where
             cut = self.cut(mark) => Err(cut),
             opened = self
                 .client
-                .open_extraction_on(&route, channel_id, self.config.permit_wait, timeout) => Ok(opened),
+                .open_extraction_on(route, channel_id, self.config.permit_wait, timeout) => Ok(opened),
         };
         let opened = match opened {
             Ok(opened) => opened,
@@ -438,8 +453,12 @@ where
         let mut failure = None;
         let mut first = true;
         let call: ExtractionCall = loop {
-            let request =
-                extraction_request(&alias, attempts.messages().to_vec(), record.reasoning);
+            let request = extraction_request_with_reserve(
+                &alias,
+                attempts.messages().to_vec(),
+                record.reasoning,
+                u32::try_from(context.reserve).unwrap_or(u32::MAX),
+            );
             let sending = async {
                 if first {
                     session.complete(&request).await

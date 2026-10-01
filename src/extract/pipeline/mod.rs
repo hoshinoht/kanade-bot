@@ -19,10 +19,10 @@ mod self_service;
 pub(crate) use call::CallRecord;
 pub use call::Failure;
 pub use config::{
-    CONTEXT_WINDOW, DEFAULT_BACKLOG_CAPACITY, DEFAULT_CALL_TIMEOUT, DEFAULT_CONTEXT_MESSAGES,
-    DEFAULT_CONTEXT_TOKENS, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, DEFAULT_MIN_CONFIDENCE,
-    DEFAULT_PERMIT_WAIT, PipelineConfig, RECENT_SCHEDULING, SelfServiceConfig, UnpublishedEffort,
-    check_reasoning_effort,
+    CONTEXT_WINDOW, CallContext, DEFAULT_BACKLOG_CAPACITY, DEFAULT_CALL_TIMEOUT,
+    DEFAULT_CONTEXT_MESSAGES, DEFAULT_CONTEXT_TOKENS, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL,
+    DEFAULT_MIN_CONFIDENCE, DEFAULT_PERMIT_WAIT, LiveContext, PipelineConfig, RECENT_SCHEDULING,
+    SelfServiceConfig, UnpublishedEffort, check_reasoning_effort,
 };
 pub use debounce::Bursts;
 pub use driver::Pipeline;

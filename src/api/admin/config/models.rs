@@ -9,10 +9,11 @@ use serde_json::Value;
 use super::patch::{PatchError, field_error, object};
 use crate::{
     api::dto::config::CapacityCheck,
-    domain::settings::{Models, Reasoning, RoleModel},
+    domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel},
     infrastructure::llm::{
         Effort,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot},
+        governor::Role as LiveRole,
+        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, resolve_context},
     },
 };
 
@@ -24,6 +25,92 @@ enum Role {
     Extraction,
     Chat,
     Rewrite,
+}
+
+/// A role whose local route runs past the warning threshold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalContextWarning {
+    pub role: &'static str,
+    pub alias: String,
+    pub window: u32,
+}
+
+/// Validates saved context settings against the current role aliases and
+/// catalog, returning the (non-blocking) local-context warnings. Settings
+/// always use the existing generic config row; the catalog is only needed
+/// for these live constraints.
+pub fn validate_context(
+    context: &ContextSettings,
+    models: &Models,
+    catalog: &CatalogSnapshot,
+) -> Result<Vec<LocalContextWarning>, PatchError> {
+    let valid = |value: u32| (1..=MAX_CONTEXT_TOKENS).contains(&value);
+    if !valid(context.cloud_default) || !valid(context.local_default) {
+        return Err(PatchError::invalid(
+            "Context defaults must be 1..=131072 tokens.",
+        ));
+    }
+    for (name, role) in [
+        ("chat", &context.chat),
+        ("extraction", &context.extraction),
+        ("rewrite", &context.rewrite),
+    ] {
+        if !valid(role.reserve) || role.cap.is_some_and(|cap| !valid(cap)) {
+            return Err(PatchError::invalid(format!(
+                "models.context.{name} reserve and cap must be 1..=131072 tokens."
+            )));
+        }
+    }
+    for (alias, window) in &context.overrides {
+        if alias.trim().is_empty() {
+            return Err(PatchError::invalid(
+                "models.context.overrides needs model aliases as keys.",
+            ));
+        }
+        if !valid(*window) {
+            return Err(PatchError::invalid(format!(
+                "models.context.overrides.{alias} must be 1..=131072 tokens."
+            )));
+        }
+        if let Some(maximum) = find(catalog, alias).and_then(|model| model.context_tokens)
+            && *window > maximum
+        {
+            return Err(PatchError::invalid(format!(
+                "models.context.overrides.{alias} exceeds Kanata's published context window ({maximum})."
+            )));
+        }
+    }
+    let mut warnings = Vec::new();
+    for (name, role, alias) in [
+        (
+            "extraction",
+            LiveRole::Extraction,
+            models.extraction.alias.as_deref(),
+        ),
+        ("chat", LiveRole::Chat, models.chat.alias.as_deref()),
+        (
+            "rewrite",
+            LiveRole::Rewrite,
+            models.rewrite.alias.as_deref(),
+        ),
+    ] {
+        let Some(alias) = alias else { continue };
+        let resolved = resolve_context(context, catalog, role, alias);
+        if resolved.reserve >= resolved.window {
+            return Err(PatchError::invalid(format!(
+                "models.context.{name}.reserve must be smaller than its effective window ({}).",
+                resolved.window
+            )));
+        }
+        if resolved.local_warning {
+            warnings.push(LocalContextWarning {
+                role: name,
+                alias: alias.to_owned(),
+                window: resolved.window,
+            });
+        }
+    }
+    Ok(warnings)
 }
 
 impl Role {
@@ -492,6 +579,7 @@ mod tests {
             sampling_controls: true,
             function_tools: true,
             context_tokens: None,
+            max_output_tokens: None,
             admission: limit.map(|max| AdmissionLimits {
                 max_in_flight: max,
                 max_queue: None,

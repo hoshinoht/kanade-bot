@@ -29,6 +29,7 @@ pub struct CatalogModel {
     pub sampling_controls: bool,
     pub function_tools: bool,
     pub context_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
     pub admission: Option<AdmissionLimits>,
 }
 
@@ -140,6 +141,7 @@ impl CatalogState {
                     sampling_controls: shown.sampling_controls,
                     function_tools: shown.function_tools,
                     context_tokens: shown.context_tokens,
+                    max_output_tokens: shown.max_output_tokens,
                     admission: shown.admission,
                 }
             })

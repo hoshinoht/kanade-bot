@@ -8,6 +8,7 @@ pub mod chat;
 mod chat_cards;
 mod chat_log;
 mod commands;
+mod context;
 pub mod discord;
 pub mod extract;
 mod health;
@@ -31,11 +32,6 @@ use health::LiveHealth;
 
 /// How long closing waits for connections a timed-out drain left behind.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
-
-/// Temporary serve-wide context window for chat and extraction (user,
-/// 2026-09-27) until `hardening/context-budget` makes it tunable per model;
-/// the library defaults stay v4's 8,192 for the frozen vectors.
-pub(crate) const CONTEXT_TOKENS: usize = 65_536;
 
 pub async fn run(config: ServeConfig) -> Result<(), Error> {
     serve_until(config, server::wait_for_shutdown()).await

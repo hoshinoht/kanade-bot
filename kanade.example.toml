@@ -109,6 +109,30 @@ reasoning = "inherit"
 # model = "kanata/chat"
 # reasoning = "inherit"
 
+# Context seeds apply only until `v5.model_context` is saved through Config
+# (then the saved row wins and edits apply live to the next call). All keys
+# but `cap` and `overrides` are required. A window (default, cap, override)
+# above 131072 is clamped to 131072 with a startup warning; a zero value or a
+# reserve not smaller than its role's window (its cap, else the smaller zone
+# default) refuses startup. Reserves are sent as max_tokens, clamped to the
+# route's published output maximum. Local routes over 16384 warn but run.
+# Override keys match aliases exactly: an override on "kanata/chat" does not
+# apply to a "kanata/chat:high" variant.
+[models.context]
+cloud_default = 65536
+local_default = 8192
+overrides = { "example-cloud-model" = 32768 }
+
+[models.context.chat]
+reserve = 1024
+# cap = 65536
+
+[models.context.extraction]
+reserve = 2500
+
+[models.context.rewrite]
+reserve = 96
+
 # Capacity groups: aliases sharing hardware share permits (1-16). A role
 # whose alias is in no group has its calls refused.
 [[models.groups]]

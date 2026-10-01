@@ -119,7 +119,8 @@ pub async fn compose(
         .map_err(|_| Error::Startup("runtime settings could not be read".into()))?;
     let sources = model_report::seed_roles(&mut settings, &config.models, &stored);
     let models = model_stack(&config.models, &settings)?;
-    let model_tasks = model_report::start(models.as_ref(), sources);
+    let model_tasks =
+        model_report::start(models.as_ref(), sources, settings.models.context.clone());
     let personas = load_personas(
         &config.files.persona_dir,
         settings::persona(&settings)?.as_ref(),

@@ -43,6 +43,10 @@ pub struct PipelineConfig {
     pub context_messages: usize,
     pub min_confidence: f64,
     pub context_tokens: usize,
+    /// The route-resolved extraction completion reserve (`max_tokens`).
+    pub completion_reserve: usize,
+    /// Context source retained with each model-log row.
+    pub context_source: &'static str,
     /// The extraction role's configured effort (`None` sends none).
     pub reasoning: Option<Effort>,
     pub permit_wait: Duration,
@@ -51,6 +55,20 @@ pub struct PipelineConfig {
     pub backlog_capacity: usize,
     pub self_service: SelfServiceConfig,
 }
+
+/// The context one pass was cut to and its calls send (`max_tokens` is the
+/// reserve), logged with each call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CallContext {
+    pub window: usize,
+    pub reserve: usize,
+    pub source: &'static str,
+}
+
+/// Resolves the live context for the extraction alias about to be called;
+/// read once per pass, so a saved change applies to the next pass while a
+/// pass in flight keeps what it started with.
+pub type LiveContext = std::sync::Arc<dyn Fn(&str) -> CallContext + Send + Sync>;
 
 /// Admin `self_service.mode` and the public portal switch; links are only
 /// ever posted while the portal is open.
@@ -78,12 +96,23 @@ impl PipelineConfig {
             context_messages: DEFAULT_CONTEXT_MESSAGES,
             min_confidence: DEFAULT_MIN_CONFIDENCE,
             context_tokens: DEFAULT_CONTEXT_TOKENS,
+            completion_reserve: crate::extract::prompt::CONTEXT_RESERVE,
+            context_source: "local_default",
             reasoning: None,
             permit_wait: DEFAULT_PERMIT_WAIT,
             call_timeout: DEFAULT_CALL_TIMEOUT,
             drain_interval: DEFAULT_DRAIN_INTERVAL,
             backlog_capacity: DEFAULT_BACKLOG_CAPACITY,
             self_service: SelfServiceConfig::default(),
+        }
+    }
+
+    /// The fixed context used without a live resolver.
+    pub fn call_context(&self) -> CallContext {
+        CallContext {
+            window: self.context_tokens,
+            reserve: self.completion_reserve,
+            source: self.context_source,
         }
     }
 

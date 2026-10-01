@@ -11,6 +11,7 @@ use chrono_tz::Tz;
 use super::error::Error;
 
 mod admin_auth;
+mod context;
 mod discord;
 mod file;
 mod files;

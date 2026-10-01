@@ -9,18 +9,18 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 
 use super::call::{CallRecord, Failure, Loaded};
-use super::config::{CONTEXT_WINDOW, PipelineConfig, RECENT_SCHEDULING};
+use super::config::{CONTEXT_WINDOW, CallContext, LiveContext, PipelineConfig, RECENT_SCHEDULING};
 use super::ports::{Guild, IncomingMessage, Outbox, Proposer, SelfServiceDeps};
 use crate::domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use crate::domain::weeks;
 use crate::extract::backlog::BacklogEntry;
 use crate::extract::gate::{self, BossLexicon, GateResult};
-use crate::extract::prompt::{estimate_messages, prompt_budget, schema_instruction_tokens};
+use crate::extract::prompt::{estimate_messages, schema_instruction_tokens};
 use crate::extract::schema::extraction_schema;
 use crate::extract::window::split_until;
 use crate::infrastructure::llm::LlmProvider;
-use crate::infrastructure::llm::governor::ModelClient;
+use crate::infrastructure::llm::governor::{ModelClient, Role, RoleRoute};
 use crate::infrastructure::llm::identity::PassthroughSession;
 
 /// Logged (and shown by the admin portal) when the schedule store fails;
@@ -101,6 +101,7 @@ pub struct Extractor<S, P, X, O> {
     ids: Mutex<Box<dyn IdSource + Send>>,
     pub(super) self_service: Option<SelfServiceDeps>,
     pub(super) config: PipelineConfig,
+    live_context: Option<LiveContext>,
     cancel: tokio::sync::watch::Sender<Cut>,
 }
 
@@ -161,7 +162,25 @@ where
             ids: Mutex::new(deps.ids),
             self_service: deps.self_service,
             config,
+            live_context: None,
             cancel: tokio::sync::watch::Sender::new(Cut::default()),
+        }
+    }
+
+    /// Resolve the context per pass from live settings instead of the fixed
+    /// `PipelineConfig` values.
+    #[must_use]
+    pub fn with_live_context(mut self, live: LiveContext) -> Self {
+        self.live_context = Some(live);
+        self
+    }
+
+    /// The context for a pass on `route`: the live resolver over its alias,
+    /// else the configured values.
+    pub(super) fn pass_context(&self, route: Option<&RoleRoute>) -> CallContext {
+        match (&self.live_context, route) {
+            (Some(live), Some(route)) => live(&route.alias),
+            _ => self.config.call_context(),
         }
     }
 
@@ -362,18 +381,23 @@ where
         channel_id: &str,
         rows: Vec<WatchedMessage>,
     ) -> Vec<CallRecord> {
+        // Route and context are pinned for the whole pass: its split and
+        // every call's alias and `max_tokens`.
+        let route = self.client.governor().route(Role::Extraction);
+        let context = self.pass_context(route.as_ref());
         let loaded = match self.load(channel_id, &rows).await {
             Ok(loaded) => loaded,
             Err(error) => {
-                let mut record = self.record(&rows);
+                let mut record = self.record(&rows, route.as_ref(), context);
                 record.fail(Failure::Failed, error);
                 return vec![record];
             }
         };
         // Err high: the runner may add its schema instruction for a model
         // without structured output.
-        let budget = prompt_budget(self.config.context_tokens)
-            .saturating_sub(schema_instruction_tokens(&extraction_schema()));
+        let budget =
+            crate::extract::prompt::prompt_budget_with_reserve(context.window, context.reserve)
+                .saturating_sub(schema_instruction_tokens(&extraction_schema()));
         let chunks = split_until(
             &rows,
             |chunk| {
@@ -385,7 +409,10 @@ where
         );
         let mut records = Vec::with_capacity(chunks.len());
         for chunk in chunks {
-            records.push(self.call(channel_id, &loaded, &chunk).await);
+            records.push(
+                self.call(channel_id, &loaded, &chunk, route.as_ref(), context)
+                    .await,
+            );
         }
         records
     }

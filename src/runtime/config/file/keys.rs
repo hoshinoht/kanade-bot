@@ -16,6 +16,8 @@ pub(super) enum Kind {
     Ints,
     /// `[[models.groups]]`, encoded as JSON.
     Groups,
+    /// `[models.context]`, encoded as JSON for the runtime settings seed.
+    Context,
 }
 
 use Kind::*;
@@ -107,6 +109,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ("models.ca_file", "KANADE_MODEL_CA_FILE", Text),
     ("models.permits", "KANADE_MODEL_PERMITS", Int),
     ("models.groups", "KANADE_MODEL_GROUPS", Groups),
+    ("models.context", "KANADE_MODEL_CONTEXT", Context),
     ("models.extraction.model", "KANADE_EXTRACT_MODEL", Text),
     (
         "models.extraction.reasoning",

@@ -418,3 +418,162 @@ async fn compose_logs_a_degraded_listing_and_disabled_models() {
         [serde_json::json!({"level": "INFO", "event": "models_disabled"})]
     );
 }
+
+/// The composed context settings and every line logged while composing.
+async fn compose_context(
+    config: &ServeConfig,
+) -> (
+    crate::domain::settings::ContextSettings,
+    Vec<serde_json::Value>,
+) {
+    let store = store::open(&config.store).await.unwrap();
+    let health = LiveHealth::new(store.clone());
+    crate::runtime::logging::capture();
+    let mut composition = api::compose(
+        config,
+        store.clone(),
+        Arc::new(StaticChannels(Vec::new())),
+        health,
+    )
+    .await
+    .unwrap();
+    composition.model_tasks.report_done().await;
+    let lines = crate::runtime::logging::captured();
+    let context = composition.settings.models.context.clone();
+    drop(composition);
+    store::close(store, Duration::ZERO).await;
+    (context, lines)
+}
+
+#[tokio::test]
+async fn a_context_seed_applies_only_while_unsaved_and_clamps_past_the_hard_cap() {
+    let seed = serde_json::json!({
+        "cloud_default": 200_000,
+        "local_default": 4_096,
+        "chat": {"reserve": 1_024},
+        "extraction": {"reserve": 2_000},
+        "rewrite": {"reserve": 96},
+    })
+    .to_string();
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
+        ("KANADE_MODEL_CONTEXT", seed.as_str()),
+    ]);
+    let (context, lines) = compose_context(&config).await;
+    assert_eq!(context.cloud_default, 131_072);
+    assert_eq!(context.local_default, 4_096);
+    let clamped = lines
+        .iter()
+        .find(|line| line["event"] == "model_context_clamped")
+        .expect("the clamp is logged");
+    assert_eq!(clamped["level"], "WARN");
+    assert_eq!(
+        clamped["fields"],
+        serde_json::json!(["models.context.cloud_default"])
+    );
+    assert_eq!(clamped["max"], 131_072);
+
+    // A saved row wins; the seed (and its clamp) is not used.
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
+        ("KANADE_MODEL_CONTEXT", seed.as_str()),
+    ]);
+    let saved = crate::domain::settings::ContextSettings {
+        local_default: 12_000,
+        ..Default::default()
+    };
+    let row = serde_json::to_string(&saved).unwrap();
+    with_rows(&config, &[(keys::MODEL_CONTEXT, row.as_str())]).await;
+    let (context, lines) = compose_context(&config).await;
+    assert_eq!(context, saved);
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line["event"] == "model_context_clamped")
+    );
+}
+
+#[test]
+fn an_invalid_context_seed_refuses_startup() {
+    let mut values: BTreeMap<String, String> = BTreeMap::new();
+    for (key, value) in [
+        ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
+        (
+            "KANADE_MODEL_CONTEXT",
+            r#"{"cloud_default":65536,"local_default":8192,"chat":{"reserve":1024},"extraction":{"reserve":9000},"rewrite":{"reserve":96}}"#,
+        ),
+    ] {
+        values.insert(key.into(), value.into());
+    }
+    let error = crate::runtime::config::ModelSettings::from_mapping(&values).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "models.context.extraction.reserve (9000) must be smaller than its window (8192)"
+    );
+}
+
+#[tokio::test]
+async fn startup_warns_once_per_local_role_past_16k_and_never_for_cloud() {
+    let url = model_gateway(serde_json::json!({"object": "list", "data": [
+        {"id": "big-local", "kanata": {"trust_zone": "local", "context_tokens": 32_768}},
+        {"id": "small-local", "kanata": {"trust_zone": "local", "context_tokens": 16_384}},
+        {"id": "big-cloud", "kanata": {"context_tokens": 131_072}},
+    ]}))
+    .await;
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", url.as_str()),
+        ("KANADE_EXTRACT_MODEL", "small-local"),
+        ("KANADE_CHAT_MODEL", "big-local"),
+        ("KANADE_REWRITE_MODEL", "big-cloud"),
+    ]);
+    let (_, lines) = compose_context(&config).await;
+    let warnings: Vec<&serde_json::Value> = lines
+        .iter()
+        .filter(|line| line["kind"] == "local_context")
+        .collect();
+    assert_eq!(warnings.len(), 1, "{lines:?}");
+    assert_eq!(warnings[0]["level"], "WARN");
+    assert_eq!(warnings[0]["role"], "chat");
+    assert_eq!(warnings[0]["alias"], "big-local");
+    assert_eq!(warnings[0]["window"], 32_768);
+    assert_eq!(
+        warnings[0]["message"],
+        "Context past 16k may result in degraded performance on local models."
+    );
+}
+
+#[tokio::test]
+async fn startup_warns_when_a_routed_reserve_fills_its_effective_window() {
+    // The catalog publishes less room than extraction's default 2500 reserve.
+    let url = model_gateway(serde_json::json!({"object": "list", "data": [
+        {"id": "tiny-local", "kanata": {"trust_zone": "local", "context_tokens": 2_048}},
+        {"id": "roomy-local", "kanata": {"trust_zone": "local", "context_tokens": 8_192}},
+    ]}))
+    .await;
+    let temp = Temp::new();
+    let config = temp.config(&[
+        ("KANADE_MODEL_BASE_URL", url.as_str()),
+        ("KANADE_EXTRACT_MODEL", "tiny-local"),
+        ("KANADE_CHAT_MODEL", "roomy-local"),
+    ]);
+    let (_, lines) = compose_context(&config).await;
+    let warnings: Vec<&serde_json::Value> = lines
+        .iter()
+        .filter(|line| line["kind"] == "context_reserve")
+        .collect();
+    assert_eq!(warnings.len(), 1, "{lines:?}");
+    let warning = warnings[0];
+    assert_eq!(warning["level"], "WARN");
+    assert_eq!(warning["event"], "model_warning");
+    assert_eq!(warning["role"], "extraction");
+    assert_eq!(warning["alias"], "tiny-local");
+    assert_eq!(warning["window"], 2_048);
+    assert_eq!(warning["reserve"], 2_500);
+    assert_eq!(
+        warning["message"],
+        "extraction context reserve 2500 is not smaller than tiny-local's effective window 2048; its prompts cannot fit"
+    );
+}

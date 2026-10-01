@@ -12,11 +12,16 @@ use super::{
 use crate::infrastructure::llm::governor::{ModelClient, Role, SessionError, SessionFailure};
 use crate::infrastructure::llm::{ChatRequest, ErrorCode, LlmProvider, Message};
 
-/// One short line; a few tokens of slack for the model's wording.
+/// One short line; a few tokens of slack for the model's wording. The
+/// default rewrite reserve when no live context resolver is attached.
 pub const REWRITE_MAX_OUTPUT_TOKENS: u32 = 96;
+
+/// The rewrite reserve (`max_tokens`) for an alias, read per request.
+pub type RewriteReserve = Arc<dyn Fn(&str) -> u32 + Send + Sync>;
 
 pub struct GovernedRewriter<P> {
     client: Arc<ModelClient<P>>,
+    reserve: Option<RewriteReserve>,
 }
 
 impl<P> std::fmt::Debug for GovernedRewriter<P> {
@@ -27,7 +32,18 @@ impl<P> std::fmt::Debug for GovernedRewriter<P> {
 
 impl<P> GovernedRewriter<P> {
     pub fn new(client: Arc<ModelClient<P>>) -> Self {
-        Self { client }
+        Self {
+            client,
+            reserve: None,
+        }
+    }
+
+    /// Size each request from live settings (the resolved rewrite reserve,
+    /// already clamped to the route's published output maximum).
+    #[must_use]
+    pub fn with_reserve(mut self, reserve: RewriteReserve) -> Self {
+        self.reserve = Some(reserve);
+        self
     }
 }
 
@@ -77,7 +93,11 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
             messages,
             tools: Vec::new(),
             output_schema: None,
-            max_output_tokens: REWRITE_MAX_OUTPUT_TOKENS,
+            // Read once with the route: a save applies to the next rewrite.
+            max_output_tokens: self
+                .reserve
+                .as_ref()
+                .map_or(REWRITE_MAX_OUTPUT_TOKENS, |reserve| reserve(&route.alias)),
             // The rewrite role's live level (read once, with the alias).
             reasoning: route.effort,
             sampling: None,

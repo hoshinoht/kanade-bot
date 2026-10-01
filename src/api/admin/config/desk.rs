@@ -351,6 +351,7 @@ impl ConfigDesk {
                 ),
                 // Retained for compatibility with the existing config schema.
                 pii_pseudonymise: false,
+                context: dto::context_settings(&settings.models.context),
             },
             manage_messages: ManageMessages {
                 missing: Vec::new(),

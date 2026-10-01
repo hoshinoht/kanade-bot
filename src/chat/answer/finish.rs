@@ -8,6 +8,11 @@ use crate::chat::sanitize::{
 };
 use crate::chat::tools::{REFUSED, ToolName};
 
+/// A posted card whose question then failed: the change is recorded, so the
+/// member must not be invited to ask again.
+pub(super) const POSTED_UNFINISHED: &str =
+    "The requested card was posted, but the request did not finish cleanly.";
+
 /// A write claim must never outlive the write it claims: the last write call
 /// decides, and a refused one overwrites the reply unless it already asks.
 fn finalize_write_reply(generation: &mut Generation) {
@@ -31,7 +36,7 @@ fn finalize_write_reply(generation: &mut Generation) {
     }
     let detail = tidy(&member_facing(&last.outcome.output), None);
     let status = if posted {
-        "The requested card was posted, but the request did not finish cleanly."
+        POSTED_UNFINISHED
     } else {
         "The requested card was not posted."
     };

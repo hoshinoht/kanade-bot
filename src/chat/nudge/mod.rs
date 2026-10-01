@@ -15,7 +15,9 @@ pub use compose::{
     EDIT_RUN_ACTION, LineSource, Nudge, NudgeFacts, Nudger, REQUEST_CHANGE_ACTION, SeedReason,
     action, mood_for, render,
 };
-pub use governed::{DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, SharedRewriter};
+pub use governed::{
+    DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, RewriteReserve, SharedRewriter,
+};
 pub use prompt::{
     GENTLE_MOOD, NUDGE_REWRITE_INSTRUCTION, PLAYFUL_MOOD, RewritePrompt, VOICE_LABEL,
 };

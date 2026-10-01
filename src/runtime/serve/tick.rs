@@ -16,7 +16,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 use super::settings;
 use crate::{
-    api::auth::Clock,
+    api::{admin::config::SettingsChanged, auth::Clock},
     bot::{
         delivery::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
@@ -30,7 +30,7 @@ use crate::{
         transport::DiscordTransport,
     },
     chat::{
-        nudge::{GovernedRewriter, SharedRewriter},
+        nudge::{GovernedRewriter, RewriteReserve, SharedRewriter},
         persona::{CompiledPersona, PersonaStore},
     },
     domain::notify::DeliveryJournal,
@@ -126,9 +126,15 @@ pub struct TickLoop<T> {
     pub post_channel: Arc<RwLock<Option<String>>>,
 }
 
-/// The heading's rewriter over the governed `rewrite` role.
-pub fn heading_rewriter<P: LlmProvider + 'static>(client: Arc<ModelClient<P>>) -> SharedRewriter {
-    SharedRewriter(Arc::new(GovernedRewriter::new(client)))
+/// The heading's rewriter over the governed `rewrite` role, each request
+/// sized by the live resolved rewrite reserve.
+pub fn heading_rewriter<P: LlmProvider + 'static>(
+    client: Arc<ModelClient<P>>,
+    reserve: RewriteReserve,
+) -> SharedRewriter {
+    SharedRewriter(Arc::new(
+        GovernedRewriter::new(client).with_reserve(reserve),
+    ))
 }
 
 /// Card inputs for the tick and card edits: the catalog, the boss art
@@ -140,10 +146,17 @@ pub fn card_kit(
     catalog: Arc<BossTable>,
     models: Option<&Arc<ModelStack>>,
     personas: Arc<PersonaStore>,
+    settings: watch::Receiver<SettingsChanged>,
 ) -> CardKit {
     let rewriter = models
         .filter(|stack| stack.has_role(Role::Rewrite))
-        .map(|stack| heading_rewriter(Arc::clone(&stack.client)));
+        .map(|stack| {
+            let resolve = super::context::resolver(Arc::clone(stack), settings, Role::Rewrite);
+            heading_rewriter(
+                Arc::clone(&stack.client),
+                Arc::new(move |alias: &str| resolve(alias).reserve),
+            )
+        });
     let persona: PersonaSource = Arc::new(move || {
         let snapshot = personas.pin();
         let active = snapshot.active()?;

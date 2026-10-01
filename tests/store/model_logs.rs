@@ -3,7 +3,9 @@
 //! more than one bounded batch.
 
 use chrono::{TimeZone, Utc};
-use kanade::domain::model_log::{ModelLogStore, PRUNE_BATCH, PruneCounts, WatchedMessage};
+use kanade::domain::model_log::{
+    ChatFilter, ExtractionFilter, ModelLogStore, PRUNE_BATCH, PruneCounts, WatchedMessage,
+};
 use kanade::domain::scheduler::StoreError;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use sqlx::sqlite::SqliteConnectOptions;
@@ -263,4 +265,64 @@ async fn retention_runs_in_bounded_batches_until_done() {
     ] {
         assert_eq!(count(&config, table).await, left, "{table}");
     }
+}
+
+#[tokio::test]
+async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
+    let dir = TempDir::new();
+    let config = dir.config("pre-context-rows");
+    SqliteStore::open(&config)
+        .await
+        .expect("opens")
+        .close()
+        .await
+        .expect("close");
+    // Guardrails as written before `guardrail.context` existed.
+    tamper(
+        &config,
+        "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, request_count, \
+         outcome, guardrail, message_ids, proposal_ids) VALUES ('x-old', \
+         '2026-09-20T00:00:00+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', \
+         '{\"external_unmasked\": true}', '[]', '[]');
+         INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, withheld, \
+         guardrail, request_count) VALUES ('c-old', '2026-09-20T00:00:00+00:00', 'q', 'a', \
+         'answered', 0, 0, '{}', 1);
+         INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
+         VALUES ('c-old', 0, 'm', '[]', '[]', '[]');",
+    )
+    .await;
+    let store = SqliteStore::open(&config).await.expect("reopens");
+    let extraction = store
+        .load_extraction("x-old")
+        .await
+        .expect("reads")
+        .expect("kept");
+    assert_eq!(
+        extraction.guardrail,
+        serde_json::json!({"external_unmasked": true})
+    );
+    assert!(extraction.guardrail.get("context").is_none());
+    let listed = store
+        .list_extractions(&ExtractionFilter {
+            limit: 10,
+            ..ExtractionFilter::default()
+        })
+        .await
+        .expect("lists");
+    assert_eq!(listed.items.len(), 1);
+    let chat = store
+        .load_chat("c-old")
+        .await
+        .expect("reads")
+        .expect("kept");
+    assert_eq!(chat.guardrail, serde_json::json!({}));
+    let chats = store
+        .list_chats(&ChatFilter {
+            limit: 10,
+            ..ChatFilter::default()
+        })
+        .await
+        .expect("lists");
+    assert_eq!(chats.items.len(), 1);
+    store.close().await.expect("close");
 }

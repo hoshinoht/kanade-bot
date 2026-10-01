@@ -27,8 +27,8 @@ use kanade::domain::scheduler::{
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage,
-    MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig, PostResult, Proposer,
-    Redirected, SelfServiceDeps,
+    LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
+    PostResult, Proposer, Redirected, SelfServiceDeps,
 };
 use kanade::extract::redirect::PublicPortalLinks;
 use kanade::extract::rescan::{Backfilled, History};
@@ -446,16 +446,21 @@ pub struct World {
 
 impl World {
     pub async fn new(actions: Vec<FakeAction>) -> Self {
-        Self::build(actions, |_| {}, true, false).await
+        Self::build(actions, |_| {}, true, false, None).await
     }
 
     pub async fn with(actions: Vec<FakeAction>, tune: impl FnOnce(&mut PipelineConfig)) -> Self {
-        Self::build(actions, tune, true, false).await
+        Self::build(actions, tune, true, false, None).await
+    }
+
+    /// Context resolved per pass by `live`, as serve does from saved settings.
+    pub async fn with_live_context(actions: Vec<FakeAction>, live: LiveContext) -> Self {
+        Self::build(actions, |_| {}, true, false, Some(live)).await
     }
 
     /// Extraction routed to an ungrouped alias.
     pub async fn ungrouped(actions: Vec<FakeAction>) -> Self {
-        Self::build(actions, |_| {}, false, false).await
+        Self::build(actions, |_| {}, false, false, None).await
     }
 
     /// With self-service links wired: the portal at [`PORTAL`], the tracked
@@ -464,7 +469,7 @@ impl World {
         actions: Vec<FakeAction>,
         tune: impl FnOnce(&mut PipelineConfig),
     ) -> Self {
-        Self::build(actions, tune, true, true).await
+        Self::build(actions, tune, true, true, None).await
     }
 
     async fn build(
@@ -472,6 +477,7 @@ impl World {
         tune: impl FnOnce(&mut PipelineConfig),
         grouped: bool,
         self_service: bool,
+        live: Option<LiveContext>,
     ) -> Self {
         let store = Arc::new(MemoryScheduleStore::new());
         let clock = TestClock::new(now().fixed_offset());
@@ -527,7 +533,7 @@ impl World {
             )),
             personas: Arc::new(KanadeForAll(kanade())),
         });
-        let extractor = Arc::new(Extractor::new(
+        let mut extractor = Extractor::new(
             Deps {
                 store: store.clone(),
                 client,
@@ -539,7 +545,11 @@ impl World {
                 self_service,
             },
             config,
-        ));
+        );
+        if let Some(live) = live {
+            extractor = extractor.with_live_context(live);
+        }
+        let extractor = Arc::new(extractor);
         Self {
             store,
             provider,

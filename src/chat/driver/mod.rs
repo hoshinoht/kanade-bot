@@ -53,8 +53,6 @@ pub struct DriverConfig {
     pub history_ttl_s: f64,
     pub timeout: Duration,
     pub tool_rounds: u8,
-    pub model_context_tokens: usize,
-    pub max_output_tokens: u32,
     /// How long shutdown lets running answers finish before cutting them.
     pub stop_grace: Duration,
     /// After the cut: how long cut questions get to log (and tidy their
@@ -70,8 +68,6 @@ impl Default for DriverConfig {
             history_ttl_s: DEFAULT_HISTORY_TTL_S,
             timeout: DEFAULT_TIMEOUT,
             tool_rounds: crate::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS,
-            model_context_tokens: DEFAULT_CONTEXT_TOKENS,
-            max_output_tokens: crate::chat::context::COMPLETION_RESERVE_TOKENS as u32,
             // With the gateway close (5 s) and the HTTP drain (10 s) the whole
             // shutdown stays well inside Compose's 30 s stop grace.
             stop_grace: Duration::from_secs(3),

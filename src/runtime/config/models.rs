@@ -8,7 +8,8 @@ use hyper::Uri;
 
 use super::{Error, groups, non_empty, parse_bounded_u64};
 use crate::{
-    domain::settings::Reasoning, infrastructure::llm::setup::CapacityGroup,
+    domain::settings::{ContextSettings, Reasoning},
+    infrastructure::llm::setup::CapacityGroup,
     runtime::secrets::Redacted,
 };
 
@@ -24,6 +25,7 @@ const REASONING: [&str; 3] = [
     "KANADE_CHAT_REASONING",
     "KANADE_REWRITE_REASONING",
 ];
+const CONTEXT: &str = super::context::KEY;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelSettings {
@@ -42,6 +44,11 @@ pub struct ModelSettings {
     pub permits: u16,
     /// Non-empty replaces the single gateway group of `permits`.
     pub groups: Vec<CapacityGroup>,
+    /// `[models.context]`, used only when no `v5.model_context` row is saved.
+    pub context: Option<ContextSettings>,
+    /// Seed windows clamped to the hard cap (`models.context.<path>`), logged
+    /// when the seed is applied.
+    pub context_clamped: Vec<String>,
 }
 
 impl ModelSettings {
@@ -69,6 +76,13 @@ impl ModelSettings {
         let [extract_model, chat_model, rewrite_model] = ALIASES.map(|key| alias(values, key));
         let [extract_reasoning, chat_reasoning, rewrite_reasoning] =
             REASONING.map(|key| reasoning(values, key));
+        let (context, context_clamped) = match non_empty(values, CONTEXT) {
+            Some(value) => {
+                let (context, clamped) = super::context::parse(value)?;
+                (Some(context), clamped)
+            }
+            None => (None, Vec::new()),
+        };
         let settings = Self {
             key_file: non_empty(values, KEY_FILE).map(PathBuf::from),
             ca_file: non_empty(values, "KANADE_MODEL_CA_FILE").map(PathBuf::from),
@@ -80,6 +94,8 @@ impl ModelSettings {
             rewrite_reasoning: rewrite_reasoning?,
             permits: parse_bounded_u64(values, "KANADE_MODEL_PERMITS", 2, 1, 16)? as u16,
             groups: groups::parse(values)?,
+            context,
+            context_clamped,
             base_url,
         };
         if settings.base_url.is_none() {
@@ -87,6 +103,7 @@ impl ModelSettings {
                 .into_iter()
                 .chain(ALIASES)
                 .chain(REASONING)
+                .chain([CONTEXT])
                 .find(|key| non_empty(values, key).is_some());
             if let Some(key) = dependent {
                 return Err(Error::Configuration(format!(

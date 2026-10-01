@@ -61,6 +61,7 @@ fn model(
         sampling_controls: true,
         function_tools: tools,
         context_tokens: None,
+        max_output_tokens: None,
         admission: admission.map(|(max, adapter)| AdmissionLimits {
             max_in_flight: max,
             max_queue: None,
@@ -457,14 +458,10 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     let models = &view["models"];
     assert_eq!(models["reachable"], true);
     assert_eq!(models["pii_pseudonymise"], false);
-    assert_eq!(
-        roles(&view),
-        json!({
-            "extraction": {"alias": "kanata/extract", "reasoning": "medium"},
-            "chat": {"alias": "kanata/chat", "reasoning": ""},
-            "rewrite": {"alias": "kanata/rewrite-small", "reasoning": "off"},
-        })
-    );
+    assert_eq!(roles(&view)["extraction"]["alias"], "kanata/extract");
+    assert_eq!(roles(&view)["chat"]["reasoning"], "");
+    assert_eq!(roles(&view)["rewrite"]["alias"], "kanata/rewrite-small");
+    assert_eq!(roles(&view)["chat"]["context"]["window"], 8192);
     let info = |id: &str| {
         models["catalog"]
             .as_array()
@@ -1410,9 +1407,10 @@ async fn reasoning_follows_published_efforts_and_strands_reset_with_notices() {
     let other = config
         .patch(json!({"models": {"roles": {"extraction": {"reasoning": "medium"}}}}))
         .await;
+    assert_eq!(other["models"]["roles"]["chat"]["alias"], "kanata/chat");
     assert_eq!(
-        other["models"]["roles"]["chat"],
-        json!({"alias": "kanata/chat", "reasoning": ""})
+        other["models"]["roles"]["chat"]["context"]["source"],
+        "cloud_default"
     );
     assert_eq!(other["notices"], json!([]));
 }
@@ -1844,15 +1842,12 @@ async fn reasoning_variants_are_marked_and_their_fixed_level_wins() {
     let saved = config
         .patch(json!({"models": {"roles": {"chat": {"alias": "kanata/chat:medium", "reasoning": "low"}}}}))
         .await;
-    assert_eq!(
-        saved["models"]["roles"]["chat"],
-        json!({
-            "alias": "kanata/chat:medium",
-            "reasoning": "medium",
-            "variant_of": "kanata/chat",
-            "fixed_effort": "medium",
-        })
-    );
+    let chat = &saved["models"]["roles"]["chat"];
+    assert_eq!(chat["alias"], "kanata/chat:medium");
+    assert_eq!(chat["reasoning"], "medium");
+    assert_eq!(chat["variant_of"], "kanata/chat");
+    assert_eq!(chat["fixed_effort"], "medium");
+    assert_eq!(chat["context"]["reserve"], 1024);
     assert_eq!(
         saved["notices"],
         json!([
@@ -2063,4 +2058,184 @@ async fn a_first_extraction_or_rewrite_model_says_it_starts_after_a_restart() {
         .patch(json!({"models": {"roles": {"extraction": {"reasoning": "medium"}}}}))
         .await;
     assert_eq!(again["notices"], json!([]));
+}
+
+/// A complete `models.context` object: the defaults with `fields` replaced.
+fn context(fields: Value) -> Value {
+    let mut value = json!({
+        "cloud_default": 65536,
+        "local_default": 8192,
+        "chat": {"reserve": 1024, "cap": null},
+        "extraction": {"reserve": 2500, "cap": null},
+        "rewrite": {"reserve": 96, "cap": null},
+        "overrides": {},
+    });
+    for (key, field) in fields.as_object().unwrap() {
+        value[key] = field.clone();
+    }
+    value
+}
+
+impl FakeCatalog {
+    fn publish(&self, alias: &str, context: Option<u32>, output: Option<u32>) {
+        let mut read = self.0.lock().unwrap();
+        let model = read
+            .snapshot
+            .models
+            .iter_mut()
+            .find(|model| model.alias == alias)
+            .unwrap();
+        model.context_tokens = context;
+        model.max_output_tokens = output;
+    }
+}
+
+const LOCAL_WARNING: &str = "Context past 16k may result in degraded performance on local models.";
+
+#[tokio::test]
+async fn context_resolves_per_role_and_warns_only_for_large_local_windows() {
+    let config = Config::new().await;
+    // Local routes with no published window run on the local default.
+    let view = config.get().await;
+    let extraction = &roles(&view)["extraction"]["context"];
+    assert_eq!(extraction["window"], 8192);
+    assert_eq!(extraction["source"], "local_default");
+    assert_eq!(extraction["reserve"], 2500);
+    assert_eq!(extraction["prompt_budget"], 8192 - 2500);
+    assert_eq!(roles(&view)["rewrite"]["context"]["reserve"], 96);
+    assert_eq!(view["models"]["context"], context(json!({})));
+
+    // A published local window past 16k warns on GET and in PATCH notices;
+    // the reserve is clamped to the route's published output maximum.
+    config
+        .catalog
+        .publish("kanata/chat", Some(65_536), Some(2_048));
+    let view = config.get().await;
+    let chat = &roles(&view)["chat"]["context"];
+    assert_eq!(chat["window"], 65_536);
+    assert_eq!(chat["source"], "catalog");
+    assert_eq!(chat["local_warning"], true);
+    assert_eq!(view["notices"], json!([]), "a GET carries no notices");
+    let saved = config
+        .patch(json!({"models": {"context": context(json!({"chat": {"reserve": 4096, "cap": null}}))}}))
+        .await;
+    let chat = &roles(&saved)["chat"]["context"];
+    assert_eq!(chat["reserve"], 2_048, "clamped to max_output_tokens");
+    assert_eq!(saved["notices"], json!([LOCAL_WARNING]));
+    assert_eq!(
+        config.desk.settings().await.models.context.chat.reserve,
+        4_096,
+        "the saved value is kept; the clamp is per route"
+    );
+
+    // A role cap at the threshold ends the warning.
+    let capped = config
+        .patch(json!({"models": {"context": context(json!({"chat": {"reserve": 1024, "cap": 16_384}}))}}))
+        .await;
+    let chat = &roles(&capped)["chat"]["context"];
+    assert_eq!(chat["window"], 16_384);
+    assert_eq!(chat["clamped_by_role_cap"], true);
+    assert_eq!(chat["local_warning"], false);
+    assert_eq!(capped["notices"], json!([]));
+
+    // An override below the published window wins over the catalog.
+    let overridden = config
+        .patch(
+            json!({"models": {"context": context(json!({"overrides": {"kanata/chat": 12_000}}))}}),
+        )
+        .await;
+    let chat = &roles(&overridden)["chat"]["context"];
+    assert_eq!(chat["source"], "override");
+    assert_eq!(chat["window"], 12_000);
+
+    // A cloud route never warns, and a window past the hard cap is clamped.
+    config.catalog.publish("kanata/legacy", Some(200_000), None);
+    let cloud = config
+        .patch(json!({"models": {
+            "roles": {"chat": {"alias": "kanata/legacy", "reasoning": "off"}},
+            "context": context(json!({})),
+        }}))
+        .await;
+    let chat = &roles(&cloud)["chat"]["context"];
+    assert_eq!(chat["window"], 131_072);
+    assert_eq!(chat["clamped_by_hard_cap"], true);
+    assert_eq!(chat["local_warning"], false);
+    assert!(
+        !cloud["notices"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(LOCAL_WARNING)),
+        "{}",
+        cloud["notices"]
+    );
+}
+
+#[tokio::test]
+async fn invalid_context_settings_are_refused_with_422() {
+    let config = Config::new().await;
+    config.catalog.publish("kanata/chat", Some(65_536), None);
+    for (fields, needle) in [
+        (json!({"local_default": 0}), "defaults"),
+        (json!({"cloud_default": -1}), "models.context"),
+        (json!({"cloud_default": 131_073}), "defaults"),
+        (
+            json!({"chat": {"reserve": 0, "cap": null}}),
+            "models.context.chat",
+        ),
+        (
+            json!({"chat": {"reserve": 1024, "cap": 131_073}}),
+            "models.context.chat",
+        ),
+        (json!({"overrides": {"kanata/x": 0}}), "overrides.kanata/x"),
+        (
+            json!({"overrides": {"kanata/x": 131_073}}),
+            "overrides.kanata/x",
+        ),
+        (
+            json!({"overrides": {"kanata/chat": 65_537}}),
+            "published context window (65536)",
+        ),
+        // Extraction runs on the 8192 local default.
+        (
+            json!({"extraction": {"reserve": 8192, "cap": null}}),
+            "models.context.extraction.reserve must be smaller than its effective window (8192)",
+        ),
+    ] {
+        let message = config
+            .refused(
+                json!({"models": {"context": context(fields.clone())}}),
+                422,
+                "invalid",
+            )
+            .await;
+        assert!(message.contains(needle), "{fields}: {message}");
+    }
+    // A reserve past the hard cap is refused even for a role with no model.
+    let mut unrouted = settings();
+    unrouted.models.rewrite.alias = None;
+    let bare = Config::with_settings(true, Vec::new(), unrouted).await;
+    let message = bare
+        .refused(
+            json!({"models": {"context": context(json!({"rewrite": {"reserve": 131_073, "cap": null}}))}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert!(message.contains("models.context.rewrite"), "{message}");
+    // `overrides` may be omitted; it defaults to none.
+    let mut without = context(json!({}));
+    without.as_object_mut().unwrap().remove("overrides");
+    bare.patch(json!({"models": {"context": without}})).await;
+    // Partial objects are refused rather than merged.
+    config
+        .refused(
+            json!({"models": {"context": {"cloud_default": 32768}}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert_eq!(
+        config.desk.settings().await.models.context,
+        Default::default()
+    );
 }

@@ -20,6 +20,9 @@ pub const CHAT_REASONING: &str = "chat_pilot_think";
 
 pub const REWRITE_MODEL: &str = "v5.rewrite_model";
 pub const REWRITE_REASONING: &str = "v5.rewrite_reasoning";
+/// JSON context-window settings. Kept as one allowlisted generic config row;
+/// its nested fields evolve without a SQLite migration.
+pub const MODEL_CONTEXT: &str = "v5.model_context";
 pub const POST_CHANNEL: &str = "v5.post_channel_id";
 pub const WATCHED_CHANNELS: &str = "v5.watched_channel_ids";
 pub const WATCHED_CATEGORIES: &str = "v5.watched_category_ids";
@@ -34,7 +37,7 @@ pub const ROLE_PROFILES: &str = "v5.role_profiles";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 28] = [
+pub const ALL: [&str; 29] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -52,6 +55,7 @@ pub const ALL: [&str; 28] = [
     CHAT_REASONING,
     REWRITE_MODEL,
     REWRITE_REASONING,
+    MODEL_CONTEXT,
     POST_CHANNEL,
     WATCHED_CHANNELS,
     WATCHED_CATEGORIES,

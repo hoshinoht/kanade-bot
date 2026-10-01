@@ -6,7 +6,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kanade::chat::answer::{AnswerDeps, AnswerSettings, ChatPorts, Generation, Question, answer};
+use kanade::chat::answer::{
+    AnswerDeps, AnswerSettings, CONTEXT_BUDGET_REPLY, ChatPorts, Generation, Question, answer,
+};
 use kanade::chat::context::COMPLETION_RESERVE_TOKENS;
 use kanade::chat::tools::ProposalCard;
 use kanade::chat::tools::bundles::ToolOffer;
@@ -284,6 +286,8 @@ fn named() -> Vec<Named> {
     let mut failures = Vec::new();
     let mut floor = Vec::new();
     let mut grounding = Vec::new();
+    let mut budget = Vec::new();
+    let mut reserve = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -379,6 +383,20 @@ fn named() -> Vec<Named> {
                         ));
                     }
                 }
+                // R01 (user 2026-10-01): an over-budget question that posted
+                // no card is told why instead of v4's silent empty reply.
+                ("context-budget", 1) => {
+                    budget.push(dev(
+                        case_id,
+                        format!("{pointer}/reply"),
+                        json!(""),
+                        json!(CONTEXT_BUDGET_REPLY),
+                    ));
+                    // The reserve is per route now, so the error names it.
+                    reserve.push(error(
+                        "ContextBudgetError: chat request estimate 18613 exceeds context budget 8192 with completion reserve 1024",
+                    ));
+                }
                 ("missing-model-alias", 0) => {
                     failures.push(error("role is not configured"));
                     // The question never opened a session.
@@ -417,6 +435,14 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-GROUND-FILTERED",
             entries: grounding,
+        },
+        Named {
+            name: "D-CONTEXT-BUDGET-REPLY",
+            entries: budget,
+        },
+        Named {
+            name: "D-CONTEXT-BUDGET-RESERVE",
+            entries: reserve,
         },
     ]
 }

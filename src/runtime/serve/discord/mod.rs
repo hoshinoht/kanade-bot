@@ -268,6 +268,7 @@ where
         Arc::clone(&composition.admin.state.catalog),
         composition.models.as_ref(),
         Arc::clone(&composition.personas),
+        settings_changes(composition),
     );
     let quiet = Arc::new(AtomicBool::new(
         composition.settings.notifications.quiet_mode,
@@ -344,10 +345,7 @@ where
     .with_feed(extraction.feed.take());
     let messages = handler.messages.clone();
     let started = chat::start(ChatInputs {
-        config: DriverConfig {
-            model_context_tokens: super::CONTEXT_TOKENS,
-            ..DriverConfig::default()
-        },
+        config: DriverConfig::default(),
         answerer: ServeAnswerer {
             store: Arc::clone(&store),
             models: composition.models.clone(),

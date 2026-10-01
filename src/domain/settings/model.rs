@@ -2,6 +2,8 @@
 //! build. Sections follow `ConfigView` (`docs/v5/api-schemas/config.json`);
 //! `schedule` and `posting` hold settings v4 read from the environment.
 
+use std::collections::BTreeMap;
+
 use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 
@@ -162,6 +164,7 @@ pub struct Models {
     pub extraction: RoleModel,
     pub chat: RoleModel,
     pub rewrite: RoleModel,
+    pub context: ContextSettings,
 }
 
 impl Default for Models {
@@ -173,6 +176,58 @@ impl Default for Models {
             },
             chat: RoleModel::default(),
             rewrite: RoleModel::default(),
+            context: ContextSettings::default(),
+        }
+    }
+}
+
+/// Context-window settings saved as `v5.model_context`. Defaults preserve the
+/// current role output reserves while selecting a conservative local window.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextSettings {
+    pub cloud_default: u32,
+    pub local_default: u32,
+    pub chat: ContextRole,
+    pub extraction: ContextRole,
+    pub rewrite: ContextRole,
+    #[serde(default)]
+    pub overrides: BTreeMap<String, u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextRole {
+    pub reserve: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cap: Option<u32>,
+}
+
+pub const MAX_CONTEXT_TOKENS: u32 = 131_072;
+pub const LOCAL_CONTEXT_WARNING_TOKENS: u32 = 16_384;
+/// Shown (never blocking) when a local route's effective window passes
+/// [`LOCAL_CONTEXT_WARNING_TOKENS`].
+pub const LOCAL_CONTEXT_WARNING: &str =
+    "Context past 16k may result in degraded performance on local models.";
+
+impl Default for ContextSettings {
+    fn default() -> Self {
+        Self {
+            cloud_default: 65_536,
+            local_default: 8_192,
+            chat: ContextRole {
+                reserve: 1_024,
+                cap: None,
+            },
+            extraction: ContextRole {
+                reserve: 2_500,
+                cap: None,
+            },
+            rewrite: ContextRole {
+                reserve: 96,
+                cap: None,
+            },
+            overrides: BTreeMap::new(),
         }
     }
 }

@@ -240,7 +240,10 @@ async fn a_closed_portal_keeps_today_behaviour_and_spends_no_tip() {
     assert_eq!(cards[0].entries[0].self_service, None);
     let log = &world.logs().await[0];
     assert_eq!(log.outcome, ExtractionOutcome::Proposed);
-    assert_eq!(log.guardrail, json!({}));
+    assert_eq!(
+        log.guardrail,
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+    );
     // The week's tip is still unclaimed.
     let week = reset().current_week(now()).unwrap();
     assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
@@ -271,7 +274,10 @@ async fn link_first_with_the_portal_open_sends_only_the_link_and_one_lead_in() {
 
     let log = &world.logs().await[0];
     assert_eq!(log.outcome, ExtractionOutcome::SelfServiceLink);
-    assert_eq!(log.guardrail, json!({"nudges": ["rewritten"]}));
+    assert_eq!(
+        log.guardrail,
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["rewritten"]})
+    );
     assert!(!log.guardrail.to_string().contains(REWRITTEN));
     // The rewrite request carried no member ids.
     let requests = world.provider.requests();
@@ -424,8 +430,14 @@ async fn cards_and_link_keeps_the_card_and_gives_the_lead_in_once_a_week() {
     assert_eq!(world.requests(), 3);
     let logs = world.logs().await;
     assert_eq!(logs[0].outcome, ExtractionOutcome::Proposed);
-    assert_eq!(logs[0].guardrail, json!({"nudges": ["rewritten"]}));
-    assert_eq!(logs[1].guardrail, json!({}));
+    assert_eq!(
+        logs[0].guardrail,
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["rewritten"]})
+    );
+    assert_eq!(
+        logs[1].guardrail,
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -446,7 +458,7 @@ async fn a_refused_rewrite_is_logged_by_label_and_the_seed_is_used() {
     assert!(seed.lines.contains(&tip.lead_in.as_deref().unwrap()));
     assert_eq!(
         world.logs().await[0].guardrail,
-        json!({"nudges": ["seed_refused"]})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["seed_refused"]})
     );
 }
 
@@ -478,7 +490,10 @@ async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
     assert!(world.outbox.cards.lock().unwrap().is_empty());
     assert!(world.outbox.redirects.lock().unwrap().is_empty());
     assert_eq!(world.requests(), 1, "no rewrite for a link never posted");
-    assert_eq!(log.guardrail, json!({}));
+    assert_eq!(
+        log.guardrail,
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+    );
     let week = reset().current_week(now()).unwrap();
     assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
 }
@@ -598,4 +613,45 @@ async fn an_external_rewrite_sends_raw_names_ids_and_urls_without_opt_in() {
     for raw in ["SyntheticMember", "999000111222333444", url] {
         assert!(serialized.contains(raw), "{raw} missing from {serialized}");
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn each_rewrite_reads_the_live_reserve_and_a_rewrite_in_flight_keeps_its_own() {
+    use std::sync::atomic::AtomicU32;
+    let late = FakeAction::Delayed {
+        delay: Duration::from_millis(500),
+        action: Box::new(reply("Late line.")),
+    };
+    let (provider, client) = client(
+        vec![reply("Default line."), late, reply("Next line.")],
+        true,
+    );
+    // No resolver: the default reserve.
+    GovernedRewriter::new(client.clone())
+        .rewrite(&rewrite_prompt(), DEADLINE)
+        .await
+        .unwrap();
+    assert_eq!(provider.requests()[0].max_output_tokens, 96);
+
+    let saved = Arc::new(AtomicU32::new(64));
+    let reading = saved.clone();
+    let rewriter = Arc::new(GovernedRewriter::new(client).with_reserve(Arc::new(
+        move |alias: &str| {
+            assert_eq!(alias, ALIAS);
+            reading.load(Ordering::SeqCst)
+        },
+    )));
+    let running = rewriter.clone();
+    let in_flight = tokio::spawn(async move { running.rewrite(&rewrite_prompt(), DEADLINE).await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(provider.requests().len(), 2, "sent before the save");
+    saved.store(120, Ordering::SeqCst);
+    assert_eq!(in_flight.await.unwrap().as_deref(), Ok("Late line."));
+    assert_eq!(provider.requests()[1].max_output_tokens, 64);
+    rewriter.rewrite(&rewrite_prompt(), DEADLINE).await.unwrap();
+    assert_eq!(
+        provider.requests()[2].max_output_tokens,
+        120,
+        "the next rewrite reads the save"
+    );
 }

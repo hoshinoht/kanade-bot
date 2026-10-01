@@ -549,7 +549,10 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
             Some("50"),
             "a thread keys on its parent"
         );
-        assert_eq!(row.guardrail, json!({}));
+        assert_eq!(
+            row.guardrail,
+            json!({"context": {"window": 32768, "reserve": 1024, "source": "catalog"}})
+        );
         assert_eq!(stub.completions(), 1);
         // The persona it answered as, and the round as sent.
         assert_eq!(row.persona.as_deref(), Some("kanade"));
@@ -709,7 +712,10 @@ async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_
         let row = one_chat(&live.store).await;
         assert_eq!(row.outcome, ChatOutcome::Answered);
         assert_eq!(row.rounds[0].route.as_deref(), Some("external_unmasked"));
-        assert_eq!(row.guardrail, json!({"external_unmasked": true}));
+        assert_eq!(
+            row.guardrail,
+            json!({"context": {"window": 32768, "reserve": 1024, "source": "catalog"}, "external_unmasked": true})
+        );
         let sent = serde_json::to_string(&*stub.completions.lock().unwrap()).unwrap();
         for part in [
             "Synthetic Alicia Quartz",

@@ -55,6 +55,11 @@ pub fn prompt_budget(num_ctx: usize) -> usize {
     num_ctx.saturating_sub(CONTEXT_RESERVE).max(CONTEXT_RESERVE)
 }
 
+/// Context budget with a role-resolved completion reserve.
+pub fn prompt_budget_with_reserve(num_ctx: usize, reserve: usize) -> usize {
+    num_ctx.saturating_sub(reserve)
+}
+
 /// What the runner's schema-in-prompt instruction adds to an estimated prompt
 /// for a model without structured output (merged after a blank line).
 pub fn schema_instruction_tokens(schema: &Value) -> usize {

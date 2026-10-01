@@ -16,7 +16,7 @@ use crate::chat::sanitize::defuse_notes;
 use crate::domain::members::{Directory, member_name};
 use crate::domain::pytext::strip;
 use crate::domain::weeks::week_start;
-use crate::extract::prompt::{estimate_tokens, prompt_budget};
+use crate::extract::prompt::estimate_tokens;
 use crate::infrastructure::llm::Message;
 
 /// A replied-to message as the gateway cache resolved it.
@@ -161,8 +161,13 @@ pub fn system_prompt(
 
 /// The system prompt and as many of the latest turns as the conversation
 /// budget allows (never fewer than the question).
-pub fn assemble(turns: &[ChatTurn], system: String, model_context_tokens: usize) -> Vec<Message> {
-    let left = i64::try_from(prompt_budget(model_context_tokens)).unwrap_or(i64::MAX)
+pub fn assemble(
+    turns: &[ChatTurn],
+    system: String,
+    model_context_tokens: usize,
+    reserve: usize,
+) -> Vec<Message> {
+    let left = i64::try_from(model_context_tokens.saturating_sub(reserve)).unwrap_or(i64::MAX)
         - i64::try_from(estimate_tokens(&system)).unwrap_or(i64::MAX);
     let cap = i64::try_from(CONVERSATION_BUDGET_TOKENS).unwrap_or(i64::MAX);
     let available = usize::try_from(left.min(cap))

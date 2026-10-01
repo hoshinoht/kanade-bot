@@ -380,6 +380,14 @@ where
                     if record.external_unmasked {
                         guardrail.insert("external_unmasked".into(), json!(true));
                     }
+                    guardrail.insert(
+                        "context".into(),
+                        json!({
+                            "window": record.context_window,
+                            "reserve": record.context_reserve,
+                            "source": record.context_source,
+                        }),
+                    );
                     serde_json::Value::Object(guardrail)
                 },
                 message_ids: record.message_ids,

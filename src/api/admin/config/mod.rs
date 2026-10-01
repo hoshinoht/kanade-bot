@@ -32,7 +32,7 @@ use super::write::{Refusal, bad_body, origin, state};
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-    domain::settings::{RuntimeSettings, Section, SettingsError},
+    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, SettingsError},
 };
 
 type Reply = Result<axum::response::Response, Refusal>;
@@ -159,6 +159,7 @@ async fn update(
     let (name, fields) = patch::section(&body)?;
     let switch_active_persona = name == "persona" && fields.contains_key("active");
     let mut notices = Vec::new();
+    let mut context_warnings = Vec::new();
     let mut catalog = None;
     let section = match name {
         "pings" => Section::Pings(patch::pings(&current.pings, fields)?),
@@ -232,8 +233,19 @@ async fn update(
                     "Kanata is unreachable, so model settings cannot be checked; try again shortly.",
                 ));
             }
-            let (next, reset) =
-                models::apply_roles(&current.models, &fields["roles"], &read.snapshot)?;
+            let mut next = current.models.clone();
+            if let Some(roles) = fields.get("roles") {
+                let (roles, reset) = models::apply_roles(&next, roles, &read.snapshot)?;
+                next = roles;
+                notices.extend(reset);
+            }
+            if let Some(context) = fields.get("context") {
+                next.context = patch::context(context)?;
+            }
+            context_warnings = models::validate_context(&next.context, &next, &read.snapshot)?;
+            if !context_warnings.is_empty() {
+                notices.push(LOCAL_CONTEXT_WARNING.into());
+            }
             let ungrouped = models::ungrouped(&current.models, &next, &desk.facts.model_groups);
             if !ungrouped.is_empty() {
                 return Err(Refusal::new(
@@ -265,7 +277,6 @@ async fn update(
                     errors.join(" "),
                 ));
             }
-            notices = reset;
             catalog = Some(read);
             Section::Models(next)
         }
@@ -296,6 +307,9 @@ async fn update(
             &before,
             &next,
         );
+        if before.models.context != next.models.context {
+            changes::local_context_warnings(&context_warnings);
+        }
     }
     // Every models save re-applies, so a stack left behind catches up.
     if let ("models", Some(stack)) = (name_of(name), &desk.models) {

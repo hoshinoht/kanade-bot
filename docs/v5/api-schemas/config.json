@@ -31,6 +31,8 @@
         "reasoning_efforts": {
           "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         },
+        "context_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata context window when present." },
+        "max_output_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata maximum completion size when present." },
         "off_allowed": {
           "type": "boolean",
           "description": "False when the alias requires reasoning (a published `reasoning_efforts` list without `none`): hide `off`; a stranded role falls back to the lowest published level."
@@ -77,6 +79,21 @@
             "alias": { "type": "string" },
             "reasoning": { "type": ["string", "null"], "description": "The level requests send: inherit resolved, a variant's fixed level or a published floor applied." }
           }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["window", "reserve", "prompt_budget", "source", "clamped_by_published", "clamped_by_hard_cap", "clamped_by_role_cap", "local_warning"],
+          "properties": {
+            "window": { "type": "integer", "minimum": 1 },
+            "reserve": { "type": "integer", "minimum": 1 },
+            "prompt_budget": { "type": "integer", "minimum": 0 },
+            "source": { "enum": ["override", "catalog", "cloud_default", "local_default"] },
+            "clamped_by_published": { "type": "boolean" },
+            "clamped_by_hard_cap": { "type": "boolean" },
+            "clamped_by_role_cap": { "type": "boolean" },
+            "local_warning": { "type": "boolean" }
+          }
         }
       }
     },
@@ -108,6 +125,28 @@
       "properties": {
         "max_in_flight": { "type": ["integer", "null"], "minimum": 0, "description": "null: Kanata publishes no per-key limit." },
         "shared": { "type": "boolean" }
+      }
+    },
+    "ContextRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reserve", "cap"],
+      "properties": {
+        "reserve": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "cap": { "type": ["integer", "null"], "minimum": 1, "maximum": 131072 }
+      }
+    },
+    "ContextSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cloud_default", "local_default", "chat", "extraction", "rewrite"],
+      "properties": {
+        "cloud_default": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "local_default": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "chat": { "$ref": "#/$defs/ContextRole" },
+        "extraction": { "$ref": "#/$defs/ContextRole" },
+        "rewrite": { "$ref": "#/$defs/ContextRole" },
+        "overrides": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 131072 }, "description": "Window per exact route alias; optional in a PATCH (defaults to {}), always present in the view. Matching is exact, so an override on a base alias does not apply to its `<base>:<level>` variants." }
       }
     },
     "CapacityCheck": {
@@ -222,7 +261,7 @@
         "models": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["reachable", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise"],
+          "required": ["reachable", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise", "context"],
           "properties": {
             "reachable": { "type": "boolean" },
             "catalog": { "type": "array", "items": { "$ref": "#/$defs/ModelInfo" } },
@@ -241,7 +280,8 @@
             "alias_limits": { "type": "array", "items": { "$ref": "#/$defs/AliasLimit" } },
             "key_limits": { "$ref": "#/$defs/KeyLimits" },
             "capacity_check": { "type": "array", "items": { "$ref": "#/$defs/CapacityCheck" } },
-            "pii_pseudonymise": { "type": "boolean", "const": false, "description": "Read-only compatibility field; new model requests are not pseudonymized. Historical masked chat turns remain readable." }
+            "pii_pseudonymise": { "type": "boolean", "const": false, "description": "Read-only compatibility field; new model requests are not pseudonymized. Historical masked chat turns remain readable." },
+            "context": { "$ref": "#/$defs/ContextSettings", "description": "Saved context settings; PATCH sends the complete object. The effective per-role result is roles.<role>.context." }
           }
         },
         "manage_messages": {

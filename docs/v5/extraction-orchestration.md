@@ -82,6 +82,16 @@ No Twilight types cross into `src/extract`:
   runner's schema instruction is always budgeted), and each piece is one
   model call. Flushes run as tasks, so events keep flowing during a call;
   the governor serialises model traffic.
+  The prompt budget is the resolved extraction window less its resolved
+  completion reserve (`max_tokens`); the published route output maximum clamps
+  that reserve. Serve resolves both once per pass (a burst, or one rescan
+  batch) from the settings saved at that moment (`Extractor::with_live_context`),
+  so a Config save applies to the next pass without a restart; a pass in
+  flight keeps the window and reserve it was cut to for every piece, answer
+  retries included. Each call's log row records them as
+  `guardrail.context = {window, reserve, source}`; rows written before this
+  field existed simply lack it. Without a live resolver the pipeline uses
+  `PipelineConfig.context_tokens`/`completion_reserve` (v4's 8,192/2,500).
 - **Shutdown.** Closing the event channel drops buffered bursts (their
   messages stay unprocessed in the cache) and waits for flushes in flight.
 

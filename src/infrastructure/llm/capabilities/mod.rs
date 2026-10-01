@@ -120,6 +120,10 @@ pub struct ModelCapabilities {
     /// Published context window; informational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<u32>,
+    /// Published maximum completion size (`max_tokens`); absent when the
+    /// gateway leaves the route unconstrained.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
     /// Gateway admission limits for capacity checks; never sent or enforced here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admission: Option<AdmissionLimits>,
@@ -138,6 +142,7 @@ impl ModelCapabilities {
             trust_zone: None,
             reasoning_efforts: None,
             context_tokens: None,
+            max_output_tokens: None,
             admission: None,
         }
     }
@@ -180,6 +185,7 @@ impl fmt::Debug for ModelCapabilities {
             .field("trust_zone", &self.trust_zone)
             .field("reasoning_efforts", &self.reasoning_efforts)
             .field("context_tokens", &self.context_tokens)
+            .field("max_output_tokens", &self.max_output_tokens)
             .field("admission", &self.admission)
             .finish()
     }

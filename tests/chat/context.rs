@@ -13,7 +13,7 @@ use kanade::domain::scheduler::Clock;
 use serde_json::{Value, json};
 
 use crate::common::{instant, strings, text};
-use crate::support::{check_family, error, unknown_op, value};
+use crate::support::{Named, check_family, dev, error, unknown_op, value};
 use crate::wire::{kanade, messages, messages_json};
 use crate::world::World;
 
@@ -144,7 +144,12 @@ async fn replay(case: Value) -> Vec<Value> {
                     model,
                     &focus,
                 );
-                value(messages_json(&assemble(&turns, system, context_tokens)))
+                value(messages_json(&assemble(
+                    &turns,
+                    system,
+                    context_tokens,
+                    kanade::extract::prompt::CONTEXT_RESERVE,
+                )))
             }
             "budgeted" => {
                 let mut kept = messages(&step["messages"]);
@@ -160,6 +165,7 @@ async fn replay(case: Value) -> Vec<Value> {
                     &schemas,
                     &persona.voice_reminder(),
                     context_tokens,
+                    kanade::chat::context::COMPLETION_RESERVE_TOKENS,
                 ) {
                     Ok(outgoing) => value(json!({
                         "messages": messages_json(&outgoing),
@@ -176,5 +182,17 @@ async fn replay(case: Value) -> Vec<Value> {
 
 #[tokio::test]
 async fn the_context_family_replays_exactly() {
-    assert_eq!(check_family("context", &[], replay).await, (6, 58));
+    // The completion reserve is resolved per route, so the error names it.
+    let reserve = Named {
+        name: "D-CONTEXT-BUDGET-RESERVE",
+        entries: vec![dev(
+            "request-budget-trims-prior-history",
+            "/steps/3/error/message",
+            json!("chat request estimate 9668 exceeds context budget 6144 with completion reserve"),
+            json!(
+                "chat request estimate 9668 exceeds context budget 6144 with completion reserve 1024"
+            ),
+        )],
+    };
+    assert_eq!(check_family("context", &[reserve], replay).await, (6, 58));
 }

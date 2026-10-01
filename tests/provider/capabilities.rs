@@ -41,6 +41,7 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
                 Effort::Max,
             ]),
             context_tokens: Some(32_768),
+            max_output_tokens: Some(4_096),
             admission: Some(AdmissionLimits {
                 max_in_flight: 4,
                 max_queue: Some(16),
@@ -53,6 +54,7 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
     let codex = models[1].capabilities.clone().unwrap();
     assert!(!codex.structured_output && !codex.sampling_controls && codex.reasoning_control);
     assert_eq!(codex.context_tokens, None);
+    assert_eq!(codex.max_output_tokens, None);
     let admission = codex.admission.unwrap();
     assert_eq!(admission.adapter_max_in_flight, None);
     assert_eq!(admission.concurrency(), 8, "no adapter cap");
@@ -79,6 +81,7 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
     assert_eq!(odd.reasoning_efforts, None);
     assert_eq!(odd.operations, vec!["chat".to_owned()]);
     assert_eq!(odd.context_tokens, None);
+    assert_eq!(odd.max_output_tokens, None);
     assert_eq!(
         odd.admission, None,
         "admission needs a numeric max_in_flight"

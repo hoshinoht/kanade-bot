@@ -6,9 +6,10 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
+use super::models::LocalContextWarning;
 use crate::{
     chat::persona::PersonaSnapshot,
-    domain::settings::{RuntimeSettings, Section, section_rows},
+    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, section_rows},
     infrastructure::llm::setup::{RoleSwap, RunningRole},
     runtime::logging,
 };
@@ -64,6 +65,25 @@ pub(super) fn settings_changed(
             "surface": "admin_portal",
         }),
     );
+}
+
+/// One line per role a saved context change leaves past the local warning
+/// threshold (the save itself is never blocked).
+pub(super) fn local_context_warnings(warnings: &[LocalContextWarning]) {
+    for warning in warnings {
+        logging::event(
+            "WARN",
+            "model_warning",
+            json!({
+                "kind": "local_context",
+                "role": warning.role,
+                "alias": warning.alias,
+                "window": warning.window,
+                "message": LOCAL_CONTEXT_WARNING,
+                "surface": "admin_portal",
+            }),
+        );
+    }
 }
 
 fn running(running: Option<&RunningRole>) -> Value {
@@ -169,6 +189,35 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert_eq!(line["values"]["persona"]["from"], before.persona.active);
         assert_eq!(line["values"]["persona"]["to"], "aria");
+    }
+
+    #[test]
+    fn a_context_change_logs_its_row_before_and_after_and_local_warnings() {
+        logging::capture();
+        let before = RuntimeSettings::default();
+        let mut after = before.clone();
+        after.models.context.chat.cap = Some(32_768);
+        settings_changed(3, "models", "admin", &before, &after);
+        local_context_warnings(&[LocalContextWarning {
+            role: "chat",
+            alias: "kanata/chat".into(),
+            window: 32_768,
+        }]);
+        let lines = logging::captured();
+        let changed = &lines[0];
+        assert_eq!(changed["keys"], serde_json::json!(["v5.model_context"]));
+        let row = &changed["values"]["v5.model_context"];
+        let from: Value = serde_json::from_str(row["from"].as_str().unwrap()).unwrap();
+        let to: Value = serde_json::from_str(row["to"].as_str().unwrap()).unwrap();
+        assert!(from["chat"].get("cap").is_none());
+        assert_eq!(to["chat"]["cap"], 32_768);
+        let warning = &lines[1];
+        assert_eq!(warning["level"], "WARN");
+        assert_eq!(warning["event"], "model_warning");
+        assert_eq!(warning["kind"], "local_context");
+        assert_eq!(warning["role"], "chat");
+        assert_eq!(warning["window"], 32_768);
+        assert_eq!(warning["message"], LOCAL_CONTEXT_WARNING);
     }
 
     #[test]

@@ -500,7 +500,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         );
         let question = Question {
             ctx: &held.ctx,
-            conversation: assemble(&turns, system, config.model_context_tokens),
+            conversation: assemble(
+                &turns,
+                system,
+                prepared.context_window,
+                prepared.max_output_tokens as usize,
+            ),
             reminder: prepared.persona.voice_reminder(),
             offer: ChatPilot::route(&asked.message.content, None, held.ctx.read_only),
             settings: AnswerSettings {
@@ -508,8 +513,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 timeout: config.timeout,
                 reasoning: prepared.reasoning,
                 temperature: None,
-                max_output_tokens: config.max_output_tokens,
-                model_context_tokens: config.model_context_tokens,
+                max_output_tokens: prepared.max_output_tokens,
+                model_context_tokens: prepared.context_window,
                 clean_retry: reserved,
             },
         };
@@ -539,6 +544,16 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         // The row first: at shutdown the reaction tidy-up may be aborted.
         if let Some(concluded) = &concluded {
             let mut row = concluded.interaction.clone();
+            if let Some(guardrail) = row.guardrail.as_object_mut() {
+                guardrail.insert(
+                    "context".into(),
+                    serde_json::json!({
+                        "window": prepared.context_window,
+                        "reserve": prepared.max_output_tokens,
+                        "source": prepared.context_source,
+                    }),
+                );
+            }
             if deleted {
                 row.error = Some(DELETED.to_owned());
             } else if was_cut {

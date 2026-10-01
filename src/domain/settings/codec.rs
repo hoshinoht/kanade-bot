@@ -9,9 +9,9 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::SettingsError;
 use super::keys;
 use super::model::{
-    Chatbot, MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, Persona, Pings, Posting,
-    Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, Schedule, SelfService,
-    SelfServiceMode, Watching,
+    Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, Models,
+    Notifications, Persona, Pings, Posting, Reasoning, RoleModel, RoleProfileAssignment,
+    RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
 };
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
@@ -245,6 +245,36 @@ fn alias(value: &str) -> Option<String> {
     (!alias.is_empty()).then(|| alias.to_owned())
 }
 
+fn context(key: &'static str, value: &str) -> Result<ContextSettings, SettingsError> {
+    let context: ContextSettings = serde_json::from_str(value)
+        .map_err(|_| malformed(key, value, "expected context settings JSON"))?;
+    let valid_window = |window: u32| (1..=MAX_CONTEXT_TOKENS).contains(&window);
+    if !valid_window(context.cloud_default) || !valid_window(context.local_default) {
+        return Err(malformed(key, value, "defaults must be 1..=131072"));
+    }
+    for role in [&context.chat, &context.extraction, &context.rewrite] {
+        if !valid_window(role.reserve) || role.cap.is_some_and(|cap| !valid_window(cap)) {
+            return Err(malformed(
+                key,
+                value,
+                "reserves and caps must be positive and at most 131072",
+            ));
+        }
+    }
+    if context
+        .overrides
+        .iter()
+        .any(|(alias, window)| alias.trim().is_empty() || !valid_window(*window))
+    {
+        return Err(malformed(
+            key,
+            value,
+            "overrides need model aliases and windows in 1..=131072",
+        ));
+    }
+    Ok(context)
+}
+
 fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<(), SettingsError> {
     match key {
         keys::DAY_OF_PING_TIME => out.pings.day_of_ping_time = clock(key, value)?,
@@ -278,6 +308,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         }
         keys::CHAT_REASONING => out.models.chat.reasoning = reasoning(key, value, true)?,
         keys::REWRITE_REASONING => out.models.rewrite.reasoning = reasoning(key, value, true)?,
+        keys::MODEL_CONTEXT => out.models.context = context(key, value)?,
         keys::RESET_WEEKDAY => {
             out.schedule.reset_weekday =
                 parse_weekday(value).map_err(|error| malformed(key, value, error.to_string()))?;
@@ -383,6 +414,11 @@ pub(super) fn encode(section: &Section) -> Rows {
                     keys::REWRITE_REASONING,
                     models.rewrite.reasoning.as_str().to_owned(),
                 ),
+                (
+                    keys::MODEL_CONTEXT,
+                    serde_json::to_string(&models.context)
+                        .expect("context settings serialize infallibly"),
+                ),
             ]
         }
         Section::Schedule(schedule) => vec![
@@ -442,6 +478,30 @@ impl Section {
             Self::Models(_) => "models",
             Self::Schedule(_) => "schedule",
             Self::Posting(_) => "posting",
+        }
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    fn row(edit: impl FnOnce(&mut ContextSettings)) -> String {
+        let mut settings = ContextSettings::default();
+        edit(&mut settings);
+        serde_json::to_string(&settings).unwrap()
+    }
+
+    #[test]
+    fn stored_reserves_and_windows_must_be_within_the_hard_cap() {
+        assert!(context(keys::MODEL_CONTEXT, &row(|_| {})).is_ok());
+        for bad in [
+            row(|c| c.rewrite.reserve = 0),
+            row(|c| c.rewrite.reserve = MAX_CONTEXT_TOKENS + 1),
+            row(|c| c.chat.cap = Some(MAX_CONTEXT_TOKENS + 1)),
+            row(|c| c.local_default = 0),
+        ] {
+            assert!(context(keys::MODEL_CONTEXT, &bad).is_err(), "{bad}");
         }
     }
 }

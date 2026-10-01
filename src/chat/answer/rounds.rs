@@ -10,10 +10,10 @@
 use serde_json::Value;
 use tokio::time::{Instant, timeout_at};
 
-use super::finish::finish;
+use super::finish::{POSTED_UNFINISHED, finish};
 use super::{
-    AnswerFailure, CARD_NOT_POSTED, ChatPorts, Generation, GuildView, ModelRound, Question,
-    RoundOutcome,
+    AnswerFailure, CARD_NOT_POSTED, CONTEXT_BUDGET_REPLY, ChatPorts, Generation, GuildView,
+    ModelRound, Question, RoundOutcome,
 };
 use crate::chat::context::{budgeted, card_focus};
 use crate::chat::tools::bundles::{Mode, ToolOffer};
@@ -279,10 +279,19 @@ where
             &surface_text(&offered),
             &state.reminder,
             context_tokens,
+            settings.max_output_tokens as usize,
         ) {
             Ok(outgoing) => outgoing,
             Err(error) => {
                 state.generation.failure = Some(AnswerFailure::ContextBudget(error));
+                // "Shorten it and try again" would invite a duplicate of a
+                // card this question already posted.
+                state.generation.reply = if posted_write || !state.generation.posted.is_empty() {
+                    POSTED_UNFINISHED
+                } else {
+                    CONTEXT_BUDGET_REPLY
+                }
+                .to_owned();
                 break None;
             }
         };
@@ -461,7 +470,13 @@ where
                 retry,
                 clean_base,
                 session,
-                (&alias, seconds, context_tokens, round),
+                (
+                    &alias,
+                    seconds,
+                    context_tokens,
+                    settings.max_output_tokens as usize,
+                    round,
+                ),
             )
             .await;
         }
@@ -482,9 +497,9 @@ async fn clean_retry<P: LlmProvider>(
     retry: Retry,
     mut base: Vec<Message>,
     session: &mut Session<'_, P>,
-    (alias, seconds, context_tokens, round): (&str, u64, usize, u32),
+    (alias, seconds, context_tokens, reserve, round): (&str, u64, usize, usize, u32),
 ) {
-    let outgoing = match budgeted(&mut base, "[]", &state.reminder, context_tokens) {
+    let outgoing = match budgeted(&mut base, "[]", &state.reminder, context_tokens, reserve) {
         Ok(outgoing) => outgoing,
         Err(_) => {
             state.generation.failure = Some(retry.failure());

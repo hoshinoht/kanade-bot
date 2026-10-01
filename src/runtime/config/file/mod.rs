@@ -163,6 +163,9 @@ fn convert(value: &Value, kind: Kind, path: &str) -> Result<String, Error> {
         }),
         Kind::Ints => list("a list of non-negative integers", &integer),
         Kind::Groups => groups(value, path),
+        Kind::Context => {
+            serde_json::to_string(value).map_err(|_| wrong(path, "a context settings table"))
+        }
     }
 }
 

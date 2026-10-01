@@ -163,6 +163,79 @@ async fn rejected_sampling_field_drops_the_whole_capability() {
     assert!(chats[1].body.get("response_format").is_some());
 }
 
+/// Kanata's 400 for both an over-cap and an unsupported size field.
+fn kanata_size_rejection() -> impl Fn(&Recorded) -> Reply + Send + Sync + 'static {
+    models_or(|request| {
+        if request.body.get("max_tokens").is_some() {
+            Reply::Json(
+                400,
+                json!({"error": {
+                    "message": "Invalid request",
+                    "type": "invalid_request_error",
+                    "code": "invalid_request",
+                    "param": "max_tokens"
+                }}),
+            )
+        } else {
+            Reply::Json(200, completion("qwen3:8b", ANSWER))
+        }
+    })
+}
+
+#[tokio::test]
+async fn size_rejection_above_the_published_maximum_keeps_the_capability() {
+    let stub = Stub::start(kanata_size_rejection()).await;
+    let mut config = HttpProviderConfig::new(stub.url());
+    config.declared = full_capabilities();
+    config
+        .declared
+        .get_mut("qwen3:8b")
+        .expect("declared")
+        .max_output_tokens = Some(16);
+    let provider = build(config);
+    let error = runner(provider.clone())
+        .complete(&structured())
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::RequestInvalid);
+    assert_eq!(stub.chat_requests().len(), 1);
+    assert!(
+        provider
+            .model_capabilities("qwen3:8b")
+            .await
+            .sampling_controls
+    );
+}
+
+#[tokio::test]
+async fn size_field_rejection_within_the_published_maximum_is_a_capability_downgrade() {
+    for published in [None, Some(4096)] {
+        let stub = Stub::start(kanata_size_rejection()).await;
+        let mut config = HttpProviderConfig::new(stub.url());
+        config.declared = full_capabilities();
+        config
+            .declared
+            .get_mut("qwen3:8b")
+            .expect("declared")
+            .max_output_tokens = published;
+        let provider = build(config);
+        runner(provider.clone())
+            .complete(&structured())
+            .await
+            .unwrap();
+        let chats = stub.chat_requests();
+        assert_eq!(chats.len(), 2, "{published:?}");
+        assert!(chats[1].body.get("max_tokens").is_none(), "{published:?}");
+        assert!(
+            !provider
+                .model_capabilities("qwen3:8b")
+                .await
+                .sampling_controls,
+            "{published:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn unknown_unsent_or_repeated_rejections_do_not_loop() {
     let error = |param: &str| json!({"error": {"message": "bad", "param": param}});

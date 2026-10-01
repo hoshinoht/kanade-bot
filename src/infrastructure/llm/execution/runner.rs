@@ -349,6 +349,9 @@ fn cause_of(kind: ProviderFailureKind) -> Cause {
 
 fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
     let code = match kind {
+        // A Kanata route size rejection is a caller-side configuration/budget
+        // fault, never an unsupported optional capability.
+        ProviderFailureKind::Permanent if reason == "size-limit" => ErrorCode::RequestInvalid,
         ProviderFailureKind::Authentication if reason == KEY_EXPIRED => ErrorCode::KeyExpired,
         ProviderFailureKind::Authentication => ErrorCode::ProviderAuthentication,
         ProviderFailureKind::InvalidOutput => ErrorCode::InvalidOutput,

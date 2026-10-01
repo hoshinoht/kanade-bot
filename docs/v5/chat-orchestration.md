@@ -20,12 +20,34 @@ are C3. Serve wiring is `chat::driver` (below).
   are assistant turns), deduplicated by message id, then the question. Member
   turns are `Name: text` with forged scheduler notes defused.
 - `assemble`: the persona system prompt (clock header, runtime model, focus
-  line) and the latest turns within `min(2500, prompt budget − system)`
-  tokens, never below 256; the question always stays.
-- `budgeted`: per request, prior history is dropped oldest first until the
-  whole request (turns, tool calls, the offered tools' JSON) plus
-  `COMPLETION_RESERVE_TOKENS` (1024) fits `MODEL_CONTEXT_TOKENS`; the trim
-  sticks for later rounds. Nothing left to drop is `ContextBudgetError`.
+  line) and the latest turns within `min(2500, window − reserve − system)`
+  tokens, never below 256; the question always stays. `window` and `reserve`
+  are the chat route's resolved context window and completion reserve
+  (default 1024), not v4's fixed 2500-token prompt reserve
+  (`prompt_budget`), so history assembly keeps more turns than v4 on the same
+  window.
+- `budgeted`: the whole request (turns, tool calls, the offered tools' JSON)
+  plus the route-resolved completion reserve (`max_output_tokens`, not the
+  v4 1024 constant) must fit the route-resolved window. Per request, in order:
+  1. prior history (turns before the question) is dropped oldest first;
+  2. only once no prior history is left, older tool-result contents are
+     replaced oldest first with `[tool result elided for context budget]`.
+     Contents are elided, never removed, so every assistant `tool_call` keeps
+     its tool message; the latest tool round's results, the system prompt and
+     the question are protected.
+  The trim sticks for later rounds. When the protected material still
+  overflows, the question fails with the typed
+  `AnswerFailure::ContextBudget` before that round's request is sent (allowance
+  refunded, outcome `error`, `error_code: context_budget`); the log row's
+  error is `ContextBudgetError: chat request estimate E exceeds context budget
+  W with completion reserve R`, and the member is told “Sorry — that question
+  is too long for this model's context. Please shorten it and try again.”
+  (`CONTEXT_BUDGET_REPLY`). If an earlier round of the question already
+  posted a card, the reply is instead “The requested card was posted, but the
+  request did not finish cleanly.” (the write-finishing line), so the member
+  is not invited to resend a recorded change; the row still records
+  `context_budget`. The driver also records the resolved window,
+  reserve and source under the row's `guardrail.context`.
 - Every round is a separate model request, not a stateful provider session:
   resend the system/persona prompt along with retained turns and tool results.
 
@@ -299,7 +321,12 @@ v4's 4. Named: `D-SHAPING` (sampled requests carry the runner's
 non-JSON arguments is unreadable to the runner as a whole, where v4 renamed
 the id or ran the call with `{}`), `D-USAGE-PAIRS` (a round's usage counts
 only when both counts are integers), `D-TYPED-FAILURES` (governor/runner
-error text) and `D-GROUND-FILTERED` (`read-then-grounded-answer` step 0's
+error text), `D-CONTEXT-BUDGET-REPLY` (`context-budget` step 1 replies
+`CONTEXT_BUDGET_REPLY` where v4 stayed silent, no card having been posted; R01, user decision
+2026-10-01), `D-CONTEXT-BUDGET-RESERVE` (the budget error names its resolved
+reserve: `… with completion reserve 1024`, in `loop` `context-budget` step 1
+and `context` `request-budget-trims-prior-history` step 3) and
+`D-GROUND-FILTERED` (`read-then-grounded-answer` step 0's
 reply shows only the run the model named; also `sanitize` case
 `schedule-grounding` step 8). Tools-withheld rounds, the read-only turn and unoffered calls
 replay as v4.

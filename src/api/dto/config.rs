@@ -10,13 +10,13 @@ use crate::{
     api::state::RoleEntry,
     chat::persona::{PersonaSnapshot, ProfileId},
     domain::settings::{
-        Rate as StoredRate, RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
-        RuntimeSettings,
+        ContextRole as StoredContextRole, Rate as StoredRate, RoleModel as StoredRole,
+        RoleProfileAssignment as StoredRoleProfile, RuntimeSettings,
     },
     infrastructure::llm::{
         TrustZone,
         governor::Role,
-        setup::{CatalogModel, CatalogSnapshot, RunningRole},
+        setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
     },
 };
 
@@ -164,6 +164,10 @@ pub struct ModelInfo {
     pub sampling_controls: bool,
     pub reasoning_control: bool,
     pub reasoning_efforts: Option<Vec<&'static str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
     /// False when the alias requires reasoning (a published list without `none`).
     pub off_allowed: bool,
     pub admission: Option<Admission>,
@@ -187,6 +191,36 @@ pub struct RoleModel {
     /// What the role's next session opens with; absent while unrouted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub running: Option<Running>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<EffectiveContext>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct EffectiveContext {
+    pub window: u32,
+    pub reserve: u32,
+    pub prompt_budget: u32,
+    pub source: &'static str,
+    pub clamped_by_published: bool,
+    pub clamped_by_hard_cap: bool,
+    pub clamped_by_role_cap: bool,
+    pub local_warning: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ContextRole {
+    pub reserve: u32,
+    pub cap: Option<u32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ContextSettings {
+    pub cloud_default: u32,
+    pub local_default: u32,
+    pub chat: ContextRole,
+    pub extraction: ContextRole,
+    pub rewrite: ContextRole,
+    pub overrides: BTreeMap<String, u32>,
 }
 
 /// The running alias and the level requests send (inherit and floors resolved).
@@ -198,6 +232,8 @@ pub struct Running {
 
 fn role_model(
     role: &StoredRole,
+    context_role: Role,
+    settings: &RuntimeSettings,
     catalog: &CatalogSnapshot,
     running: Option<&RunningRole>,
 ) -> RoleModel {
@@ -213,6 +249,19 @@ fn role_model(
         running: running.map(|running| Running {
             alias: running.alias.clone(),
             reasoning: running.effort.map(|effort| effort.as_str()),
+        }),
+        context: role.alias.as_deref().map(|alias| {
+            let resolved = resolve_context(&settings.models.context, catalog, context_role, alias);
+            EffectiveContext {
+                window: resolved.window,
+                reserve: resolved.reserve,
+                prompt_budget: resolved.prompt_budget,
+                source: resolved.source.as_str(),
+                clamped_by_published: resolved.clamped_by_published,
+                clamped_by_hard_cap: resolved.clamped_by_hard_cap,
+                clamped_by_role_cap: resolved.clamped_by_role_cap,
+                local_warning: resolved.local_warning,
+            }
         }),
     }
 }
@@ -265,6 +314,7 @@ pub struct Models {
     pub key_limits: KeyLimits,
     pub capacity_check: Vec<CapacityCheck>,
     pub pii_pseudonymise: bool,
+    pub context: ContextSettings,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -300,11 +350,26 @@ pub fn roles(
     catalog: &CatalogSnapshot,
     running: &BTreeMap<Role, RunningRole>,
 ) -> Roles {
-    let role = |stored, role| role_model(stored, catalog, running.get(&role));
+    let role = |stored, role| role_model(stored, role, settings, catalog, running.get(&role));
     Roles {
         extraction: role(&settings.models.extraction, Role::Extraction),
         chat: role(&settings.models.chat, Role::Chat),
         rewrite: role(&settings.models.rewrite, Role::Rewrite),
+    }
+}
+
+pub fn context_settings(settings: &crate::domain::settings::ContextSettings) -> ContextSettings {
+    let role = |role: &StoredContextRole| ContextRole {
+        reserve: role.reserve,
+        cap: role.cap,
+    };
+    ContextSettings {
+        cloud_default: settings.cloud_default,
+        local_default: settings.local_default,
+        chat: role(&settings.chat),
+        extraction: role(&settings.extraction),
+        rewrite: role(&settings.rewrite),
+        overrides: settings.overrides.clone(),
     }
 }
 
@@ -332,6 +397,8 @@ pub fn model_info(model: &CatalogModel, catalog: &CatalogSnapshot) -> ModelInfo 
             .reasoning_efforts
             .as_ref()
             .map(|efforts| efforts.iter().map(|effort| effort.as_str()).collect()),
+        context_tokens: model.context_tokens,
+        max_output_tokens: model.max_output_tokens,
         off_allowed: model.off_allowed(),
         admission: model.admission.map(|limits| Admission {
             max_in_flight: limits.max_in_flight,

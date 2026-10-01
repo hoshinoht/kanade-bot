@@ -48,6 +48,15 @@ pub fn parse_models_list(body: &[u8]) -> Option<Vec<ListedModel>> {
 
 fn metadata(meta: &Map<String, Value>) -> ModelCapabilities {
     let flag = |key: &str, default: bool| meta.get(key).and_then(Value::as_bool).unwrap_or(default);
+    let context_tokens = meta.get("context_tokens").and_then(as_u32);
+    // A route output limit is meaningful only when it is a positive wire
+    // value and fits the route's published context. Ignore malformed metadata
+    // rather than turning a listing into an unsafe request limit.
+    let max_output_tokens = meta
+        .get("max_output_tokens")
+        .and_then(as_u32)
+        .filter(|limit| (1..=super::MAX_OUTPUT_TOKENS).contains(limit))
+        .filter(|limit| context_tokens.is_none_or(|context| *limit <= context));
     ModelCapabilities {
         operations: meta
             .get("operations")
@@ -88,7 +97,8 @@ fn metadata(meta: &Map<String, Value>) -> ModelCapabilities {
                 efforts.dedup();
                 efforts
             }),
-        context_tokens: meta.get("context_tokens").and_then(as_u32),
+        context_tokens,
+        max_output_tokens,
         admission: meta
             .get("admission")
             .and_then(Value::as_object)

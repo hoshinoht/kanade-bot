@@ -45,7 +45,10 @@ use crate::{
         settings::RuntimeSettings,
     },
     infrastructure::{
-        llm::{governor::Role, setup::ModelStack},
+        llm::{
+            governor::Role,
+            setup::{ModelStack, resolve_context},
+        },
         store::SqliteStore,
     },
     runtime::{error::Error, logging},
@@ -137,6 +140,13 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             }
         };
         let settings = self.settings();
+        let stack = self.models.as_ref()?;
+        let context = resolve_context(
+            &settings.models.context,
+            &stack.catalog(),
+            Role::Chat,
+            &route.alias,
+        );
         let choices = self.config.profile_choices_for(&settings);
         let snapshot = choices.snapshot.as_deref()?;
         let active = snapshot.active()?;
@@ -184,6 +194,9 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             pilot: self.pilot(&settings),
             model: route.alias.clone(),
             reasoning: route.effort,
+            context_window: context.window as usize,
+            max_output_tokens: context.reserve,
+            context_source: context.source.as_str(),
             route: Some(route),
             now: (self.clock)(),
             zone: self.policy.zone(),

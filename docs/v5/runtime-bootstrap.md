@@ -118,6 +118,7 @@ lists are comma-separated.
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
+| `KANADE_MODEL_CONTEXT` | unset | JSON seed from `[models.context]`: cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; the Config API is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, or a reserve not smaller than its role's seed window (its cap, else the smaller zone default) refuses startup naming the field. Needs `KANADE_MODEL_BASE_URL`. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
@@ -213,6 +214,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `models.ca_file` | `KANADE_MODEL_CA_FILE` | string |
 | `models.permits` | `KANADE_MODEL_PERMITS` | integer |
 | `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
+| `models.context` | `KANADE_MODEL_CONTEXT` | table |
 | `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
 | `models.extraction.reasoning` | `KANADE_EXTRACT_REASONING` | string |
 | `models.chat.model` | `KANADE_CHAT_MODEL` | string |
@@ -260,7 +262,18 @@ else where the role's own level came from: `stored`, `env` or `default`.
 `external_refused` are historical values only. Every external route, including
 an unknown alias until a listing classifies it, gets an `external_unmasked`
 WARN with the raw-data and ZDR-retention notice. `capacity` and `ungrouped`
-are WARN, `unpublished_effort` INFO. The catalog refresh task (every 300 s,
+are WARN, `unpublished_effort` INFO. Each role whose route is local
+(`leaves_homelab` false) and whose effective context window is above 16,384
+adds one WARN line
+`{"event":"model_warning","kind":"local_context","role":…,"alias":…,"window":…,"message":"Context past 16k may result in degraded performance on local models."}`;
+cloud routes never warn. Each routed role whose reserve is not smaller than
+its effective window (defaults, a seed, or a catalog that later lowers its
+published window can all cause this) adds a WARN
+`{"event":"model_warning","kind":"context_reserve","role":…,"alias":…,"window":…,"reserve":…,"message":"<role> context reserve <n> is not smaller than <alias>'s effective window <n>; its prompts cannot fit"}`;
+`kanade models check` prints the same message as a `warning:` line under the
+role, as it does the local-context warning. The local-context line (with `"surface":"admin_portal"`) is
+logged when a Config save changes `models.context` and leaves a role past the
+threshold. The catalog refresh task (every 300 s,
 30 s until a listing succeeds) is aborted at shutdown.
 
 Model roles saved in the config API switch the running stack at once
@@ -282,6 +295,13 @@ so a save landing mid-question applies from the next question. Per-call chat
 and extraction `guardrail.external_unmasked` is set only after a provider
 request is admitted. Each extraction log row carries its `model` and
 `reasoning`.
+Context windows apply live the same way: chat resolves per question,
+extraction once per pass (burst or rescan batch) and the heading rewriter per
+request, each from the settings saved at that moment and the cached catalog;
+a call in flight keeps what it started with. The window is
+`min(override | published | zone default, published, 131072, role cap)` and
+each role's `max_tokens` is its reserve clamped to the route's published
+`max_output_tokens` (rewrite defaults to 96).
 Extraction and the heading rewriter are still composed at startup: a role
 with no alias then gets its route live, but extraction and heading rewrites
 for it start only after a restart — the save says so in `notices` ("The

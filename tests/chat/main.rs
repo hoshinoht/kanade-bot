@@ -5,6 +5,7 @@
 
 mod answer;
 mod authority;
+mod budget;
 mod bundles;
 mod context;
 mod gate;

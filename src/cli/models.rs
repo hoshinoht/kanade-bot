@@ -6,13 +6,13 @@
 use std::{collections::BTreeMap, io::Write, sync::Arc};
 
 use crate::{
-    domain::settings::Models as StoredModels,
+    domain::settings::{LOCAL_CONTEXT_WARNING, Models as StoredModels},
     infrastructure::llm::{
         TrustZone,
         governor::XorShift,
         setup::{
             CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
-            build_with_groups,
+            build_with_groups, resolve_context,
         },
     },
     runtime::{config::ModelSettings, error::Error},
@@ -115,6 +115,7 @@ pub async fn check(
         }
     }
     let catalog = stack.catalog();
+    let context = settings.context.clone().unwrap_or_default();
     // Variants (`<base>:<level>`) are listed under their base, as the picker does.
     for model in &catalog.models {
         if catalog.variant(&model.alias).is_some() {
@@ -177,6 +178,26 @@ pub async fn check(
             },
         )
         .map_err(io)?;
+        let resolved = resolve_context(&context, &catalog, role, &route.alias);
+        writeln!(
+            out,
+            "    context={} reserve={} source={}",
+            resolved.window,
+            resolved.reserve,
+            resolved.source.as_str(),
+        )
+        .map_err(io)?;
+        if resolved.reserve_fills_window() {
+            writeln!(
+                out,
+                "warning: {}",
+                resolved.reserve_warning(role, &route.alias)
+            )
+            .map_err(io)?;
+        }
+        if resolved.local_warning {
+            writeln!(out, "warning: {LOCAL_CONTEXT_WARNING}").map_err(io)?;
+        }
     }
     for warning in &report.warnings {
         writeln!(out, "warning: {warning}").map_err(io)?;
@@ -249,6 +270,9 @@ fn describe(model: &CatalogModel) -> String {
     );
     if let Some(tokens) = model.context_tokens {
         line.push_str(&format!(" context={tokens}"));
+    }
+    if let Some(tokens) = model.max_output_tokens {
+        line.push_str(&format!(" max_output={tokens}"));
     }
     if let Some(admission) = model.admission {
         line.push_str(&format!(" in_flight={}", admission.concurrency()));

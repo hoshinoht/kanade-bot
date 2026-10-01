@@ -224,6 +224,17 @@ impl OpenAiCompatibleProvider {
                 wire::parse_completion(&reply.body, request, unfence)
             }
             Err(PostError::Failed(failure)) => Err(failure),
+            // Kanata answers an over-cap size and an unsupported size field
+            // with the same 400; only a sent value above the published route
+            // maximum is a size fault, which must never downgrade the alias.
+            Err(PostError::Rejected(field, _))
+                if is_size_field(field) && over_published_output(request, capabilities) =>
+            {
+                Err(ProviderFailure {
+                    kind: ProviderFailureKind::Permanent,
+                    reason_code: "size-limit",
+                })
+            }
             Err(PostError::Rejected(field, capability)) if body.get(field).is_some() => {
                 self.downgrades.revoke(&request.model, capability);
                 Err(ProviderFailure {
@@ -340,6 +351,16 @@ fn catalog_of(models: &[ListedModel]) -> Models {
 fn rejected_field(body: &[u8]) -> Option<(&'static str, Capability)> {
     let value: Value = serde_json::from_slice(body).ok()?;
     field_capability(value.get("error")?.get("param")?.as_str()?)
+}
+
+fn is_size_field(field: &str) -> bool {
+    matches!(field, "max_tokens" | "max_completion_tokens")
+}
+
+fn over_published_output(request: &ChatRequest, capabilities: &ModelCapabilities) -> bool {
+    capabilities
+        .max_output_tokens
+        .is_some_and(|maximum| request.max_output_tokens > maximum)
 }
 
 /// Kanata admission refusals, each pinned to the status Kanata sends it with: the

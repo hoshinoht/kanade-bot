@@ -113,7 +113,7 @@ async fn models_check_lists_the_catalog_and_routes_without_printing_the_key() {
     assert!(out.contains("catalog: 6 models"), "{out}");
     assert!(out.contains(
         "  sumi-structured zone=private_network homelab=stays \
-         efforts=off,minimal,low,medium,high,xhigh,max context=32768 in_flight=2"
+         efforts=off,minimal,low,medium,high,xhigh,max context=32768 max_output=4096 in_flight=2"
     ));
     assert!(out.contains("  glm-cloud zone=local homelab=leaves efforts=unsupported"));
     assert!(out.contains("  extraction sumi-structured effort=off route=homelab"));
@@ -205,4 +205,66 @@ async fn models_check_uses_the_env_reasoning_seeds() {
         out.contains("  rewrite codex-like effort=high route=external_unmasked"),
         "{out}"
     );
+}
+
+#[tokio::test]
+async fn models_check_prints_each_role_context_and_warns_only_for_large_local_windows() {
+    let stub = Stub::start(gateway(kanata_models(), "ok")).await;
+    let warning = "warning: Context past 16k may result in degraded performance on local models.";
+    let base = [
+        // Private network, publishes 32768 with a 4096 output maximum.
+        ("KANADE_EXTRACT_MODEL", "sumi-structured"),
+        ("KANADE_CHAT_MODEL", "codex-like"),
+        ("KANADE_REWRITE_MODEL", "codex-like"),
+    ];
+    let (out, result) = run(Args { probe: false }, &env(&stub.url(), &base)).await;
+    result.unwrap();
+    assert!(
+        out.contains(&format!(
+            "  extraction sumi-structured effort=off route=homelab\n    context=32768 reserve=2500 source=catalog\n{warning}\n"
+        )),
+        "{out}"
+    );
+    assert_eq!(
+        out.matches(warning).count(),
+        1,
+        "cloud routes never warn: {out}"
+    );
+    assert!(
+        out.contains("    context=65536 reserve=96 source=cloud_default"),
+        "{out}"
+    );
+
+    // A seeded extraction cap at the threshold ends the warning.
+    let seed = r#"{"cloud_default":65536,"local_default":8192,"chat":{"reserve":1024},"extraction":{"reserve":2500,"cap":16384},"rewrite":{"reserve":96}}"#;
+    let mut capped = base.to_vec();
+    capped.push(("KANADE_MODEL_CONTEXT", seed));
+    let (out, result) = run(Args { probe: false }, &env(&stub.url(), &capped)).await;
+    result.unwrap();
+    assert!(
+        out.contains("    context=16384 reserve=2500 source=catalog"),
+        "{out}"
+    );
+    assert!(!out.contains(warning), "{out}");
+}
+
+#[tokio::test]
+async fn models_check_warns_when_a_routed_reserve_fills_its_effective_window() {
+    let stub = Stub::start(gateway(kanata_models(), "ok")).await;
+    // An override narrower than extraction's 2500 reserve.
+    let seed = r#"{"cloud_default":65536,"local_default":8192,"chat":{"reserve":1024},"extraction":{"reserve":2500},"rewrite":{"reserve":96},"overrides":{"sumi-structured":2048}}"#;
+    let pairs = [
+        ("KANADE_EXTRACT_MODEL", "sumi-structured"),
+        ("KANADE_CHAT_MODEL", "codex-like"),
+        ("KANADE_MODEL_CONTEXT", seed),
+    ];
+    let (out, result) = run(Args { probe: false }, &env(&stub.url(), &pairs)).await;
+    result.unwrap();
+    assert!(
+        out.contains(
+            "    context=2048 reserve=2500 source=override\nwarning: extraction context reserve 2500 is not smaller than sumi-structured's effective window 2048; its prompts cannot fit\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(out.matches("prompts cannot fit").count(), 1, "{out}");
 }

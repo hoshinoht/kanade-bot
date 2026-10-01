@@ -6,6 +6,20 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 model context windows are live, saved settings (`v5.model_context`,
+  seeded from `[models.context]`): per-alias override, then the catalog's
+  published window, then a cloud (65,536) or local (8,192) default, capped at
+  131,072 and by optional per-role caps. Per-role reply reserves (chat 1024,
+  extraction 2500, rewrite 96) are sent as `max_tokens`, clamped to Kanata's
+  published `max_output_tokens`. Config API, `kanade models check`, startup
+  logs and model-log rows show the effective window and its source, and warn
+  when a local model's window exceeds 16,384 or a reserve fills its window.
+  Changes apply to the next chat question, extraction pass or rewrite without
+  a restart; the fixed 65,536 serve window is gone.
+- v5 chat trims oldest history, then older tool results, before failing a
+  too-long question with a typed context-budget error and a member reply;
+  a Kanata size 400 above the published output maximum no longer downgrades
+  the model's sampling controls.
 - v5 gives countdown and weekly digest headers a bounded persona-flavored
   interjection, preserving code-owned schedule facts and stable stored text
   across retries and edits; schema v18 stores phrases before delivery claims.

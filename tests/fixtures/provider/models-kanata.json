@@ -16,6 +16,7 @@
         "trust_zone": "private_network",
         "reasoning_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
         "context_tokens": 32768,
+        "max_output_tokens": 4096,
         "admission": {
           "max_in_flight": 4,
           "max_queue": 16,

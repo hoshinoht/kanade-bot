@@ -64,6 +64,11 @@ pub struct Prepared {
     /// all use them.
     pub model: String,
     pub reasoning: Option<Effort>,
+    /// Context and completion reserve resolved with this question's route;
+    /// a later Config save cannot alter an in-flight question.
+    pub context_window: usize,
+    pub max_output_tokens: u32,
+    pub context_source: &'static str,
     /// The chat route read once for this question; the answer opens its
     /// session on it (`None`: the answerer reads its own).
     pub route: Option<RoleRoute>,

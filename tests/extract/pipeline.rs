@@ -10,7 +10,7 @@ use kanade::domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogSt
 use kanade::domain::schedule::RsvpState;
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{
-    AuthorKind, MessageEvent, check_reasoning_effort, extraction_outcome,
+    AuthorKind, CallContext, LiveContext, MessageEvent, check_reasoning_effort, extraction_outcome,
 };
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
@@ -677,4 +677,155 @@ async fn external_extraction_sends_raw_names_ids_urls_and_answer_retry_without_o
     assert_eq!(logs[0].outcome, ExtractionOutcome::NoChange);
     assert_eq!(logs[0].guardrail["external_unmasked"], true);
     assert_eq!(world.requests(), 2);
+}
+
+/// Serve's live resolver stand-in: whatever reserve is "saved" when asked.
+fn live(reserve: &std::sync::Arc<std::sync::atomic::AtomicUsize>) -> LiveContext {
+    let reserve = reserve.clone();
+    std::sync::Arc::new(move |alias: &str| {
+        assert_eq!(alias, ALIAS, "resolved for the routed alias");
+        CallContext {
+            window: 32_768,
+            reserve: reserve.load(Ordering::SeqCst),
+            source: "override",
+        }
+    })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_saved_context_applies_to_the_next_pass_while_a_pass_in_flight_keeps_its_own() {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    let saved = Arc::new(AtomicUsize::new(1_500));
+    // The first reply is late and malformed, so its answer retry is sent
+    // after the setting changed.
+    let slow = FakeAction::Delayed {
+        delay: Duration::from_secs(10),
+        action: Box::new(reply("not json")),
+    };
+    let world = World::with_live_context(vec![slow, nothing(), nothing()], live(&saved)).await;
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(95).await;
+    assert_eq!(world.requests(), 1, "the first reply is still on its way");
+    saved.store(3_000, Ordering::SeqCst);
+    after(10).await;
+    let sent = world.provider.requests();
+    assert_eq!(sent.len(), 2);
+    assert!(
+        sent.iter()
+            .all(|request| request.max_output_tokens == 1_500),
+        "the pass in flight keeps the reserve it started with"
+    );
+    let logs = world.logs().await;
+    assert_eq!(
+        logs[0].guardrail["context"],
+        serde_json::json!({"window": 32_768, "reserve": 1_500, "source": "override"})
+    );
+
+    let next = message("102", MY, local(8, 30, 13, 20), "hstar wed 9pm?");
+    events.send(MessageEvent::Posted(next)).await.expect("send");
+    after(91).await;
+    let sent = world.provider.requests();
+    assert_eq!(sent.len(), 3);
+    assert_eq!(
+        sent[2].max_output_tokens, 3_000,
+        "the next pass reads the save"
+    );
+    assert_eq!(world.logs().await[1].guardrail["context"]["reserve"], 3_000);
+}
+
+#[tokio::test(start_paused = true)]
+async fn without_a_live_resolver_the_configured_context_is_sent_and_logged() {
+    let world = World::new(vec![nothing()]).await;
+    let (events, _loop) = world.pipeline();
+    events.send(post(MOVE_TEXT)).await.expect("send");
+    after(91).await;
+    assert_eq!(world.provider.requests()[0].max_output_tokens, 2_500);
+    assert_eq!(
+        world.logs().await[0].guardrail["context"],
+        serde_json::json!({"window": 8_192, "reserve": 2_500, "source": "local_default"})
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_model_switch_mid_pass_keeps_the_pass_on_its_model_and_context() {
+    use kanade::infrastructure::llm::governor::{GroupConfig, Role, RouteTarget};
+    const OTHER_MODEL: &str = "other-model";
+    let live: LiveContext = std::sync::Arc::new(|alias: &str| {
+        if alias == ALIAS {
+            CallContext {
+                window: 4_096,
+                reserve: 1_000,
+                source: "catalog",
+            }
+        } else {
+            assert_eq!(alias, OTHER_MODEL);
+            CallContext {
+                window: 32_768,
+                reserve: 3_000,
+                source: "override",
+            }
+        }
+    });
+    let slow = FakeAction::Delayed {
+        delay: Duration::from_secs(10),
+        action: Box::new(nothing()),
+    };
+    let mut actions = vec![slow];
+    actions.extend((0..8).map(|_| nothing()));
+    let world = World::with_live_context(actions, live).await;
+    let (events, _loop) = world.pipeline();
+    for n in 0..4 {
+        let text = format!("hstar wed 9pm? {}", "long planning chatter ".repeat(150));
+        let long = message(&format!("10{n}"), MY, local(8, 30, 13, n), &text);
+        events.send(MessageEvent::Posted(long)).await.expect("send");
+    }
+    after(91).await;
+    assert_eq!(world.requests(), 1, "the first piece is in flight");
+    let open = GroupConfig {
+        name: "open".into(),
+        backend: "open backend".into(),
+        permits: 1,
+        requests_per_min: 6_000,
+        burst: Some(1_000),
+        aliases: Vec::new(),
+    };
+    let target = RouteTarget {
+        alias: OTHER_MODEL.into(),
+        effort: None,
+        external: Some(false),
+    };
+    world
+        .client
+        .governor()
+        .reroute([(Role::Extraction, Some(target))], Some(&open))
+        .expect("reroute");
+    after(30).await;
+    let sent = world.provider.requests();
+    assert!(sent.len() > 1, "the pass was read in pieces");
+    for request in &sent {
+        assert_eq!(request.model, ALIAS, "the pass keeps its model");
+        assert_eq!(request.max_output_tokens, 1_000, "and its reserve");
+    }
+    let logs = world.logs().await;
+    assert_eq!(logs.len(), sent.len());
+    for log in &logs {
+        assert_eq!(log.model, ALIAS);
+        assert_eq!(
+            log.guardrail["context"],
+            serde_json::json!({"window": 4_096, "reserve": 1_000, "source": "catalog"})
+        );
+    }
+
+    // The next pass runs on the new model with its own context.
+    let next = message("110", MY, local(8, 30, 13, 20), "hstar wed 9pm?");
+    events.send(MessageEvent::Posted(next)).await.expect("send");
+    after(91).await;
+    let sent = world.provider.requests();
+    let last = sent.last().expect("a new call");
+    assert_eq!(last.model, OTHER_MODEL);
+    assert_eq!(last.max_output_tokens, 3_000);
+    let logs = world.logs().await;
+    assert_eq!(logs.last().unwrap().guardrail["context"]["reserve"], 3_000);
 }

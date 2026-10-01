@@ -239,7 +239,9 @@ fn an_unusable_ca_file_is_refused() {
 
 #[test]
 fn stored_settings_map_onto_setup_roles() {
-    use kanade::domain::settings::{Models as Stored, Reasoning, RoleModel as StoredRole};
+    use kanade::domain::settings::{
+        ContextSettings, Models as Stored, Reasoning, RoleModel as StoredRole,
+    };
     let stored = Stored {
         extraction: StoredRole {
             alias: Some("kanata/extract".into()),
@@ -253,6 +255,7 @@ fn stored_settings_map_onto_setup_roles() {
             alias: None,
             reasoning: Reasoning::Off,
         },
+        context: ContextSettings::default(),
     };
     assert_eq!(
         ModelRoles::from(&stored),

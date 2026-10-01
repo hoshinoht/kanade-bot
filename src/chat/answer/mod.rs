@@ -35,6 +35,11 @@ use crate::infrastructure::llm::{Effort, ErrorCode, Message};
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
 
+/// The member-facing line when protected prompt material exceeds a route's
+/// context window before any model request can be sent.
+pub const CONTEXT_BUDGET_REPLY: &str =
+    "Sorry — that question is too long for this model's context. Please shorten it and try again.";
+
 /// What the caller owns: the channel's pending cards and card posting.
 pub trait ChatPorts {
     /// Cards still waiting for a ✅, read before each round.

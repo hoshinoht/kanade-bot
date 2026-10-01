@@ -47,7 +47,8 @@ use crate::{
     },
     extract::{
         pipeline::{
-            DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline, PipelineConfig,
+            CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
+            PipelineConfig,
         },
         rescan::Rescans,
     },
@@ -189,33 +190,49 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
     );
     tuning.debounce = inputs.timing.debounce;
     tuning.drain_interval = inputs.timing.drain_interval;
-    tuning.context_tokens = super::CONTEXT_TOKENS;
     // The configured level; the runner floors `off` per call.
     tuning.reasoning = stack.effort(Role::Extraction);
     let clock = Arc::new(ApiClock(Arc::clone(&inputs.clock)));
-    let extractor = Arc::new(Extractor::new(
-        Deps {
-            store: Arc::clone(&inputs.store),
-            client: Arc::clone(&stack.client),
-            guild: Arc::new(LiveGuild {
-                status: Arc::clone(&inputs.status),
-                cache: Arc::clone(&inputs.cache),
-                roster: Arc::clone(&inputs.roster),
-                bosses: inputs.bosses,
-            }),
-            proposer: Arc::new(StoreProposer {
+    let extractor = Arc::new(
+        Extractor::new(
+            Deps {
                 store: Arc::clone(&inputs.store),
-                clock: Arc::clone(&inputs.clock),
-                policy: inputs.policy,
-                directory: Arc::clone(&inputs.roster),
-            }),
-            outbox: Arc::new(CardOutbox(inputs.desk)),
-            clock,
-            ids: Box::new(RandomIds),
-            self_service: None,
-        },
-        tuning,
-    ));
+                client: Arc::clone(&stack.client),
+                guild: Arc::new(LiveGuild {
+                    status: Arc::clone(&inputs.status),
+                    cache: Arc::clone(&inputs.cache),
+                    roster: Arc::clone(&inputs.roster),
+                    bosses: inputs.bosses,
+                }),
+                proposer: Arc::new(StoreProposer {
+                    store: Arc::clone(&inputs.store),
+                    clock: Arc::clone(&inputs.clock),
+                    policy: inputs.policy,
+                    directory: Arc::clone(&inputs.roster),
+                }),
+                outbox: Arc::new(CardOutbox(inputs.desk)),
+                clock,
+                ids: Box::new(RandomIds),
+                self_service: None,
+            },
+            tuning,
+        )
+        .with_live_context({
+            let resolve = super::context::resolver(
+                Arc::clone(&stack),
+                super::context::changes_or(changes.clone(), &inputs.settings),
+                Role::Extraction,
+            );
+            Arc::new(move |alias: &str| {
+                let context = resolve(alias);
+                CallContext {
+                    window: context.window as usize,
+                    reserve: context.reserve as usize,
+                    source: context.source.as_str(),
+                }
+            })
+        }),
+    );
 
     let (events, queue) = mpsc::channel(EVENT_QUEUE);
     extraction.pipeline = Some(tokio::spawn(
