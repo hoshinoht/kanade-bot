@@ -1163,11 +1163,15 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
                 .iter()
                 .all(|(content, _)| !content.contains("via portal"))
         );
-        assert!(harness.fake.calls().iter().any(|call| matches!(
-            call,
-            Call::Edit { edit, .. }
-                if edit.content.as_deref().is_some_and(|text| text.contains("✅ applied by"))
-        )));
+        // The card edit runs on its own refresh task after the merge.
+        eventually!(
+            "the applied card edit",
+            harness.fake.calls().iter().any(|call| matches!(
+                call,
+                Call::Edit { edit, .. }
+                    if edit.content.as_deref().is_some_and(|text| text.contains("✅ applied by"))
+            ))
+        );
     })
     .await;
     finish(&harness, ctx).await;
