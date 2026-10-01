@@ -15,8 +15,10 @@ use twilight_model::id::Id;
 use kanade::bot::mentions;
 use kanade::bot::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
-    Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig, TwilightTransport, Upload,
+    Outcome, OutgoingMessage, Presence, RejectionKind, SILENT, TransportConfig, TwilightTransport,
+    Upload,
 };
+use twilight_model::channel::message::MessageFlags;
 
 use super::support::{
     ALICE, BOB, CHANNEL, GUILD, TEXT, channel_json, member_json, message_json, user_json,
@@ -636,6 +638,82 @@ async fn a_plain_post_has_no_message_reference() {
     assert!(outcome.is_delivered());
     let body: Value = serde_json::from_slice(&stub.seen()[0].body).unwrap();
     assert!(body.get("message_reference").is_none());
+}
+
+#[tokio::test]
+async fn a_silent_post_carries_suppress_notifications_and_a_plain_one_no_flags() {
+    let (stub, addr) = Stub::start(vec![
+        json_reply(200, json!({ "id": "92" })),
+        json_reply(200, json!({ "id": "93" })),
+    ])
+    .await;
+    let transport = quick(addr);
+    assert_eq!(
+        transport
+            .create_flagged_message(Id::new(CHANNEL), &post(), SILENT)
+            .await,
+        Outcome::Delivered(Id::new(92))
+    );
+    assert!(
+        transport
+            .create_message(Id::new(CHANNEL), &post())
+            .await
+            .is_delivered()
+    );
+    let seen = stub.seen();
+    let silent: Value = serde_json::from_slice(&seen[0].body).unwrap();
+    assert_eq!(silent["flags"], json!(1 << 12));
+    assert_eq!(
+        silent["allowed_mentions"],
+        json!({ "parse": [], "users": ["1001"] })
+    );
+    let plain: Value = serde_json::from_slice(&seen[1].body).unwrap();
+    assert!(plain.get("flags").is_none(), "{plain}");
+}
+
+#[tokio::test]
+async fn flags_discord_refuses_on_creates_are_refused_unsent() {
+    let (stub, addr) = Stub::start(Vec::new()).await;
+    assert_eq!(
+        quick(addr)
+            .create_flagged_message(Id::new(CHANNEL), &post(), SILENT | MessageFlags::EPHEMERAL)
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert!(stub.seen().is_empty());
+}
+
+#[tokio::test]
+async fn typing_posts_to_the_channel_typing_route_and_is_classified() {
+    let (stub, addr) = Stub::start(vec![
+        raw_reply(204, ""),
+        json_reply(
+            403,
+            json!({ "code": 50013, "message": "Missing Permissions" }),
+        ),
+        json_reply(500, json!({ "code": 0, "message": "oops" })),
+    ])
+    .await;
+    let transport = quick(addr);
+    let channel = Id::new(CHANNEL);
+    assert_eq!(
+        transport.trigger_typing(channel).await,
+        Outcome::Delivered(())
+    );
+    assert_eq!(
+        transport.trigger_typing(channel).await,
+        Outcome::DefinitelyRejected(RejectionKind::MissingPermissions)
+    );
+    assert_eq!(
+        transport.trigger_typing(channel).await,
+        Outcome::Ambiguous(AmbiguousKind::ServerError { status: 500 })
+    );
+    let seen = stub.seen();
+    assert_eq!(seen.len(), 3, "never retried");
+    assert_eq!(
+        seen[0].request_line,
+        format!("POST /api/v10/channels/{CHANNEL}/typing HTTP/1.1")
+    );
 }
 
 #[tokio::test]

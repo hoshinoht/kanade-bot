@@ -188,6 +188,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         }
         Some(Prepared {
             persona,
+            catalog: Arc::clone(&self.catalog),
             persona_key,
             directory: Arc::new(roster),
             members,

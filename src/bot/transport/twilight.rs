@@ -44,8 +44,9 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use super::{
-    AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
-    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, classify_status,
+    AmbiguousKind, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
+    InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    classify_status,
 };
 use crate::bot::mentions;
 
@@ -280,16 +281,24 @@ fn interaction_data(
     }
 }
 
-impl DiscordTransport for TwilightTransport {
-    async fn create_message(
+impl TwilightTransport {
+    async fn create(
         &self,
         channel: ChannelId,
         message: &OutgoingMessage,
+        flags: MessageFlags,
     ) -> Outcome<MessageId> {
+        // Twilight forwards any bits; refuse what Discord would reject.
+        if !CREATE_FLAGS.contains(flags) {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
         let mut request = self
             .client
             .create_message(channel)
             .allowed_mentions(Some(&message.allowed_mentions));
+        if !flags.is_empty() {
+            request = request.flags(flags);
+        }
         if let Some(content) = &message.content {
             request = request.content(content);
         }
@@ -321,6 +330,30 @@ impl DiscordTransport for TwilightTransport {
             }
         })
         .await
+    }
+}
+
+impl DiscordTransport for TwilightTransport {
+    async fn create_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+    ) -> Outcome<MessageId> {
+        self.create(channel, message, MessageFlags::empty()).await
+    }
+
+    async fn create_flagged_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+        flags: MessageFlags,
+    ) -> Outcome<MessageId> {
+        self.create(channel, message, flags).await
+    }
+
+    async fn trigger_typing(&self, channel: ChannelId) -> Outcome<()> {
+        self.settle(self.client.create_typing_trigger(channel))
+            .await
     }
 
     async fn edit_message(

@@ -14,6 +14,7 @@ use crate::chat::context::QuestionMessage;
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
 use crate::chat::persona::CompiledPersona;
 use crate::chat::pilot::StormAlert;
+use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, MemberProfile};
 use crate::domain::model_log::ChatInteraction;
 use crate::infrastructure::llm::{Effort, governor::RoleRoute};
@@ -54,6 +55,8 @@ pub struct Setup {
 /// Everything one question needs besides the pilot, read when it starts.
 pub struct Prepared {
     pub persona: CompiledPersona,
+    /// The boss catalog the staging line resolves names through.
+    pub catalog: Arc<BossTable>,
     /// Changes when the persona's identity does (history is then forgotten).
     pub persona_key: String,
     pub directory: Arc<dyn Directory + Send + Sync>,
@@ -110,8 +113,35 @@ pub trait Answerer: Send + Sync + 'static {
     fn observe(&self, _event: &ChatEvent<'_>) {}
 }
 
-/// Reactions and replies on the asking message. Replies are outside the
-/// delivery journal: an ambiguous send is never retried.
+/// What one message effect did: the transport's outcome classes, without
+/// Discord types.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Effect<T> {
+    Done(T),
+    /// Certainly never processed (not sent, or rate limited out): one retry
+    /// is safe.
+    NotSent,
+    /// The target message does not exist.
+    UnknownMessage,
+    /// Refused; nothing happened. A content-free label.
+    Rejected(String),
+    /// May or may not have happened. A content-free label.
+    Ambiguous(String),
+}
+
+/// A new message. It always mentions nobody.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Post<'a> {
+    pub text: &'a str,
+    /// Reply to this message (a deleted target still posts).
+    pub reply_to: Option<&'a str>,
+    /// Discord's `@silent`: notifies nobody.
+    pub silent: bool,
+}
+
+/// Reactions on the asking message and the message effects that deliver an
+/// answer. Delivery is outside the delivery journal: the driver applies the
+/// retry rules (`delivery.rs`); an implementation never retries.
 pub trait Surface: Send + Sync + 'static {
     fn react(
         &self,
@@ -127,11 +157,21 @@ pub trait Surface: Send + Sync + 'static {
         emoji: &str,
     ) -> impl Future<Output = ()> + Send;
 
-    /// Reply to `reply_to`, pinging nobody; the posted message's id.
-    fn reply(
+    /// Post a message; the posted message's id.
+    fn post(&self, channel_id: &str, post: Post<'_>)
+    -> impl Future<Output = Effect<String>> + Send;
+
+    /// Replace a message's text, mentioning nobody.
+    fn edit(
         &self,
         channel_id: &str,
-        reply_to: &str,
+        message_id: &str,
         text: &str,
-    ) -> impl Future<Output = Result<String, String>> + Send;
+    ) -> impl Future<Output = Effect<()>> + Send;
+
+    fn delete(&self, channel_id: &str, message_id: &str)
+    -> impl Future<Output = Effect<()>> + Send;
+
+    /// Show the bot typing; fire and forget.
+    fn typing(&self, channel_id: &str) -> impl Future<Output = ()> + Send;
 }

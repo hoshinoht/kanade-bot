@@ -29,7 +29,7 @@ use crate::{
     api::auth,
     bot::{
         gateway::{EventSource, GatewayError},
-        transport::{Call, FakeDiscord, Outcome},
+        transport::{Call, FakeDiscord, Op, Outcome},
     },
     domain::{
         members::{Member, MemberProfile, MemberStore},
@@ -489,21 +489,44 @@ fn connect(live: &Live) {
     live.events.send(guild_create()).unwrap();
 }
 
+/// What members see in `channel`: each delivered message's latest text (the
+/// staging placeholder is edited into the answer) and what it replies to.
 fn replies(fake: &FakeDiscord, channel: u64) -> Vec<(String, Option<u64>)> {
-    fake.calls()
-        .into_iter()
-        .filter_map(|call| match call {
+    let mut shown: Vec<(u64, String, Option<u64>)> = Vec::new();
+    for call in fake.calls() {
+        match call {
             Call::Create {
                 channel: to,
                 message,
-                outcome: Outcome::Delivered(_),
-            } if to.get() == channel => Some((
+                outcome: Outcome::Delivered(id),
+            } if to.get() == channel => shown.push((
+                id.get(),
                 message.content.unwrap_or_default(),
                 message.reply_to.map(|id| id.get()),
             )),
-            _ => None,
-        })
+            Call::Edit {
+                message,
+                edit,
+                outcome: Outcome::Delivered(()),
+                ..
+            } => {
+                if let Some(entry) = shown.iter_mut().find(|entry| entry.0 == message.get()) {
+                    entry.1 = edit.content.unwrap_or_default();
+                }
+            }
+            _ => {}
+        }
+    }
+    shown
+        .into_iter()
+        .map(|(_, text, reply_to)| (text, reply_to))
         .collect()
+}
+
+/// The persona's staging line is still showing: the answer is not in yet.
+fn answered(fake: &FakeDiscord, channel: u64, count: usize) -> bool {
+    let shown = replies(fake, channel);
+    shown.len() == count && fake.count(Op::Edit) >= count
 }
 
 async fn chats(store: &SqliteStore) -> Vec<ChatInteraction> {
@@ -532,7 +555,7 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
         connect(live);
         eventually!("chat idle", live.health.health().await.chat == Some("idle"));
         live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
-        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
+        eventually!("the reply", answered(&live.fake, THREAD, 1));
         let posted = replies(&live.fake, THREAD);
         assert_eq!(posted.len(), 1);
         assert!(
@@ -551,7 +574,10 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
         );
         assert_eq!(
             row.guardrail,
-            json!({"context": {"window": 32768, "reserve": 1024, "source": "catalog"}})
+            json!({
+                "context": {"window": 32768, "reserve": 1024, "source": "catalog"},
+                "delivery": {"placeholder": "edited", "parts": 1, "delivered": 1},
+            })
         );
         assert_eq!(stub.completions(), 1);
         // The persona it answered as, and the round as sent.
@@ -571,10 +597,7 @@ async fn a_pilot_member_in_a_chat_category_thread_is_answered_as_a_reply_and_log
         live.events
             .send(question_by_role(5003, &[PILOT_ROLE]))
             .unwrap();
-        eventually!(
-            "the role-mention reply",
-            replies(&live.fake, THREAD).len() == 2
-        );
+        eventually!("the role-mention reply", answered(&live.fake, THREAD, 2));
         assert_eq!(replies(&live.fake, THREAD)[1].1, Some(5003));
     })
     .await;
@@ -605,7 +628,7 @@ async fn chat_resolves_live_discord_roles_before_saved_style_without_granting_ac
                 &[PILOT_ROLE, ROLE_PRIORITY_FIRST, ROLE_PRIORITY_SECOND],
             ))
             .unwrap();
-        eventually!("role-profile reply", replies(&live.fake, THREAD).len() == 1);
+        eventually!("role-profile reply", answered(&live.fake, THREAD, 1));
         let row = one_chat(&live.store).await;
         assert_eq!(row.profile.as_deref(), Some("role-private"));
         assert_eq!(row.profile_source.as_deref(), Some("role"));
@@ -633,7 +656,7 @@ async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
         connect(live);
         eventually!("chat idle", live.health.health().await.chat == Some("idle"));
         live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
-        eventually!("the first reply", replies(&live.fake, THREAD).len() == 1);
+        eventually!("the first reply", answered(&live.fake, THREAD, 1));
         assert_eq!(stub.sent(), [(ALIAS.to_owned(), Some("low".to_owned()))]);
 
         // What a config PATCH applies after saving: the reasoning first.
@@ -642,7 +665,7 @@ async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
         models.chat.reasoning = Reasoning::High;
         stack.apply(&models).unwrap();
         live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
-        eventually!("the second reply", replies(&live.fake, THREAD).len() == 2);
+        eventually!("the second reply", answered(&live.fake, THREAD, 2));
         assert_eq!(stub.sent()[1], (ALIAS.to_owned(), Some("high".to_owned())));
 
         // Then another alias with its own level.
@@ -650,7 +673,7 @@ async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
         models.chat.reasoning = Reasoning::Medium;
         stack.apply(&models).unwrap();
         live.events.send(question(5003, &[PILOT_ROLE])).unwrap();
-        eventually!("the third reply", replies(&live.fake, THREAD).len() == 3);
+        eventually!("the third reply", answered(&live.fake, THREAD, 3));
         assert_eq!(
             stub.sent()[2],
             (OTHER.to_owned(), Some("medium".to_owned()))
@@ -707,14 +730,18 @@ async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_
                 asked,
             ))))
             .unwrap();
-        eventually!("the reply", !replies(&live.fake, THREAD).is_empty());
+        eventually!("the reply", answered(&live.fake, THREAD, 1));
         assert!(replies(&live.fake, THREAD)[0].0.contains("Lotus"));
         let row = one_chat(&live.store).await;
         assert_eq!(row.outcome, ChatOutcome::Answered);
         assert_eq!(row.rounds[0].route.as_deref(), Some("external_unmasked"));
         assert_eq!(
             row.guardrail,
-            json!({"context": {"window": 32768, "reserve": 1024, "source": "catalog"}, "external_unmasked": true})
+            json!({
+                "context": {"window": 32768, "reserve": 1024, "source": "catalog"},
+                "delivery": {"placeholder": "edited", "parts": 1, "delivered": 1},
+                "external_unmasked": true,
+            })
         );
         let sent = serde_json::to_string(&*stub.completions.lock().unwrap()).unwrap();
         for part in [
@@ -780,11 +807,11 @@ async fn renamed_member_names_in_chat_history_are_sent_unchanged() {
                 first,
             ))))
             .unwrap();
-        eventually!("the first reply", replies(&live.fake, THREAD).len() == 1);
+        eventually!("the first reply", answered(&live.fake, THREAD, 1));
         // Renamed and the alias removed before the next question.
         live.store.put_member(alice("Newnick", &[])).await.unwrap();
         live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
-        eventually!("the second reply", replies(&live.fake, THREAD).len() == 2);
+        eventually!("the second reply", answered(&live.fake, THREAD, 2));
         let bodies = stub.completions.lock().unwrap().clone();
         assert_eq!(bodies.len(), 2);
         let second = bodies[1].to_string();

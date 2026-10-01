@@ -8,6 +8,7 @@
 mod allowance;
 mod guard;
 mod reply;
+mod staging;
 mod traffic;
 
 use std::future::Future;
@@ -20,6 +21,7 @@ pub use allowance::{
 };
 pub use guard::{CleanRetryGuard, GuardLimits, GuardView, StormAlert};
 pub use reply::{CONTENT_BLOCKED_REPLY, failure_reply};
+pub use staging::staging_line;
 pub use traffic::{Admission, Handoff, QueueView, Traffic, TrafficLimits, Waiting};
 
 use crate::chat::answer::{Generation, interaction, with_persona};

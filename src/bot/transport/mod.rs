@@ -14,7 +14,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
-use twilight_model::channel::message::{AllowedMentions, Embed};
+use twilight_model::channel::message::{AllowedMentions, Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -27,12 +27,20 @@ pub use outcome::{AmbiguousKind, Outcome, RejectionKind, classify_status, codes}
 pub use twilight::{MAX_SENDS, TransportConfig, TwilightTransport};
 
 #[cfg(any(test, feature = "test-support"))]
-pub use fake::{Call, FakeDiscord, Op, Step};
+pub use fake::{Call, FakeDiscord, Hold, Op, Step};
 
 /// Discord's page-size bounds; out-of-range limits are refused unsent
 /// (`RejectionKind::Invalid`).
 pub const MAX_MEMBERS_PAGE: u16 = 1000;
 pub const MAX_MESSAGES_PAGE: u16 = 100;
+
+/// The only flags Discord accepts on a created message; any other bit is
+/// refused unsent (`RejectionKind::Invalid`).
+pub const CREATE_FLAGS: MessageFlags =
+    MessageFlags::SUPPRESS_EMBEDS.union(MessageFlags::SUPPRESS_NOTIFICATIONS);
+
+/// A post that notifies nobody (Discord's `@silent`).
+pub const SILENT: MessageFlags = MessageFlags::SUPPRESS_NOTIFICATIONS;
 
 /// A new message. `allowed_mentions` is required so no post can fall back to
 /// Discord's parse-everything default; build it with [`crate::bot::mentions`].
@@ -165,6 +173,27 @@ pub trait DiscordTransport: Send + Sync {
         channel: ChannelId,
         message: &OutgoingMessage,
     ) -> impl Future<Output = Outcome<MessageId>> + Send;
+
+    /// [`Self::create_message`] with message flags within [`CREATE_FLAGS`]
+    /// (e.g. [`SILENT`]). Transports that cannot carry flags keep the
+    /// default and refuse unsent, so a silent post never goes out pinging.
+    fn create_flagged_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+        flags: MessageFlags,
+    ) -> impl Future<Output = Outcome<MessageId>> + Send {
+        let _ = (channel, message, flags);
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
+    /// Show the bot as typing in `channel` (Discord clears it after ~10 s or
+    /// at the bot's next message). Callers fire and forget: a failure is
+    /// never retried. Test doubles that never type may keep the default.
+    fn trigger_typing(&self, channel: ChannelId) -> impl Future<Output = Outcome<()>> + Send {
+        let _ = channel;
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
 
     fn edit_message(
         &self,

@@ -1,11 +1,13 @@
 //! The production transport, built once `READY` names the application.
 //! Nothing calls Discord before the gateway is ready (registration,
 //! interactions, roster paging and the tick all wait for it); a call that
-//! did is refused unsent.
+//! did is refused unsent. Every trait method is delegated, including the
+//! ones with a default body (a missed one would be refused `Invalid`).
 
 use std::sync::OnceLock;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
+use twilight_model::channel::message::MessageFlags;
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -73,6 +75,19 @@ impl DiscordTransport for LateTransport {
         delegate!(self, create_message(channel, message))
     }
 
+    async fn create_flagged_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+        flags: MessageFlags,
+    ) -> Outcome<MessageId> {
+        delegate!(self, create_flagged_message(channel, message, flags))
+    }
+
+    async fn trigger_typing(&self, channel: ChannelId) -> Outcome<()> {
+        delegate!(self, trigger_typing(channel))
+    }
+
     async fn edit_message(
         &self,
         channel: ChannelId,
@@ -124,6 +139,14 @@ impl DiscordTransport for LateTransport {
         delegate!(self, defer(interaction, ephemeral))
     }
 
+    async fn followup(
+        &self,
+        interaction: &InteractionRef,
+        reply: &InteractionReply,
+    ) -> Outcome<()> {
+        delegate!(self, followup(interaction, reply))
+    }
+
     async fn complete_deferred(
         &self,
         interaction: &InteractionRef,
@@ -166,3 +189,7 @@ impl DiscordTransport for LateTransport {
         delegate!(self, current_user())
     }
 }
+
+#[cfg(test)]
+#[path = "late_tests.rs"]
+mod tests;

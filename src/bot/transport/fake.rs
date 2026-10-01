@@ -1,10 +1,13 @@
 //! A deterministic in-memory Discord for tests: records every call, applies
-//! scripted outcomes per operation and assigns sequential message ids.
+//! scripted outcomes per operation, assigns sequential message ids and can
+//! park a call mid-flight ([`FakeDiscord::hold`]).
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use tokio::sync::Notify;
 use twilight_model::application::command::{Command, CommandOptionChoice};
+use twilight_model::channel::message::MessageFlags;
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -13,9 +16,9 @@ use twilight_model::id::{
 };
 
 use super::{
-    AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
-    MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId, Outcome, OutgoingMessage,
-    Presence, RejectionKind,
+    AmbiguousKind, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
+    InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId, Outcome,
+    OutgoingMessage, Presence, RejectionKind,
 };
 
 /// Operation kinds a [`Step`] can be scripted for.
@@ -36,6 +39,7 @@ pub enum Op {
     ListMembers,
     ChannelMessages,
     GuildChannels,
+    Typing,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -134,6 +138,10 @@ pub enum Call {
         guild: Id<GuildMarker>,
         outcome: Outcome<Vec<Channel>>,
     },
+    Typing {
+        channel: ChannelId,
+        outcome: Outcome<()>,
+    },
 }
 
 impl Call {
@@ -154,7 +162,39 @@ impl Call {
             Self::ListMembers { .. } => Op::ListMembers,
             Self::ChannelMessages { .. } => Op::ChannelMessages,
             Self::GuildChannels { .. } => Op::GuildChannels,
+            Self::Typing { .. } => Op::Typing,
         }
+    }
+}
+
+/// A barrier for one call: the call parks before its step is taken or its
+/// effect applied, until [`Hold::release`]. Dropping the parked call's future
+/// cancels it with no effect and nothing recorded.
+#[derive(Clone, Debug, Default)]
+pub struct Hold {
+    gate: Arc<Gate>,
+}
+
+#[derive(Debug, Default)]
+struct Gate {
+    entered: Notify,
+    released: Notify,
+}
+
+impl Hold {
+    /// Wait until the held call has arrived and parked.
+    pub async fn entered(&self) {
+        self.gate.entered.notified().await;
+    }
+
+    /// Let the held call proceed (also before it arrives).
+    pub fn release(&self) {
+        self.gate.released.notify_one();
+    }
+
+    async fn park(&self) {
+        self.gate.entered.notify_one();
+        self.gate.released.notified().await;
     }
 }
 
@@ -164,6 +204,10 @@ struct State {
     /// `None` uses [`FIRST_MESSAGE_ID`].
     first_id: Option<u64>,
     calls: Vec<Call>,
+    /// The flags of each recorded create, in call order (empty when plain).
+    create_flags: Vec<MessageFlags>,
+    /// Calls to park, per operation, in arrival order.
+    holds: BTreeMap<Op, VecDeque<Hold>>,
     scripts: BTreeMap<Op, VecDeque<Step>>,
     /// Applied when an operation's script is empty; `Succeed` if unset.
     defaults: BTreeMap<Op, Step>,
@@ -225,6 +269,72 @@ impl FakeDiscord {
 
     pub fn calls(&self) -> Vec<Call> {
         self.state().calls.clone()
+    }
+
+    /// The flags each [`Call::Create`] was sent with, in call order (empty
+    /// for [`DiscordTransport::create_message`]).
+    pub fn create_flags(&self) -> Vec<MessageFlags> {
+        self.state().create_flags.clone()
+    }
+
+    /// Park the next call of `op` (after any earlier holds of `op` are
+    /// consumed) until the returned handle is released.
+    pub fn hold(&self, op: Op) -> Hold {
+        let hold = Hold::default();
+        self.state()
+            .holds
+            .entry(op)
+            .or_default()
+            .push_back(hold.clone());
+        hold
+    }
+
+    async fn gate(&self, op: Op) {
+        let hold = self
+            .state()
+            .holds
+            .get_mut(&op)
+            .and_then(VecDeque::pop_front);
+        if let Some(hold) = hold {
+            hold.park().await;
+        }
+    }
+
+    async fn create(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+        flags: MessageFlags,
+    ) -> Outcome<MessageId> {
+        self.gate(Op::Create).await;
+        let mut state = self.state();
+        let outcome = if CREATE_FLAGS.contains(flags) {
+            match state.next_step(Op::Create) {
+                Step::Succeed => {
+                    let id = state.mint();
+                    state.messages.insert(id, channel);
+                    Outcome::Delivered(id)
+                }
+                Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
+                Step::Ambiguous { kind, applied } => {
+                    if applied {
+                        let id = state.mint();
+                        state.messages.insert(id, channel);
+                    }
+                    Outcome::Ambiguous(kind)
+                }
+            }
+        } else {
+            // Refused unsent like the real transport; no step is consumed.
+            Outcome::DefinitelyRejected(RejectionKind::Invalid)
+        };
+        state.calls.push(Call::Create {
+            channel,
+            message: message.clone(),
+            outcome: outcome.clone(),
+        });
+        state.create_flags.push(flags);
+        outcome
     }
 
     /// Messages that exist remotely, including ambiguous posts that landed.
@@ -335,25 +445,24 @@ impl DiscordTransport for FakeDiscord {
         channel: ChannelId,
         message: &OutgoingMessage,
     ) -> Outcome<MessageId> {
+        self.create(channel, message, MessageFlags::empty()).await
+    }
+
+    async fn create_flagged_message(
+        &self,
+        channel: ChannelId,
+        message: &OutgoingMessage,
+        flags: MessageFlags,
+    ) -> Outcome<MessageId> {
+        self.create(channel, message, flags).await
+    }
+
+    async fn trigger_typing(&self, channel: ChannelId) -> Outcome<()> {
+        self.gate(Op::Typing).await;
         let mut state = self.state();
-        let outcome = match state.next_step(Op::Create) {
-            Step::Succeed => {
-                let id = state.mint();
-                state.messages.insert(id, channel);
-                Outcome::Delivered(id)
-            }
-            Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
-            Step::Ambiguous { kind, applied } => {
-                if applied {
-                    let id = state.mint();
-                    state.messages.insert(id, channel);
-                }
-                Outcome::Ambiguous(kind)
-            }
-        };
-        state.calls.push(Call::Create {
+        let outcome = state.plain(Op::Typing);
+        state.calls.push(Call::Typing {
             channel,
-            message: message.clone(),
             outcome: outcome.clone(),
         });
         outcome
@@ -365,6 +474,7 @@ impl DiscordTransport for FakeDiscord {
         message: MessageId,
         edit: &MessageEdit,
     ) -> Outcome<()> {
+        self.gate(Op::Edit).await;
         let mut state = self.state();
         let outcome = state.on_message(Op::Edit, channel, message, |_| {});
         state.calls.push(Call::Edit {
@@ -377,6 +487,7 @@ impl DiscordTransport for FakeDiscord {
     }
 
     async fn delete_message(&self, channel: ChannelId, message: MessageId) -> Outcome<()> {
+        self.gate(Op::Delete).await;
         let mut state = self.state();
         let outcome = state.on_message(Op::Delete, channel, message, |state| {
             state.messages.remove(&message);
@@ -395,6 +506,7 @@ impl DiscordTransport for FakeDiscord {
         message: MessageId,
         emoji: &str,
     ) -> Outcome<()> {
+        self.gate(Op::AddReaction).await;
         let mut state = self.state();
         let outcome = state.on_message(Op::AddReaction, channel, message, |_| {});
         state.calls.push(Call::AddReaction {
@@ -412,6 +524,7 @@ impl DiscordTransport for FakeDiscord {
         message: MessageId,
         emoji: &str,
     ) -> Outcome<()> {
+        self.gate(Op::RemoveReaction).await;
         let mut state = self.state();
         let outcome = state.on_message(Op::RemoveReaction, channel, message, |_| {});
         state.calls.push(Call::RemoveReaction {
@@ -424,6 +537,7 @@ impl DiscordTransport for FakeDiscord {
     }
 
     async fn message_presence(&self, channel: ChannelId, message: MessageId) -> Outcome<Presence> {
+        self.gate(Op::Presence).await;
         let mut state = self.state();
         let outcome = match state.next_step(Op::Presence) {
             Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
@@ -442,6 +556,7 @@ impl DiscordTransport for FakeDiscord {
     }
 
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
+        self.gate(Op::Respond).await;
         let mut state = self.state();
         let outcome = state.plain(Op::Respond);
         state.calls.push(Call::Respond {
@@ -453,6 +568,7 @@ impl DiscordTransport for FakeDiscord {
     }
 
     async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
+        self.gate(Op::Defer).await;
         let mut state = self.state();
         let outcome = state.plain(Op::Defer);
         state.calls.push(Call::Defer {
@@ -468,6 +584,7 @@ impl DiscordTransport for FakeDiscord {
         interaction: &InteractionRef,
         reply: &InteractionReply,
     ) -> Outcome<()> {
+        self.gate(Op::CompleteDeferred).await;
         let mut state = self.state();
         let outcome = state.plain(Op::CompleteDeferred);
         state.calls.push(Call::CompleteDeferred {
@@ -483,6 +600,7 @@ impl DiscordTransport for FakeDiscord {
         interaction: &InteractionRef,
         reply: &InteractionReply,
     ) -> Outcome<()> {
+        self.gate(Op::Followup).await;
         let mut state = self.state();
         let outcome = state.plain(Op::Followup);
         state.calls.push(Call::Followup {
@@ -498,6 +616,7 @@ impl DiscordTransport for FakeDiscord {
         interaction: &InteractionRef,
         choices: &[CommandOptionChoice],
     ) -> Outcome<()> {
+        self.gate(Op::Autocomplete).await;
         let mut state = self.state();
         let outcome = state.plain(Op::Autocomplete);
         state.calls.push(Call::Autocomplete {
@@ -513,6 +632,7 @@ impl DiscordTransport for FakeDiscord {
         guild: Id<GuildMarker>,
         commands: &[Command],
     ) -> Outcome<()> {
+        self.gate(Op::Register).await;
         let mut state = self.state();
         let outcome = state.plain(Op::Register);
         state.calls.push(Call::Register {
@@ -529,6 +649,7 @@ impl DiscordTransport for FakeDiscord {
         after: Option<Id<UserMarker>>,
         limit: u16,
     ) -> Outcome<Vec<Member>> {
+        self.gate(Op::ListMembers).await;
         let mut state = self.state();
         let valid = (1..=MAX_MEMBERS_PAGE).contains(&limit);
         let outcome = state.read(Op::ListMembers, valid, |state| {
@@ -559,6 +680,7 @@ impl DiscordTransport for FakeDiscord {
         page: HistoryPage,
         limit: u16,
     ) -> Outcome<Vec<Message>> {
+        self.gate(Op::ChannelMessages).await;
         let mut state = self.state();
         let valid = (1..=MAX_MESSAGES_PAGE).contains(&limit);
         let outcome = state.read(Op::ChannelMessages, valid, |state| {
@@ -599,6 +721,7 @@ impl DiscordTransport for FakeDiscord {
     }
 
     async fn guild_channels(&self, guild: Id<GuildMarker>) -> Outcome<Vec<Channel>> {
+        self.gate(Op::GuildChannels).await;
         let mut state = self.state();
         let outcome = state.read(Op::GuildChannels, true, |state| {
             state.channels.get(&guild).cloned().unwrap_or_default()

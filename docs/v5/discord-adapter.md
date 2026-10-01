@@ -43,6 +43,17 @@ the final image keeps `ca-certificates`.
   out-of-range limits `Invalid` and never sent. History pages are newest
   first, as Discord returns them (`After` holds the oldest messages after
   the cursor).
+- `create_flagged_message(channel, message, flags)` is create with message
+  flags; only `CREATE_FLAGS` (`SUPPRESS_EMBEDS`, `SUPPRESS_NOTIFICATIONS`)
+  are sent, any other bit is `Invalid` and never sent. `SILENT`
+  (`SUPPRESS_NOTIFICATIONS`, `1 << 12`) is for chat placeholder and
+  continuation messages, still with an explicit no-mentions allow-list.
+  `trigger_typing(channel)` (POST `/channels/{id}/typing`) is classified like
+  any call; callers fire and forget it and never retry. Both are provided
+  trait methods whose default refuses `Invalid` unsent, so a transport that
+  has not implemented them can never post a pinging message in place of a
+  silent one; `TwilightTransport`, `FakeDiscord` and the serve
+  `LateTransport` (delegating) implement them.
 - Commands: only `register_guild_commands` (PUT
   `/applications/{app}/guilds/{guild}/commands`) exists. There is no
   global-command operation, and a test fails if any source under `src/`
@@ -50,7 +61,10 @@ the final image keeps `ca-certificates`.
   guilds.
   `TwilightTransport` implements it; `FakeDiscord` (test support) records calls,
   scripts outcomes per operation (including ambiguous-but-applied) and mints
-  sequential message ids.
+  sequential message ids. It records each create's flags (`create_flags`)
+  and typing (`Op::Typing`), and `hold(op)` parks the next call of `op`
+  before its step or effect until the returned `Hold` is released
+  (`entered()` waits for it to park; a dropped parked call does nothing).
 - `events::CardIndex`: message id → run ids; both stores implement it (bind
   writes the card→run mapping).
 - `events::ReactionSink`: implemented for `SchedulerService` by delegating to
@@ -551,8 +565,12 @@ tick, and a `ConnectionStatus` for health; `handler::Fanout` (the
 `handler::Reactions` (card ✅/❌ → `CardDesk::on_reaction`, else the
 `ReactionRouter`), tracks spawned interaction and command-registration tasks,
 offers created messages to the chat pilot (`chat_feed::ChatFeed`: resolved
-roles, mentions and the replied-to message, nothing fetched; deletions cancel)
-and counts message events. `roster::reconcile` pages `list_members` and diffs it
+roles, mentions and the replied-to message, nothing fetched; deletions cancel;
+`chat_feed::DiscordSurface` is the driver's effect adapter: reactions, one
+create (`SILENT` when asked), edit, delete or typing trigger per call, no
+mentions, outcomes mapped to the driver's `Effect` with Not Sent and Rate
+Limited as `NotSent`; it never retries, the driver's delivery does) and counts
+message events. `roster::reconcile` pages `list_members` and diffs it
 against the stored rows (`Seen` for changed members, `Left` for rows still
 holding a role, roles or Administrator); `roster::LiveRoster` is the
 in-memory member snapshot (`Directory`) the tick and cards read. The first

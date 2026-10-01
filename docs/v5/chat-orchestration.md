@@ -155,10 +155,9 @@ are C3. Serve wiring is `chat::driver` (below).
   line boundaries into fences that reopen its opening line, a single line
   too long for one part is cut by characters, and at most
   `MAX_REPLY_PARTS` (4) parts post, the last ending `*(reply trimmed)*`.
-  `DiscordSurface` posts the first part as the reply and the rest as plain
-  follow-ups in order, all pinging nobody; a failed follow-up is logged
-  (`chat_followup_failed`, `chat_followup_stopped`) and ends the reply
-  without failing or retrying the answer. A fence is reopened with ```` ``` ````
+  The driver's delivery (see "Delivery" below) posts the parts in order,
+  all pinging nobody; a part that does not land ends the answer with the
+  incomplete marker, without failing or retrying the answer. A fence is reopened with ```` ``` ````
   plus its language only (a short bare word alone on the opening line), a
   cut never lands inside a fence marker or a joined emoji, and a cut at a
   fence's closing line leaves no empty fence. Known limitation: only the
@@ -227,6 +226,15 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   sent. The governor's retry budget and breaker still apply.
 - **Routing.** v4 had no model pre-screen, so `ChatPilot::route` is
   code-only (`bundles::select` over the text and card, no intent label).
+- **Staging line.** `pilot::staging_line(text, catalog, staging)` is v4's
+  `placeholder_for` over `route_strategy_intent`, pure: a strategy cue
+  naming one to three bosses resolved only through the catalog →
+  `guide_named_for` with their short names joined by `, ` (an unsafe or
+  over-budget render falls back to `guide`); any other strategy cue →
+  `guide`; then v4's write and schedule hints; else `generic`. `staging` is
+  the compiled persona's `staging_lines()`. Named deviation
+  `D-STAGING-WORD-CLASS` (`tests/chat/staging.rs`). The driver posts it as
+  the silent placeholder (see "Delivery").
 - **Glue.** `ChatPilot::conclude` posts the answer or a fixed failure line
   (blocked: the persona's `failures.content_blocked`, else
   `CONTENT_BLOCKED_REPLY`; any other failure: v4's `FAILURE_REPLY`),
@@ -256,15 +264,16 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   - call `reload_withheld` before admitting any question.
 
   Serve wires it in `chat::driver` (`ChatDriver`, no Discord types; ports
-  `Answerer` for the model side and `Surface` for reactions and replies),
+  `Answerer` for the model side and `Surface` for reactions and message
+  effects),
   composed in `runtime::serve::chat`. `ChatDriver::start` validates the
   timeout and reloads withheld ids before the driver exists. `offer` gates
   (the live `Setup`), then `Traffic::admit`s: answer now, queue (keycap
   position reaction) or shed (💬, refund); a spent budget gets ⏳, the
   limited reply and its row. A channel's worker reserves the clean retry
-  when it dequeues a question, answers, posts the reply (`reply_to`, no
-  mentions) and then `conclude`s with that reservation under the state
-  lock (`conclude` sees the already-posted result), then records the row.
+  when it dequeues a question, answers and delivers it (see "Delivery")
+  and then `conclude`s with that reservation under the state lock
+  (`conclude` sees the already-delivered result), then records the row.
   Before `prepare` a dequeued question is re-gated (chat still on, channel
   still in a chat category, re-read from the live channel directory so a
   channel moved out of a chat category meanwhile is caught; an unknown
@@ -274,8 +283,8 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   move to their current FIFO positions, each move waiting for the keycap it
   replaces to land. Deleting a waiting question
   refunds it; deleting a running one lets it finish (a dispatch is never
-  cut) but posts nothing more and withholds both the question and its
-  unposted answer from later context. Once a question is prepared, an armed
+  cut) but delivers nothing more and withholds the question, its unposted
+  answer and every delivered part from later context. Once a question is prepared, an armed
   `Held` guard exists before the state lock is taken; the reservation is
   taken last under that lock and recorded on the guard at once, so the
   guard concludes the question (refund, reservation settled) even if its
@@ -290,6 +299,80 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   history. Proposals are recorded against the interaction id.
 - Not here: strategy prefetch and source attribution (no boss-knowledge v2
   renderer outside `api`), and a model pre-screen.
+
+### Delivery (`chat::driver::delivery`, R05)
+
+One `Delivery` per question, run by the channel's worker; its
+`DeliveryRecord` is in memory only and shared with the `Held` guard.
+`deleted` and the shutdown cut only set flags and wake the worker; they
+never issue Discord effects.
+
+- **Staging.** After `prepare` (queued questions show only their keycap;
+  shed and limited ones never get a placeholder) the worker posts the
+  persona's staging line (`pilot::staging_line` over
+  `staging_lines()`) as a silent reply to the question, mentions none.
+  Not sent / rate limited: one retry, unless the question was deleted or
+  cut meanwhile (then unstaged, `create_rejected`). Refused: unstaged. Ambiguous:
+  unstaged and never re-created. While the answer runs, typing triggers
+  every `TYPING_EVERY` (8 s) from the worker's own select loop, from the
+  placeholder's outcome until the answer returns; failures are ignored and
+  never retried, and one in flight when the answer returns is dropped.
+- **Answer.** Text is the reply or the failure line (a failure is a
+  one-part answer, I5), split by `reply_parts`. With a live placeholder,
+  part 1 is edited into it (posted id = the placeholder's): Unknown
+  Message → part 1 posted as a new reply; another refusal → a new reply,
+  then the placeholder deleted; ambiguous → one identical retry, then
+  treated as landed (`unknown: [1]`, D2) and never deleted or rewritten.
+  Without one, part 1 is today's reply (audible, `reply_to`). Parts 2..n
+  are silent, reply to nothing and post only after the previous part
+  landed (I4); not sent → one retry; refused or ambiguous → ending (an
+  ambiguous create is never replayed, I2).
+- **Ending.** ` *(reply incomplete)*` (`INCOMPLETE_MARKER`) is appended by
+  editing the last confirmed part; when that would exceed 2000 UTF-16
+  units, or no part was confirmed, `*(reply incomplete)*` is one silent new
+  message (a reply to the question only when nothing landed), never
+  replayed. Named deviation `D-DELIVERY-MARKER`: the only bytes added to an
+  answer's text; delivered parts are otherwise byte-identical to today's
+  reply and follow-ups.
+- **Deletion.** Waiting or preparing: refund, no placeholder. Staging in
+  flight: awaited, then deleted if it landed. Staged: deleted at once
+  beside the running answer. Answer returned, first effect not started:
+  re-checked right before it, then withdrawn; likewise when part 1's edit
+  was refused or found the placeholder gone (withdrawn, not incomplete, no
+  marker). Editing or later: what landed
+  stays, later parts stop, the marker is added (D4). Withdrawal: Unknown
+  Message counts as done; one retry when not sent or ambiguous, else
+  `orphaned`.
+- **Shutdown (D5; user decision 2026-10-01).** A cut is observed only
+  while the answer is still running: it turns a live placeholder into the
+  failure line (nothing is posted without one). Mid-delivery a cut does not
+  end the answer: once the answer has returned, its remaining parts keep
+  posting within the cut budget, with no incomplete marker for the cut, and
+  only the final hard abort stops them. The hard abort drops the effect in
+  flight (recorded ambiguous), posts no marker, records the row
+  `incomplete: delivered k of n parts` with `cause: shutdown` and anchors
+  the first delivered id.
+- **Held drop.** A panic or abort with a live placeholder, no effect in
+  flight and no answer effect started: a spawned task withdraws the
+  placeholder if the question was deleted (same retry rules), else edits it
+  into the failure line (nothing that can panic runs while unwinding).
+  Otherwise no Discord effect; the row is built from the record. Its error
+  starts like a normal conclusion's: `cancelled: the question was deleted`
+  when deleted, `cancelled: serve shut down` when the cut came before the
+  answer returned, `failed: the question stopped unexpectedly` only for a
+  genuine abort (a panic) that delivered nothing; the incomplete note is
+  appended whenever parts are missing. A deleted question's delivery cause
+  is `deleted` (deletion wins over `shutdown` and `aborted`), matching its
+  row error.
+- **Row.** `guardrail.delivery` always carries `placeholder`
+  (`none|edited|deleted|create_rejected|create_ambiguous|orphaned`),
+  `parts` and `delivered`; `unknown` (1-based parts whose landing is
+  unknown), `incomplete: true` and `cause`
+  (`rejected|ambiguous|deleted|shutdown|aborted`) appear only when set. An
+  incomplete answer appends `incomplete: delivered k of n parts` to the
+  row error after any cancel string (`; `-separated). An aborted question
+  with delivered parts never reads `failed: the question stopped
+  unexpectedly`.
 
 ### Lifecycle events (`Answerer::observe`)
 

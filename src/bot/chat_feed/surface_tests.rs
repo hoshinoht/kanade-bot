@@ -1,147 +1,136 @@
-//! `DiscordSurface::reply`: one message within the bound, follow-ups past it.
+//! `DiscordSurface`: each driver effect is one transport call, never
+//! retried, mentioning nobody, with its outcome classified for the driver.
 
 use std::sync::Arc;
 
-use serde_json::Map;
+use twilight_model::channel::message::MessageFlags;
 
 use super::DiscordSurface;
 use crate::bot::mentions;
-use crate::bot::transport::{Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
-use crate::chat::driver::Surface;
-use crate::chat::sanitize::shape_reply;
-use crate::chat::tools::{MAX_MEMBER_REPLY, ToolOutcome};
+use crate::bot::transport::{AmbiguousKind, Call, FakeDiscord, Op, RejectionKind, SILENT, Step};
+use crate::chat::driver::{Effect, Post, Surface};
 
 const CHANNEL: &str = "900";
 const ASKED: &str = "777";
 
-/// `(content, reply_to)` of every create call, delivered or not.
-fn sent(fake: &FakeDiscord) -> Vec<(String, Option<u64>)> {
-    fake.calls()
-        .into_iter()
-        .filter_map(|call| match call {
-            Call::Create { message, .. } => {
-                assert_eq!(message.allowed_mentions, mentions::none());
-                Some((
-                    message.content.unwrap_or_default(),
-                    message.reply_to.map(|id| id.get()),
-                ))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 fn fake_surface() -> (Arc<FakeDiscord>, DiscordSurface<FakeDiscord>) {
-    let fake = Arc::new(FakeDiscord::new());
+    let fake = Arc::new(FakeDiscord::with_first_message_id(5001));
     (fake.clone(), DiscordSurface(fake))
 }
 
-fn schedule() -> ToolOutcome {
-    let records: Vec<String> = [
-        (
-            "1a2b3c4d",
-            "Hard Lucid",
-            "Mon 21 Sep · 21:00",
-            " · *already happened*",
-        ),
-        ("7c5f4680", "Hard Baldrix", "Sun 27 Sep · 22:00", ""),
-        ("8d6e5791", "Extreme Kalos", "Sun 27 Sep · 23:30", ""),
-    ]
-    .iter()
-    .map(|(id, boss, when, past)| {
-        format!("`[{id}]` **{boss}**\n*{when}* · `planned` · `2/6 yes` · <#9001>{past}")
-    })
-    .collect();
-    ToolOutcome {
-        name: "get_schedule".to_owned(),
-        output: format!(
-            "**Your 3 runs this week · All channels**\n\n{}",
-            records.join("\n\n")
-        ),
-        arguments: Map::new(),
-        ok: true,
-        error: None,
-        created: Vec::new(),
-        cards: Vec::new(),
-        detail: None,
+fn post<'a>(text: &'a str, reply_to: Option<&'static str>, silent: bool) -> Post<'a> {
+    Post {
+        text,
+        reply_to,
+        silent,
     }
 }
 
-fn rust_fence(lines: usize) -> String {
-    let body: Vec<String> = (0..lines)
-        .map(|n| format!("        let centre_{n} = expand(bytes, {n}, {n} + 1); // odd  and even"))
+#[tokio::test]
+async fn posts_reply_or_stay_silent_and_never_mention() {
+    let (fake, surface) = fake_surface();
+    let placeholder = surface
+        .post(CHANNEL, post("Checking…", Some(ASKED), true))
+        .await;
+    let reply = surface
+        .post(CHANNEL, post("Hi <@1>", Some(ASKED), false))
+        .await;
+    let more = surface.post(CHANNEL, post("More", None, true)).await;
+    assert_eq!(placeholder, Effect::Done("5001".into()));
+    assert_eq!(reply, Effect::Done("5002".into()));
+    assert_eq!(more, Effect::Done("5003".into()));
+    assert_eq!(fake.create_flags(), [SILENT, MessageFlags::empty(), SILENT]);
+    let sent: Vec<_> = fake
+        .calls()
+        .into_iter()
+        .map(|call| match call {
+            Call::Create { message, .. } => {
+                assert_eq!(message.allowed_mentions, mentions::none());
+                (
+                    message.content.unwrap_or_default(),
+                    message.reply_to.map(|id| id.get()),
+                )
+            }
+            other => panic!("{other:?}"),
+        })
         .collect();
-    format!(
-        "```rust\nfn longest_palindrome(s: &str) -> &str {{\n    let bytes = s.as_bytes();\n{}\n    &s[..]\n}}\n```",
-        body.join("\n")
-    )
+    assert_eq!(
+        sent,
+        [
+            ("Checking…".to_owned(), Some(777)),
+            ("Hi <@1>".to_owned(), Some(777)),
+            ("More".to_owned(), None),
+        ]
+    );
 }
 
 #[tokio::test]
-async fn a_short_reply_is_one_unchanged_message() {
+async fn edits_replace_the_text_only_and_mention_nobody() {
     let (fake, surface) = fake_surface();
-    let id = surface.reply(CHANNEL, ASKED, "Hi  there~").await.unwrap();
-    assert_eq!(sent(&fake), vec![("Hi  there~".to_owned(), Some(777))]);
-    assert_eq!(fake.count(Op::Create), 1);
-    assert!(!id.is_empty());
-}
-
-/// The live 11fedae9 shape over the bound: the schedule answer, then the
-/// code whole and in order, then the closing lines, as follow-ups.
-#[tokio::test]
-async fn a_long_answer_posts_in_order_as_follow_ups() {
-    let code = rust_fence(15);
-    let closing = "Good luck tonight, you've got this!\n\nSee you at the run~";
-    let reply = format!(
-        "**Your next boss run**\n\n[7c5f4680] **Hard Baldrix** – *Sun 27 Sep · 22:00* – #hbaldguy\n\n{code}\n\n{closing}"
+    surface.post(CHANNEL, post("staging", None, true)).await;
+    assert_eq!(
+        surface.edit(CHANNEL, "5001", "the answer").await,
+        Effect::Done(())
     );
-    let shaped = shape_reply(&reply, &[schedule()]);
-    assert!(shaped.chars().count() > MAX_MEMBER_REPLY);
-    assert!(shaped.contains(&code));
-
-    let (fake, surface) = fake_surface();
-    let first = surface.reply(CHANNEL, ASKED, &shaped).await.unwrap();
-    let posted = sent(&fake);
-    assert!(posted.len() >= 2, "{posted:?}");
-    assert_eq!(posted[0].1, Some(777));
-    assert!(posted[1..].iter().all(|(_, to)| to.is_none()));
-    assert!(
-        posted[0]
-            .0
-            .starts_with("**Your next boss run**\n\n`[7c5f4680]`")
-    );
-    assert!(
-        posted.iter().any(|(text, _)| text.contains(&code)),
-        "{posted:?}"
-    );
-    let texts: Vec<&str> = posted.iter().map(|(text, _)| text.as_str()).collect();
-    assert_eq!(texts.join("\n\n"), shaped);
-    assert!(texts.last().unwrap().ends_with("See you at the run~"));
-    let Call::Create {
-        outcome: Outcome::Delivered(id),
-        ..
-    } = &fake.calls()[0]
-    else {
-        panic!("first create")
+    let Some(Call::Edit { message, edit, .. }) = fake.calls().pop() else {
+        panic!("edit recorded");
     };
-    assert_eq!(first, id.get().to_string());
+    assert_eq!(message.get(), 5001);
+    assert_eq!(edit.content.as_deref(), Some("the answer"));
+    assert_eq!(edit.embeds, None);
+    assert_eq!(edit.allowed_mentions, mentions::none());
 }
 
-/// A failed follow-up is logged and ends the reply; the reply itself stands.
 #[tokio::test]
-async fn a_failed_follow_up_stops_without_failing_the_reply() {
-    let text = (0..6)
-        .map(|n| format!("Paragraph {n}: {}", "words ".repeat(60)))
-        .collect::<Vec<_>>()
-        .join("\n\n");
+async fn outcomes_are_classified_once_and_never_retried() {
     let (fake, surface) = fake_surface();
-    fake.script(Op::Create, Step::Succeed);
-    fake.script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
-    assert!(surface.reply(CHANNEL, ASKED, &text).await.is_ok());
-    assert_eq!(fake.count(Op::Create), 2);
-
-    let (fake, surface) = fake_surface();
+    for kind in [RejectionKind::NotSent, RejectionKind::RateLimited] {
+        fake.script(Op::Create, Step::Reject(kind));
+        assert_eq!(
+            surface.post(CHANNEL, post("x", None, true)).await,
+            Effect::NotSent
+        );
+    }
     fake.script(Op::Create, Step::Reject(RejectionKind::MissingAccess));
-    assert!(surface.reply(CHANNEL, ASKED, &text).await.is_err());
-    assert_eq!(fake.count(Op::Create), 1);
+    assert_eq!(
+        surface.post(CHANNEL, post("x", None, false)).await,
+        Effect::Rejected("missing_access".into())
+    );
+    fake.script(
+        Op::Create,
+        Step::Ambiguous {
+            kind: AmbiguousKind::Timeout,
+            applied: true,
+        },
+    );
+    assert_eq!(
+        surface.post(CHANNEL, post("x", None, true)).await,
+        Effect::Ambiguous("ambiguous_timeout".into())
+    );
+    assert_eq!(fake.count(Op::Create), 4, "one call each");
+    assert_eq!(
+        surface.edit(CHANNEL, "4242", "gone").await,
+        Effect::UnknownMessage
+    );
+    assert_eq!(
+        surface.delete(CHANNEL, "4242").await,
+        Effect::UnknownMessage
+    );
+    assert_eq!(surface.delete(CHANNEL, "5001").await, Effect::Done(()));
+    assert_eq!(
+        surface.post("not-an-id", post("x", None, true)).await,
+        Effect::Rejected("invalid_id".into())
+    );
+}
+
+#[tokio::test]
+async fn typing_is_fire_and_forget() {
+    let (fake, surface) = fake_surface();
+    fake.set_default(
+        Op::Typing,
+        Some(Step::Reject(RejectionKind::MissingPermissions)),
+    );
+    surface.typing(CHANNEL).await;
+    surface.typing("bad").await;
+    assert_eq!(fake.count(Op::Typing), 1, "refused once, not retried");
 }

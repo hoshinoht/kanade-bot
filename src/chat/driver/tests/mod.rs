@@ -1,8 +1,10 @@
-//! The driver over a scripted answerer and a recording surface; the
-//! monotonic clock is the test's.
+//! The driver over a scripted answerer and a recording surface whose
+//! message effects go through `DiscordSurface` to a `FakeDiscord` (scripted
+//! outcomes and hold barriers); the monotonic clock is the test's. The
+//! delivery matrix (T1–T28) is in `delivery.rs`.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,14 +13,18 @@ use serde_json::json;
 use tokio::sync::Notify;
 
 use super::*;
+use crate::bot::chat_feed::DiscordSurface;
+use crate::bot::mentions;
+use crate::bot::transport::{Call, FakeDiscord, Op};
 use crate::chat::answer::Generation;
 use crate::chat::context::{Parent, QuestionMessage, Reference, WITHHELD};
 use crate::chat::gate::{
     Author, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings, SEEN_REACTION,
 };
 use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
-use crate::chat::sanitize::schedule_defaults;
+use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
+use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member, Roster};
 use crate::domain::model_log::{ChatInteraction, ChatOutcome};
 use crate::infrastructure::llm::Message;
@@ -37,6 +43,16 @@ fn kanade() -> CompiledPersona {
     let root = PersonaRoot::open(&root).expect("tracked personas");
     let id = PersonaId::parse("kanade").expect("persona id");
     CompiledPersona::compile(&root.load_bundle(&id).expect("bundle").value, None)
+}
+
+fn catalog() -> Arc<BossTable> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml");
+    Arc::new(crate::infrastructure::files::load_catalog(&path).expect("shipped catalog"))
+}
+
+/// The tracked persona's staging line for the test question ("when is").
+fn staged() -> String {
+    kanade().staging_lines().schedule.clone()
 }
 
 /// Live like the guild cache: a channel may move category meanwhile.
@@ -109,6 +125,8 @@ enum Step {
     /// Never answers (only a shutdown cut ends it).
     Forever,
     Panic,
+    /// Panic once notified.
+    PanicAfter(Arc<Notify>),
 }
 
 #[derive(Default)]
@@ -184,6 +202,7 @@ impl Answerer for Arc<Fake> {
         }
         Some(Prepared {
             persona: kanade(),
+            catalog: catalog(),
             persona_key: "kanade".into(),
             directory: if self.panic_directory_always.swap(false, Ordering::SeqCst) {
                 Arc::new(PanicAlways)
@@ -223,6 +242,10 @@ impl Answerer for Arc<Fake> {
             }
             Some(Step::Forever) | None => std::future::pending().await,
             Some(Step::Panic) => panic!("scripted answerer panic"),
+            Some(Step::PanicAfter(notify)) => {
+                notify.notified().await;
+                panic!("scripted answerer panic")
+            }
         };
         Generation {
             reply: reply.into(),
@@ -262,15 +285,74 @@ struct Knobs {
     slow_keycap: Mutex<Option<Duration>>,
     /// Every removal hangs (a stuck Discord).
     hang_unreact: AtomicBool,
+    /// The n-th post (1-based) panics before reaching Discord; 0 never.
+    panic_on_post: AtomicUsize,
+    posts: AtomicUsize,
 }
 
-#[derive(Clone, Default)]
-struct Recorder(Arc<Mutex<Vec<String>>>, Arc<Knobs>);
+/// Reactions as event lines; message effects through `DiscordSurface` to
+/// the fake Discord (message ids from 5001).
+#[derive(Clone)]
+struct Recorder(Arc<Mutex<Vec<String>>>, Arc<Knobs>, Arc<FakeDiscord>);
+
+impl Default for Recorder {
+    fn default() -> Self {
+        Self(
+            Arc::default(),
+            Arc::default(),
+            Arc::new(FakeDiscord::with_first_message_id(5001)),
+        )
+    }
+}
 
 impl Recorder {
     fn events(&self) -> Vec<String> {
         self.0.lock().unwrap().clone()
     }
+
+    fn discord(&self) -> DiscordSurface<FakeDiscord> {
+        DiscordSurface(Arc::clone(&self.2))
+    }
+}
+
+/// Every create and edit Discord saw (delivered or not), typing excluded:
+/// `post[ silent][ ^reply_to] <channel>: text`, `edit <id>: text`,
+/// `delete <id>`. Each must mention nobody (T27).
+fn effects(fake: &FakeDiscord) -> Vec<String> {
+    let mut flags = fake.create_flags().into_iter();
+    fake.calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::Create {
+                channel, message, ..
+            } => {
+                assert_eq!(message.allowed_mentions, mentions::none());
+                let silent = flags
+                    .next()
+                    .expect("flags")
+                    .contains(crate::bot::transport::SILENT);
+                let to = message
+                    .reply_to
+                    .map(|id| format!(" ^{id}"))
+                    .unwrap_or_default();
+                let silent = if silent { " silent" } else { "" };
+                Some(format!(
+                    "post{silent}{to} {channel}: {}",
+                    message.content.unwrap_or_default()
+                ))
+            }
+            Call::Edit { message, edit, .. } => {
+                assert_eq!(edit.allowed_mentions, mentions::none());
+                assert!(edit.embeds.is_none());
+                Some(format!(
+                    "edit {message}: {}",
+                    edit.content.unwrap_or_default()
+                ))
+            }
+            Call::Delete { message, .. } => Some(format!("delete {message}")),
+            _ => None,
+        })
+        .collect()
 }
 
 impl Surface for Recorder {
@@ -295,10 +377,25 @@ impl Surface for Recorder {
             .push(format!("-{emoji} {channel_id}/{message_id}"));
     }
 
-    async fn reply(&self, channel_id: &str, reply_to: &str, text: &str) -> Result<String, String> {
-        let mut events = self.0.lock().unwrap();
-        events.push(format!("reply {channel_id}/{reply_to}: {text}"));
-        Ok(format!("9{}", events.len()))
+    async fn post(&self, channel_id: &str, post: Post<'_>) -> Effect<String> {
+        let n = self.1.posts.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(
+            self.1.panic_on_post.load(Ordering::SeqCst) != n,
+            "injected surface panic"
+        );
+        self.discord().post(channel_id, post).await
+    }
+
+    async fn edit(&self, channel_id: &str, message_id: &str, text: &str) -> Effect<()> {
+        self.discord().edit(channel_id, message_id, text).await
+    }
+
+    async fn delete(&self, channel_id: &str, message_id: &str) -> Effect<()> {
+        self.discord().delete(channel_id, message_id).await
+    }
+
+    async fn typing(&self, channel_id: &str) {
+        self.discord().typing(channel_id).await;
     }
 }
 
@@ -390,6 +487,14 @@ impl Rig {
     fn advance(&self, seconds: f64) {
         *self.clock.lock().unwrap() += seconds;
     }
+
+    fn fake_discord(&self) -> &FakeDiscord {
+        &self.surface.2
+    }
+
+    fn effects(&self) -> Vec<String> {
+        effects(self.fake_discord())
+    }
 }
 
 #[tokio::test]
@@ -412,8 +517,14 @@ async fn a_thread_question_in_a_chat_category_is_answered_as_a_reply_and_logged(
         rig.surface.events(),
         [
             format!("+{SEEN_REACTION} {THREAD}/1001"),
-            format!("reply {THREAD}/1001: Lotus is at 9."),
             format!("-{SEEN_REACTION} {THREAD}/1001"),
+        ]
+    );
+    assert_eq!(
+        rig.effects(),
+        [
+            format!("post silent ^1001 {THREAD}: {}", staged()),
+            "edit 5001: Lotus is at 9.".to_owned(),
         ]
     );
     let rows = rig.rows();
@@ -475,7 +586,7 @@ async fn queued_questions_show_their_position_and_a_deleted_one_is_refunded() {
     // 1003 runs next (its keycap comes off); the deleted one never does.
     let events = rig.surface.events();
     assert!(events.contains(&format!("-{} {CHANNEL}/1003", position_reaction(2))));
-    assert!(!events.iter().any(|event| event.contains("/1002: ")));
+    assert!(!rig.effects().iter().any(|effect| effect.contains("^1002")));
     assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 2);
 }
 
@@ -537,7 +648,14 @@ async fn a_deleted_running_question_finishes_but_posts_nothing() {
     rig.driver.deleted(&["1001".into()]);
     held.notify_one();
     rig.settle().await;
-    assert!(!rig.surface.events().iter().any(|e| e.starts_with("reply")));
+    assert_eq!(
+        rig.effects(),
+        [
+            format!("post silent ^1001 {CHANNEL}: {}", staged()),
+            "delete 5001".to_owned(),
+        ],
+        "the placeholder is withdrawn; the late answer never posts"
+    );
     let rows = rig.rows();
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -595,10 +713,15 @@ async fn a_spent_allowance_reacts_says_so_once_and_logs_rate_limited() {
     rig.settle().await;
     let events = rig.surface.events();
     assert!(events.contains(&format!("+{RATE_LIMITED_REACTION} {CHANNEL}/1002")));
-    let limited: Vec<_> = events
+    let effects = rig.effects();
+    let limited: Vec<_> = effects
         .iter()
-        .filter(|event| event.contains("That's your 1 answer"))
+        .filter(|effect| effect.contains("That's your 1 answer"))
         .collect();
+    assert!(
+        limited[0].starts_with(&format!("post ^1002 {CHANNEL}: ")),
+        "an audible reply, as before: {limited:?}"
+    );
     assert_eq!(limited.len(), 1, "once per episode");
     let rows = rig.rows();
     let outcomes: Vec<_> = rows.iter().map(|row| row.outcome).collect();
@@ -716,7 +839,14 @@ async fn shutdown_cuts_running_questions_refunds_and_concludes_them() {
     assert_eq!(rows[0].error.as_deref(), Some("cancelled: serve shut down"));
     assert_eq!(rig.driver.limits().clean_retry.pending, 0);
     let events = rig.surface.events();
-    assert!(!events.iter().any(|event| event.starts_with("reply")));
+    assert_eq!(
+        rig.effects(),
+        [
+            format!("post silent ^1001 {CHANNEL}: {}", staged()),
+            format!("edit 5001: {FAILURE_REPLY}"),
+        ],
+        "D5: the placeholder becomes the failure line"
+    );
     assert!(events.contains(&format!("-{} {CHANNEL}/1002", position_reaction(1))));
     assert!(
         !rig.driver.offer(asked("1003", "13", CHANNEL, &[ROLE])),
@@ -884,14 +1014,16 @@ async fn a_panicking_answer_concludes_and_frees_the_channel() {
     assert_eq!(limits.clean_retry.pending, 0, "the reservation settled");
     assert!(limits.queue.answering.is_empty(), "the channel is free");
     assert_eq!(limits.allowance.pool.used, 0, "refunded");
-    assert!(!rig.surface.events().iter().any(|e| e.starts_with("reply")));
+    assert_eq!(
+        rig.effects(),
+        [
+            format!("post silent ^1001 {CHANNEL}: {}", staged()),
+            format!("edit 5001: {FAILURE_REPLY}"),
+        ]
+    );
     assert!(rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
-    assert!(
-        rig.surface
-            .events()
-            .contains(&format!("reply {CHANNEL}/1002: after"))
-    );
+    assert!(rig.effects().contains(&"edit 5002: after".to_owned()));
 }
 
 #[tokio::test]
@@ -1176,3 +1308,5 @@ async fn an_expired_waiter_moves_the_rest_up() {
         "{events:?}"
     );
 }
+
+mod delivery;

@@ -1,11 +1,14 @@
 //! The fake transport's scripted outcomes and remote-state model.
 
+use std::sync::Arc;
+
+use twilight_model::channel::message::MessageFlags;
 use twilight_model::id::Id;
 
 use kanade::bot::mentions;
 use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, HistoryPage, MessageEdit, Op, Outcome,
-    OutgoingMessage, Presence, RejectionKind, Step,
+    OutgoingMessage, Presence, RejectionKind, SILENT, Step,
 };
 
 use super::support::{
@@ -284,4 +287,134 @@ async fn registration_is_recorded_per_guild() {
         fake.calls()[..],
         [Call::Register { guild, .. }] if guild == Id::new(GUILD)
     ));
+}
+
+#[tokio::test]
+async fn flags_are_recorded_per_create_and_bad_flags_refused_unsent() {
+    let fake = FakeDiscord::new();
+    let channel = Id::new(CHANNEL);
+    fake.script(Op::Create, Step::Reject(RejectionKind::MissingAccess));
+    assert_eq!(
+        fake.create_flagged_message(channel, &message("x"), SILENT | MessageFlags::EPHEMERAL)
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert_eq!(
+        fake.create_flagged_message(channel, &message("a"), SILENT)
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::MissingAccess),
+        "the refused call consumed no scripted step"
+    );
+    assert!(
+        fake.create_flagged_message(channel, &message("b"), SILENT)
+            .await
+            .is_delivered()
+    );
+    assert!(
+        fake.create_message(channel, &message("c"))
+            .await
+            .is_delivered()
+    );
+    assert_eq!(
+        fake.create_flags(),
+        vec![
+            SILENT | MessageFlags::EPHEMERAL,
+            SILENT,
+            SILENT,
+            MessageFlags::empty()
+        ]
+    );
+    assert_eq!(fake.count(Op::Create), 4);
+    assert_eq!(fake.messages().len(), 2);
+}
+
+#[tokio::test]
+async fn typing_is_recorded_and_scriptable() {
+    let fake = FakeDiscord::new();
+    let channel = Id::new(CHANNEL);
+    fake.script(Op::Typing, Step::Reject(RejectionKind::MissingPermissions));
+    assert_eq!(
+        fake.trigger_typing(channel).await,
+        Outcome::DefinitelyRejected(RejectionKind::MissingPermissions)
+    );
+    assert_eq!(fake.trigger_typing(channel).await, Outcome::Delivered(()));
+    assert_eq!(fake.count(Op::Typing), 2);
+    assert!(matches!(
+        fake.calls()[..],
+        [Call::Typing { channel: a, .. }, Call::Typing { channel: b, .. }]
+            if a == channel && b == channel
+    ));
+    assert!(fake.messages().is_empty(), "typing posts nothing");
+}
+
+#[tokio::test]
+async fn a_held_call_parks_before_its_effect_until_released() {
+    let fake = Arc::new(FakeDiscord::new());
+    let channel = Id::new(CHANNEL);
+    let hold = fake.hold(Op::Create);
+    fake.script(
+        Op::Create,
+        Step::Ambiguous {
+            kind: AmbiguousKind::Timeout,
+            applied: true,
+        },
+    );
+    let task = tokio::spawn({
+        let fake = Arc::clone(&fake);
+        async move {
+            fake.create_flagged_message(channel, &message("held"), SILENT)
+                .await
+        }
+    });
+    hold.entered().await;
+    assert!(fake.calls().is_empty(), "nothing recorded while parked");
+    assert!(fake.messages().is_empty(), "no effect while parked");
+    // Other operations, and later creates, are not held.
+    assert!(fake.trigger_typing(channel).await.is_delivered());
+    hold.release();
+    assert_eq!(
+        task.await.unwrap(),
+        Outcome::Ambiguous(AmbiguousKind::Timeout),
+        "the scripted step applies after release"
+    );
+    assert_eq!(fake.messages().len(), 1);
+    assert_eq!(fake.create_flags(), vec![SILENT]);
+    assert!(
+        fake.create_message(channel, &message("free"))
+            .await
+            .is_delivered()
+    );
+}
+
+#[tokio::test]
+async fn a_hold_released_early_lets_the_call_through_and_a_cancelled_one_does_nothing() {
+    let fake = FakeDiscord::new();
+    let channel = Id::new(CHANNEL);
+    fake.hold(Op::Typing).release();
+    assert!(fake.trigger_typing(channel).await.is_delivered());
+
+    let _never_released = fake.hold(Op::Edit);
+    fake.seed_message(channel, Id::new(77));
+    let edit = MessageEdit {
+        content: Some("later".into()),
+        embeds: None,
+        allowed_mentions: mentions::none(),
+    };
+    let parked = tokio::time::timeout(
+        std::time::Duration::from_millis(20),
+        fake.edit_message(channel, Id::new(77), &edit),
+    )
+    .await;
+    assert!(parked.is_err(), "still parked");
+    assert_eq!(
+        fake.count(Op::Edit),
+        0,
+        "a dropped parked call records nothing"
+    );
+    assert!(
+        fake.edit_message(channel, Id::new(77), &edit)
+            .await
+            .is_delivered(),
+        "the hold was consumed by the cancelled call"
+    );
 }

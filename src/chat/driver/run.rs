@@ -1,24 +1,29 @@
-//! One channel's worker: answer the question, then hand over to the next
-//! waiting one until the channel's queue is empty. A prepared question
-//! always concludes, even when its future is dropped (a panic or a shutdown
-//! abort), settling any clean-retry reservation: see [`Held`].
+//! One channel's worker: answer the question and deliver it
+//! ([`super::delivery`]), then hand over to the next waiting one until the
+//! channel's queue is empty. A prepared question always concludes, even when
+//! its future is dropped (a panic or a shutdown abort), settling any
+//! clean-retry reservation and logging what was delivered: see [`Held`].
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::{Pin, pin};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use super::{Answerer, Asked, ChatDriver, ChatEvent, Job, Prepared, Queued, State, Surface};
+use super::delivery::{Cause, Deletion, Delivery, DeliveryRecord, Placeholder, append_error, lock};
+use super::{
+    Answerer, Asked, ChatDriver, ChatEvent, Effect, Job, Prepared, Queued, State, Surface,
+};
 use crate::chat::answer::{AnswerFailure, AnswerSettings, Generation, Question};
 use crate::chat::context::{assemble, build_turns, system_prompt};
 use crate::chat::gate::{CHANNEL_BUSY_REACTION, SEEN_REACTION, is_chat_channel};
-use crate::chat::pilot::{ChatPilot, Concluded, Finished, LogFacts, ReplyPort, failure_reply};
-use crate::chat::sanitize::schedule_defaults;
+use crate::chat::pilot::{
+    ChatPilot, Concluded, Finished, LogFacts, ReplyPort, failure_reply, staging_line,
+};
+use crate::chat::sanitize::{reply_parts, schedule_defaults};
 use crate::chat::tools::ToolContext;
 use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
 
@@ -113,8 +118,9 @@ fn tool_context(asked: &Asked, prepared: &Prepared, source_id: &str) -> ToolCont
 
 /// A prepared question, armed before its context is built and holding its
 /// clean-retry reservation once taken (`reserved`). Concluding it disarms
-/// it; dropped armed (panic, abort) it concludes as a refunded failure, so
-/// any reservation is settled and nothing is posted.
+/// it; dropped armed (panic, abort) it concludes from its delivery record
+/// (a refunded failure when the answer never returned), so any reservation
+/// is settled and no further part is posted.
 struct Held<A: Answerer, S: Surface> {
     driver: ChatDriver<A, S>,
     asked: Asked,
@@ -127,6 +133,10 @@ struct Held<A: Answerer, S: Surface> {
     armed: bool,
     /// Already handed off from an unwinding drop: never defer again.
     deferred: bool,
+    record: Arc<Mutex<DeliveryRecord>>,
+    deletion: Arc<Deletion>,
+    /// The answer, once it returned.
+    generation: Option<Generation>,
 }
 
 impl<A: Answerer, S: Surface> Held<A, S> {
@@ -147,6 +157,9 @@ impl<A: Answerer, S: Surface> Held<A, S> {
             let unposted = format!("unposted:{}", asked.message.id);
             pilot.conversations.withhold(&asked.message.id);
             pilot.conversations.withhold(&unposted);
+            for landed in &lock(&self.record).landed {
+                pilot.conversations.withhold(&landed.id);
+            }
             Ok(unposted)
         } else {
             posted
@@ -204,21 +217,90 @@ impl<A: Answerer, S: Surface> Held<A, S> {
         }
     }
 
-    /// Concludes an armed question as a refunded failure, logs it and takes
-    /// the 👀 off.
+    /// Concludes an armed question from its delivery record (a refunded
+    /// failure when the answer never returned), logs it and takes the 👀 off.
+    /// What was in flight is recorded ambiguous; a placeholder still showing
+    /// the staging line with nothing in flight is, by a spawned task,
+    /// withdrawn when the question was deleted, else edited into the failure
+    /// line. No other effect is issued. The row error starts like a normal
+    /// conclusion's (deleted, cut before the answer returned, or failed when
+    /// a genuine abort delivered nothing) and notes an incomplete delivery.
     fn abort(&mut self) {
-        let concluded = self.conclude(&ended(), Err("not posted".into()), false);
+        // A deletion wins: the cause matches the row's cancel string.
+        let deleted = self.deletion.is_set();
+        let cause = if deleted {
+            Cause::Deleted
+        } else if *self.driver.shared.cut.borrow() {
+            Cause::Shutdown
+        } else {
+            Cause::Aborted
+        };
+        let (posted, failure_edit) = {
+            let mut record = lock(&self.record);
+            let idle = record.in_flight.is_none() && !record.answer_started;
+            let failure_edit = match &record.placeholder {
+                Placeholder::Live(id) if idle => Some(id.clone()),
+                _ => None,
+            };
+            record.aborted(cause);
+            if deleted && record.cause.is_some() {
+                record.cause = Some(Cause::Deleted);
+            }
+            (record.first_id(), failure_edit)
+        };
+        let answered = self.generation.is_some();
+        let generation = self.generation.take().unwrap_or_else(ended);
+        let posted = posted.ok_or_else(|| "not posted".to_owned());
+        let concluded = self.conclude(&generation, posted, deleted);
         self.driver.shared.answerer.observe(&ChatEvent::Cancelled {
             interaction_id: &self.row_id,
             reason: "aborted",
         });
         let driver = self.driver.clone();
         let (channel, message) = (self.asked.channel_id.clone(), self.asked.message.id.clone());
+        let (record, prepared) = (Arc::clone(&self.record), Arc::clone(&self.prepared));
+        let deletion = Arc::clone(&self.deletion);
         self.driver.spawn(async move {
             let shared = &driver.shared;
+            if failure_edit.is_some() && deleted {
+                let delivery = Delivery::new(
+                    &shared.surface,
+                    &channel,
+                    &message,
+                    Arc::clone(&record),
+                    &deletion,
+                );
+                delivery.withdraw().await;
+            } else if let Some(id) = failure_edit {
+                let text = failure_reply(&ended(), &prepared.persona);
+                let outcome = shared.surface.edit(&channel, &id, text).await;
+                lock(&record).placeholder = match outcome {
+                    Effect::Done(()) => Placeholder::Edited,
+                    Effect::UnknownMessage => Placeholder::Deleted,
+                    _ => Placeholder::Orphaned,
+                };
+            }
             if let Some(concluded) = concluded {
                 let mut row = concluded.interaction;
-                row.error = Some(FAILED.to_owned());
+                let record = lock(&record).clone();
+                let base = if deleted {
+                    Some(DELETED)
+                } else if cause == Cause::Shutdown && !answered {
+                    Some(CUT)
+                } else if cause == Cause::Aborted && record.landed.is_empty() {
+                    Some(FAILED)
+                } else {
+                    None
+                };
+                if let Some(base) = base {
+                    row.error = Some(base.to_owned());
+                }
+                if let Some(incomplete) = record.incomplete_error() {
+                    append_error(&mut row.error, incomplete);
+                }
+                if let Some(guardrail) = row.guardrail.as_object_mut() {
+                    guardrail.insert("delivery".into(), record.guardrail());
+                }
                 shared.answerer.record(row).await;
             }
             shared
@@ -266,13 +348,16 @@ impl<A: Answerer, S: Surface> Drop for Held<A, S> {
             started: self.started,
             armed: true,
             deferred: true,
+            record: Arc::clone(&self.record),
+            deletion: Arc::clone(&self.deletion),
+            generation: self.generation.take(),
         };
         self.driver.spawn(async move { later.abort() });
     }
 }
 
 impl<A: Answerer, S: Surface> ChatDriver<A, S> {
-    pub(super) async fn worker(self, mut job: Queued, mut cancelled: Arc<AtomicBool>) {
+    pub(super) async fn worker(self, mut job: Queued, mut cancelled: Arc<Deletion>) {
         let origin = job.asked.origin_id.clone();
         loop {
             // A panicking question concludes through its `Held` guard; the
@@ -344,13 +429,13 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
     /// Finish the channel's answer: give up stale waiters (refund, busy
     /// reaction), take the next waiting question, if any, and move the
     /// remaining waiters up.
-    fn hand_off(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<AtomicBool>)> {
+    fn hand_off(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<Deletion>)> {
         let next = self.take_next(state, origin);
         self.renumber(state);
         next
     }
 
-    fn take_next(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<AtomicBool>)> {
+    fn take_next(&self, state: &mut State, origin: &str) -> Option<(Queued, Arc<Deletion>)> {
         let now = self.now();
         loop {
             let handoff = state.pilot.traffic.finish(origin, now);
@@ -380,7 +465,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             let Some(queued) = state.waiting.remove(&next.message_id) else {
                 continue;
             };
-            let cancelled = Arc::new(AtomicBool::new(false));
+            let cancelled = Arc::new(Deletion::default());
             state
                 .running
                 .insert(next.message_id.clone(), Arc::clone(&cancelled));
@@ -421,7 +506,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             && is_chat_channel(fresh.as_ref().or(snapshot), channels, &setup.pilot)
     }
 
-    async fn run_one(&self, job: &Queued, cancelled: &Arc<AtomicBool>) {
+    async fn run_one(&self, job: &Queued, deletion: &Arc<Deletion>) {
         let shared = &self.shared;
         let (asked, surface) = (&job.asked, &shared.surface);
         let (channel, message_id) = (asked.channel_id.as_str(), asked.message.id.as_str());
@@ -436,8 +521,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         let started = Instant::now();
         let prepared = shared.answerer.prepare(asked).await;
         // Deleted while it was being prepared: no model call.
-        let Some(prepared) = prepared.filter(|_| !cancelled.load(Ordering::SeqCst)) else {
-            let reason = if cancelled.load(Ordering::SeqCst) {
+        let Some(prepared) = prepared.filter(|_| !deletion.is_set()) else {
+            let reason = if deletion.is_set() {
                 "deleted"
             } else {
                 "not_ready"
@@ -466,6 +551,9 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             started,
             armed: true,
             deferred: false,
+            record: Arc::default(),
+            deletion: Arc::clone(deletion),
+            generation: None,
         };
         let (reserved, turns, focus) = {
             let mut state = self.state();
@@ -518,28 +606,53 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 clean_retry: reserved,
             },
         };
+        let delivery = Delivery::new(
+            surface,
+            channel,
+            message_id,
+            Arc::clone(&held.record),
+            deletion,
+        );
+        let staging = staging_line(
+            &asked.message.content,
+            &prepared.catalog,
+            prepared.persona.staging_lines(),
+        );
         let answered = shared.answerer.answer(Job {
             prepared: &prepared,
             asked,
             question,
-            cancelled,
+            cancelled: &deletion.flag,
         });
-        let (generation, was_cut) = tokio::select! {
-            generation = answered => (generation, false),
-            () = cut_signal(shared.cut.subscribe()) => (ended(), true),
-        };
-        let deleted = cancelled.load(Ordering::SeqCst);
-
-        let posted = if deleted || was_cut {
-            Err("not posted".to_owned())
+        let answer = delivery
+            .until_answered(staging, answered, cut_signal(shared.cut.subscribe()))
+            .await;
+        let was_cut = answer.is_none();
+        let generation = answer.unwrap_or_else(ended);
+        if !was_cut {
+            held.generation = Some(generation.clone());
+        }
+        let failure = || failure_reply(&generation, &prepared.persona).to_owned();
+        // Re-checked right before the first answer effect.
+        if deletion.is_set() {
+            delivery.ended_early(Cause::Deleted).await;
+        } else if was_cut {
+            // D5: a live placeholder becomes the failure line.
+            if matches!(lock(&held.record).placeholder, Placeholder::Live(_)) {
+                delivery.deliver(vec![failure()]).await;
+            }
+            delivery.ended_early(Cause::Shutdown).await;
         } else {
             let text = if generation.reply.is_empty() {
-                failure_reply(&generation, &prepared.persona).to_owned()
+                failure()
             } else {
                 generation.reply.clone()
             };
-            surface.reply(channel, message_id, &text).await
-        };
+            delivery.deliver(reply_parts(&text)).await;
+        }
+        let deleted = deletion.is_set();
+        let record = lock(&held.record).clone();
+        let posted = record.first_id().ok_or_else(|| "not posted".to_owned());
         let concluded = held.conclude(&generation, posted, deleted);
         // The row first: at shutdown the reaction tidy-up may be aborted.
         if let Some(concluded) = &concluded {
@@ -554,10 +667,16 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                     }),
                 );
             }
+            if let Some(guardrail) = row.guardrail.as_object_mut() {
+                guardrail.insert("delivery".into(), record.guardrail());
+            }
             if deleted {
                 row.error = Some(DELETED.to_owned());
             } else if was_cut {
                 row.error = Some(CUT.to_owned());
+            }
+            if let Some(incomplete) = record.incomplete_error() {
+                append_error(&mut row.error, incomplete);
             }
             let event = if deleted || was_cut {
                 ChatEvent::Cancelled {

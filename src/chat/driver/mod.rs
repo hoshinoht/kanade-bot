@@ -1,10 +1,12 @@
 //! Serve's chat loop around [`ChatPilot`], with no Discord types: the gate,
 //! the per-channel queue (position reactions, refunds on shed, delete and
 //! expiry), the clean-retry reservation taken when a question is dequeued,
-//! the answer, `conclude` with the reservation it holds, the reply and the
-//! chat-log row. The model side is an [`Answerer`], Discord a [`Surface`]
-//! (`docs/v5/chat-orchestration.md`, "Serve composition").
+//! the answer and its delivery (`delivery.rs`: staging placeholder, typing,
+//! the answer edited in and continued), `conclude` with the reservation it
+//! holds and the chat-log row. The model side is an [`Answerer`], Discord a
+//! [`Surface`] (`docs/v5/chat-orchestration.md`, "Serve composition").
 
+mod delivery;
 mod events;
 mod ports;
 mod run;
@@ -14,7 +16,6 @@ mod view;
 mod tests;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -22,8 +23,11 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
+pub use delivery::{INCOMPLETE_MARKER, TYPING_EVERY};
 pub use events::ChatEvent;
-pub use ports::{Answerer, Asked, Job, Prepared, Setup, Surface};
+pub use ports::{Answerer, Asked, Effect, Job, Post, Prepared, Setup, Surface};
+
+use delivery::Deletion;
 pub use view::{ChatHandle, ChatView};
 
 use crate::chat::gate::{CHANNEL_BUSY_REACTION, ChatDecision, RATE_LIMITED_REACTION, Summons};
@@ -148,8 +152,8 @@ struct State {
     pilot: ChatPilot,
     overrides: Vec<AllowanceOverride>,
     waiting: HashMap<String, Queued>,
-    /// Running questions by message id → deleted.
-    running: HashMap<String, Arc<AtomicBool>>,
+    /// Running questions by message id → their deletion.
+    running: HashMap<String, Arc<Deletion>>,
     persona_key: Option<String>,
     /// Last `(enabled, ready)` seen, for `SetupChanged`.
     setup_seen: Option<(bool, bool)>,
@@ -320,7 +324,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         );
         match admission {
             Admission::Answer => {
-                let cancelled = Arc::new(AtomicBool::new(false));
+                let cancelled = Arc::new(Deletion::default());
                 state.running.insert(message_id, Arc::clone(&cancelled));
                 drop(guard);
                 self.shared.answerer.observe(&ChatEvent::Admitted {
@@ -419,7 +423,12 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 .react(&channel, &message, RATE_LIMITED_REACTION)
                 .await;
             if let Some(text) = reply {
-                let _ = shared.surface.reply(&channel, &message, &text).await;
+                let post = Post {
+                    text: &text,
+                    reply_to: Some(&message),
+                    silent: false,
+                };
+                let _ = shared.surface.post(&channel, post).await;
             }
             shared.answerer.record(row).await;
         });
@@ -427,7 +436,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
 
     /// Deleted messages: a waiting question leaves the queue with a refund;
     /// a running one finishes (a staged proposal is never cut from its
-    /// supersede) but posts nothing more.
+    /// supersede) while its delivery withdraws the placeholder, or stops
+    /// after the parts already delivered. Only flags are set here.
     pub fn deleted(&self, message_ids: &[String]) {
         let mut guard = self.state();
         let state = &mut *guard;
@@ -442,8 +452,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 if let Some(stamp) = waiting.spent_at {
                     state.pilot.allowance.refund(&waiting.member_id, stamp);
                 }
-            } else if let Some(cancelled) = state.running.get(id) {
-                cancelled.store(true, Ordering::SeqCst);
+            } else if let Some(deletion) = state.running.get(id) {
+                deletion.set();
             }
         }
         self.renumber(state);

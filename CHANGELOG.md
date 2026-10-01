@@ -6,6 +6,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 chat shows the persona's staging line as a silent reply with typing
+  while it answers, then edits that message into the answer; longer answers
+  continue as silent follow-ups. A deleted question's placeholder is
+  withdrawn, an answer that stops early ends with `*(reply incomplete)*`,
+  shutdown turns a pending placeholder into the failure line, and chat-log
+  rows record what was delivered (`guardrail.delivery`, `incomplete:
+  delivered k of n parts`).
 - v5 model context windows are live, saved settings (`v5.model_context`,
   seeded from `[models.context]`): per-alias override, then the catalog's
   published window, then a cloud (65,536) or local (8,192) default, capped at
@@ -590,6 +597,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 long slash-command replies now post their follow-up parts in serve;
+  the production transport refused every follow-up (and would have refused
+  any other default-bodied transport call) as invalid without sending it.
 - v5 chat queue fixes: waiting questions' keycap positions are renumbered
   when a question leaves the queue; a queued question whose channel left the
   chat category is refunded instead of answered; a panic while a question's
