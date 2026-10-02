@@ -270,15 +270,42 @@ impl Catalog {
     /// keys only, so no request path ever reaches the filesystem unchecked.
     pub fn file(&self, kind: Kind, key: &str) -> Option<PathBuf> {
         let def = BOSSES.iter().find(|d| d.key == key)?;
+        self.named(kind, def.key)
+    }
+
+    /// Art for an event boss, named by its key. The caller has checked that a
+    /// knowledge document declares exactly this key; letters and digits only.
+    pub fn event_file(&self, kind: Kind, key: &str) -> Option<PathBuf> {
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return None;
+        }
+        self.named(kind, key)
+    }
+
+    fn named(&self, kind: Kind, basename: &str) -> Option<PathBuf> {
         let dir = self.root.join(kind.dir());
         SUFFIXES
             .iter()
-            .map(|s| dir.join(format!("{}.{s}", def.key)))
+            .map(|s| dir.join(format!("{basename}.{s}")))
             .find(|p| p.is_file())
     }
 
     fn url(&self, kind: Kind, key: &str) -> Option<String> {
         self.file(kind, key).map(|_| format!("{}{key}", kind.url()))
+    }
+
+    /// An event boss's `(portrait, portrait_sm, art)` URLs, as on `Boss`.
+    pub fn event_art(&self, key: &str) -> (Option<String>, Option<String>, Option<String>) {
+        let url = |kind: Kind| {
+            self.event_file(kind, key)
+                .map(|_| format!("{}{key}", kind.url()))
+        };
+        let portrait = url(Kind::Portrait);
+        (
+            portrait.clone(),
+            url(Kind::Icon).or(portrait),
+            url(Kind::Entry),
+        )
     }
 
     /// The in-game list in level order, with what the guild's timings use ticked.

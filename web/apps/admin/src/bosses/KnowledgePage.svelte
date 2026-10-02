@@ -3,7 +3,8 @@
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/boss-grid.scss';
   import type { Difficulty, DifficultyFacts, Knowledge } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Portrait } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, Portrait, StatusChip } from '@kanade/ui';
+  import { seasonal } from './event';
   import { Resource } from '../resource.svelte';
 
   let { key, difficulty = '' }: { key: string; difficulty?: string } = $props();
@@ -51,7 +52,7 @@
           size="md"
         />{/if}
       {knowledge.data?.name ?? key}
-      {#if doc?.event}<span class="chip chip--maybe">Event</span>{/if}
+      {#if doc?.event}<StatusChip>{seasonal(doc.event)}</StatusChip>{/if}
     </h1>
   {#if knowledge.data}
     <p class="pageline__context">

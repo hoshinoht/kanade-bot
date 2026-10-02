@@ -17,7 +17,7 @@ use axum::{
 use ring::digest::{Context, SHA256, digest};
 use serde::Serialize;
 
-use super::{error::ApiError, listeners::Site};
+use super::{dto::bosses::is_event, error::ApiError, listeners::Site};
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
 /// Cached identity art, in lookup order (`bot::identity` writes these).
@@ -166,10 +166,18 @@ pub async fn art(
     let Ok(UrlPath((kind, key))) = path else {
         return ApiError::NOT_FOUND.into_response();
     };
-    // With a catalog, only catalog keys (exact case) resolve, through their portrait basename.
+    // With a catalog, only catalog keys (exact case) resolve, through their portrait basename,
+    // and keys an event knowledge document declares (exact case), through the key itself.
     let basename = match site.state.as_ref() {
         Some(state) => match state.catalog.boss(&key) {
             Some(boss) => boss.portrait().unwrap_or(boss.short()).to_owned(),
+            None if state
+                .knowledge_dir
+                .as_deref()
+                .is_some_and(|dir| is_event(dir, &key)) =>
+            {
+                key
+            }
             None => return ApiError::NOT_FOUND.into_response(),
         },
         None => key,

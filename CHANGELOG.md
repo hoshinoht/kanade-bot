@@ -15,6 +15,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   damage requirement and payoff (e.g. four Radiant Malefic Star altar routes).
   Chat can now answer event bosses by name or alias (new Meilin prep guide;
   Bellona is kept as a prep guide until she reaches MapleSEA).
+- v5 admin Bosses shows event bosses (e.g. Kai, Meilin) with their portrait
+  or icon like catalog rows and a "Seasonal boss · Challengers World Season n"
+  chip, also on their knowledge page with the portrait. `/art` now serves art
+  for a key an event knowledge document declares (exact case), and the events
+  read carries `portrait`, `portrait_sm` and `art`.
 - v5 admin Config now uses the M3E Settings window: a grouped, deep-linkable
   contents list with current-value hints, a "find a setting" search, settings
   cards in the section panel, and a page-line risk chip (Config only) in place

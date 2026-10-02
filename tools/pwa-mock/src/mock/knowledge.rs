@@ -1,7 +1,7 @@
 //! Boss knowledge from the tracked `boss/knowledge/*.yaml` (schema v2). The
 //! files are public, so the mock serves them as they are.
 
-use super::{MoveError, Store};
+use super::{MoveError, Store, catalog::Catalog};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -25,6 +25,9 @@ pub struct EventBoss {
     pub key: String,
     pub event: Value,
     pub summary: Value,
+    pub portrait: Option<String>,
+    pub portrait_sm: Option<String>,
+    pub art: Option<String>,
 }
 
 fn read(path: &Path) -> Option<Value> {
@@ -53,8 +56,15 @@ impl KnowledgeDir {
             .map(str::to_owned)
     }
 
+    /// Whether an event document declares exactly `key` (case-sensitive).
+    pub fn is_event(&self, key: &str) -> bool {
+        self.doc(key).is_some_and(|(doc, _)| {
+            doc.get("event").is_some() && doc.get("boss").and_then(Value::as_str) == Some(key)
+        })
+    }
+
     /// Documents that declare an `event` (bosses outside the catalog, e.g. Kai).
-    pub fn events(&self) -> Vec<EventBoss> {
+    pub fn events(&self, catalog: &Catalog) -> Vec<EventBoss> {
         let Ok(entries) = std::fs::read_dir(&self.0) else {
             return Vec::new();
         };
@@ -67,10 +77,15 @@ impl KnowledgeDir {
             .filter_map(|e| read(&e.path()))
             .filter_map(|doc| {
                 let event = doc.get("event")?.clone();
+                let key = doc.get("boss")?.as_str()?.to_owned();
+                let (portrait, portrait_sm, art) = catalog.event_art(&key);
                 Some(EventBoss {
-                    key: doc.get("boss")?.as_str()?.to_owned(),
+                    key,
                     event,
                     summary: doc.get("summary").cloned().unwrap_or(Value::Null),
+                    portrait,
+                    portrait_sm,
+                    art,
                 })
             })
             .collect();
@@ -88,12 +103,17 @@ impl Store {
             .unwrap_or(key)
             .to_owned();
         let row = self.boss_rows().into_iter().find(|r| r.key == key);
+        let portrait = match &row {
+            Some(r) => r.portrait.clone(),
+            None if doc.get("event").is_some() => self.catalog().event_art(&key).0,
+            None => None,
+        };
         Ok(Knowledge {
             name: row
                 .as_ref()
                 .map_or_else(|| key.clone(), |r| r.name.to_owned()),
             level: row.as_ref().map(|r| r.level),
-            portrait: row.as_ref().and_then(|r| r.portrait.clone()),
+            portrait,
             hue: row.as_ref().map_or(0, |r| r.hue),
             in_use: row
                 .map(|r| {
@@ -115,7 +135,11 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::KnowledgeDir;
-    use crate::mock::tests::store;
+    use crate::mock::{
+        Store,
+        catalog::{Catalog, Kind},
+        tests::store,
+    };
     use std::path::PathBuf;
 
     fn dir() -> KnowledgeDir {
@@ -138,6 +162,83 @@ mod tests {
 
     #[test]
     fn event_bosses_are_listed() {
-        assert!(dir().events().iter().any(|e| e.key == "Kai"));
+        let catalog = Catalog::new(PathBuf::from("/nonexistent"));
+        let events = dir().events(&catalog);
+        let kai = events.iter().find(|e| e.key == "Kai").unwrap();
+        // No art in this deployment: null, never a broken URL.
+        assert_eq!(
+            (&kai.portrait, &kai.portrait_sm, &kai.art),
+            (&None, &None, &None)
+        );
+    }
+
+    /// An invented, mixed-case event boss with art (Linux CI is case-sensitive).
+    struct EventFixture(PathBuf);
+
+    impl EventFixture {
+        fn new(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!("pwa-mock-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            for (path, body) in [
+                (
+                    "knowledge/starwyrm.yaml",
+                    "boss: StarWyrm\nevent:\n  name: Wyrmfall Trials Season 9\n  availability: Invented.\nsummary: Invented.\n",
+                ),
+                (
+                    "knowledge/plainwyrm.yaml",
+                    "boss: PlainWyrm\nsummary: No event.\n",
+                ),
+                ("boss/portraits/StarWyrm.png", "art"),
+                ("boss/portraits/icon/StarWyrm.png", "art"),
+                ("boss/artwork/entry/StarWyrm.png", "art"),
+                ("boss/portraits/PlainWyrm.png", "art"),
+            ] {
+                let path = root.join(path);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, body).unwrap();
+            }
+            Self(root)
+        }
+    }
+
+    impl Drop for EventFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn event_bosses_carry_their_art_by_exact_key() {
+        let fixture = EventFixture::new("event-art");
+        let dir = KnowledgeDir(fixture.0.join("knowledge"));
+        let catalog = Catalog::new(fixture.0.join("boss"));
+        let events = dir.events(&catalog);
+        assert_eq!(events.len(), 1);
+        let wyrm = &events[0];
+        assert_eq!(wyrm.key, "StarWyrm");
+        assert_eq!(wyrm.portrait.as_deref(), Some("/art/portraits/StarWyrm"));
+        assert_eq!(wyrm.portrait_sm.as_deref(), Some("/art/icons/StarWyrm"));
+        assert_eq!(wyrm.art.as_deref(), Some("/art/entry/StarWyrm"));
+
+        assert!(dir.is_event("StarWyrm"));
+        for key in ["starwyrm", "STARWYRM", "MoonWyrm", "PlainWyrm", "../etc"] {
+            assert!(!dir.is_event(key), "{key}");
+        }
+        assert!(catalog.event_file(Kind::Icon, "StarWyrm").is_some());
+        assert!(catalog.event_file(Kind::Portrait, "../StarWyrm").is_none());
+
+        let k = Store::new(catalog)
+            .knowledge_v2(&dir, "StarWyrm")
+            .ok()
+            .unwrap();
+        assert_eq!(k.portrait.as_deref(), Some("/art/portraits/StarWyrm"));
+        let plain = Store::new(Catalog::new(fixture.0.join("boss")))
+            .knowledge_v2(&dir, "PlainWyrm")
+            .ok()
+            .unwrap();
+        assert_eq!(
+            plain.portrait, None,
+            "only event documents lend their key to art"
+        );
     }
 }

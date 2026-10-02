@@ -197,10 +197,13 @@ async fn bosses(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 
 async fn events(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
+    let art = Art {
+        root: site.boss_dir.as_deref(),
+    };
     let events = state
         .knowledge_dir
         .as_deref()
-        .map(dto::bosses::events)
+        .map(|dir| dto::bosses::events(dir, &art))
         .unwrap_or_default();
     Ok(Json(events).into_response())
 }

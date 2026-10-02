@@ -26,7 +26,7 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
 
   await go(page, '/bosses');
   await page.getByRole('link', { name: 'Kai' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Event');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Seasonal boss · Challengers World Season 3');
   await expect(page.getByText('Event boss.')).toBeVisible();
   await expect(page.getByRole('table', { name: /facts$/ }).getByRole('row', { name: /Party/ })).toContainText('Solo only');
 });

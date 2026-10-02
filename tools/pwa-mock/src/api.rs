@@ -299,7 +299,8 @@ pub async fn knowledge_v2(State(app): State<App>, Path(key): Path<String>) -> Re
 }
 
 pub async fn events(State(app): State<App>) -> Response {
-    Json(app.knowledge.events()).into_response()
+    let catalog = app.store.lock().await.catalog().clone();
+    Json(app.knowledge.events(&catalog)).into_response()
 }
 
 pub async fn inbox(State(app): State<App>) -> Response {

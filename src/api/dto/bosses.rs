@@ -107,10 +107,16 @@ pub fn knowledge(
     let key = doc.get("boss").and_then(Value::as_str)?.to_owned();
     let boss = catalog.boss(&key);
     let in_use = in_use_tokens(fixed);
+    let portrait = match boss {
+        Some(boss) => art.url("portraits", &key, boss.portrait().unwrap_or(&key)),
+        // Event bosses' art is named by their key (`/art` resolves them the same way).
+        None if doc.get("event").is_some() => art.url("portraits", &key, &key),
+        None => None,
+    };
     Some(Knowledge {
         name: boss.map_or_else(|| key.clone(), |boss| boss.full().to_owned()),
         level: boss.and_then(|boss| boss.level()),
-        portrait: boss.and_then(|boss| art.url("portraits", &key, boss.portrait().unwrap_or(&key))),
+        portrait,
         hue: boss.map_or(0, |boss| hue(boss.guide_colour())),
         researched_as_of: read_yaml(&dir.join("_meta.yaml"))
             .and_then(|meta| meta.get("researched_as_of")?.as_str().map(str::to_owned)),
@@ -134,10 +140,23 @@ pub struct EventBoss {
     pub key: String,
     pub event: Value,
     pub summary: Value,
+    pub portrait: Option<String>,
+    pub portrait_sm: Option<String>,
+    pub art: Option<String>,
+}
+
+/// Whether an event document declares exactly `key` (case-sensitive), so
+/// `/art` may serve art under that basename.
+pub fn is_event(dir: &Path, key: &str) -> bool {
+    stem(key)
+        .and_then(|stem| read_yaml(&dir.join(format!("{stem}.yaml"))))
+        .is_some_and(|doc| {
+            doc.get("event").is_some() && doc.get("boss").and_then(Value::as_str) == Some(key)
+        })
 }
 
 /// Documents that declare an `event` (bosses outside the catalog, e.g. Kai).
-pub fn events(dir: &Path) -> Vec<EventBoss> {
+pub fn events(dir: &Path, art: &Art<'_>) -> Vec<EventBoss> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -153,13 +172,18 @@ pub fn events(dir: &Path) -> Vec<EventBoss> {
         })
         .filter_map(|path| read_yaml(&path))
         .filter_map(|doc| {
+            let key = doc.get("boss")?.as_str()?.to_owned();
+            let portrait = art.url("portraits", &key, &key);
             Some(EventBoss {
-                key: doc.get("boss")?.as_str()?.to_owned(),
                 event: doc.get("event")?.clone(),
                 summary: doc
                     .get("summary")
                     .cloned()
                     .unwrap_or(Value::String(String::new())),
+                portrait_sm: art.url("icons", &key, &key).or_else(|| portrait.clone()),
+                portrait,
+                art: art.url("entry", &key, &key),
+                key,
             })
         })
         .collect();

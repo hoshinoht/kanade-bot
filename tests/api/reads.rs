@@ -218,6 +218,31 @@ fn write(root: &Path, relative: &str) {
     std::fs::write(path, b"art").unwrap();
 }
 
+const STAR_WYRM: &str = "boss: StarWyrm
+event:
+  name: Wyrmfall Trials Season 9
+  availability: Invented for tests; never ran.
+summary: An invented event boss.
+core: [Dodge the wyrm.]
+danger: [The tail.]
+tips: [Stay central.]
+sources: []
+";
+
+/// The tracked knowledge documents plus the invented `StarWyrm` event document.
+fn event_knowledge(root: &Path) -> PathBuf {
+    let tracked = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge");
+    let dir = root.join("knowledge");
+    std::fs::create_dir_all(&dir).unwrap();
+    for entry in std::fs::read_dir(tracked).unwrap().flatten() {
+        if entry.path().extension().is_some_and(|ext| ext == "yaml") {
+            std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
+        }
+    }
+    std::fs::write(dir.join("starwyrm.yaml"), STAR_WYRM).unwrap();
+    dir
+}
+
 /// `reset` past midnight shifts each seeded week start by the same amount.
 async fn seed(store: &SqliteStore, reset: NaiveTime) {
     let shift = reset - NaiveTime::MIN;
@@ -475,6 +500,11 @@ impl Reads {
         write(&fixture.root, "boss/portraits/MaleficStar.png");
         write(&fixture.root, "boss/portraits/icon/Kalos.png");
         write(&fixture.root, "boss/artwork/entry/Kalos.webp");
+        // An invented event boss outside the catalog, with all three kinds of art.
+        let knowledge = event_knowledge(&fixture.root);
+        write(&fixture.root, "boss/portraits/StarWyrm.png");
+        write(&fixture.root, "boss/portraits/icon/StarWyrm.png");
+        write(&fixture.root, "boss/artwork/entry/StarWyrm.png");
 
         let access = Arc::new(GuildAccess::new(
             AccessPolicy {
@@ -584,7 +614,7 @@ impl Reads {
                 role_directory_connected,
             )),
             access,
-            knowledge_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("boss/knowledge")),
+            knowledge_dir: Some(knowledge),
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
@@ -1076,6 +1106,67 @@ async fn bosses_events_and_knowledge() {
             (404, "not_found".into()),
             "{path}"
         );
+    }
+}
+
+#[tokio::test]
+async fn event_bosses_carry_and_serve_their_art() {
+    let reads = Reads::new().await;
+    let events = reads
+        .read("/api/admin/bosses/events", "bosses.json#/$defs/EventBosses")
+        .await;
+    let wyrm = events
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["key"] == "StarWyrm")
+        .expect("the fixture event");
+    assert_eq!(wyrm["event"]["name"], "Wyrmfall Trials Season 9");
+    assert_eq!(wyrm["portrait"], "/art/portraits/StarWyrm");
+    assert_eq!(wyrm["portrait_sm"], "/art/icons/StarWyrm");
+    assert_eq!(wyrm["art"], "/art/entry/StarWyrm");
+    // Absent art stays null.
+    let kai = events
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["key"] == "Kai")
+        .expect("tracked event");
+    assert_eq!(
+        (&kai["portrait"], &kai["portrait_sm"], &kai["art"]),
+        (&Value::Null, &Value::Null, &Value::Null)
+    );
+
+    let knowledge = reads
+        .read(
+            "/api/admin/bosses/StarWyrm/knowledge",
+            "bosses.json#/$defs/Knowledge",
+        )
+        .await;
+    assert_eq!(knowledge["portrait"], "/art/portraits/StarWyrm");
+
+    for path in [
+        "/art/portraits/StarWyrm",
+        "/art/icons/StarWyrm",
+        "/art/entry/StarWyrm",
+    ] {
+        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
+        assert_eq!(reply.status, 200, "{path}");
+        assert_eq!(reply.body, b"art", "{path}");
+    }
+    for path in [
+        // Exact case only (a case-insensitive filesystem would otherwise find the file).
+        "/art/portraits/starwyrm",
+        "/art/portraits/STARWYRM",
+        "/art/icons/starWyrm",
+        // Unknown key.
+        "/art/portraits/MoonWyrm",
+        // A document without `event`, outside the catalog, whose art file exists.
+        "/art/portraits/Carling",
+        "/art/entry/Carling",
+    ] {
+        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
+        assert_eq!(reply.status, 404, "{path}");
     }
 }
 

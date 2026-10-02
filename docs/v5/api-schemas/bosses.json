@@ -154,11 +154,14 @@
     "EventBoss": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "event", "summary"],
+      "required": ["key", "event", "summary", "portrait", "portrait_sm", "art"],
       "properties": {
         "key": { "type": "string" },
         "event": { "$ref": "#/$defs/EventInfo" },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "portrait": { "$ref": "common.json#/$defs/NullableString" },
+        "portrait_sm": { "$ref": "common.json#/$defs/NullableString" },
+        "art": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
     "EventBosses": { "type": "array", "items": { "$ref": "#/$defs/EventBoss" } }

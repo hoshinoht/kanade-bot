@@ -59,7 +59,14 @@ pub async fn art(State(app): State<App>, Path((kind, key)): Path<(String, String
     let Some(kind) = Kind::parse(&kind) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let found = app.store.lock().await.catalog().file(kind, &key);
+    let catalog = app.store.lock().await.catalog().clone();
+    // Catalog keys, else a key an event knowledge document declares (exact case).
+    let found = catalog.file(kind, &key).or_else(|| {
+        app.knowledge
+            .is_event(&key)
+            .then(|| catalog.event_file(kind, &key))
+            .flatten()
+    });
     match found {
         Some(path) => send(path).await,
         None => StatusCode::NOT_FOUND.into_response(),

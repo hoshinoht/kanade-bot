@@ -284,6 +284,11 @@ export interface EventBoss {
   key: string;
   event: { name: string; availability: string };
   summary: string;
+  /** Art named by the key, as on `Boss`; null where the deployment has none. */
+  portrait: string | null;
+  /** The icon, else the portrait. */
+  portrait_sm: string | null;
+  art: string | null;
 }
 
 /** A card the bot will post or posted: `queued` later, `due` now, `sent`, `stale` (retired unposted). */

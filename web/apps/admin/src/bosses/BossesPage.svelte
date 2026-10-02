@@ -4,6 +4,9 @@
   import PaneWindow from '../pages/PaneWindow.svelte';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
+  import { Portrait, StatusChip } from '@kanade/ui';
+  import '@kanade/ui/styles/boss-grid.scss';
+  import { eventAsBoss as asBoss, seasonal } from './event';
 
   const bosses = new Resource<BossRow[]>('/api/admin/bosses');
   const events = new Resource<EventBoss[]>('/api/admin/bosses/events');
@@ -32,12 +35,17 @@
     <p class="note">Edit <code>boss/bosses.yaml</code> and restart to change this list.</p>
     {#if events.data?.length}
       <h3 class="pane__section">Event bosses</h3>
-      <ul class="events">
+      <ul class="grid-bosses events" aria-label="Event bosses">
         {#each events.data as boss (boss.key)}
-          <li>
-            <a class="bossrow__name" href="/bosses/{boss.key}/knowledge">{boss.key}</a>
-            <span class="chip chip--maybe">Event · {boss.event.name}</span>
-            <p class="note">{boss.event.availability}</p>
+          <li class="bossrow">
+            <div class="bossrow__id">
+              <Portrait boss={asBoss(boss)} size="md" />
+              <a class="bossrow__name" href="/bosses/{boss.key}/knowledge">{boss.key}</a>
+            </div>
+            <div class="events__about">
+              <StatusChip>{seasonal(boss.event)}</StatusChip>
+              <p class="note">{boss.event.availability}</p>
+            </div>
           </li>
         {/each}
       </ul>
@@ -52,11 +60,9 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
-    gap: 0.6rem;
   }
 
-  .events p {
-    margin: 0.2rem 0 0;
+  .events__about p {
+    margin: 0.3rem 0 0;
   }
 </style>
