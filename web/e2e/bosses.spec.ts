@@ -10,8 +10,8 @@ async function go(page: Page, path: string) {
   await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
 }
 
-const SEASON_3 = 'Seasonal boss · Challengers World Season 3';
-const SEASON_4 = 'Seasonal boss · Challengers World Season 4';
+const SEASON_3 = 'Seasonal boss · CW3';
+const SEASON_4 = 'Seasonal boss · CW4';
 
 test.describe('event bosses', () => {
   test.skip(REAL_ART, 'fixture-specific assertions');
@@ -23,6 +23,8 @@ test.describe('event bosses', () => {
     const meilin = events.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Meilin', exact: true }) });
     await expect(kai.locator('.status-chip')).toHaveText(SEASON_3);
     await expect(meilin.locator('.status-chip')).toHaveText(SEASON_4);
+    // The short tag keeps the event's full name from the data.
+    await expect(kai.locator('.status-chip abbr')).toHaveAttribute('title', 'Challengers World Season 3');
     // No fixture art for event keys: the monogram holds the same box.
     await expect(kai.locator('.portrait--mono')).toHaveText('Ka');
     await expect(page.getByRole('listbox', { name: 'Bosses' })).not.toContainText('Seasonal boss');
@@ -82,6 +84,29 @@ test('bosses: board rows and detail keep compact timing and fact content', async
   await expect(timing.locator('strong')).toHaveText(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d:\d\d$/);
   await expect(timing.locator('.pill')).toHaveText(/^(EASY|NORMAL|HARD|CHAOS|EXTREME)$/);
   await expect(page.locator('.knowledge-aside__count')).toContainText('next');
+});
+
+test('bosses: a whole catalog row selects its boss, not only the name', async ({ page }) => {
+  await go(page, '/bosses/MaleficStar/knowledge');
+  const other = page.locator('.bosses-list .bossrow').filter({ hasNotText: 'Radiant Malefic Star' }).first();
+  const name = (await other.locator('a.bossrow__name').textContent())!.trim();
+  // The row's right edge (the ticks), well away from the name link.
+  const box = (await other.boundingBox())!;
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+  await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
+  await expect(other).toHaveAttribute('aria-selected', 'true');
+});
+
+test('bosses: a weekly timing opens that timing in Fixed', async ({ page }) => {
+  await go(page, '/bosses/MaleficStar/knowledge');
+  const timing = page.locator('.knowledge-detail aside li a').first();
+  const when = (await timing.locator('strong').textContent())!.trim();
+  await timing.click();
+  // Wide, the editor is the side pane beside the list (a sheet only on phones).
+  const pane = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await expect(pane).toBeVisible();
+  await expect(pane).toContainText(when.slice(-5));
+  await expect(page).toHaveURL(/\/fixed$/);
 });
 
 test('bosses: real catalog portraits and detail art load from the declared asset paths', async ({ page }) => {

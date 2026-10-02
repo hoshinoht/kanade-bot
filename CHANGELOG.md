@@ -795,6 +795,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Bosses: a whole catalog or event row selects its boss, weekly timings
+  read as one outlined list and open that timing's editor in Fixed
+  (`/fixed?open=<id>`), difficulty notes sit in their own accented callouts, and
+  seasonal chips use a short `Seasonal boss · CW3` tag (full season name on hover)
+  so the event list no longer scrolls sideways.
 - v5 admin Inbox shows a proposed status change as status chips under its
   field name (old struck, new toned, e.g. At risk → Unconfirmed) instead of
   raw `at_risk`/`planned` text pushed into a side column.

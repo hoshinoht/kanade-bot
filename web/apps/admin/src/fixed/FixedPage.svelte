@@ -10,7 +10,12 @@
   import FixedEditor from './FixedEditor.svelte';
   import { FixedSnapshot } from './snapshot.svelte';
 
-  let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
+  let {
+    store,
+    toaster,
+    openId = '',
+    onopened = () => {},
+  }: { store: AdminWeek; toaster: Toaster; openId?: string; onopened?: () => void } = $props();
 
   /** Rows and the week version they were read at, published together; edits send that version. */
   const fixed = new FixedSnapshot();
@@ -68,6 +73,18 @@
     restoreElement = opener;
     editorOpen = true;
   }
+
+  /** A deep link (`/fixed?open=<id>`) opens that timing's editor once its row is on screen. */
+  $effect(() => {
+    if (!openId || !fixed.rows) return;
+    const row = fixed.rows.find((candidate) => candidate.id === openId);
+    const opener = document.querySelector<HTMLButtonElement>(`.fixed-list__open[data-fixed="${CSS.escape(openId)}"]`);
+    if (row && opener) {
+      opener.scrollIntoView({ block: 'nearest' });
+      open(row, opener);
+    }
+    onopened();
+  });
 
   $effect(() => {
     const media = window.matchMedia('(min-width: 840px)');

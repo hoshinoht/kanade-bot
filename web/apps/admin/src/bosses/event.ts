@@ -1,8 +1,13 @@
 import type { Boss, EventBoss } from '@kanade/api-types';
 
-/** The label event bosses wear: their Challengers World season is the event's name. */
-export function seasonal(event: { name: string }): string {
-  return `Seasonal boss · ${event.name}`;
+/**
+ * The short tag an event boss wears: "Challengers World Season 3" becomes
+ * "CW3"; any other event name is kept whole. The full name stays in the data
+ * (and the tag's `title`).
+ */
+export function seasonTag(event: { name: string }): string {
+  const season = /^Challengers World Season (\d+)$/i.exec(event.name.trim());
+  return season ? `CW${season[1]}` : event.name;
 }
 
 /** `Portrait` wants a Boss; an event boss shows its portrait, else its icon. */

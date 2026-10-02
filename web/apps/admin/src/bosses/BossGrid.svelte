@@ -28,10 +28,25 @@
   }
 
   const TICK: Record<string, string> = { e: 'EASY', n: 'NORM', h: 'HARD', c: 'CHAOS', x: 'EXT' };
+
+  /**
+   * A pointer anywhere on a catalog row follows its name link (as Fixed rows
+   * do, without a `::after` overlay that WebKit lets escape); the keyboard
+   * keeps using the link itself.
+   */
+  function forwardRowClicks(grid: HTMLElement) {
+    const onclick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target || target.closest('a, button, input, label')) return;
+      target.closest('.bossrow')?.querySelector<HTMLAnchorElement>('a.bossrow__name')?.click();
+    };
+    grid.addEventListener('click', onclick);
+    return () => grid.removeEventListener('click', onclick);
+  }
 </script>
 
 <!-- v4 macros.boss_grid: each difficulty a pill; checked = filled with a tick, so state is not colour alone. -->
-<div class="grid-bosses" role={readonly ? 'listbox' : 'group'} aria-label="Bosses">
+<div class="grid-bosses" role={readonly ? 'listbox' : 'group'} aria-label="Bosses" {@attach (grid) => (readonly ? forwardRowClicks(grid) : undefined)}>
   {#each rows as row (row.key)}
     {@const on = readonly ? row.difficulties.some((d) => d.in_use) : row.difficulties.some((d) => selected.includes(d.token))}
     {@const remaining = row.difficulties.filter((option) => !option.in_use).length}

@@ -4,10 +4,11 @@
 .frame--rail .bosses-window > .card__head { flex: none; flex-wrap: nowrap; gap: 4px; border-radius: 0; }
 .bosses-window__order { margin-left: auto; color: var(--win-ink); font-size: var(--fs-mini); }
 .bosses-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: clip; }
-.bosses-list { display: flex; flex: 0 0 330px; flex-direction: column; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 10px; border-right: 1.5px solid var(--line); background: var(--pane); }
+.bosses-list { display: flex; flex: 0 0 330px; flex-direction: column; min-width: 0; overflow: clip auto; overscroll-behavior: contain; padding: 10px; border-right: 1.5px solid var(--line); background: var(--pane); }
 .bosses-list .grid-bosses { gap: 2px; border: 0; border-radius: 0; background: transparent; overflow: visible; }
 .bosses-list .bossrow { display: flex; gap: 10px; min-height: 52px; padding: 0 10px; border-radius: 6px; background: var(--row); }
 .bosses-list .bossrow__id { flex: 1 1 auto; }
+.bosses-list .bossrow, .bosses-events li { cursor: pointer; }
 .bosses-list .bossrow:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
 .bosses-list .bossrow--active, .bosses-list .bossrow--active:hover { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
 .bosses-list .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
@@ -29,7 +30,10 @@
 .bosses-events a { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; color: var(--ink); text-decoration: none; }
 .bosses-events .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
 .bosses-events strong { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
-.bosses-events .status-chip { flex: none; min-height: 18px; padding: 0 6px; font-size: var(--fs-micro); }
+.bosses-events .status-chip abbr, .knowledge-hero .status-chip abbr { text-decoration: none; }
+// The season label gives way (ellipsis) before the name; the list never scrolls sideways.
+.bosses-events a { flex: 0 1 auto; }
+.bosses-events .status-chip { display: block; flex: 0 1 auto; min-width: 0; min-height: 18px; margin-left: auto; overflow: hidden; padding: 0 6px; font-size: var(--fs-micro); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); }
 .knowledge-hero { position: relative; flex: none; min-height: 150px; overflow: hidden; border-bottom: 1.5px solid var(--line); }
 .knowledge-hero > * { position: relative; }
@@ -54,6 +58,11 @@
 .knowledge-recommended { max-width: 62ch; margin-top: 14px; }
 .knowledge-recommended h3, .knowledge-recommended p { margin: 0; }
 .knowledge-recommended p { margin-top: 4px; font-size: var(--fs-small); line-height: 1.5; }
+// Difficulty notes: separate accent-edged callouts rather than loose paragraphs.
+.knowledge-callouts { margin-top: 16px; }
+.knowledge-callouts h3 { margin: 0 0 6px; }
+.knowledge-callouts ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.knowledge-callouts li { padding: 8px 12px; border-left: 3px solid var(--accent); border-radius: 4px 10px 10px 4px; background: var(--pane); font-size: var(--fs-small); line-height: 1.5; }
 .knowledge-notes { margin-top: 16px; }
 .knowledge-notes h2 { margin: 0 0 6px; }
 .knowledge-notes ul { margin: 0; padding-left: 1.25rem; }
@@ -62,11 +71,12 @@
 .knowledge-detail aside { display: flex; flex: 0 0 240px; flex-direction: column; gap: 8px; }
 .knowledge-detail aside h2 { margin: 0 0 8px; }
 .knowledge-detail aside h2:not(:first-child) { margin-top: 16px; }
-.knowledge-detail aside ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.knowledge-detail aside li { border-radius: 4px; background: var(--row); }
-.knowledge-detail aside li:first-child { border-top-left-radius: 14px; border-top-right-radius: 14px; }
-.knowledge-detail aside li:last-child { border-bottom-right-radius: 14px; border-bottom-left-radius: 14px; }
-.knowledge-detail aside a { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; color: var(--ink); text-decoration: none; }
+// One outlined group with ruled rows, so neighbouring timings stay apart on the light surface.
+.knowledge-detail aside ul { display: grid; margin: 0; padding: 0; overflow: hidden; border-radius: 14px; background: var(--pane); box-shadow: inset 0 0 0 1.5px var(--line); list-style: none; }
+.knowledge-detail aside li + li { border-top: 1.5px solid var(--line); }
+.knowledge-detail aside a { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 12px; color: var(--ink); text-decoration: none; }
+.knowledge-detail aside a:hover { background: var(--row-hover); }
+.knowledge-detail aside a:focus-visible { outline-offset: -3px; }
 .knowledge-detail aside a strong { flex: none; font-family: var(--mono); font-size: var(--fs-small); }
 .knowledge-detail aside .pill { flex: none; min-height: 18px; padding: 0 6px; font-size: var(--fs-micro); }
 .knowledge-aside__others { min-width: 0; overflow: hidden; font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }

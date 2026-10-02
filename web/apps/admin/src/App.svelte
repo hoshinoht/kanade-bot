@@ -173,6 +173,8 @@
         };
       }
       case 'fixed':
+        // `?open=<id>` (Bosses' weekly timings) opens that timing's editor once.
+        return { store, toaster, openId: router.query.get('open') ?? '', onopened: () => router.go('/fixed', { replace: true }) };
       case 'history':
         return { store, toaster };
       case 'inbox':
