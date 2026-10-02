@@ -16,7 +16,13 @@
 .bosses-list .bossrow__pills { flex-wrap: nowrap; gap: 3px; overflow: hidden; }
 .bosses-list .bossrow > .row-content { flex: 0 1 46%; width: auto; }
 .bosses-list .bossrow--active .bossrow__name { white-space: normal; }
+// Selected: identity keeps its own line; difficulties wrap below it, item by item.
+.bosses-list .bossrow--active { flex-wrap: wrap; }
+.bosses-list .bossrow--active > .bossrow__id { min-height: 52px; }
+.bosses-list .bossrow--active > .row-content { flex-basis: 100%; }
 .bossrow__difficulties { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
+.bosses-list .bossrow__difficulties { flex-flow: row wrap; gap: 6px 10px; padding: 0 0 10px 44px; }
+.bosses-list .bossrow__difficulties > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .bossrow__tracked { color: var(--dim-text); font-size: var(--fs-micro); }
 .boss-tick { display: inline-flex; flex: none; align-items: center; min-height: 18px; padding: 0 6px; border-radius: 9px; color: var(--pill-n-fg); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .04em; }
 .boss-tick--e { background: var(--pill-e-bg); color: var(--pill-e-fg); }
