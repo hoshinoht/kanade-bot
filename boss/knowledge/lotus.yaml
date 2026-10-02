@@ -1,21 +1,92 @@
 boss: Lotus
-summary: 'Extreme Lotus is a Purge Gauge fight: bait Lotus''s own tracking mechanics into him to drain Purge, break shields, and create safer damage windows.'
+summary: Extreme Lotus (party of up to 2) is an annihilation gauge fight (also called Purge Gauge). Bait Lotus's own arms and lasers into him to drain the gauge and break shields, and phase quickly before Annihilation Mode piles on extra patterns.
 core:
-- Each player has a personal Purge Gauge. It rises over time and from certain hits; when full, Purge Mode activates with extra patterns.
-- In Phase 3, Purge Mode is the default and the gauge must be drained by making specific map attacks hit Lotus.
-- Mechanical Arms and Tracking Lasers lower your Purge Gauge when they hit Lotus, so positioning them into the boss is an intended mechanic.
-- Phase 1's white shield reduces incoming damage by 90%; destroy it within 20 seconds or Lotus heals based on the shield left. Map mechanics can damage the shield.
+- Each player has their own annihilation gauge. In Phases 1-2 it rises on its own (2%/s and 2.7%/s on Extreme) and from hits; when full, you enter Annihilation Mode for 34 s with extra patterns.
+- In Phase 3 Annihilation Mode is the default and the gauge only falls when Lotus is hit by map attacks; emptying it gives 25 s of Safe Mode on Extreme.
+- Tracking lasers and Mechanical Arms raise your gauge if they hit you and lower it if they hit Lotus. On Extreme, a large arm follows every 10th small arm and is worth about -16 to -22% on Lotus.
+- In Phase 1, a white shield cuts damage by 90% for 20 s, about every 40 s. Any shield left heals Lotus (up to 20% of max HP); lasers and arms aimed through Lotus strip it. Binding in Phase 1 stops only the shield pattern.
+- The gauge does not move while you are dead, and Annihilation patterns are per player in a duo.
 danger:
-- Purge Mode adds much denser map pressure; in Phase 3 you do not naturally leave it without draining the gauge.
-- Extreme's large Mechanical Arm hits for 70% HP in Phase 1 and 80% in Phases 2-3.
-- Purge Routine is a lethal laser sequence; respect the barrier/safe-side mechanic rather than trying to tank it.
+- 'Horizontal bombardment (also called Purge Routine; SEA name unconfirmed) is a lethal beam: safe on the right in Phase 1, and top-left or bottom-right in Phases 2-3. The firing cannon itself is safe.'
+- The large arm on Extreme gives about 1 s of warning and hits 70% HP in Phase 1 and 80% in Phases 2-3.
+- 'Phase 3: Darkness Aura is dodged by standing on Lotus, except when you are bound by the orange Gravity Restraint lasers; then it deals 100% and cannot be avoided.'
+- Drill Push into a corner gives two unavoidable hits; Current Discharge deals 100% plus a 2 s stun unless you leave the floor.
+- Extreme bottom-right in Phase 3 risks being knocked into the bombardment beam.
 tips:
-- Aim tracking lasers and marked Mechanical Arms through Lotus whenever it is safe to do so.
-- In Phase 3, prioritize earning non-Purge windows instead of greeding damage through permanent map pressure.
-- When the Phase 1 shield appears, use both normal damage and boss-hit map mechanics to remove it quickly.
+- On Extreme, one full arm set plus the large arm clears the Phase 1 shield; stand where you can drag them through Lotus.
+- In Phase 3, use the portals that link the two safe corners to switch sides when the bombardment comes.
+- You can duck the rear spawn of Drill Push; never take it pinned in a corner.
+- Oz-ring swappers can swap while the shield is up, since damage is already cut by 90%.
+notes:
+- MapleSEA v244 (Aug 2025) removed the Phase 3 ceiling cannon, cut Extreme Phase 3 bombing by one shot and two locations, shortened drone fields and made bombardments rarer; older guides overstate those patterns.
+- Only Extreme is tracked here; Normal and Hard are level 210 with 300% PDR and a party of up to 6.
+difficulties:
+- name: Extreme
+  entry_level: 190
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 2
+  hp:
+  - {phase: '1', value: 543.3t}
+  - {phase: '2', value: 543.3t}
+  - {phase: '3', value: 724.4t}
+  recommended_spec: {kind: Combat power, text: CMS lists 200M combat power solo or about 65M each in a duo as a rough reference. There is no Arcane or Authentic Force requirement.}
+  notes:
+  - 5 lives, 30 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
+  - HP is the KMS value before OVERDRIVE; each Phase 1 shield holds about 2.7t more.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 368t / 368t / 491t (32.2% less; KMS calls Lotus Suu), 20-minute limit.'
+strategies:
+- name: Duo standard
+  when: Two players, the group's usual setup
+  risk: medium
+  damage: high
+  payoff: Short Phases 1-2 and fewer Annihilation Mode cycles
+  steps:
+  - Phase 1 - stay central and let arms and lasers strip the shield rather than bursting into 90% damage reduction.
+  - Phases 1-2 - burst to phase before your gauge fills.
+  - Phase 2 - play top-left or bottom-right, which double as the bombardment safe zones.
+  - Phase 3 - default to top-left rather than bottom-right.
+- name: Phase 3 drain discipline
+  when: Always in Phase 3
+  risk: low
+  damage: low
+  payoff: 25 s Safe Mode windows, the only breaks in Phase 3
+  steps:
+  - Aim all three tracking lasers, the marked arms (especially the large arm) and the missiles through Lotus.
+  - Burst during Safe Mode, then return to draining as soon as Annihilation Mode resumes.
 sources:
+- url: https://docs.google.com/document/d/1ozaBBT0D7rZJr_KurQYNHLdKJU7PWw437bq5auyom5c/edit
+  title: MapleStory Complete Remastered Lotus Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v235_Patch_Notes/
+  title: MapleSEA v235 Lotus Remastered Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory Overdrive
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.digitaltq.com/maplestory-lotus-remaster-guide
+  title: Lotus Remaster Guide
+  author: Aleph (DigitalTQ)
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/lotus
+  title: MapleTools - Lotus
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
 - url: https://maplestorywiki.net/w/Lotus/Monster
   title: MapleStory Wiki - Lotus/Monster
   author: MapleStory Wiki contributors
   kind: wiki
-  fetched: '2026-09-05'
+  fetched: '2026-10-02'

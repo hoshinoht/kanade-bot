@@ -31,7 +31,13 @@ fn difficulty_facts(lines: &mut Vec<String>, facts: &Value) {
             force.get("value"),
         )
     {
-        lines.push(format!("- Force: {kind} {value}"));
+        let name = match kind {
+            // MapleSEA calls sacred symbols Authentic.
+            "sacred" => "Authentic Force",
+            "arcane" => "Arcane Force",
+            _ => "Force",
+        };
+        lines.push(format!("- {name}: {value}"));
     }
     if let Some(hp) = facts.get("hp").and_then(Value::as_array) {
         let values: Vec<String> = hp
@@ -59,6 +65,34 @@ fn difficulty_facts(lines: &mut Vec<String>, facts: &Value) {
     if let Some(notes) = strings(facts, "notes") {
         lines.extend(notes.into_iter().map(|note| format!("- {note}")));
     }
+}
+
+/// `## Strategies`: each route with its trade-off and numbered steps, or
+/// `None` when a strategy lacks a required part.
+fn strategies(lines: &mut Vec<String>, strategies: &[Value]) -> Option<()> {
+    lines.extend([String::new(), "## Strategies".to_owned()]);
+    for strategy in strategies {
+        let text = |field: &str| strategy.get(field).and_then(Value::as_str);
+        lines.extend([
+            format!("### {}", text("name")?),
+            format!("- When: {}", text("when")?),
+            format!(
+                "- Risk: {}; damage needed: {}",
+                text("risk")?,
+                text("damage")?
+            ),
+            format!("- Payoff: {}", text("payoff")?),
+            "- Steps:".to_owned(),
+        ]);
+        let steps = strings(strategy, "steps")?;
+        lines.extend(
+            steps
+                .into_iter()
+                .enumerate()
+                .map(|(at, step)| format!("  {}. {step}", at + 1)),
+        );
+    }
+    Some(())
 }
 
 /// One `### Name` block: v2 per-difficulty facts and the letter-keyed
@@ -110,19 +144,30 @@ fn sections<'a>(document: &'a Value, catalog: &BossTable) -> Vec<Section<'a>> {
 
 /// The guide for `reference` from its knowledge `document`, or `None` when
 /// the document lacks a required part. `## Sources` is never included.
+///
+/// A catalog boss is headed by its full name; an event boss (not in the
+/// catalog, with an `event` block) by its key and its availability.
 pub fn render_guide(
     document: &Value,
     researched_as_of: &str,
     catalog: &BossTable,
     reference: &BossReference,
 ) -> Option<String> {
-    let boss = catalog.boss(&reference.short)?;
-    let mut lines = vec![
-        format!("# {} ({})", boss.full(), boss.short()),
+    let mut lines = match catalog.boss(&reference.short) {
+        Some(boss) => vec![format!("# {} ({})", boss.full(), boss.short())],
+        None => {
+            let availability = document.get("event")?.get("availability")?.as_str()?;
+            vec![
+                format!("# {}", reference.short),
+                format!("Availability: {availability}"),
+            ]
+        }
+    };
+    lines.extend([
         format!("_Researched as of {researched_as_of}._"),
         String::new(),
         document.get("summary")?.as_str()?.to_owned(),
-    ];
+    ]);
     for (heading, field) in [("Core", "core"), ("Danger", "danger"), ("Tips", "tips")] {
         lines.extend([String::new(), format!("## {heading}")]);
         lines.extend(
@@ -130,6 +175,9 @@ pub fn render_guide(
                 .into_iter()
                 .map(|bullet| format!("- {bullet}")),
         );
+    }
+    if let Some(routes) = document.get("strategies") {
+        strategies(&mut lines, routes.as_array()?)?;
     }
     let wanted = reference
         .difficulty

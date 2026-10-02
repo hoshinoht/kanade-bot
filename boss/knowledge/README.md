@@ -22,6 +22,17 @@ Optional: `difficulty_notes` (catalog letter to text), `notes`, and new in v2:
   `Easy|Normal|Hard|Chaos|Extreme` and must be a catalog difficulty. `hp.phase`
   is `'1'`, `'2-1'`, or `total` when phases are HP thresholds on one bar.
   Unit-bearing values stay strings (`241.5t`, `10.266q`).
+- `strategies` (added 2026-10): up to 4 named routes, each `{name, when, risk:
+  low|medium|high, damage: low|medium|high, payoff, steps}` (1-6 steps).
+  `damage` is the damage requirement. Only routes a source describes; general
+  advice stays in `tips`.
+- `event.aliases` (added 2026-10): other names members use (spellings, the
+  Korean name), matched case-insensitively by the chatbot. Event bosses stay
+  answerable until their file is removed or edited by hand.
+- MapleSEA wording: SEA patch-note terms first, other names once as "also
+  called". `force.kind: sacred` is MapleSEA's Authentic Force. HP rows are the
+  KMS values before OVERDRIVE (what MapleSEA has now); a per-difficulty note
+  gives the post-OVERDRIVE value until MapleSEA ships it.
 - `sources` entries are objects: `{url (https), title, author, kind:
   guide|wiki|tool|official, fetched: YYYY-MM-DD, updated?: YYYY-MM-DD}`.
 

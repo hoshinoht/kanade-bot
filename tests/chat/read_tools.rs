@@ -218,24 +218,34 @@ fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
         render_guide(&document, &researched, &catalog, &reference).expect("guide")
     };
 
+    // Structural only: the tracked prose is rewritten as research moves.
     let seren = guide("Seren", None);
-    assert!(seren.contains("\n\n## Core\n- "), "{seren}");
-    assert!(
-        seren.contains("\n\n## Difficulty notes\n### Extreme\nExtreme keeps"),
-        "{seren}"
-    );
+    assert!(seren.starts_with("# Chosen Seren (Seren)\n"), "{seren}");
+    for section in ["## Core\n- ", "## Danger\n- ", "## Tips\n- "] {
+        assert!(seren.contains(&format!("\n\n{section}")), "{seren}");
+    }
+    assert!(seren.contains("\n\n## Difficulty notes\n### "), "{seren}");
+    assert!(seren.contains("\n### Extreme\n"), "{seren}");
     assert!(
         !seren.contains("## Sources") && !seren.contains("https://"),
         "{seren}"
     );
-    assert!(!guide("Seren", Some("h")).contains("## Difficulty notes"));
+    let seren_hard = guide("Seren", Some("h"));
+    assert!(
+        !seren_hard.contains("\n### Extreme\n") && !seren_hard.contains("\n### Normal\n"),
+        "{seren_hard}"
+    );
 
     let hard = guide("MaleficStar", Some("h"));
     assert!(hard.contains("### Hard\n- Entry level: 280\n"), "{hard}");
-    assert!(
-        hard.contains("- PDR: 380%\n- Party max: 3\n- Force: sacred 550\n- HP: total 14.74q"),
-        "{hard}"
-    );
+    for fact in [
+        "- PDR: 380%\n",
+        "- Party max: 3\n",
+        "- Authentic Force: 550\n",
+        "- HP: total 14.74q",
+    ] {
+        assert!(hard.contains(fact), "{fact}: {hard}");
+    }
     assert!(!hard.contains("### Normal"), "{hard}");
     assert!(
         knowledge

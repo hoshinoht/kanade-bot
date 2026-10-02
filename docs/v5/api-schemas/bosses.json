@@ -34,7 +34,21 @@
       "required": ["name", "availability"],
       "properties": {
         "name": { "type": "string" },
-        "availability": { "type": "string" }
+        "availability": { "type": "string" },
+        "aliases": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "Strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "when", "risk", "damage", "payoff", "steps"],
+      "properties": {
+        "name": { "type": "string" },
+        "when": { "type": "string" },
+        "risk": { "enum": ["low", "medium", "high"] },
+        "damage": { "enum": ["low", "medium", "high"] },
+        "payoff": { "type": "string" },
+        "steps": { "type": "array", "items": { "type": "string" } }
       }
     },
     "DifficultyFacts": {
@@ -117,6 +131,7 @@
         "notes": { "type": "array", "items": { "type": "string" } },
         "event": { "$ref": "#/$defs/EventInfo" },
         "difficulties": { "type": "array", "items": { "$ref": "#/$defs/DifficultyFacts" } },
+        "strategies": { "type": "array", "items": { "$ref": "#/$defs/Strategy" } },
         "sources": { "type": "array", "items": { "$ref": "#/$defs/KnowledgeSource" } }
       }
     },

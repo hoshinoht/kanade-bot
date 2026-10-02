@@ -116,6 +116,17 @@ def check_semantics(path: Path, doc: dict, catalog: dict, errors: list[str]) -> 
         phases = [h.get("phase") for h in d.get("hp", []) if isinstance(h, dict)]
         if len(phases) != len(set(phases)):
             errors.append(f"difficulties[{d.get('name')}] duplicate hp phase")
+    strategies = [s.get("name") for s in doc.get("strategies", []) if isinstance(s, dict)]
+    if len(strategies) != len(set(strategies)):
+        errors.append("duplicate strategy name")
+    aliases = [a.casefold() for a in doc.get("event", {}).get("aliases", []) if isinstance(a, str)]
+    if len(aliases) != len(set(aliases)):
+        errors.append("duplicate event alias")
+    if boss in catalog and "event" in doc:
+        errors.append(f"{boss!r} is a catalog boss, so it must not declare `event`")
+    clashes = sorted({a for a in aliases} & {key.casefold() for key in catalog})
+    if clashes:
+        errors.append(f"event aliases collide with catalog keys: {', '.join(clashes)}")
     if not catalog:
         return
     if boss in catalog:

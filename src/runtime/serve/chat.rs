@@ -37,7 +37,7 @@ use crate::{
         tools::{
             bundles::Bundle,
             propose::Proposer,
-            read::{GuideError, StrategyGuides, render_guide},
+            read::{EventBoss, GuideError, StrategyGuides, render_guide},
         },
     },
     domain::{
@@ -91,6 +91,19 @@ impl StrategyGuides for LiveStrategyGuides<'_> {
         // Validated at startup, so a document edited since may lack a part.
         render_guide(&document, &researched, self.catalog, reference)
             .ok_or_else(|| unreadable("document is missing a required guide field".to_owned()))
+    }
+
+    fn events(&self) -> Vec<EventBoss> {
+        self.knowledge
+            .events
+            .iter()
+            // A catalog key always resolves through the catalog first.
+            .filter(|event| self.catalog.boss(&event.key).is_none())
+            .map(|event| EventBoss {
+                key: event.key.clone(),
+                aliases: event.aliases.clone(),
+            })
+            .collect()
     }
 }
 

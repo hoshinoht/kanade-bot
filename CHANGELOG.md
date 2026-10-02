@@ -9,6 +9,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 Discord chat now answers boss strategy questions from the checked-in boss
   knowledge (`KANADE_KNOWLEDGE_DIR`), without sources, as v4 did; without a
   knowledge directory the strategy tools are not offered at all.
+- Boss guides refreshed for MapleSEA (researched 2026-10-02): SEA names first,
+  full per-difficulty facts for every boss, and the KMS HP values both before
+  and after OVERDRIVE. Guides gain named strategy options, each with its risk,
+  damage requirement and payoff (e.g. four Radiant Malefic Star altar routes).
+  Chat can now answer event bosses by name or alias (new Meilin prep guide;
+  Bellona is kept as a prep guide until she reaches MapleSEA).
 - v5 admin Config now uses the M3E Settings window: a grouped, deep-linkable
   contents list with current-value hints, a "find a setting" search, settings
   cards in the section panel, and a page-line risk chip (Config only) in place

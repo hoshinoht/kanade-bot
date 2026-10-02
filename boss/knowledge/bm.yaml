@@ -1,33 +1,123 @@
 boss: BM
-summary: 'Black Mage is primarily a curse-management fight: never cross Creative and Destructive curses, execute the Phase 3 full-map checks, then match your Phase 4 affinity to attack color.'
+summary: Black Mage is a curse-management fight over four phases with 12 lives each; never take a Creation and a Destruction hit within 6 seconds of each other, solve the Phase 2 and 3 full-map checks by position, then hold the right Phase 4 affinity.
 core:
-- 'Creative (white) and Destructive (black) curses last 6 seconds. Taking the opposite curse while one is active triggers Curse Crossing: lose one life, take extra damage, and get skill-sealed.'
-- Phase 1's two knights share HP but apply opposite curses, so careless contact with both burns lives quickly.
-- 'Phase 3''s Creation/Destruction ultimates use temporary platforms: one requires shelter beneath platforms and the other requires standing on them above the floor hazard.'
-- In Phase 4, Harvest/NPC toggles Creation or Destruction affinity. You ignore attacks matching your current affinity/color and remain vulnerable to the opposite color.
+- 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
+- 'Phase 1: Aion of Creation (also called Aeonian Rise; white curse) and Yaldabaoth of Destruction (also called Tanadian Ruin; black curse) share one HP bar. Walls close in from the edges and spawning on you is lethal, so avoid corners; Red Lightning cages you for 15s.'
+- 'Phase 2: dodge the chain volleys first. For the full-map Laser Jail, a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
+- 'Phase 3: stay inside his shield bubble (outside it you deal half damage). His Creation ultimate (white snowfall) is survived under a platform; Destruction (floor vortex) is survived standing on a platform, ideally the farthest. Crouch to avoid his Push.'
+- 'Phase 4: party members are hidden. The Harvest key swaps your affinity: Creation ignores white attacks, Destruction ignores black ones. Every 30s a pillar check kills anyone on the wrong colour, then he regains a barrier.'
+- Only Origin skills can bind Black Mage from Phase 2 onward; normal binds still work on the Phase 1 knights.
 danger:
-- Curse Crossing can erase lives without a normal death and is dangerous in every phase where both curse types overlap.
-- Phase 3's Creation and Destruction ultimates deal effectively lethal damage when their positioning check is failed.
-- Phase 4 hides party members, so each player must manage their own color/affinity correctly.
+- Curse crossing removes a life without a normal death and is the main way runs fail.
+- Phase 2 and 3 full-map attacks and Phase 1 wall spawns are instant kills when positioned wrong; walking into Red Lightning is near-lethal, and lethal while you hold the Curse of Destruction.
+- An Origin bind in Phase 2 can hide which hand is charging Laser Jail; know the timer instead.
+- Phase 3 Push, pull and lasers can chain curses; stop attacking when pink lasers appear and avoid double-jumping near him.
+- In Phase 4, bullets and explosions are the main life drains, and nobody can see your mistakes to call them.
 tips:
-- Before intentionally taking a hit, check which curse is already active.
-- In Phase 3, learn the platform tell first; damage is secondary during the full-map check.
-- In Phase 4, switch affinity deliberately rather than spam-toggling Harvest.
+- Before taking any intentional hit, check which curse you currently have.
+- In Phase 1, bind and burst when both knights overlap; their dive makes them briefly untargetable, so bind only when sure.
+- In Phase 4, default to Destruction so you are immune to black attacks and can still use potions; swap only for pillar checks.
+- After the final kill, break the Egg of the Beginning (also called Genesis Crux) with basic attacks to collect rewards; the clear counts on the last-phase kill (MapleSEA v214).
 difficulty_notes:
-  x: In Extreme Phase 4, the player's Creation/Destruction affinity is automatically switched every 30 seconds after a warning.
+  x: Extreme forces your Phase 4 affinity to swap every 30 seconds after a warning, and has a 30 minute limit instead of Hard's 60 (before OVERDRIVE).
+notes:
+- HP rows are KMS values before OVERDRIVE, which match MapleSEA now. Clears are monthly, shared between Hard and Extreme. Arcane Force 1320 (+10% final damage at 1452, +30% at 1716, +50% at 1980).
+- 'MapleSEA changes: v244 stopped the Phase 3 Creation ultimate overlapping the absorption pattern; v246 removed the entry item; v249 removed Dark Falling and Morning Starfall from Phases 2 and 3.'
+- Entry level 255 per the wiki and guides; MapleTools lists 275 (unconfirmed which is right).
+difficulties:
+- name: Hard
+  entry_level: 255
+  boss_level: 275
+  pdr_percent: 300
+  party_max: 6
+  force: {kind: arcane, value: 1320}
+  hp:
+  - {phase: '1', value: 63t}
+  - {phase: '2', value: 115.5t}
+  - {phase: '3', value: 157.5t}
+  - {phase: '4', value: 136.5t}
+  - {phase: total, value: 472.5t}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clears around 45k (Aug 2024, before OVERDRIVE).'}
+  notes:
+  - Phase 1 HP is one bar shared by both knights, plus white shields. 12 lives per player, 60 minute limit. Boss level 265 in phases 1 and 4.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 166t total, 20-minute limit.'
+- name: Extreme
+  entry_level: 255
+  boss_level: 280
+  pdr_percent: 300
+  party_max: 6
+  force: {kind: arcane, value: 1320}
+  hp:
+  - {phase: '1', value: 1.18q}
+  - {phase: '2', value: 1.191q}
+  - {phase: '3', value: 1.285q}
+  - {phase: '4', value: 1.155q}
+  - {phase: total, value: 4.811q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo clears reported around 96k (minimum cut, 99% of HP) to 110k (Sep 2025), before OVERDRIVE; single clears, not a cut table.'}
+  notes:
+  - 12 lives per player, 30 minute limit. Boss level 275 in Phase 1.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.26q total, 20-minute limit.'
+strategies:
+- name: Phase 4 burst-only
+  when: Hard with clear-time slack (60 minute limit)
+  risk: low
+  damage: medium
+  payoff: Damage lands on fresh barriers while the rest of the phase is spent surviving
+  steps:
+  - Skip normal attacks in Phase 4; the barrier refills after each 30s pillar check.
+  - Start buffs about 3s before a pillar check and burst on the fresh barrier.
+  - Four pillar checks are roughly one 2-minute burst cycle; between bursts, just survive.
+- name: Laser Jail invincibility
+  when: Any difficulty, with a class that has a roughly 10-second invincibility
+  risk: low
+  damage: medium
+  payoff: Turns the Phase 2 full-map check into a free damage window
+  steps:
+  - Save the invincibility for Laser Jail (or a Phase 3 ultimate) and keep attacking through it.
+  - Damage stops about 2s before the effect visually ends, so be in the safe spot by then.
 sources:
+- url: https://maplestorywiki.net/w/Black_Mage/Monster
+  title: MapleStory Wiki - Black Mage/Monster
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v221_patch_notes_2/
+  title: MapleSEA v221 patch notes 2
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v214_patch_notes
+  title: MapleSEA v214 patch notes
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v249_Patch_IBF/
+  title: MapleSEA v249 patch notes
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: Orange Mushroom - KMS ver. 1.2.416 (OVERDRIVE)
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.digitaltq.com/maplestory-black-mage-guide
+  title: DigitalTQ - MapleStory Black Mage guide
+  author: Aleph (DigitalTQ)
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/32487
+  title: Inven - Black Mage solo guide
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://dexless.com/guides/black-mage-boss-guide-and-genesis-weapons.366/
+  title: Dexless - Black Mage boss guide and Genesis weapons
+  author: PirateIzzy (Dexless)
+  kind: guide
+  fetched: '2026-09-05'
 - url: https://mapletools.app/bosses/blackmage
   title: MapleTools - Black Mage
   author: MapleTools
   kind: tool
-  fetched: '2026-09-05'
-- url: https://maplestory.fandom.com/wiki/Black_Mage/Monster
-  title: MapleStory Fandom Wiki - Black Mage/Monster
-  author: MapleStory Fandom Wiki contributors
-  kind: wiki
-  fetched: '2026-09-05'
-- url: https://dexless.com/guides/black-mage-boss-guide-and-genesis-weapons.366/
-  title: Dexless - Black Mage boss guide and Genesis weapons
-  author: Dexless
-  kind: guide
   fetched: '2026-09-05'

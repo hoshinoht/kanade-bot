@@ -1,30 +1,47 @@
 boss: Jupiter
-summary: Keep the shared Magic Synchronization gauge inside 401-600 at every Command and merge; letting it drift stacks Disruption and forces the harsher Auspicious or Ruinous merged forms.
+summary: Keep the shared Magic Synchronization needle inside 401-600 at every Command and at each merge; drifting off-centre stacks Rupture and sends the party into the harsher Auspicious or Ruinous merged forms.
 core:
-- Disruption (also called Rupture) is personal, starts at 0 and ejects you at 1000. A death adds 150 while separated or 200 while combined.
-- 'Separated state: Jupiter on the left, the Alchemical Entity (also called Alchemic Matter) on the right, at most two players per side. Hits on the Jupiter side push the shared 0-1000 Magic Synchronization gauge (also called Mana Sync) down; hits on the Entity side push it up. Ether Warp (NPC key) swaps sides, cooldown 15/20/30s solo/duo/trio.'
-- Three Commands check the gauge in each separated state (every 50/40/30s in Phases 1/2/3). Centred, a Command removes 10 Disruption; off-centre it adds 60, 80 or 100 the further out the needle is. Off-centre the needle also keeps sliding outward every 3s and you take up to 10/15% extra damage.
-- After the third Command the party merges for 100s into Balanced (centred), Auspicious (0-400; also called Perfection) or Ruinous (601-1000; also called Destruction) Jupiter. Balanced has its own -7..+7 Deflection needle; finishing within one of 0 removes 40 Disruption, finishing far out adds up to 60.
-- The Bond Initiative gauge (also called Combination Initiative) rises a stage after each Auspicious/Ruinous merge and falls one after Balanced. At stage 2/3 every hit adds 5/10 Disruption and reaching stage 3 adds 100 at once; getting back to stage 1 quickly refunds part of the hit Disruption.
+- Rupture (also called Disruption) is personal, starts at 0 and ejects you at 1000. A death adds 150 while separated or 200 while merged.
+- 'Separated state: Jupiter on the left, the Alchemical Entity (also called Alchemic Matter) on the right, at most two players per side. Hits on the Jupiter side push the shared 0-1000 Magic Synchronization gauge (also called Mana Sync) down; hits on the Entity side push it up. Ether Warp (NPC/Gather key) swaps sides, cooldown 15/20/30s solo/duo/trio.'
+- Three Commands check the gauge in each separated state (every 50/40/30s in Phases 1/2/3). Centred, a Command removes 10 Rupture; off-centre it adds 60, 80 or 100 the further out the needle is. About 5s after the needle leaves the blue band it starts sliding outward 25 every 3s, and you take up to 10/15% extra damage.
+- After the third Command the party merges for 100s into Balanced (centred), Auspicious (0-400; also called Perfection) or Ruinous (601-1000; also called Destruction) Jupiter. Balanced has its own -7..+7 Deflection needle; finishing within one of 0 removes 40 Rupture, finishing far out adds up to 60. Auspicious and Ruinous have no needle; just survive.
+- The Bond Initiative gauge (also called Combination Initiative) rises a stage after each Auspicious/Ruinous merge and falls one after Balanced. At stage 2/3 every hit adds 5/10 Rupture and reaching stage 3 adds 100 at once; getting back to stage 1 quickly refunds part of the hit Rupture.
 - Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 50%); separated time shrinks from 150s to 120s to 90s.
 danger:
-- In Phase 3 every Command also shoves the needle 150 away from centre, so the party must re-centre within 30 seconds each time.
-- Lance Protocol laser sets on the Jupiter side swing the gauge hardest, which is why only one player should normally fight Jupiter.
-- 'Phase 3 Alchemical Entity chain: each hit during the combo brands you (brands are also called Stigma), and the closing execution deals 200% HP at two brands. Ruinous Jupiter runs the same branded combo from Phase 1.'
+- In Phase 3 every Command also shoves the needle, from centre to 350 or 650, or otherwise 150 further out, so the party must re-centre within 30 seconds each time.
+- Lance Protocol laser sets on the Jupiter side swing the gauge hardest.
+- 'Phase 3 Alchemical Entity chain: each hit during the combo brands you (brands are also called Stigma), and the closing execution deals 200% HP at two brands; brands clear after about 5s without a hit. Ruinous Jupiter runs the same branded combo from Phase 1.'
 - Phase 3 Auspicious adds Colossus Impact and Phase 3 Ruinous adds Illusion Kill; both track you and then detonate for 200% HP over a wide radius.
-- Auspicious Commands mark a destination above each head twice; if anyone misses, the whole party gains 50 Disruption.
+- Auspicious Commands mark a spot above each head twice; if everyone reaches theirs both times everyone loses 10 Rupture, if anyone misses everyone gains 50. Spectral Bane zones cut your final damage by 80% while you stand in them.
 - Ruinous is the fastest and hardest merged form; overlapping Refraction Cannon bounces or Reverb Distortion portals can also chain into a death.
 tips:
-- Keep someone watching the needle and calling drift before each Command, above all in Phase 3.
-- Put one strong, steady-uptime player on Jupiter and the rest on the Entity, whose movement suits burst-heavy classes.
-- Correct drift with chosen hits at full HP, e.g. Arcane Rift (pushes the needle down) or Tracking Instinct pillars (push it up) while healing on Holy Fountain, which can be installed on both sides.
-- Use Ether Warp deliberately when one side is taking too many hits; your debuffs on the boss persist after warping.
+- One caller watches the needle and calls drift. Start correcting about 15s before each Command (about 20s from the outermost band), and ask the other side for a balancing hit when your side is hit, never a 200% attack.
+- Correct drift with chosen hits at full HP, e.g. Arcane Rift or Ether Racer (push the needle down) or Tracking Instinct pillars (push it up), while healing on Holy Fountain, which can be installed on both sides.
+- Failing balance in Phase 1 costs the most; one bad merge is recoverable because a Balanced merge drops Bond Initiative a stage.
+- Use Ether Warp deliberately when one side is taking too many hits; your debuffs on the boss persist after warping. Bind resistance is tracked per side, but the merged boss inherits the longer one, so plan binds before merges or burst under invincibility.
 - Crouch Double Sided Attack, Tackle, Cruel Claw and Execution A; step between Mana Plum pillars in Balanced.
 - On Hard, keep i-frames and Ascent skills for the forced Auspicious/Ruinous merges.
+strategies:
+- name: One on Jupiter
+  when: Trios with one strong, steady-uptime player (iSIingGunz guide).
+  risk: medium
+  damage: medium
+  payoff: Steadiest needle, because Jupiter-side lasers swing it hardest.
+  steps:
+  - In the waiting room the strongest player takes Jupiter's side (left) alone; the other two take the Alchemical Entity (right), whose movement suits burst classes.
+- name: Two on Jupiter, switch in Phase 3
+  when: Trios still learning the fight, and solo or duo runs (Korean Inven guide).
+  risk: medium
+  damage: medium
+  payoff: Less damage lost while the Entity sinks or teleports out of reach (it is invincible then).
+  steps:
+  - Solo and duo players fight on Jupiter's side; a duo may burst together there and split otherwise.
+  - In a trio, Phases 1-2 put two on Jupiter and one on the Entity.
+  - From Phase 3 swap to one on Jupiter and two on the Entity, since the Entity side starts branding and Commands come every 30s.
 difficulty_notes:
-  h: Every third merge is forced to Auspicious or Ruinous even when the needle is centred (odd gauge value gives Auspicious, even gives Ruinous).
+  h: Every third merge is forced to Auspicious or Ruinous; off-centre it follows the needle as usual. When centred, the guide says an odd exact gauge value gives Auspicious and an even one Ruinous, while MapleTools says forced merges alternate (unconfirmed).
 notes:
-- 30-minute limit and 10-second potion cooldown; Jupiter cannot be slowed or critically bound. The five bodies share one HP bar, and bind resistance carries over between separated and merged rooms.
+- 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; Jupiter cannot be slowed or critically bound. The five bodies share one HP bar, and bind resistance carries over between separated and merged rooms.
 difficulties:
 - name: Normal
   entry_level: 295
@@ -36,7 +53,9 @@ difficulties:
   - {phase: total, value: 10.266q}
   recommended_spec:
     kind: HEXA-converted stat
-    text: Trio 80k, duo 95k, solo 117k, measured at 860 Sacred Force, level 300 and a maxed Geardock symbol (post Sol Hecate).
+    text: Trio 80k, duo 95k, solo 117k, measured at 860 Authentic Force, level 300 and a maxed Grand Authentic Symbol Geardrock, with Sol Hecate.
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.98q, 20-minute limit.'
 - name: Hard
   entry_level: 295
   boss_level: 295
@@ -48,19 +67,31 @@ difficulties:
   recommended_spec:
     kind: HEXA-converted stat
     text: Trio 130k, duo 142k, solo not estimated; same assumptions as Normal.
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 33.6q, 20-minute limit.'
 sources:
 - url: https://docs.google.com/document/d/1DwlX_-lXPA6-KRKCxGZ2g6Xzwl3DPniq-BcBudOyr98/edit
   title: MapleStory Complete Jupiter Guide
   author: iSIingGunz
   kind: guide
-  fetched: '2026-09-24'
-- url: https://mapletools.app/bosses/jupiter
-  title: MapleTools - Jupiter
-  author: MapleTools
-  kind: tool
-  fetched: '2026-09-05'
+  fetched: '2026-10-02'
 - url: https://www.maplesea.com/updates/view/v252_Jupiter/
   title: MapleSEA v252 Jupiter update notes
   author: Nexon (MapleSEA)
   kind: official
-  fetched: '2026-09-24'
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/46955
+  title: Inven - Jupiter guide
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/jupiter/guide
+  title: MapleTools - Jupiter
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Jupiter/Monster
+  title: MapleStory Wiki - Jupiter
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'

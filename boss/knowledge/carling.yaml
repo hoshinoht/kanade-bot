@@ -1,21 +1,154 @@
 boss: Carling
-summary: Balance the three Peril gauges while protecting the party's shared Mental Strength; a gauge hitting either extreme permanently damages the run.
+summary: Carling (also called Kaling) replaces deaths with a shared 1000 Mental Strength pool and three linked Balance of Season gauges for Gunggi, Do'oul and Hondon; a gauge reaching 0 or 1000 locks and costs 350, so runs are won by gauge control more than raw damage.
 core:
-- The party shares 1000 Mental Strength instead of a normal death count; reaching 0 fails the run.
-- Goongi, Dool, and Chaos each have a gauge starting at 500. Taking an element's hit raises that gauge and lowers the counter-clockwise gauge.
-- If any Peril gauge reaches 0 or 1000, it locks there and immediately costs the party 350 Mental Strength.
-- Phase 1 splits the party among the three Perils. Defeating all three without breaking gauge balance restores Mental Strength and can grant their blessings.
+- 'Mental Strength (also called Willpower) is shared: 1000 at the start, and the run fails at 0. Each death costs 160/100/80/70/60/50 for parties of 1-6 (MapleSEA v249). Phase 2 spirits (-30) and the Scroll trap (about -50) also drain it. The only refill is +300 for finishing Phase 1 with no gauge broken.'
+- 'The Balance of Season gauges (also called seasonal gauges) start at 500 and are linked: a Gunggi (Spring, also called Goongi) hit raises Gunggi and lowers Hondon; Do''oul (Summer, also called Dool) raises Do''oul and lowers Gunggi; Hondon (Autumn, also called Chaos) raises Hondon and lowers Do''oul. A gauge at 0 or 1000 locks and costs 350; three breaks end the run.'
+- 'The Four Gentlemen laser flowers (also called Four Gracious Plants) move gauges by colour: red = Gunggi, green = Do''oul, yellow = Hondon.'
+- 'Phase 1 splits the party into three Peril rooms (max 2 each). While alive, Gunggi drains Mental Strength every 30s, Do''oul shields the other two every 45s, and Hondon makes the others hit 25% harder. Killing a Peril with its gauge unbroken grants its blessing: Gunggi blocks one lethal hit, Do''oul gives a Purification cleanse for Phase 2, Hondon gives +10% final damage.'
+- 'Do''oul takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Do''oul absorbs them as a shield.'
+- 'Phase 2 Carling uses all three Perils'' attacks. After her flight she teleports; bait it toward the third of the map whose laser colour you need (left Gunggi, centre Do''oul, right Hondon). Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
+- 'Phase 3: Gunggi (left), Hondon (centre) and Do''oul (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s. Outside Carling''s zone you take +80% damage and cannot use potions. Each Peril kill unlocks the next 25% of Carling''s HP.'
 danger:
-- The Four Gracious Plant lasers are a major source of accidental Peril-gauge drift throughout the fight.
-- Repeatedly eating one element can simultaneously max its own gauge and bottom out its neighbour.
-- Deaths also consume shared Mental Strength, so one player's mistakes reduce the entire party's run budget.
+- After all three Phase 3 Perils die, Aura Overflow kills everyone in Carling's zone every 30s (plus one random zone on Hard/Extreme), ignoring most invincibility; plan the last kill and leave the flagged zone. MapleSEA's name for it is unconfirmed.
+- Phase 2 Vengeful Spirits (each minute) and the Scroll imprisonment cost Mental Strength directly; a Scroll catch often chains into a spirit hit.
+- Do'oul's Phase 3 lightning stuns long enough for a second bolt; outside Carling's zone the follow-up can kill outright.
+- Gunggi's hide-and-seek wipes the room if nobody hits the right Torn Spring painting within 15s.
+- Repeatedly taking one Peril's attacks maxes its gauge and bottoms out its neighbour at the same time.
 tips:
-- Call Peril gauge values and coordinate room assignments instead of treating each room independently.
-- Avoid unnecessary laser hits even when the HP damage looks small; the gauge movement is the real cost.
-- In Phase 1, finish each Peril with its gauge still inside the valid range to keep the clear bonuses.
+- Name one gauge caller who calls numbers; before leaving a room, pre-load the gauge the next room will push down.
+- Never break a gauge in Phase 1; losing the blessings and the +300 refill usually means restarting.
+- In Phase 3, switch on the zone statue (Harvest key) before single-target bursts so they hit the Peril, not Carling.
+- In Phase 2, burst right after Carling's flight and dodge spirits by staying airborne or high up.
+- A full party pays less per death but shares one pool, so it has fewer total spare deaths than it looks.
 difficulty_notes:
-  x: In Extreme, leaving the 250-750 range also increases damage taken from that Peril's element by 30%.
+  h: On Hard and Extreme, Aura Overflow hits Carling's zone plus a random second zone, and Gunggi's Phase 3 tornado order is random (fixed on Easy/Normal).
+  x: Extreme adds +30% damage taken from a Peril's element whenever its gauge is outside 250-750, and Do'oul's Phase 1 shields double to 2% HP.
+notes:
+- HP rows are KMS values before OVERDRIVE (what MapleSEA has now, including the v244 and v251 cuts). Phase 1 and 3-1 rows are per Peril (three each); 3-2 is Carling; Phase 3 rows are rounded.
+- 30 minute limit before OVERDRIVE. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
+difficulties:
+- name: Easy
+  entry_level: 275
+  boss_level: 275
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 230}
+  hp:
+  - {phase: '1', value: 96.6t}
+  - {phase: '2', value: 105t}
+  - {phase: 3-1, value: 93.2t}
+  - {phase: 3-2, value: 111t}
+  - {phase: total, value: 786t}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clears around 51k (May 2025, before the Phase 3 HP cut MapleSEA now has); treat as a rough floor.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 533t total, 20-minute limit.'
+- name: Normal
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 330}
+  hp:
+  - {phase: '1', value: 399t}
+  - {phase: '2', value: 468t}
+  - {phase: 3-1, value: 399t}
+  - {phase: 3-2, value: 462t}
+  - {phase: total, value: 3.33q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clear about 86k (Oct 2025, before the March 2026 Phase 3 cut that MapleSEA has), so slightly less should work.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.26q total, 20-minute limit.'
+- name: Hard
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 350}
+  hp:
+  - {phase: '1', value: 920t}
+  - {phase: '2', value: 1.404q}
+  - {phase: 3-1, value: 1.407q}
+  - {phase: 3-2, value: 1.883q}
+  - {phase: total, value: 10.27q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo clear at about 113k right after the March 2026 Phase 3 cut (the state MapleSEA is in); a single sample, not a cut table.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.96q total, 20-minute limit.'
+- name: Extreme
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 480}
+  hp:
+  - {phase: '1', value: 6.018q}
+  - {phase: '2', value: 6.93q}
+  - {phase: 3-1, value: 5.198q}
+  - {phase: 3-2, value: 6.497q}
+  - {phase: total, value: 47.1q}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 31.9q total, 20-minute limit.'
+strategies:
+- name: Balanced gauges
+  when: Parties, first clears, or any spec with room to spare
+  risk: low
+  damage: high
+  payoff: Keeps most Mental Strength so mistakes are survivable; walking gauges costs uptime, so the clear is slower
+  steps:
+  - Keep every gauge between 1 and 999 (250-750 on Extreme) in all phases.
+  - 'Phase 1 order used by min-cut solo players: Hondon, Do''oul, Gunggi. Burst Hondon after its second frenzy, then take a few Hondon hits to pre-drain Do''oul before leaving.'
+  - In Phase 2, bait Carling's teleport to the third whose laser colour you need.
+  - 'Phase 3 order: Do''oul, Gunggi, then Hondon last, so you can stand centre with Carling and push her HP before Aura Overflow starts; walk between zones to fix gauges.'
+  - Before the Phase 3 Perils spawn, wait on Do'oul's side to pre-load its gauge.
+- name: Do'oul turbo (break build)
+  when: Solo or duo near the minimum cut, only after a clean Phase 1 (all blessings plus the refill) and a Phase 2 with no spirit or Scroll hits
+  risk: high
+  damage: low
+  payoff: Near-full Phase 3 uptime with only one gauge left to manage
+  steps:
+  - At Phase 3 start, park in the right (Do'oul) zone and burst, letting Do'oul reach 1000 and Gunggi reach 0 (700 Mental Strength spent).
+  - After Do'oul dies, manage only Hondon's gauge by alternating between the Hondon and Gunggi zones, using each zone's statue.
+  - With about 300 Mental Strength left, one or two deaths end the run; play safe through Aura Overflow.
+  - The older Hondon-zone build (hit everything from Hondon's zone) stopped working after MapleSEA v251's zone rule.
 sources:
+- url: https://www.maplesea.com/updates/view/v224_Patch_Notes/
+  title: MapleSEA v224 patch notes (Carling release)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 patch notes
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v249_Patch_IBF/
+  title: MapleSEA v249 patch notes
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content2/
+  title: MapleSEA v251 content notes part 2
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: Orange Mushroom - KMS ver. 1.2.416 (OVERDRIVE)
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Kaling/Monster
+  title: MapleStory Wiki - Kaling/Monster
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2294/402615
+  title: Inven - Kaling solo tips
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://arca.live/b/maplestory/179559217
+  title: arca.live - Kaling Phase 3 and Do'oul turbo build
+  author: arca.live community
+  kind: guide
+  fetched: '2026-10-02'
 - url: https://mapletools.app/bosses/kaling/guide
   title: MapleTools - Kaling guide
   author: MapleTools

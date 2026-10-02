@@ -770,6 +770,63 @@ fn a_guide_edited_after_startup_is_unreadable_not_missing() {
     );
 }
 
+#[test]
+fn live_guides_offer_only_non_catalog_event_documents() {
+    let temp = Temp::new();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp.0.join("knowledge");
+    fs::create_dir(&dir).unwrap();
+    fs::copy(
+        root.join("boss/knowledge/schema.json"),
+        dir.join("schema.json"),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("_meta.yaml"),
+        "schema_version: 2\nresearched_as_of: '2031-04-05'\n",
+    )
+    .unwrap();
+    // Invented documents: one event outside the catalog, one under a catalog key.
+    let doc = |key: &str| {
+        format!(
+            "boss: {key}\nevent:\n  name: Invented Season\n  availability: Invented World only.\n  \
+             aliases: [Zeph, 제피]\nsummary: Invented.\ncore: [a]\ndanger: [b]\ntips: [c]\n\
+             sources:\n- {{url: 'https://example.invalid/', title: t, author: a, kind: guide, \
+             fetched: '2031-04-01'}}\n"
+        )
+    };
+    fs::write(dir.join("zephyrine.yaml"), doc("Zephyrine")).unwrap();
+    fs::write(dir.join("lotus.yaml"), doc("Lotus")).unwrap();
+    let catalog = load_catalog(&root.join("boss/bosses.yaml")).unwrap();
+    let knowledge = load_knowledge_dir(&dir).unwrap();
+    assert_eq!(knowledge.events.len(), 2);
+    let guides = LiveStrategyGuides {
+        knowledge: &knowledge,
+        catalog: &catalog,
+    };
+    let events = guides.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].key, "Zephyrine");
+    assert_eq!(events[0].aliases, ["Zeph", "제피"]);
+    let event = guides
+        .render(&BossReference {
+            short: "Zephyrine".into(),
+            difficulty: None,
+        })
+        .unwrap();
+    assert!(
+        event.starts_with("# Zephyrine\nAvailability: Invented World only.\n"),
+        "{event}"
+    );
+    let lotus = guides
+        .render(&BossReference {
+            short: "Lotus".into(),
+            difficulty: None,
+        })
+        .unwrap();
+    assert!(lotus.starts_with("# Lotus (Lotus)\n_Researched"), "{lotus}");
+}
+
 #[tokio::test]
 async fn without_a_knowledge_dir_live_chat_hides_the_strategy_bundle() {
     let stub = ModelStub::start("local", "I have no guides here.").await;

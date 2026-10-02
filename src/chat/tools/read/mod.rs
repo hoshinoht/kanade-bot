@@ -2,6 +2,7 @@
 //! function is pure over a [`ToolWorld`] the caller loads and the context's
 //! clock reading.
 
+mod event;
 pub mod format;
 mod guide;
 pub mod participants;
@@ -13,6 +14,7 @@ use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
+pub use event::{EventBoss, match_event};
 pub use guide::render_guide;
 pub use schedule::get_schedule;
 
@@ -37,8 +39,14 @@ pub enum GuideError {
 /// Checked-in boss strategy guides (serve: the schema v2 knowledge
 /// directory through [`render_guide`]).
 pub trait StrategyGuides {
-    /// The guide text for one boss and optional difficulty.
+    /// The guide text for one boss and optional difficulty; `reference.short`
+    /// is a catalog key or an [`EventBoss::key`].
     fn render(&self, reference: &BossReference) -> Result<String, GuideError>;
+
+    /// Event bosses outside the catalog with a checked-in guide.
+    fn events(&self) -> Vec<EventBoss> {
+        Vec::new()
+    }
 }
 
 /// One proposal card still waiting for ✅, as the inbox names it.
@@ -186,10 +194,21 @@ pub fn get_boss_strategy(world: &ToolWorld<'_>, args: &Map<String, Value>) -> To
         Some(Value::String(raw)) if !strip(raw).is_empty() => raw,
         _ => return Err(ToolError::new("Ask which boss they want strategy for.")),
     };
-    let reference = world
-        .catalog
-        .resolve_reference(raw)
-        .map_err(|error| ToolError(error.message().to_owned()))?;
+    let reference = match world.catalog.resolve_reference(raw) {
+        Ok(reference) => reference,
+        Err(error) => {
+            // Only a name the catalog cannot resolve may be an event boss.
+            if let Some(guides) = world.guides {
+                let events = guides.events();
+                if let Some((event, stated)) =
+                    match_event(&events, world.catalog, raw).map_err(ToolError)?
+                {
+                    return event_strategy(world, guides, args, &event.key, stated);
+                }
+            }
+            return Err(ToolError(error.message().to_owned()));
+        }
+    };
     let explicit = difficulty(world, args.get("difficulty"))?;
     if let (Some(explicit), Some(stated)) = (&explicit, &reference.difficulty)
         && explicit != stated
@@ -234,6 +253,40 @@ pub fn get_boss_strategy(world: &ToolWorld<'_>, args: &Map<String, Value>) -> To
             GuideError::Unreadable => ToolError(format!(
                 "The strategy guide for {} could not be read right now.",
                 boss.full()
+            )),
+        })
+}
+
+/// `get_boss_strategy` for an event boss: the same difficulty handling, minus
+/// the catalog's per-boss difficulty list.
+fn event_strategy(
+    world: &ToolWorld<'_>,
+    guides: &(dyn StrategyGuides + Sync),
+    args: &Map<String, Value>,
+    key: &str,
+    stated: Option<String>,
+) -> ToolResult<String> {
+    let explicit = difficulty(world, args.get("difficulty"))?;
+    if let (Some(explicit), Some(stated)) = (&explicit, &stated)
+        && explicit != stated
+    {
+        return Err(ToolError(format!(
+            "conflicting difficulties: {} and {}",
+            world.catalog.difficulty_name(stated),
+            world.catalog.difficulty_name(explicit)
+        )));
+    }
+    guides
+        .render(&BossReference {
+            short: key.to_owned(),
+            difficulty: explicit.or(stated),
+        })
+        .map_err(|error| match error {
+            GuideError::Missing => ToolError(format!(
+                "No checked-in strategy guide is available for {key}."
+            )),
+            GuideError::Unreadable => ToolError(format!(
+                "The strategy guide for {key} could not be read right now."
             )),
         })
 }

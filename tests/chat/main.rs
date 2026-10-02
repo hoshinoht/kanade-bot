@@ -18,6 +18,7 @@ mod read_tools;
 mod sanitize;
 mod slow_store;
 mod staging;
+mod strategy_guides;
 mod support;
 mod tool_schemas;
 mod wire;

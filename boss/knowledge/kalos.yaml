@@ -1,26 +1,149 @@
 boss: Kalos
-summary: Control T-Boy's four interference systems with Kalos's Will; letting all four stay active is the fight's hard fail.
+summary: Gatekeeper Kalos (also called Kalos the Guardian or Watcher Kalos) is a system-control fight. T-Boy keeps switching on four tower weapons and the party must shoot them off with Will of Kalos; if all four stay on, the run fails. Phase 2 adds a safe-dome test after every 25% of HP.
 core:
-- 'T-Boy can activate four weapon systems: Eye of Restraint, Eye of the Abyss, Bombardment Fighter, and Sphere of Odium.'
-- 'Use the Harvest/NPC key for Kalos''s Will: aim and fire it at active systems to step them down until deactivated.'
-- Kalos's Will refills on a short timer while alive; dead players do not recharge it.
-- If all four systems remain active until the interference fail timer expires, the party is forcibly ejected. Deactivating even one stops/resets that fail state.
+- 'Four weapons, each with a dot on the gauge: Eye of Restraint (left tower, stun laser; also called Eye of Penitence), Eye of the Abyss (right tower, darkness arrows), Bombardment Fighter (top drone, downward beam; also called Beam Strafe Maneuver) and the Odium sphere (bouncing ball).'
+- One weapon switches on every 80 s (Easy), 70 s (Normal) or 60 s (Chaos/Extreme), and every Watcher's Roar (also called Guardian's Roar or FMA, the full-map attack) switches on one more.
+- Press the NPC/Gather key to aim Will of Kalos (also called Kalos's Will) and press again to fire. It refills about every 10 s (the wiki says 15 s on Easy), auto-fires after 10 s and does not charge while you are dead; since SEA v251 its crosshair stays fixed. Shoot the Eyes directly; for the drone and the ball, shoot the generator above or below them as they pass.
+- Hits needed scale with party size. Eyes take 2 per member on Easy and Normal (3 on Chaos and Extreme); the drone takes 1 on Easy and Normal (2 on Chaos and Extreme); the ball takes 1 on Easy and 2 on Chaos and Extreme (Normal unconfirmed).
+- If all four weapons are still active when the next activation timer ends, the party is ejected. Freeing any one resets it.
+- Phase 2 HP is split into four 25% segments. Each segment ends in a test of three safe domes; any death fails it and heals Kalos 5%, while success gives a 15 s groggy with all timers paused.
 danger:
-- Eye of Restraint is particularly dangerous because its laser applies a long stun and can chain into other attacks.
-- Kalos's full-barrage pattern can activate another interference system, accelerating the system-management check.
-- On Chaos and Extreme, three or more active systems switch to enhanced attacks.
+- Eye of Restraint's laser stuns and can chain into Kalos's attacks; it keeps firing during the dome test. Since SEA v251, freeing it cancels its current shot.
+- On Chaos and Extreme, three or more active weapons empower all of them; empowered arrows can kill in two hits.
+- Watcher's Roar (about every 2.5 min) is a one-shot that also adds a weapon; every bind delays it by the bind's length.
+- Phase 2 Laser Breath kills through Heaven's Door and reaches one floor up; his dive lands on a random player.
+- 'Below 25% HP (segment 2-4) a curse lands every minute: two stacks raise damage taken, a third kills a random player. Harvest the armguard to clear curses.'
 tips:
-- Assign responsibility for Kalos's Will shots instead of having everyone react late.
-- Reduce the number of active systems before committing to long burst windows.
-- If the active count reaches four, treat freeing one system as the immediate priority.
+- Assign a caller to watch Kalos after every teleport and one player to run timers (Roar, breath, dive, next system).
+- Call generator numbers 1-5 for drone and ball shots so two people never spend shots on the same one.
+- Fire at the ball when it is about halfway to its generator; the barrier lasts only about 2 s.
+- Read a weapon's colour to count the shots left (red, then purple, then dark blue).
+- Use Hero's Will before the left tower's laser lands to avoid its stun.
+- 'Authentic Symbol: Hotel Arcs Lv 11 adds +20% damage against Kalos (SEA v251).'
+difficulties:
+- name: Easy
+  entry_level: 265
+  boss_level: 270
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 200}
+  hp:
+  - {phase: '1', value: 94.5t}
+  - {phase: '2', value: 262.5t}
+  recommended_spec: {kind: Authentic Force, text: '200 Authentic Force in both phases; 250 gives the full +25%. CMS lists 35M combat power solo (about 3.7M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes; weapons activate every 80 s (SEA v251, up from 60).
+  - Phase 1 has 330% PDR and Phase 2 has 380%. HP is the KMS value before OVERDRIVE (wiki estimate).
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 63.1t / 175.4t (33.2% less), 20-minute limit.'
+- name: Normal
+  entry_level: 265
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 300}
+  hp:
+  - {phase: '1', value: 336t}
+  - {phase: '2', value: 720t}
+  recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 250 and Phase 2 needs 300 Authentic Force (350 for the full +25%). CMS lists 120M combat power solo (about 13M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes; weapons activate every 70 s (SEA v251, up from 60).
+  - Phase 1 is level 275 with 330% PDR, and Phase 2 is level 280 with 380%.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 224.4t / 481t (33.2% less), 20-minute limit.'
+- name: Chaos
+  entry_level: 265
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 330}
+  hp:
+  - {phase: '1', value: 1.066q}
+  - {phase: '2', value: 4.06q}
+  recommended_spec: {kind: Authentic Force, text: '330 Authentic Force (380 for the full +25%). CMS lists 550M combat power solo (about 59M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes; the Destiny Weapon mission runs with 3. Weapons activate every 60 s.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 712t / 2.71q (33.2% less), 20-minute limit.'
+- name: Extreme
+  entry_level: 265
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 440}
+  hp:
+  - {phase: '1', value: 5.798q}
+  - {phase: '2', value: 15.498q}
+  recommended_spec: {kind: Authentic Force, text: '440 Authentic Force (490 for the full +25%). CMS lists 2.5B combat power solo (about 270M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes. Watcher's Roar is replaced by marked pillars that one-shot.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.87q / 10.35q (33.2% less), 20-minute limit.'
+strategies:
+- name: Left-first control
+  when: Easy and Normal, learning parties or low shot accuracy
+  risk: low
+  damage: low
+  payoff: Fewest stun-chain deaths and safe dome tests
+  steps:
+  - Cleanse Eye of Restraint first, then Eye of the Abyss, then the ball, then the drone (the least dangerous).
+  - Shoot the towers from close range so the shot cannot miss.
+  - Never start a dome test while the Left tower is active.
+  - Hold a charged shot when the next system is about 10 s away, instead of firing at nothing.
+- name: Prep and hold
+  when: Chaos and Extreme, where three active weapons empower all of them
+  risk: medium
+  damage: high
+  payoff: Keeps the active count under three at tests and bursts
+  steps:
+  - Shoot one weapon (often the ball or drone) down to its last colour and leave it there as a reserve.
+  - When a third weapon switches on, finish the reserve to drop back to two.
+  - Leave a nearly finished weapon up until the next activation, so you do not re-roll a worse one.
+  - Prioritise the Right tower over Left when arrows are empowered, and keep shooting during tests and bursts.
+- name: Threshold burst
+  when: Any difficulty; the main party damage plan
+  risk: medium
+  damage: high
+  payoff: One long burst per segment and fewer weapon cycles
+  steps:
+  - Phase 1 - group on one side, wait for his first teleport so everyone has loaded, then bind and burst.
+  - Phase 2 start - group in the middle so his opening dive lands there, step out, then bind and burst.
+  - Stop about 0.3-1% above each 25% threshold and phase once Left is off and fewer than three weapons are up, before the next Roar adds a weapon.
+  - Burst again in the 15 s groggy after each dome test, and burst through segment 2-4 quickly.
 sources:
+- url: https://www.maplesea.com/updates/view/v251_Content2/
+  title: MapleSEA v251 Content Updates Part 2
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content/
+  title: MapleSEA v251 Content Updates
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v227_Patch_Notes/
+  title: MapleSEA v227 NEW AGE Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory Overdrive
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.youtube.com/watch?v=CS7aTJUxwfA
+  title: Comprehensive Kalos Boss Guide 2024
+  author: Duky
+  kind: guide
+  fetched: '2026-10-02'
 - url: https://mapletools.app/bosses/kalos
   title: MapleTools - Kalos
   author: MapleTools
   kind: tool
-  fetched: '2026-09-05'
+  fetched: '2026-10-02'
 - url: https://maplestorywiki.net/w/Kalos/Monster
   title: MapleStory Wiki - Kalos/Monster
   author: MapleStory Wiki contributors
   kind: wiki
-  fetched: '2026-09-05'
+  fetched: '2026-10-02'

@@ -12,7 +12,7 @@ pub use art::BossArt;
 pub use catalog::load_catalog;
 pub use error::LoadError;
 pub(crate) use knowledge::read_document;
-pub use knowledge::{KnowledgeDir, load_knowledge_dir};
+pub use knowledge::{KnowledgeDir, KnowledgeEvent, load_knowledge_dir};
 pub use personas::{PersonaLoad, load_personas};
 
 #[cfg(test)]

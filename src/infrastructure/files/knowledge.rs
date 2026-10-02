@@ -22,12 +22,22 @@ pub(crate) fn read_document(path: &Path) -> Result<Value, LoadError> {
         .map_err(|error| LoadError::new(path, format!("invalid YAML: {error}")))
 }
 
+/// An event boss document (one with an `event` block): its key and the
+/// other names members use for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KnowledgeEvent {
+    pub key: String,
+    pub aliases: Vec<String>,
+}
+
 /// A knowledge directory whose every document validated at startup.
 #[derive(Clone, Debug)]
 pub struct KnowledgeDir {
     pub path: PathBuf,
     /// Document `boss` keys, sorted.
     pub keys: Vec<String>,
+    /// Event documents, in key order.
+    pub events: Vec<KnowledgeEvent>,
 }
 
 impl KnowledgeDir {
@@ -77,6 +87,7 @@ pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
         .collect();
     names.sort();
     let mut keys = Vec::with_capacity(names.len());
+    let mut events = Vec::new();
     for name in names {
         let path = dir.join(&name);
         let doc = read_document(&path)?;
@@ -96,10 +107,25 @@ pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
                 "file name must be the lowercased `boss` key",
             ));
         }
+        if let Some(event) = doc.get("event") {
+            let aliases = event
+                .get("aliases")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            events.push(KnowledgeEvent {
+                key: key.to_owned(),
+                aliases,
+            });
+        }
         keys.push(key.to_owned());
     }
     Ok(KnowledgeDir {
         path: dir.to_path_buf(),
         keys,
+        events,
     })
 }

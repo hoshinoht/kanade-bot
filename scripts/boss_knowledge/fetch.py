@@ -26,6 +26,7 @@ GUIDES: dict[str, tuple[str, str]] = {
     "baldrix": ("1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY", "iSIingGunz"),
     "limbo": ("1OJ9-xZvQVaXZ4p1DmhnIjYurSuK1gtUZlZdzoFk6fHA", "iSIingGunz"),
     "kai": ("1oPyMyovLuS8aPh87MP3B_vJJcbnYoXWXrLp8Q4By0BI", "iSIingGunz"),
+    "lotus": ("1ozaBBT0D7rZJr_KurQYNHLdKJU7PWw437bq5auyom5c", "iSIingGunz"),
 }
 
 _MAX_BYTES = 5 * 1024 * 1024

@@ -1,29 +1,30 @@
 boss: FA
-summary: 'The First Adversary is a parry fight: time Immortal Will on the right attacks to keep the shared Power of Order high, which protects everyone''s Will and sets the party''s final damage.'
+summary: 'The First Adversary is a parry fight: time Immortal Will on the right attacks to keep the party''s shared Power of Order high. That gauge sets everyone''s final damage and protects each player''s Will of the Adversary.'
 core:
-- Each player has 1000 Enemy's Will (also called Adversary's Will; MapleSEA patch notes say Will of the Adversary); a death costs 200 and reaching 0 removes you.
-- Power of Order is shared, starts each phase at 500, drains 5 per second, and scales final damage from -40% (under 200) through 0% (400-599) to +20% (800+). Gains and losses are scaled down in duo and trio.
-- 'Cycle of Power every 2:18 (5s warning): under 400 Power of Order everyone loses 100 Will (200-399) or 200 Will (under 200), and a low gauge is pulled back to 500.'
-- Immortal Will (NPC key; also called Indomitable Will) is a 0.5s parry against his attacks. Base cooldown 6s; each rewarded parry cuts 4.5s and raises Power of Order. It still works while you are i-framed, but not during Origin or Ascent casts.
-- 'Phase 1 (warrior/thief): parry the red strengthened hits; Shadow Partner copies swing before him. Phase 2 (mage/archer): each player gets Fire, Ice or Holy, re-rolled every Cycle, and only matching attacks are rewarding parries. Phase 3 mixes both, with strengthened hits glowing rainbow.'
-- HP is split 30/30/40 across the phases; he can be bound (which cancels his current pattern) but not critically bound. The clear counts after Phase 3.
+- Each player has 1000 Will of the Adversary (also called Enemy's Will); a death costs 200 and reaching 0 removes you.
+- 'Power of Order is shared, starts each phase at 500 and decays 5 per second, but decay alone never drops it below the current stage (MapleSEA v247; one Korean source limits this to Normal and below, unconfirmed for Hard/Extreme). Stages: under 200 = -40% final damage, 200-399 = -20%, 400-599 = 0, 600-799 = +10%, 800+ = +20%.'
+- 'Party scaling: a duo gains 50% and a trio 34% of the solo gauge amounts. Hits drain 75% (duo) or 50% (trio) of the solo loss on Easy to Hard, but the full amount on Extreme.'
+- 'Cycle of Power every 2:18 (5s warning). At stage 4 or higher (600+) the gauge is kept (MapleSEA v249). Below 400 everyone also loses Will (100 at 200-399, 200 under 200) and the gauge returns to 500; whether a stage 3 gauge resets to 500 or is kept is unconfirmed.'
+- Immortal Will (NPC/Gather key; also called Indomitable Will) is a 0.5s parry with a 6s cooldown. A rewarded parry cuts 4.5s off it and raises Power of Order, so a whiff costs the full 6s. It works while you are i-framed, but not during Origin or Ascent casts.
+- 'Phase 1 (warrior/thief): parry the red strengthened hits; Shadow Partner copies swing before him. Phase 2 (mage/archer): each player gets Fire, Ice or Holy, re-rolled every Cycle, and only matching attacks are rewarding parries. Phase 3 mixes both, with strengthened hits glowing rainbow. HP splits 30/30/40; he can be bound (cancelling his pattern) but not critically bound.'
 danger:
 - On Easy/Normal only the hits you were meant to parry drain Power of Order; on Hard/Extreme every hit, map patterns included, drains it.
 - 'Intense Strike (Phase 1): he hides between two clones and hits the whole map; the real body, whose daggers briefly glow red, deals 999%. With no parry ready, i-frame, take a clone hit at full HP, or crouch in a far corner.'
-- Greatsword Shower's second slam deals 1000% unless parried or cleared with a high enough jump; it is his opener when he is not bound on entry.
-- Phase 2 Altar drops on a marked player and drains the gauge quickly on Hard/Extreme, so that player should take it to a corner before it lands.
-- Phase 3 Elemental Flow and Arrow Rain overlap with his other attacks; they are good slots for Genesis or class i-frames and Ascent skills.
-- Extreme adds much heavier hits, including a 999% final Sniping arrow and 200% last swings in Phase 3.
+- Sword Shower (also called Greatsword Shower) ends with a slam dealing 1000% unless parried or cleared with a high enough jump; it is his opener when he is not bound on entry.
+- Phase 2 Altar drops on a marked player and drains the gauge quickly on Hard/Extreme, so that player should take it to a corner early; moving it at the last moment makes others see it in the wrong place.
+- Phase 3 Elemental Flow and Arrow Rain overlap with his other attacks; they are good slots for Genesis or class i-frames and Ascent skills, and a bind cancels Elemental Flow.
+- Extreme adds much heavier hits, including a 999% final Sniping arrow and 200% last swings in Phase 3, and party gauge losses are no longer reduced.
 tips:
-- Reliable correct parries matter more than damage greed; Power of Order is a party resource.
+- Reliable correct parries matter more than damage greed. Aim to enter every Cycle at 600+; once the gauge is high, dodge risky attacks instead of forcing parries.
 - Call attributes clearly in Phases 2-3 and parry only your own colour.
 - Stay on the same side as whoever holds aggro; he can turn around just before strengthened swings.
-- Many parties parry the opening Greatsword Shower to reach stage 4 before the first burst.
+- Burst on cooldown rather than waiting for the Cycle, since waiting pushes every later burst back. The guide's ideal is 16 bursts (5 in Phase 1, 4 in Phase 2, 7 in Phase 3).
 - 'Summon Evolve tell: both wings folded hits the centre, both spread hits both sides, one wing folded hits that side.'
-- For Sniping, steer the crossbow away from you during the regular shots, then parry the final attribute arrow for a large gauge gain.
+- He casts nothing for about 5s before each Cycle, and big patterns stop 10-15s before it, so that is a safe damage window.
 notes:
-- KMS 1.2.407 lets a gauge already at stage 4 or higher keep that stage through the Cycle of Power. The MapleSEA launch notes (v247) still say the Cycle resets the gauge, so this is unconfirmed for MapleSEA.
-- 30-minute limit and 10-second potion cooldown.
+- MapleSEA v249 (Mar 2026) applied the KMS 1.2.407 change, so a gauge at stage 4 or higher keeps its value through the Cycle of Power.
+- 30-minute limit, 10-second potion cooldown, 1-3 players. One clear per week shared across all difficulties; it counts on the Phase 3 kill.
+- Odium symbol at Growth Level 11 gives +20% damage against this boss (MapleSEA v251). MapleSEA v249 also caps boss kills at 12 per week.
 difficulties:
 - name: Easy
   entry_level: 270
@@ -36,6 +37,8 @@ difficulties:
   - {phase: '2', value: 171t}
   - {phase: '3', value: 228t}
   recommended_spec: {kind: HEXA-converted stat, text: 'Trio 25k, duo 30k, solo 40k.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 114t/114t/152t (33.2% less), 20-minute limit.'
 - name: Normal
   entry_level: 270
   boss_level: 280
@@ -47,6 +50,8 @@ difficulties:
   - {phase: '2', value: 495t}
   - {phase: '3', value: 660t}
   recommended_spec: {kind: HEXA-converted stat, text: 'Trio 40k, duo 45k, solo 60k.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 331t/331t/441t (33.2% less), 20-minute limit.'
 - name: Hard
   entry_level: 270
   boss_level: 285
@@ -58,6 +63,8 @@ difficulties:
   - {phase: '2', value: 3.135q}
   - {phase: '3', value: 4.18q}
   recommended_spec: {kind: HEXA-converted stat, text: 'Trio 85k, duo 100k, solo 118k.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.09q/2.09q/2.79q (33.2% less), 20-minute limit.'
 - name: Extreme
   entry_level: 270
   boss_level: 290
@@ -69,6 +76,41 @@ difficulties:
   - {phase: '2', value: 9.655q}
   - {phase: '3', value: 12.87q}
   recommended_spec: {kind: HEXA-converted stat, text: 'Strongly composition-dependent; roughly 112-113k with a Lynn for a minimum clear.'}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.45q/6.45q/8.60q (33.2% less), 20-minute limit.'
+strategies:
+- name: Parry the opener
+  when: Parties that parry reliably; most useful at minimum spec on Hard/Extreme
+  risk: medium
+  damage: low
+  payoff: The first burst lands at stage 4 or higher, and that stage now survives the Cycle
+  steps:
+  - Do not bind on entry, so his first cast is Sword Shower.
+  - Up-jump or i-frame the first slam, then everyone parries the second slam. In a trio one parry alone will not reach stage 4.
+  - Burst right after the parry.
+- name: Bind on entry
+  when: Damage is comfortable, or someone cannot yet parry the opener reliably (inferred from the guide's wording, not stated as a recommendation)
+  risk: low
+  damage: high
+  payoff: Immediate damage with no opener risk, but the first burst runs at stage 3 with no bonus
+  steps:
+  - Bind as you enter; the bind cancels his current pattern.
+  - Burst during the bind and build the gauge with later red parries.
+- name: Sniping, parry the final arrow
+  when: Players confident in the timing; skip on Extreme unless practised, since the final arrow deals 999%
+  risk: high
+  damage: low
+  payoff: Large gauge gain (+250 solo on Easy, +200 otherwise)
+  steps:
+  - During the six regular shots, steer the crossbow so it fires away from you.
+  - Parry the final arrow of your own attribute.
+- name: Sniping, avoid it
+  when: Low on parry confidence, or the gauge is already high
+  risk: low
+  damage: medium
+  payoff: No gauge gain and no risk
+  steps:
+  - Once the crossbow locks on, move onto the boss's centre and hold a blink or i-frame until the final arrow passes.
 sources:
 - url: https://docs.google.com/document/d/1kVb7FMPvHtntji69dnfAsU025yT_hqdDM1aWVRodxXU/edit
   title: MapleStory Complete First Adversary Guide
@@ -79,7 +121,27 @@ sources:
   title: MapleSEA v247 - Ascent Skills & The First Adversary
   author: Nexon (MapleSEA)
   kind: official
-  fetched: '2026-09-24'
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v249_Patch_IBF/
+  title: MapleSEA v249 - Patch notes (Cycle of Power change)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content/
+  title: MapleSEA v251 - Content update (Symbol Growth Level 11)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2025/09/24/kms-ver-1-2-407-epic-dungeon-nightmare-paradise/
+  title: KMS ver. 1.2.407 (First Adversary gauge change)
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory OVERDRIVE
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
 - url: https://mapletools.app/bosses/first-adversary/guide
   title: MapleTools - First Adversary guide
   author: MapleTools
@@ -89,4 +151,4 @@ sources:
   title: MapleStory Wiki - First Adversary
   author: MapleStory Wiki contributors
   kind: wiki
-  fetched: '2026-09-05'
+  fetched: '2026-10-02'

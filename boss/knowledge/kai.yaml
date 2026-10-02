@@ -1,7 +1,7 @@
 boss: Kai
 event:
   name: Challengers World Season 3
-  availability: 'MapleSEA: Challengers World only, 3 Jun 2026 (after the v251 patch) until the 30 Sep 2026 maintenance; solo only.'
+  availability: 'MapleSEA: ran in Challengers World Season 3 only, from 3 Jun 2026 (after the v251 patch) until it ended at the 30 Sep 2026 maintenance; solo only. Not currently available.'
 summary: 'Time Wanderer Kai is a solo dodging fight: bank Chrono Gauge, spend it on Chrono Break during Time Distortion, and reach 10,000 Fever for big cooldown refunds and a groggy window.'
 core:
 - Solo only, with a 20-minute limit and 5 lives. One HP bar; at 50% damage pauses while he transforms into Phase 2. One clear per week per Maple ID (resets Wednesday 23:59 SGT), separate from the weekly boss clear limit.
@@ -24,7 +24,7 @@ tips:
 - Standing on top of him avoids the Phase 2 Recall Strike hologram and trailing sword waves.
 - A full 10,000 Fever run gives roughly 1.5x the usual number of bursts, so time bursts around the groggy.
 notes:
-- Not in the boss catalog; it is a time-limited event entry.
+- Not in the boss catalog. The MapleSEA season ended at the 30 Sep 2026 maintenance; kept for reference in case Kai returns.
 difficulties:
 - name: Normal
   entry_level: 270
@@ -34,7 +34,7 @@ difficulties:
   hp:
   - {phase: '1', value: 63t}
   - {phase: '2', value: 63t}
-  recommended_spec: {kind: HEXA-converted stat, text: Solo in the low-to-mid 20k range (post Sol Hecate).}
+  recommended_spec: {kind: HEXA-converted stat, text: Solo in the low-to-mid 20k range (with Sol Hecate).}
 - name: Hard
   entry_level: 280
   boss_level: 280
@@ -43,7 +43,7 @@ difficulties:
   hp:
   - {phase: '1', value: 241.5t}
   - {phase: '2', value: 241.5t}
-  recommended_spec: {kind: HEXA-converted stat, text: Solo from about 38k up to the low 40k range (post Sol Hecate).}
+  recommended_spec: {kind: HEXA-converted stat, text: Solo from about 38k up to the low 40k range (with Sol Hecate).}
 sources:
 - url: https://docs.google.com/document/d/1oPyMyovLuS8aPh87MP3B_vJJcbnYoXWXrLp8Q4By0BI/edit
   title: MapleStory Complete Kai Guide

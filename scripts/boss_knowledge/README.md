@@ -8,7 +8,7 @@ ephemerally.
 
 Downloads each public guide's `export?format=txt` into the git-ignored
 `data/research/boss-guides/<boss>.txt`, and records `url`, `fetched` and
-`sha256` in `index.json` there. The guide list (currently iSIingGunz's six
+`sha256` in `index.json` there. The guide list (currently iSIingGunz's seven
 Google Docs) lives in `GUIDES` in the script.
 
 ```sh
