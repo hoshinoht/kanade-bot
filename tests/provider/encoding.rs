@@ -71,6 +71,8 @@ async fn canonical_schema_size_matches_serde_json_at_both_boundaries() {
     let mut output_object = Map::new();
     output_object.insert(key.into(), json!(["ok"]));
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some(serde_json::to_string(&Value::Object(output_object)).unwrap()),
         tool_calls: Vec::new(),
@@ -107,6 +109,8 @@ async fn canonical_schema_size_matches_serde_json_at_both_boundaries() {
 #[tokio::test]
 async fn canonical_response_size_matches_serde_json_at_both_boundaries() {
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some("quote \" slash \\ line\ncontrol\tunicode ☃".repeat(16)),
         tool_calls: Vec::new(),
@@ -163,6 +167,8 @@ async fn canonical_structured_output_size_matches_serde_json_at_both_boundaries(
     let value = Value::Object(output_object);
     let output_len = serde_json::to_vec(&value).unwrap().len();
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some(serde_json::to_string(&value).unwrap()),
         tool_calls: Vec::new(),

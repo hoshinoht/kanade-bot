@@ -380,6 +380,8 @@ where
                 prompt_tokens: record.usage.prompt_tokens(),
                 completion_tokens: record.usage.completion_tokens(),
                 prompt_estimate: record.usage.prompt_estimate(),
+                reasoning_content: record.reasoning_content.clone(),
+                reasoning_tokens: record.reasoning_tokens,
                 outcome: extraction_outcome(
                     record.failure,
                     record.proposal_ids.len(),

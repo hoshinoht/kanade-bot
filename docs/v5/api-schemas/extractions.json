@@ -12,6 +12,7 @@
       "additionalProperties": false,
       "required": ["id", "short_id", "at", "model", "latency_ms", "messages", "changes", "channel", "channel_id", "error", "outcome"],
       "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over reporting attempts; null when none reported. Additive, optional for older clients/fixtures." },
         "id": { "type": "string" },
         "short_id": { "type": "string" },
         "at": { "type": "string" },
@@ -52,6 +53,8 @@
         "prompt", "raw_response", "amendments", "messages"
       ],
       "properties": {
+        "reasoning_content": { "$ref": "common.json#/$defs/NullableString", "description": "Response-only text from attempts in order, joined with two newlines; at most 64 KiB including a visible truncation marker. Never sent in later requests." },
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over attempts that reported reasoning tokens; null when none reported." },
         "id": { "type": "string" },
         "short_id": { "type": "string" },
         "at": { "type": "string" },

@@ -33,6 +33,8 @@ fn request() -> ChatRequest {
 
 fn ok() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: Some("see you at {time}!".into()),
         tool_calls: Vec::new(),

@@ -40,6 +40,8 @@ async fn externally_constructed_tool_calls_and_multicall_results_are_valid() {
         },
     ];
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -74,6 +76,8 @@ async fn requested_tool_ids_are_global_even_after_results() {
         },
     ];
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -100,6 +104,8 @@ async fn missing_and_unmatched_tool_results_are_rejected() {
         },
     ];
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -123,6 +129,8 @@ async fn missing_and_unmatched_tool_results_are_rejected() {
         },
     ];
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -144,6 +152,8 @@ async fn requested_tool_ids_and_definitions_cannot_be_duplicated() {
         tool_calls: vec![tool_call("same"), tool_call("same")],
     }];
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -163,6 +173,8 @@ async fn requested_tool_ids_and_definitions_cannot_be_duplicated() {
         input_schema: tool_schema(),
     });
     let (provider, runner) = build_runner([FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -180,6 +192,8 @@ async fn requested_tool_ids_and_definitions_cannot_be_duplicated() {
 async fn historical_tool_calls_are_shape_checked_not_schema_checked() {
     let words = || {
         FakeAction::Response(CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: Some("done".into()),
             tool_calls: Vec::new(),
@@ -238,6 +252,8 @@ async fn historical_tool_calls_are_shape_checked_not_schema_checked() {
 #[tokio::test]
 async fn response_tool_ids_and_arguments_are_correlated_and_schema_checked() {
     let duplicate = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![response_tool_call("same"), response_tool_call("same")],
@@ -252,6 +268,8 @@ async fn response_tool_ids_and_arguments_are_correlated_and_schema_checked() {
     assert_eq!(provider.requests().len(), 1);
 
     let wrong_arguments = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![ToolCall {
@@ -290,6 +308,8 @@ async fn response_ids_cannot_reuse_historical_request_ids() {
         },
     ];
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![response_tool_call("historical")],
@@ -307,6 +327,8 @@ async fn response_ids_cannot_reuse_historical_request_ids() {
 #[tokio::test]
 async fn finish_reason_must_agree_with_tool_calls() {
     let stop_with_calls = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![response_tool_call("one")],
@@ -321,6 +343,8 @@ async fn finish_reason_must_agree_with_tool_calls() {
     assert_eq!(provider.requests().len(), 1);
 
     let calls_without_calls = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: Vec::new(),
@@ -338,6 +362,8 @@ async fn finish_reason_must_agree_with_tool_calls() {
 #[tokio::test]
 async fn unknown_response_tools_are_rejected_without_execution() {
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![ToolCall {

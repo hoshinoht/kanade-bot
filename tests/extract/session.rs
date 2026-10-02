@@ -52,6 +52,8 @@ fn governed(replies: &[&str]) -> (Arc<Governor>, Arc<FakeProvider>, ModelClient<
     let governor = Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("valid config"));
     let actions = replies.iter().map(|content| {
         FakeAction::Response(CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: ALIAS.into(),
             content: Some((*content).to_owned()),
             tool_calls: Vec::new(),

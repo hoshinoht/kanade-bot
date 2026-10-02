@@ -29,6 +29,11 @@ impl Usage {
 pub struct CompletionResponse {
     pub model: String,
     pub content: Option<String>,
+    /// Response-only diagnostics; never part of a request message.
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: FinishReason,
     pub usage: Option<Usage>,
@@ -61,6 +66,11 @@ impl fmt::Debug for CompletionResponse {
         f.debug_struct("CompletionResponse")
             .field("model_bytes", &self.model.len())
             .field("content_bytes", &self.content.as_ref().map(String::len))
+            .field(
+                "reasoning_bytes",
+                &self.reasoning_content.as_ref().map(String::len),
+            )
+            .field("reasoning_tokens", &self.reasoning_tokens)
             .field("tool_call_count", &self.tool_calls.len())
             .field("finish_reason", &self.finish_reason)
             .field("has_usage", &self.usage.is_some())

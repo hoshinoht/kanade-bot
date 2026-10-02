@@ -55,6 +55,7 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
             "tools_used": ["schedule_read"],
             "prompt_tokens": 1200,
             "completion_tokens": 30,
+            "reasoning_tokens": 12,
         })
     );
     // Counts only: a withheld turn shows them; turn totals pass through as logged.
@@ -236,6 +237,9 @@ async fn a_withheld_question_is_never_shown_or_searchable() {
     assert_eq!(turn["tools"][0]["arguments"], "[message withheld]");
     assert_eq!(turn["tools"][0]["result"], "[message withheld]");
     assert_eq!(turn["tools"][0]["took_ms"], 5);
+    assert_eq!(turn["rounds"][0]["reasoning_content"], "[message withheld]");
+    assert_eq!(turn["rounds"][0]["reasoning_tokens"], 8);
+    assert_eq!(turn["reasoning_tokens"], 8);
     assert_eq!(turn["member"], json!({"id": "1002", "name": "Bobby"}));
     assert!(!reply.text().contains("forbidden"), "{}", reply.text());
 }
@@ -261,10 +265,12 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
             {"round": 1, "requested_tools": ["schedule_read"], "finish": "tool_calls",
              "model": "kanata/chat", "effort": "low", "route": "homelab", "latency_ms": 1000,
              "prompt_tokens": 1200, "completion_tokens": 30, "prompt_estimate": 1000,
+             "reasoning_content": "Look up Kalos before answering.", "reasoning_tokens": 12,
              "guardrail": clean},
             {"round": 2, "requested_tools": [], "finish": "stop", "model": "kanata/chat",
              "effort": null, "route": "external_masked", "latency_ms": null,
              "prompt_tokens": null, "completion_tokens": null, "prompt_estimate": 1100,
+             "reasoning_content": "Use the read result.", "reasoning_tokens": null,
              "guardrail": {"clean": true, "content_filter": false}},
         ])
     );

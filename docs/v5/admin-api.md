@@ -536,6 +536,21 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   source}` from the logged guardrail (`null` when absent). Extractions add
   `summary` `[{model, count, prompt_tokens, completion_tokens, reported,
   est_ratio}]` per model over the filtered calls, with the same rules.
+- **Response reasoning** (additive, schema v21, 2026-10-02): Chat round
+  details and extraction details carry nullable `reasoning_content` and
+  `reasoning_tokens`. Text is response-only, capped at 64 KiB including a
+  visible `… [reasoning truncated]` marker, cut at a UTF-8 boundary; empty
+  text is NULL. Extractions join attempt texts with two newlines and sum
+  only reported counts; chat rows/turns sum the rounds' reported counts.
+  No reporting count means NULL, not 0; it is independent of the reported
+  prompt/completion pair. Lists carry counts only, not reasoning text.
+  Withheld chat reasoning text is `[message withheld]` when present, with
+  counts still shown. Both fields share the row's 90-day retention. The
+  admin detail shows a collapsed `Reasoning · n tokens` disclosure (no
+  count suffix when unknown), list rows show the count beside in → out,
+  and copied chat transcripts include each round's text/count in Markdown
+  and JSON. Fields are optional in schemas/types for older clients/fixtures;
+  current responses always send them. Reasoning is never outgoing history.
 - **Extraction detail**: `messages` are the read messages still in the
   watched-message cache, looked up by id (pruned ones are left out; authors
   by roster name);

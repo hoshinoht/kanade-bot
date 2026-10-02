@@ -34,6 +34,8 @@ fn request() -> ChatRequest {
 
 fn ok() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: Some("soon".into()),
         tool_calls: Vec::new(),
@@ -636,6 +638,8 @@ async fn a_content_filter_is_charged_healthy_and_leaves_the_question_open() {
     let governor = build(&config(10));
     let filtered = || {
         FakeAction::Response(CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: ALIAS.into(),
             content: None,
             tool_calls: Vec::new(),

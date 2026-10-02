@@ -23,7 +23,8 @@ const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.qu
     c.profile, c.profile_source, c.error_code";
 
 const ROUND_COLUMNS: &str = "model, reasoning, finish_reason, latency_ms, tool_bundles, tools, \
-    tool_calls, response, route, clean, prompt_tokens, completion_tokens, prompt_estimate";
+    tool_calls, response, route, clean, prompt_tokens, completion_tokens, prompt_estimate, \
+    reasoning_content, reasoning_tokens";
 
 impl Keyed for ChatInteraction {
     fn cursor(&self) -> LogCursor {
@@ -75,6 +76,8 @@ fn round_of(row: &SqliteRow) -> Result<ChatRound, StoreError> {
     Ok(ChatRound {
         model: text(row, "model")?,
         reasoning: optional_text(row, "reasoning")?,
+        reasoning_content: optional_text(row, "reasoning_content")?,
+        reasoning_tokens: read_optional_u64(row, "reasoning_tokens")?,
         finish_reason: optional_text(row, "finish_reason")?,
         latency_ms: read_optional_u64(row, "latency_ms")?,
         tool_bundles: read_list(row, "tool_bundles")?,
@@ -149,8 +152,8 @@ pub(super) async fn insert(
         sqlx::query(
             "INSERT INTO chat_rounds (interaction_id, ord, model, reasoning, finish_reason, \
              latency_ms, tool_bundles, tools, tool_calls, response, route, clean, \
-             prompt_tokens, completion_tokens, prompt_estimate) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+             prompt_tokens, completion_tokens, prompt_estimate, reasoning_content, reasoning_tokens) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         )
         .bind(&chat.id)
         .bind(i64::try_from(ord).map_err(|_| StoreError::Constraint("too many rounds".into()))?)
@@ -170,6 +173,8 @@ pub(super) async fn insert(
             "completion_tokens",
         )?)
         .bind(optional_signed(round.prompt_estimate, "prompt_estimate")?)
+        .bind(&round.reasoning_content)
+        .bind(optional_signed(round.reasoning_tokens, "reasoning_tokens")?)
         .execute(&mut *conn)
         .await
         .map_err(store_error)?;

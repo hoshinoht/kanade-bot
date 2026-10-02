@@ -8,6 +8,7 @@ mod filter;
 mod masked;
 mod outcome;
 mod port;
+mod reasoning;
 mod records;
 mod retention;
 
@@ -17,6 +18,7 @@ pub use filter::{
 pub use masked::{MaskedName, MaskedRound, MaskedTurn};
 pub use outcome::{ChatOutcome, ExtractionOutcome, RescanStatus};
 pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
+pub use reasoning::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
 pub use records::{
     AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, ExtractionRefusal,
     PROFILE_SOURCES, ROUTES, RescanJob, WatchedMessage, in_order,

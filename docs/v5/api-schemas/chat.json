@@ -36,6 +36,7 @@
         "tools_used"
       ],
       "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum of the rounds' reported reasoning counts; null when none reported. Additive, optional for older clients/fixtures." },
         "id": {
           "type": "string"
         },
@@ -211,6 +212,7 @@
         "model_view"
       ],
       "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount" },
         "id": {
           "type": "string"
         },
@@ -370,6 +372,8 @@
                 "$ref": "#/$defs/TokenCount",
                 "description": "The local prompt-size estimate the context budget used for this request (completion reserve excluded); null for rows logged before it was."
               },
+              "reasoning_content": { "$ref": "common.json#/$defs/NullableString", "description": "Response-only text, at most 64 KiB including a visible truncation marker; withheld when the turn is withheld. Never sent in a later request." },
+              "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported reasoning tokens; independent of the usage pair. Null when absent, never substituted with 0." },
               "guardrail": {
                 "type": "object",
                 "additionalProperties": false,

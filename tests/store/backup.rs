@@ -29,7 +29,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 20);
+    assert_eq!(restored.schema_version().await.expect("version"), 21);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -151,7 +151,7 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (21, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (22, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
@@ -159,8 +159,8 @@ async fn restore_validates_the_copy_before_publishing() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 21,
-                known: 20
+                found: 22,
+                known: 21
             }
         ),
         "{error}"
@@ -204,13 +204,17 @@ async fn a_pre_v20_backup_restores_and_migrates() {
          VALUES ('old-run', 'old-member', 'old-channel', 'old-message',
                  '2026-09-01T00:00:00.000000+00:00');
          DELETE FROM schema_migrations WHERE version >= 19;
+         ALTER TABLE extractions DROP COLUMN reasoning_content;
+         ALTER TABLE extractions DROP COLUMN reasoning_tokens;
+         ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
+         ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
          UPDATE store_meta SET schema_version = 18;",
     )
     .await;
     let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))
         .await
         .expect("restores");
-    assert_eq!(restored.schema_version().await.expect("version"), 20);
+    assert_eq!(restored.schema_version().await.expect("version"), 21);
     assert_eq!(restored.foreign_key_violations().await.expect("check"), 0);
     let decline = restored
         .decline_notice("old-run", "old-member")

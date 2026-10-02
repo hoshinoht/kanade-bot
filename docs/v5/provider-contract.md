@@ -2,6 +2,18 @@
 
 `infrastructure::llm::LlmProvider` accepts a model identity and OpenAI-style system, user, assistant and tool messages. Tool calls include an ID, name and JSON arguments; IDs are unique across the complete transcript and returned calls, and each tool result must match a pending call. Requests can include tool input schemas and one strict JSON output schema; responses carry model, content, tool calls, finish reason and optional prompt/completion usage.
 
+Response-only reasoning (2026-10-02): `choices[0].message.reasoning_content`
+is captured when non-empty (Kanata caps it at 256 KiB; Codex summary parts
+are already joined with two newlines). `usage.completion_tokens_details.reasoning_tokens`
+is an independent optional count: absence stays `None`, not zero, even when
+text exists or the prompt/completion pair is absent. Like the usage pair,
+wire counts outside the unsigned 32-bit range are unknown, not logged as an
+oversized count. No other reasoning fields
+are read. Request `Message` types and the wire encoder never carry these
+diagnostics: Kanata denies unknown message fields, including in later tool
+rounds and answer retries. Debug output exposes sizes/counts only. Successful
+returned responses feed the logs; runner-refused replies remain typed failures.
+
 The stable offline subset is JSON Schema draft 2020-12 with local `#` references only. `$id`, `$dynamicRef`, `$recursiveRef` and nonlocal `$ref` are rejected before compilation; the maintained validator has resolver features disabled and a rejecting retriever. Value traversal is iterative and bounds schema/output bytes, depth and nodes before compilation. Canonical JSON is counted through a capped writer after preflight, so syntax and escaping count toward schema, request, and response aggregates without allocating an unbounded encoded buffer. The synthetic fixture is `tests/fixtures/provider/structured-response.json`; it is an OpenAI-style shape, not evidence of a Kanata contract.
 
 Defaults: 64 messages, 64 KiB semantic strings and response metadata, 256 KiB output payloads, 32 tools, 512 KiB request/response aggregates, 16,384 tokens, at most three attempts, a 100 ms backoff base and a 30-second total deadline. Construction rejects zero or unbounded limits and policies. Each attempt reserves the conservative estimate (canonical JSON request bytes/4 plus `max_output_tokens`) before calling the provider; this is an offline JSON-accounting seam, not a future HTTP wire-size or provider-tokenizer contract. A transient failure or missing usage consumes the full reservation; reported usage, when present, must fit within it, and a successful response ends the run. A transient failure retries (and an upstream timeout too, except for the chat call kind); authentication, permanent, invalid-output, admission-refused and backend-unavailable failures never do. Before each retry the runner asks the governor's retry gate (breaker and group retry budget), then sleeps a full-jitter pause drawn uniformly below `min(base × 2^(retry − 1), 10 s)` from the governor's injected `Random`; a pause that would pass the deadline ends the call. None of these finish reasons is a successful completion: `content_filter` fails with `ContentFiltered` (user decision: kept apart from a cut-off), while `length` and unknown reasons fail with `Incomplete`. Both are permanent for that request (never retried by the runner) and, since the backend answered, are healthy for the breaker and charged. Kanata passes `length` and `content_filter` through, but an empty filtered or refused reply from Ollama, vLLM or OpenRouter, and any Codex incomplete, reach us as a generic 502 upstream failure, which the runner treats as transient; telling them apart needs a dedicated Kanata error code.

@@ -4,6 +4,7 @@
   through this page's query string.
 -->
 <script lang="ts">
+  import TokenUsage from '../logs/TokenUsage.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import Name from '../names/Name.svelte';
   import type { Channel, Extractions } from '@kanade/api-types';
@@ -95,7 +96,7 @@
         <table>
           <caption class="vh">Extraction calls, newest first</caption>
           <thead>
-            <tr><th scope="col">When</th><th scope="col">Channel</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Latency</th><th scope="col" class="num">Messages</th><th scope="col" class="num">Changes</th><th scope="col"><span class="vh">Open</span></th></tr>
+            <tr><th scope="col">When</th><th scope="col">Channel</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Latency</th><th scope="col" class="num">Tokens</th><th scope="col" class="num">Messages</th><th scope="col" class="num">Changes</th><th scope="col"><span class="vh">Open</span></th></tr>
           </thead>
           <tbody>
             {#each shown.rows as row (row.id)}
@@ -105,6 +106,7 @@
                 <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
                 <td class="mono log__clip" title={row.model}>{row.model}</td>
                 <td class="num log__nowrap">{duration(row.latency_ms)}</td>
+                <td class="num log__nowrap"><TokenUsage prompt={row.prompt_tokens} completion={row.completion_tokens} reasoning={row.reasoning_tokens} /></td>
                 <td class="num">{row.messages}</td>
                 <td class="num">{row.changes}</td>
                 <td><a class="btn" href="/extractions/{row.id}" aria-label="Open call {row.short_id}">Open</a></td>

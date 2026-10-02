@@ -197,6 +197,8 @@ async fn replay(case: Value) -> Vec<Value> {
 /// A plain answer in words.
 pub fn said(model: &str, content: &str) -> CompletionResponse {
     CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: model.to_owned(),
         content: Some(content.to_owned()),
         tool_calls: Vec::new(),

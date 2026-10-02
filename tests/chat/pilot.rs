@@ -625,6 +625,8 @@ async fn other_failures_say_v4s_line_and_turned_away_questions_are_refunded() {
 
 fn filtered() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: MODEL.into(),
         content: None,
         tool_calls: Vec::new(),

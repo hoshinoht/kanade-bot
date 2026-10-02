@@ -49,10 +49,16 @@ async fn extractions_list_every_call_with_total_facets_and_the_current_model() {
     assert_eq!(newest["messages"], 2);
     assert_eq!(newest["changes"], 2);
     assert_eq!(newest["channel"], "#kalos-four");
+    assert_eq!(newest["reasoning_tokens"], 24);
+    assert!(
+        newest.get("reasoning_content").is_none(),
+        "body omitted from list"
+    );
     let failed = &all["rows"][1];
     assert_eq!(failed["latency_ms"], serde_json::Value::Null);
     assert_eq!(failed["error"], "no answer");
     assert_eq!(failed["outcome"], "failed");
+    assert_eq!(failed["reasoning_tokens"], json!(null));
     assert_eq!(
         (&newest["prompt_tokens"], &newest["completion_tokens"]),
         (&json!(1500), &json!(60))
@@ -125,6 +131,11 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     let detail = reply.json();
     assert_valid(EXTRACTION, "detail", &detail);
     assert_eq!(
+        detail["reasoning_content"],
+        "The party agreed on Wednesday."
+    );
+    assert_eq!(detail["reasoning_tokens"], 24);
+    assert_eq!(
         detail["prompt"],
         "Messages:\n[Alice] kalos wed 9pm instead?"
     );
@@ -164,6 +175,8 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
 
     let failed = logs.get("/api/admin/extractions/x-fail").await.json();
     assert_valid(EXTRACTION, "failed", &failed);
+    assert_eq!(failed["reasoning_content"], json!(null));
+    assert_eq!(failed["reasoning_tokens"], json!(null));
     assert_eq!(failed["refusals"], json!([]));
     assert_eq!(failed["messages"], json!([]));
     assert_eq!(

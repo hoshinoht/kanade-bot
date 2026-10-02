@@ -328,6 +328,7 @@ impl Store {
             "latency_ms": t.latency_ms, "outcome": t.outcome, "asked": if t.outcome == "withheld" { WITHHELD } else { t.asked },
             "tools_used": t.tools.iter().map(|x| x.0).collect::<Vec<_>>(),
             "prompt_tokens": turn_usage(t).0, "completion_tokens": turn_usage(t).1,
+            "reasoning_tokens": if t.id == "c-guide" { Some(32) } else { None::<u32> },
         })
     }
 
@@ -438,6 +439,8 @@ impl Store {
                     "prompt_tokens": round_usage(&t, i).0,
                     "completion_tokens": round_usage(&t, i).1,
                     "prompt_estimate": round_usage(&t, i).2,
+                    "reasoning_content": if t.id == "c-guide" && i == 0 { Some("Read the checked-in Limbo notes before answering.") } else { None },
+                    "reasoning_tokens": if t.id == "c-guide" && i == 0 { Some(32) } else { None::<u32> },
                     "guardrail": {
                         "clean": t.outcome == "clean_retry" && i + 1 == t.models.len(),
                         "content_filter": t.outcome == "content_blocked",
@@ -466,6 +469,22 @@ impl Store {
 mod tests {
     use super::super::logfilter::LogQuery;
     use super::super::tests::store;
+
+    #[test]
+    fn reasoning_fixtures_preserve_text_counts_and_unknowns() {
+        let s = store();
+        let guide = s.chat_turn("c-guide").ok().expect("guide");
+        assert_eq!(guide["reasoning_tokens"], 32);
+        assert_eq!(guide["rounds"][0]["reasoning_tokens"], 32);
+        assert_eq!(
+            guide["rounds"][0]["reasoning_content"],
+            "Read the checked-in Limbo notes before answering."
+        );
+        assert!(guide["rounds"][1]["reasoning_tokens"].is_null());
+        let absent = s.chat_turn("c-when").ok().expect("old turn");
+        assert!(absent["reasoning_tokens"].is_null());
+        assert!(absent["rounds"][0]["reasoning_content"].is_null());
+    }
 
     fn ids(v: &serde_json::Value) -> Vec<String> {
         v["rows"]

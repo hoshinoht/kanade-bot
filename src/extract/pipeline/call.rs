@@ -148,13 +148,15 @@ impl Kept {
 }
 
 /// One model call and, after commit, what came of it: one extraction log row.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct CallRecord {
     pub log_id: String,
     pub at: DateTime<Utc>,
     pub model: String,
     /// The level sent: the live route's, else the pipeline's configured one.
     pub reasoning: Option<Effort>,
+    pub reasoning_content: Option<String>,
+    pub reasoning_tokens: Option<u64>,
     pub prompt: String,
     pub raw: String,
     pub latency_ms: Option<u64>,
@@ -194,6 +196,20 @@ impl CallRecord {
 
     pub fn ok(&self) -> bool {
         self.failure.is_none()
+    }
+}
+
+impl std::fmt::Debug for CallRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CallRecord")
+            .field("log_id", &self.log_id)
+            .field("requests", &self.requests)
+            .field(
+                "reasoning_bytes",
+                &self.reasoning_content.as_ref().map(String::len),
+            )
+            .field("reasoning_tokens", &self.reasoning_tokens)
+            .finish_non_exhaustive()
     }
 }
 
@@ -303,6 +319,8 @@ where
             model: route.map(|route| route.alias.clone()).unwrap_or_default(),
             prompt: String::new(),
             raw: String::new(),
+            reasoning_content: None,
+            reasoning_tokens: None,
             latency_ms: None,
             requests: 0,
             message_ids,
@@ -532,6 +550,33 @@ where
                 }
             };
             first = false;
+            if let Ok(response) = &sent {
+                if let Some(text) = response
+                    .reasoning_content
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+                    .filter(|_| {
+                        record.reasoning_content.as_deref().is_none_or(|previous| {
+                            !previous.ends_with(crate::domain::model_log::REASONING_TRUNCATED)
+                        })
+                    })
+                {
+                    let joined = match &record.reasoning_content {
+                        Some(previous) => format!("{previous}\n\n{text}"),
+                        None => text.to_owned(),
+                    };
+                    record.reasoning_content = crate::domain::model_log::capped_reasoning(&joined);
+                }
+                if let Some(tokens) = response.reasoning_tokens {
+                    record.reasoning_tokens = Some(
+                        record
+                            .reasoning_tokens
+                            .unwrap_or_default()
+                            .saturating_add(tokens)
+                            .min(i64::MAX as u64),
+                    );
+                }
+            }
             record.usage.attempt(
                 session.requests_used() > before,
                 estimate,

@@ -39,6 +39,8 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
     };
     let (provider, runner) = build_runner_with(
         [FakeAction::Response(CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "model".into(),
             content: Some("not-called".into()),
             tool_calls: Vec::new(),
@@ -158,6 +160,8 @@ async fn request_string_fields_are_each_bounded_before_provider_call() {
         };
         let (provider, runner) = build_runner_with(
             [FakeAction::Response(CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: "m".into(),
                 content: None,
                 tool_calls: Vec::new(),
@@ -229,6 +233,8 @@ async fn response_string_and_collection_bounds_fail_closed() {
     let response_cases = [
         (
             CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: "m".into(),
                 content: Some("x".repeat(33)),
                 tool_calls: Vec::new(),
@@ -239,6 +245,8 @@ async fn response_string_and_collection_bounds_fail_closed() {
         ),
         (
             CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: "m".into(),
                 content: None,
                 tool_calls: vec![ToolCall {
@@ -253,6 +261,8 @@ async fn response_string_and_collection_bounds_fail_closed() {
         ),
         (
             CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: "m".into(),
                 content: None,
                 tool_calls: vec![ToolCall {
@@ -267,6 +277,8 @@ async fn response_string_and_collection_bounds_fail_closed() {
         ),
         (
             CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: "m".into(),
                 content: None,
                 tool_calls: vec![ToolCall {
@@ -304,6 +316,8 @@ async fn response_string_and_collection_bounds_fail_closed() {
     }
 
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![response_tool_call("one"), response_tool_call("two")],

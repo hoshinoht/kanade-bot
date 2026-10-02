@@ -102,9 +102,11 @@ pub struct RoundOutcome {
 }
 
 /// Diagnostics for one model request.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ModelRound {
     pub round: u32,
+    pub reasoning_content: Option<String>,
+    pub reasoning_tokens: Option<u64>,
     /// The reply text as the model sent it.
     pub content: Option<String>,
     pub requested_tools: Vec<String>,
@@ -122,6 +124,22 @@ pub struct ModelRound {
     /// The budget's prompt estimate for this request, completion reserve
     /// excluded.
     pub prompt_estimate: Option<u64>,
+}
+
+impl fmt::Debug for ModelRound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelRound")
+            .field("round", &self.round)
+            .field("content_bytes", &self.content.as_ref().map(String::len))
+            .field(
+                "reasoning_bytes",
+                &self.reasoning_content.as_ref().map(String::len),
+            )
+            .field("reasoning_tokens", &self.reasoning_tokens)
+            .field("latency_ms", &self.latency_ms)
+            .field("finish_reason", &self.finish_reason)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Why a question produced no answer. C3 turns these into member-facing

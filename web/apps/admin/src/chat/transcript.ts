@@ -17,6 +17,8 @@ type Call = ChatTurn['tools'][number];
 
 export interface Round {
   round: number;
+  reasoning_content: string | null;
+  reasoning_tokens: number | null;
   /** The alias the round's request named; null when not recorded. */
   model: string | null;
   effort: string | null;
@@ -43,6 +45,8 @@ export function rounds(turn: ChatTurn): Round[] {
   const perRound = turn.models.length === turn.rounds.length;
   const out: Round[] = turn.rounds.map((r, i) => ({
     round: r.round,
+    reasoning_content: r.reasoning_content ?? null,
+    reasoning_tokens: r.reasoning_tokens ?? null,
     model: r.model || (perRound ? turn.models[i]! : null),
     effort: r.effort ?? null,
     route: r.route ?? null,
@@ -122,6 +126,8 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
       `- Finish: ${r.finish || '—'}`,
       `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`,
     );
+    if (r.reasoning_tokens !== null) lines.push(`- Reasoning tokens: ${r.reasoning_tokens}`);
+    if (r.reasoning_content) lines.push('', '### Reasoning', '', fence(r.reasoning_content));
     for (const c of r.calls) lines.push(...callLines(c));
   }
   const loose = unrounded(turn);

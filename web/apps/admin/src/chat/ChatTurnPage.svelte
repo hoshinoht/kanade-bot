@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Reasoning from '../logs/Reasoning.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import type { ChatTurn } from '@kanade/api-types';
@@ -112,6 +113,9 @@
         <p><Mentions text={data.asked} asked /></p>
         <h3 class="pane__section">What it said</h3>
         <p>{#if data.said}<Mentions text={data.said} />{:else}— nothing was sent —{/if}</p>
+        {#each data.rounds as r (r.round)}
+          <Reasoning text={r.reasoning_content} tokens={r.reasoning_tokens} round={r.round} />
+        {/each}
         {#if view === 'withheld'}
           <h3 class="pane__section">Model view (masked)</h3>
           <p class="note">Model view unavailable for withheld questions.</p>

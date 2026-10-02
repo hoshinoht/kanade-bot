@@ -11,6 +11,8 @@ async fn hundred_kib_plain_content_uses_payload_limit_not_metadata_limit() {
     let mut input = tiny_request();
     input.max_output_tokens = 100_000;
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some("p".repeat(100 * 1024)),
         tool_calls: Vec::new(),
@@ -47,6 +49,8 @@ async fn hundred_kib_structured_content_uses_payload_limit_not_metadata_limit() 
     });
     let content = serde_json::to_string(&json!({"answer": "s".repeat(100 * 1024)})).unwrap();
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some(content),
         tool_calls: Vec::new(),
@@ -72,6 +76,8 @@ async fn hundred_kib_returned_tool_arguments_use_payload_limit_not_metadata_limi
     input.max_output_tokens = 100_000;
     let arguments = serde_json::to_string(&json!({"value": "a".repeat(100 * 1024)})).unwrap();
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: vec![ToolCall {
@@ -102,6 +108,8 @@ async fn raw_payload_limits_are_exact_for_plain_content_and_arguments() {
     input.max_output_tokens = 10_000;
     for (length, expected) in [(limit, None), (limit + 1, Some(ErrorCode::InvalidOutput))] {
         let output = CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: Some("x".repeat(length)),
             tool_calls: Vec::new(),
@@ -131,6 +139,8 @@ async fn raw_payload_limits_are_exact_for_plain_content_and_arguments() {
         let arguments = format!(r#"{{"value":"{}"}}"#, "x".repeat(value_length + extra));
         assert_eq!(arguments.len(), limit + extra);
         let output = CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: None,
             tool_calls: vec![ToolCall {
@@ -164,6 +174,8 @@ async fn response_metadata_over_64_kib_still_fails() {
     let over = "x".repeat(64 * 1024 + 1);
     let metadata_cases = [
         CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: None,
             tool_calls: vec![ToolCall {
@@ -175,6 +187,8 @@ async fn response_metadata_over_64_kib_still_fails() {
             usage: None,
         },
         CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: None,
             tool_calls: vec![ToolCall {
@@ -186,6 +200,8 @@ async fn response_metadata_over_64_kib_still_fails() {
             usage: None,
         },
         CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: None,
             tool_calls: Vec::new(),
@@ -224,6 +240,8 @@ async fn multiple_payloads_can_exceed_the_response_aggregate() {
     let content = "c".repeat(260 * 1024);
     let arguments = serde_json::to_string(&json!({"value": "a".repeat(260 * 1024)})).unwrap();
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some(content),
         tool_calls: vec![ToolCall {
@@ -275,6 +293,8 @@ async fn escaped_payloads_respect_raw_and_canonical_boundaries() {
     let cases = [(canonical, canonical_len), (escaped.into(), escaped.len())];
     for (payload, limit) in cases {
         let output = CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "m".into(),
             content: Some(payload.clone()),
             tool_calls: Vec::new(),

@@ -204,6 +204,14 @@ tool calls and offered schemas, without the completion reserve), the clean
 retry included. The interaction totals stay the sum of the rounds' reported
 pairs (`D-USAGE-PAIRS`). Pinned in `tests/chat/answer.rs`.
 
+Response reasoning (schema v21, 2026-10-02): each answered round retains
+`reasoning_content` and `reasoning_tokens`, distinct from the requested effort
+in `reasoning`. Text is capped at 64 KiB **including** the visible
+`… [reasoning truncated]` marker, cut at a UTF-8 boundary; empty text is NULL.
+The independent provider count is NULL when unreported, never inferred as zero.
+It is recorded separately without adding it to completion totals. Both fields share
+the row's 90-day retention and are never added to conversation messages.
+
 ## Pilot: traffic and safety (C3)
 
 `chat::pilot` wraps one question; it holds no Discord types (replies go
@@ -469,7 +477,8 @@ cheap and must not block or fail.
 (12/22) through `answer` with the fake provider and the tool-round setting at
 v4's 4. Named: `D-SHAPING` (sampled requests carry the runner's
 `max_tokens`), `D-CLEAN-RETRY` (empty/malformed answers use the clean retry;
-`D-NO-THINKING`: responses carry no reasoning text), `D-STRICT-TOOL-CALLS`
+`D-NO-THINKING`: the frozen replay adapter omits legacy thinking; production
+now records Kanata's response-only reasoning without changing the vectors), `D-STRICT-TOOL-CALLS`
 (folded into `D-CLEAN-RETRY`, one step: a reply with a duplicate call id or
 non-JSON arguments is unreadable to the runner as a whole, where v4 renamed
 the id or ran the call with `{}`), `D-USAGE-PAIRS` (a round's usage counts

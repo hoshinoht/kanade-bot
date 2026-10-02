@@ -179,6 +179,8 @@ async fn an_overflow_after_a_posted_card_does_not_invite_a_resend() {
         serde_json::json!({"run_query": "hstar", "to_when": "thu 22:00", "note": padding});
     let propose = || {
         FakeAction::Response(CompletionResponse {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: MODEL.into(),
             content: None,
             tool_calls: vec![ToolCall {

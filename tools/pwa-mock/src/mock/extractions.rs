@@ -223,6 +223,7 @@ impl Store {
                     "changes": c.amendments.len(), "channel": seed::channel(c.channel).map(|x| x.1),
                     "channel_id": c.channel, "error": c.error, "outcome": c.outcome,
                     "prompt_tokens": c.usage.map(|u| u.0), "completion_tokens": c.usage.map(|u| u.1),
+                    "reasoning_tokens": if c.id == "x-bm" { Some(24) } else { None::<u32> },
                 })
             })
             .collect();
@@ -292,6 +293,8 @@ impl Store {
             "prompt": prompt, "raw_response": raw.to_string(), "amendments": amendments, "messages": chat,
             "prompt_tokens": c.usage.map(|u| u.0), "completion_tokens": c.usage.map(|u| u.1),
             "prompt_estimate": c.estimate,
+            "reasoning_content": if c.id == "x-bm" { Some("The messages agree on Wednesday at the existing time.") } else { None },
+            "reasoning_tokens": if c.id == "x-bm" { Some(24) } else { None::<u32> },
             // Older legacy calls were logged before the context was.
             "context": if c.model == MODEL { json!({"window": 8_192, "reserve": 2_500, "source": "local_default"}) } else { Value::Null },
         }))
@@ -390,6 +393,20 @@ impl Store {
 mod tests {
     use super::super::logfilter::LogQuery;
     use super::super::tests::store;
+
+    #[test]
+    fn reasoning_fixtures_preserve_text_counts_and_unknowns() {
+        let s = store();
+        let bm = s.extraction("x-bm").ok().expect("call");
+        assert_eq!(
+            bm["reasoning_content"],
+            "The messages agree on Wednesday at the existing time."
+        );
+        assert_eq!(bm["reasoning_tokens"], 24);
+        let absent = s.extraction("x-limbo").ok().expect("unreported");
+        assert!(absent["reasoning_content"].is_null());
+        assert!(absent["reasoning_tokens"].is_null());
+    }
 
     #[test]
     fn extraction_filters_by_outcome_model_member_and_refuse_chat_only_ones() {

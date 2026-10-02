@@ -244,6 +244,16 @@ out logs none of the three. "Sent" is counted at gateway admission, so an
 attempt the gateway then turns away (`turned_away`, nothing ran upstream)
 still logs its estimate with no pair. Pinned in `tests/extract/usage.rs`.
 
+Response reasoning (schema v21, 2026-10-02): `reasoning_content` joins non-empty
+attempt texts in order with two newlines, capped across the whole extraction
+call at 64 KiB **including** `… [reasoning truncated]`, on a UTF-8 boundary.
+Once truncated, later attempts do not append text or re-cut the marker.
+`reasoning_tokens` sums only attempts that reported the independent count;
+the sum saturates at SQLite's signed 64-bit maximum (wire counts are u32).
+When none did it stays NULL, even if text was returned. Both follow the row's
+90-day retention. The existing `reasoning` remains the configured effort.
+Neither diagnostic enters an answer retry's outgoing messages.
+
 ## Backlog
 
 Late messages (`MessageOrigin::Replay`) and the messages of turned-away

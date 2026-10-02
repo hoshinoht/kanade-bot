@@ -114,6 +114,18 @@ pub(crate) fn parse_completion(
             .unwrap_or(&request.model)
             .to_owned(),
         content,
+        reasoning_content: message
+            .get("reasoning_content")
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned),
+        reasoning_tokens: value
+            .get("usage")
+            .and_then(|usage| usage.get("completion_tokens_details"))
+            .and_then(|details| details.get("reasoning_tokens"))
+            .and_then(Value::as_u64)
+            .and_then(|count| u32::try_from(count).ok())
+            .map(u64::from),
         tool_calls,
         finish_reason,
         usage,

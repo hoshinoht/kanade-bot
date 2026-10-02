@@ -45,6 +45,10 @@ pub struct ExtractionLog {
     /// Model alias.
     pub model: String,
     pub reasoning: Option<String>,
+    /// Response text, distinct from the requested reasoning effort.
+    pub reasoning_content: Option<String>,
+    /// Provider-reported count; absent stays unknown, not zero.
+    pub reasoning_tokens: Option<u64>,
     pub prompt: String,
     pub raw_response: String,
     pub latency_ms: Option<u64>,
@@ -103,6 +107,8 @@ pub struct ChatRound {
     pub model: String,
     /// Reasoning effort as sent; `None` when none went out.
     pub reasoning: Option<String>,
+    pub reasoning_content: Option<String>,
+    pub reasoning_tokens: Option<u64>,
     pub finish_reason: Option<String>,
     pub latency_ms: Option<u64>,
     /// Tool bundles offered this round.
@@ -206,10 +212,19 @@ fn usage_pair(prompt: Option<u64>, completion: Option<u64>) -> bool {
     prompt.is_some() == completion.is_some()
 }
 
+fn reasoning_shape(text: Option<&str>, tokens: Option<u64>) -> bool {
+    text.is_none_or(|text| !text.is_empty() && text.len() <= super::REASONING_CAP)
+        && tokens.is_none_or(|tokens| i64::try_from(tokens).is_ok())
+}
+
 impl ExtractionLog {
     /// The shape every store refuses to write otherwise.
     pub fn check_shape(&self) -> Result<(), StoreError> {
         shape(self.guardrail.is_object(), "extraction guardrail")?;
+        shape(
+            reasoning_shape(self.reasoning_content.as_deref(), self.reasoning_tokens),
+            "extraction reasoning",
+        )?;
         shape(
             usage_pair(self.prompt_tokens, self.completion_tokens),
             "extraction token usage",
@@ -228,6 +243,10 @@ impl ChatInteraction {
             "chat profile_source",
         )?;
         for round in &self.rounds {
+            shape(
+                reasoning_shape(round.reasoning_content.as_deref(), round.reasoning_tokens),
+                "chat round reasoning",
+            )?;
             shape(round.tool_calls.is_array(), "chat round tool_calls")?;
             shape(
                 round

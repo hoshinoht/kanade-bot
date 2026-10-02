@@ -45,6 +45,27 @@ const turn = (over: Partial<ChatTurn> = {}): ChatTurn => ({
 });
 
 describe('chat transcript', () => {
+  it('copies response reasoning and reported counts in Markdown and JSON, preserving unknowns', () => {
+    const t = turn();
+    t.rounds[0]!.reasoning_content = 'Summary one.\n\nSummary two with ``` code.\n… [reasoning truncated]';
+    t.rounds[0]!.reasoning_tokens = 32;
+    const md = transcriptMarkdown(t, { timeZone: 'UTC' });
+    expect(md).toContain('- Reasoning tokens: 32');
+    expect(md).toContain('### Reasoning\n\n````\nSummary one.');
+    expect(md).toContain('… [reasoning truncated]');
+    const requested = md.indexOf('- Requested tools: knowledge.read');
+    const tokens = md.indexOf('- Reasoning tokens: 32');
+    const reasoning = md.indexOf('### Reasoning');
+    const call = md.indexOf('### knowledge.read');
+    expect(tokens).toBeGreaterThan(requested);
+    expect(reasoning).toBeGreaterThan(tokens);
+    expect(call).toBeGreaterThan(reasoning);
+    const json = JSON.parse(transcriptJson(t, { timeZone: 'UTC' }));
+    expect(json.rounds[0].reasoning_content).toBe(t.rounds[0]!.reasoning_content);
+    expect(json.rounds[0].reasoning_tokens).toBe(32);
+    expect(json.rounds[1].reasoning_content).toBeNull();
+    expect(json.rounds[1].reasoning_tokens).toBeNull();
+  });
   it('deals tool calls out to the rounds that requested them', () => {
     const r = rounds(turn());
     expect(r.map((x) => x.calls.length)).toEqual([1, 0]);

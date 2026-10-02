@@ -359,6 +359,8 @@ impl Random for Fixed {
 
 pub fn reply(content: &str) -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: Some(content.to_owned()),
         tool_calls: Vec::new(),
@@ -373,6 +375,8 @@ pub fn reply(content: &str) -> FakeAction {
 /// A reply stopped by the provider's content filter.
 pub fn filtered() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: None,
         tool_calls: Vec::new(),

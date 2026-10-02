@@ -37,6 +37,8 @@ const MODEL: &str = "synthetic-chat";
 
 fn wants(calls: &[(&str, &str, Value)]) -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: MODEL.into(),
         content: None,
         tool_calls: calls
@@ -58,6 +60,8 @@ fn words(text: &str) -> FakeAction {
 
 fn filtered() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: MODEL.into(),
         content: None,
         tool_calls: Vec::new(),
@@ -903,6 +907,62 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
     store.record_chat(row.clone()).await.expect("recorded");
     assert_eq!(
         store.load_chat("chat-usage").await.expect("load"),
+        Some(row)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
+    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
+    use kanade::infrastructure::llm::wire_body;
+    let FakeAction::Response(mut first) = wants(&[("r1", "list_fixed", json!({}))]) else {
+        panic!("response")
+    };
+    first.reasoning_content = Some("奏".repeat(REASONING_CAP));
+    first.reasoning_tokens = Some(32);
+    let run = run(
+        vec![FakeAction::Response(first), words("Three weeklies.")],
+        ToolOffer::dynamic([Bundle::Strategy], false),
+        8,
+        "which weeklies?",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let row = interaction(
+        "chat-reasoning".into(),
+        run.world.clock.now().with_timezone(&Utc),
+        &run.ctx,
+        "which weeklies?",
+        &run.generation,
+        MODEL,
+        settings(&run.input, 8).reasoning,
+        1,
+    );
+    assert_eq!(row.rounds[0].reasoning_tokens, Some(32));
+    let text = row.rounds[0].reasoning_content.as_deref().expect("text");
+    assert!(text.len() <= REASONING_CAP && text.ends_with(REASONING_TRUNCATED));
+    assert_eq!(
+        (
+            row.rounds[1].reasoning_content.as_ref(),
+            row.rounds[1].reasoning_tokens
+        ),
+        (None, None)
+    );
+    assert_eq!(run.requests.len(), 2);
+    for request in &run.requests {
+        let body = wire_body(request, &capabilities(&run.input["caps"])).expect("body");
+        for message in body["messages"].as_array().expect("messages") {
+            assert!(message.as_object().expect("message").keys().all(|key| {
+                ["role", "content", "tool_calls", "tool_call_id"].contains(&key.as_str())
+            }));
+            assert!(!message.to_string().contains('奏'));
+        }
+    }
+    let store = run.world.service.store();
+    store.record_chat(row.clone()).await.expect("record");
+    assert_eq!(
+        store.load_chat("chat-reasoning").await.expect("load"),
         Some(row)
     );
 }

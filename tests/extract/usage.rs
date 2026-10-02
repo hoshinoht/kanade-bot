@@ -15,6 +15,8 @@ const NOTHING: &str = r#"{"amendments": [], "summary": "no schedule change"}"#;
 
 fn answer(content: &str, usage: Option<(u32, u32)>) -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: Some(content.to_owned()),
         tool_calls: Vec::new(),
@@ -82,6 +84,99 @@ async fn an_answer_retry_sums_both_reported_attempts() {
     let sent = estimates(&world);
     assert_eq!(sent.len(), 2);
     assert_eq!(usage, (Some(2100), Some(45), Some(sent[0] + sent[1])));
+}
+
+#[tokio::test(start_paused = true)]
+async fn reasoning_attempts_are_retained_summed_and_not_sent_back() {
+    use kanade::infrastructure::llm::{ModelCapabilities, wire_body};
+    let with_reasoning = |content: &str, text: &str, tokens: Option<u64>| {
+        let FakeAction::Response(mut response) = answer(content, None) else {
+            panic!("response")
+        };
+        response.reasoning_content = Some(text.into());
+        response.reasoning_tokens = tokens;
+        FakeAction::Response(response)
+    };
+    let world = World::new(vec![
+        with_reasoning("not json", "First reasoning.", Some(7)),
+        with_reasoning(NOTHING, "Retry reasoning.", Some(9)),
+    ])
+    .await;
+    one_call(&world).await;
+    let rows = world.logs().await;
+    assert_eq!(
+        rows[0].reasoning_content.as_deref(),
+        Some("First reasoning.\n\nRetry reasoning.")
+    );
+    assert_eq!(rows[0].reasoning_tokens, Some(16));
+    assert_eq!(
+        rows[0].prompt_tokens, None,
+        "reasoning count is independent of the usage pair"
+    );
+    let requests = world.provider.requests();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        let body = wire_body(request, &ModelCapabilities::minimal()).expect("body");
+        assert!(!body.to_string().contains("First reasoning"));
+        assert!(!body.to_string().contains("reasoning_content"));
+        assert!(!body.to_string().contains("reasoning_tokens"));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn absent_reasoning_stays_null_and_text_only_stays_unknown() {
+    let world = World::new(vec![answer(NOTHING, None)]).await;
+    one_call(&world).await;
+    let rows = world.logs().await;
+    assert_eq!(
+        (rows[0].reasoning_content.as_ref(), rows[0].reasoning_tokens),
+        (None, None)
+    );
+    let FakeAction::Response(mut response) = answer(NOTHING, None) else {
+        panic!("response")
+    };
+    response.reasoning_content = Some("Text only.".into());
+    let world = World::new(vec![FakeAction::Response(response)]).await;
+    one_call(&world).await;
+    let rows = world.logs().await;
+    assert_eq!(rows[0].reasoning_content.as_deref(), Some("Text only."));
+    assert_eq!(rows[0].reasoning_tokens, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_truncated_attempt_is_not_appended_again_and_token_sums_stay_storable() {
+    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
+
+    let text = "奏".repeat(REASONING_CAP);
+    let FakeAction::Response(mut first) = answer("not json", None) else {
+        panic!("response")
+    };
+    first.reasoning_content = Some(text.clone());
+    first.reasoning_tokens = Some(i64::MAX as u64);
+    let FakeAction::Response(mut second) = answer(NOTHING, None) else {
+        panic!("response")
+    };
+    second.reasoning_content = Some("Later reasoning must not replace the marker.".into());
+    second.reasoning_tokens = Some(1);
+    let world = World::new(vec![
+        FakeAction::Response(first),
+        FakeAction::Response(second),
+    ])
+    .await;
+    one_call(&world).await;
+    let rows = world.logs().await;
+    assert_eq!(rows[0].reasoning_content, capped_reasoning(&text));
+    assert_eq!(rows[0].reasoning_tokens, Some(i64::MAX as u64));
+    assert_eq!(
+        rows[0]
+            .reasoning_content
+            .as_deref()
+            .expect("text")
+            .matches(REASONING_TRUNCATED)
+            .count(),
+        1
+    );
+    assert_eq!(world.provider.requests().len(), 2);
 }
 
 #[tokio::test(start_paused = true)]

@@ -205,6 +205,18 @@ suppresses replacement; only a confirmed deletion may clear it. Schema v20 is a
 future version to an older image, so rollback is the old image plus a pre-v20
 whole-store backup, never an in-place downgrade.
 
+### Model-log response reasoning (v5 schema v21)
+
+`0021_model_log_reasoning.sql` only adds nullable `reasoning_content` TEXT
+and `reasoning_tokens` INTEGER to `extractions` and `chat_rounds`. Existing
+rows keep NULLs and the existing `reasoning` effort column is unchanged.
+Text CHECKs count bytes (`length(CAST(... AS BLOB))`, 1..=65536); count CHECKs
+refuse negatives. The insert-only triggers, indexes, foreign keys and row
+retention remain unchanged. This uses the existing checksummed, transactional
+migration path. An older image refuses v21 as `FutureVersion`; rollback still
+requires the old image plus a pre-deploy **whole-store** backup, never an
+in-place downgrade. Adding these columns requires no separate data gate.
+
 ## Fingerprints and finalization
 
 Canonicalize in memory; persist only versioned SHA-256 values, no plaintext

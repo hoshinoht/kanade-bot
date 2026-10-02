@@ -713,6 +713,8 @@ async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
         prompt_tokens: None,
         completion_tokens: None,
         rounds: vec![kanade::domain::model_log::ChatRound {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: "chat-model".into(),
             reasoning: None,
             finish_reason: None,

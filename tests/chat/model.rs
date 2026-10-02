@@ -138,6 +138,8 @@ pub fn completion(raw: &Value, model: &str) -> Option<CompletionResponse> {
         _ => None,
     };
     Some(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: model.to_owned(),
         content: message
             .get("content")

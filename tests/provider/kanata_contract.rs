@@ -27,6 +27,60 @@ fn full() -> ModelCapabilities {
     }
 }
 
+#[tokio::test]
+async fn reasoning_response_fields_are_optional_and_never_echoed_in_later_messages() {
+    for (text, tokens) in [
+        (Some("Summary one.\n\nSummary two."), Some(32)),
+        (Some("Text only."), None),
+        (None, None),
+        (Some(""), Some(0)),
+        (Some("Count too large."), Some(1_u64 << 63)),
+    ] {
+        let stub = Stub::start(models_or(move |_| {
+            let mut body = completion("qwen3:8b", r#"{"answer":"ok"}"#);
+            if let Some(text) = text {
+                body["choices"][0]["message"]["reasoning_content"] = json!(text);
+            }
+            if let Some(tokens) = tokens {
+                body["usage"]["completion_tokens_details"] = json!({"reasoning_tokens": tokens});
+            }
+            Reply::Json(200, body)
+        }))
+        .await;
+        let runner = runner(declared(stub.url()));
+        let mut request = structured();
+        let response = runner.complete(&request).await.expect("reply");
+        assert_eq!(
+            response.reasoning_content.as_deref(),
+            text.filter(|text| !text.is_empty())
+        );
+        assert_eq!(
+            response.reasoning_tokens,
+            tokens.filter(|tokens| u32::try_from(*tokens).is_ok())
+        );
+        request.messages.push(Message::Assistant {
+            content: response.content,
+            tool_calls: vec![],
+        });
+        request.messages.push(Message::User {
+            content: "And next?".into(),
+        });
+        runner.complete(&request).await.expect("later reply");
+        let sent = stub.chat_requests();
+        assert_eq!(sent.len(), 2);
+        for message in sent
+            .iter()
+            .flat_map(|sent| sent.body["messages"].as_array().expect("messages"))
+        {
+            let object = message.as_object().expect("message");
+            assert!(object.keys().all(|key| {
+                ["role", "content", "tool_calls", "tool_call_id"].contains(&key.as_str())
+            }));
+            assert!(!message.to_string().contains("Summary one"));
+        }
+    }
+}
+
 fn refused(request: &ChatRequest, caps: &ModelCapabilities) -> ErrorCode {
     wire_body(request, caps).unwrap_err().code
 }

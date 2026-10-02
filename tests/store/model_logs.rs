@@ -13,6 +13,89 @@ use sqlx::{ConnectOptions, Connection};
 
 use crate::support::{TempDir, tamper};
 
+#[tokio::test]
+async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
+    use axum::{Json, Router, routing::post};
+    use kanade::infrastructure::llm::{
+        ChatRequest, HttpProviderConfig, LlmProvider, Message, ModelCapabilities,
+        OpenAiCompatibleProvider,
+    };
+    use serde_json::json;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("loopback");
+    let address = listener.local_addr().expect("address");
+    let router = Router::new().route("/v1/chat/completions", post(|| async {
+        Json(json!({
+            "model": "m", "choices": [{"message": {"content": "answer", "reasoning_content": "Summary."}, "finish_reason": "stop"}],
+            "usage": {"completion_tokens_details": {"reasoning_tokens": 1_u64 << 63}}
+        }))
+    }));
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve");
+    });
+    let provider =
+        OpenAiCompatibleProvider::new(HttpProviderConfig::new(format!("http://{address}/v1")))
+            .expect("provider");
+    let request = ChatRequest {
+        model: "m".into(),
+        messages: vec![Message::User {
+            content: "hi".into(),
+        }],
+        tools: vec![],
+        output_schema: None,
+        max_output_tokens: 16,
+        reasoning: None,
+        sampling: None,
+    };
+    let response = provider
+        .complete_with(&request, &ModelCapabilities::minimal())
+        .await
+        .expect("response");
+    assert_eq!(response.reasoning_tokens, None);
+    server.abort();
+    assert!(server.await.expect_err("server aborted").is_cancelled());
+
+    let dir = TempDir::new();
+    let config = dir.config("wire-reasoning-count");
+    let store = SqliteStore::open(&config).await.expect("store");
+    raw(&config, "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids) VALUES ('template', '2026-09-20T00:00:00+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', '{}', '[]', '[]')").await.expect("template");
+    let mut log = store
+        .load_extraction("template")
+        .await
+        .expect("load")
+        .expect("template");
+    log.id = "parsed".into();
+    log.reasoning_content = response.reasoning_content;
+    log.reasoning_tokens = response.reasoning_tokens;
+    store
+        .record_extraction(log.clone())
+        .await
+        .expect("row accepted");
+    assert_eq!(
+        store.load_extraction("parsed").await.expect("load"),
+        Some(log)
+    );
+    let mut conn = SqliteConnectOptions::new()
+        .filename(&config.db_path)
+        .read_only(true)
+        .connect()
+        .await
+        .expect("raw read");
+    let tokens: Option<i64> =
+        sqlx::query_scalar("SELECT reasoning_tokens FROM extractions WHERE id = 'parsed'")
+            .fetch_one(&mut conn)
+            .await
+            .expect("stored count");
+    assert_eq!(
+        tokens, None,
+        "stored as SQL NULL, not zero or a refused row"
+    );
+    conn.close().await.expect("close raw");
+    store.close().await.expect("close store");
+}
+
 async fn raw(config: &SqliteStoreConfig, sql: &str) -> Result<(), sqlx::Error> {
     let mut conn = SqliteConnectOptions::new()
         .filename(&config.db_path)
@@ -288,7 +371,13 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
          guardrail, request_count) VALUES ('c-old', '2026-09-20T00:00:00+00:00', 'q', 'a', \
          'answered', 0, 0, '{}', 1);
          INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
-         VALUES ('c-old', 0, 'm', '[]', '[]', '[]');",
+         VALUES ('c-old', 0, 'm', '[]', '[]', '[]');
+         ALTER TABLE extractions DROP COLUMN reasoning_content;
+         ALTER TABLE extractions DROP COLUMN reasoning_tokens;
+         ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
+         ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
+         DELETE FROM schema_migrations WHERE version = 21;
+         UPDATE store_meta SET schema_version = 20;",
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("reopens");
@@ -302,6 +391,13 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
         serde_json::json!({"external_unmasked": true})
     );
     assert!(extraction.guardrail.get("context").is_none());
+    assert_eq!(
+        (
+            extraction.reasoning_content.as_ref(),
+            extraction.reasoning_tokens
+        ),
+        (None, None)
+    );
     let listed = store
         .list_extractions(&ExtractionFilter {
             limit: 10,
@@ -316,6 +412,13 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
         .expect("reads")
         .expect("kept");
     assert_eq!(chat.guardrail, serde_json::json!({}));
+    assert_eq!(
+        (
+            chat.rounds[0].reasoning_content.as_ref(),
+            chat.rounds[0].reasoning_tokens
+        ),
+        (None, None)
+    );
     let chats = store
         .list_chats(&ChatFilter {
             limit: 10,
@@ -324,5 +427,35 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
         .await
         .expect("lists");
     assert_eq!(chats.items.len(), 1);
+    store.close().await.expect("close");
+    let store = SqliteStore::open(&config)
+        .await
+        .expect("reopen after additive migration");
+    assert_eq!(store.schema_version().await.expect("version"), 21);
+    let mut extraction = extraction;
+    extraction.id = "x-reasoning".into();
+    extraction.reasoning_content = Some("Stored extraction reasoning.".into());
+    extraction.reasoning_tokens = Some(24);
+    store
+        .record_extraction(extraction.clone())
+        .await
+        .expect("write reasoning");
+    let mut chat = chat;
+    chat.id = "c-reasoning".into();
+    chat.rounds[0].reasoning_content = Some("Stored chat reasoning.".into());
+    chat.rounds[0].reasoning_tokens = Some(32);
+    store
+        .record_chat(chat.clone())
+        .await
+        .expect("write reasoning");
+    store.close().await.expect("close");
+    let store = SqliteStore::open(&config)
+        .await
+        .expect("reopen written reasoning");
+    assert_eq!(
+        store.load_extraction(&extraction.id).await.expect("load"),
+        Some(extraction)
+    );
+    assert_eq!(store.load_chat(&chat.id).await.expect("load"), Some(chat));
     store.close().await.expect("close");
 }

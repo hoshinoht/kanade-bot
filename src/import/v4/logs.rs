@@ -83,6 +83,8 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
             return Vec::new();
         }
         return vec![ChatRound {
+            reasoning_content: None,
+            reasoning_tokens: None,
             model: model.to_owned(),
             reasoning: None,
             finish_reason: None,
@@ -116,6 +118,8 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
                 .filter(|tools| !tools.is_empty())
                 .unwrap_or_else(|| names(&calls));
             ChatRound {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: model.to_owned(),
                 reasoning: None,
                 finish_reason: None,
@@ -215,6 +219,8 @@ pub fn extraction(
         .filter_map(|message| message.author_id.clone())
         .collect();
     ExtractionLog {
+        reasoning_content: None,
+        reasoning_tokens: None,
         id: log_id(&row.id),
         at,
         channel_id: (channels.len() == 1)

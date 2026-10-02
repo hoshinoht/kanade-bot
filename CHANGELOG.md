@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 model logs retain Kanata reasoning text (64 KiB, visibly truncated) and
+  reported reasoning tokens; admin Chat/Extractions show collapsed reasoning
+  and token counts, and copied chat transcripts include both. Oversized counts
+  stay unknown, and retries keep a single truncation marker.
+
 - v5 admin Inbox items now carry `thread`: the stored channel messages around
   a proposal's evidence (oldest first, at most 37, the extractor's context plus
   a burst), each marked `used` when the proposal cites it. It is read from the

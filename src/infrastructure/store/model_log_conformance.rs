@@ -22,6 +22,7 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     extraction_filters_combine_and_page(make().await).await;
     chat_logs_round_trip_with_rounds(make().await).await;
     token_usage_round_trips_and_pairs_are_whole(make().await).await;
+    reasoning_round_trips_with_independent_nulls_and_row_retention(make().await).await;
     masked_chat_views_round_trip_and_prune(make().await).await;
     identity_leak_is_an_extraction_outcome(make().await).await;
     chat_filters_match_rounds_flags_and_latency(make().await).await;
@@ -98,6 +99,106 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
     );
 }
 
+async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: ModelLogStore>(
+    store: S,
+) {
+    let mut log = extraction("x-reasoning", utc(20, 12, 0));
+    log.reasoning_content = Some("Text without a reported count.".into());
+    store.record_extraction(log.clone()).await.expect("record");
+    assert_eq!(
+        store.load_extraction(&log.id).await.expect("load"),
+        Some(log.clone())
+    );
+    let listed = store
+        .list_extractions(&ExtractionFilter {
+            omit_bodies: true,
+            ..Default::default()
+        })
+        .await
+        .expect("list");
+    assert_eq!(listed.items[0].reasoning_content, None);
+    let mut interaction = chat("c-reasoning", utc(20, 12, 0));
+    let mut first = round("m", &[]);
+    first.reasoning_content = Some("Round text.".into());
+    first.reasoning_tokens = Some(0);
+    let mut second = round("m", &[]);
+    second.reasoning_tokens = Some(15);
+    interaction.rounds = vec![first, second, round("m", &[])];
+    store
+        .record_chat(interaction.clone())
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_chat(&interaction.id).await.expect("load"),
+        Some(interaction.clone())
+    );
+    assert_eq!(
+        store
+            .list_chats(&ChatFilter::default())
+            .await
+            .expect("list")
+            .items,
+        [interaction]
+    );
+    for text in [
+        String::new(),
+        "奏".repeat(crate::domain::model_log::REASONING_CAP),
+    ] {
+        let mut bad = log.clone();
+        bad.id = "x-bad".into();
+        bad.reasoning_content = Some(text.clone());
+        assert!(matches!(
+            store.record_extraction(bad).await,
+            Err(StoreError::Constraint(_))
+        ));
+        let mut bad = chat("c-bad", utc(20, 12, 0));
+        let mut r = round("m", &[]);
+        r.reasoning_content = Some(text);
+        bad.rounds.push(r);
+        assert!(matches!(
+            store.record_chat(bad).await,
+            Err(StoreError::Constraint(_))
+        ));
+    }
+    for (index, tokens) in [i64::MAX as u64, 1_u64 << 63].into_iter().enumerate() {
+        let mut count_log = log.clone();
+        count_log.id = format!("x-count-{index}");
+        count_log.reasoning_tokens = Some(tokens);
+        let result = store.record_extraction(count_log.clone()).await;
+        let valid = i64::try_from(tokens).is_ok();
+        assert_eq!(
+            result.is_ok(),
+            valid,
+            "reasoning counts have the same bound on both stores"
+        );
+        assert_eq!(
+            store.load_extraction(&count_log.id).await.expect("load"),
+            valid.then_some(count_log)
+        );
+
+        let mut count_chat = chat(&format!("c-count-{index}"), utc(20, 12, 0));
+        let mut r = round("m", &[]);
+        r.reasoning_tokens = Some(tokens);
+        count_chat.rounds.push(r);
+        let result = store.record_chat(count_chat.clone()).await;
+        assert_eq!(
+            result.is_ok(),
+            valid,
+            "round counts have the same bound on both stores"
+        );
+        assert_eq!(
+            store.load_chat(&count_chat.id).await.expect("load"),
+            valid.then_some(count_chat)
+        );
+    }
+    store.prune_model_logs(utc(21, 0, 0)).await.expect("prune");
+    assert_eq!(
+        store.load_extraction("x-reasoning").await.expect("load"),
+        None
+    );
+    assert_eq!(store.load_chat("c-reasoning").await.expect("load"), None);
+}
+
 fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0)
         .single()
@@ -118,6 +219,8 @@ fn message(id: &str, channel: &str, at: DateTime<Utc>, content: &str) -> Watched
 
 fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
     ExtractionLog {
+        reasoning_content: None,
+        reasoning_tokens: None,
         id: id.into(),
         at,
         channel_id: Some("900".into()),
@@ -142,6 +245,8 @@ fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
 
 fn round(model: &str, tools: &[&str]) -> ChatRound {
     ChatRound {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: model.into(),
         reasoning: None,
         finish_reason: Some("stop".into()),

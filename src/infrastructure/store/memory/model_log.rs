@@ -256,6 +256,7 @@ impl ModelLogStore for MemoryScheduleStore {
             for log in &mut found {
                 log.prompt.clear();
                 log.raw_response.clear();
+                log.reasoning_content = None;
             }
         }
         Ok(page(found, filter.limit, |log| LogCursor {

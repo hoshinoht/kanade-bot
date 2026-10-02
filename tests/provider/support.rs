@@ -82,6 +82,8 @@ pub fn tiny_request() -> ChatRequest {
 
 pub fn tiny_response(model: &str) -> CompletionResponse {
     CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: model.into(),
         content: None,
         tool_calls: Vec::new(),

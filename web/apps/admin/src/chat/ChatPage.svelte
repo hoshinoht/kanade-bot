@@ -4,6 +4,7 @@
   deep-linked through this page's query string.
 -->
 <script lang="ts">
+  import TokenUsage from '../logs/TokenUsage.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import ModelStats from './ModelStats.svelte';
   import LogTime from '../logs/LogTime.svelte';
@@ -86,7 +87,7 @@
       <div class="table-wrap">
         <table>
           <caption class="vh">Chatbot interactions, newest first</caption>
-          <thead><tr><th scope="col">Question</th><th scope="col">Who</th><th scope="col">When</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Took</th></tr></thead>
+          <thead><tr><th scope="col">Question</th><th scope="col">Who</th><th scope="col">When</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Took</th><th scope="col" class="num">Tokens</th></tr></thead>
           <tbody>
             {#each shown.rows as row (row.id)}
               {@const models = row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}
@@ -97,6 +98,7 @@
                 <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
                 <td class="mono log__clip" title={models}>{models}</td>
                 <td class="num log__nowrap">{duration(row.latency_ms)}</td>
+                <td class="num log__nowrap"><TokenUsage prompt={row.prompt_tokens} completion={row.completion_tokens} reasoning={row.reasoning_tokens} /></td>
               </tr>
             {/each}
           </tbody>

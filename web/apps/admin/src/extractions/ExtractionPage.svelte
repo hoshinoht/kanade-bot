@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Reasoning from '../logs/Reasoning.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
@@ -42,6 +43,7 @@
     {#snippet panel(which)}
       {#if which === 'changes'}
         {#if data.error}<p class="flash flash--error">{data.error}</p>{/if}
+        <Reasoning text={data.reasoning_content} tokens={data.reasoning_tokens} />
         {#if data.amendments.length}
           <table>
             <caption class="vh">Changes the model proposed</caption>

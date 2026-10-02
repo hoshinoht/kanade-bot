@@ -116,6 +116,8 @@ pub fn chat_row(names: &Names<'_>, chat: &ChatInteraction) -> Value {
         // Turn totals as logged; counts only, so shown for withheld turns too.
         "prompt_tokens": chat.prompt_tokens,
         "completion_tokens": chat.completion_tokens,
+        "reasoning_tokens": chat.rounds.iter().filter_map(|round| round.reasoning_tokens)
+            .fold(None::<u64>, |sum, count| Some(sum.unwrap_or_default().saturating_add(count))),
     })
 }
 
@@ -248,6 +250,8 @@ pub fn chat_turn(
                 "prompt_tokens": round.prompt_tokens,
                 "completion_tokens": round.completion_tokens,
                 "prompt_estimate": round.prompt_estimate,
+                "reasoning_content": if chat.withheld { round.reasoning_content.as_ref().map(|_| WITHHELD) } else { round.reasoning_content.as_deref() },
+                "reasoning_tokens": round.reasoning_tokens,
                 "guardrail": {
                     "clean": round.clean,
                     "content_filter": round.finish_reason.as_deref() == Some("content_filter"),
@@ -519,6 +523,7 @@ fn extraction_common(names: &Names<'_>, log: &ExtractionLog) -> Value {
         "outcome": log.outcome.as_str(),
         "prompt_tokens": log.prompt_tokens,
         "completion_tokens": log.completion_tokens,
+        "reasoning_tokens": log.reasoning_tokens,
     })
 }
 
@@ -631,6 +636,7 @@ pub fn extraction(
     let object = detail.as_object_mut().expect("detail object");
     object.insert("prompt".into(), json!(log.prompt));
     object.insert("raw_response".into(), json!(log.raw_response));
+    object.insert("reasoning_content".into(), json!(log.reasoning_content));
     object.insert("prompt_estimate".into(), json!(log.prompt_estimate));
     object.insert("context".into(), call_context(log));
     object.insert(

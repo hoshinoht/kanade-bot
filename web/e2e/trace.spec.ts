@@ -89,6 +89,39 @@ test('copy transcript: Markdown by default, JSON on request, names not ids', asy
   expect(json.id).toBe('c-guide');
   expect(json.rounds[0].calls[0].name).toBe('knowledge.read');
   expect(json.rounds[0].calls[0].result).toContain('truncated');
+  expect(md).toContain('### Reasoning');
+  expect(md).toContain('Read the checked-in Limbo notes before answering.');
+  expect(md).toContain('- Reasoning tokens: 32');
+  expect(json.rounds[0].reasoning_content).toBe('Read the checked-in Limbo notes before answering.');
+  expect(json.rounds[0].reasoning_tokens).toBe(32);
+  expect(json.rounds[1].reasoning_tokens).toBeNull();
+});
+
+test('reasoning: collapsed disclosures in Chat and Extractions, reported counts beside in → out', async ({ page }) => {
+  await page.goto(`${ADMIN}/chat?sw=off`);
+  const chatRow = page.getByRole('row').filter({ has: page.locator('a[href="/chat/c-guide"]') });
+  await expect(chatRow).toContainText('— → — · 32 reasoning');
+  await page.goto(`${ADMIN}/chat/c-guide?sw=off`);
+  const chat = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Reasoning · 32 tokens' }) });
+  await expect(chat).not.toHaveAttribute('open');
+  await expect(chat.locator('pre')).toBeHidden();
+  await chat.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(chat.locator('pre')).toContainText('Read the checked-in Limbo notes');
+  await page.screenshot({ path: 'e2e/.captures/synthetic/reasoning-chat.png', animations: 'disabled' });
+
+  await page.goto(`${ADMIN}/extractions?sw=off`);
+  const extractionRow = page.getByRole('row').filter({ has: page.locator('a[href="/extractions/x-bm"]') });
+  await expect(extractionRow).toContainText('1,820 → 64 · 24 reasoning');
+  await page.goto(`${ADMIN}/extractions/x-bm?sw=off`);
+  const extraction = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Reasoning · 24 tokens' }) });
+  await expect(extraction).not.toHaveAttribute('open');
+  await expect(extraction.locator('pre')).toBeHidden();
+  await extraction.locator('summary').click();
+  await expect(extraction.locator('pre')).toContainText('The messages agree on Wednesday');
+  await page.screenshot({ path: 'e2e/.captures/synthetic/reasoning-extraction.png', animations: 'disabled' });
+  await page.goto(`${ADMIN}/extractions/x-limbo?sw=off`);
+  await expect(page.locator('summary', { hasText: 'Reasoning' })).toHaveCount(0);
 });
 
 test('copy transcript: a withheld turn stays redacted', async ({ page, context }) => {

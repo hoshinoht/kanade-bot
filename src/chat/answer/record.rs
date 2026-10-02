@@ -130,6 +130,8 @@ pub fn interaction(
             }
             .map(|effort| effort.as_str().to_owned()),
             finish_reason: round.finish_reason.clone(),
+            reasoning_content: round.reasoning_content.clone(),
+            reasoning_tokens: round.reasoning_tokens,
             latency_ms: Some(round.latency_ms),
             tool_bundles: round.bundles.clone(),
             tools: round.requested_tools.clone(),

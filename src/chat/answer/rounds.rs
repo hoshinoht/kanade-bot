@@ -178,6 +178,11 @@ impl Loop<'_, '_> {
         }
         self.generation.model_rounds.push(ModelRound {
             round,
+            reasoning_content: response
+                .reasoning_content
+                .as_deref()
+                .and_then(crate::domain::model_log::capped_reasoning),
+            reasoning_tokens: response.reasoning_tokens,
             content: response.content.clone(),
             requested_tools: response.tool_calls.iter().map(|c| c.name.clone()).collect(),
             finish_reason: Some(finish_name(&response.finish_reason)),

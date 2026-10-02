@@ -378,6 +378,8 @@ mod tests {
         let governor = Arc::new(Governor::new(&config, Arc::new(XorShift::new(1))).unwrap());
         let provider = Arc::new(FakeProvider::new([FakeAction::Response(
             CompletionResponse {
+                reasoning_content: None,
+                reasoning_tokens: None,
                 model: ALIAS.into(),
                 content: Some(reply.into()),
                 tool_calls: Vec::new(),

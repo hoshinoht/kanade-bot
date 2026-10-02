@@ -61,6 +61,8 @@ pub struct Logs {
 
 fn round(model: &str, tools: &[&str], calls: Value, response: Option<&str>) -> ChatRound {
     ChatRound {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: model.into(),
         reasoning: None,
         finish_reason: Some(
@@ -130,6 +132,8 @@ pub fn extraction(
     outcome: ExtractionOutcome,
 ) -> ExtractionLog {
     ExtractionLog {
+        reasoning_content: None,
+        reasoning_tokens: None,
         id: id.into(),
         at,
         channel_id: Some(channel.into()),
@@ -192,6 +196,9 @@ async fn seed_chats(reads: &Reads) {
     answered.rounds[0].prompt_tokens = Some(1200);
     answered.rounds[0].completion_tokens = Some(30);
     answered.rounds[0].prompt_estimate = Some(1000);
+    answered.rounds[0].reasoning_content = Some("Look up Kalos before answering.".into());
+    answered.rounds[0].reasoning_tokens = Some(12);
+    answered.rounds[1].reasoning_content = Some("Use the read result.".into());
     answered.rounds[1].prompt_estimate = Some(1100);
     let mut withheld = chat(
         "c-withheld",
@@ -216,6 +223,8 @@ async fn seed_chats(reads: &Reads) {
     withheld.rounds[0].prompt_tokens = Some(500);
     withheld.rounds[0].completion_tokens = Some(20);
     withheld.rounds[0].prompt_estimate = Some(400);
+    withheld.rounds[0].reasoning_content = Some("the forbidden thing in reasoning".into());
+    withheld.rounds[0].reasoning_tokens = Some(8);
     withheld.guardrail = json!({"content_filter": true});
     let mut limited = chat(
         "c-limited",
@@ -336,6 +345,8 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     newest.prompt_tokens = Some(1500);
     newest.completion_tokens = Some(60);
     newest.prompt_estimate = Some(1200);
+    newest.reasoning_content = Some("The party agreed on Wednesday.".into());
+    newest.reasoning_tokens = Some(24);
     newest.guardrail =
         json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}});
     newest.message_ids = vec!["m-said".into(), "m-pruned".into()];

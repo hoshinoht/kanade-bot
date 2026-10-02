@@ -534,6 +534,8 @@ export type ExtractionOutcome =
   | 'identity_leak';
 
 export interface ExtractionRow {
+  /** Provider-reported reasoning tokens over reporting attempts; null = unknown. */
+  reasoning_tokens?: number | null;
   id: string;
   short_id: string;
   at: string;
@@ -593,6 +595,8 @@ export interface Extractions {
 }
 
 export interface Extraction extends Omit<ExtractionRow, 'messages' | 'changes'> {
+  /** Response-only text, capped at 64 KiB including a visible marker. */
+  reasoning_content?: string | null;
   prompt: string;
   raw_response: string;
   amendments: { kind: string; bosses: string; when: string; confidence: number; status: string }[];
@@ -626,6 +630,8 @@ export type ChatOutcome =
   | 'clean_retry';
 
 export interface ChatRow {
+  /** Sum of the rounds' reported reasoning counts; null = unknown. */
+  reasoning_tokens?: number | null;
   id: string;
   at: string;
   member: Member;
@@ -680,6 +686,8 @@ export interface ChatToolCall {
 }
 
 export interface ChatRoundFacts {
+  reasoning_content?: string | null;
+  reasoning_tokens?: number | null;
   round: number;
   requested_tools: string[];
   finish: string;

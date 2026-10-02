@@ -63,6 +63,8 @@ async fn local_schema_references_are_supported_without_retrieval() {
         validation: OutputValidation::Runner,
     });
     let output = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some(r#"{"answer":"ok"}"#.into()),
         tool_calls: Vec::new(),

@@ -10,6 +10,8 @@ use kanade::infrastructure::llm::{
 
 fn words() -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: Some("answered in words".into()),
         tool_calls: Vec::new(),
@@ -20,6 +22,8 @@ fn words() -> FakeAction {
 
 fn calls(calls: Vec<ToolCall>) -> FakeAction {
     FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: "m".into(),
         content: None,
         tool_calls: calls,

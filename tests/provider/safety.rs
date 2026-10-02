@@ -103,6 +103,8 @@ async fn every_public_debug_representation_redacts_nested_sentinels() {
         sampling: None,
     };
     let response = CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: sentinel.into(),
         content: Some(sentinel.into()),
         tool_calls: vec![ToolCall {

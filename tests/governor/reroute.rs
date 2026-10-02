@@ -190,6 +190,8 @@ async fn a_requeue_returns_to_the_alias_the_session_opened_with() {
         .push(group("cloud", 1, 6_000, &["cloud-model"]));
     let governor = build(&config);
     let ok = FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
         model: ALIAS.into(),
         content: Some("soon".into()),
         tool_calls: Vec::new(),
